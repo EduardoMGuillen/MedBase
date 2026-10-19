@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, FileText, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { PageHead } from '../components/ui'
+import { Loading, PageHead } from '../components/ui'
 import { age, date, fullName, time } from '../lib/format'
 import { CLINIC } from '../lib/seed'
 import { LogoMark } from '../components/Logo'
@@ -40,12 +40,16 @@ export default function Prescriptions() {
 
 export function PrescriptionSheet() {
   const { id } = useParams()
-  const { prescriptions, patient, staffById, consultations } = useStore()
-  const rx = prescriptions.find((r) => r.id === id)
-  if (!rx) return <div className="page"><div className="empty">Esta receta no existe. Vuelve a <Link to="/app/recetas">Recetas</Link>.</div></div>
-  const p = patient(rx.patientId)!
+  const { staffById, fetchPrescription } = useStore()
+  const [data, setData] = useState<Awaited<ReturnType<typeof fetchPrescription>> | null>(null)
+  const [missing, setMissing] = useState(false)
+  useEffect(() => {
+    if (id) fetchPrescription(id).then(setData).catch(() => setMissing(true))
+  }, [id, fetchPrescription])
+  if (missing) return <div className="page"><div className="empty">Esta receta no existe. Vuelve a <Link to="/app/recetas">Recetas</Link>.</div></div>
+  if (!data) return <Loading label="Cargando receta" />
+  const { prescription: rx, consultation: c, patient: p } = data
   const doc = staffById(rx.doctorId)!
-  const c = consultations.find((x) => x.id === rx.consultationId)
 
   return (
     <div className="page">

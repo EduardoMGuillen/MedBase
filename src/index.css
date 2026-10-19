@@ -413,6 +413,12 @@ button.chip[aria-pressed='true'] { background: var(--ink); color: #fff; border-c
 
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--petrol); color: #fff; padding: 12px 18px; border-radius: 12px; font-weight: 600; font-size: 14px; z-index: 60; display: flex; gap: 10px; align-items: center; box-shadow: var(--shadow-lift); animation: pop .2s; }
 
+.toast--error { background: var(--red-ink); }
+.loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px; color: var(--muted); font-size: 14px; }
+.loading__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--mint-strong); animation: pulse-dot 1s ease-in-out infinite; }
+@keyframes pulse-dot { 50% { transform: scale(1.6); opacity: .5; } }
+.secret { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: 18px; background: var(--ward); border: 1px dashed var(--line); padding: 12px 14px; border-radius: 10px; user-select: all; }
+
 .matrix th:not(:first-child), .matrix td:not(:first-child) { text-align: center; }
 .matrix td:first-child { font-weight: 500; }
 .yes { color: var(--mint-ink); display: inline-block; }

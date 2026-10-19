@@ -1,122 +1,113 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
-import type { Appointment, ApptStatus, AuditEntry, Consultation, Patient, Prescription, Staff, Vitals } from './types'
-import { PATIENTS, STAFF, seedAppointments, seedClinical } from './seed'
-import { can, type Permission } from './permissions'
+import type { Appointment, ApptStatus, AuditEntry, Consultation, Patient, Prescription, PrescriptionItem, Staff, Vitals } from './types'
+import type { Permission } from './permissions'
+import { api, ApiError } from './api'
 
 interface Data {
   staff: Staff[]
   patients: Patient[]
   appointments: Appointment[]
-  vitals: Vitals[]
-  consultations: Consultation[]
   prescriptions: Prescription[]
   audit: AuditEntry[]
+  vitals: Vitals[] // signos tomados hoy
 }
 
-const KEY = 'clinara.demo.v1'
-const SESSION = 'clinara.session'
+interface Session { user: Staff; permissions: Permission[]; demo: boolean }
 
-function fresh(): Data {
-  return { staff: STAFF, patients: PATIENTS, appointments: seedAppointments(), ...seedClinical(), audit: [] }
-}
+export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescriptions: Prescription[] }
 
-function load(): Data {
-  try {
-    const raw = localStorage.getItem(KEY)
-    if (raw) {
-      const d = JSON.parse(raw) as Data & { seededOn?: string }
-      // La agenda de demo se regenera cada día para que "hoy" siempre tenga citas.
-      if (d.seededOn === new Date().toDateString()) return d
-    }
-  } catch { /* almacenamiento no disponible */ }
-  return fresh()
-}
-
-const uid = (prefix: string) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+const EMPTY: Data = { staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [] }
 
 function useStoreValue() {
-  const [data, setData] = useState<Data>(load)
-  const [userId, setUserId] = useState<string | null>(() => {
-    try { return sessionStorage.getItem(SESSION) } catch { return null }
-  })
+  const [session, setSession] = useState<Session | null>(null)
+  const [checking, setChecking] = useState(true)
+  const [data, setData] = useState<Data>(EMPTY)
+  const [toast, setToast] = useState<{ msg: string; tone: 'ok' | 'error' } | null>(null)
+
+  const notify = useCallback((msg: string, tone: 'ok' | 'error' = 'ok') => setToast({ msg, tone }), [])
+
+  const refresh = useCallback(async () => {
+    try {
+      setData(await api<Data>('/bootstrap'))
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) setSession(null)
+      else notify((e as Error).message, 'error')
+    }
+  }, [notify])
 
   useEffect(() => {
-    try { localStorage.setItem(KEY, JSON.stringify({ ...data, seededOn: new Date().toDateString() })) } catch { /* noop */ }
-  }, [data])
+    api<{ user: Staff | null; permissions?: Permission[]; demo: boolean }>('/auth/me')
+      .then(async (r) => {
+        if (r.user) { setSession({ user: r.user, permissions: r.permissions ?? [], demo: r.demo }); await refresh() }
+      })
+      .catch(() => { /* sin servidor: el login mostrará el error */ })
+      .finally(() => setChecking(false))
+  }, [refresh])
 
-  const user = data.staff.find((s) => s.id === userId) ?? null
-
-  const log = useCallback((d: Data, action: string): Data => (
-    userId ? { ...d, audit: [{ id: uid('l'), at: new Date().toISOString(), userId, action }, ...d.audit].slice(0, 200) } : d
-  ), [userId])
-
-  const signIn = (id: string) => {
-    setUserId(id)
-    try { sessionStorage.setItem(SESSION, id) } catch { /* noop */ }
-    setData((d) => ({ ...d, audit: [{ id: uid('l'), at: new Date().toISOString(), userId: id, action: 'Inició sesión' }, ...d.audit] }))
-  }
-  const signOut = () => {
-    setUserId(null)
-    try { sessionStorage.removeItem(SESSION) } catch { /* noop */ }
-  }
-
-  const setStatus = (apptId: string, status: ApptStatus) => setData((d) => log({
-    ...d,
-    appointments: d.appointments.map((a) => a.id === apptId
-      ? { ...a, status, arrivedAt: status === 'arrived' ? new Date().toISOString() : a.arrivedAt } : a),
-  }, `Cita ${apptId} → ${status}`))
-
-  const addAppointment = (a: Omit<Appointment, 'id'>) => setData((d) => log({
-    ...d, appointments: [...d.appointments, { ...a, id: uid('a') }],
-  }, 'Agendó una cita'))
-
-  const addPatient = (p: Omit<Patient, 'id' | 'record' | 'createdAt'>) => {
-    const id = uid('p')
-    setData((d) => log({
-      ...d,
-      patients: [...d.patients, { ...p, id, record: `EXP-${String(400 + d.patients.length + 80).padStart(5, '0')}`, createdAt: new Date().toISOString() }],
-    }, `Registró paciente ${p.firstName} ${p.lastName}`))
-    return id
-  }
-
-  const addVitals = (v: Omit<Vitals, 'id' | 'takenAt' | 'takenBy'>) => setData((d) => {
-    const next = { ...d, vitals: [{ ...v, id: uid('v'), takenAt: new Date().toISOString(), takenBy: userId! }, ...d.vitals] }
-    if (v.appointmentId) {
-      next.appointments = d.appointments.map((a) => a.id === v.appointmentId && a.status === 'arrived' ? { ...a, status: 'triaged' as const } : a)
+  /** Ejecuta una mutación, recarga los datos y avisa el resultado. Devuelve null si falló. */
+  const run = useCallback(async <T,>(fn: () => Promise<T>, success?: string): Promise<T | null> => {
+    try {
+      const r = await fn()
+      await refresh()
+      if (success) notify(success)
+      return r
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) setSession(null)
+      notify((e as Error).message, 'error')
+      return null
     }
-    return log(next, 'Registró signos vitales')
-  })
+  }, [refresh, notify])
 
-  const finishConsult = (c: Omit<Consultation, 'id' | 'prescriptionId'>, rxItems: Prescription['items']) => {
-    const cid = uid('c')
-    const rxId = rxItems.length ? uid('rx') : undefined
-    setData((d) => {
-      const prescriptions = rxId ? [{
-        id: rxId, folio: `RX-${new Date().getFullYear()}-${String(1100 + d.prescriptions.length).padStart(4, '0')}`,
-        patientId: c.patientId, doctorId: c.doctorId, consultationId: cid, issuedAt: new Date().toISOString(), items: rxItems,
-      }, ...d.prescriptions] : d.prescriptions
-      return log({
-        ...d,
-        prescriptions,
-        consultations: [{ ...c, id: cid, prescriptionId: rxId }, ...d.consultations],
-        appointments: d.appointments.map((a) => a.id === c.appointmentId ? { ...a, status: 'done' as const } : a),
-      }, rxId ? 'Firmó consulta y emitió receta' : 'Firmó consulta')
-    })
-    return { cid, rxId }
+  const signIn = async (email: string, password: string) => {
+    const r = await api<Session>('/auth/login', { body: { email, password } })
+    setSession(r)
+    await refresh()
+  }
+  const signOut = async () => {
+    await api('/auth/logout', { method: 'POST' }).catch(() => null)
+    setSession(null)
+    setData(EMPTY)
   }
 
-  const toggleStaff = (id: string) => setData((d) => log({
-    ...d, staff: d.staff.map((s) => s.id === id ? { ...s, active: !s.active } : s),
-  }, 'Cambió estado de un usuario'))
+  const user = session?.user ?? null
 
-  const reset = () => setData(fresh())
+  // Estables entre renders para poder usarlos como dependencias de efectos
+  const fetchChart = useCallback((patientId: string) => api<Chart>(`/patients/${patientId}/chart`), [])
+  const fetchPrescription = useCallback((id: string) =>
+    api<{ prescription: Prescription; consultation: Consultation | null; patient: Patient }>(`/prescriptions/${id}`), [])
 
   return {
-    ...data, user,
-    can: (perm: Permission) => !!user && can(user.role, perm),
-    signIn, signOut, setStatus, addAppointment, addPatient, addVitals, finishConsult, toggleStaff, reset,
+    ...data, user, checking, demo: session?.demo ?? false, toast, notify, clearToast: () => setToast(null), refresh,
+    can: (perm: Permission) => !!session?.permissions.includes(perm),
+    signIn, signOut,
     patient: (id: string) => data.patients.find((p) => p.id === id),
     staffById: (id: string) => data.staff.find((s) => s.id === id),
+
+    setStatus: (id: string, status: Exclude<ApptStatus, 'scheduled' | 'triaged' | 'done'>, success?: string) =>
+      run(() => api<Appointment>(`/appointments/${id}/status`, { body: { status } }), success),
+    addAppointment: (a: Omit<Appointment, 'id' | 'status' | 'arrivedAt'>) =>
+      run(() => api<Appointment>('/appointments', { body: a }), 'Cita agendada'),
+    reschedule: (id: string, a: Partial<Pick<Appointment, 'doctorId' | 'start' | 'minutes' | 'reason'>>) =>
+      run(() => api<Appointment>(`/appointments/${id}`, { method: 'PATCH', body: a }), 'Cita reprogramada'),
+    addPatient: (p: Omit<Patient, 'id' | 'record' | 'createdAt'>) =>
+      run(() => api<{ id: string; record: string }>('/patients', { body: p }), 'Paciente registrado'),
+    updatePatient: (id: string, p: Partial<Patient>) =>
+      run(() => api<Patient>(`/patients/${id}`, { method: 'PATCH', body: p }), 'Ficha actualizada'),
+    addVitals: (v: Omit<Vitals, 'id' | 'takenAt' | 'takenBy'>) =>
+      run(() => api<Vitals>('/vitals', { body: v }), 'Signos vitales guardados'),
+    finishConsult: (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string }, items: PrescriptionItem[]) =>
+      run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null }>('/consultations', { body: { ...c, items } }),
+        items.length ? 'Consulta y receta firmadas' : 'Consulta firmada'),
+    fetchChart, fetchPrescription,
+
+    createStaff: (s: Pick<Staff, 'name' | 'role' | 'email' | 'specialty' | 'license'>) =>
+      run(() => api<{ user: Staff; password: string }>('/staff', { body: s }), 'Usuario creado'),
+    updateStaff: (id: string, b: { active?: boolean; role?: Staff['role'] }) =>
+      run(() => api<Staff>(`/staff/${id}`, { method: 'PATCH', body: b }), 'Usuario actualizado'),
+    resetStaffPassword: (id: string) => run(() => api<{ password: string }>(`/staff/${id}/reset-password`, { method: 'POST' })),
+    changePassword: (current: string, next: string) =>
+      run(() => api('/auth/password', { body: { current, next } }), 'Contraseña actualizada'),
+    resetDemo: () => run(() => api('/admin/reset-demo', { method: 'POST' }), 'Datos de demo restablecidos'),
   }
 }
 

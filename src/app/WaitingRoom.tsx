@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Activity, LogIn } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { Modal, PageHead, StatusBadge, Toast } from '../components/ui'
+import { Modal, PageHead, StatusBadge } from '../components/ui'
 import { age, fullName, sameDay, time } from '../lib/format'
 import type { Appointment } from '../lib/types'
 
@@ -10,7 +10,6 @@ const minutesSince = (iso?: string) => (iso ? Math.max(0, Math.round((Date.now()
 export default function WaitingRoom() {
   const { appointments, patient, staffById, can, setStatus } = useStore()
   const [triage, setTriage] = useState<Appointment | null>(null)
-  const [toast, setToast] = useState('')
   const today = appointments.filter((a) => sameDay(a.start, new Date())).sort((a, b) => a.start.localeCompare(b.start))
   const lanes = [
     { title: 'Por llegar', hint: 'Registra la llegada cuando el paciente se presente.', list: today.filter((a) => ['scheduled', 'confirmed'].includes(a.status)) },
@@ -40,7 +39,7 @@ export default function WaitingRoom() {
                     </div>
                   </div>
                   {['scheduled', 'confirmed'].includes(a.status) && can('checkin.manage') &&
-                    <button className="btn btn--soft btn--sm" onClick={() => { setStatus(a.id, 'arrived'); setToast(`Llegada de ${p.firstName} registrada`) }}><LogIn size={15} />Registrar llegada</button>}
+                    <button className="btn btn--soft btn--sm" onClick={() => setStatus(a.id, 'arrived', `Llegada de ${p.firstName} registrada`)}><LogIn size={15} />Registrar llegada</button>}
                   {a.status === 'arrived' && can('vitals.record') &&
                     <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Tomar signos</button>}
                 </div>
@@ -49,8 +48,7 @@ export default function WaitingRoom() {
           </section>
         ))}
       </div>
-      {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={(name) => { setTriage(null); setToast(`Signos de ${name} registrados`) }} />}
-      {toast && <Toast message={toast} onDone={() => setToast('')} />}
+      {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}
     </div>
   )
 }
@@ -59,10 +57,11 @@ const RANGES = {
   systolic: [90, 139], diastolic: [60, 89], heartRate: [60, 100], temperature: [36, 37.5], spo2: [94, 100],
 } as const
 
-export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onClose: () => void; onSaved: (name: string) => void }) {
+export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onClose: () => void; onSaved: () => void }) {
   const { patient, addVitals } = useStore()
   const p = patient(appt.patientId)!
   const [v, setV] = useState({ systolic: '', diastolic: '', heartRate: '', temperature: '', spo2: '', weightKg: '', heightCm: '', painScale: '0', notes: '' })
+  const [busy, setBusy] = useState(false)
   const num = (k: keyof typeof v) => Number(v[k])
   const out = (k: keyof typeof RANGES) => v[k] !== '' && (num(k) < RANGES[k][0] || num(k) > RANGES[k][1])
   const ready = ['systolic', 'diastolic', 'heartRate', 'temperature', 'spo2'].every((k) => v[k as keyof typeof v] !== '')
@@ -79,12 +78,14 @@ export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onC
   return (
     <Modal title={`Triaje de ${fullName(p)}`} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={!ready} onClick={() => {
-        addVitals({
+      <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
+        setBusy(true)
+        const ok = await addVitals({
           patientId: p.id, appointmentId: appt.id, systolic: num('systolic'), diastolic: num('diastolic'), heartRate: num('heartRate'),
           temperature: num('temperature'), spo2: num('spo2'), weightKg: num('weightKg'), heightCm: num('heightCm'), painScale: num('painScale'), notes: v.notes || undefined,
         })
-        onSaved(p.firstName)
+        setBusy(false)
+        if (ok) onSaved()
       }}>Guardar signos vitales</button>
     </>}>
       {p.allergies.length > 0 && <div className="alert-strip">Alergias: {p.allergies.join(', ')}</div>}

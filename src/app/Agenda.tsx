@@ -2,18 +2,16 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { Avatar, Modal, PageHead, StatusBadge, Toast } from '../components/ui'
+import { Avatar, Modal, PageHead, StatusBadge } from '../components/ui'
 import { cap, fullName, sameDay, time } from '../lib/format'
-import type { Appointment } from '../lib/types'
+import type { Appointment, Patient, Staff } from '../lib/types'
 
 const START_H = 7
 const END_H = 18
 const HOUR_PX = 96
 
-const toLocalISO = (d: Date) => {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
+const pad = (n: number) => String(n).padStart(2, '0')
+const toLocalISO = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
 export default function Agenda() {
   const store = useStore()
@@ -21,8 +19,8 @@ export default function Agenda() {
   const navigate = useNavigate()
   const [day, setDay] = useState(() => new Date())
   const [creating, setCreating] = useState(false)
-  const [selected, setSelected] = useState<Appointment | null>(null)
-  const [toast, setToast] = useState('')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [rescheduling, setRescheduling] = useState<Appointment | null>(null)
 
   const doctors = staff.filter((s) => s.role === 'doctor' && s.active)
   // El médico ve primero su propia columna
@@ -33,6 +31,9 @@ export default function Agenda() {
   const now = new Date()
   const nowTop = ((now.getHours() - START_H) * 60 + now.getMinutes()) * (HOUR_PX / 60)
   const gridCols = `56px repeat(${cols.length}, minmax(180px, 1fr))`
+  const selected = appointments.find((a) => a.id === selectedId)
+
+  const act = async (fn: () => Promise<unknown>) => { if (await fn()) setSelectedId(null) }
 
   return (
     <div className="page">
@@ -59,18 +60,19 @@ export default function Agenda() {
           </div>
           <div className="cal__body" style={{ gridTemplateColumns: gridCols }}>
             <div className="cal__hours">
-              {Array.from({ length: END_H - START_H }, (_, i) => <div key={i} className="cal__hour">{String(START_H + i).padStart(2, '0')}:00</div>)}
+              {Array.from({ length: END_H - START_H }, (_, i) => <div key={i} className="cal__hour">{pad(START_H + i)}:00</div>)}
             </div>
             {cols.map((d) => (
               <div key={d.id} className="cal__col" style={{ height: (END_H - START_H) * HOUR_PX }}>
                 {dayAppts.filter((a) => a.doctorId === d.id && a.status !== 'cancelled').map((a) => {
                   const s = new Date(a.start)
                   const top = ((s.getHours() - START_H) * 60 + s.getMinutes()) * (HOUR_PX / 60)
-                  const p = patient(a.patientId)!
+                  const p = patient(a.patientId)
+                  if (!p) return null
                   return (
                     <button key={a.id} className={`appt ${a.status === 'done' || a.status === 'no_show' ? 'appt--done' : ''} ${a.type === 'urgent' ? 'appt--urgent' : ''}`}
                       style={{ top: top + 2, height: a.minutes * (HOUR_PX / 60) - 4, ['--c' as string]: d.color, textAlign: 'left', border: 0, borderLeft: `3px solid ${d.color}` }}
-                      onClick={() => setSelected(a)}>
+                      onClick={() => setSelectedId(a.id)}>
                       <strong>{time(a.start)} {fullName(p)}</strong>
                       <span>{a.reason}</span>
                     </button>
@@ -84,13 +86,14 @@ export default function Agenda() {
       </section>
 
       {selected && (() => {
-        const a = appointments.find((x) => x.id === selected.id)!
+        const a = selected
         const p = patient(a.patientId)!
         const open = ['scheduled', 'confirmed'].includes(a.status)
         return (
-          <Modal title={fullName(p)} onClose={() => setSelected(null)} footer={<>
-            {can('agenda.manage') && open && <button className="btn btn--danger" onClick={() => { store.setStatus(a.id, 'cancelled'); setSelected(null); setToast('Cita cancelada') }}>Cancelar cita</button>}
-            {can('checkin.manage') && open && <button className="btn btn--soft" onClick={() => { store.setStatus(a.id, 'arrived'); setSelected(null); setToast('Llegada registrada') }}>Registrar llegada</button>}
+          <Modal title={fullName(p)} onClose={() => setSelectedId(null)} footer={<>
+            {can('agenda.manage') && open && <button className="btn btn--danger" onClick={() => act(() => store.setStatus(a.id, 'cancelled', 'Cita cancelada'))}>Cancelar cita</button>}
+            {can('agenda.manage') && open && <button className="btn btn--ghost" onClick={() => { setRescheduling(a); setSelectedId(null) }}>Reprogramar</button>}
+            {can('checkin.manage') && open && <button className="btn btn--soft" onClick={() => act(() => store.setStatus(a.id, 'arrived', 'Llegada registrada'))}>Registrar llegada</button>}
             {can('consult.write') && a.doctorId === user?.id && ['arrived', 'triaged', 'in_consult'].includes(a.status) &&
               <button className="btn btn--primary" onClick={() => navigate(`/app/consulta/${a.id}`)}>Atender</button>}
             {!open && <button className="btn btn--ghost" onClick={() => navigate(`/app/pacientes/${p.id}`)}>Abrir ficha</button>}
@@ -101,37 +104,59 @@ export default function Agenda() {
               <span>Expediente <b>{p.record}</b></span><span>Teléfono <b>{p.phone}</b></span>
             </div>
             <p><b>Motivo:</b> {a.reason}</p>
-            {open && a.status === 'scheduled' && can('agenda.manage') && (
-              <button className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => { store.setStatus(a.id, 'confirmed'); setToast('Cita confirmada') }}>Marcar como confirmada</button>
-            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {a.status === 'scheduled' && can('agenda.manage') && (
+                <button className="btn btn--ghost btn--sm" onClick={() => store.setStatus(a.id, 'confirmed', 'Cita confirmada')}>Marcar como confirmada</button>
+              )}
+              {open && can('checkin.manage') && new Date(a.start) < new Date() && (
+                <button className="btn btn--ghost btn--sm" onClick={() => act(() => store.setStatus(a.id, 'no_show', 'Inasistencia registrada'))}>Marcar que no asistió</button>
+              )}
+            </div>
           </Modal>
         )
       })()}
 
-      {creating && <NewAppointment day={day} doctors={doctors} patients={patients} defaultDoctor={user?.role === 'doctor' ? user.id : doctors[0]?.id}
+      {creating && <AppointmentForm title="Nueva cita" submitLabel="Agendar cita" doctors={doctors} patients={patients}
+        initial={{ date: toLocalISO(day), doctorId: user?.role === 'doctor' ? user.id : doctors[0]?.id }}
         onClose={() => setCreating(false)}
-        onSave={(a) => { store.addAppointment(a); setCreating(false); setToast('Cita agendada') }} />}
-      {toast && <Toast message={toast} onDone={() => setToast('')} />}
+        onSave={async (a) => { if (await store.addAppointment(a)) setCreating(false) }} />}
+
+      {rescheduling && <AppointmentForm title="Reprogramar cita" submitLabel="Guardar cambios" doctors={doctors} patients={patients} lockPatient
+        initial={{
+          patientId: rescheduling.patientId, doctorId: rescheduling.doctorId, date: rescheduling.start.slice(0, 10), time: rescheduling.start.slice(11, 16),
+          minutes: rescheduling.minutes, reason: rescheduling.reason, type: rescheduling.type,
+        }}
+        onClose={() => setRescheduling(null)}
+        onSave={async (a) => {
+          if (await store.reschedule(rescheduling.id, { doctorId: a.doctorId, start: a.start, minutes: a.minutes, reason: a.reason })) setRescheduling(null)
+        }} />}
     </div>
   )
 }
 
-function NewAppointment({ day, doctors, patients, defaultDoctor, onClose, onSave }: {
-  day: Date; doctors: ReturnType<typeof useStore>['staff']; patients: ReturnType<typeof useStore>['patients']; defaultDoctor?: string
-  onClose: () => void; onSave: (a: Omit<Appointment, 'id'>) => void
+interface FormState { patientId: string; doctorId: string; date: string; time: string; minutes: number; reason: string; type: Appointment['type'] }
+
+function AppointmentForm({ title, submitLabel, doctors, patients, initial, lockPatient, onClose, onSave }: {
+  title: string; submitLabel: string; doctors: Staff[]; patients: Patient[]; initial: Partial<FormState>; lockPatient?: boolean
+  onClose: () => void; onSave: (a: Omit<Appointment, 'id' | 'status' | 'arrivedAt'>) => Promise<void>
 }) {
-  const [f, setF] = useState({ patientId: patients[0]?.id ?? '', doctorId: defaultDoctor ?? '', date: toLocalISO(day), time: '10:00', minutes: 30, reason: '', type: 'followup' as Appointment['type'] })
-  const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }))
-  const valid = f.patientId && f.doctorId && f.reason.trim()
+  const [f, setF] = useState<FormState>({
+    patientId: patients[0]?.id ?? '', doctorId: doctors[0]?.id ?? '', date: toLocalISO(new Date()), time: '10:00', minutes: 30, reason: '', type: 'followup', ...initial,
+  } as FormState)
+  const [busy, setBusy] = useState(false)
+  const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((x) => ({ ...x, [k]: v }))
+  const valid = f.patientId && f.doctorId && f.reason.trim() && f.date && f.time
   return (
-    <Modal title="Nueva cita" onClose={onClose} footer={<>
+    <Modal title={title} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={!valid} onClick={() => onSave({
-        patientId: f.patientId, doctorId: f.doctorId, start: `${f.date}T${f.time}:00`, minutes: f.minutes, reason: f.reason.trim(), type: f.type, status: 'scheduled',
-      })}>Agendar cita</button>
+      <button className="btn btn--primary" disabled={!valid || busy} onClick={async () => {
+        setBusy(true)
+        await onSave({ patientId: f.patientId, doctorId: f.doctorId, start: `${f.date}T${f.time}:00`, minutes: f.minutes, reason: f.reason.trim(), type: f.type })
+        setBusy(false)
+      }}>{submitLabel}</button>
     </>}>
       <label className="field"><span>Paciente</span>
-        <select className="select" value={f.patientId} onChange={(e) => set('patientId', e.target.value)}>
+        <select className="select" value={f.patientId} disabled={lockPatient} onChange={(e) => set('patientId', e.target.value)}>
           {patients.map((p) => <option key={p.id} value={p.id}>{fullName(p)} ({p.record})</option>)}
         </select>
       </label>
@@ -150,11 +175,13 @@ function NewAppointment({ day, doctors, patients, defaultDoctor, onClose, onSave
         </label>
       </div>
       <label className="field"><span>Motivo de consulta</span><input className="input" value={f.reason} onChange={(e) => set('reason', e.target.value)} placeholder="Ej. Control de presión arterial" /></label>
-      <label className="field"><span>Tipo</span>
-        <select className="select" value={f.type} onChange={(e) => set('type', e.target.value as Appointment['type'])}>
-          <option value="first">Primera vez</option><option value="followup">Seguimiento</option><option value="urgent">Urgente</option>
-        </select>
-      </label>
+      {!lockPatient && (
+        <label className="field"><span>Tipo</span>
+          <select className="select" value={f.type} onChange={(e) => set('type', e.target.value as Appointment['type'])}>
+            <option value="first">Primera vez</option><option value="followup">Seguimiento</option><option value="urgent">Urgente</option>
+          </select>
+        </label>
+      )}
     </Modal>
   )
 }

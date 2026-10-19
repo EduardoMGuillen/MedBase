@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { initials, STATUS } from '../lib/format'
 import type { ApptStatus } from '../lib/types'
+import { useStore } from '../lib/store'
 
 export function Avatar({ name, color, size }: { name: string; color: string; size?: number }) {
   return (
@@ -36,12 +37,20 @@ export function Modal({ title, onClose, children, footer }: { title: string; onC
   )
 }
 
-export function Toast({ message, onDone }: { message: string; onDone: () => void }) {
+/** Aviso global: confirma acciones y muestra errores del servidor. */
+export function Toaster() {
+  const { toast, clearToast } = useStore()
   useEffect(() => {
-    const t = setTimeout(onDone, 2800)
+    if (!toast) return
+    const t = setTimeout(clearToast, toast.tone === 'error' ? 5000 : 2800)
     return () => clearTimeout(t)
-  }, [onDone])
-  return <div className="toast" role="status">{message}</div>
+  }, [toast, clearToast])
+  if (!toast) return null
+  return <div className={`toast ${toast.tone === 'error' ? 'toast--error' : ''}`} role={toast.tone === 'error' ? 'alert' : 'status'}>{toast.msg}</div>
+}
+
+export function Loading({ label = 'Cargando' }: { label?: string }) {
+  return <div className="loading" role="status"><span className="loading__dot" />{label}</div>
 }
 
 export function PageHead({ title, sub, actions }: { title: string; sub?: ReactNode; actions?: ReactNode }) {

@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { StoreProvider, useStore } from './lib/store'
 import type { Permission } from './lib/permissions'
+import { Loading, Toaster } from './components/ui'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import AppShell from './app/AppShell'
@@ -15,7 +16,8 @@ import Prescriptions, { PrescriptionSheet } from './app/Prescriptions'
 import StaffPage from './app/Staff'
 
 function Guard({ perm, children }: { perm?: Permission; children: ReactNode }) {
-  const { user, can } = useStore()
+  const { user, can, checking } = useStore()
+  if (checking) return <Loading label="Abriendo tu sesión" />
   if (!user) return <Navigate to="/login" replace />
   if (perm && !can(perm)) return <Navigate to="/app" replace />
   return children
@@ -41,6 +43,7 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <Toaster />
       </BrowserRouter>
     </StoreProvider>
   )

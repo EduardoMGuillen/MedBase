@@ -1,45 +1,46 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
 import { useStore } from '../lib/store'
+import { api } from '../lib/api'
 import { ROLE_LABEL } from '../lib/permissions'
-
-const DEMO_PASSWORD = 'demo1234'
+import type { Staff } from '../lib/types'
 
 export default function Login() {
-  const { staff, signIn } = useStore()
+  const { user, signIn } = useStore()
   const nav = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [demo, setDemo] = useState<{ accounts: Staff[]; password: string | null }>({ accounts: [], password: null })
 
-  const enter = (id: string) => { signIn(id); nav('/app') }
-
-  // Enlace directo de demo: /login?as=s-herrera&next=/app/agenda
-  const [params] = useSearchParams()
   useEffect(() => {
-    const as = params.get('as')
-    if (as && staff.some((s) => s.id === as)) { signIn(as); nav(params.get('next') ?? '/app', { replace: true }) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    api<typeof demo>('/demo-accounts').then(setDemo).catch((e: Error) => setError(e.message))
   }, [])
+
+  if (user) return <Navigate to="/app" replace />
+
+  const enter = async (mail: string, pw: string) => {
+    setBusy(true)
+    setError('')
+    try {
+      await signIn(mail, pw)
+      nav('/app')
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const user = staff.find((s) => s.email.toLowerCase() === email.trim().toLowerCase())
-    if (!user || password !== DEMO_PASSWORD) {
-      setError('El correo o la contraseña no coinciden. Revisa los datos o entra con una cuenta de demo.')
-      return
-    }
-    if (!user.active) {
-      setError('Esta cuenta está desactivada. Pide a administración que la reactive.')
-      return
-    }
-    enter(user.id)
+    if (!email.trim() || !password) { setError('Escribe tu correo y tu contraseña.'); return }
+    enter(email.trim(), password)
   }
-
-  const demo = ['s-herrera', 's-rios', 's-mejia', 's-admin'].map((id) => staff.find((s) => s.id === id)!)
 
   return (
     <div className="auth">
@@ -66,22 +67,24 @@ export default function Login() {
               <span>Contraseña</span>
               <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </label>
-            <button className="btn btn--primary btn--lg" type="submit">Iniciar sesión</button>
+            <button className="btn btn--primary btn--lg" type="submit" disabled={busy}>{busy ? 'Entrando…' : 'Iniciar sesión'}</button>
           </form>
 
-          <div className="auth__demo">
-            <span>Cuentas de demo (contraseña {DEMO_PASSWORD})</span>
-            {demo.map((s) => (
-              <button key={s.id} className="demo-role" onClick={() => enter(s.id)}>
-                <Avatar name={s.name} color={s.color} />
-                <span>
-                  <strong>{s.name}</strong>
-                  <small>{ROLE_LABEL[s.role]}{s.specialty ? `, ${s.specialty}` : ''}</small>
-                </span>
-                <ChevronRight size={18} />
-              </button>
-            ))}
-          </div>
+          {demo.accounts.length > 0 && demo.password && (
+            <div className="auth__demo">
+              <span>Cuentas de demo (contraseña {demo.password})</span>
+              {demo.accounts.filter((s) => s.id !== 's-paz' && s.id !== 's-zuniga').map((s) => (
+                <button key={s.id} className="demo-role" disabled={busy} onClick={() => enter(s.email, demo.password!)}>
+                  <Avatar name={s.name} color={s.color} />
+                  <span>
+                    <strong>{s.name}</strong>
+                    <small>{ROLE_LABEL[s.role]}{s.specialty ? `, ${s.specialty}` : ''}</small>
+                  </span>
+                  <ChevronRight size={18} />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </div>

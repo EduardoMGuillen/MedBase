@@ -91,10 +91,14 @@ Los tipos están en `src/lib/types.ts`.
 
 ## 5. Arquitectura
 
-### Prototipo actual (este repositorio)
-- React 19, TypeScript, Vite y React Router.
-- Estado en memoria con persistencia en `localStorage`. La agenda de demo se regenera cada día.
-- Sin backend: la autenticación es simulada con cuentas de demo.
+### Versión actual (este repositorio)
+- Frontend: React 19, TypeScript, Vite y React Router.
+- Backend: Express 5 con SQLite (`node:sqlite`, sin dependencias nativas). Todo corre con `npm run dev`.
+- Autenticación real: bcrypt, sesión JWT en cookie `httpOnly`, bloqueo por intentos fallidos e invalidación de sesiones al desactivar usuarios o cambiar roles.
+- Los permisos de `src/lib/permissions.ts` se aplican en el servidor y en la interfaz.
+- Bitácora de sólo inserción, protegida con triggers.
+- Pruebas de API con `node:test` (`npm test`).
+- `Dockerfile` para publicarlo en cualquier servicio de contenedores.
 
 ### Producción propuesta
 | Capa | Elección | Motivo |
@@ -115,7 +119,8 @@ Los tipos están en `src/lib/types.ts`.
 | Fase | Alcance |
 |---|---|
 | **0. Prototipo** (hecho) | Landing, login, 4 roles, agenda, sala de espera, triaje, consulta SOAP, CIE-10, recetas con cruce de alergias, expediente, personal, bitácora |
-| **1. MVP real** | Supabase con RLS, login real con doble factor, alta de clínica, edición de pacientes y citas, recordatorios por WhatsApp |
+| **1. MVP funcional** (hecho) | Backend con base de datos, login real, permisos en servidor, edición de pacientes, reprogramación con detección de choques, alta de usuarios con contraseña temporal, cambio de contraseña, pruebas automáticas |
+| **1b. Pendiente para salir a producción** | Doble factor (TOTP), alta de varias clínicas, recordatorios por WhatsApp, respaldos automáticos, migrar a Postgres si crece el volumen |
 | **2. Operación** | Caja y facturación, reportes exportables, plantillas de nota por especialidad, órdenes de laboratorio |
 | **3. Pacientes** | Portal del paciente, reserva en línea, receta digital con código QR verificable |
 | **4. Escala** | Multisede, farmacia, integraciones (HL7 FHIR), app móvil para médicos |

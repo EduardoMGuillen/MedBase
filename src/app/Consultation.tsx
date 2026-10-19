@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { PageHead } from '../components/ui'
 import { age, date, fullName } from '../lib/format'
 import { DRUGS, FREQUENCIES, ICD10, SYMPTOMS, allergyConflict } from '../lib/catalogs'
-import { VitalsGrid } from './PatientChart'
+import { useChart, VitalsGrid } from './PatientChart'
 import { VitalsModal } from './WaitingRoom'
 import type { PrescriptionItem } from '../lib/types'
 
@@ -14,7 +14,7 @@ const EMPTY_ITEM: PrescriptionItem = { drug: '', presentation: '', dose: '1 tabl
 export default function Consultation() {
   const { apptId } = useParams()
   const store = useStore()
-  const { appointments, patient, vitals, consultations, user, setStatus } = store
+  const { appointments, patient, vitals, user, setStatus } = store
   const nav = useNavigate()
   const appt = appointments.find((a) => a.id === apptId)
   const p = appt && patient(appt.patientId)
@@ -32,18 +32,22 @@ export default function Consultation() {
   const [drugOpen, setDrugOpen] = useState(false)
   const [override, setOverride] = useState(false)
   const [triage, setTriage] = useState(false)
+  const [signing, setSigning] = useState(false)
+  const mine = !!appt && appt.doctorId === user?.id
+  const { chart } = useChart(p?.id, mine)
 
   useEffect(() => {
-    if (appt && ['arrived', 'triaged', 'confirmed', 'scheduled'].includes(appt.status)) setStatus(appt.id, 'in_consult')
+    if (appt && mine && ['arrived', 'triaged', 'confirmed', 'scheduled'].includes(appt.status)) setStatus(appt.id, 'in_consult')
     // Sólo al abrir la consulta
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appt?.id])
 
   if (!appt || !p || !user) return <div className="page"><div className="empty">No se encontró la cita. Vuelve a la <Link to="/app/agenda">agenda</Link>.</div></div>
-  if (appt.doctorId !== user.id) return <div className="page"><div className="empty">Esta cita pertenece a otro médico. Sólo el médico asignado puede firmar la consulta.</div></div>
+  if (appt.status === 'done') return <div className="page"><div className="empty">Esta consulta ya fue firmada. Puedes verla en el <Link to={`/app/pacientes/${p.id}`}>expediente</Link>.</div></div>
+  if (!mine) return <div className="page"><div className="empty">Esta cita pertenece a otro médico. Sólo el médico asignado puede firmar la consulta.</div></div>
 
   const todayVitals = vitals.find((v) => v.appointmentId === appt.id)
-  const last = consultations.filter((c) => c.patientId === p.id).sort((a, b) => b.date.localeCompare(a.date))[0]
+  const last = chart?.consultations[0]
   const dxMatches = dxQuery.trim().length > 0
     ? ICD10.filter((d) => !dx.some((x) => x.code === d.code) && (d.code.toLowerCase().includes(dxQuery.toLowerCase()) || d.label.toLowerCase().includes(dxQuery.toLowerCase()))).slice(0, 6)
     : []
@@ -58,12 +62,13 @@ export default function Consultation() {
     setOverride(false)
   }
 
-  const sign = () => {
-    const { rxId } = store.finishConsult({
-      patientId: p.id, doctorId: user.id, appointmentId: appt.id, date: new Date().toISOString(), reason: reason.trim(),
-      symptoms, symptomOnset: onset, history, exam, diagnoses: dx, plan, vitalsId: todayVitals?.id,
+  const sign = async () => {
+    setSigning(true)
+    const r = await store.finishConsult({
+      appointmentId: appt.id, reason: reason.trim(), symptoms, symptomOnset: onset, history, exam, diagnoses: dx, plan, vitalsId: todayVitals?.id,
     }, items)
-    nav(rxId ? `/app/recetas/${rxId}` : `/app/pacientes/${p.id}`)
+    setSigning(false)
+    if (r) nav(r.prescriptionId ? `/app/recetas/${r.prescriptionId}` : `/app/pacientes/${p.id}`)
   }
 
   return (
@@ -71,7 +76,7 @@ export default function Consultation() {
       <PageHead title={`Consulta de ${fullName(p)}`} sub={`${age(p.birthDate)}, expediente ${p.record}`}
         actions={<>
           <Link className="btn btn--ghost" to={`/app/pacientes/${p.id}`}>Ver expediente</Link>
-          <button className="btn btn--primary" disabled={!canSign} onClick={sign}>Firmar consulta{items.length ? ' y receta' : ''}</button>
+          <button className="btn btn--primary" disabled={!canSign || signing} onClick={sign}>Firmar consulta{items.length ? ' y receta' : ''}</button>
         </>} />
 
       <div className="consult">
@@ -140,7 +145,7 @@ export default function Consultation() {
               <div className="field span-2 suggest">
                 <span>Medicamento</span>
                 <input className="input" value={draft.drug} onFocus={() => setDrugOpen(true)} onBlur={() => setTimeout(() => setDrugOpen(false), 150)}
-                  onChange={(e) => { setDraft({ ...draft, drug: e.target.value, presentation: '' }); setOverride(false) }} placeholder="Busca en el vademécum" />
+                  onChange={(e) => { setDraft({ ...draft, drug: e.target.value, presentation: '' }); setOverride(false); setDrugOpen(true) }} placeholder="Busca en el vademécum" />
                 {drugOpen && drugMatches.length > 0 && (
                   <div className="suggest__list">
                     {drugMatches.map((d) => <button key={d.name} onMouseDown={(e) => e.preventDefault()} onClick={() => { setDraft({ ...draft, drug: d.name, presentation: d.presentation }); setDrugOpen(false) }}>
@@ -190,7 +195,7 @@ export default function Consultation() {
               <p style={{ fontSize: 14, color: 'var(--muted)' }}>
                 {canSign ? `Al firmar se cierra la cita${items.length ? ` y se emite una receta con ${items.length} medicamento${items.length > 1 ? 's' : ''}` : ''}.` : 'Para firmar escribe el motivo y agrega al menos un diagnóstico.'}
               </p>
-              <button className="btn btn--primary" disabled={!canSign} onClick={sign}>Firmar consulta{items.length ? ' y receta' : ''}</button>
+              <button className="btn btn--primary" disabled={!canSign || signing} onClick={sign}>Firmar consulta{items.length ? ' y receta' : ''}</button>
             </div>
           </section>
         </aside>

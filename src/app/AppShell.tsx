@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { CalendarDays, FileText, House, LogOut, Menu, Armchair, Users, UserCog } from 'lucide-react'
+import { CalendarDays, FileText, House, KeyRound, LogOut, Menu, Armchair, Users, UserCog } from 'lucide-react'
 import { Logo } from '../components/Logo'
-import { Avatar } from '../components/ui'
+import { Avatar, Modal } from '../components/ui'
 import { useStore } from '../lib/store'
 import { ROLE_LABEL, type Permission } from '../lib/permissions'
 import { CLINIC } from '../lib/seed'
@@ -18,11 +18,19 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
 ]
 
 export default function AppShell() {
-  const { user, can, signOut, appointments } = useStore()
+  const { user, can, signOut, appointments, refresh } = useStore()
   const nav = useNavigate()
   const loc = useLocation()
   const [open, setOpen] = useState(false)
+  const [pwOpen, setPwOpen] = useState(false)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setOpen(false), [loc.pathname])
+
+  // La sala de espera cambia por acciones de otros: se sincroniza cada 30 segundos
+  useEffect(() => {
+    const t = setInterval(refresh, 30_000)
+    return () => clearInterval(t)
+  }, [refresh])
 
   if (!user) return null
   const waiting = appointments.filter((a) => sameDay(a.start, new Date()) && a.status === 'arrived').length
@@ -51,7 +59,10 @@ export default function AppShell() {
             <strong>{user.name}</strong>
             <small>{ROLE_LABEL[user.role]}</small>
           </div>
-          <button className="icon-btn" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={() => { signOut(); nav('/login') }}>
+          <button className="icon-btn" aria-label="Cambiar contraseña" title="Cambiar contraseña" onClick={() => setPwOpen(true)}>
+            <KeyRound size={17} />
+          </button>
+          <button className="icon-btn" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={async () => { await signOut(); nav('/login') }}>
             <LogOut size={17} />
           </button>
         </div>
@@ -64,6 +75,27 @@ export default function AppShell() {
         </div>
         <Outlet />
       </div>
+      {pwOpen && <ChangePassword onClose={() => setPwOpen(false)} />}
     </div>
+  )
+}
+
+function ChangePassword({ onClose }: { onClose: () => void }) {
+  const { changePassword } = useStore()
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [repeat, setRepeat] = useState('')
+  const mismatch = repeat.length > 0 && next !== repeat
+  const valid = current && next.length >= 8 && next === repeat
+  return (
+    <Modal title="Cambiar contraseña" onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={!valid} onClick={async () => { if (await changePassword(current, next)) onClose() }}>Cambiar contraseña</button>
+    </>}>
+      <label className="field"><span>Contraseña actual</span><input className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} /></label>
+      <label className="field"><span>Nueva contraseña, mínimo 8 caracteres</span><input className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} /></label>
+      <label className="field"><span>Repite la nueva contraseña</span><input className="input" type="password" autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)} aria-invalid={mismatch} /></label>
+      {mismatch && <p style={{ color: 'var(--red-ink)', fontSize: 13.5 }}>Las contraseñas no coinciden.</p>}
+    </Modal>
   )
 }

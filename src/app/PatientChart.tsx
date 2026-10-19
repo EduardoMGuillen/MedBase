@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { FileText, Lock, TriangleAlert, ShieldCheck } from 'lucide-react'
-import { useStore } from '../lib/store'
-import { Avatar, StatusBadge } from '../components/ui'
+import { FileText, Lock, Pencil, TriangleAlert, ShieldCheck } from 'lucide-react'
+import { useStore, type Chart } from '../lib/store'
+import { Avatar, Loading, StatusBadge } from '../components/ui'
 import { age, bmi, date, fullName, time } from '../lib/format'
-import { patientColor } from './Patients'
+import { patientColor, PatientForm } from './Patients'
 import type { Vitals } from '../lib/types'
 
 export function VitalsGrid({ v }: { v: Vitals }) {
@@ -21,23 +21,37 @@ export function VitalsGrid({ v }: { v: Vitals }) {
   )
 }
 
+/** Carga el expediente clínico de un paciente. Cada carga queda en la bitácora del servidor. */
+export function useChart(patientId: string | undefined, enabled: boolean) {
+  const { fetchChart, notify } = useStore()
+  const [chart, setChart] = useState<Chart | null>(null)
+  const load = useCallback(() => {
+    if (!patientId || !enabled) return
+    fetchChart(patientId).then(setChart).catch((e: Error) => notify(e.message, 'error'))
+  }, [patientId, enabled, fetchChart, notify])
+  useEffect(load, [load])
+  return { chart, reload: load }
+}
+
 type Tab = 'summary' | 'consults' | 'rx' | 'vitals'
 
 export default function PatientChart() {
   const { id } = useParams()
-  const { patient, consultations, prescriptions, vitals, appointments, staffById, can } = useStore()
+  const { patient, appointments, staffById, can, updatePatient } = useStore()
   const [tab, setTab] = useState<Tab>('summary')
+  const [editing, setEditing] = useState<null | 'demo' | 'clinical'>(null)
+  const clinical = can('chart.view')
+  const { chart, reload } = useChart(id, clinical)
   const p = patient(id!)
   if (!p) return <div className="page"><div className="empty">Este expediente no existe. Vuelve a <Link to="/app/pacientes">Pacientes</Link>.</div></div>
 
-  const clinical = can('chart.view')
-  const cs = consultations.filter((c) => c.patientId === p.id).sort((a, b) => b.date.localeCompare(a.date))
-  const rxs = prescriptions.filter((r) => r.patientId === p.id).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))
-  const vs = vitals.filter((v) => v.patientId === p.id).sort((a, b) => b.takenAt.localeCompare(a.takenAt))
+  const cs = chart?.consultations ?? []
+  const rxs = chart?.prescriptions ?? []
+  const vs = chart?.vitals ?? []
   const appts = appointments.filter((a) => a.patientId === p.id).sort((a, b) => b.start.localeCompare(a.start))
   const tabs: [Tab, string, boolean][] = [
     ['summary', 'Resumen', true], ['consults', `Consultas (${cs.length})`, clinical],
-    ['rx', `Recetas (${rxs.length})`, can('rx.view')], ['vitals', 'Signos vitales', clinical],
+    ['rx', `Recetas (${rxs.length})`, clinical && can('rx.view')], ['vitals', 'Signos vitales', clinical],
   ]
 
   return (
@@ -54,7 +68,10 @@ export default function PatientChart() {
             {p.insurance && <span>Seguro <b>{p.insurance}</b></span>}
           </div>
         </div>
-        <div />
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {can('patients.manage') && <button className="btn btn--ghost btn--sm" onClick={() => setEditing('demo')}><Pencil size={14} />Editar datos</button>}
+          {clinical && <button className="btn btn--ghost btn--sm" onClick={() => setEditing('clinical')}><Pencil size={14} />Alergias y problemas</button>}
+        </div>
       </div>
 
       {clinical && (p.allergies.length
@@ -66,6 +83,8 @@ export default function PatientChart() {
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
+
+      {clinical && !chart && <Loading label="Cargando expediente" />}
 
       {tab === 'summary' && (
         <div className="grid-2">
@@ -105,7 +124,7 @@ export default function PatientChart() {
         </div>
       )}
 
-      {tab === 'consults' && (
+      {tab === 'consults' && chart && (
         <section className="panel timeline">
           {cs.length ? cs.map((c) => (
             <article key={c.id} className="tl">
@@ -113,9 +132,9 @@ export default function PatientChart() {
               <div>
                 <h3>{c.reason}</h3>
                 {c.symptoms.length > 0 && <div className="chips" style={{ margin: '6px 0' }}>{c.symptoms.map((s) => <span key={s} className="chip">{s}</span>)}</div>}
-                <p><b style={{ color: 'var(--petrol)' }}>Padecimiento:</b> {c.history}</p>
+                {c.history && <p><b style={{ color: 'var(--petrol)' }}>Padecimiento:</b> {c.history}</p>}
                 {c.exam && <p><b style={{ color: 'var(--petrol)' }}>Exploración:</b> {c.exam}</p>}
-                <p><b style={{ color: 'var(--petrol)' }}>Plan:</b> {c.plan}</p>
+                {c.plan && <p><b style={{ color: 'var(--petrol)' }}>Plan:</b> {c.plan}</p>}
                 <div className="tl__dx">{c.diagnoses.map((d) => <span key={d.code} className="dx"><code>{d.code}</code>{d.label}</span>)}</div>
                 {c.prescriptionId && can('rx.view') && <Link className="btn btn--ghost btn--sm" style={{ marginTop: 12 }} to={`/app/recetas/${c.prescriptionId}`}><FileText size={15} />Ver receta</Link>}
               </div>
@@ -124,7 +143,7 @@ export default function PatientChart() {
         </section>
       )}
 
-      {tab === 'rx' && (
+      {tab === 'rx' && chart && (
         <section className="panel">
           {rxs.length ? <div className="rows">{rxs.map((r) => (
             <Link key={r.id} to={`/app/recetas/${r.id}`} className="row" style={{ gridTemplateColumns: '110px 1fr auto' }}>
@@ -136,7 +155,7 @@ export default function PatientChart() {
         </section>
       )}
 
-      {tab === 'vitals' && (
+      {tab === 'vitals' && chart && (
         <section className="panel table-wrap">
           <table className="table">
             <thead><tr><th>Fecha</th><th>PA</th><th>FC</th><th>Temp.</th><th>SpO₂</th><th>Peso</th><th>Tomó</th></tr></thead>
@@ -149,6 +168,15 @@ export default function PatientChart() {
           </table>
           {!vs.length && <div className="empty">Sin registros todavía.</div>}
         </section>
+      )}
+
+      {editing && (
+        <PatientForm
+          title={editing === 'demo' ? 'Editar datos del paciente' : 'Alergias y problemas activos'}
+          submitLabel="Guardar cambios" initial={p}
+          clinicalOnly={editing === 'clinical'} demographicOnly={editing === 'demo'}
+          onClose={() => setEditing(null)}
+          onSave={async (data) => { if (await updatePatient(p.id, data)) { setEditing(null); reload() } }} />
       )}
     </div>
   )
