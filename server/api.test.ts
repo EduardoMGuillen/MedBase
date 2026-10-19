@@ -68,7 +68,7 @@ describe('permisos por rol', () => {
     const chart = await n.get('/api/patients/p1/chart')
     assert.equal(chart.status, 200)
     assert.ok(chart.body.consultations.length >= 1)
-    const sign = await n.post('/api/consultations', { appointmentId: 'a3', reason: 'x', diagnoses: [{ code: 'J00', label: 'x' }] })
+    const sign = await n.post('/api/consultations', { appointmentId: 'a3', reason: 'x', diagnoses: [{ code: 'J00', label: 'x' }], orders: ['Reposo'] })
     assert.equal(sign.status, 403)
   })
   test('administración no ve el expediente clínico', async () => {
@@ -77,7 +77,7 @@ describe('permisos por rol', () => {
   })
   test('un médico no puede firmar la cita de otro', async () => {
     const paz = await as('apaz@demo.clinara')
-    const r = await paz.post('/api/consultations', { appointmentId: 'a3', reason: 'x', diagnoses: [{ code: 'J00', label: 'x' }] })
+    const r = await paz.post('/api/consultations', { appointmentId: 'a3', reason: 'x', diagnoses: [{ code: 'J00', label: 'x' }], orders: ['Reposo'] })
     assert.equal(r.status, 403)
   })
 })
@@ -96,7 +96,10 @@ describe('flujo de la cita', () => {
     assert.equal((await rec.post(`/api/appointments/${id}/status`, { status: 'arrived' })).body.status, 'arrived')
 
     const nurse = await as('crios@demo.clinara')
-    const v = await nurse.post('/api/vitals', { patientId: 'p4', appointmentId: id, systolic: 120, diastolic: 80, heartRate: 72, temperature: 36.6, spo2: 98, weightKg: 80, heightCm: 178 })
+    const v = await nurse.post('/api/vitals', { patientId: 'p4', appointmentId: id, systolic: 120, diastolic: 80, heartRate: 72, respRate: 16, temperature: 36.6, spo2: 98, weightKg: 80, heightCm: 178,
+      chiefComplaint: 'Dolor lumbar de 4 días de evolución.' })
+    assert.equal(v.body.chiefComplaint, 'Dolor lumbar de 4 días de evolución.')
+    assert.equal(v.body.respRate, 16)
     assert.equal(v.status, 201)
     const boot = await nurse.get('/api/bootstrap')
     assert.equal(boot.body.appointments.find((a: any) => a.id === id).status, 'triaged')
@@ -105,9 +108,12 @@ describe('flujo de la cita', () => {
     assert.equal((await doc.post(`/api/appointments/${id}/status`, { status: 'in_consult' })).status, 200)
     const noDx = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor lumbar', diagnoses: [] })
     assert.equal(noDx.status, 400)
+    const noOrders = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor lumbar', diagnoses: [{ code: 'M54.5', label: 'Lumbago' }], orders: [] })
+    assert.equal(noOrders.status, 400)
+    assert.match(noOrders.body.error, /orden médica/)
     const signed = await doc.post('/api/consultations', {
       appointmentId: id, reason: 'Dolor lumbar', symptoms: ['Lumbalgia'], diagnoses: [{ code: 'M54.5', label: 'Lumbago no especificado' }],
-      plan: 'Reposo relativo', vitalsId: v.body.id,
+      orders: ['Reposo relativo.', 'Naproxeno 550 mg cada 12 horas por 5 días.'], vitalsId: v.body.id,
       items: [{ drug: 'Naproxeno', presentation: 'Tableta 550 mg', dose: '1 tableta', frequency: 'Cada 12 horas', duration: '5 días' }],
     })
     assert.equal(signed.status, 201)
@@ -115,7 +121,7 @@ describe('flujo de la cita', () => {
 
     const rx = await doc.get(`/api/prescriptions/${signed.body.prescriptionId}`)
     assert.equal(rx.body.prescription.items[0].drug, 'Naproxeno')
-    const again = await doc.post('/api/consultations', { appointmentId: id, reason: 'x', diagnoses: [{ code: 'J00', label: 'x' }] })
+    const again = await doc.post('/api/consultations', { appointmentId: id, reason: 'x', diagnoses: [{ code: 'J00', label: 'x' }], orders: ['Reposo'] })
     assert.equal(again.status, 409)
   })
 
@@ -291,5 +297,42 @@ describe('archivos del expediente', () => {
     assert.equal(list.body[0].name, 'Hemograma.pdf')
     const rec = await as('smejia@demo.clinara')
     assert.equal((await rec.get('/api/patients/p1/attachments')).status, 403)
+  })
+})
+
+describe('formato de historia clínica', () => {
+  test('la ficha de identificación y los antecedentes se guardan; recepción no ve los antecedentes', async () => {
+    const rec = await as('smejia@demo.clinara')
+    const p = await rec.post('/api/patients', { firstName: 'Lucía', lastName: 'Prueba', birthDate: '1980-01-01', sex: 'F', phone: '99991111',
+      dni: '0801-1980-00001', civilStatus: 'Casada', occupation: 'Abogada', address: 'Tegucigalpa', emergencyName: 'Juan', emergencyPhone: '99992222', emergencyRelation: 'Esposo' })
+    assert.equal(p.status, 201)
+    assert.equal((await rec.patch(`/api/patients/${p.body.id}`, { background: { surgical: 'Apendicectomía' } })).status, 403)
+    const doc = await as('lherrera@demo.clinara')
+    const upd = await doc.patch(`/api/patients/${p.body.id}`, { background: { surgical: 'Apendicectomía (2010)', family: 'Madre con HTA' } })
+    assert.equal(upd.body.background.surgical, 'Apendicectomía (2010)')
+    assert.equal(upd.body.dni, '0801-1980-00001')
+    const boot = await rec.get('/api/bootstrap')
+    const mine = boot.body.patients.find((x: any) => x.id === p.body.id)
+    assert.equal(mine.occupation, 'Abogada')
+    assert.equal(mine.background, undefined)
+  })
+
+  test('las órdenes médicas se guardan numeradas y la nota de consulta trae los signos', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const chart = await doc.get('/api/patients/p1/chart')
+    const c1 = chart.body.consultations.find((c: any) => c.id === 'c1')
+    assert.ok(c1.orders.length >= 3)
+    const note = await doc.get('/api/consultations/c1')
+    assert.equal(note.body.vitals.respRate, 16)
+    assert.equal(note.body.patient.background.surgical, 'Colecistectomía laparoscópica (2019).')
+  })
+
+  test('la agenda puede consultar cualquier rango de fechas', async () => {
+    const rec = await as('smejia@demo.clinara')
+    const d = new Date(); d.setDate(d.getDate() - 120)
+    const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const r = await rec.get(`/api/appointments?from=${from}&to=${today()}`)
+    assert.equal(r.status, 200)
+    assert.ok(r.body.length > 100)
   })
 })

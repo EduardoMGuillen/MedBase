@@ -54,17 +54,23 @@ export default function WaitingRoom() {
 }
 
 const RANGES = {
-  systolic: [90, 139], diastolic: [60, 89], heartRate: [60, 100], temperature: [36, 37.5], spo2: [94, 100],
+  systolic: [90, 139], diastolic: [60, 89], heartRate: [60, 100], respRate: [12, 20], temperature: [36, 37.5], spo2: [94, 100], glucose: [70, 180],
 } as const
+const RANGE_LABEL: Record<keyof typeof RANGES, string> = {
+  systolic: 'sistólica', diastolic: 'diastólica', heartRate: 'frecuencia cardíaca', respRate: 'frecuencia respiratoria', temperature: 'temperatura', spo2: 'saturación', glucose: 'glucometría',
+}
 
+/** Triaje: enfermería registra el motivo de consulta y los signos vitales; el médico recibe ambos. */
 export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onClose: () => void; onSaved: () => void }) {
   const { patient, addVitals } = useStore()
   const p = patient(appt.patientId)!
-  const [v, setV] = useState({ systolic: '', diastolic: '', heartRate: '', temperature: '', spo2: '', weightKg: '', heightCm: '', painScale: '0', notes: '' })
+  const [reason, setReason] = useState(appt.reason)
+  const [v, setV] = useState({ systolic: '', diastolic: '', heartRate: '', respRate: '', temperature: '', spo2: '', glucose: '', weightKg: '', heightCm: '', painScale: '0', notes: '' })
   const [busy, setBusy] = useState(false)
   const num = (k: keyof typeof v) => Number(v[k])
+  const opt = (k: keyof typeof v) => (v[k] === '' ? undefined : Number(v[k]))
   const out = (k: keyof typeof RANGES) => v[k] !== '' && (num(k) < RANGES[k][0] || num(k) > RANGES[k][1])
-  const ready = ['systolic', 'diastolic', 'heartRate', 'temperature', 'spo2'].every((k) => v[k as keyof typeof v] !== '')
+  const ready = reason.trim() && ['systolic', 'diastolic', 'heartRate', 'respRate', 'temperature', 'spo2'].every((k) => v[k as keyof typeof v] !== '')
   const F = (k: keyof typeof v, label: string, unit: string, step = '1') => (
     <label className="field">
       <span>{label} <small style={{ fontWeight: 400 }}>({unit})</small></span>
@@ -81,26 +87,31 @@ export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onC
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
         const ok = await addVitals({
-          patientId: p.id, appointmentId: appt.id, systolic: num('systolic'), diastolic: num('diastolic'), heartRate: num('heartRate'),
-          temperature: num('temperature'), spo2: num('spo2'), weightKg: num('weightKg'), heightCm: num('heightCm'), painScale: num('painScale'), notes: v.notes || undefined,
+          patientId: p.id, appointmentId: appt.id, chiefComplaint: reason.trim(), systolic: num('systolic'), diastolic: num('diastolic'), heartRate: num('heartRate'),
+          respRate: opt('respRate'), temperature: num('temperature'), spo2: num('spo2'), glucose: opt('glucose'), weightKg: num('weightKg'), heightCm: num('heightCm'),
+          painScale: num('painScale'), notes: v.notes || undefined,
         })
         setBusy(false)
         if (ok) onSaved()
-      }}>Guardar signos vitales</button>
+      }}>Guardar triaje</button>
     </>}>
       {p.allergies.length > 0 && <div className="alert-strip">Alergias: {p.allergies.join(', ')}</div>}
+      <label className="field"><span>Motivo de consulta, en palabras del paciente</span>
+        <textarea className="textarea textarea--sm" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Dolor de garganta y fiebre desde hace 3 días" /></label>
       <div className="form-grid">
         {F('systolic', 'Presión sistólica', 'mmHg')}
         {F('diastolic', 'Presión diastólica', 'mmHg')}
         {F('heartRate', 'Frecuencia cardíaca', 'lpm')}
+        {F('respRate', 'Frecuencia respiratoria', 'rpm')}
         {F('temperature', 'Temperatura', '°C', '0.1')}
         {F('spo2', 'Saturación O₂', '%')}
-        {F('painScale', 'Dolor', '0 a 10')}
         {F('weightKg', 'Peso', 'kg', '0.1')}
         {F('heightCm', 'Talla', 'cm')}
+        {F('glucose', 'Glucometría (opcional)', 'mg/dL')}
+        {F('painScale', 'Dolor', '0 a 10')}
       </div>
-      {flags.length > 0 && <div className="alert-strip" role="status">Fuera de rango: {flags.map((f) => ({ systolic: 'sistólica', diastolic: 'diastólica', heartRate: 'frecuencia cardíaca', temperature: 'temperatura', spo2: 'saturación' })[f]).join(', ')}. El médico verá la alerta.</div>}
-      <label className="field"><span>Observaciones</span><textarea className="textarea" value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} placeholder="Lo que el paciente refiere al llegar" /></label>
+      {flags.length > 0 && <div className="alert-strip" role="status">Fuera de rango: {flags.map((f) => RANGE_LABEL[f]).join(', ')}. El médico verá la alerta.</div>}
+      <label className="field"><span>Observaciones de enfermería</span><textarea className="textarea textarea--sm" rows={2} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></label>
     </Modal>
   )
 }

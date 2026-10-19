@@ -67,6 +67,28 @@ export interface Attachment {
   uploadedAt: string
 }
 
+/** Antecedentes en el orden de la historia clínica. Todos son texto libre opcional. */
+export interface Background {
+  pathological?: string // personales patológicos (además de `conditions`)
+  surgical?: string // quirúrgicos
+  traumatic?: string // traumáticos
+  hospitalizations?: string // hospitalarios
+  transfusions?: string // transfusionales
+  medications?: string // medicamentos de uso actual
+  family?: string // heredofamiliares
+  smoking?: string // tabaquismo
+  alcohol?: string // alcoholismo
+  drugs?: string // otras sustancias
+  lifestyle?: string // actividad física y alimentación
+  immunizations?: string // inmunizaciones
+  // Gineco-obstétricos
+  menarche?: string
+  lmp?: string // fecha de última menstruación (FUM)
+  gpac?: string // gestas, partos, abortos, cesáreas
+  contraception?: string
+  gynecoNotes?: string
+}
+
 export interface Patient {
   id: string
   record: string // número de expediente
@@ -76,10 +98,22 @@ export interface Patient {
   sex: 'F' | 'M'
   phone: string
   email?: string
+  // Ficha de identificación
+  dni?: string // número de identidad
+  civilStatus?: string
+  occupation?: string
+  education?: string // escolaridad
+  religion?: string
+  address?: string // procedencia y dirección
+  emergencyName?: string
+  emergencyPhone?: string
+  emergencyRelation?: string
+  insurance?: string
+  // Datos clínicos (sólo para personal con acceso al expediente)
   bloodType?: string
   allergies: string[]
-  conditions: string[] // problemas crónicos
-  insurance?: string
+  conditions: string[] // enfermedades crónicas
+  background?: Background
   createdAt: string
 }
 
@@ -122,7 +156,10 @@ export interface Vitals {
   spo2: number
   weightKg: number
   heightCm: number
+  respRate?: number // frecuencia respiratoria
+  glucose?: number // glucometría capilar (mg/dL)
   painScale?: number
+  chiefComplaint?: string // motivo de consulta registrado en el triaje
   notes?: string
 }
 
@@ -132,6 +169,7 @@ export interface PrescriptionItem {
   dose: string
   frequency: string
   duration: string
+  route?: string // vía de administración
   instructions?: string
 }
 
@@ -151,13 +189,14 @@ export interface Consultation {
   doctorId: string
   appointmentId?: string
   date: string
-  reason: string
-  symptoms: string[]
+  reason: string // motivo de consulta
+  symptoms: string[] // (sin uso desde la v0.5; se conserva por compatibilidad)
   symptomOnset?: string
-  history: string // padecimiento actual (S)
-  exam: string // exploración física (O)
-  diagnoses: { code: string; label: string }[] // (A)
-  plan: string // (P)
+  history: string // enfermedad actual (EA)
+  exam: string // examen físico
+  diagnoses: { code: string; label: string }[] // impresión diagnóstica
+  orders: string[] // manejo: órdenes médicas numeradas
+  plan: string // manejo en texto (consultas anteriores a la v0.5)
   vitalsId?: string
   prescriptionId?: string
 }

@@ -1,49 +1,66 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Activity, Plus, TriangleAlert, X } from 'lucide-react'
+import { Activity, ArrowDown, ArrowUp, ClipboardList, Pencil, Pill, Plus, TriangleAlert, X } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { PageHead } from '../components/ui'
-import { age, date, fullName } from '../lib/format'
-import { DRUGS, FREQUENCIES, ICD10, SYMPTOMS, allergyConflict } from '../lib/catalogs'
-import { useChart, VitalsGrid } from './PatientChart'
+import { PatientHeader } from '../components/PatientHeader'
+import { date, defaultRoute, medicationOrder, ROUTES, time } from '../lib/format'
+import { DRUGS, FREQUENCIES, ICD10, allergyConflict } from '../lib/catalogs'
+import { BackgroundView, useChart, VitalsGrid } from './PatientChart'
+import { BackgroundForm } from './PatientForms'
 import { VitalsModal } from './WaitingRoom'
 import type { PrescriptionItem } from '../lib/types'
 
-const EMPTY_ITEM: PrescriptionItem = { drug: '', presentation: '', dose: '1 tableta', frequency: 'Cada 8 horas', duration: '5 días', instructions: '' }
+/** Una orden del manejo. Si trae `rx`, además va a la receta. */
+interface Order { text: string; rx?: PrescriptionItem }
 
-interface Draft { reason: string; symptoms: string[]; onset: string; history: string; exam: string; dx: { code: string; label: string }[]; plan: string; items: PrescriptionItem[] }
-const draftKey = (id?: string) => `clinara.borrador.${id}`
+interface Draft { reason: string; history: string; exam: string; dx: { code: string; label: string }[]; orders: Order[] }
+const draftKey = (id?: string) => `clinara.nota.${id}`
 function loadDraft(id?: string): Partial<Draft> {
   try { return JSON.parse(localStorage.getItem(draftKey(id)) ?? '{}') } catch { return {} }
 }
 
+const EXAM_GUIDE = ['Aspecto general', 'Piel y mucosas', 'Cabeza y cuello', 'Tórax y pulmones', 'Corazón', 'Abdomen', 'Genitourinario', 'Extremidades', 'Neurológico']
+  .map((s) => `${s}: `).join('\n')
+
+const FREQUENT_ORDERS = [
+  'Dieta blanda.', 'Dieta hiposódica.', 'Dieta para diabético.', 'Abundantes líquidos orales.', 'Reposo relativo.',
+  'Hemograma completo.', 'Examen general de orina.', 'Glucosa en ayunas.', 'Perfil lipídico.', 'Creatinina y nitrógeno ureico.', 'Radiografía de tórax PA.',
+  'Control de presión arterial en casa, registro diario.', 'Signos de alarma explicados; acudir a emergencia si empeora.',
+  'Cita de control en 1 semana.', 'Cita de control en 1 mes.', 'Cita de control con resultados de laboratorio.',
+]
+
+const EMPTY_RX: PrescriptionItem = { drug: '', presentation: '', dose: '1 tableta', route: 'Oral', frequency: 'Cada 8 horas', duration: '5 días', instructions: '' }
+
 export default function Consultation() {
   const { apptId } = useParams()
   const store = useStore()
-  const { appointments, patient, vitals, user, setStatus } = store
+  const { appointments, patient, vitals, user, setStatus, updatePatient } = store
   const nav = useNavigate()
   const appt = appointments.find((a) => a.id === apptId)
   const p = appt && patient(appt.patientId)
+  const todayVitals = vitals.find((v) => v.appointmentId === apptId)
 
   // El borrador se guarda en este navegador mientras se escribe, por si se cierra la pestaña
   const [saved] = useState(() => loadDraft(apptId))
-  const [reason, setReason] = useState(saved.reason ?? appt?.reason ?? '')
-  const [symptoms, setSymptoms] = useState<string[]>(saved.symptoms ?? [])
-  const [onset, setOnset] = useState(saved.onset ?? '1 a 3 días')
+  const [reason, setReason] = useState(saved.reason ?? todayVitals?.chiefComplaint ?? appt?.reason ?? '')
   const [history, setHistory] = useState(saved.history ?? '')
   const [exam, setExam] = useState(saved.exam ?? '')
-  const [dxQuery, setDxQuery] = useState('')
   const [dx, setDx] = useState<{ code: string; label: string }[]>(saved.dx ?? [])
-  const [plan, setPlan] = useState(saved.plan ?? '')
-  const [items, setItems] = useState<PrescriptionItem[]>(saved.items ?? [])
-  const [savedAt, setSavedAt] = useState<string | null>(Object.keys(saved).length ? 'recuperado' : null)
-  const [draft, setDraft] = useState<PrescriptionItem>(EMPTY_ITEM)
+  const [dxQuery, setDxQuery] = useState('')
+  const [orders, setOrders] = useState<Order[]>(saved.orders ?? [])
+  const [orderText, setOrderText] = useState('')
+  const [editingOrder, setEditingOrder] = useState<number | null>(null)
+  const [rxOpen, setRxOpen] = useState(false)
+  const [draft, setDraft] = useState<PrescriptionItem>(EMPTY_RX)
   const [drugOpen, setDrugOpen] = useState(false)
   const [override, setOverride] = useState(false)
   const [triage, setTriage] = useState(false)
+  const [editBg, setEditBg] = useState(false)
   const [signing, setSigning] = useState(false)
+  const [savedAt, setSavedAt] = useState<string | null>(Object.keys(saved).length ? 'recuperado' : null)
+  const orderInput = useRef<HTMLInputElement>(null)
   const mine = !!appt && appt.doctorId === user?.id
-  const { chart } = useChart(p?.id, mine)
+  const { chart, reload } = useChart(p?.id, mine)
 
   useEffect(() => {
     if (appt && mine && ['arrived', 'triaged', 'confirmed', 'scheduled'].includes(appt.status)) setStatus(appt.id, 'in_consult')
@@ -51,179 +68,223 @@ export default function Consultation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appt?.id])
 
+  // Si el triaje llega después de abrir la consulta, se toma su motivo
   useEffect(() => {
-    const d: Draft = { reason, symptoms, onset, history, exam, dx, plan, items }
-    const blank = !symptoms.length && !history && !exam && !dx.length && !plan && !items.length
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (todayVitals?.chiefComplaint && !saved.reason && reason === appt?.reason) setReason(todayVitals.chiefComplaint)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayVitals?.id])
+
+  useEffect(() => {
+    const d: Draft = { reason, history, exam, dx, orders }
+    const blank = !history && !exam && !dx.length && !orders.length
     const t = setTimeout(() => {
       try {
         if (blank) localStorage.removeItem(draftKey(apptId))
-        else { localStorage.setItem(draftKey(apptId), JSON.stringify(d)); setSavedAt(new Date().toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })) }
+        else { localStorage.setItem(draftKey(apptId), JSON.stringify(d)); setSavedAt(time(new Date().toISOString())) }
       } catch { /* sin almacenamiento local */ }
     }, 600)
     return () => clearTimeout(t)
-  }, [apptId, reason, symptoms, onset, history, exam, dx, plan, items])
+  }, [apptId, reason, history, exam, dx, orders])
 
   if (!appt || !p || !user) return <div className="page"><div className="empty">No se encontró la cita. Vuelve a la <Link to="/app/agenda">agenda</Link>.</div></div>
   if (appt.status === 'done') return <div className="page"><div className="empty">Esta consulta ya fue firmada. Puedes verla en el <Link to={`/app/pacientes/${p.id}`}>expediente</Link>.</div></div>
   if (!mine) return <div className="page"><div className="empty">Esta cita pertenece a otro médico. Sólo el médico asignado puede firmar la consulta.</div></div>
 
-  const todayVitals = vitals.find((v) => v.appointmentId === appt.id)
   const last = chart?.consultations[0]
-  const dxMatches = dxQuery.trim().length > 0
+  const dxMatches = dxQuery.trim()
     ? ICD10.filter((d) => !dx.some((x) => x.code === d.code) && (d.code.toLowerCase().includes(dxQuery.toLowerCase()) || d.label.toLowerCase().includes(dxQuery.toLowerCase()))).slice(0, 6)
     : []
   const drugMatches = draft.drug ? DRUGS.filter((d) => d.name.toLowerCase().includes(draft.drug.toLowerCase())).slice(0, 6) : DRUGS.slice(0, 6)
   const conflict = draft.drug ? allergyConflict(p.allergies, draft.drug) : null
-  const canSign = reason.trim() && dx.length > 0
+  const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !orders.length && 'al menos una orden en el manejo'].filter(Boolean)
+  const rxCount = orders.filter((o) => o.rx).length
 
-  const addItem = () => {
-    if (!draft.drug.trim()) return
-    setItems([...items, { ...draft, drug: draft.drug.trim() }])
-    setDraft(EMPTY_ITEM)
-    setOverride(false)
+  const addOrder = (text: string) => {
+    const t = text.trim()
+    if (!t) return
+    setOrders([...orders, { text: /[.!?]$/.test(t) ? t : `${t}.` }])
+    setOrderText('')
+  }
+  const move = (i: number, d: -1 | 1) => {
+    const j = i + d
+    if (j < 0 || j >= orders.length) return
+    const next = [...orders]; [next[i], next[j]] = [next[j], next[i]]; setOrders(next)
+  }
+  const addMedication = (e?: FormEvent) => {
+    e?.preventDefault()
+    if (!draft.drug.trim() || (conflict && !override)) return
+    const rx = { ...draft, drug: draft.drug.trim() }
+    setOrders([...orders, { text: medicationOrder(rx), rx }])
+    setDraft(EMPTY_RX); setOverride(false); setRxOpen(false)
   }
 
   const sign = async () => {
     setSigning(true)
     const r = await store.finishConsult({
-      appointmentId: appt.id, reason: reason.trim(), symptoms, symptomOnset: onset, history, exam, diagnoses: dx, plan, vitalsId: todayVitals?.id,
-    }, items)
+      appointmentId: appt.id, reason: reason.trim(), symptoms: [], history, exam, diagnoses: dx, orders: orders.map((o) => o.text), plan: '', vitalsId: todayVitals?.id,
+    }, orders.flatMap((o) => (o.rx ? [o.rx] : [])))
     setSigning(false)
-    if (r) try { localStorage.removeItem(draftKey(apptId)) } catch { /* noop */ }
-    if (r) nav(r.prescriptionId ? `/app/recetas/${r.prescriptionId}` : `/app/pacientes/${p.id}`)
+    if (r) {
+      try { localStorage.removeItem(draftKey(apptId)) } catch { /* noop */ }
+      nav(r.prescriptionId ? `/app/recetas/${r.prescriptionId}` : `/app/pacientes/${p.id}`)
+    }
   }
 
   return (
-    <div className="page">
-      <PageHead title={`Consulta de ${fullName(p)}`}
-        sub={`${age(p.birthDate)}, expediente ${p.record}${savedAt === 'recuperado' ? '. Recuperamos tu borrador sin firmar.' : savedAt ? `. Borrador guardado ${savedAt}` : ''}`}
-        actions={<>
-          <Link className="btn btn--ghost" to={`/app/pacientes/${p.id}`}>Ver expediente</Link>
-          <button className="btn btn--primary" disabled={!canSign || signing} onClick={sign}>Firmar consulta{items.length ? ' y receta' : ''}</button>
-        </>} />
+    <div className="page page--consult">
+      <div className="sticky-top">
+        <PatientHeader p={p} clinical link>
+          <span className="ph__draft">{savedAt === 'recuperado' ? 'Borrador recuperado' : savedAt ? `Borrador guardado ${savedAt}` : 'Consulta en curso'}</span>
+        </PatientHeader>
+      </div>
 
-      <div className="consult">
-        <section className="panel soap">
-          <div className="soap__sec">
-            <div className="soap__title"><span className="soap__letter">S</span><h3>Lo que refiere el paciente</h3></div>
-            <label className="field"><span>Motivo de consulta</span><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></label>
-            <div className="field">
-              <span>Síntomas</span>
-              <div className="chips">
-                {SYMPTOMS.map((s) => (
-                  <button key={s} type="button" className="chip" aria-pressed={symptoms.includes(s)}
-                    onClick={() => setSymptoms(symptoms.includes(s) ? symptoms.filter((x) => x !== s) : [...symptoms, s])}>{s}</button>
-                ))}
-              </div>
+      <div className="consult2">
+        <div className="consult2__left">
+          <details className="panel csec" open={!last}>
+            <summary className="panel__head"><h2>Antecedentes</h2>
+              <button className="btn btn--ghost btn--sm" onClick={(e) => { e.preventDefault(); setEditBg(true) }}><Pencil size={14} />Editar</button></summary>
+            <div className="panel__body">
+              <BackgroundView p={p} compact />
+              {last && <p className="csec__last">Última consulta, {date(last.date)}: <b>{last.diagnoses.map((d) => d.label).join('; ')}</b></p>}
             </div>
-            <div className="form-grid">
-              <label className="field"><span>Desde hace</span>
-                <select className="select" value={onset} onChange={(e) => setOnset(e.target.value)}>
-                  {['Hoy', '1 a 3 días', '4 a 7 días', '1 a 4 semanas', 'Más de un mes'].map((o) => <option key={o}>{o}</option>)}
-                </select>
-              </label>
+          </details>
+
+          <section className="panel csec">
+            <div className="panel__head"><div><h2>Motivo de consulta y signos vitales</h2>
+              <p>{todayVitals ? `Registrado por enfermería a las ${time(todayVitals.takenAt)}` : 'Enfermería aún no registra el triaje'}</p></div>
+              {!todayVitals && <button className="btn btn--soft btn--sm" onClick={() => setTriage(true)}><Activity size={15} />Tomar signos</button>}
             </div>
-            <label className="field"><span>Padecimiento actual</span><textarea className="textarea" value={history} onChange={(e) => setHistory(e.target.value)} placeholder="Evolución, factores que agravan o alivian, tratamientos previos" /></label>
-          </div>
-
-          <div className="soap__sec">
-            <div className="soap__title"><span className="soap__letter">O</span><h3>Lo que encuentras</h3>
-              {!todayVitals && <button className="btn btn--soft btn--sm" style={{ marginLeft: 'auto' }} onClick={() => setTriage(true)}><Activity size={15} />Tomar signos</button>}
+            <div className="panel__body csec__body">
+              <label className="field"><span>Motivo de consulta</span>
+                <textarea className="textarea textarea--sm" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></label>
+              {todayVitals && <VitalsGrid v={todayVitals} />}
+              {todayVitals?.notes && <p className="muted" style={{ fontSize: 14 }}>Nota de enfermería: {todayVitals.notes}</p>}
             </div>
-            {todayVitals ? <VitalsGrid v={todayVitals} /> : <p style={{ color: 'var(--muted)', fontSize: 14 }}>Enfermería aún no registra signos vitales para esta cita.</p>}
-            {todayVitals?.notes && <p style={{ fontSize: 14, color: 'var(--muted)' }}>Nota de triaje: {todayVitals.notes}</p>}
-            <label className="field"><span>Exploración física</span><textarea className="textarea" value={exam} onChange={(e) => setExam(e.target.value)} placeholder="Hallazgos por aparatos y sistemas" /></label>
-          </div>
+          </section>
 
-          <div className="soap__sec">
-            <div className="soap__title"><span className="soap__letter">A</span><h3>Diagnóstico</h3><p>Al menos uno para firmar</p></div>
-            {dx.length > 0 && <div className="tl__dx" style={{ marginTop: 0 }}>{dx.map((d) => (
-              <span key={d.code} className="dx" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><code>{d.code}</code>{d.label}
-                <button className="icon-btn" style={{ width: 20, height: 20 }} aria-label={`Quitar ${d.label}`} onClick={() => setDx(dx.filter((x) => x.code !== d.code))}><X size={13} /></button>
-              </span>
-            ))}</div>}
-            <div className="suggest">
-              <input className="input" value={dxQuery} onChange={(e) => setDxQuery(e.target.value)} placeholder="Busca por nombre o código CIE-10, por ejemplo faringitis o J02" aria-label="Buscar diagnóstico" />
-              {dxMatches.length > 0 && (
-                <div className="suggest__list">
-                  {dxMatches.map((d) => <button key={d.code} onClick={() => { setDx([...dx, d]); setDxQuery('') }}><code>{d.code}</code>{d.label}</button>)}
-                </div>
-              )}
+          <section className="panel csec">
+            <div className="panel__head"><h2>Enfermedad actual</h2></div>
+            <div className="panel__body">
+              <textarea className="textarea textarea--lg" value={history} onChange={(e) => setHistory(e.target.value)} aria-label="Enfermedad actual"
+                placeholder="Inicio, evolución, características, factores que agravan o alivian, síntomas acompañantes y tratamientos recibidos." />
             </div>
-          </div>
+          </section>
 
-          <div className="soap__sec">
-            <div className="soap__title"><span className="soap__letter">P</span><h3>Plan y receta</h3></div>
-            <label className="field"><span>Plan e indicaciones</span><textarea className="textarea" value={plan} onChange={(e) => setPlan(e.target.value)} placeholder="Estudios, medidas generales, cuándo volver" /></label>
+          <section className="panel csec">
+            <div className="panel__head"><h2>Examen físico</h2>
+              {!exam.trim() && <button className="btn btn--ghost btn--sm" onClick={() => setExam(EXAM_GUIDE)}><ClipboardList size={15} />Guía por sistemas</button>}</div>
+            <div className="panel__body">
+              <textarea className="textarea textarea--lg" value={exam} onChange={(e) => setExam(e.target.value)} aria-label="Examen físico" placeholder="Hallazgos por aparatos y sistemas." />
+            </div>
+          </section>
 
-            {items.map((it, i) => (
-              <div key={i} className={`rx-item ${allergyConflict(p.allergies, it.drug) ? 'rx-item--warn' : ''}`}>
-                <div><strong>{it.drug}</strong> <span style={{ color: 'var(--muted)', fontSize: 13 }}>{it.presentation}</span>
-                  <p>{it.dose}, {it.frequency.toLowerCase()}, durante {it.duration}.{it.instructions ? ` ${it.instructions}` : ''}</p></div>
-                <button className="icon-btn" aria-label={`Quitar ${it.drug}`} onClick={() => setItems(items.filter((_, j) => j !== i))}><X size={16} /></button>
-              </div>
-            ))}
-
-            <div className="form-grid form-grid--4" style={{ alignItems: 'end' }}>
-              <div className="field span-2 suggest">
-                <span>Medicamento</span>
-                <input className="input" value={draft.drug} onFocus={() => setDrugOpen(true)} onBlur={() => setTimeout(() => setDrugOpen(false), 150)}
-                  onChange={(e) => { setDraft({ ...draft, drug: e.target.value, presentation: '' }); setOverride(false); setDrugOpen(true) }} placeholder="Busca en el vademécum" />
-                {drugOpen && drugMatches.length > 0 && (
+          <section className="panel csec">
+            <div className="panel__head"><h2>Impresión diagnóstica</h2></div>
+            <div className="panel__body csec__body">
+              {dx.length > 0 && <ol className="dx-list">{dx.map((d) => (
+                <li key={d.code}><span><b>{d.label}</b> <span className="muted">{d.code}</span></span>
+                  <button className="icon-btn" aria-label={`Quitar ${d.label}`} onClick={() => setDx(dx.filter((x) => x.code !== d.code))}><X size={15} /></button></li>
+              ))}</ol>}
+              <div className="suggest">
+                <input className="input" value={dxQuery} onChange={(e) => setDxQuery(e.target.value)} placeholder="Busca por nombre o código CIE-10, por ejemplo faringitis o J02" aria-label="Buscar diagnóstico" />
+                {dxMatches.length > 0 && (
                   <div className="suggest__list">
-                    {drugMatches.map((d) => <button key={d.name} onMouseDown={(e) => e.preventDefault()} onClick={() => { setDraft({ ...draft, drug: d.name, presentation: d.presentation }); setDrugOpen(false) }}>
-                      <span>{d.name}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{d.presentation}</span>
-                    </button>)}
+                    {dxMatches.map((d) => <button key={d.code} onClick={() => { setDx([...dx, d]); setDxQuery('') }}><code>{d.code}</code>{d.label}</button>)}
                   </div>
                 )}
               </div>
-              <label className="field"><span>Dosis</span><input className="input" value={draft.dose} onChange={(e) => setDraft({ ...draft, dose: e.target.value })} /></label>
-              <label className="field"><span>Duración</span><input className="input" value={draft.duration} onChange={(e) => setDraft({ ...draft, duration: e.target.value })} /></label>
-              <label className="field span-2"><span>Frecuencia</span>
-                <select className="select" value={draft.frequency} onChange={(e) => setDraft({ ...draft, frequency: e.target.value })}>{FREQUENCIES.map((f) => <option key={f}>{f}</option>)}</select>
-              </label>
-              <label className="field span-2"><span>Indicaciones</span><input className="input" value={draft.instructions} onChange={(e) => setDraft({ ...draft, instructions: e.target.value })} placeholder="Ej. Tomar con alimentos" /></label>
             </div>
-            {conflict && (
-              <div className="alert-strip" role="alert" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
-                <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}><TriangleAlert size={18} />{p.firstName} es alérgica/o a {conflict}. {draft.drug} puede provocar una reacción.</span>
-                {!override && <button className="btn btn--danger btn--sm" style={{ background: '#fff' }} onClick={() => setOverride(true)}>Prescribir de todos modos</button>}
-              </div>
-            )}
-            <button className="btn btn--soft" style={{ justifySelf: 'start' }} disabled={!draft.drug.trim() || (!!conflict && !override)} onClick={addItem}><Plus size={16} />Agregar a la receta</button>
-          </div>
-        </section>
+          </section>
+        </div>
 
-        <aside className="consult__aside">
-          <section className="panel">
-            <div className="panel__head"><h2>Paciente</h2></div>
-            <div className="panel__body" style={{ display: 'grid', gap: 14 }}>
-              {p.allergies.length ? <div className="alert-strip"><TriangleAlert size={18} />Alergias: {p.allergies.join(', ')}</div> : <div className="alert-strip alert-strip--calm">Sin alergias conocidas</div>}
-              <div>
-                <h3 style={{ fontSize: 14, marginBottom: 6 }}>Problemas activos</h3>
-                {p.conditions.length ? <div className="chips">{p.conditions.map((c) => <span key={c} className="chip">{c}</span>)}</div> : <p style={{ fontSize: 14, color: 'var(--muted)' }}>Ninguno registrado</p>}
+        <aside className="consult2__right">
+          <section className="panel orders-panel">
+            <div className="panel__head"><div><h2>Manejo</h2><p>Órdenes médicas en el orden en que se indican</p></div></div>
+            <div className="panel__body csec__body">
+              {orders.length ? (
+                <ol className="orders">
+                  {orders.map((o, i) => (
+                    <li key={i} className={o.rx && allergyConflict(p.allergies, o.rx.drug) ? 'is-warn' : ''}>
+                      <span className="orders__n">{i + 1}.</span>
+                      {editingOrder === i ? (
+                        <input className="input" autoFocus defaultValue={o.text} aria-label={`Editar orden ${i + 1}`}
+                          onBlur={(e) => { const t = e.target.value.trim(); setOrders(t ? orders.map((x, j) => (j === i ? { ...x, text: t } : x)) : orders.filter((_, j) => j !== i)); setEditingOrder(null) }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingOrder(null) }} />
+                      ) : (
+                        <button className="orders__text" onClick={() => setEditingOrder(i)} title="Toca para editar">
+                          {o.rx && <Pill size={13} className="orders__pill" aria-label="Va a la receta" />}{o.text}
+                        </button>
+                      )}
+                      <span className="orders__tools">
+                        <button className="icon-btn" aria-label="Subir" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp size={14} /></button>
+                        <button className="icon-btn" aria-label="Bajar" disabled={i === orders.length - 1} onClick={() => move(i, 1)}><ArrowDown size={14} /></button>
+                        <button className="icon-btn" aria-label={`Quitar orden ${i + 1}`} onClick={() => setOrders(orders.filter((_, j) => j !== i))}><X size={14} /></button>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              ) : <p className="muted" style={{ fontSize: 14 }}>Agrega las órdenes una por una: dieta, medicamentos, estudios, cuidados y la cita de control.</p>}
+
+              <form className="order-add" onSubmit={(e) => { e.preventDefault(); addOrder(orderText) }}>
+                <input ref={orderInput} className="input" value={orderText} onChange={(e) => setOrderText(e.target.value)} placeholder={`${orders.length + 1}. Escribe una orden y presiona Enter`} aria-label="Nueva orden médica" enterKeyHint="done" />
+                <button className="btn btn--soft" disabled={!orderText.trim()} aria-label="Agregar orden"><Plus size={16} /></button>
+              </form>
+              <div className="order-quick">
+                <select className="select" value="" aria-label="Órdenes frecuentes" onChange={(e) => { addOrder(e.target.value); orderInput.current?.blur() }}>
+                  <option value="">Órdenes frecuentes…</option>
+                  {FREQUENT_ORDERS.filter((f) => !orders.some((o) => o.text === f)).map((f) => <option key={f}>{f}</option>)}
+                </select>
+                <button className={`btn ${rxOpen ? 'btn--ghost' : 'btn--primary'}`} onClick={() => setRxOpen((x) => !x)}><Pill size={15} />{rxOpen ? 'Cerrar' : 'Medicamento'}</button>
               </div>
-              {last && (
-                <div>
-                  <h3 style={{ fontSize: 14, marginBottom: 6 }}>Consulta anterior, {date(last.date)}</h3>
-                  <p style={{ fontSize: 14 }}>{last.reason}</p>
-                  <div className="tl__dx">{last.diagnoses.map((d) => <span key={d.code} className="dx"><code>{d.code}</code>{d.label}</span>)}</div>
-                  <p style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: 8 }}>{last.plan}</p>
-                </div>
+
+              {rxOpen && (
+                <form className="rx-form" onSubmit={addMedication}>
+                  <div className="field suggest">
+                    <span>Medicamento</span>
+                    <input className="input" autoFocus value={draft.drug} onFocus={() => setDrugOpen(true)} onBlur={() => setTimeout(() => setDrugOpen(false), 150)}
+                      onChange={(e) => { setDraft({ ...draft, drug: e.target.value, presentation: '' }); setOverride(false); setDrugOpen(true) }} placeholder="Busca en el vademécum" />
+                    {drugOpen && drugMatches.length > 0 && (
+                      <div className="suggest__list">
+                        {drugMatches.map((d) => <button type="button" key={d.name} onMouseDown={(e) => e.preventDefault()} onClick={() => { setDraft({ ...draft, drug: d.name, presentation: d.presentation, route: defaultRoute(d.presentation) }); setDrugOpen(false) }}>
+                          <span>{d.name}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{d.presentation}</span>
+                        </button>)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="form-grid">
+                    <label className="field"><span>Presentación</span><input className="input" value={draft.presentation} onChange={(e) => setDraft({ ...draft, presentation: e.target.value })} /></label>
+                    <label className="field"><span>Dosis</span><input className="input" value={draft.dose} onChange={(e) => setDraft({ ...draft, dose: e.target.value })} /></label>
+                    <label className="field"><span>Vía</span><select className="select" value={draft.route} onChange={(e) => setDraft({ ...draft, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
+                    <label className="field"><span>Frecuencia</span><select className="select" value={draft.frequency} onChange={(e) => setDraft({ ...draft, frequency: e.target.value })}>{FREQUENCIES.map((f) => <option key={f}>{f}</option>)}</select></label>
+                    <label className="field"><span>Duración</span><input className="input" value={draft.duration} onChange={(e) => setDraft({ ...draft, duration: e.target.value })} /></label>
+                    <label className="field"><span>Indicaciones</span><input className="input" value={draft.instructions} onChange={(e) => setDraft({ ...draft, instructions: e.target.value })} placeholder="Ej. Con los alimentos" /></label>
+                  </div>
+                  {conflict && (
+                    <div className="alert-strip" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                      <span style={{ display: 'flex', gap: 8 }}><TriangleAlert size={18} style={{ flex: 'none' }} />{p.firstName} es alérgica/o a {conflict}. {draft.drug} puede provocar una reacción.</span>
+                      {!override && <button type="button" className="btn btn--danger btn--sm" style={{ background: '#fff' }} onClick={() => setOverride(true)}>Prescribir de todos modos</button>}
+                    </div>
+                  )}
+                  <button className="btn btn--primary" disabled={!draft.drug.trim() || (!!conflict && !override)}><Plus size={16} />Agregar al manejo</button>
+                </form>
               )}
             </div>
           </section>
-          <section className="panel">
+
+          <section className="panel sign-box">
             <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
               <p style={{ fontSize: 14, color: 'var(--muted)' }}>
-                {canSign ? `Al firmar se cierra la cita${items.length ? ` y se emite una receta con ${items.length} medicamento${items.length > 1 ? 's' : ''}` : ''}.` : 'Para firmar escribe el motivo y agrega al menos un diagnóstico.'}
+                {missing.length ? `Para firmar falta ${missing.join(', ')}.` : `Al firmar se cierra la cita${rxCount ? ` y se emite una receta con ${rxCount} medicamento${rxCount > 1 ? 's' : ''}` : ''}.`}
               </p>
-              <button className="btn btn--primary" disabled={!canSign || signing} onClick={sign}>Firmar consulta{items.length ? ' y receta' : ''}</button>
+              <button className="btn btn--primary btn--lg" disabled={missing.length > 0 || signing} onClick={sign}>Firmar consulta{rxCount ? ' y receta' : ''}</button>
             </div>
           </section>
         </aside>
       </div>
+
       {triage && <VitalsModal appt={appt} onClose={() => setTriage(false)} onSaved={() => setTriage(false)} />}
+      {editBg && <BackgroundForm initial={p} onClose={() => setEditBg(false)} onSave={async (data) => { if (await updatePatient(p.id, data)) { setEditBg(false); reload() } }} />}
     </div>
   )
 }

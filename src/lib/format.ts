@@ -1,4 +1,4 @@
-import type { ApptStatus, Patient } from './types'
+import type { ApptStatus, Background, Patient, PrescriptionItem } from './types'
 
 export const fullName = (p: Patient) => `${p.firstName} ${p.lastName}`
 
@@ -67,3 +67,46 @@ export function whatsappUrl(phone: string, text: string) {
 
 export const fileSize = (bytes: number) =>
   bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
+
+// ---------- Historia clínica ----------
+
+export const CIVIL_STATUS = ['Soltero(a)', 'Casado(a)', 'Unión libre', 'Divorciado(a)', 'Viudo(a)']
+export const EDUCATION = ['Ninguna', 'Preescolar', 'Primaria incompleta', 'Primaria completa', 'Secundaria incompleta', 'Secundaria completa', 'Técnico', 'Universitaria', 'Posgrado']
+
+/** Antecedentes en el orden de la historia clínica. `female` marca los gineco-obstétricos. */
+export const BACKGROUND_GROUPS: { title: string; female?: boolean; fields: { key: keyof Background; label: string; date?: boolean }[] }[] = [
+  { title: 'Personales patológicos', fields: [
+    { key: 'pathological', label: 'Enfermedades' },
+    { key: 'surgical', label: 'Quirúrgicos' },
+    { key: 'traumatic', label: 'Traumáticos' },
+    { key: 'hospitalizations', label: 'Hospitalarios' },
+    { key: 'transfusions', label: 'Transfusionales' },
+    { key: 'medications', label: 'Medicamentos actuales' },
+  ] },
+  { title: 'Personales no patológicos', fields: [
+    { key: 'smoking', label: 'Tabaquismo' },
+    { key: 'alcohol', label: 'Alcoholismo' },
+    { key: 'drugs', label: 'Otras sustancias' },
+    { key: 'lifestyle', label: 'Actividad física y alimentación' },
+    { key: 'immunizations', label: 'Inmunizaciones' },
+  ] },
+  { title: 'Heredofamiliares', fields: [{ key: 'family', label: 'Antecedentes familiares' }] },
+  { title: 'Gineco-obstétricos', female: true, fields: [
+    { key: 'menarche', label: 'Menarca' },
+    { key: 'lmp', label: 'FUM', date: true },
+    { key: 'gpac', label: 'G P A C' },
+    { key: 'contraception', label: 'Planificación familiar' },
+    { key: 'gynecoNotes', label: 'Otros' },
+  ] },
+]
+
+export const ROUTES = ['Oral', 'Sublingual', 'Intramuscular', 'Intravenosa', 'Subcutánea', 'Inhalada', 'Tópica', 'Oftálmica', 'Ótica', 'Nasal', 'Rectal', 'Vaginal']
+
+export const defaultRoute = (presentation = '') =>
+  /inhalador/i.test(presentation) ? 'Inhalada' : /crema|ungüento|gel/i.test(presentation) ? 'Tópica' : /gotas oft/i.test(presentation) ? 'Oftálmica' : 'Oral'
+
+/** Texto de una orden médica de medicamento, p. ej. "Azitromicina 500 mg tableta: 1 tableta vía oral cada 24 horas por 3 días." */
+export function medicationOrder(i: PrescriptionItem) {
+  const route = i.route ? ` vía ${i.route.toLowerCase()}` : ''
+  return `${i.drug}${i.presentation ? ` (${i.presentation.toLowerCase()})` : ''}: ${i.dose}${route} ${i.frequency.toLowerCase()} por ${i.duration}.${i.instructions ? ` ${i.instructions}` : ''}`
+}

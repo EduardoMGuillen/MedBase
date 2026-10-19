@@ -16,7 +16,7 @@ export default function Certificate() {
   const [to, setTo] = useState('A quien corresponda')
   const [notes, setNotes] = useState('')
 
-  useEffect(() => { if (id) fetchConsultation(id).then(setData).catch((e: Error) => notify(e.message, 'error')) }, [id, fetchConsultation, notify])
+  useEffect(() => { if (id) fetchConsultation(id, 'certificate').then(setData).catch((e: Error) => notify(e.message, 'error')) }, [id, fetchConsultation, notify])
   if (!data) return <Loading label="Preparando constancia" />
   const { consultation: c, patient: p } = data
   const doc = staffById(c.doctorId)!

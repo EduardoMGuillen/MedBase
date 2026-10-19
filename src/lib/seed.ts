@@ -25,16 +25,55 @@ const p = (
 })
 
 export const PATIENTS: Patient[] = [
-  p('p1', 'EXP-00412', 'María José', 'Castillo Reyes', '1984-03-12', 'F', '9876-1123', { bloodType: 'O+', allergies: ['Penicilina'], conditions: ['Hipertensión arterial'], insurance: 'Seguros Atlántida' }),
-  p('p2', 'EXP-00413', 'Carlos Eduardo', 'Banegas', '1967-11-02', 'M', '9455-2201', { bloodType: 'A+', conditions: ['Diabetes tipo 2', 'Dislipidemia'] }),
-  p('p3', 'EXP-00420', 'Valentina', 'Ordóñez Pineda', '2019-06-25', 'F', '3311-8890', { bloodType: 'B+', allergies: ['AINEs'] }),
-  p('p4', 'EXP-00431', 'Jorge Luis', 'Matute', '1991-01-30', 'M', '9988-0145', { bloodType: 'O-', insurance: 'Mapfre' }),
-  p('p5', 'EXP-00438', 'Ana Gabriela', 'Fiallos', '1996-09-14', 'F', '8812-4433', { bloodType: 'A-', conditions: ['Embarazo 24 semanas'] }),
-  p('p6', 'EXP-00447', 'Héctor', 'Mondragón Sierra', '1958-04-08', 'M', '9701-6620', { bloodType: 'AB+', allergies: ['Sulfas'], conditions: ['EPOC'] }),
-  p('p7', 'EXP-00452', 'Daniela', 'Rivera Cáceres', '2002-12-19', 'F', '3190-7765', {}),
-  p('p8', 'EXP-00460', 'Mateo', 'Galeano', '2015-02-03', 'M', '9620-1180', { allergies: ['Metamizol'], conditions: ['Asma'] }),
-  p('p9', 'EXP-00466', 'Rosa Elena', 'Turcios', '1973-07-21', 'F', '9433-5532', { bloodType: 'O+', conditions: ['Hipotiroidismo'], insurance: 'Seguros Atlántida' }),
-  p('p10', 'EXP-00471', 'Fernando', 'Alvarado Lanza', '1988-10-10', 'M', '8890-2314', {}),
+  p('p1', 'EXP-00412', 'María José', 'Castillo Reyes', '1984-03-12', 'F', '9876-1123', {
+    dni: '0801-1984-04512', civilStatus: 'Casada', occupation: 'Contadora', education: 'Universitaria', religion: 'Católica',
+    address: 'Tegucigalpa, Col. Lomas del Guijarro, calle 3', emergencyName: 'Ricardo Castillo', emergencyPhone: '9876-4410', emergencyRelation: 'Esposo',
+    bloodType: 'O+', allergies: ['Penicilina'], conditions: ['Hipertensión arterial'], insurance: 'Seguros Atlántida',
+    background: {
+      pathological: 'HTA diagnosticada en 2024, en tratamiento con losartán.', surgical: 'Colecistectomía laparoscópica (2019).', traumatic: 'Negados.',
+      hospitalizations: 'Por la colecistectomía (2019).', transfusions: 'Negados.', medications: 'Losartán 50 mg cada 24 horas.',
+      family: 'Madre con HTA y DM2. Padre con cardiopatía isquémica.', smoking: 'Negado.', alcohol: 'Social, ocasional.', drugs: 'Negado.',
+      lifestyle: 'Camina 3 veces por semana. Dieta hiposódica irregular.', immunizations: 'Esquema completo. Influenza 2025.',
+      menarche: '12 años', lmp: '2026-10-02', gpac: 'G2 P2 A0 C0', contraception: 'DIU de cobre',
+    },
+  }),
+  p('p2', 'EXP-00413', 'Carlos Eduardo', 'Banegas', '1967-11-02', 'M', '9455-2201', {
+    dni: '0801-1967-11873', civilStatus: 'Casado', occupation: 'Comerciante', education: 'Secundaria completa', address: 'Comayagüela, Barrio El Bosque',
+    emergencyName: 'Lilian Banegas', emergencyPhone: '9455-7781', emergencyRelation: 'Esposa',
+    bloodType: 'A+', conditions: ['Diabetes tipo 2', 'Dislipidemia'],
+    background: { pathological: 'DM2 desde 2015. Dislipidemia.', surgical: 'Negados.', medications: 'Metformina 850 mg cada 12 horas. Atorvastatina 20 mg.', family: 'Padre con DM2.', smoking: 'Exfumador, 10 paquetes/año, suspendido en 2010.', alcohol: 'Negado.' },
+  }),
+  p('p3', 'EXP-00420', 'Valentina', 'Ordóñez Pineda', '2019-06-25', 'F', '3311-8890', {
+    address: 'Tegucigalpa, Res. Plaza', emergencyName: 'Karla Pineda', emergencyPhone: '3311-8890', emergencyRelation: 'Madre', education: 'Preescolar',
+    bloodType: 'B+', allergies: ['AINEs'], background: { pathological: 'Negados.', immunizations: 'Esquema de vacunación completo para la edad.' },
+  }),
+  p('p4', 'EXP-00431', 'Jorge Luis', 'Matute', '1991-01-30', 'M', '9988-0145', {
+    dni: '0801-1991-02233', civilStatus: 'Soltero', occupation: 'Albañil', education: 'Primaria completa', address: 'Tegucigalpa, Col. Kennedy',
+    bloodType: 'O-', insurance: 'Mapfre', background: { traumatic: 'Fractura de radio derecho (2012).', alcohol: 'Fines de semana.' },
+  }),
+  p('p5', 'EXP-00438', 'Ana Gabriela', 'Fiallos', '1996-09-14', 'F', '8812-4433', {
+    dni: '0801-1996-09214', civilStatus: 'Unión libre', occupation: 'Maestra', education: 'Universitaria', address: 'Tegucigalpa, Col. Miraflores',
+    emergencyName: 'José Fiallos', emergencyPhone: '8812-0091', emergencyRelation: 'Padre',
+    bloodType: 'A-', conditions: ['Embarazo de 24 semanas'],
+    background: { menarche: '13 años', lmp: '2026-05-04', gpac: 'G1 P0 A0 C0', medications: 'Ácido fólico y sulfato ferroso.' },
+  }),
+  p('p6', 'EXP-00447', 'Héctor', 'Mondragón Sierra', '1958-04-08', 'M', '9701-6620', {
+    dni: '0801-1958-00412', civilStatus: 'Viudo', occupation: 'Jubilado', address: 'Tegucigalpa, Col. Palmira',
+    emergencyName: 'Sandra Mondragón', emergencyPhone: '9701-1123', emergencyRelation: 'Hija',
+    bloodType: 'AB+', allergies: ['Sulfas'], conditions: ['EPOC'],
+    background: { pathological: 'EPOC diagnosticado en 2018.', smoking: 'Fumador activo, 40 paquetes/año.', medications: 'Salbutamol inhalado a demanda.', hospitalizations: 'Exacerbación de EPOC (2023).' },
+  }),
+  p('p7', 'EXP-00452', 'Daniela', 'Rivera Cáceres', '2002-12-19', 'F', '3190-7765', { civilStatus: 'Soltera', occupation: 'Estudiante', education: 'Universitaria en curso', address: 'Tegucigalpa, Col. Tepeyac' }),
+  p('p8', 'EXP-00460', 'Mateo', 'Galeano', '2015-02-03', 'M', '9620-1180', {
+    education: 'Primaria en curso', address: 'Tegucigalpa, Col. Las Minitas', emergencyName: 'Marta Galeano', emergencyPhone: '9620-1180', emergencyRelation: 'Madre',
+    allergies: ['Metamizol'], conditions: ['Asma'], background: { pathological: 'Asma desde los 4 años.', medications: 'Salbutamol inhalado a demanda.' },
+  }),
+  p('p9', 'EXP-00466', 'Rosa Elena', 'Turcios', '1973-07-21', 'F', '9433-5532', {
+    dni: '0801-1973-07781', civilStatus: 'Divorciada', occupation: 'Secretaria', address: 'Tegucigalpa, Col. Florencia Norte',
+    bloodType: 'O+', conditions: ['Hipotiroidismo'], insurance: 'Seguros Atlántida',
+    background: { pathological: 'Hipotiroidismo desde 2020.', medications: 'Levotiroxina 75 mcg en ayunas.', gpac: 'G3 P2 A1 C0', menarche: '11 años' },
+  }),
+  p('p10', 'EXP-00471', 'Fernando', 'Alvarado Lanza', '1988-10-10', 'M', '8890-2314', { dni: '0801-1988-10331', civilStatus: 'Casado', occupation: 'Ingeniero civil', education: 'Universitaria', address: 'Tegucigalpa, Res. El Trapiche' }),
 ]
 
 /** Fecha ISO local de hoy a una hora dada, para que la demo siempre tenga agenda viva. */
@@ -77,22 +116,27 @@ export function seedAppointments(): Appointment[] {
 
 export function seedClinical() {
   const vitals: Vitals[] = [
-    { id: 'v1', patientId: 'p1', appointmentId: 'a3', takenBy: 's-rios', takenAt: at(0, 9, 22), systolic: 128, diastolic: 84, heartRate: 96, temperature: 38.4, spo2: 97, weightKg: 68, heightCm: 162, painScale: 5, notes: 'Refiere odinofagia desde hace 3 días.' },
-    { id: 'v0', patientId: 'p1', takenBy: 's-rios', takenAt: at(-62, 10, 5), systolic: 142, diastolic: 92, heartRate: 78, temperature: 36.7, spo2: 98, weightKg: 69.5, heightCm: 162 },
-    { id: 'v2', patientId: 'p2', takenBy: 's-rios', takenAt: at(0, 7, 55), systolic: 134, diastolic: 82, heartRate: 74, temperature: 36.5, spo2: 98, weightKg: 91, heightCm: 174 },
+    { id: 'v1', patientId: 'p1', appointmentId: 'a3', takenBy: 's-rios', takenAt: at(0, 9, 22), systolic: 128, diastolic: 84, heartRate: 96, respRate: 18, temperature: 38.4, spo2: 97, weightKg: 68, heightCm: 162, painScale: 5,
+      chiefComplaint: 'Dolor de garganta y fiebre desde hace 3 días.', notes: 'Refiere dificultad para tragar.' },
+    { id: 'v0', patientId: 'p1', takenBy: 's-rios', takenAt: at(-62, 10, 5), systolic: 142, diastolic: 92, heartRate: 78, respRate: 16, temperature: 36.7, spo2: 98, weightKg: 69.5, heightCm: 162, chiefComplaint: 'Control de presión arterial.' },
+    { id: 'v2', patientId: 'p2', takenBy: 's-rios', takenAt: at(0, 7, 55), systolic: 134, diastolic: 82, heartRate: 74, respRate: 16, temperature: 36.5, spo2: 98, weightKg: 91, heightCm: 174, glucose: 148, chiefComplaint: 'Control de glucosa.' },
   ]
   const consultations: Consultation[] = [
     {
       id: 'c1', patientId: 'p1', doctorId: 's-herrera', date: at(-62, 10, 15), reason: 'Control de presión arterial',
-      symptoms: ['Cefalea', 'Mareo'], history: 'Paciente con HTA diagnosticada hace 2 años, refiere cefalea occipital matutina.',
-      exam: 'TA 142/92. Ruidos cardíacos rítmicos, sin soplos. Sin edema.', diagnoses: [{ code: 'I10', label: 'Hipertensión esencial (primaria)' }],
-      plan: 'Ajuste de antihipertensivo. Dieta hiposódica. Control en 2 meses con perfil lipídico.', vitalsId: 'v0', prescriptionId: 'rx1',
+      symptoms: [], history: 'Paciente femenina de 42 años con HTA diagnosticada hace 2 años, en tratamiento irregular. Refiere cefalea occipital matutina de 2 semanas de evolución, sin alteraciones visuales ni dolor torácico.',
+      exam: 'Consciente, orientada, hidratada. Cuello sin ingurgitación yugular. Tórax: ruidos cardíacos rítmicos, sin soplos; murmullo vesicular presente sin agregados. Abdomen blando, depresible. Extremidades sin edema.',
+      diagnoses: [{ code: 'I10', label: 'Hipertensión esencial (primaria)' }],
+      orders: ['Dieta hiposódica (menos de 2 g de sal al día).', 'Losartán 50 mg, 1 tableta vía oral cada 24 horas por 60 días.', 'Perfil lipídico, creatinina y examen general de orina.', 'Control de presión arterial en casa, registro diario.', 'Cita de control en 2 meses con resultados.'],
+      plan: '', vitalsId: 'v0', prescriptionId: 'rx1',
     },
     {
       id: 'c2', patientId: 'p2', doctorId: 's-herrera', appointmentId: 'a1', date: at(0, 8, 5), reason: 'Control de glucosa',
-      symptoms: ['Fatiga'], history: 'DM2 en tratamiento con metformina. Glucosa en ayunas 148 mg/dL.',
-      exam: 'Pies sin lesiones, pulsos pedios presentes.', diagnoses: [{ code: 'E11.9', label: 'Diabetes mellitus tipo 2 sin complicaciones' }],
-      plan: 'Continuar metformina. HbA1c en 3 meses.', vitalsId: 'v2', prescriptionId: 'rx2',
+      symptoms: [], history: 'Paciente masculino de 58 años con DM2 de 10 años de evolución en tratamiento con metformina. Refiere fatiga leve. Glucosa en ayunas en casa de 140 a 150 mg/dL.',
+      exam: 'Buen estado general. Pies sin lesiones, pulsos pedios presentes, sensibilidad conservada con monofilamento.',
+      diagnoses: [{ code: 'E11.9', label: 'Diabetes mellitus tipo 2 sin complicaciones' }],
+      orders: ['Dieta para diabético, 1800 kcal.', 'Metformina 850 mg, 1 tableta vía oral cada 12 horas por 90 días.', 'Atorvastatina 20 mg, 1 tableta vía oral cada noche por 90 días.', 'Hemoglobina glicosilada (HbA1c) en 3 meses.', 'Cita de control en 3 meses.'],
+      plan: '', vitalsId: 'v2', prescriptionId: 'rx2',
     },
   ]
   const prescriptions: Prescription[] = [
@@ -187,7 +231,7 @@ export function seedHistory(days = 60) {
         appointments.push({ id, patientId: pt.id, doctorId: doc, start: at(-d, h, m), minutes: 30, reason, type: rand() < 0.3 ? 'first' : 'followup', status, source: rand() < 0.35 ? 'online' : 'staff' })
         if (status !== 'done') continue
         const dx = ICD10.find((x) => x.code === code)!
-        consultations.push({ id: `hc${consultations.length}`, patientId: pt.id, doctorId: doc, appointmentId: id, date: at(-d, h, m + 20), reason, symptoms: [], history: '', exam: '', diagnoses: [dx], plan: '' })
+        consultations.push({ id: `hc${consultations.length}`, patientId: pt.id, doctorId: doc, appointmentId: id, date: at(-d, h, m + 20), reason, symptoms: [], history: '', exam: '', diagnoses: [dx], orders: ['Tratamiento según diagnóstico.', 'Cita de control según evolución.'], plan: '' })
         const svc = SERVICES.find((s) => s.id === setup.serviceId)!
         const extra = rand() < 0.2 ? pick(SERVICES.filter((s) => !s.name.startsWith('Consulta'))) : null
         const items = [{ serviceId: svc.id, name: svc.name, price: svc.price, qty: 1 }, ...(extra ? [{ serviceId: extra.id, name: extra.name, price: extra.price, qty: 1 }] : [])]

@@ -260,6 +260,16 @@ export function createApp(opts: AppOptions) {
     insurance: z.string().trim().optional(),
     allergies: z.array(z.string().trim().min(1)).default([]),
     conditions: z.array(z.string().trim().min(1)).default([]),
+    dni: z.string().trim().max(30).optional(),
+    civilStatus: z.string().trim().max(40).optional(),
+    occupation: z.string().trim().max(80).optional(),
+    education: z.string().trim().max(80).optional(),
+    religion: z.string().trim().max(60).optional(),
+    address: z.string().trim().max(200).optional(),
+    emergencyName: z.string().trim().max(100).optional(),
+    emergencyPhone: z.string().trim().max(30).optional(),
+    emergencyRelation: z.string().trim().max(40).optional(),
+    background: z.record(z.string(), z.string().max(2000)).optional(),
   })
 
   app.post('/api/patients', auth, need('patients.manage'), async (req, res) => {
@@ -274,18 +284,21 @@ export function createApp(opts: AppOptions) {
     const user = userOf(req)
     const row = (await patientRow(String(req.params.id))) ?? fail(404, 'El paciente no existe.')
     const body = parse(patientBody.partial(), req.body)
-    const demographic = ['firstName', 'lastName', 'birthDate', 'sex', 'phone', 'email', 'insurance'] as const
-    const clinicalKeys = ['allergies', 'conditions', 'bloodType'] as const
+    const demographic = ['firstName', 'lastName', 'birthDate', 'sex', 'phone', 'email', 'insurance', 'dni', 'civilStatus', 'occupation', 'education',
+      'religion', 'address', 'emergencyName', 'emergencyPhone', 'emergencyRelation'] as const
+    const clinicalKeys = ['allergies', 'conditions', 'bloodType', 'background'] as const
     if (demographic.some((k) => k in req.body) && !can(user.role, 'patients.manage')) fail(403, 'Tu rol no puede editar los datos generales del paciente.')
     if (clinicalKeys.some((k) => k in req.body) && !can(user.role, 'chart.view')) fail(403, 'Tu rol no puede editar datos clínicos.')
-    const cols: Record<string, string> = { firstName: 'first_name', lastName: 'last_name', birthDate: 'birth_date', sex: 'sex', phone: 'phone', email: 'email', insurance: 'insurance', bloodType: 'blood_type', allergies: 'allergies', conditions: 'conditions' }
+    const cols: Record<string, string> = { firstName: 'first_name', lastName: 'last_name', birthDate: 'birth_date', sex: 'sex', phone: 'phone', email: 'email', insurance: 'insurance',
+      bloodType: 'blood_type', allergies: 'allergies', conditions: 'conditions', background: 'background', dni: 'dni', civilStatus: 'civil_status', occupation: 'occupation',
+      education: 'education', religion: 'religion', address: 'address', emergencyName: 'emergency_name', emergencyPhone: 'emergency_phone', emergencyRelation: 'emergency_relation' }
     const sets: string[] = []
     const vals: (string | null)[] = []
     for (const [k, col] of Object.entries(cols)) {
       if (!(k in req.body)) continue
       const v = body[k as keyof typeof body]
       sets.push(`${col} = ?`)
-      vals.push(Array.isArray(v) ? JSON.stringify(v) : v == null || v === '' ? null : String(v))
+      vals.push(typeof v === 'object' && v !== null ? JSON.stringify(v) : v == null || v === '' ? null : String(v))
     }
     if (sets.length) await sql.run(`UPDATE patients SET ${sets.join(', ')} WHERE id = ?`, [...vals, String(row!.id)])
     await audit(user.id, `Actualizó la ficha de ${row!.first_name} ${row!.last_name}`)
@@ -312,6 +325,15 @@ export function createApp(opts: AppOptions) {
     minutes: z.number().int().min(10).max(240),
     reason: z.string().trim().min(1, 'Escribe el motivo de consulta.'),
     type: z.enum(['first', 'followup', 'urgent']),
+  })
+
+  app.get('/api/appointments', auth, need('agenda.view'), async (req, res) => {
+    const q = parse(z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }), req.query, 'Elige un rango de fechas.')
+    const user = userOf(req)
+    const rows = await sql.query(`SELECT a.*, EXISTS(SELECT 1 FROM payments p WHERE p.appointment_id = a.id AND NOT p.voided) AS paid
+      FROM appointments a WHERE a.start >= ? AND a.start < ? ORDER BY a.start`, [q.from, `${q.to}T99`])
+    const billing = can(user.role, 'billing.manage')
+    res.json(rows.map((r) => ({ ...toAppointment(r), paid: billing ? Boolean(r.paid) : undefined })))
   })
 
   app.post('/api/appointments', auth, need('agenda.manage'), async (req, res) => {
@@ -386,6 +408,9 @@ export function createApp(opts: AppOptions) {
       heartRate: n(25, 250, 'la frecuencia cardíaca'), temperature: n(32, 43, 'la temperatura'), spo2: n(50, 100, 'la saturación'),
       weightKg: z.number().min(0).max(400).default(0), heightCm: z.number().min(0).max(250).default(0),
       painScale: z.number().int().min(0).max(10).optional(), notes: z.string().max(2000).optional(),
+      respRate: z.number().int().min(4, 'Revisa la frecuencia respiratoria.').max(80, 'Revisa la frecuencia respiratoria.').optional(),
+      glucose: z.number().int().min(10, 'Revisa la glucometría.').max(900, 'Revisa la glucometría.').optional(),
+      chiefComplaint: z.string().trim().max(500).optional(),
     }), req.body)
     ;(await patientRow(v.patientId)) ?? fail(404, 'El paciente no existe.')
     if (v.appointmentId) {
@@ -395,9 +420,10 @@ export function createApp(opts: AppOptions) {
     const id = randomUUID()
     const name = await patientName(v.patientId)
     await sql.tx(async (q) => {
-      await q.run(`INSERT INTO vitals (id,patient_id,appointment_id,taken_by,taken_at,systolic,diastolic,heart_rate,temperature,spo2,weight_kg,height_cm,pain_scale,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      await q.run(`INSERT INTO vitals (id,patient_id,appointment_id,taken_by,taken_at,systolic,diastolic,heart_rate,temperature,spo2,weight_kg,height_cm,pain_scale,notes,resp_rate,glucose,chief_complaint)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [id, v.patientId, v.appointmentId ?? null, user.id, new Date().toISOString(), v.systolic, v.diastolic, v.heartRate, v.temperature, v.spo2,
-          v.weightKg, v.heightCm, v.painScale ?? null, v.notes || null])
+          v.weightKg, v.heightCm, v.painScale ?? null, v.notes || null, v.respRate ?? null, v.glucose ?? null, v.chiefComplaint || null])
       if (v.appointmentId) await q.run(`UPDATE appointments SET status = 'triaged' WHERE id = ? AND status = 'arrived'`, [v.appointmentId])
       await audit(user.id, `Registró signos vitales de ${name}`, q)
     })
@@ -415,7 +441,7 @@ export function createApp(opts: AppOptions) {
       history: z.string().default(''),
       exam: z.string().default(''),
       diagnoses: z.array(z.object({ code: z.string(), label: z.string() })).min(1, 'Agrega al menos un diagnóstico.'),
-      plan: z.string().default(''),
+      orders: z.array(z.string().trim().min(1)).min(1, 'Agrega al menos una orden médica en el manejo.'),
       vitalsId: z.string().optional(),
       items: z.array(z.object({
         drug: z.string().trim().min(1), presentation: z.string().default(''), dose: z.string().trim().min(1, 'Escribe la dosis.'),
@@ -444,20 +470,23 @@ export function createApp(opts: AppOptions) {
         await q.run(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items) VALUES (?,?,?,?,?,?,?)`,
           [rxId, folio, patientId, user.id, cid, now.toISOString(), JSON.stringify(c.items)])
       }
-      await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id,orders)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [cid, patientId, user.id, c.appointmentId, now.toISOString(), c.reason, JSON.stringify(c.symptoms), c.symptomOnset ?? null,
-          c.history, c.exam, JSON.stringify(c.diagnoses), c.plan, c.vitalsId ?? null, rxId])
+          c.history, c.exam, JSON.stringify(c.diagnoses), c.orders.map((o, i) => `${i + 1}. ${o}`).join('\n'), c.vitalsId ?? null, rxId, JSON.stringify(c.orders)])
       await q.run(`UPDATE appointments SET status = 'done' WHERE id = ?`, [c.appointmentId])
       await audit(user.id, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
     })
     res.status(201).json({ consultationId: cid, prescriptionId: rxId, folio })
   })
 
-  app.get('/api/consultations/:id', auth, need('consult.write'), async (req, res) => {
+  app.get('/api/consultations/:id', auth, need('chart.view'), async (req, res) => {
     const row = (await sql.one('SELECT * FROM consultations WHERE id = ?', [String(req.params.id)])) ?? fail(404, 'La consulta no existe.')
     const c = toConsultation(row!)
-    await audit(userOf(req).id, `Emitió constancia médica de ${await patientName(c.patientId)}`)
-    res.json({ consultation: c, patient: toPatient((await patientRow(c.patientId))!, true) })
+    const vitals = c.vitalsId ? await sql.one('SELECT * FROM vitals WHERE id = ?', [c.vitalsId]) : undefined
+    const what = req.query.purpose === 'certificate' ? 'Emitió constancia médica de' : 'Abrió la nota de consulta de'
+    await audit(userOf(req).id, `${what} ${await patientName(c.patientId)}`)
+    res.json({ consultation: c, patient: toPatient((await patientRow(c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null })
   })
 
   app.get('/api/prescriptions/:id', auth, need('rx.view'), async (req, res) => {

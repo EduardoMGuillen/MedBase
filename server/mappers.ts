@@ -1,4 +1,4 @@
-import type { Appointment, Attachment, AuditEntry, Consultation, Patient, Payment, Prescription, Service, Staff, Vitals } from '../src/lib/types.js'
+import type { Appointment, Attachment, AuditEntry, Background, Consultation, Patient, Payment, Prescription, Service, Staff, Vitals } from '../src/lib/types.js'
 
 type Row = Record<string, unknown>
 const s = (v: unknown) => (v == null ? undefined : String(v))
@@ -14,10 +14,13 @@ export const toPatient = (r: Row, clinical: boolean): Patient => ({
   id: String(r.id), record: String(r.record), firstName: String(r.first_name), lastName: String(r.last_name),
   birthDate: String(r.birth_date), sex: r.sex as Patient['sex'], phone: String(r.phone), email: s(r.email),
   insurance: s(r.insurance), createdAt: String(r.created_at),
+  dni: s(r.dni), civilStatus: s(r.civil_status), occupation: s(r.occupation), education: s(r.education), religion: s(r.religion),
+  address: s(r.address), emergencyName: s(r.emergency_name), emergencyPhone: s(r.emergency_phone), emergencyRelation: s(r.emergency_relation),
   // Los datos clínicos sólo viajan a quien tiene acceso al expediente
   bloodType: clinical ? s(r.blood_type) : undefined,
   allergies: clinical ? j<string[]>(r.allergies, []) : [],
   conditions: clinical ? j<string[]>(r.conditions, []) : [],
+  background: clinical ? j<Background>(r.background, {}) : undefined,
 })
 
 export const toAppointment = (r: Row): Appointment => ({
@@ -33,12 +36,14 @@ export const toVitals = (r: Row): Vitals => ({
   takenAt: String(r.taken_at), systolic: Number(r.systolic), diastolic: Number(r.diastolic), heartRate: Number(r.heart_rate),
   temperature: Number(r.temperature), spo2: Number(r.spo2), weightKg: Number(r.weight_kg), heightCm: Number(r.height_cm),
   painScale: r.pain_scale == null ? undefined : Number(r.pain_scale), notes: s(r.notes),
+  respRate: r.resp_rate == null ? undefined : Number(r.resp_rate), glucose: r.glucose == null ? undefined : Number(r.glucose),
+  chiefComplaint: s(r.chief_complaint),
 })
 
 export const toConsultation = (r: Row): Consultation => ({
   id: String(r.id), patientId: String(r.patient_id), doctorId: String(r.doctor_id), appointmentId: s(r.appointment_id),
   date: String(r.date), reason: String(r.reason), symptoms: j(r.symptoms, []), symptomOnset: s(r.symptom_onset),
-  history: String(r.history ?? ''), exam: String(r.exam ?? ''), diagnoses: j(r.diagnoses, []), plan: String(r.plan ?? ''),
+  history: String(r.history ?? ''), exam: String(r.exam ?? ''), diagnoses: j(r.diagnoses, []), plan: String(r.plan ?? ''), orders: j(r.orders, []),
   vitalsId: s(r.vitals_id), prescriptionId: s(r.prescription_id),
 })
 

@@ -78,11 +78,18 @@ export function PrescriptionSheet() {
           {rx.items.map((it, i) => (
             <li key={i}>
               <strong>{it.drug}</strong> <span style={{ color: 'var(--muted)' }}>{it.presentation}</span>
-              <p>{it.dose}, {it.frequency.toLowerCase()}, durante {it.duration}.{it.instructions ? ` ${it.instructions}` : ''}</p>
+              <p>{it.dose}{it.route ? ` vía ${it.route.toLowerCase()}` : ''}, {it.frequency.toLowerCase()}, durante {it.duration}.{it.instructions ? ` ${it.instructions}` : ''}</p>
             </li>
           ))}
         </ol>
-        {c?.plan && <p style={{ marginTop: 24, fontSize: 14 }}><b>Indicaciones generales:</b> {c.plan}</p>}
+        {(() => {
+          // Indicaciones: las órdenes del manejo que no son medicamentos de esta receta
+          const notes = c?.orders.length ? c.orders.filter((o) => !rx.items.some((it) => o.startsWith(it.drug))) : c?.plan ? [c.plan] : []
+          return notes.length > 0 && (
+            <div style={{ marginTop: 24, fontSize: 14 }}><b>Indicaciones generales</b>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{notes.map((n, i) => <li key={i}>{n}</li>)}</ul></div>
+          )
+        })()}
         <div className="rx-sheet__sign"><div><em>{doc.name.replace(/^Dra?\.\s*/, '')}</em>{doc.name}<br /><span style={{ color: 'var(--muted)' }}>{doc.license}</span></div></div>
         <footer className="rx-sheet__foot"><span>Receta válida por {settings.rxValidityDays} días a partir de su emisión.</span><span>Emitida con Clinara</span></footer>
       </article>

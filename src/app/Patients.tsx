@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Search, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { Avatar, Modal, PageHead } from '../components/ui'
+import { Avatar, PageHead } from '../components/ui'
+import { IdentificationForm } from './PatientForms'
 import { age, date, fullName } from '../lib/format'
 import type { Patient } from '../lib/types'
 
@@ -67,57 +68,10 @@ export default function Patients() {
         {!list.length && <div className="empty">Ningún paciente coincide con “{q}”. Revisa la ortografía o registra al paciente.</div>}
       </section>
 
-      {adding && <PatientForm title="Registrar paciente" submitLabel="Registrar paciente" onClose={() => setAdding(false)} onSave={async (p) => {
-        const r = await addPatient(p)
+      {adding && <IdentificationForm title="Registrar paciente" submitLabel="Registrar paciente" withAllergies onClose={() => setAdding(false)} onSave={async (p) => {
+        const r = await addPatient(p as Omit<Patient, 'id' | 'record' | 'createdAt'>)
         if (r) { setAdding(false); nav(`/app/pacientes/${r.id}`) }
       }} />}
     </div>
-  )
-}
-
-export function PatientForm({ title, submitLabel, initial, clinicalOnly, demographicOnly, onClose, onSave }: {
-  title: string; submitLabel: string; initial?: Patient; clinicalOnly?: boolean; demographicOnly?: boolean
-  onClose: () => void; onSave: (p: Omit<Patient, 'id' | 'record' | 'createdAt'>) => Promise<void>
-}) {
-  const [f, setF] = useState({
-    firstName: initial?.firstName ?? '', lastName: initial?.lastName ?? '', birthDate: initial?.birthDate ?? '', sex: (initial?.sex ?? 'F') as 'F' | 'M',
-    phone: initial?.phone ?? '', email: initial?.email ?? '', bloodType: initial?.bloodType ?? '', insurance: initial?.insurance ?? '',
-    allergies: initial?.allergies.join(', ') ?? '', conditions: initial?.conditions.join(', ') ?? '',
-  })
-  const [busy, setBusy] = useState(false)
-  const list = (v: string) => v.split(',').map((x) => x.trim()).filter(Boolean)
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
-  const valid = clinicalOnly || (f.firstName.trim() && f.lastName.trim() && f.birthDate && f.phone.trim().length >= 7)
-  const showDemo = !clinicalOnly
-  const showClinical = !demographicOnly
-  return (
-    <Modal title={title} onClose={onClose} footer={<>
-      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={!valid || busy} onClick={async () => {
-        setBusy(true)
-        const demo = { firstName: f.firstName.trim(), lastName: f.lastName.trim(), birthDate: f.birthDate, sex: f.sex, phone: f.phone.trim(), email: f.email || undefined, insurance: f.insurance || undefined }
-        const clinical = { bloodType: f.bloodType || undefined, allergies: list(f.allergies), conditions: list(f.conditions) }
-        await onSave((clinicalOnly ? clinical : demographicOnly ? demo : { ...demo, ...clinical }) as Omit<Patient, 'id' | 'record' | 'createdAt'>)
-        setBusy(false)
-      }}>{submitLabel}</button>
-    </>}>
-      <div className="form-grid">
-        {showDemo && <>
-        <label className="field"><span>Nombres</span><input className="input" value={f.firstName} onChange={set('firstName')} /></label>
-        <label className="field"><span>Apellidos</span><input className="input" value={f.lastName} onChange={set('lastName')} /></label>
-        <label className="field"><span>Fecha de nacimiento</span><input className="input" type="date" value={f.birthDate} onChange={set('birthDate')} /></label>
-        <label className="field"><span>Sexo</span><select className="select" value={f.sex} onChange={set('sex')}><option value="F">Femenino</option><option value="M">Masculino</option></select></label>
-        <label className="field"><span>Teléfono</span><input className="input" inputMode="tel" value={f.phone} onChange={set('phone')} /></label>
-        <label className="field"><span>Correo (opcional)</span><input className="input" type="email" value={f.email} onChange={set('email')} /></label>
-        <label className="field span-2"><span>Aseguradora (opcional)</span><input className="input" value={f.insurance} onChange={set('insurance')} /></label>
-        </>}
-        {showClinical && <>
-        <label className="field"><span>Tipo de sangre</span><select className="select" value={f.bloodType} onChange={set('bloodType')}><option value="">Sin dato</option>{['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'].map((b) => <option key={b}>{b}</option>)}</select></label>
-        <div />
-        <label className="field span-2"><span>Alergias conocidas, separadas por coma</span><input className="input" value={f.allergies} onChange={set('allergies')} placeholder="Ej. Penicilina, AINEs" /></label>
-        <label className="field span-2"><span>Problemas activos, separados por coma</span><input className="input" value={f.conditions} onChange={set('conditions')} placeholder="Ej. Hipertensión arterial, Asma" /></label>
-        </>}
-      </div>
-    </Modal>
   )
 }

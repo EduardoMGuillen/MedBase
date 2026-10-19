@@ -117,7 +117,9 @@ function useStoreValue() {
   const fetchChart = useCallback((patientId: string) => api<Chart>(`/patients/${patientId}/chart`), [])
   const fetchPrescription = useCallback((id: string) =>
     api<{ prescription: Prescription; consultation: Consultation | null; patient: Patient }>(`/prescriptions/${id}`), [])
-  const fetchConsultation = useCallback((id: string) => api<{ consultation: Consultation; patient: Patient }>(`/consultations/${id}`), [])
+  const fetchConsultation = useCallback((id: string, purpose: 'note' | 'certificate' = 'note') =>
+    api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null }>(`/consultations/${id}?purpose=${purpose}`), [])
+  const fetchAppointments = useCallback((from: string, to: string) => api<Appointment[]>(`/appointments?from=${from}&to=${to}`), [])
   const fetchPayments = useCallback((from: string, to: string) => api<Payment[]>(`/payments?from=${from}&to=${to}`), [])
   const fetchPayment = useCallback((id: string) => api<{ payment: Payment; patient: Patient }>(`/payments/${id}`), [])
   const fetchReport = useCallback((from: string, to: string) => api<Report>(`/reports?from=${from}&to=${to}`), [])
@@ -129,7 +131,7 @@ function useStoreValue() {
     signIn, signOut,
     patient: (id: string) => data.patients.find((p) => p.id === id),
     staffById: (id: string) => data.staff.find((s) => s.id === id),
-    fetchChart, fetchPrescription, fetchConsultation, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
+    fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
 
     setStatus: (id: string, status: Exclude<ApptStatus, 'scheduled' | 'triaged' | 'done'>, success?: string) =>
       run(() => api<Appointment>(`/appointments/${id}/status`, { body: { status } }), success),

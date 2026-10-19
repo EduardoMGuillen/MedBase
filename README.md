@@ -63,10 +63,10 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
 | Módulo | Qué hace |
 |---|---|
 | Reserva en línea (`/reservar`) | El paciente elige médico, día y hora según el horario configurado. Si ya existe, se reutiliza su expediente (mismo teléfono y fecha de nacimiento). Tiene protección contra spam y reservas dobles. |
-| Agenda | Columnas por médico, estados en color, detección de choques, reprogramación, marca de reservas en línea, recordatorio por WhatsApp |
-| Sala de espera | Llegada, triaje con alertas de rango y cola de pacientes listos para consulta |
-| Consulta | Formato SOAP, síntomas con un toque, CIE-10, receta con cruce de alergias, borrador automático |
-| Expediente | Alergias siempre visibles, problemas activos, historial, signos, recetas, archivos (PDF e imágenes) y constancias |
+| Agenda | Vistas de día, semana y mes; salto a cualquier fecha y filtro por médico; detección de choques, reprogramación, reservas en línea y recordatorio por WhatsApp |
+| Sala de espera | Llegada y triaje: enfermería registra el motivo de consulta y los signos vitales (PA, FC, FR, T, SpO₂, peso, talla, glucometría) con alertas de rango |
+| Consulta | Datos generales siempre visibles. A la izquierda: antecedentes, motivo y signos del triaje, enfermedad actual, examen físico e impresión diagnóstica (CIE-10). A la derecha: manejo como órdenes médicas numeradas; los medicamentos van también a la receta, con cruce de alergias. Borrador automático |
+| Expediente | Formato de historia clínica: ficha de identificación, alergias, antecedentes (patológicos, quirúrgicos, traumáticos, hospitalarios, transfusionales, medicamentos, no patológicos, heredofamiliares, gineco-obstétricos) y consultas en orden legal con el manejo al final. Nota de consulta imprimible, recetas, archivos y constancias |
 | Caja | Por cobrar, cobro con varios servicios, descuento, efectivo con cambio, tarjeta, transferencia o aseguradora, recibos imprimibles, cierre del día y anulación (sólo administración) |
 | Reportes | Ingresos, asistencia, reservas en línea, carga por médico, formas de pago y diagnósticos frecuentes, con exportación CSV |
 | Configuración | Datos de la clínica, plantilla del recordatorio, servicios y precios, horario y servicio por defecto de cada médico |
