@@ -1,12 +1,11 @@
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { type Ctx, fail, parse, type Row } from '../http'
-import { tx } from '../db'
-import { toService } from '../mappers'
+import { type Ctx, fail, parse } from '../http.js'
+import { toService } from '../mappers.js'
 
-export function registerSettings(app: Express, { db, auth, need, userOf, audit, settings }: Ctx) {
-  app.put('/api/settings', auth, need('settings.manage'), (req, res) => {
+export function registerSettings(app: Express, { sql, auth, need, userOf, audit, settings }: Ctx) {
+  app.put('/api/settings', auth, need('settings.manage'), async (req, res) => {
     const s = parse(z.object({
       name: z.string().trim().min(2, 'Escribe el nombre de la clínica.'),
       address: z.string().trim().min(3, 'Escribe la dirección.'),
@@ -16,12 +15,13 @@ export function registerSettings(app: Express, { db, auth, need, userOf, audit, 
       rxValidityDays: z.number().int().min(1).max(365),
       reminderTemplate: z.string().trim().min(10, 'El mensaje de recordatorio es muy corto.').max(600),
     }), req.body)
-    tx(db, () => {
-      const st = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
-      for (const [k, v] of Object.entries(s)) st.run(k, JSON.stringify(v))
+    await sql.tx(async (q) => {
+      for (const [k, v] of Object.entries(s)) {
+        await q.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', [k, JSON.stringify(v)])
+      }
     })
-    audit(userOf(req).id, 'Actualizó la configuración de la clínica')
-    res.json(settings())
+    await audit(userOf(req).id, 'Actualizó la configuración de la clínica')
+    res.json(await settings())
   })
 
   const serviceBody = z.object({
@@ -30,21 +30,21 @@ export function registerSettings(app: Express, { db, auth, need, userOf, audit, 
     active: z.boolean().default(true),
   })
 
-  app.post('/api/services', auth, need('settings.manage'), (req, res) => {
+  app.post('/api/services', auth, need('settings.manage'), async (req, res) => {
     const s = parse(serviceBody, req.body)
     const id = randomUUID()
-    db.prepare('INSERT INTO services (id, name, price, active) VALUES (?, ?, ?, ?)').run(id, s.name, s.price, s.active ? 1 : 0)
-    audit(userOf(req).id, `Creó el servicio ${s.name}`)
-    res.status(201).json(toService(db.prepare('SELECT * FROM services WHERE id = ?').get(id) as Row))
+    await sql.run('INSERT INTO services (id, name, price, active) VALUES (?, ?, ?, ?)', [id, s.name, s.price, s.active])
+    await audit(userOf(req).id, `Creó el servicio ${s.name}`)
+    res.status(201).json(toService((await sql.one('SELECT * FROM services WHERE id = ?', [id]))!))
   })
 
-  app.patch('/api/services/:id', auth, need('settings.manage'), (req, res) => {
+  app.patch('/api/services/:id', auth, need('settings.manage'), async (req, res) => {
     const id = String(req.params.id)
-    const row = db.prepare('SELECT * FROM services WHERE id = ?').get(id) as Row | undefined ?? fail(404, 'El servicio no existe.')
+    const row = (await sql.one('SELECT * FROM services WHERE id = ?', [id])) ?? fail(404, 'El servicio no existe.')
     const s = parse(serviceBody.partial(), req.body)
-    db.prepare('UPDATE services SET name = ?, price = ?, active = ? WHERE id = ?')
-      .run(s.name ?? String(row!.name), s.price ?? Number(row!.price), s.active === undefined ? Number(row!.active) : s.active ? 1 : 0, id)
-    audit(userOf(req).id, `Actualizó el servicio ${s.name ?? row!.name}`)
-    res.json(toService(db.prepare('SELECT * FROM services WHERE id = ?').get(id) as Row))
+    await sql.run('UPDATE services SET name = ?, price = ?, active = ? WHERE id = ?',
+      [s.name ?? String(row!.name), s.price ?? Number(row!.price), 'active' in req.body ? Boolean(s.active) : Boolean(row!.active), id])
+    await audit(userOf(req).id, `Actualizó el servicio ${s.name ?? row!.name}`)
+    res.json(toService((await sql.one('SELECT * FROM services WHERE id = ?', [id]))!))
   })
 }

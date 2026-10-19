@@ -6,7 +6,7 @@ import { date, fileSize, time } from '../lib/format'
 import type { Attachment } from '../lib/types'
 
 const CATEGORY: Record<Attachment['category'], string> = { lab: 'Laboratorio', imaging: 'Imagen', document: 'Documento', other: 'Otro' }
-const MAX = 8 * 1024 * 1024
+const MAX = 3 * 1024 * 1024
 const TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp']
 
 const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
@@ -33,7 +33,7 @@ export function Attachments({ patientId }: { patientId: string }) {
     setBusy(true)
     for (const file of Array.from(files)) {
       if (!TYPES.includes(file.type)) { notify(`"${file.name}" no es PDF ni imagen. Sólo se aceptan PDF, PNG, JPG o WEBP.`, 'error'); continue }
-      if (file.size > MAX) { notify(`"${file.name}" pesa ${fileSize(file.size)}. El máximo es 8 MB.`, 'error'); continue }
+      if (file.size > MAX) { notify(`"${file.name}" pesa ${fileSize(file.size)}. El máximo es 3 MB.`, 'error'); continue }
       await uploadAttachment(patientId, { name: file.name, mime: file.type, category, data: await toBase64(file) })
     }
     setBusy(false)
@@ -56,7 +56,7 @@ export function Attachments({ patientId }: { patientId: string }) {
         <Upload size={22} />
         <div>
           <strong>{busy ? 'Subiendo…' : 'Arrastra aquí resultados o imágenes'}</strong>
-          <p>PDF, PNG, JPG o WEBP de hasta 8 MB.</p>
+          <p>PDF, PNG, JPG o WEBP de hasta 3 MB.</p>
         </div>
         <select className="select" style={{ width: 'auto' }} value={category} onChange={(e) => setCategory(e.target.value as Attachment['category'])} aria-label="Tipo de archivo">
           {Object.entries(CATEGORY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}

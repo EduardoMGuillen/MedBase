@@ -1,4 +1,4 @@
-import type { Role } from './types'
+import type { Role } from './types.js'
 
 /**
  * Matriz de permisos por rol (principio de mínimo privilegio).

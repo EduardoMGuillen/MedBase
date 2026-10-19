@@ -9,7 +9,7 @@ RUN npm run build
 
 ENV NODE_ENV=production \
     PORT=3001 \
-    DB_PATH=/app/data/clinara.db
+    PGLITE_DIR=/app/data/pglite
 VOLUME ["/app/data"]
 EXPOSE 3001
 

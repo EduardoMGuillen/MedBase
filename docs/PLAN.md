@@ -94,12 +94,13 @@ Los tipos están en `src/lib/types.ts`.
 
 ### Versión actual (este repositorio)
 - Frontend: React 19, TypeScript, Vite y React Router.
-- Backend: Express 5 con SQLite (`node:sqlite`, sin dependencias nativas). Todo corre con `npm run dev`.
+- Backend: Express 5 sobre Postgres. En producción, Neon (serverless) con la API como función de Vercel; en desarrollo y pruebas, PGlite (Postgres embebido, sin instalación). Todo corre con `npm run dev`.
 - Autenticación real: bcrypt, sesión JWT en cookie `httpOnly`, bloqueo por intentos fallidos e invalidación de sesiones al desactivar usuarios o cambiar roles.
 - Los permisos de `src/lib/permissions.ts` se aplican en el servidor y en la interfaz.
-- Bitácora de sólo inserción, protegida con triggers.
+- Bitácora de sólo inserción, protegida con un trigger de Postgres.
+- Bloqueos por intentos fallidos y límites de reserva guardados en la base, compartidos entre instancias serverless.
 - Pruebas de API con `node:test` (`npm test`).
-- `Dockerfile` para publicarlo en cualquier servicio de contenedores.
+- Despliegue en Vercel + Neon (`vercel.json`), o con el `Dockerfile` en cualquier servicio de contenedores.
 
 ### Producción propuesta
 | Capa | Elección | Motivo |
@@ -122,7 +123,7 @@ Los tipos están en `src/lib/types.ts`.
 | **0. Prototipo** (hecho) | Landing, login, 4 roles, agenda, sala de espera, triaje, consulta SOAP, CIE-10, recetas con cruce de alergias, expediente, personal, bitácora |
 | **1. MVP funcional** (hecho) | Backend con base de datos, login real, permisos en servidor, edición de pacientes, reprogramación con detección de choques, alta de usuarios con contraseña temporal, cambio de contraseña, pruebas automáticas |
 | **2. Operación** (hecho) | Reserva en línea con horarios por médico, recordatorios por WhatsApp (enlace), caja con recibos y cierre, reportes con exportación, archivos en el expediente, constancias médicas, configuración de clínica y precios, verificación en dos pasos, cierre por inactividad, buscador Ctrl+K |
-| **3. Pendiente para producción** | Envío automático de recordatorios (WhatsApp Business API), alta de varias clínicas, respaldos automáticos programados, facturación fiscal (CAI/SAR), migrar a Postgres si crece el volumen |
+| **3. Pendiente para producción** | Envío automático de recordatorios (WhatsApp Business API), alta de varias clínicas, respaldos automáticos programados, facturación fiscal (CAI/SAR), adjuntos en almacenamiento de objetos (Vercel Blob o S3) para archivos de más de 3 MB |
 | **4. Pacientes** | Portal del paciente con historial, receta digital con código QR verificable, plantillas de nota por especialidad, órdenes de laboratorio |
 | **5. Escala** | Multisede, farmacia, integraciones (HL7 FHIR), app móvil para médicos |
 

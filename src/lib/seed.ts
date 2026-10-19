@@ -1,5 +1,5 @@
-import type { Appointment, ClinicSettings, Consultation, Patient, Payment, Prescription, Schedule, Service, Staff, Vitals } from './types'
-import { ICD10 } from './catalogs'
+import type { Appointment, ClinicSettings, Consultation, Patient, Payment, Prescription, Schedule, Service, Staff, Vitals } from './types.js'
+import { ICD10 } from './catalogs.js'
 
 export const CLINIC = {
   name: 'Clínica Santa Brígida',

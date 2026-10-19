@@ -26,3 +26,7 @@ dist-ssr
 # Base de datos local
 data/
 .env
+
+# Simulación local del runtime de Vercel
+.sim/
+.vercel

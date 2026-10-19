@@ -7,20 +7,21 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { createPatient, type DB, DEMO_PASSWORD, resetDemo, tx } from './db'
-import { type Ctx, fail, HttpError, localDate, parse, type Row } from './http'
-import { toAppointment, toAudit, toConsultation, toPatient, toPrescription, toService, toStaff, toVitals } from './mappers'
-import { newSecret, otpauthUrl, verifyTotp } from './totp'
-import { registerSettings } from './routes/settings'
-import { registerPublic } from './routes/public'
-import { registerBilling } from './routes/billing'
-import { registerReports } from './routes/reports'
-import { registerFiles } from './routes/files'
-import { can, ROLE_PERMISSIONS, type Permission } from '../src/lib/permissions'
-import type { ApptStatus, Staff } from '../src/lib/types'
+import { attempts, createPatient, DEMO_PASSWORD, ensureDb, hit, resetDemo } from './db.js'
+import type { Sql } from './sql.js'
+import { type Ctx, fail, HttpError, localDate, parse, type Row } from './http.js'
+import { toAppointment, toAudit, toConsultation, toPatient, toPrescription, toService, toStaff, toVitals } from './mappers.js'
+import { newSecret, otpauthUrl, verifyTotp } from './totp.js'
+import { registerSettings } from './routes/settings.js'
+import { registerPublic } from './routes/public.js'
+import { registerBilling } from './routes/billing.js'
+import { registerReports } from './routes/reports.js'
+import { registerFiles } from './routes/files.js'
+import { can, ROLE_PERMISSIONS, type Permission } from '../src/lib/permissions.js'
+import type { ApptStatus, Staff } from '../src/lib/types.js'
 
 export interface AppOptions {
-  db: DB
+  sql: Sql
   jwtSecret?: string
   demoMode?: boolean
   secureCookies?: boolean
@@ -36,9 +37,9 @@ const COLORS = ['#2335C9', '#0F8A6E', '#B4407A', '#C27A12', '#6A4BC4', '#2C7DA0'
 const ROLES = ['admin', 'doctor', 'nurse', 'reception'] as const
 
 export function createApp(opts: AppOptions) {
-  const { db } = opts
+  const { sql } = opts
   const demoMode = opts.demoMode ?? true
-  const secret = opts.jwtSecret ?? persistentSecret(db)
+  let secret = opts.jwtSecret
   const app = express()
 
   app.disable('x-powered-by')
@@ -53,41 +54,45 @@ export function createApp(opts: AppOptions) {
     res.setHeader('Referrer-Policy', 'same-origin')
     next()
   })
+  // La primera petición de cada instancia crea o actualiza el esquema si hace falta
+  app.use('/api', async (_req, _res, next) => {
+    await ensureDb(sql)
+    secret ??= await persistentSecret(sql)
+    next()
+  })
 
-  const audit = (userId: string, action: string) => {
-    db.prepare('INSERT INTO audit (at, user_id, action) VALUES (?, ?, ?)').run(new Date().toISOString(), userId, action)
+  const audit = async (userId: string, action: string, q: Sql = sql) => {
+    await q.run('INSERT INTO audit (at, user_id, action) VALUES (?, ?, ?)', [new Date().toISOString(), userId, action])
   }
-  const staffRow = (id: string) => db.prepare('SELECT * FROM staff WHERE id = ?').get(id) as Row | undefined
-  const patientRow = (id: string) => db.prepare('SELECT * FROM patients WHERE id = ?').get(id) as Row | undefined
-  const apptRow = (id: string) => db.prepare('SELECT * FROM appointments WHERE id = ?').get(id) as Row | undefined
-  const patientName = (id: string) => { const p = patientRow(id); return p ? `${p.first_name} ${p.last_name}` : id }
-  const settings = () => Object.fromEntries((db.prepare('SELECT key, value FROM settings').all() as Row[])
+  const staffRow = (id: string) => sql.one('SELECT * FROM staff WHERE id = ?', [id])
+  const patientRow = (id: string) => sql.one('SELECT * FROM patients WHERE id = ?', [id])
+  const apptRow = (id: string) => sql.one('SELECT * FROM appointments WHERE id = ?', [id])
+  const patientName = async (id: string) => { const p = await patientRow(id); return p ? `${p.first_name} ${p.last_name}` : id }
+  const settings = async () => Object.fromEntries((await sql.query('SELECT key, value FROM settings'))
     .map((r) => [String(r.key), JSON.parse(String(r.value))]))
 
   // ---------- Autenticación ----------
-  const failures = new Map<string, { n: number; until: number }>()
-
   function issue(res: Response, row: Row) {
-    const token = jwt.sign({ sub: row.id, v: row.token_version }, secret, { expiresIn: `${SESSION_HOURS}h` })
+    const token = jwt.sign({ sub: row.id, v: Number(row.token_version) }, secret!, { expiresIn: `${SESSION_HOURS}h` })
     res.cookie(COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: !!opts.secureCookies, maxAge: SESSION_HOURS * 3600_000, path: '/' })
   }
 
-  function authenticate(req: Request): Staff | null {
+  async function authenticate(req: Request): Promise<Staff | null> {
     const token = req.cookies?.[COOKIE]
     if (!token) return null
-    try {
-      const payload = jwt.verify(token, secret) as { sub: string; v: number }
-      const row = staffRow(payload.sub)
-      if (!row || !row.active || Number(row.token_version) !== payload.v) return null
-      return toStaff(row)
-    } catch { return null }
+    let payload: { sub: string; v: number }
+    try { payload = jwt.verify(token, secret!) as { sub: string; v: number } } catch { return null }
+    const row = await staffRow(payload.sub)
+    if (!row || !row.active || Number(row.token_version) !== payload.v) return null
+    return toStaff(row)
   }
 
   const auth = (req: Request, _res: Response, next: NextFunction) => {
-    const user = authenticate(req)
-    if (!user) return next(new HttpError(401, 'Tu sesión terminó. Vuelve a iniciar sesión.'))
-    ;(req as AuthedRequest).user = user
-    next()
+    authenticate(req).then((user) => {
+      if (!user) return next(new HttpError(401, 'Tu sesión terminó. Vuelve a iniciar sesión.'))
+      ;(req as AuthedRequest).user = user
+      next()
+    }, next)
   }
   const need = (...perms: Permission[]) => (req: Request, _res: Response, next: NextFunction) => {
     const { user } = req as AuthedRequest
@@ -96,71 +101,69 @@ export function createApp(opts: AppOptions) {
   }
   const userOf = (req: Request) => (req as AuthedRequest).user
 
-  function assertFree(doctorId: string, start: string, minutes: number, ignoreId?: string) {
+  async function assertFree(doctorId: string, start: string, minutes: number, ignoreId?: string) {
     const s = new Date(start).getTime()
     const e = s + minutes * 60_000
-    const same = db.prepare(`SELECT * FROM appointments WHERE doctor_id = ? AND start LIKE ? AND status NOT IN ('cancelled','no_show') AND id != ?`)
-      .all(doctorId, `${start.slice(0, 10)}%`, ignoreId ?? '') as Row[]
+    const same = await sql.query(`SELECT start, minutes FROM appointments WHERE doctor_id = ? AND start LIKE ? AND status NOT IN ('cancelled','no_show') AND id != ?`,
+      [doctorId, `${start.slice(0, 10)}%`, ignoreId ?? ''])
     const clash = same.find((a) => {
       const as = new Date(String(a.start)).getTime()
       return as < e && s < as + Number(a.minutes) * 60_000
     })
-    if (clash) fail(409, `${staffRow(doctorId)?.name} ya tiene una cita a las ${String(clash.start).slice(11, 16)}. Elige otra hora.`)
+    if (clash) fail(409, `${(await staffRow(doctorId))?.name} ya tiene una cita a las ${String(clash.start).slice(11, 16)}. Elige otra hora.`)
   }
 
-  const ctx: Ctx = { db, demoMode, auth, need, userOf, audit, patientName, staffRow, patientRow, apptRow, assertFree, settings }
+  const ctx: Ctx = { sql, demoMode, auth, need, userOf, audit, patientName, staffRow, patientRow, apptRow, assertFree, settings }
 
   const session = (row: Row) => {
     const user = toStaff(row)
     return { user, permissions: ROLE_PERMISSIONS[user.role], demo: demoMode }
   }
 
-  app.post('/api/auth/login', (req, res) => {
+  app.post('/api/auth/login', async (req, res) => {
     const body = parse(z.object({ email: z.string().trim().min(1), password: z.string().min(1), code: z.string().optional() }), req.body,
       'Escribe tu correo y tu contraseña.')
-    const key = body.email.toLowerCase()
-    const f = failures.get(key)
-    if (f && f.until > Date.now()) fail(429, 'Demasiados intentos. Espera 5 minutos e inténtalo de nuevo.')
-    const bump = () => {
-      const n = (f?.n ?? 0) + 1
-      failures.set(key, { n, until: n >= 5 ? Date.now() + 5 * 60_000 : 0 })
-    }
-    const row = db.prepare('SELECT * FROM staff WHERE email = ?').get(body.email) as Row | undefined
+    const key = `login:${body.email.toLowerCase()}`
+    if (await attempts(sql, key) >= 5) fail(429, 'Demasiados intentos. Espera 5 minutos e inténtalo de nuevo.')
+    const row = await sql.one('SELECT * FROM staff WHERE lower(email) = lower(?)', [body.email])
     if (!row || !bcrypt.compareSync(body.password, String(row.password_hash))) {
-      bump()
+      await hit(sql, key, 5 * 60_000)
       fail(401, 'El correo o la contraseña no coinciden.')
     }
     if (!row!.active) fail(403, 'Esta cuenta está desactivada. Pide a administración que la reactive.')
     if (row!.totp_enabled) {
       if (!body.code) return res.json({ twoFactor: true })
-      if (!verifyTotp(String(row!.totp_secret), body.code)) { bump(); fail(401, 'El código no es válido o ya expiró. Usa el que muestra tu app ahora.') }
+      if (!verifyTotp(String(row!.totp_secret), body.code)) {
+        await hit(sql, key, 5 * 60_000)
+        fail(401, 'El código no es válido o ya expiró. Usa el que muestra tu app ahora.')
+      }
     }
-    failures.delete(key)
+    await sql.run('DELETE FROM rate_limits WHERE key = ?', [key])
     issue(res, row!)
-    audit(String(row!.id), 'Inició sesión')
+    await audit(String(row!.id), 'Inició sesión')
     res.json(session(row!))
   })
 
-  app.post('/api/auth/logout', (req, res) => {
-    const user = authenticate(req)
-    if (user) audit(user.id, 'Cerró sesión')
+  app.post('/api/auth/logout', async (req, res) => {
+    const user = await authenticate(req)
+    if (user) await audit(user.id, 'Cerró sesión')
     res.clearCookie(COOKIE, { path: '/' })
     res.json({ ok: true })
   })
 
-  app.get('/api/auth/me', (req, res) => {
-    const user = authenticate(req)
-    res.json(user ? session(staffRow(user.id)!) : { user: null, demo: demoMode })
+  app.get('/api/auth/me', async (req, res) => {
+    const user = await authenticate(req)
+    res.json(user ? session((await staffRow(user.id))!) : { user: null, demo: demoMode })
   })
 
-  app.post('/api/auth/password', auth, (req, res) => {
+  app.post('/api/auth/password', auth, async (req, res) => {
     const body = parse(z.object({ current: z.string(), next: z.string().min(8, 'La nueva contraseña debe tener al menos 8 caracteres.') }), req.body)
     const user = userOf(req)
-    const row = staffRow(user.id)!
+    const row = (await staffRow(user.id))!
     if (!bcrypt.compareSync(body.current, String(row.password_hash))) fail(400, 'La contraseña actual no es correcta.')
-    db.prepare('UPDATE staff SET password_hash = ?, token_version = token_version + 1 WHERE id = ?').run(bcrypt.hashSync(body.next, 10), user.id)
-    issue(res, staffRow(user.id)!)
-    audit(user.id, 'Cambió su contraseña')
+    await sql.run('UPDATE staff SET password_hash = ?, token_version = token_version + 1 WHERE id = ?', [bcrypt.hashSync(body.next, 10), user.id])
+    issue(res, (await staffRow(user.id))!)
+    await audit(user.id, 'Cambió su contraseña')
     res.json({ ok: true })
   })
 
@@ -168,58 +171,65 @@ export function createApp(opts: AppOptions) {
   app.post('/api/auth/2fa/setup', auth, async (req, res) => {
     const user = userOf(req)
     const s = newSecret()
-    db.prepare('UPDATE staff SET totp_secret = ? WHERE id = ? AND totp_enabled = 0').run(s, user.id)
-    const url = otpauthUrl(s, user.email, String(settings().name ?? 'Clinara'))
+    await sql.run('UPDATE staff SET totp_secret = ? WHERE id = ? AND NOT totp_enabled', [s, user.id])
+    const url = otpauthUrl(s, user.email, String((await settings()).name ?? 'Clinara'))
     res.json({ secret: s, qr: await QRCode.toString(url, { type: 'svg', margin: 1, color: { dark: '#0e2233', light: '#ffffff' } }) })
   })
 
-  app.post('/api/auth/2fa/enable', auth, (req, res) => {
+  app.post('/api/auth/2fa/enable', auth, async (req, res) => {
     const { code } = parse(z.object({ code: z.string() }), req.body, 'Escribe el código de 6 dígitos.')
     const user = userOf(req)
-    const row = staffRow(user.id)!
+    const row = (await staffRow(user.id))!
     if (!row.totp_secret) fail(400, 'Primero genera el código QR.')
     if (!verifyTotp(String(row.totp_secret), code)) fail(400, 'El código no coincide. Revisa que la hora de tu teléfono sea correcta e inténtalo con el código actual.')
-    db.prepare('UPDATE staff SET totp_enabled = 1 WHERE id = ?').run(user.id)
-    audit(user.id, 'Activó la verificación en dos pasos')
+    await sql.run('UPDATE staff SET totp_enabled = TRUE WHERE id = ?', [user.id])
+    await audit(user.id, 'Activó la verificación en dos pasos')
     res.json({ ok: true })
   })
 
-  app.post('/api/auth/2fa/disable', auth, (req, res) => {
+  app.post('/api/auth/2fa/disable', auth, async (req, res) => {
     const { password } = parse(z.object({ password: z.string().min(1) }), req.body, 'Escribe tu contraseña.')
     const user = userOf(req)
-    if (!bcrypt.compareSync(password, String(staffRow(user.id)!.password_hash))) fail(400, 'La contraseña no es correcta.')
-    db.prepare('UPDATE staff SET totp_enabled = 0, totp_secret = NULL WHERE id = ?').run(user.id)
-    audit(user.id, 'Desactivó la verificación en dos pasos')
+    if (!bcrypt.compareSync(password, String((await staffRow(user.id))!.password_hash))) fail(400, 'La contraseña no es correcta.')
+    await sql.run('UPDATE staff SET totp_enabled = FALSE, totp_secret = NULL WHERE id = ?', [user.id])
+    await audit(user.id, 'Desactivó la verificación en dos pasos')
     res.json({ ok: true })
   })
 
-  app.get('/api/demo-accounts', (_req, res) => {
+  app.get('/api/demo-accounts', async (_req, res) => {
     if (!demoMode) return res.json({ accounts: [], password: null })
-    const rows = db.prepare(`SELECT * FROM staff WHERE active = 1 AND email LIKE '%@demo.clinara' ORDER BY CASE role WHEN 'doctor' THEN 0 WHEN 'nurse' THEN 1 WHEN 'reception' THEN 2 ELSE 3 END, name`).all() as Row[]
+    const rows = await sql.query(`SELECT * FROM staff WHERE active AND email LIKE '%@demo.clinara' ORDER BY CASE role WHEN 'doctor' THEN 0 WHEN 'nurse' THEN 1 WHEN 'reception' THEN 2 ELSE 3 END, name`)
     res.json({ accounts: rows.map(toStaff), password: DEMO_PASSWORD })
   })
 
   // ---------- Datos iniciales según el rol ----------
-  app.get('/api/bootstrap', auth, (req, res) => {
+  app.get('/api/bootstrap', auth, async (req, res) => {
     const user = userOf(req)
     const clinical = can(user.role, 'chart.view')
     const billing = can(user.role, 'billing.manage')
-    const staff = (db.prepare('SELECT * FROM staff ORDER BY name').all() as Row[]).map(toStaff)
-    const patients = (db.prepare('SELECT * FROM patients ORDER BY last_name').all() as Row[]).map((r) => toPatient(r, clinical))
-    // Ventana de agenda: 90 días atrás y todo lo futuro
     const since = new Date(); since.setDate(since.getDate() - 90)
-    const appointments = (db.prepare(`SELECT a.*, EXISTS(SELECT 1 FROM payments p WHERE p.appointment_id = a.id AND p.voided = 0) AS paid
-      FROM appointments a WHERE a.start >= ? ORDER BY a.start`).all(localDate(since)) as Row[])
-      .map((r) => ({ ...toAppointment(r), paid: billing ? Boolean(r.paid) : undefined }))
-    const prescriptions = can(user.role, 'rx.view')
-      ? (db.prepare('SELECT * FROM prescriptions ORDER BY issued_at DESC LIMIT 500').all() as Row[]).map(toPrescription) : []
-    const auditLog = can(user.role, 'audit.view')
-      ? (db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 500').all() as Row[]).map(toAudit) : []
-    const todaysVitals = clinical
-      ? (db.prepare(`SELECT v.* FROM vitals v JOIN appointments a ON a.id = v.appointment_id WHERE a.start LIKE ?`).all(`${localDate(new Date())}%`) as Row[]).map(toVitals)
-      : []
-    const services = (db.prepare('SELECT * FROM services ORDER BY name').all() as Row[]).map(toService)
-    res.json({ staff, patients, appointments, prescriptions, audit: auditLog, vitals: todaysVitals, services, settings: settings() })
+    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg] = await Promise.all([
+      sql.query('SELECT * FROM staff ORDER BY name'),
+      sql.query('SELECT * FROM patients ORDER BY last_name'),
+      // Ventana de agenda: 90 días atrás y todo lo futuro
+      sql.query(`SELECT a.*, EXISTS(SELECT 1 FROM payments p WHERE p.appointment_id = a.id AND NOT p.voided) AS paid
+        FROM appointments a WHERE a.start >= ? ORDER BY a.start`, [localDate(since)]),
+      can(user.role, 'rx.view') ? sql.query('SELECT * FROM prescriptions ORDER BY issued_at DESC LIMIT 500') : Promise.resolve([]),
+      can(user.role, 'audit.view') ? sql.query('SELECT * FROM audit ORDER BY id DESC LIMIT 500') : Promise.resolve([]),
+      clinical ? sql.query(`SELECT v.* FROM vitals v JOIN appointments a ON a.id = v.appointment_id WHERE a.start LIKE ?`, [`${localDate(new Date())}%`]) : Promise.resolve([]),
+      sql.query('SELECT * FROM services ORDER BY name'),
+      settings(),
+    ])
+    res.json({
+      staff: staff.map(toStaff),
+      patients: patients.map((r) => toPatient(r, clinical)),
+      appointments: appts.map((r) => ({ ...toAppointment(r), paid: billing ? Boolean(r.paid) : undefined })),
+      prescriptions: prescriptions.map(toPrescription),
+      audit: auditLog.map(toAudit),
+      vitals: vitals.map(toVitals),
+      services: services.map(toService),
+      settings: cfg,
+    })
   })
 
   // ---------- Pacientes ----------
@@ -236,17 +246,17 @@ export function createApp(opts: AppOptions) {
     conditions: z.array(z.string().trim().min(1)).default([]),
   })
 
-  app.post('/api/patients', auth, need('patients.manage'), (req, res) => {
+  app.post('/api/patients', auth, need('patients.manage'), async (req, res) => {
     const p = parse(patientBody, req.body)
-    const id = createPatient(db, p)
-    const record = String(patientRow(id)!.record)
-    audit(userOf(req).id, `Registró al paciente ${p.firstName} ${p.lastName} (${record})`)
+    const id = await createPatient(sql, p)
+    const record = String((await patientRow(id))!.record)
+    await audit(userOf(req).id, `Registró al paciente ${p.firstName} ${p.lastName} (${record})`)
     res.status(201).json({ id, record })
   })
 
-  app.patch('/api/patients/:id', auth, need('patients.manage', 'chart.view'), (req, res) => {
+  app.patch('/api/patients/:id', auth, need('patients.manage', 'chart.view'), async (req, res) => {
     const user = userOf(req)
-    const row = patientRow(String(req.params.id)) ?? fail(404, 'El paciente no existe.')
+    const row = (await patientRow(String(req.params.id))) ?? fail(404, 'El paciente no existe.')
     const body = parse(patientBody.partial(), req.body)
     const demographic = ['firstName', 'lastName', 'birthDate', 'sex', 'phone', 'email', 'insurance'] as const
     const clinicalKeys = ['allergies', 'conditions', 'bloodType'] as const
@@ -261,19 +271,21 @@ export function createApp(opts: AppOptions) {
       sets.push(`${col} = ?`)
       vals.push(Array.isArray(v) ? JSON.stringify(v) : v == null || v === '' ? null : String(v))
     }
-    if (sets.length) db.prepare(`UPDATE patients SET ${sets.join(', ')} WHERE id = ?`).run(...vals, String(row!.id))
-    audit(user.id, `Actualizó la ficha de ${row!.first_name} ${row!.last_name}`)
-    res.json(toPatient(patientRow(String(row!.id))!, can(user.role, 'chart.view')))
+    if (sets.length) await sql.run(`UPDATE patients SET ${sets.join(', ')} WHERE id = ?`, [...vals, String(row!.id)])
+    await audit(user.id, `Actualizó la ficha de ${row!.first_name} ${row!.last_name}`)
+    res.json(toPatient((await patientRow(String(row!.id)))!, can(user.role, 'chart.view')))
   })
 
-  app.get('/api/patients/:id/chart', auth, need('chart.view'), (req, res) => {
+  app.get('/api/patients/:id/chart', auth, need('chart.view'), async (req, res) => {
     const id = String(req.params.id)
-    patientRow(id) ?? fail(404, 'El paciente no existe.')
-    const vitals = (db.prepare('SELECT * FROM vitals WHERE patient_id = ? ORDER BY taken_at DESC').all(id) as Row[]).map(toVitals)
-    const consultations = (db.prepare('SELECT * FROM consultations WHERE patient_id = ? ORDER BY date DESC').all(id) as Row[]).map(toConsultation)
-    const prescriptions = (db.prepare('SELECT * FROM prescriptions WHERE patient_id = ? ORDER BY issued_at DESC').all(id) as Row[]).map(toPrescription)
-    audit(userOf(req).id, `Consultó el expediente de ${patientName(id)}`)
-    res.json({ vitals, consultations, prescriptions })
+    ;(await patientRow(id)) ?? fail(404, 'El paciente no existe.')
+    const [vitals, consultations, prescriptions] = await Promise.all([
+      sql.query('SELECT * FROM vitals WHERE patient_id = ? ORDER BY taken_at DESC', [id]),
+      sql.query('SELECT * FROM consultations WHERE patient_id = ? ORDER BY date DESC', [id]),
+      sql.query('SELECT * FROM prescriptions WHERE patient_id = ? ORDER BY issued_at DESC', [id]),
+    ])
+    await audit(userOf(req).id, `Consultó el expediente de ${await patientName(id)}`)
+    res.json({ vitals: vitals.map(toVitals), consultations: consultations.map(toConsultation), prescriptions: prescriptions.map(toPrescription) })
   })
 
   // ---------- Citas ----------
@@ -286,22 +298,22 @@ export function createApp(opts: AppOptions) {
     type: z.enum(['first', 'followup', 'urgent']),
   })
 
-  app.post('/api/appointments', auth, need('agenda.manage'), (req, res) => {
+  app.post('/api/appointments', auth, need('agenda.manage'), async (req, res) => {
     const a = parse(apptBody, req.body)
     const start = a.start.length === 16 ? `${a.start}:00` : a.start
-    patientRow(a.patientId) ?? fail(400, 'El paciente no existe.')
-    const doc = staffRow(a.doctorId)
+    ;(await patientRow(a.patientId)) ?? fail(400, 'El paciente no existe.')
+    const doc = await staffRow(a.doctorId)
     if (!doc || doc.role !== 'doctor' || !doc.active) fail(400, 'El médico elegido no está disponible.')
-    assertFree(a.doctorId, start, a.minutes)
+    await assertFree(a.doctorId, start, a.minutes)
     const id = randomUUID()
-    db.prepare(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,source) VALUES (?,?,?,?,?,?,?, 'scheduled', 'staff')`)
-      .run(id, a.patientId, a.doctorId, start, a.minutes, a.reason, a.type)
-    audit(userOf(req).id, `Agendó cita de ${patientName(a.patientId)} con ${doc!.name} el ${start.slice(0, 10)} a las ${start.slice(11, 16)}`)
-    res.status(201).json(toAppointment(apptRow(id)!))
+    await sql.run(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,source) VALUES (?,?,?,?,?,?,?, 'scheduled', 'staff')`,
+      [id, a.patientId, a.doctorId, start, a.minutes, a.reason, a.type])
+    await audit(userOf(req).id, `Agendó cita de ${await patientName(a.patientId)} con ${doc!.name} el ${start.slice(0, 10)} a las ${start.slice(11, 16)}`)
+    res.status(201).json(toAppointment((await apptRow(id))!))
   })
 
-  app.patch('/api/appointments/:id', auth, need('agenda.manage'), (req, res) => {
-    const row = apptRow(String(req.params.id)) ?? fail(404, 'La cita no existe.')
+  app.patch('/api/appointments/:id', auth, need('agenda.manage'), async (req, res) => {
+    const row = (await apptRow(String(req.params.id))) ?? fail(404, 'La cita no existe.')
     if (!['scheduled', 'confirmed'].includes(String(row!.status))) fail(409, 'Sólo se pueden reprogramar citas que aún no empiezan.')
     const b = parse(apptBody.pick({ doctorId: true, start: true, minutes: true, reason: true }).partial(), req.body)
     const next = {
@@ -310,11 +322,11 @@ export function createApp(opts: AppOptions) {
       minutes: b.minutes ?? Number(row!.minutes),
       reason: b.reason ?? String(row!.reason),
     }
-    assertFree(next.doctorId, next.start, next.minutes, String(row!.id))
-    db.prepare('UPDATE appointments SET doctor_id = ?, start = ?, minutes = ?, reason = ?, status = ?, reminded_at = NULL WHERE id = ?')
-      .run(next.doctorId, next.start, next.minutes, next.reason, 'scheduled', String(row!.id))
-    audit(userOf(req).id, `Reprogramó la cita de ${patientName(String(row!.patient_id))} al ${next.start.slice(0, 10)} ${next.start.slice(11, 16)}`)
-    res.json(toAppointment(apptRow(String(row!.id))!))
+    await assertFree(next.doctorId, next.start, next.minutes, String(row!.id))
+    await sql.run('UPDATE appointments SET doctor_id = ?, start = ?, minutes = ?, reason = ?, status = ?, reminded_at = NULL WHERE id = ?',
+      [next.doctorId, next.start, next.minutes, next.reason, 'scheduled', String(row!.id)])
+    await audit(userOf(req).id, `Reprogramó la cita de ${await patientName(String(row!.patient_id))} al ${next.start.slice(0, 10)} ${next.start.slice(11, 16)}`)
+    res.json(toAppointment((await apptRow(String(row!.id)))!))
   })
 
   /** Transiciones permitidas: estado destino → estados de origen y permiso necesario. */
@@ -326,30 +338,30 @@ export function createApp(opts: AppOptions) {
     in_consult: { from: ['scheduled', 'confirmed', 'arrived', 'triaged'], perm: 'consult.write', label: 'Inició la consulta de' },
   }
 
-  app.post('/api/appointments/:id/status', auth, (req, res) => {
+  app.post('/api/appointments/:id/status', auth, async (req, res) => {
     const user = userOf(req)
     const { status } = parse(z.object({ status: z.enum(['confirmed', 'cancelled', 'arrived', 'no_show', 'in_consult']) }), req.body)
-    const row = apptRow(String(req.params.id)) ?? fail(404, 'La cita no existe.')
+    const row = (await apptRow(String(req.params.id))) ?? fail(404, 'La cita no existe.')
     const t = TRANSITIONS[status]!
     if (!can(user.role, t.perm)) fail(403, 'Tu rol no tiene permiso para esta acción.')
     if (row!.status === status) return res.json(toAppointment(row!))
     if (!t.from.includes(row!.status as ApptStatus)) fail(409, 'La cita ya avanzó a otra etapa. Actualiza la página.')
     if (status === 'in_consult' && row!.doctor_id !== user.id) fail(403, 'Sólo el médico asignado puede atender esta cita.')
-    db.prepare('UPDATE appointments SET status = ?, arrived_at = COALESCE(?, arrived_at) WHERE id = ?')
-      .run(status, status === 'arrived' ? new Date().toISOString() : null, String(row!.id))
-    audit(user.id, `${t.label} la cita de ${patientName(String(row!.patient_id))}`)
-    res.json(toAppointment(apptRow(String(row!.id))!))
+    await sql.run('UPDATE appointments SET status = ?, arrived_at = COALESCE(?, arrived_at) WHERE id = ?',
+      [status, status === 'arrived' ? new Date().toISOString() : null, String(row!.id)])
+    await audit(user.id, `${t.label} la cita de ${await patientName(String(row!.patient_id))}`)
+    res.json(toAppointment((await apptRow(String(row!.id)))!))
   })
 
-  app.post('/api/appointments/:id/reminded', auth, need('agenda.manage', 'checkin.manage'), (req, res) => {
-    const row = apptRow(String(req.params.id)) ?? fail(404, 'La cita no existe.')
-    db.prepare('UPDATE appointments SET reminded_at = ? WHERE id = ?').run(new Date().toISOString(), String(row!.id))
-    audit(userOf(req).id, `Envió recordatorio por WhatsApp a ${patientName(String(row!.patient_id))}`)
-    res.json(toAppointment(apptRow(String(row!.id))!))
+  app.post('/api/appointments/:id/reminded', auth, need('agenda.manage', 'checkin.manage'), async (req, res) => {
+    const row = (await apptRow(String(req.params.id))) ?? fail(404, 'La cita no existe.')
+    await sql.run('UPDATE appointments SET reminded_at = ? WHERE id = ?', [new Date().toISOString(), String(row!.id)])
+    await audit(userOf(req).id, `Envió recordatorio por WhatsApp a ${await patientName(String(row!.patient_id))}`)
+    res.json(toAppointment((await apptRow(String(row!.id)))!))
   })
 
   // ---------- Triaje ----------
-  app.post('/api/vitals', auth, need('vitals.record'), (req, res) => {
+  app.post('/api/vitals', auth, need('vitals.record'), async (req, res) => {
     const user = userOf(req)
     const n = (min: number, max: number, label: string) => z.number({ error: `Escribe ${label}.` }).min(min, `Revisa ${label}.`).max(max, `Revisa ${label}.`)
     const v = parse(z.object({
@@ -359,24 +371,25 @@ export function createApp(opts: AppOptions) {
       weightKg: z.number().min(0).max(400).default(0), heightCm: z.number().min(0).max(250).default(0),
       painScale: z.number().int().min(0).max(10).optional(), notes: z.string().max(2000).optional(),
     }), req.body)
-    patientRow(v.patientId) ?? fail(404, 'El paciente no existe.')
+    ;(await patientRow(v.patientId)) ?? fail(404, 'El paciente no existe.')
     if (v.appointmentId) {
-      const a = apptRow(v.appointmentId)
+      const a = await apptRow(v.appointmentId)
       if (!a || a.patient_id !== v.patientId) fail(400, 'La cita no corresponde a este paciente.')
     }
     const id = randomUUID()
-    tx(db, () => {
-      db.prepare(`INSERT INTO vitals (id,patient_id,appointment_id,taken_by,taken_at,systolic,diastolic,heart_rate,temperature,spo2,weight_kg,height_cm,pain_scale,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(id, v.patientId, v.appointmentId ?? null, user.id, new Date().toISOString(), v.systolic, v.diastolic, v.heartRate, v.temperature, v.spo2,
-          v.weightKg, v.heightCm, v.painScale ?? null, v.notes || null)
-      if (v.appointmentId) db.prepare(`UPDATE appointments SET status = 'triaged' WHERE id = ? AND status = 'arrived'`).run(v.appointmentId)
-      audit(user.id, `Registró signos vitales de ${patientName(v.patientId)}`)
+    const name = await patientName(v.patientId)
+    await sql.tx(async (q) => {
+      await q.run(`INSERT INTO vitals (id,patient_id,appointment_id,taken_by,taken_at,systolic,diastolic,heart_rate,temperature,spo2,weight_kg,height_cm,pain_scale,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [id, v.patientId, v.appointmentId ?? null, user.id, new Date().toISOString(), v.systolic, v.diastolic, v.heartRate, v.temperature, v.spo2,
+          v.weightKg, v.heightCm, v.painScale ?? null, v.notes || null])
+      if (v.appointmentId) await q.run(`UPDATE appointments SET status = 'triaged' WHERE id = ? AND status = 'arrived'`, [v.appointmentId])
+      await audit(user.id, `Registró signos vitales de ${name}`, q)
     })
-    res.status(201).json(toVitals(db.prepare('SELECT * FROM vitals WHERE id = ?').get(id) as Row))
+    res.status(201).json(toVitals((await sql.one('SELECT * FROM vitals WHERE id = ?', [id]))!))
   })
 
   // ---------- Consulta y receta ----------
-  app.post('/api/consultations', auth, need('consult.write'), (req, res) => {
+  app.post('/api/consultations', auth, need('consult.write'), async (req, res) => {
     const user = userOf(req)
     const c = parse(z.object({
       appointmentId: z.string(),
@@ -393,52 +406,57 @@ export function createApp(opts: AppOptions) {
         frequency: z.string().min(1), duration: z.string().trim().min(1, 'Escribe la duración.'), instructions: z.string().optional(),
       })).default([]),
     }), req.body)
-    const appt = apptRow(c.appointmentId) ?? fail(404, 'La cita no existe.')
+    const appt = (await apptRow(c.appointmentId)) ?? fail(404, 'La cita no existe.')
     if (appt!.doctor_id !== user.id) fail(403, 'Sólo el médico asignado puede firmar esta consulta.')
     if (['done', 'cancelled', 'no_show'].includes(String(appt!.status))) fail(409, 'Esta cita ya está cerrada.')
     const patientId = String(appt!.patient_id)
+    const name = await patientName(patientId)
     const cid = randomUUID()
     const rxId = c.items.length ? randomUUID() : null
     const now = new Date()
     let folio: string | null = null
-    tx(db, () => {
+    await sql.tx(async (q) => {
+      // Evita que dos médicos tomen el mismo folio al mismo tiempo
+      await q.run('SELECT pg_advisory_xact_lock(7272742)')
+      const closed = await q.one(`SELECT 1 FROM appointments WHERE id = ? AND status = 'done'`, [c.appointmentId])
+      if (closed) fail(409, 'Esta cita ya está cerrada.')
       if (rxId) {
         const year = now.getFullYear()
-        const last = db.prepare(`SELECT folio FROM prescriptions WHERE folio LIKE ? ORDER BY folio DESC LIMIT 1`).get(`RX-${year}-%`) as Row | undefined
+        const last = await q.one(`SELECT folio FROM prescriptions WHERE folio LIKE ? ORDER BY folio DESC LIMIT 1`, [`RX-${year}-%`])
         const seq = last ? Number(String(last.folio).split('-')[2]) + 1 : 1001
         folio = `RX-${year}-${String(seq).padStart(4, '0')}`
-        db.prepare(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items) VALUES (?,?,?,?,?,?,?)`)
-          .run(rxId, folio, patientId, user.id, cid, now.toISOString(), JSON.stringify(c.items))
+        await q.run(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items) VALUES (?,?,?,?,?,?,?)`,
+          [rxId, folio, patientId, user.id, cid, now.toISOString(), JSON.stringify(c.items)])
       }
-      db.prepare(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(cid, patientId, user.id, c.appointmentId, now.toISOString(), c.reason, JSON.stringify(c.symptoms), c.symptomOnset ?? null,
-          c.history, c.exam, JSON.stringify(c.diagnoses), c.plan, c.vitalsId ?? null, rxId)
-      db.prepare(`UPDATE appointments SET status = 'done' WHERE id = ?`).run(c.appointmentId)
-      audit(user.id, rxId ? `Firmó consulta y receta ${folio} de ${patientName(patientId)}` : `Firmó consulta de ${patientName(patientId)}`)
+      await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [cid, patientId, user.id, c.appointmentId, now.toISOString(), c.reason, JSON.stringify(c.symptoms), c.symptomOnset ?? null,
+          c.history, c.exam, JSON.stringify(c.diagnoses), c.plan, c.vitalsId ?? null, rxId])
+      await q.run(`UPDATE appointments SET status = 'done' WHERE id = ?`, [c.appointmentId])
+      await audit(user.id, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
     })
     res.status(201).json({ consultationId: cid, prescriptionId: rxId, folio })
   })
 
-  app.get('/api/consultations/:id', auth, need('consult.write'), (req, res) => {
-    const row = db.prepare('SELECT * FROM consultations WHERE id = ?').get(String(req.params.id)) as Row | undefined ?? fail(404, 'La consulta no existe.')
+  app.get('/api/consultations/:id', auth, need('consult.write'), async (req, res) => {
+    const row = (await sql.one('SELECT * FROM consultations WHERE id = ?', [String(req.params.id)])) ?? fail(404, 'La consulta no existe.')
     const c = toConsultation(row!)
-    audit(userOf(req).id, `Emitió constancia médica de ${patientName(c.patientId)}`)
-    res.json({ consultation: c, patient: toPatient(patientRow(c.patientId)!, true) })
+    await audit(userOf(req).id, `Emitió constancia médica de ${await patientName(c.patientId)}`)
+    res.json({ consultation: c, patient: toPatient((await patientRow(c.patientId))!, true) })
   })
 
-  app.get('/api/prescriptions/:id', auth, need('rx.view'), (req, res) => {
-    const row = db.prepare('SELECT * FROM prescriptions WHERE id = ?').get(String(req.params.id)) as Row | undefined ?? fail(404, 'La receta no existe.')
+  app.get('/api/prescriptions/:id', auth, need('rx.view'), async (req, res) => {
+    const row = (await sql.one('SELECT * FROM prescriptions WHERE id = ?', [String(req.params.id)])) ?? fail(404, 'La receta no existe.')
     const rx = toPrescription(row!)
-    const cons = db.prepare('SELECT * FROM consultations WHERE id = ?').get(rx.consultationId) as Row | undefined
-    const patient = toPatient(patientRow(rx.patientId)!, true)
-    audit(userOf(req).id, `Abrió la receta ${rx.folio}`)
+    const cons = await sql.one('SELECT * FROM consultations WHERE id = ?', [rx.consultationId])
+    const patient = toPatient((await patientRow(rx.patientId))!, true)
+    await audit(userOf(req).id, `Abrió la receta ${rx.folio}`)
     res.json({ prescription: rx, consultation: cons ? toConsultation(cons) : null, patient })
   })
 
   // ---------- Personal ----------
   const tempPassword = () => randomBytes(6).toString('base64url')
 
-  app.post('/api/staff', auth, need('staff.manage'), (req, res) => {
+  app.post('/api/staff', auth, need('staff.manage'), async (req, res) => {
     const s = parse(z.object({
       name: z.string().trim().min(3, 'Escribe el nombre completo.'),
       role: z.enum(ROLES),
@@ -447,21 +465,21 @@ export function createApp(opts: AppOptions) {
       license: z.string().trim().optional(),
     }), req.body)
     if (s.role === 'doctor' && !s.license) fail(400, 'Para un médico escribe su número de colegiación.')
-    if (db.prepare('SELECT 1 FROM staff WHERE email = ?').get(s.email)) fail(409, 'Ya existe un usuario con ese correo.')
+    if (await sql.one('SELECT 1 FROM staff WHERE lower(email) = lower(?)', [s.email])) fail(409, 'Ya existe un usuario con ese correo.')
     const id = randomUUID()
     const password = tempPassword()
-    const count = Number((db.prepare('SELECT COUNT(*) AS n FROM staff').get() as Row).n)
+    const count = Number((await sql.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM staff'))!.n)
     const schedule = s.role === 'doctor' ? JSON.stringify({ days: [1, 2, 3, 4, 5], start: '08:00', end: '17:00', slot: 30 }) : null
-    db.prepare(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id) VALUES (?,?,?,?,?,?,?,1,?,?,?)`)
-      .run(id, s.name, s.role, s.specialty || null, s.email, s.license || null, COLORS[count % COLORS.length], bcrypt.hashSync(password, 10),
-        schedule, s.role === 'doctor' ? 'svc-gen' : null)
-    audit(userOf(req).id, `Creó el usuario ${s.name} (${s.role})`)
-    res.status(201).json({ user: toStaff(staffRow(id)!), password })
+    await sql.run(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id) VALUES (?,?,?,?,?,?,?,TRUE,?,?,?)`,
+      [id, s.name, s.role, s.specialty || null, s.email, s.license || null, COLORS[count % COLORS.length], bcrypt.hashSync(password, 10),
+        schedule, s.role === 'doctor' ? 'svc-gen' : null])
+    await audit(userOf(req).id, `Creó el usuario ${s.name} (${s.role})`)
+    res.status(201).json({ user: toStaff((await staffRow(id))!), password })
   })
 
-  app.patch('/api/staff/:id', auth, need('staff.manage'), (req, res) => {
+  app.patch('/api/staff/:id', auth, need('staff.manage'), async (req, res) => {
     const me = userOf(req)
-    const row = staffRow(String(req.params.id)) ?? fail(404, 'El usuario no existe.')
+    const row = (await staffRow(String(req.params.id))) ?? fail(404, 'El usuario no existe.')
     const b = parse(z.object({
       active: z.boolean().optional(),
       role: z.enum(ROLES).optional(),
@@ -478,32 +496,32 @@ export function createApp(opts: AppOptions) {
     const id = String(row!.id)
     if (id === me.id && (b.active === false || (b.role && b.role !== me.role))) fail(400, 'No puedes desactivar ni cambiar el rol de tu propia cuenta.')
     const changes: string[] = []
-    tx(db, () => {
-      if (b.active !== undefined) { db.prepare('UPDATE staff SET active = ?, token_version = token_version + 1 WHERE id = ?').run(b.active ? 1 : 0, id); changes.push(b.active ? 'Reactivó' : 'Desactivó') }
-      if (b.role) { db.prepare('UPDATE staff SET role = ?, token_version = token_version + 1 WHERE id = ?').run(b.role, id); changes.push('Cambió el rol de') }
-      if (b.twoFactor === false) { db.prepare('UPDATE staff SET totp_enabled = 0, totp_secret = NULL WHERE id = ?').run(id); changes.push('Quitó la verificación en dos pasos de') }
-      if (b.specialty !== undefined) db.prepare('UPDATE staff SET specialty = ? WHERE id = ?').run(b.specialty || null, id)
-      if (b.license !== undefined) db.prepare('UPDATE staff SET license = ? WHERE id = ?').run(b.license || null, id)
-      if (b.serviceId !== undefined) db.prepare('UPDATE staff SET service_id = ? WHERE id = ?').run(b.serviceId || null, id)
-      if (b.schedule) { db.prepare('UPDATE staff SET schedule = ? WHERE id = ?').run(JSON.stringify(b.schedule), id); changes.push('Actualizó el horario de') }
+    await sql.tx(async (q) => {
+      if (b.active !== undefined) { await q.run('UPDATE staff SET active = ?, token_version = token_version + 1 WHERE id = ?', [b.active, id]); changes.push(b.active ? 'Reactivó a' : 'Desactivó a') }
+      if (b.role) { await q.run('UPDATE staff SET role = ?, token_version = token_version + 1 WHERE id = ?', [b.role, id]); changes.push('Cambió el rol de') }
+      if (b.twoFactor === false) { await q.run('UPDATE staff SET totp_enabled = FALSE, totp_secret = NULL WHERE id = ?', [id]); changes.push('Quitó la verificación en dos pasos de') }
+      if (b.specialty !== undefined) await q.run('UPDATE staff SET specialty = ? WHERE id = ?', [b.specialty || null, id])
+      if (b.license !== undefined) await q.run('UPDATE staff SET license = ? WHERE id = ?', [b.license || null, id])
+      if (b.serviceId !== undefined) await q.run('UPDATE staff SET service_id = ? WHERE id = ?', [b.serviceId || null, id])
+      if (b.schedule) { await q.run('UPDATE staff SET schedule = ? WHERE id = ?', [JSON.stringify(b.schedule), id]); changes.push('Actualizó el horario de') }
     })
-    audit(me.id, `${changes[0] ?? 'Actualizó los datos de'} ${row!.name}`)
-    res.json(toStaff(staffRow(id)!))
+    await audit(me.id, `${changes[0] ?? 'Actualizó los datos de'} ${row!.name}`)
+    res.json(toStaff((await staffRow(id))!))
   })
 
-  app.post('/api/staff/:id/reset-password', auth, need('staff.manage'), (req, res) => {
-    const row = staffRow(String(req.params.id)) ?? fail(404, 'El usuario no existe.')
+  app.post('/api/staff/:id/reset-password', auth, need('staff.manage'), async (req, res) => {
+    const row = (await staffRow(String(req.params.id))) ?? fail(404, 'El usuario no existe.')
     const password = tempPassword()
-    db.prepare('UPDATE staff SET password_hash = ?, token_version = token_version + 1 WHERE id = ?').run(bcrypt.hashSync(password, 10), String(row!.id))
-    audit(userOf(req).id, `Restableció la contraseña de ${row!.name}`)
+    await sql.run('UPDATE staff SET password_hash = ?, token_version = token_version + 1 WHERE id = ?', [bcrypt.hashSync(password, 10), String(row!.id)])
+    await audit(userOf(req).id, `Restableció la contraseña de ${row!.name}`)
     res.json({ password })
   })
 
-  app.post('/api/admin/reset-demo', auth, need('staff.manage'), (req, res) => {
+  app.post('/api/admin/reset-demo', auth, need('staff.manage'), async (req, res) => {
     if (!demoMode) fail(403, 'Esta acción sólo está disponible en modo demo.')
     const me = userOf(req)
-    resetDemo(db)
-    audit(me.id, 'Restableció los datos de demo')
+    await resetDemo(sql)
+    await audit(me.id, 'Restableció los datos de demo')
     res.json({ ok: true })
   })
 
@@ -515,7 +533,7 @@ export function createApp(opts: AppOptions) {
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))
 
-  // ---------- Frontend compilado ----------
+  // ---------- Frontend compilado (servidor propio; en Vercel lo sirve la plataforma) ----------
   if (opts.staticDir && existsSync(opts.staticDir)) {
     app.use(express.static(opts.staticDir, { index: false, maxAge: '1h' }))
     app.get(/^(?!\/api).*/, (_req, res) => res.sendFile(join(opts.staticDir!, 'index.html')))
@@ -525,7 +543,7 @@ export function createApp(opts: AppOptions) {
     void _next
     if (err instanceof HttpError) return res.status(err.status).json({ error: err.message })
     const e = err as { type?: string }
-    if (e?.type === 'entity.too.large') return res.status(413).json({ error: 'El archivo es demasiado grande. El máximo es 8 MB.' })
+    if (e?.type === 'entity.too.large') return res.status(413).json({ error: 'El archivo es demasiado grande. El máximo es 3 MB.' })
     if (err instanceof SyntaxError) return res.status(400).json({ error: 'La solicitud no es válida.' })
     console.error(err)
     res.status(500).json({ error: 'Ocurrió un error en el servidor. Inténtalo de nuevo.' })
@@ -534,12 +552,9 @@ export function createApp(opts: AppOptions) {
   return app
 }
 
-
-/** Sin JWT_SECRET en el entorno, genera uno y lo guarda en la base para que las sesiones sobrevivan reinicios. */
-function persistentSecret(db: DB) {
-  const row = db.prepare(`SELECT value FROM meta WHERE key = 'jwt_secret'`).get() as Row | undefined
-  if (row) return String(row.value)
-  const s = randomBytes(48).toString('hex')
-  db.prepare(`INSERT INTO meta (key, value) VALUES ('jwt_secret', ?)`).run(s)
-  return s
+/** Sin JWT_SECRET en el entorno, genera uno y lo guarda en la base para que todas las instancias lo compartan. */
+async function persistentSecret(sql: Sql) {
+  const fresh = randomBytes(48).toString('hex')
+  await sql.run(`INSERT INTO meta (key, value) VALUES ('jwt_secret', ?) ON CONFLICT (key) DO NOTHING`, [fresh])
+  return String((await sql.one(`SELECT value FROM meta WHERE key = 'jwt_secret'`))!.value)
 }

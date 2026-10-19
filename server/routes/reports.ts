@@ -1,21 +1,28 @@
 import type { Express } from 'express'
 import { z } from 'zod'
-import { type Ctx, fail, localDate, parse, type Row } from '../http'
+import { type Ctx, fail, localDate, parse, type Row } from '../http.js'
 
 /** Indicadores agregados para administración. No incluye datos clínicos individuales. */
-export function registerReports(app: Express, { db, auth, need }: Ctx) {
-  app.get('/api/reports', auth, need('reports.view'), (req, res) => {
+export function registerReports(app: Express, { sql, auth, need }: Ctx) {
+  app.get('/api/reports', auth, need('reports.view'), async (req, res) => {
     const q = parse(z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }), req.query, 'Elige un rango de fechas.')
     if (q.from > q.to) fail(400, 'La fecha inicial debe ser anterior a la final.')
     const inRange = (iso: string) => { const d = localDate(new Date(iso)); return d >= q.from && d <= q.to }
+    // Las marcas de tiempo en UTC se amplían un día y se filtran por fecha local
+    const lo = new Date(`${q.from}T00:00:00`); lo.setDate(lo.getDate() - 1)
+    const hi = new Date(`${q.to}T23:59:59`); hi.setDate(hi.getDate() + 1)
 
-    const appts = (db.prepare(`SELECT id, doctor_id, start, status, source FROM appointments WHERE start >= ? AND start < ?`)
-      .all(q.from, `${q.to}T99`) as Row[])
-    const payments = (db.prepare(`SELECT p.total, p.method, p.paid_at, a.doctor_id FROM payments p LEFT JOIN appointments a ON a.id = p.appointment_id WHERE p.voided = 0`)
-      .all() as Row[]).filter((p) => inRange(String(p.paid_at)))
-    const consults = (db.prepare(`SELECT diagnoses, date FROM consultations`).all() as Row[]).filter((c) => inRange(String(c.date)))
-    const newPatients = (db.prepare(`SELECT created_at FROM patients`).all() as Row[]).filter((p) => inRange(String(p.created_at))).length
-    const doctors = db.prepare(`SELECT id, name FROM staff WHERE role = 'doctor' ORDER BY name`).all() as Row[]
+    const [appts, payRows, consRows, patRows, doctors] = await Promise.all([
+      sql.query(`SELECT id, doctor_id, start, status, source FROM appointments WHERE start >= ? AND start < ?`, [q.from, `${q.to}T99`]),
+      sql.query(`SELECT p.total, p.method, p.paid_at, a.doctor_id FROM payments p LEFT JOIN appointments a ON a.id = p.appointment_id
+        WHERE NOT p.voided AND p.paid_at BETWEEN ? AND ?`, [lo.toISOString(), hi.toISOString()]),
+      sql.query(`SELECT diagnoses, date FROM consultations WHERE date BETWEEN ? AND ?`, [localDate(lo), hi.toISOString()]),
+      sql.query(`SELECT created_at FROM patients WHERE created_at BETWEEN ? AND ?`, [localDate(lo), hi.toISOString()]),
+      sql.query(`SELECT id, name FROM staff WHERE role = 'doctor' ORDER BY name`),
+    ])
+    const payments = payRows.filter((p) => inRange(String(p.paid_at)))
+    const consults = consRows.filter((c) => inRange(String(c.date)))
+    const newPatients = patRows.filter((p) => inRange(String(p.created_at))).length
 
     const count = (f: (a: Row) => boolean) => appts.filter(f).length
     const done = count((a) => a.status === 'done')

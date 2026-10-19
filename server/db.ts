@@ -1,28 +1,34 @@
-import { DatabaseSync } from 'node:sqlite'
-import { mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
 import bcrypt from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
-import { DEFAULT_SETTINGS, DOCTOR_SETUP, PATIENTS, SERVICES, STAFF, seedAppointments, seedClinical, seedHistory } from '../src/lib/seed'
-import type { Payment } from '../src/lib/types'
-
-export type DB = DatabaseSync
+import { DEFAULT_SETTINGS, DOCTOR_SETUP, PATIENTS, SERVICES, STAFF, seedAppointments, seedClinical, seedHistory } from '../src/lib/seed.js'
+import type { Payment } from '../src/lib/types.js'
+import type { Row, Sql } from './sql.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
+/** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
+const SCHEMA_VERSION = '4'
+
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS staff (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin','doctor','nurse','reception')),
   specialty TEXT,
-  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  email TEXT NOT NULL,
   license TEXT,
   color TEXT NOT NULL,
-  active INTEGER NOT NULL DEFAULT 1,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
   password_hash TEXT NOT NULL,
-  token_version INTEGER NOT NULL DEFAULT 0
+  token_version INTEGER NOT NULL DEFAULT 0,
+  schedule TEXT,
+  service_id TEXT,
+  totp_secret TEXT,
+  totp_enabled BOOLEAN NOT NULL DEFAULT FALSE
 );
+CREATE UNIQUE INDEX IF NOT EXISTS staff_email ON staff (lower(email));
 CREATE TABLE IF NOT EXISTS patients (
   id TEXT PRIMARY KEY,
   record TEXT NOT NULL UNIQUE,
@@ -47,9 +53,12 @@ CREATE TABLE IF NOT EXISTS appointments (
   reason TEXT NOT NULL,
   type TEXT NOT NULL,
   status TEXT NOT NULL,
-  arrived_at TEXT
+  arrived_at TEXT,
+  source TEXT NOT NULL DEFAULT 'staff',
+  reminded_at TEXT
 );
 CREATE INDEX IF NOT EXISTS appt_start ON appointments(start);
+CREATE INDEX IF NOT EXISTS appt_doctor ON appointments(doctor_id, start);
 CREATE TABLE IF NOT EXISTS vitals (
   id TEXT PRIMARY KEY,
   patient_id TEXT NOT NULL REFERENCES patients(id),
@@ -57,9 +66,11 @@ CREATE TABLE IF NOT EXISTS vitals (
   taken_by TEXT NOT NULL REFERENCES staff(id),
   taken_at TEXT NOT NULL,
   systolic INTEGER NOT NULL, diastolic INTEGER NOT NULL, heart_rate INTEGER NOT NULL,
-  temperature REAL NOT NULL, spo2 INTEGER NOT NULL, weight_kg REAL NOT NULL, height_cm REAL NOT NULL,
+  temperature DOUBLE PRECISION NOT NULL, spo2 INTEGER NOT NULL,
+  weight_kg DOUBLE PRECISION NOT NULL, height_cm DOUBLE PRECISION NOT NULL,
   pain_scale INTEGER, notes TEXT
 );
+CREATE INDEX IF NOT EXISTS vitals_patient ON vitals(patient_id);
 CREATE TABLE IF NOT EXISTS consultations (
   id TEXT PRIMARY KEY,
   patient_id TEXT NOT NULL REFERENCES patients(id),
@@ -76,6 +87,7 @@ CREATE TABLE IF NOT EXISTS consultations (
   vitals_id TEXT,
   prescription_id TEXT
 );
+CREATE INDEX IF NOT EXISTS cons_patient ON consultations(patient_id);
 CREATE TABLE IF NOT EXISTS prescriptions (
   id TEXT PRIMARY KEY,
   folio TEXT NOT NULL UNIQUE,
@@ -86,20 +98,21 @@ CREATE TABLE IF NOT EXISTS prescriptions (
   items TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS audit (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id BIGSERIAL PRIMARY KEY,
   at TEXT NOT NULL,
   user_id TEXT NOT NULL,
   action TEXT NOT NULL
 );
-CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT, 'audit is append-only'); END;
-CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT, 'audit is append-only'); END;
-CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE OR REPLACE FUNCTION audit_append_only() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN RAISE EXCEPTION 'audit is append-only'; END
+$fn$;
+DROP TRIGGER IF EXISTS audit_no_change ON audit;
+CREATE TRIGGER audit_no_change BEFORE UPDATE OR DELETE ON audit FOR EACH ROW EXECUTE FUNCTION audit_append_only();
 CREATE TABLE IF NOT EXISTS services (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  price REAL NOT NULL,
-  active INTEGER NOT NULL DEFAULT 1
+  price DOUBLE PRECISION NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE
 );
 CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY,
@@ -107,15 +120,16 @@ CREATE TABLE IF NOT EXISTS payments (
   appointment_id TEXT REFERENCES appointments(id),
   patient_id TEXT NOT NULL REFERENCES patients(id),
   items TEXT NOT NULL,
-  discount REAL NOT NULL DEFAULT 0,
-  total REAL NOT NULL,
+  discount DOUBLE PRECISION NOT NULL DEFAULT 0,
+  total DOUBLE PRECISION NOT NULL,
   method TEXT NOT NULL CHECK (method IN ('cash','card','transfer','insurance')),
   reference TEXT,
   received_by TEXT NOT NULL REFERENCES staff(id),
   paid_at TEXT NOT NULL,
-  voided INTEGER NOT NULL DEFAULT 0
+  voided BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE INDEX IF NOT EXISTS pay_date ON payments(paid_at);
+CREATE INDEX IF NOT EXISTS pay_appt ON payments(appointment_id);
 CREATE TABLE IF NOT EXISTS attachments (
   id TEXT PRIMARY KEY,
   patient_id TEXT NOT NULL REFERENCES patients(id),
@@ -123,141 +137,125 @@ CREATE TABLE IF NOT EXISTS attachments (
   mime TEXT NOT NULL,
   size INTEGER NOT NULL,
   category TEXT NOT NULL,
-  data BLOB NOT NULL,
+  data BYTEA NOT NULL,
   uploaded_by TEXT NOT NULL REFERENCES staff(id),
   uploaded_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, n INTEGER NOT NULL, reset_at BIGINT NOT NULL);
 `
 
-/** Columnas añadidas después de la primera versión; se agregan si faltan. */
-const COLUMNS: [table: string, column: string, ddl: string][] = [
-  ['staff', 'schedule', `TEXT`],
-  ['staff', 'service_id', `TEXT`],
-  ['staff', 'totp_secret', `TEXT`],
-  ['staff', 'totp_enabled', `INTEGER NOT NULL DEFAULT 0`],
-  ['appointments', 'source', `TEXT NOT NULL DEFAULT 'staff'`],
-  ['appointments', 'reminded_at', `TEXT`],
-]
-
-function migrate(db: DB) {
-  db.exec(SCHEMA)
-  for (const [table, column, ddl] of COLUMNS) {
-    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
-    if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`)
-  }
-  // Bases creadas con la primera versión: completa configuración y servicios
-  if (!db.prepare(`SELECT 1 FROM settings LIMIT 1`).get()) {
-    const st = db.prepare(`INSERT INTO settings (key, value) VALUES (?, ?)`)
-    for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) st.run(k, JSON.stringify(v))
-  }
-  if (!db.prepare(`SELECT 1 FROM services LIMIT 1`).get()) {
-    const sv = db.prepare(`INSERT INTO services (id, name, price, active) VALUES (?, ?, ?, ?)`)
-    for (const s of SERVICES) sv.run(s.id, s.name, s.price, s.active ? 1 : 0)
-  }
-  for (const [id, setup] of Object.entries(DOCTOR_SETUP)) {
-    db.prepare(`UPDATE staff SET schedule = COALESCE(schedule, ?), service_id = COALESCE(service_id, ?) WHERE id = ?`)
-      .run(JSON.stringify(setup.schedule), setup.serviceId, id)
+/** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
+async function insertMany(q: Sql, table: string, columns: string[], rows: unknown[][]) {
+  const per = Math.max(1, Math.floor(1000 / columns.length))
+  for (let i = 0; i < rows.length; i += per) {
+    const chunk = rows.slice(i, i + per)
+    const values = chunk.map(() => `(${columns.map(() => '?').join(',')})`).join(',')
+    await q.run(`INSERT INTO ${table} (${columns.join(',')}) VALUES ${values}`, chunk.flat())
   }
 }
 
-export function openDb(path: string): DB {
-  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
-  const db = new DatabaseSync(path)
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;')
-  db.exec(SCHEMA)
-  const seeded = db.prepare(`SELECT value FROM meta WHERE key = 'seeded'`).get()
-  if (!seeded) {
-    migrate(db)
-    seed(db)
-  }
-  migrate(db)
-  return db
-}
+const initialized = new WeakMap<Sql, Promise<void>>()
 
-export function tx<T>(db: DB, fn: () => T): T {
-  db.exec('BEGIN')
-  try {
-    const r = fn()
-    db.exec('COMMIT')
-    return r
-  } catch (e) {
-    db.exec('ROLLBACK')
-    throw e
-  }
-}
-
-function insertPayment(db: DB, p: Payment) {
-  db.prepare(`INSERT INTO payments (id,receipt_no,appointment_id,patient_id,items,discount,total,method,reference,received_by,paid_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(p.id, p.receiptNo, p.appointmentId ?? null, p.patientId, JSON.stringify(p.items), p.discount, p.total, p.method, p.reference ?? null, p.receivedBy, p.paidAt)
+/**
+ * Crea o actualiza el esquema y, si la base está vacía, carga la clínica de demo.
+ * Un candado de Postgres evita que dos instancias lo hagan al mismo tiempo.
+ */
+export function ensureDb(sql: Sql) {
+  const pending = initialized.get(sql)
+  if (pending) return pending
+  const p = (async () => {
+    const current = await sql.one<{ value: string }>(`SELECT value FROM meta WHERE key = 'schema'`).catch(() => undefined)
+    if (current?.value === SCHEMA_VERSION) return
+    await sql.tx(async (q) => {
+      await q.run('SELECT pg_advisory_xact_lock(7272741)')
+      await q.exec(SCHEMA)
+      if (!(await q.one(`SELECT 1 FROM meta WHERE key = 'seeded'`))) await seed(q)
+      await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
+    })
+  })().catch((e) => { initialized.delete(sql); throw e })
+  initialized.set(sql, p)
+  return p
 }
 
 /** Carga la clínica de demostración. La agenda queda relativa al día en que se crea la base. */
-export function seed(db: DB) {
+export async function seed(q: Sql) {
   const hash = bcrypt.hashSync(DEMO_PASSWORD, 10)
   const { vitals, consultations, prescriptions } = seedClinical()
   const history = seedHistory()
-  tx(db, () => {
-    const st = db.prepare(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-    for (const s of STAFF) {
+  const today = seedAppointments()
+
+  await insertMany(q, 'settings', ['key', 'value'], Object.entries(DEFAULT_SETTINGS).map(([k, v]) => [k, JSON.stringify(v)]))
+  await insertMany(q, 'services', ['id', 'name', 'price', 'active'], SERVICES.map((s) => [s.id, s.name, s.price, s.active]))
+  await insertMany(q, 'staff', ['id', 'name', 'role', 'specialty', 'email', 'license', 'color', 'active', 'password_hash', 'schedule', 'service_id'],
+    STAFF.map((s) => {
       const setup = DOCTOR_SETUP[s.id]
-      st.run(s.id, s.name, s.role, s.specialty ?? null, s.email, s.license ?? null, s.color, s.active ? 1 : 0, hash,
-        setup ? JSON.stringify(setup.schedule) : null, setup?.serviceId ?? null)
-    }
+      return [s.id, s.name, s.role, s.specialty ?? null, s.email, s.license ?? null, s.color, s.active, hash, setup ? JSON.stringify(setup.schedule) : null, setup?.serviceId ?? null]
+    }))
+  await insertMany(q, 'patients', ['id', 'record', 'first_name', 'last_name', 'birth_date', 'sex', 'phone', 'email', 'blood_type', 'allergies', 'conditions', 'insurance', 'created_at'],
+    [...PATIENTS, ...history.patients].map((p) => [p.id, p.record, p.firstName, p.lastName, p.birthDate, p.sex, p.phone, p.email ?? null, p.bloodType ?? null,
+      JSON.stringify(p.allergies), JSON.stringify(p.conditions), p.insurance ?? null, p.createdAt]))
+  const arrived = new Date(Date.now() - 12 * 60000).toISOString()
+  await insertMany(q, 'appointments', ['id', 'patient_id', 'doctor_id', 'start', 'minutes', 'reason', 'type', 'status', 'arrived_at', 'source'],
+    [...history.appointments, ...today].map((a) => [a.id, a.patientId, a.doctorId, a.start, a.minutes, a.reason, a.type, a.status,
+      a.status === 'arrived' || a.status === 'triaged' ? arrived : null, ['a7', 'a13'].includes(a.id) ? 'online' : a.source ?? 'staff']))
+  await insertMany(q, 'vitals', ['id', 'patient_id', 'appointment_id', 'taken_by', 'taken_at', 'systolic', 'diastolic', 'heart_rate', 'temperature', 'spo2', 'weight_kg', 'height_cm', 'pain_scale', 'notes'],
+    vitals.map((v) => [v.id, v.patientId, v.appointmentId ?? null, v.takenBy, v.takenAt, v.systolic, v.diastolic, v.heartRate, v.temperature, v.spo2, v.weightKg, v.heightCm, v.painScale ?? null, v.notes ?? null]))
+  await insertMany(q, 'consultations', ['id', 'patient_id', 'doctor_id', 'appointment_id', 'date', 'reason', 'symptoms', 'symptom_onset', 'history', 'exam', 'diagnoses', 'plan', 'vitals_id', 'prescription_id'],
+    [...history.consultations, ...consultations].map((c) => [c.id, c.patientId, c.doctorId, c.appointmentId ?? null, c.date, c.reason, JSON.stringify(c.symptoms),
+      c.symptomOnset ?? null, c.history, c.exam, JSON.stringify(c.diagnoses), c.plan, c.vitalsId ?? null, c.prescriptionId ?? null]))
+  await insertMany(q, 'prescriptions', ['id', 'folio', 'patient_id', 'doctor_id', 'consultation_id', 'issued_at', 'items'],
+    prescriptions.map((r) => [r.id, r.folio, r.patientId, r.doctorId, r.consultationId, r.issuedAt, JSON.stringify(r.items)]))
 
-    const pt = db.prepare(`INSERT INTO patients (id,record,first_name,last_name,birth_date,sex,phone,email,blood_type,allergies,conditions,insurance,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    for (const p of [...PATIENTS, ...history.patients]) pt.run(p.id, p.record, p.firstName, p.lastName, p.birthDate, p.sex, p.phone, p.email ?? null, p.bloodType ?? null,
-      JSON.stringify(p.allergies), JSON.stringify(p.conditions), p.insurance ?? null, p.createdAt)
+  // Cobros: historial y dos consultas de esta mañana (la de Rosa Elena queda pendiente para probar la caja)
+  let n = history.lastReceipt
+  const payments: Payment[] = [...history.payments]
+  for (const [apptId, svc] of [['a1', 'svc-mi'], ['a8', 'svc-ped']] as const) {
+    const a = today.find((x) => x.id === apptId)!
+    const s = SERVICES.find((x) => x.id === svc)!
+    payments.push({ id: `tp-${apptId}`, receiptNo: `R-${String(++n).padStart(6, '0')}`, appointmentId: apptId, patientId: a.patientId,
+      items: [{ serviceId: s.id, name: s.name, price: s.price, qty: 1 }], discount: 0, total: s.price, method: 'card', reference: 'DEMO', receivedBy: 's-mejia',
+      paidAt: new Date(new Date(a.start).getTime() + 40 * 60000).toISOString() })
+  }
+  await insertMany(q, 'payments', ['id', 'receipt_no', 'appointment_id', 'patient_id', 'items', 'discount', 'total', 'method', 'reference', 'received_by', 'paid_at'],
+    payments.map((p) => [p.id, p.receiptNo, p.appointmentId ?? null, p.patientId, JSON.stringify(p.items), p.discount, p.total, p.method, p.reference ?? null, p.receivedBy, p.paidAt]))
 
-    const ap = db.prepare(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,arrived_at,source) VALUES (?,?,?,?,?,?,?,?,?,?)`)
-    for (const a of [...history.appointments, ...seedAppointments()]) ap.run(a.id, a.patientId, a.doctorId, a.start, a.minutes, a.reason, a.type, a.status,
-      a.status === 'arrived' || a.status === 'triaged' ? new Date(Date.now() - 12 * 60000).toISOString() : null, a.source ?? 'staff')
-    // Una cita de hoy llegó por la reserva en línea
-    db.prepare(`UPDATE appointments SET source = 'online' WHERE id IN ('a7', 'a13')`).run()
+  await q.run(`INSERT INTO meta (key, value) VALUES ('seeded', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [new Date().toISOString()])
+}
 
-    const vt = db.prepare(`INSERT INTO vitals (id,patient_id,appointment_id,taken_by,taken_at,systolic,diastolic,heart_rate,temperature,spo2,weight_kg,height_cm,pain_scale,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    for (const v of vitals) vt.run(v.id, v.patientId, v.appointmentId ?? null, v.takenBy, v.takenAt, v.systolic, v.diastolic, v.heartRate,
-      v.temperature, v.spo2, v.weightKg, v.heightCm, v.painScale ?? null, v.notes ?? null)
-
-    const cs = db.prepare(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    for (const c of [...history.consultations, ...consultations]) cs.run(c.id, c.patientId, c.doctorId, c.appointmentId ?? null, c.date, c.reason, JSON.stringify(c.symptoms),
-      c.symptomOnset ?? null, c.history, c.exam, JSON.stringify(c.diagnoses), c.plan, c.vitalsId ?? null, c.prescriptionId ?? null)
-
-    const rx = db.prepare(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items) VALUES (?,?,?,?,?,?,?)`)
-    for (const r of prescriptions) rx.run(r.id, r.folio, r.patientId, r.doctorId, r.consultationId, r.issuedAt, JSON.stringify(r.items))
-
-    for (const p of history.payments) insertPayment(db, p)
-    // Cobros de las consultas de esta mañana (la de Rosa Elena queda pendiente para probar la caja)
-    let n = history.lastReceipt
-    const today = seedAppointments()
-    for (const [apptId, svc] of [['a1', 'svc-mi'], ['a8', 'svc-ped']] as const) {
-      const a = today.find((x) => x.id === apptId)!
-      const s = SERVICES.find((x) => x.id === svc)!
-      insertPayment(db, { id: `tp-${apptId}`, receiptNo: `R-${String(++n).padStart(6, '0')}`, appointmentId: apptId, patientId: a.patientId,
-        items: [{ serviceId: s.id, name: s.name, price: s.price, qty: 1 }], discount: 0, total: s.price, method: 'card', receivedBy: 's-mejia',
-        paidAt: new Date(new Date(a.start).getTime() + 40 * 60000).toISOString() })
-    }
-
-    db.prepare(`INSERT INTO meta (key, value) VALUES ('seeded', ?)`).run(new Date().toISOString())
+/** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
+export async function resetDemo(sql: Sql) {
+  await sql.tx(async (q) => {
+    await q.exec(`TRUNCATE attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, rate_limits RESTART IDENTITY CASCADE`)
+    await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
+    await seed(q)
   })
 }
 
-/** Borra todo y vuelve a cargar la demo (sólo en modo demo). */
-export function resetDemo(db: DB) {
-  db.exec('DROP TRIGGER IF EXISTS audit_no_delete')
-  for (const t of ['attachments', 'payments', 'prescriptions', 'consultations', 'vitals', 'appointments', 'patients', 'audit', 'staff', 'services', 'settings']) db.exec(`DELETE FROM ${t}`)
-  db.exec(`DELETE FROM meta WHERE key = 'seeded'`)
-  db.exec(SCHEMA)
-  migrate(db)
-  seed(db)
-}
-
 /** Crea un paciente con el siguiente número de expediente libre. */
-export function createPatient(db: DB, p: { firstName: string; lastName: string; birthDate: string; sex: 'F' | 'M'; phone: string; email?: string; bloodType?: string; insurance?: string; allergies?: string[]; conditions?: string[] }) {
+export async function createPatient(q: Sql, p: { firstName: string; lastName: string; birthDate: string; sex: 'F' | 'M'; phone: string; email?: string; bloodType?: string; insurance?: string; allergies?: string[]; conditions?: string[] }) {
   const id = randomUUID()
-  const n = Number((db.prepare(`SELECT COALESCE(MAX(CAST(SUBSTR(record, 5) AS INTEGER)), 400) AS n FROM patients`).get() as { n: number }).n) + 1
-  db.prepare(`INSERT INTO patients (id,record,first_name,last_name,birth_date,sex,phone,email,blood_type,allergies,conditions,insurance,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, `EXP-${String(n).padStart(5, '0')}`, p.firstName, p.lastName, p.birthDate, p.sex, p.phone, p.email ?? null, p.bloodType || null,
-      JSON.stringify(p.allergies ?? []), JSON.stringify(p.conditions ?? []), p.insurance || null, new Date().toISOString())
+  const max = await q.one<{ n: number }>(`SELECT COALESCE(MAX(CAST(SUBSTR(record, 5) AS INTEGER)), 400)::int AS n FROM patients`)
+  await q.run(`INSERT INTO patients (id,record,first_name,last_name,birth_date,sex,phone,email,blood_type,allergies,conditions,insurance,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, `EXP-${String(Number(max!.n) + 1).padStart(5, '0')}`, p.firstName, p.lastName, p.birthDate, p.sex, p.phone, p.email ?? null, p.bloodType || null,
+      JSON.stringify(p.allergies ?? []), JSON.stringify(p.conditions ?? []), p.insurance || null, new Date().toISOString()])
   return id
 }
 
+/**
+ * Limitador por clave guardado en la base, compartido por todas las instancias.
+ * Devuelve cuántos intentos van en la ventana actual.
+ */
+export async function hit(q: Sql, key: string, windowMs: number) {
+  const now = Date.now()
+  const r = await q.one<{ n: number }>(`INSERT INTO rate_limits (key, n, reset_at) VALUES (?, 1, ?)
+    ON CONFLICT (key) DO UPDATE SET
+      n = CASE WHEN rate_limits.reset_at < ? THEN 1 ELSE rate_limits.n + 1 END,
+      reset_at = CASE WHEN rate_limits.reset_at < ? THEN excluded.reset_at ELSE rate_limits.reset_at END
+    RETURNING n`, [key, now + windowMs, now, now])
+  return Number(r!.n)
+}
+
+export async function attempts(q: Sql, key: string) {
+  const r = await q.one<Row>(`SELECT n, reset_at FROM rate_limits WHERE key = ?`, [key])
+  return r && Number(r.reset_at) > Date.now() ? Number(r.n) : 0
+}

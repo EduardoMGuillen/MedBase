@@ -1,4 +1,4 @@
-import type { Appointment, Attachment, AuditEntry, Consultation, Patient, Payment, Prescription, Service, Staff, Vitals } from '../src/lib/types'
+import type { Appointment, Attachment, AuditEntry, Consultation, Patient, Payment, Prescription, Service, Staff, Vitals } from '../src/lib/types.js'
 
 type Row = Record<string, unknown>
 const s = (v: unknown) => (v == null ? undefined : String(v))

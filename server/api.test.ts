@@ -2,18 +2,22 @@ import { after, before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
-import { createApp } from './app'
-import { DEMO_PASSWORD, openDb } from './db'
+import { createApp } from './app.js'
+import { DEMO_PASSWORD, ensureDb } from './db.js'
+import { createSql, type Sql } from './sql.js'
 
 let server: Server
+let sql: Sql
 let base = ''
 
 before(async () => {
-  const app = createApp({ db: openDb(':memory:'), jwtSecret: 'test-secret', demoMode: true })
+  sql = createSql({ memory: true })
+  await ensureDb(sql)
+  const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
   await new Promise<void>((r) => { server = app.listen(0, () => r()) })
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 })
-after(() => server.close())
+after(async () => { server.close(); await sql.close() })
 
 /** Cliente mínimo que conserva la cookie de sesión. */
 async function as(email: string, password = DEMO_PASSWORD) {
@@ -146,10 +150,20 @@ describe('pacientes y personal', () => {
     assert.equal((await nueva.get('/api/bootstrap')).status, 401)
   })
 
-  test('la bitácora registra los accesos al expediente', async () => {
+  test('la bitácora registra los accesos al expediente y no se puede alterar', async () => {
     const admin = await as('admin@demo.clinara')
     const boot = await admin.get('/api/bootstrap')
     assert.ok(boot.body.audit.some((e: any) => e.action.startsWith('Consultó el expediente')))
+    await assert.rejects(sql.run('DELETE FROM audit'), /append-only/)
+    await assert.rejects(sql.run(`UPDATE audit SET action = 'x'`), /append-only/)
+  })
+
+  test('el bloqueo por intentos fallidos se guarda en la base', async () => {
+    for (let i = 0; i < 5; i++) await as('apaz@demo.clinara', 'mala')
+    const blocked = await as('apaz@demo.clinara')
+    assert.equal(blocked.status, 429)
+    await sql.run('DELETE FROM rate_limits')
+    assert.equal((await as('apaz@demo.clinara')).status, 200)
   })
 })
 
@@ -246,7 +260,7 @@ describe('reportes y configuración', () => {
 
 describe('verificación en dos pasos', () => {
   test('tras activarla, el login pide el código', async () => {
-    const { totp } = await import('./totp')
+    const { totp } = await import('./totp.js')
     const nurse = await as('crios@demo.clinara')
     const setup = await nurse.post('/api/auth/2fa/setup')
     assert.match(setup.body.qr, /<svg/)
