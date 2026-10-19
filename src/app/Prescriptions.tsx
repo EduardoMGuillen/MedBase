@@ -4,7 +4,6 @@ import { ChevronLeft, FileText, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading, PageHead } from '../components/ui'
 import { age, date, fullName, time } from '../lib/format'
-import { CLINIC } from '../lib/seed'
 import { LogoMark } from '../components/Logo'
 
 export default function Prescriptions() {
@@ -40,7 +39,7 @@ export default function Prescriptions() {
 
 export function PrescriptionSheet() {
   const { id } = useParams()
-  const { staffById, fetchPrescription } = useStore()
+  const { staffById, fetchPrescription, settings } = useStore()
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchPrescription>> | null>(null)
   const [missing, setMissing] = useState(false)
   useEffect(() => {
@@ -60,10 +59,10 @@ export function PrescriptionSheet() {
       <article className="rx-sheet">
         <header className="rx-sheet__head">
           <div className="rx-sheet__doc">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}><LogoMark size={26} /><b>{CLINIC.name}</b></div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}><LogoMark size={26} /><b>{settings.name}</b></div>
             <h2>{doc.name}</h2>
             <p>{doc.specialty}, colegiación {doc.license}</p>
-            <p>{CLINIC.address}, tel. {CLINIC.phone}</p>
+            <p>{settings.address}, tel. {settings.phone}</p>
           </div>
           <div className="rx-sheet__folio">Folio<b>{rx.folio}</b>{date(rx.issuedAt)}, {time(rx.issuedAt)}</div>
         </header>
@@ -85,7 +84,7 @@ export function PrescriptionSheet() {
         </ol>
         {c?.plan && <p style={{ marginTop: 24, fontSize: 14 }}><b>Indicaciones generales:</b> {c.plan}</p>}
         <div className="rx-sheet__sign"><div><em>{doc.name.replace(/^Dra?\.\s*/, '')}</em>{doc.name}<br /><span style={{ color: 'var(--muted)' }}>{doc.license}</span></div></div>
-        <footer className="rx-sheet__foot"><span>Receta válida por 30 días a partir de su emisión.</span><span>Emitida con Clinara</span></footer>
+        <footer className="rx-sheet__foot"><span>Receta válida por {settings.rxValidityDays} días a partir de su emisión.</span><span>Emitida con Clinara</span></footer>
       </article>
     </div>
   )

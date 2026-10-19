@@ -16,7 +16,9 @@ export const PERMISSIONS = {
   'consult.write': 'Escribir y firmar consultas',
   'rx.write': 'Emitir recetas',
   'rx.view': 'Ver e imprimir recetas',
+  'billing.manage': 'Cobrar y emitir recibos',
   'staff.manage': 'Gestionar personal y roles',
+  'settings.manage': 'Configurar la clínica y servicios',
   'reports.view': 'Ver indicadores de la clínica',
   'audit.view': 'Ver bitácora de accesos',
 } as const
@@ -25,15 +27,15 @@ export type Permission = keyof typeof PERMISSIONS
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: [
-    'agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage',
-    'staff.manage', 'reports.view', 'audit.view',
+    'agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage',
+    'staff.manage', 'settings.manage', 'reports.view', 'audit.view',
   ],
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'chart.view', 'vitals.record',
     'consult.write', 'rx.write', 'rx.view',
   ],
   nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'chart.view', 'vitals.record', 'rx.view'],
-  reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage'],
+  reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage'],
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -44,10 +46,10 @@ export const ROLE_LABEL: Record<Role, string> = {
 }
 
 export const ROLE_SUMMARY: Record<Role, string> = {
-  admin: 'Configura la clínica, el personal y revisa indicadores. Sin acceso a notas clínicas.',
+  admin: 'Configura la clínica, el personal y los precios, y revisa indicadores. Sin acceso a notas clínicas.',
   doctor: 'Atiende su agenda, escribe consultas, diagnostica y emite recetas firmadas.',
   nurse: 'Recibe al paciente, toma signos vitales y lo deja listo para consulta.',
-  reception: 'Agenda citas, registra pacientes y controla la sala de espera.',
+  reception: 'Agenda citas, registra pacientes, controla la sala de espera y cobra.',
 }
 
 export const can = (role: Role, p: Permission) => ROLE_PERMISSIONS[role].includes(p)

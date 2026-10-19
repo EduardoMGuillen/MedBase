@@ -46,7 +46,8 @@ export default function StaffPage() {
                   )}
                 </td>
                 <td>{s.email}</td>
-                <td>{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Desactivado</span>}</td>
+                <td><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Desactivado</span>}
+                  {s.twoFactor && <span className="badge badge--ink">Dos pasos</span>}</div></td>
                 <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {s.id !== user?.id && <>
                     <button className="btn btn--ghost btn--sm" onClick={async () => {
@@ -54,6 +55,9 @@ export default function StaffPage() {
                       const r = await resetStaffPassword(s.id)
                       if (r) setSecret({ name: s.name, email: s.email, password: r.password })
                     }}>Restablecer contraseña</button>{' '}
+                    {s.twoFactor && <><button className="btn btn--ghost btn--sm" title="Por si perdió su teléfono" onClick={() => {
+                      if (confirm(`¿Quitar la verificación en dos pasos de ${s.name}? Podrá entrar sólo con su contraseña hasta que la vuelva a activar.`)) updateStaff(s.id, { twoFactor: false })
+                    }}>Quitar dos pasos</button>{' '}</>}
                     <button className="btn btn--ghost btn--sm" onClick={() => updateStaff(s.id, { active: !s.active })}>{s.active ? 'Desactivar' : 'Reactivar'}</button>
                   </>}
                 </td>
@@ -85,7 +89,7 @@ export default function StaffPage() {
           <table className="table">
             <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th></tr></thead>
             <tbody>{log.map((e) => (
-              <tr key={e.id}><td className="num" style={{ whiteSpace: 'nowrap' }}>{date(e.at)} {time(e.at)}</td><td>{staffById(e.userId)?.name ?? 'Usuario eliminado'}</td><td>{e.action}</td></tr>
+              <tr key={e.id}><td className="num" style={{ whiteSpace: 'nowrap' }}>{date(e.at)} {time(e.at)}</td><td>{e.userId === 'online' ? 'Reserva en línea' : staffById(e.userId)?.name ?? 'Usuario eliminado'}</td><td>{e.action}</td></tr>
             ))}</tbody>
           </table>
           {!log.length && <div className="empty">{q ? 'Nada coincide con el filtro.' : 'La bitácora se llena a medida que el equipo usa el sistema.'}</div>}

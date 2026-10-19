@@ -11,6 +11,12 @@ import type { PrescriptionItem } from '../lib/types'
 
 const EMPTY_ITEM: PrescriptionItem = { drug: '', presentation: '', dose: '1 tableta', frequency: 'Cada 8 horas', duration: '5 días', instructions: '' }
 
+interface Draft { reason: string; symptoms: string[]; onset: string; history: string; exam: string; dx: { code: string; label: string }[]; plan: string; items: PrescriptionItem[] }
+const draftKey = (id?: string) => `clinara.borrador.${id}`
+function loadDraft(id?: string): Partial<Draft> {
+  try { return JSON.parse(localStorage.getItem(draftKey(id)) ?? '{}') } catch { return {} }
+}
+
 export default function Consultation() {
   const { apptId } = useParams()
   const store = useStore()
@@ -19,15 +25,18 @@ export default function Consultation() {
   const appt = appointments.find((a) => a.id === apptId)
   const p = appt && patient(appt.patientId)
 
-  const [reason, setReason] = useState(appt?.reason ?? '')
-  const [symptoms, setSymptoms] = useState<string[]>([])
-  const [onset, setOnset] = useState('1 a 3 días')
-  const [history, setHistory] = useState('')
-  const [exam, setExam] = useState('')
+  // El borrador se guarda en este navegador mientras se escribe, por si se cierra la pestaña
+  const [saved] = useState(() => loadDraft(apptId))
+  const [reason, setReason] = useState(saved.reason ?? appt?.reason ?? '')
+  const [symptoms, setSymptoms] = useState<string[]>(saved.symptoms ?? [])
+  const [onset, setOnset] = useState(saved.onset ?? '1 a 3 días')
+  const [history, setHistory] = useState(saved.history ?? '')
+  const [exam, setExam] = useState(saved.exam ?? '')
   const [dxQuery, setDxQuery] = useState('')
-  const [dx, setDx] = useState<{ code: string; label: string }[]>([])
-  const [plan, setPlan] = useState('')
-  const [items, setItems] = useState<PrescriptionItem[]>([])
+  const [dx, setDx] = useState<{ code: string; label: string }[]>(saved.dx ?? [])
+  const [plan, setPlan] = useState(saved.plan ?? '')
+  const [items, setItems] = useState<PrescriptionItem[]>(saved.items ?? [])
+  const [savedAt, setSavedAt] = useState<string | null>(Object.keys(saved).length ? 'recuperado' : null)
   const [draft, setDraft] = useState<PrescriptionItem>(EMPTY_ITEM)
   const [drugOpen, setDrugOpen] = useState(false)
   const [override, setOverride] = useState(false)
@@ -41,6 +50,18 @@ export default function Consultation() {
     // Sólo al abrir la consulta
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appt?.id])
+
+  useEffect(() => {
+    const d: Draft = { reason, symptoms, onset, history, exam, dx, plan, items }
+    const blank = !symptoms.length && !history && !exam && !dx.length && !plan && !items.length
+    const t = setTimeout(() => {
+      try {
+        if (blank) localStorage.removeItem(draftKey(apptId))
+        else { localStorage.setItem(draftKey(apptId), JSON.stringify(d)); setSavedAt(new Date().toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })) }
+      } catch { /* sin almacenamiento local */ }
+    }, 600)
+    return () => clearTimeout(t)
+  }, [apptId, reason, symptoms, onset, history, exam, dx, plan, items])
 
   if (!appt || !p || !user) return <div className="page"><div className="empty">No se encontró la cita. Vuelve a la <Link to="/app/agenda">agenda</Link>.</div></div>
   if (appt.status === 'done') return <div className="page"><div className="empty">Esta consulta ya fue firmada. Puedes verla en el <Link to={`/app/pacientes/${p.id}`}>expediente</Link>.</div></div>
@@ -68,12 +89,14 @@ export default function Consultation() {
       appointmentId: appt.id, reason: reason.trim(), symptoms, symptomOnset: onset, history, exam, diagnoses: dx, plan, vitalsId: todayVitals?.id,
     }, items)
     setSigning(false)
+    if (r) try { localStorage.removeItem(draftKey(apptId)) } catch { /* noop */ }
     if (r) nav(r.prescriptionId ? `/app/recetas/${r.prescriptionId}` : `/app/pacientes/${p.id}`)
   }
 
   return (
     <div className="page">
-      <PageHead title={`Consulta de ${fullName(p)}`} sub={`${age(p.birthDate)}, expediente ${p.record}`}
+      <PageHead title={`Consulta de ${fullName(p)}`}
+        sub={`${age(p.birthDate)}, expediente ${p.record}${savedAt === 'recuperado' ? '. Recuperamos tu borrador sin firmar.' : savedAt ? `. Borrador guardado ${savedAt}` : ''}`}
         actions={<>
           <Link className="btn btn--ghost" to={`/app/pacientes/${p.id}`}>Ver expediente</Link>
           <button className="btn btn--primary" disabled={!canSign || signing} onClick={sign}>Firmar consulta{items.length ? ' y receta' : ''}</button>

@@ -15,6 +15,8 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [code, setCode] = useState('')
+  const [needCode, setNeedCode] = useState(false)
   const [demo, setDemo] = useState<{ accounts: Staff[]; password: string | null }>({ accounts: [], password: null })
 
   useEffect(() => {
@@ -23,11 +25,14 @@ export default function Login() {
 
   if (user) return <Navigate to="/app" replace />
 
-  const enter = async (mail: string, pw: string) => {
+  const enter = async (mail: string, pw: string, otp?: string) => {
     setBusy(true)
     setError('')
     try {
-      await signIn(mail, pw)
+      if (await signIn(mail, pw, otp)) {
+        setEmail(mail); setPassword(pw); setNeedCode(true)
+        return
+      }
       nav('/app')
     } catch (e) {
       setError((e as Error).message)
@@ -39,7 +44,8 @@ export default function Login() {
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (!email.trim() || !password) { setError('Escribe tu correo y tu contraseña.'); return }
-    enter(email.trim(), password)
+    if (needCode && !/^\d{6}$/.test(code.trim())) { setError('Escribe los 6 dígitos que muestra tu app de autenticación.'); return }
+    enter(email.trim(), password, needCode ? code.trim() : undefined)
   }
 
   return (
@@ -59,6 +65,14 @@ export default function Login() {
           <p>Usa el correo que te asignó tu clínica.</p>
           <form onSubmit={submit} style={{ display: 'grid', gap: 14 }} noValidate>
             {error && <div className="auth__err" role="alert">{error}</div>}
+            {needCode ? (
+              <label className="field">
+                <span>Código de verificación</span>
+                <input className="input num" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" style={{ fontSize: 22, letterSpacing: '0.3em', height: 52 }} />
+                <small style={{ color: 'var(--muted)', fontSize: 13 }}>Ábrelo en Google Authenticator, Microsoft Authenticator o tu app de códigos.</small>
+              </label>
+            ) : (<>
             <label className="field">
               <span>Correo</span>
               <input className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nombre@clinica.com" required />
@@ -67,10 +81,12 @@ export default function Login() {
               <span>Contraseña</span>
               <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </label>
-            <button className="btn btn--primary btn--lg" type="submit" disabled={busy}>{busy ? 'Entrando…' : 'Iniciar sesión'}</button>
+            </>)}
+            <button className="btn btn--primary btn--lg" type="submit" disabled={busy}>{busy ? 'Entrando…' : needCode ? 'Verificar y entrar' : 'Iniciar sesión'}</button>
+            {needCode && <button type="button" className="btn btn--ghost" onClick={() => { setNeedCode(false); setCode(''); setPassword('') }}>Usar otra cuenta</button>}
           </form>
 
-          {demo.accounts.length > 0 && demo.password && (
+          {!needCode && demo.accounts.length > 0 && demo.password && (
             <div className="auth__demo">
               <span>Cuentas de demo (contraseña {demo.password})</span>
               {demo.accounts.filter((s) => s.id !== 's-paz' && s.id !== 's-zuniga').map((s) => (

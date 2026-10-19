@@ -2,14 +2,22 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import cookieParser from 'cookie-parser'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
+import QRCode from 'qrcode'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { type DB, DEMO_PASSWORD, resetDemo, tx } from './db'
-import { toAppointment, toAudit, toConsultation, toPatient, toPrescription, toStaff, toVitals } from './mappers'
+import { createPatient, type DB, DEMO_PASSWORD, resetDemo, tx } from './db'
+import { type Ctx, fail, HttpError, localDate, parse, type Row } from './http'
+import { toAppointment, toAudit, toConsultation, toPatient, toPrescription, toService, toStaff, toVitals } from './mappers'
+import { newSecret, otpauthUrl, verifyTotp } from './totp'
+import { registerSettings } from './routes/settings'
+import { registerPublic } from './routes/public'
+import { registerBilling } from './routes/billing'
+import { registerReports } from './routes/reports'
+import { registerFiles } from './routes/files'
 import { can, ROLE_PERMISSIONS, type Permission } from '../src/lib/permissions'
-import type { ApptStatus, Role, Staff } from '../src/lib/types'
+import type { ApptStatus, Staff } from '../src/lib/types'
 
 export interface AppOptions {
   db: DB
@@ -22,17 +30,10 @@ export interface AppOptions {
 const COOKIE = 'clinara_session'
 const SESSION_HOURS = 10
 
-/** Error con código HTTP y mensaje listo para mostrar en la interfaz. */
-class HttpError extends Error {
-  status: number
-  constructor(status: number, message: string) { super(message); this.status = status }
-}
-const fail = (status: number, message: string): never => { throw new HttpError(status, message) }
-
-type Row = Record<string, unknown>
 interface AuthedRequest extends Request { user: Staff }
 
 const COLORS = ['#2335C9', '#0F8A6E', '#B4407A', '#C27A12', '#6A4BC4', '#2C7DA0', '#5B6472']
+const ROLES = ['admin', 'doctor', 'nurse', 'reception'] as const
 
 export function createApp(opts: AppOptions) {
   const { db } = opts
@@ -41,7 +42,10 @@ export function createApp(opts: AppOptions) {
   const app = express()
 
   app.disable('x-powered-by')
-  app.use(express.json({ limit: '200kb' }))
+  app.set('trust proxy', 1)
+  // Los adjuntos traen su propio parser con un límite mayor
+  const smallJson = express.json({ limit: '200kb' })
+  app.use((req, res, next) => (/\/attachments$/.test(req.path) ? next() : smallJson(req, res, next)))
   app.use(cookieParser())
   app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff')
@@ -50,13 +54,15 @@ export function createApp(opts: AppOptions) {
     next()
   })
 
-  const audit = (userId: string, action: string) =>
+  const audit = (userId: string, action: string) => {
     db.prepare('INSERT INTO audit (at, user_id, action) VALUES (?, ?, ?)').run(new Date().toISOString(), userId, action)
-
+  }
   const staffRow = (id: string) => db.prepare('SELECT * FROM staff WHERE id = ?').get(id) as Row | undefined
   const patientRow = (id: string) => db.prepare('SELECT * FROM patients WHERE id = ?').get(id) as Row | undefined
   const apptRow = (id: string) => db.prepare('SELECT * FROM appointments WHERE id = ?').get(id) as Row | undefined
   const patientName = (id: string) => { const p = patientRow(id); return p ? `${p.first_name} ${p.last_name}` : id }
+  const settings = () => Object.fromEntries((db.prepare('SELECT key, value FROM settings').all() as Row[])
+    .map((r) => [String(r.key), JSON.parse(String(r.value))]))
 
   // ---------- Autenticación ----------
   const failures = new Map<string, { n: number; until: number }>()
@@ -90,23 +96,49 @@ export function createApp(opts: AppOptions) {
   }
   const userOf = (req: Request) => (req as AuthedRequest).user
 
+  function assertFree(doctorId: string, start: string, minutes: number, ignoreId?: string) {
+    const s = new Date(start).getTime()
+    const e = s + minutes * 60_000
+    const same = db.prepare(`SELECT * FROM appointments WHERE doctor_id = ? AND start LIKE ? AND status NOT IN ('cancelled','no_show') AND id != ?`)
+      .all(doctorId, `${start.slice(0, 10)}%`, ignoreId ?? '') as Row[]
+    const clash = same.find((a) => {
+      const as = new Date(String(a.start)).getTime()
+      return as < e && s < as + Number(a.minutes) * 60_000
+    })
+    if (clash) fail(409, `${staffRow(doctorId)?.name} ya tiene una cita a las ${String(clash.start).slice(11, 16)}. Elige otra hora.`)
+  }
+
+  const ctx: Ctx = { db, demoMode, auth, need, userOf, audit, patientName, staffRow, patientRow, apptRow, assertFree, settings }
+
+  const session = (row: Row) => {
+    const user = toStaff(row)
+    return { user, permissions: ROLE_PERMISSIONS[user.role], demo: demoMode }
+  }
+
   app.post('/api/auth/login', (req, res) => {
-    const body = parse(z.object({ email: z.string().trim().min(1), password: z.string().min(1) }), req.body,
+    const body = parse(z.object({ email: z.string().trim().min(1), password: z.string().min(1), code: z.string().optional() }), req.body,
       'Escribe tu correo y tu contraseña.')
     const key = body.email.toLowerCase()
     const f = failures.get(key)
     if (f && f.until > Date.now()) fail(429, 'Demasiados intentos. Espera 5 minutos e inténtalo de nuevo.')
-    const row = db.prepare('SELECT * FROM staff WHERE email = ?').get(body.email) as Row | undefined
-    if (!row || !bcrypt.compareSync(body.password, String(row.password_hash))) {
+    const bump = () => {
       const n = (f?.n ?? 0) + 1
       failures.set(key, { n, until: n >= 5 ? Date.now() + 5 * 60_000 : 0 })
+    }
+    const row = db.prepare('SELECT * FROM staff WHERE email = ?').get(body.email) as Row | undefined
+    if (!row || !bcrypt.compareSync(body.password, String(row.password_hash))) {
+      bump()
       fail(401, 'El correo o la contraseña no coinciden.')
     }
     if (!row!.active) fail(403, 'Esta cuenta está desactivada. Pide a administración que la reactive.')
+    if (row!.totp_enabled) {
+      if (!body.code) return res.json({ twoFactor: true })
+      if (!verifyTotp(String(row!.totp_secret), body.code)) { bump(); fail(401, 'El código no es válido o ya expiró. Usa el que muestra tu app ahora.') }
+    }
     failures.delete(key)
     issue(res, row!)
     audit(String(row!.id), 'Inició sesión')
-    res.json({ user: toStaff(row!), permissions: ROLE_PERMISSIONS[row!.role as Role], demo: demoMode })
+    res.json(session(row!))
   })
 
   app.post('/api/auth/logout', (req, res) => {
@@ -118,7 +150,7 @@ export function createApp(opts: AppOptions) {
 
   app.get('/api/auth/me', (req, res) => {
     const user = authenticate(req)
-    res.json(user ? { user, permissions: ROLE_PERMISSIONS[user.role], demo: demoMode } : { user: null, demo: demoMode })
+    res.json(user ? session(staffRow(user.id)!) : { user: null, demo: demoMode })
   })
 
   app.post('/api/auth/password', auth, (req, res) => {
@@ -132,6 +164,35 @@ export function createApp(opts: AppOptions) {
     res.json({ ok: true })
   })
 
+  // Doble factor: configurar genera un secreto pendiente; se activa al confirmar un código válido
+  app.post('/api/auth/2fa/setup', auth, async (req, res) => {
+    const user = userOf(req)
+    const s = newSecret()
+    db.prepare('UPDATE staff SET totp_secret = ? WHERE id = ? AND totp_enabled = 0').run(s, user.id)
+    const url = otpauthUrl(s, user.email, String(settings().name ?? 'Clinara'))
+    res.json({ secret: s, qr: await QRCode.toString(url, { type: 'svg', margin: 1, color: { dark: '#0e2233', light: '#ffffff' } }) })
+  })
+
+  app.post('/api/auth/2fa/enable', auth, (req, res) => {
+    const { code } = parse(z.object({ code: z.string() }), req.body, 'Escribe el código de 6 dígitos.')
+    const user = userOf(req)
+    const row = staffRow(user.id)!
+    if (!row.totp_secret) fail(400, 'Primero genera el código QR.')
+    if (!verifyTotp(String(row.totp_secret), code)) fail(400, 'El código no coincide. Revisa que la hora de tu teléfono sea correcta e inténtalo con el código actual.')
+    db.prepare('UPDATE staff SET totp_enabled = 1 WHERE id = ?').run(user.id)
+    audit(user.id, 'Activó la verificación en dos pasos')
+    res.json({ ok: true })
+  })
+
+  app.post('/api/auth/2fa/disable', auth, (req, res) => {
+    const { password } = parse(z.object({ password: z.string().min(1) }), req.body, 'Escribe tu contraseña.')
+    const user = userOf(req)
+    if (!bcrypt.compareSync(password, String(staffRow(user.id)!.password_hash))) fail(400, 'La contraseña no es correcta.')
+    db.prepare('UPDATE staff SET totp_enabled = 0, totp_secret = NULL WHERE id = ?').run(user.id)
+    audit(user.id, 'Desactivó la verificación en dos pasos')
+    res.json({ ok: true })
+  })
+
   app.get('/api/demo-accounts', (_req, res) => {
     if (!demoMode) return res.json({ accounts: [], password: null })
     const rows = db.prepare(`SELECT * FROM staff WHERE active = 1 AND email LIKE '%@demo.clinara' ORDER BY CASE role WHEN 'doctor' THEN 0 WHEN 'nurse' THEN 1 WHEN 'reception' THEN 2 ELSE 3 END, name`).all() as Row[]
@@ -142,18 +203,23 @@ export function createApp(opts: AppOptions) {
   app.get('/api/bootstrap', auth, (req, res) => {
     const user = userOf(req)
     const clinical = can(user.role, 'chart.view')
+    const billing = can(user.role, 'billing.manage')
     const staff = (db.prepare('SELECT * FROM staff ORDER BY name').all() as Row[]).map(toStaff)
     const patients = (db.prepare('SELECT * FROM patients ORDER BY last_name').all() as Row[]).map((r) => toPatient(r, clinical))
-    const appointments = (db.prepare('SELECT * FROM appointments ORDER BY start').all() as Row[]).map(toAppointment)
+    // Ventana de agenda: 90 días atrás y todo lo futuro
+    const since = new Date(); since.setDate(since.getDate() - 90)
+    const appointments = (db.prepare(`SELECT a.*, EXISTS(SELECT 1 FROM payments p WHERE p.appointment_id = a.id AND p.voided = 0) AS paid
+      FROM appointments a WHERE a.start >= ? ORDER BY a.start`).all(localDate(since)) as Row[])
+      .map((r) => ({ ...toAppointment(r), paid: billing ? Boolean(r.paid) : undefined }))
     const prescriptions = can(user.role, 'rx.view')
-      ? (db.prepare('SELECT * FROM prescriptions ORDER BY issued_at DESC').all() as Row[]).map(toPrescription) : []
+      ? (db.prepare('SELECT * FROM prescriptions ORDER BY issued_at DESC LIMIT 500').all() as Row[]).map(toPrescription) : []
     const auditLog = can(user.role, 'audit.view')
-      ? (db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 300').all() as Row[]).map(toAudit) : []
-    // Signos del día para que el médico vea quién está listo sin abrir cada expediente
+      ? (db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 500').all() as Row[]).map(toAudit) : []
     const todaysVitals = clinical
       ? (db.prepare(`SELECT v.* FROM vitals v JOIN appointments a ON a.id = v.appointment_id WHERE a.start LIKE ?`).all(`${localDate(new Date())}%`) as Row[]).map(toVitals)
       : []
-    res.json({ staff, patients, appointments, prescriptions, audit: auditLog, vitals: todaysVitals })
+    const services = (db.prepare('SELECT * FROM services ORDER BY name').all() as Row[]).map(toService)
+    res.json({ staff, patients, appointments, prescriptions, audit: auditLog, vitals: todaysVitals, services, settings: settings() })
   })
 
   // ---------- Pacientes ----------
@@ -172,12 +238,8 @@ export function createApp(opts: AppOptions) {
 
   app.post('/api/patients', auth, need('patients.manage'), (req, res) => {
     const p = parse(patientBody, req.body)
-    const id = randomUUID()
-    const n = Number((db.prepare(`SELECT COALESCE(MAX(CAST(SUBSTR(record, 5) AS INTEGER)), 400) AS n FROM patients`).get() as Row).n) + 1
-    const record = `EXP-${String(n).padStart(5, '0')}`
-    db.prepare(`INSERT INTO patients (id,record,first_name,last_name,birth_date,sex,phone,email,blood_type,allergies,conditions,insurance,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(id, record, p.firstName, p.lastName, p.birthDate, p.sex, p.phone, p.email ?? null, p.bloodType || null,
-        JSON.stringify(p.allergies), JSON.stringify(p.conditions), p.insurance || null, new Date().toISOString())
+    const id = createPatient(db, p)
+    const record = String(patientRow(id)!.record)
     audit(userOf(req).id, `Registró al paciente ${p.firstName} ${p.lastName} (${record})`)
     res.status(201).json({ id, record })
   })
@@ -215,18 +277,6 @@ export function createApp(opts: AppOptions) {
   })
 
   // ---------- Citas ----------
-  function assertFree(doctorId: string, start: string, minutes: number, ignoreId?: string) {
-    const s = new Date(start).getTime()
-    const e = s + minutes * 60_000
-    const same = db.prepare(`SELECT * FROM appointments WHERE doctor_id = ? AND start LIKE ? AND status NOT IN ('cancelled','no_show') AND id != ?`)
-      .all(doctorId, `${start.slice(0, 10)}%`, ignoreId ?? '') as Row[]
-    const clash = same.find((a) => {
-      const as = new Date(String(a.start)).getTime()
-      return as < e && s < as + Number(a.minutes) * 60_000
-    })
-    if (clash) fail(409, `${staffRow(doctorId)?.name} ya tiene una cita a las ${String(clash.start).slice(11, 16)}. Elige otra hora.`)
-  }
-
   const apptBody = z.object({
     patientId: z.string().min(1, 'Elige un paciente.'),
     doctorId: z.string().min(1, 'Elige un médico.'),
@@ -244,7 +294,7 @@ export function createApp(opts: AppOptions) {
     if (!doc || doc.role !== 'doctor' || !doc.active) fail(400, 'El médico elegido no está disponible.')
     assertFree(a.doctorId, start, a.minutes)
     const id = randomUUID()
-    db.prepare(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status) VALUES (?,?,?,?,?,?,?, 'scheduled')`)
+    db.prepare(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,source) VALUES (?,?,?,?,?,?,?, 'scheduled', 'staff')`)
       .run(id, a.patientId, a.doctorId, start, a.minutes, a.reason, a.type)
     audit(userOf(req).id, `Agendó cita de ${patientName(a.patientId)} con ${doc!.name} el ${start.slice(0, 10)} a las ${start.slice(11, 16)}`)
     res.status(201).json(toAppointment(apptRow(id)!))
@@ -261,7 +311,7 @@ export function createApp(opts: AppOptions) {
       reason: b.reason ?? String(row!.reason),
     }
     assertFree(next.doctorId, next.start, next.minutes, String(row!.id))
-    db.prepare('UPDATE appointments SET doctor_id = ?, start = ?, minutes = ?, reason = ?, status = ? WHERE id = ?')
+    db.prepare('UPDATE appointments SET doctor_id = ?, start = ?, minutes = ?, reason = ?, status = ?, reminded_at = NULL WHERE id = ?')
       .run(next.doctorId, next.start, next.minutes, next.reason, 'scheduled', String(row!.id))
     audit(userOf(req).id, `Reprogramó la cita de ${patientName(String(row!.patient_id))} al ${next.start.slice(0, 10)} ${next.start.slice(11, 16)}`)
     res.json(toAppointment(apptRow(String(row!.id))!))
@@ -288,6 +338,13 @@ export function createApp(opts: AppOptions) {
     db.prepare('UPDATE appointments SET status = ?, arrived_at = COALESCE(?, arrived_at) WHERE id = ?')
       .run(status, status === 'arrived' ? new Date().toISOString() : null, String(row!.id))
     audit(user.id, `${t.label} la cita de ${patientName(String(row!.patient_id))}`)
+    res.json(toAppointment(apptRow(String(row!.id))!))
+  })
+
+  app.post('/api/appointments/:id/reminded', auth, need('agenda.manage', 'checkin.manage'), (req, res) => {
+    const row = apptRow(String(req.params.id)) ?? fail(404, 'La cita no existe.')
+    db.prepare('UPDATE appointments SET reminded_at = ? WHERE id = ?').run(new Date().toISOString(), String(row!.id))
+    audit(userOf(req).id, `Envió recordatorio por WhatsApp a ${patientName(String(row!.patient_id))}`)
     res.json(toAppointment(apptRow(String(row!.id))!))
   })
 
@@ -362,6 +419,13 @@ export function createApp(opts: AppOptions) {
     res.status(201).json({ consultationId: cid, prescriptionId: rxId, folio })
   })
 
+  app.get('/api/consultations/:id', auth, need('consult.write'), (req, res) => {
+    const row = db.prepare('SELECT * FROM consultations WHERE id = ?').get(String(req.params.id)) as Row | undefined ?? fail(404, 'La consulta no existe.')
+    const c = toConsultation(row!)
+    audit(userOf(req).id, `Emitió constancia médica de ${patientName(c.patientId)}`)
+    res.json({ consultation: c, patient: toPatient(patientRow(c.patientId)!, true) })
+  })
+
   app.get('/api/prescriptions/:id', auth, need('rx.view'), (req, res) => {
     const row = db.prepare('SELECT * FROM prescriptions WHERE id = ?').get(String(req.params.id)) as Row | undefined ?? fail(404, 'La receta no existe.')
     const rx = toPrescription(row!)
@@ -377,7 +441,7 @@ export function createApp(opts: AppOptions) {
   app.post('/api/staff', auth, need('staff.manage'), (req, res) => {
     const s = parse(z.object({
       name: z.string().trim().min(3, 'Escribe el nombre completo.'),
-      role: z.enum(['admin', 'doctor', 'nurse', 'reception']),
+      role: z.enum(ROLES),
       email: z.string().trim().email('El correo no es válido.'),
       specialty: z.string().trim().optional(),
       license: z.string().trim().optional(),
@@ -387,8 +451,10 @@ export function createApp(opts: AppOptions) {
     const id = randomUUID()
     const password = tempPassword()
     const count = Number((db.prepare('SELECT COUNT(*) AS n FROM staff').get() as Row).n)
-    db.prepare(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash) VALUES (?,?,?,?,?,?,?,1,?)`)
-      .run(id, s.name, s.role, s.specialty || null, s.email, s.license || null, COLORS[count % COLORS.length], bcrypt.hashSync(password, 10))
+    const schedule = s.role === 'doctor' ? JSON.stringify({ days: [1, 2, 3, 4, 5], start: '08:00', end: '17:00', slot: 30 }) : null
+    db.prepare(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id) VALUES (?,?,?,?,?,?,?,1,?,?,?)`)
+      .run(id, s.name, s.role, s.specialty || null, s.email, s.license || null, COLORS[count % COLORS.length], bcrypt.hashSync(password, 10),
+        schedule, s.role === 'doctor' ? 'svc-gen' : null)
     audit(userOf(req).id, `Creó el usuario ${s.name} (${s.role})`)
     res.status(201).json({ user: toStaff(staffRow(id)!), password })
   })
@@ -396,12 +462,33 @@ export function createApp(opts: AppOptions) {
   app.patch('/api/staff/:id', auth, need('staff.manage'), (req, res) => {
     const me = userOf(req)
     const row = staffRow(String(req.params.id)) ?? fail(404, 'El usuario no existe.')
-    const b = parse(z.object({ active: z.boolean().optional(), role: z.enum(['admin', 'doctor', 'nurse', 'reception']).optional() }), req.body)
-    if (row!.id === me.id && (b.active === false || (b.role && b.role !== me.role))) fail(400, 'No puedes desactivar ni cambiar el rol de tu propia cuenta.')
-    if (b.active !== undefined) db.prepare('UPDATE staff SET active = ?, token_version = token_version + 1 WHERE id = ?').run(b.active ? 1 : 0, String(row!.id))
-    if (b.role) db.prepare('UPDATE staff SET role = ?, token_version = token_version + 1 WHERE id = ?').run(b.role, String(row!.id))
-    audit(me.id, `${b.active === false ? 'Desactivó' : b.active ? 'Reactivó' : 'Cambió el rol de'} a ${row!.name}`)
-    res.json(toStaff(staffRow(String(row!.id))!))
+    const b = parse(z.object({
+      active: z.boolean().optional(),
+      role: z.enum(ROLES).optional(),
+      twoFactor: z.literal(false).optional(),
+      specialty: z.string().trim().optional(),
+      license: z.string().trim().optional(),
+      serviceId: z.string().optional(),
+      schedule: z.object({
+        days: z.array(z.number().int().min(0).max(6)).min(1, 'Elige al menos un día de atención.'),
+        start: z.string().regex(/^\d{2}:\d{2}$/), end: z.string().regex(/^\d{2}:\d{2}$/),
+        slot: z.number().int().refine((n) => [15, 20, 30, 45, 60].includes(n), 'La duración de cita no es válida.'),
+      }).refine((s) => s.start < s.end, 'La hora de salida debe ser después de la de entrada.').optional(),
+    }), req.body)
+    const id = String(row!.id)
+    if (id === me.id && (b.active === false || (b.role && b.role !== me.role))) fail(400, 'No puedes desactivar ni cambiar el rol de tu propia cuenta.')
+    const changes: string[] = []
+    tx(db, () => {
+      if (b.active !== undefined) { db.prepare('UPDATE staff SET active = ?, token_version = token_version + 1 WHERE id = ?').run(b.active ? 1 : 0, id); changes.push(b.active ? 'Reactivó' : 'Desactivó') }
+      if (b.role) { db.prepare('UPDATE staff SET role = ?, token_version = token_version + 1 WHERE id = ?').run(b.role, id); changes.push('Cambió el rol de') }
+      if (b.twoFactor === false) { db.prepare('UPDATE staff SET totp_enabled = 0, totp_secret = NULL WHERE id = ?').run(id); changes.push('Quitó la verificación en dos pasos de') }
+      if (b.specialty !== undefined) db.prepare('UPDATE staff SET specialty = ? WHERE id = ?').run(b.specialty || null, id)
+      if (b.license !== undefined) db.prepare('UPDATE staff SET license = ? WHERE id = ?').run(b.license || null, id)
+      if (b.serviceId !== undefined) db.prepare('UPDATE staff SET service_id = ? WHERE id = ?').run(b.serviceId || null, id)
+      if (b.schedule) { db.prepare('UPDATE staff SET schedule = ? WHERE id = ?').run(JSON.stringify(b.schedule), id); changes.push('Actualizó el horario de') }
+    })
+    audit(me.id, `${changes[0] ?? 'Actualizó los datos de'} ${row!.name}`)
+    res.json(toStaff(staffRow(id)!))
   })
 
   app.post('/api/staff/:id/reset-password', auth, need('staff.manage'), (req, res) => {
@@ -420,6 +507,12 @@ export function createApp(opts: AppOptions) {
     res.json({ ok: true })
   })
 
+  registerSettings(app, ctx)
+  registerPublic(app, ctx)
+  registerBilling(app, ctx)
+  registerReports(app, ctx)
+  registerFiles(app, ctx)
+
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))
 
   // ---------- Frontend compilado ----------
@@ -431,6 +524,8 @@ export function createApp(opts: AppOptions) {
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     void _next
     if (err instanceof HttpError) return res.status(err.status).json({ error: err.message })
+    const e = err as { type?: string }
+    if (e?.type === 'entity.too.large') return res.status(413).json({ error: 'El archivo es demasiado grande. El máximo es 8 MB.' })
     if (err instanceof SyntaxError) return res.status(400).json({ error: 'La solicitud no es válida.' })
     console.error(err)
     res.status(500).json({ error: 'Ocurrió un error en el servidor. Inténtalo de nuevo.' })
@@ -439,16 +534,6 @@ export function createApp(opts: AppOptions) {
   return app
 }
 
-function parse<T extends z.ZodType>(schema: T, data: unknown, message?: string): z.infer<T> {
-  const r = schema.safeParse(data)
-  if (!r.success) fail(400, message ?? r.error.issues[0]?.message ?? 'Revisa los datos enviados.')
-  return r.data as z.infer<T>
-}
-
-function localDate(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
 
 /** Sin JWT_SECRET en el entorno, genera uno y lo guarda en la base para que las sesiones sobrevivan reinicios. */
 function persistentSecret(db: DB) {

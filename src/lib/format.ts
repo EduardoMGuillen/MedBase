@@ -42,3 +42,28 @@ export const STATUS: Record<ApptStatus, { label: string; tone: string }> = {
 export const bmi = (kg: number, cm: number) => (kg / (cm / 100) ** 2).toFixed(1)
 
 export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+export const money = (n: number, currency = 'L') =>
+  `${currency} ${n.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+export const METHOD_LABEL = { cash: 'Efectivo', card: 'Tarjeta', transfer: 'Transferencia', insurance: 'Aseguradora' } as const
+
+export const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+
+export const localISODate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+/** Rellena la plantilla de recordatorio con los datos de la cita. */
+export function fillTemplate(tpl: string, v: Record<string, string>) {
+  return tpl.replace(/\{(\w+)\}/g, (m, k: string) => v[k] ?? m)
+}
+
+/** Enlace de WhatsApp. Números de 8 dígitos se asumen de Honduras (+504). */
+export function whatsappUrl(phone: string, text: string) {
+  let digits = phone.replace(/\D/g, '')
+  if (digits.length === 8) digits = `504${digits}`
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`
+}
+
+export const fileSize = (bytes: number) =>
+  bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`

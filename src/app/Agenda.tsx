@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Globe, Plus, Receipt } from 'lucide-react'
+import { ReminderButton } from '../components/Reminder'
 import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead, StatusBadge } from '../components/ui'
 import { cap, fullName, sameDay, time } from '../lib/format'
@@ -74,7 +75,7 @@ export default function Agenda() {
                       style={{ top: top + 2, height: a.minutes * (HOUR_PX / 60) - 4, ['--c' as string]: d.color, textAlign: 'left', border: 0, borderLeft: `3px solid ${d.color}` }}
                       onClick={() => setSelectedId(a.id)}>
                       <strong>{time(a.start)} {fullName(p)}</strong>
-                      <span>{a.reason}</span>
+                      <span>{a.source === 'online' && <Globe size={11} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }} aria-label="Reservada en línea" />}{a.reason}</span>
                     </button>
                   )
                 })}
@@ -96,15 +97,23 @@ export default function Agenda() {
             {can('checkin.manage') && open && <button className="btn btn--soft" onClick={() => act(() => store.setStatus(a.id, 'arrived', 'Llegada registrada'))}>Registrar llegada</button>}
             {can('consult.write') && a.doctorId === user?.id && ['arrived', 'triaged', 'in_consult'].includes(a.status) &&
               <button className="btn btn--primary" onClick={() => navigate(`/app/consulta/${a.id}`)}>Atender</button>}
+            {can('billing.manage') && a.status === 'done' && a.paid === false && <button className="btn btn--primary" onClick={() => navigate('/app/caja')}><Receipt size={15} />Ir a cobrar</button>}
             {!open && <button className="btn btn--ghost" onClick={() => navigate(`/app/pacientes/${p.id}`)}>Abrir ficha</button>}
           </>}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><StatusBadge status={a.status} />{a.type === 'urgent' && <span className="badge badge--red">Urgente</span>}</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <StatusBadge status={a.status} />
+              {a.type === 'urgent' && <span className="badge badge--red">Urgente</span>}
+              {a.source === 'online' && <span className="badge badge--ink">Reservada en línea</span>}
+              {a.remindedAt && open && <span className="badge badge--mint">Recordatorio enviado</span>}
+              {a.paid === true && <span className="badge badge--mint">Cobrada</span>}
+            </div>
             <div className="chart-meta" style={{ marginTop: 0 }}>
               <span>Hora <b>{time(a.start)}</b></span><span>Duración <b>{a.minutes} min</b></span>
               <span>Expediente <b>{p.record}</b></span><span>Teléfono <b>{p.phone}</b></span>
             </div>
             <p><b>Motivo:</b> {a.reason}</p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {open && (can('agenda.manage') || can('checkin.manage')) && <ReminderButton appt={a} />}
               {a.status === 'scheduled' && can('agenda.manage') && (
                 <button className="btn btn--ghost btn--sm" onClick={() => store.setStatus(a.id, 'confirmed', 'Cita confirmada')}>Marcar como confirmada</button>
               )}

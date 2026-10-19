@@ -1,4 +1,5 @@
-import type { Appointment, Consultation, Patient, Prescription, Staff, Vitals } from './types'
+import type { Appointment, ClinicSettings, Consultation, Patient, Payment, Prescription, Schedule, Service, Staff, Vitals } from './types'
+import { ICD10 } from './catalogs'
 
 export const CLINIC = {
   name: 'Clínica Santa Brígida',
@@ -42,7 +43,7 @@ function at(dayOffset: number, h: number, m = 0) {
   d.setDate(d.getDate() + dayOffset)
   d.setHours(h, m, 0, 0)
   const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(h)}:${pad(m)}:00`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`
 }
 
 let n = 0
@@ -104,4 +105,97 @@ export function seedClinical() {
     ] },
   ]
   return { vitals, consultations, prescriptions }
+}
+
+// ---------- Configuración, servicios y horarios ----------
+
+export const DEFAULT_SETTINGS: ClinicSettings = {
+  name: CLINIC.name,
+  address: CLINIC.address,
+  phone: CLINIC.phone,
+  email: 'citas@santabrigida.hn',
+  currency: 'L',
+  rxValidityDays: 30,
+  reminderTemplate: 'Hola {paciente}, le recordamos su cita en {clinica} con {medico} el {fecha} a las {hora}. Responda SÍ para confirmar o llámenos al {telefono} si necesita cambiarla.',
+}
+
+export const SERVICES: Service[] = [
+  { id: 'svc-gen', name: 'Consulta general', price: 500, active: true },
+  { id: 'svc-mi', name: 'Consulta de medicina interna', price: 800, active: true },
+  { id: 'svc-ped', name: 'Consulta pediátrica', price: 700, active: true },
+  { id: 'svc-gin', name: 'Consulta ginecológica', price: 900, active: true },
+  { id: 'svc-vac', name: 'Aplicación de vacuna', price: 350, active: true },
+  { id: 'svc-neb', name: 'Nebulización', price: 250, active: true },
+  { id: 'svc-ecg', name: 'Electrocardiograma', price: 600, active: true },
+  { id: 'svc-pap', name: 'Papanicolaou', price: 650, active: true },
+  { id: 'svc-cur', name: 'Curación', price: 300, active: true },
+]
+
+export const DOCTOR_SETUP: Record<string, { schedule: Schedule; serviceId: string }> = {
+  's-herrera': { schedule: { days: [1, 2, 3, 4, 5], start: '08:00', end: '17:00', slot: 30 }, serviceId: 'svc-mi' },
+  's-paz': { schedule: { days: [1, 2, 3, 4, 5, 6], start: '08:00', end: '14:00', slot: 30 }, serviceId: 'svc-ped' },
+  's-zuniga': { schedule: { days: [1, 3, 5], start: '09:00', end: '17:00', slot: 30 }, serviceId: 'svc-gin' },
+}
+
+// ---------- Historial sintético para que los reportes tengan datos ----------
+const FIRST_F = ['Karla', 'Lourdes', 'Gabriela', 'Patricia', 'Andrea', 'Claudia', 'Fátima', 'Iris', 'Sandra', 'Yolanda', 'Paola', 'Melissa', 'Cinthia', 'Marta', 'Elena']
+const FIRST_M = ['José', 'Luis', 'Kevin', 'Óscar', 'Mario', 'Javier', 'Ricardo', 'Edwin', 'Marvin', 'Nelson', 'Wilmer', 'César', 'Raúl', 'Hugo', 'Bryan']
+const LAST = ['Martínez', 'López', 'Hernández', 'Flores', 'Zelaya', 'Aguilar', 'Rodríguez', 'Mejía', 'Cruz', 'Ramos', 'Ortiz', 'Murillo', 'Espinoza', 'Valladares', 'Canales', 'Bonilla', 'Sosa', 'Maradiaga']
+const REASONS: Record<string, [string, string][]> = {
+  's-herrera': [['Control de presión arterial', 'I10'], ['Dolor de garganta', 'J02.9'], ['Control de glucosa', 'E11.9'], ['Gastritis', 'K29.7'], ['Dolor lumbar', 'M54.5'], ['Chequeo general', 'Z00.0'], ['Cefalea', 'G43.9'], ['Ardor al orinar', 'N39.0']],
+  's-paz': [['Fiebre y tos', 'J20.9'], ['Diarrea', 'A09'], ['Control niño sano', 'Z00.0'], ['Dolor de oído', 'H66.9'], ['Resfriado', 'J00'], ['Crisis asmática', 'J45.9']],
+  's-zuniga': [['Control prenatal', 'O26.9'], ['Papanicolaou', 'Z00.0'], ['Infección urinaria', 'N39.0'], ['Consulta anticonceptivos', 'Z00.0']],
+}
+
+function rng(seed: number) {
+  return () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296 }
+}
+
+export function seedHistory(days = 60) {
+  const rand = rng(20261019)
+  const pick = <T,>(a: T[]) => a[Math.floor(rand() * a.length)]
+  const patients: Patient[] = []
+  for (let i = 0; i < 48; i++) {
+    const f = rand() < 0.55
+    const year = 1950 + Math.floor(rand() * 70)
+    patients.push(p(`h${i}`, `EXP-${String(300 + i).padStart(5, '0')}`, pick(f ? FIRST_F : FIRST_M), `${pick(LAST)} ${pick(LAST)}`,
+      `${year}-${String(1 + Math.floor(rand() * 12)).padStart(2, '0')}-${String(1 + Math.floor(rand() * 28)).padStart(2, '0')}`,
+      f ? 'F' : 'M', `9${Math.floor(100 + rand() * 900)}-${Math.floor(1000 + rand() * 9000)}`, { createdAt: at(-days - 30, 9) }))
+  }
+  const appointments: Appointment[] = []
+  const consultations: Consultation[] = []
+  const payments: Payment[] = []
+  let receipt = 0
+  for (let d = days; d >= 1; d--) {
+    const date = new Date(); date.setDate(date.getDate() - d)
+    for (const [doc, setup] of Object.entries(DOCTOR_SETUP)) {
+      if (!setup.schedule.days.includes(date.getDay())) continue
+      const n = 2 + Math.floor(rand() * 4)
+      const used = new Set<number>()
+      for (let k = 0; k < n; k++) {
+        let slot = Math.floor(rand() * 10)
+        while (used.has(slot)) slot = (slot + 1) % 10
+        used.add(slot)
+        const startH = Number(setup.schedule.start.slice(0, 2))
+        const h = startH + Math.floor(slot / 2)
+        const m = (slot % 2) * 30
+        const [reason, code] = pick(REASONS[doc])
+        const r = rand()
+        const status = r < 0.82 ? 'done' : r < 0.93 ? 'no_show' : 'cancelled'
+        const pt = pick(patients)
+        const id = `ha${appointments.length}`
+        appointments.push({ id, patientId: pt.id, doctorId: doc, start: at(-d, h, m), minutes: 30, reason, type: rand() < 0.3 ? 'first' : 'followup', status, source: rand() < 0.35 ? 'online' : 'staff' })
+        if (status !== 'done') continue
+        const dx = ICD10.find((x) => x.code === code)!
+        consultations.push({ id: `hc${consultations.length}`, patientId: pt.id, doctorId: doc, appointmentId: id, date: at(-d, h, m + 20), reason, symptoms: [], history: '', exam: '', diagnoses: [dx], plan: '' })
+        const svc = SERVICES.find((s) => s.id === setup.serviceId)!
+        const extra = rand() < 0.2 ? pick(SERVICES.filter((s) => !s.name.startsWith('Consulta'))) : null
+        const items = [{ serviceId: svc.id, name: svc.name, price: svc.price, qty: 1 }, ...(extra ? [{ serviceId: extra.id, name: extra.name, price: extra.price, qty: 1 }] : [])]
+        const total = items.reduce((s, i) => s + i.price * i.qty, 0)
+        const method = (['cash', 'cash', 'card', 'card', 'transfer', 'insurance'] as const)[Math.floor(rand() * 6)]
+        payments.push({ id: `hp${payments.length}`, receiptNo: `R-${String(++receipt).padStart(6, '0')}`, appointmentId: id, patientId: pt.id, items, discount: 0, total, method, receivedBy: 's-mejia', paidAt: at(-d, h, m + 35) })
+      }
+    }
+  }
+  return { patients, appointments, consultations, payments, lastReceipt: receipt }
 }

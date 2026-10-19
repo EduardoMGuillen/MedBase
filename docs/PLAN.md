@@ -42,6 +42,8 @@ Principios que resultan de esa revisión:
 | Ver e imprimir recetas | | ✓ | ✓ | |
 | Gestionar personal y roles | ✓ | | | |
 | Ver indicadores | ✓ | | | |
+| Cobrar y emitir recibos | ✓ | | | ✓ |
+| Configurar clínica y servicios | ✓ | | | |
 | Ver bitácora | ✓ | | | |
 
 La fuente de verdad está en `src/lib/permissions.ts`.
@@ -50,7 +52,6 @@ La fuente de verdad está en `src/lib/permissions.ts`.
 - **Superadmin de plataforma**: gestiona clínicas (multiempresa), planes y facturación. No accede a datos clínicos.
 - **Farmacia**: ve recetas emitidas y marca la dispensación.
 - **Laboratorio**: recibe órdenes y sube resultados al expediente.
-- **Caja / facturación**: cobros, recibos y aseguradoras, sin acceso clínico.
 - **Paciente (portal)**: ve sus citas, recetas y resultados, y reserva en línea.
 
 ---
@@ -120,10 +121,10 @@ Los tipos están en `src/lib/types.ts`.
 |---|---|
 | **0. Prototipo** (hecho) | Landing, login, 4 roles, agenda, sala de espera, triaje, consulta SOAP, CIE-10, recetas con cruce de alergias, expediente, personal, bitácora |
 | **1. MVP funcional** (hecho) | Backend con base de datos, login real, permisos en servidor, edición de pacientes, reprogramación con detección de choques, alta de usuarios con contraseña temporal, cambio de contraseña, pruebas automáticas |
-| **1b. Pendiente para salir a producción** | Doble factor (TOTP), alta de varias clínicas, recordatorios por WhatsApp, respaldos automáticos, migrar a Postgres si crece el volumen |
-| **2. Operación** | Caja y facturación, reportes exportables, plantillas de nota por especialidad, órdenes de laboratorio |
-| **3. Pacientes** | Portal del paciente, reserva en línea, receta digital con código QR verificable |
-| **4. Escala** | Multisede, farmacia, integraciones (HL7 FHIR), app móvil para médicos |
+| **2. Operación** (hecho) | Reserva en línea con horarios por médico, recordatorios por WhatsApp (enlace), caja con recibos y cierre, reportes con exportación, archivos en el expediente, constancias médicas, configuración de clínica y precios, verificación en dos pasos, cierre por inactividad, buscador Ctrl+K |
+| **3. Pendiente para producción** | Envío automático de recordatorios (WhatsApp Business API), alta de varias clínicas, respaldos automáticos programados, facturación fiscal (CAI/SAR), migrar a Postgres si crece el volumen |
+| **4. Pacientes** | Portal del paciente con historial, receta digital con código QR verificable, plantillas de nota por especialidad, órdenes de laboratorio |
+| **5. Escala** | Multisede, farmacia, integraciones (HL7 FHIR), app móvil para médicos |
 
 ---
 

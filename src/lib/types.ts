@@ -1,5 +1,13 @@
 export type Role = 'admin' | 'doctor' | 'nurse' | 'reception'
 
+/** Horario de atención de un médico. `days` usa 0 = domingo … 6 = sábado. */
+export interface Schedule {
+  days: number[]
+  start: string // HH:MM
+  end: string // HH:MM
+  slot: number // minutos por cita
+}
+
 export interface Staff {
   id: string
   name: string
@@ -9,6 +17,54 @@ export interface Staff {
   license?: string
   color: string
   active: boolean
+  schedule?: Schedule
+  serviceId?: string // servicio que se cobra por defecto en sus consultas
+  twoFactor?: boolean
+}
+
+export interface ClinicSettings {
+  name: string
+  address: string
+  phone: string
+  email: string
+  currency: string // símbolo, p. ej. "L"
+  rxValidityDays: number
+  reminderTemplate: string
+}
+
+export interface Service {
+  id: string
+  name: string
+  price: number
+  active: boolean
+}
+
+export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'insurance'
+
+export interface Payment {
+  id: string
+  receiptNo: string
+  appointmentId?: string
+  patientId: string
+  items: { serviceId?: string; name: string; price: number; qty: number }[]
+  discount: number
+  total: number
+  method: PaymentMethod
+  reference?: string
+  receivedBy: string
+  paidAt: string
+  voided?: boolean
+}
+
+export interface Attachment {
+  id: string
+  patientId: string
+  name: string
+  mime: string
+  size: number
+  category: 'lab' | 'imaging' | 'document' | 'other'
+  uploadedBy: string
+  uploadedAt: string
 }
 
 export interface Patient {
@@ -48,6 +104,9 @@ export interface Appointment {
   type: 'first' | 'followup' | 'urgent'
   status: ApptStatus
   arrivedAt?: string
+  source?: 'staff' | 'online'
+  remindedAt?: string
+  paid?: boolean
 }
 
 export interface Vitals {

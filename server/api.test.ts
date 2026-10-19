@@ -23,7 +23,7 @@ async function as(email: string, password = DEMO_PASSWORD) {
     const r = await fetch(`${base}${path}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
     return { status: r.status, body: await r.json() as any }
   }
-  return { status: res.status, login: await res.json() as any, get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), patch: (p: string, b: unknown) => call('PATCH', p, b) }
+  return { status: res.status, login: await res.json() as any, call, get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), patch: (p: string, b: unknown) => call('PATCH', p, b) }
 }
 
 const today = () => {
@@ -150,5 +150,132 @@ describe('pacientes y personal', () => {
     const admin = await as('admin@demo.clinara')
     const boot = await admin.get('/api/bootstrap')
     assert.ok(boot.body.audit.some((e: any) => e.action.startsWith('Consultó el expediente')))
+  })
+})
+
+describe('reserva en línea', () => {
+  const nextWeekday = () => {
+    const d = new Date(); d.setDate(d.getDate() + 1)
+    while (![1, 2, 3, 4, 5].includes(d.getDay())) d.setDate(d.getDate() + 1)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
+
+  test('muestra médicos y horarios libres sin sesión, y la cita aparece en la agenda', async () => {
+    const clinic = await (await fetch(`${base}/api/public/clinic`)).json() as any
+    assert.ok(clinic.doctors.some((d: any) => d.id === 's-herrera'))
+    assert.equal(clinic.doctors[0].email, undefined)
+    const date = nextWeekday()
+    const { slots } = await (await fetch(`${base}/api/public/slots?doctorId=s-herrera&date=${date}`)).json() as any
+    assert.ok(slots.length > 0)
+    const book = await fetch(`${base}/api/public/book`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+      doctorId: 's-herrera', date, time: slots[0], firstName: 'Paciente', lastName: 'En Línea', birthDate: '1985-02-02', sex: 'F', phone: '9900-1122', reason: 'Chequeo general',
+    }) })
+    assert.equal(book.status, 201)
+    const again = await (await fetch(`${base}/api/public/slots?doctorId=s-herrera&date=${date}`)).json() as any
+    assert.ok(!again.slots.includes(slots[0]))
+    const dup = await fetch(`${base}/api/public/book`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+      doctorId: 's-herrera', date, time: slots[0], firstName: 'Otra', lastName: 'Persona', birthDate: '1990-02-02', sex: 'M', phone: '9900-3344', reason: 'Chequeo general',
+    }) })
+    assert.equal(dup.status, 409)
+    const rec = await as('smejia@demo.clinara')
+    const boot = await rec.get('/api/bootstrap')
+    assert.ok(boot.body.appointments.some((a: any) => a.source === 'online' && a.start.startsWith(`${date}T${slots[0]}`)))
+  })
+})
+
+describe('caja', () => {
+  test('recepción cobra una consulta atendida una sola vez; el médico no puede cobrar', async () => {
+    const rec = await as('smejia@demo.clinara')
+    const boot = await rec.get('/api/bootstrap')
+    const pending = boot.body.appointments.find((a: any) => a.id === 'a2')
+    assert.equal(pending.paid, false)
+    const body = { appointmentId: 'a2', patientId: pending.patientId, items: [{ serviceId: 'svc-mi', name: 'Consulta de medicina interna', price: 800, qty: 1 }], discount: 100, method: 'cash' }
+    const pay = await rec.post('/api/payments', body)
+    assert.equal(pay.status, 201)
+    assert.equal(pay.body.total, 700)
+    assert.match(pay.body.receiptNo, /^R-\d{6}$/)
+    assert.equal((await rec.post('/api/payments', body)).status, 409)
+    const card = await rec.post('/api/payments', { ...body, appointmentId: undefined, method: 'card' })
+    assert.equal(card.status, 400)
+    const doc = await as('lherrera@demo.clinara')
+    assert.equal((await doc.post('/api/payments', body)).status, 403)
+    assert.equal((await rec.post(`/api/payments/${pay.body.id}/void`, { reason: 'Cobro duplicado' })).status, 403)
+    const admin = await as('admin@demo.clinara')
+    assert.equal((await admin.post(`/api/payments/${pay.body.id}/void`, { reason: 'Cobro de prueba' })).body.voided, true)
+  })
+})
+
+describe('reportes y configuración', () => {
+  test('administración obtiene indicadores; el médico no', async () => {
+    const admin = await as('admin@demo.clinara')
+    const to = today()
+    const d = new Date(); d.setDate(d.getDate() - 30)
+    const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const r = await admin.get(`/api/reports?from=${from}&to=${to}`)
+    assert.equal(r.status, 200)
+    assert.equal(r.body.days.length, 31)
+    assert.ok(r.body.totals.revenue > 0)
+    assert.ok(r.body.topDiagnoses.length > 0)
+    const doc = await as('lherrera@demo.clinara')
+    assert.equal((await doc.get(`/api/reports?from=${from}&to=${to}`)).status, 403)
+  })
+
+  test('administración cambia el nombre de la clínica y el precio de un servicio', async () => {
+    const admin = await as('admin@demo.clinara')
+    const boot = await admin.get('/api/bootstrap')
+    const s = await admin.call('PUT', '/api/settings', { ...boot.body.settings, name: 'Clínica de Prueba' })
+    assert.equal(s.body.name, 'Clínica de Prueba')
+    const svc = await admin.patch('/api/services/svc-gen', { price: 550 })
+    assert.equal(svc.body.price, 550)
+    const rec = await as('smejia@demo.clinara')
+    assert.equal((await rec.patch('/api/services/svc-gen', { price: 1 })).status, 403)
+  })
+
+  test('el horario del médico limita la reserva en línea', async () => {
+    const admin = await as('admin@demo.clinara')
+    const r = await admin.patch('/api/staff/s-zuniga', { schedule: { days: [2], start: '10:00', end: '11:00', slot: 30 } })
+    assert.deepEqual(r.body.schedule.days, [2])
+    const d = new Date(); d.setDate(d.getDate() + 1)
+    while (d.getDay() === 2) d.setDate(d.getDate() + 1)
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const { slots } = await (await fetch(`${base}/api/public/slots?doctorId=s-zuniga&date=${date}`)).json() as any
+    assert.deepEqual(slots, [])
+  })
+})
+
+describe('verificación en dos pasos', () => {
+  test('tras activarla, el login pide el código', async () => {
+    const { totp } = await import('./totp')
+    const nurse = await as('crios@demo.clinara')
+    const setup = await nurse.post('/api/auth/2fa/setup')
+    assert.match(setup.body.qr, /<svg/)
+    assert.equal((await nurse.post('/api/auth/2fa/enable', { code: '000000' })).status, 400)
+    assert.equal((await nurse.post('/api/auth/2fa/enable', { code: totp(setup.body.secret) })).status, 200)
+    const step1 = await as('crios@demo.clinara')
+    assert.equal(step1.login.twoFactor, true)
+    assert.equal((await step1.get('/api/bootstrap')).status, 401)
+    const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'crios@demo.clinara', password: DEMO_PASSWORD, code: totp(setup.body.secret) }) })
+    assert.equal(res.status, 200)
+    const admin = await as('admin@demo.clinara')
+    await admin.patch('/api/staff/s-rios', { twoFactor: false })
+    assert.equal((await as('crios@demo.clinara')).login.user.twoFactor, false)
+  })
+})
+
+describe('archivos del expediente', () => {
+  test('enfermería sube un PDF, el médico lo ve y recepción no tiene acceso', async () => {
+    const nurse = await as('crios@demo.clinara')
+    const pdf = Buffer.from('%PDF-1.4 resultado de laboratorio').toString('base64')
+    const up = await nurse.post('/api/patients/p1/attachments', { name: 'Hemograma.pdf', mime: 'application/pdf', category: 'lab', data: pdf })
+    assert.equal(up.status, 201)
+    const bad = await nurse.post('/api/patients/p1/attachments', { name: 'x.exe', mime: 'application/x-msdownload', category: 'other', data: pdf })
+    assert.equal(bad.status, 400)
+    const doc = await as('lherrera@demo.clinara')
+    const list = await doc.get('/api/patients/p1/attachments')
+    assert.equal(list.body[0].name, 'Hemograma.pdf')
+    const rec = await as('smejia@demo.clinara')
+    assert.equal((await rec.get('/api/patients/p1/attachments')).status, 403)
   })
 })

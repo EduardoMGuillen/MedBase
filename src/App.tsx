@@ -5,6 +5,8 @@ import type { Permission } from './lib/permissions'
 import { Loading, Toaster } from './components/ui'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
+import Booking from './pages/Booking'
+import NotFound from './pages/NotFound'
 import AppShell from './app/AppShell'
 import Dashboard from './app/Dashboard'
 import Agenda from './app/Agenda'
@@ -13,7 +15,12 @@ import Patients from './app/Patients'
 import PatientChart from './app/PatientChart'
 import Consultation from './app/Consultation'
 import Prescriptions, { PrescriptionSheet } from './app/Prescriptions'
+import Certificate from './app/Certificate'
+import Billing, { ReceiptSheet } from './app/Billing'
+import Reports from './app/Reports'
+import Settings from './app/Settings'
 import StaffPage from './app/Staff'
+import Account from './app/Account'
 
 function Guard({ perm, children }: { perm?: Permission; children: ReactNode }) {
   const { user, can, checking } = useStore()
@@ -30,6 +37,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/reservar" element={<Booking />} />
           <Route path="/app" element={<Guard><AppShell /></Guard>}>
             <Route index element={<Dashboard />} />
             <Route path="agenda" element={<Guard perm="agenda.view"><Agenda /></Guard>} />
@@ -37,11 +45,18 @@ export default function App() {
             <Route path="pacientes" element={<Guard perm="patients.view"><Patients /></Guard>} />
             <Route path="pacientes/:id" element={<Guard perm="patients.view"><PatientChart /></Guard>} />
             <Route path="consulta/:apptId" element={<Guard perm="consult.write"><Consultation /></Guard>} />
+            <Route path="constancia/:id" element={<Guard perm="consult.write"><Certificate /></Guard>} />
             <Route path="recetas" element={<Guard perm="rx.view"><Prescriptions /></Guard>} />
             <Route path="recetas/:id" element={<Guard perm="rx.view"><PrescriptionSheet /></Guard>} />
+            <Route path="caja" element={<Guard perm="billing.manage"><Billing /></Guard>} />
+            <Route path="recibos/:id" element={<Guard perm="billing.manage"><ReceiptSheet /></Guard>} />
+            <Route path="reportes" element={<Guard perm="reports.view"><Reports /></Guard>} />
             <Route path="personal" element={<Guard perm="staff.manage"><StaffPage /></Guard>} />
+            <Route path="configuracion" element={<Guard perm="settings.manage"><Settings /></Guard>} />
+            <Route path="cuenta" element={<Account />} />
+            <Route path="*" element={<NotFound inApp />} />
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
         <Toaster />
       </BrowserRouter>

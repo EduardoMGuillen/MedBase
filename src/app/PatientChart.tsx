@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { FileText, Lock, Pencil, TriangleAlert, ShieldCheck } from 'lucide-react'
+import { FileText, Lock, Pencil, TriangleAlert, ShieldCheck, FileBadge } from 'lucide-react'
 import { useStore, type Chart } from '../lib/store'
 import { Avatar, Loading, StatusBadge } from '../components/ui'
 import { age, bmi, date, fullName, time } from '../lib/format'
 import { patientColor, PatientForm } from './Patients'
+import { Attachments } from './Attachments'
 import type { Vitals } from '../lib/types'
 
 export function VitalsGrid({ v }: { v: Vitals }) {
@@ -33,7 +34,7 @@ export function useChart(patientId: string | undefined, enabled: boolean) {
   return { chart, reload: load }
 }
 
-type Tab = 'summary' | 'consults' | 'rx' | 'vitals'
+type Tab = 'summary' | 'consults' | 'rx' | 'vitals' | 'files'
 
 export default function PatientChart() {
   const { id } = useParams()
@@ -51,7 +52,7 @@ export default function PatientChart() {
   const appts = appointments.filter((a) => a.patientId === p.id).sort((a, b) => b.start.localeCompare(a.start))
   const tabs: [Tab, string, boolean][] = [
     ['summary', 'Resumen', true], ['consults', `Consultas (${cs.length})`, clinical],
-    ['rx', `Recetas (${rxs.length})`, clinical && can('rx.view')], ['vitals', 'Signos vitales', clinical],
+    ['rx', `Recetas (${rxs.length})`, clinical && can('rx.view')], ['vitals', 'Signos vitales', clinical], ['files', 'Archivos', clinical],
   ]
 
   return (
@@ -136,7 +137,10 @@ export default function PatientChart() {
                 {c.exam && <p><b style={{ color: 'var(--petrol)' }}>Exploración:</b> {c.exam}</p>}
                 {c.plan && <p><b style={{ color: 'var(--petrol)' }}>Plan:</b> {c.plan}</p>}
                 <div className="tl__dx">{c.diagnoses.map((d) => <span key={d.code} className="dx"><code>{d.code}</code>{d.label}</span>)}</div>
-                {c.prescriptionId && can('rx.view') && <Link className="btn btn--ghost btn--sm" style={{ marginTop: 12 }} to={`/app/recetas/${c.prescriptionId}`}><FileText size={15} />Ver receta</Link>}
+                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                  {c.prescriptionId && can('rx.view') && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${c.prescriptionId}`}><FileText size={15} />Ver receta</Link>}
+                  {can('consult.write') && <Link className="btn btn--ghost btn--sm" to={`/app/constancia/${c.id}`}><FileBadge size={15} />Constancia médica</Link>}
+                </div>
               </div>
             </article>
           )) : <div className="empty">Este paciente aún no tiene consultas firmadas.</div>}
@@ -169,6 +173,8 @@ export default function PatientChart() {
           {!vs.length && <div className="empty">Sin registros todavía.</div>}
         </section>
       )}
+
+      {tab === 'files' && clinical && <Attachments patientId={p.id} />}
 
       {editing && (
         <PatientForm

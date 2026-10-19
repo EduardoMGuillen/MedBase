@@ -27,11 +27,11 @@ function tracePath() {
 }
 
 const JOURNEY = [
-  { t: 'Agenda', d: 'La cita se reserva por consultorio y médico, con recordatorio al paciente un día antes.', who: 'Recepción' },
+  { t: 'Agenda', d: 'El paciente reserva en línea o por teléfono, y recibe un recordatorio por WhatsApp un día antes.', who: 'Paciente y recepción' },
   { t: 'Llegada', d: 'Un toque registra la llegada y el paciente pasa a la sala de espera con tiempo visible.', who: 'Recepción' },
   { t: 'Triaje', d: 'Signos vitales con alertas de rango. El médico los ve antes de llamar al paciente.', who: 'Enfermería' },
   { t: 'Consulta', d: 'Nota en formato SOAP, síntomas en un toque y diagnóstico con código CIE-10.', who: 'Médico' },
-  { t: 'Receta', d: 'Receta con folio, cruce contra alergias y lista para imprimir o enviar.', who: 'Médico' },
+  { t: 'Receta y cobro', d: 'Receta con folio y cruce contra alergias. Recepción cobra y entrega el recibo.', who: 'Médico y recepción' },
 ]
 
 const ROLES: Role[] = ['doctor', 'nurse', 'reception', 'admin']
@@ -51,6 +51,7 @@ export default function Landing() {
             <a href="#roles">Roles</a>
             <a href="#modulos">Módulos</a>
             <a href="#planes">Planes</a>
+            <Link to="/reservar">Reservar cita</Link>
           </nav>
           <Link className="btn btn--ghost" to="/login">Iniciar sesión</Link>
           <Link className="btn btn--primary" to="/login">Probar la demo</Link>
@@ -68,7 +69,7 @@ export default function Landing() {
               </p>
               <div className="hero__cta">
                 <Link className="btn btn--primary btn--lg" to="/login">Probar la demo</Link>
-                <a className="btn btn--ghost btn--lg" href="#recorrido">Ver cómo funciona</a>
+                <Link className="btn btn--ghost btn--lg" to="/reservar">Reservar una cita</Link>
               </div>
               <p className="hero__note">Demo con datos ficticios. No necesitas tarjeta.</p>
             </div>
@@ -176,12 +177,24 @@ export default function Landing() {
                 </div>
               </article>
               <article className="mod mod--half">
-                <h3>Agenda por consultorio</h3>
-                <p>Vista por médico con estados en color, citas urgentes resaltadas y la línea de la hora actual.</p>
+                <h3>Reserva en línea y recordatorios</h3>
+                <p>Tus pacientes eligen médico, día y hora sin llamar. Recepción envía el recordatorio por WhatsApp con un toque.</p>
               </article>
               <article className="mod mod--half">
-                <h3>Indicadores para administración</h3>
-                <p>Citas atendidas, ausencias y tiempos de espera por médico, sin exponer información clínica.</p>
+                <h3>Agenda por consultorio</h3>
+                <p>Vista por médico con estados en color, citas urgentes resaltadas, choques de horario detectados y la línea de la hora actual.</p>
+              </article>
+              <article className="mod mod--narrow">
+                <h3>Caja y recibos</h3>
+                <p>Cobro por servicio, descuentos, varias formas de pago y cierre de caja del día.</p>
+              </article>
+              <article className="mod mod--narrow">
+                <h3>Reportes</h3>
+                <p>Ingresos, asistencia y diagnósticos frecuentes, exportables a Excel.</p>
+              </article>
+              <article className="mod mod--narrow">
+                <h3>Archivos y constancias</h3>
+                <p>Laboratorios e imágenes en el expediente, y constancias médicas con reposo listas para imprimir.</p>
               </article>
             </div>
           </div>
@@ -206,8 +219,8 @@ export default function Landing() {
             </div>
             <div className="plans">
               {[
-                { n: 'Consultorio', p: 29, d: 'Un médico con su asistente.', f: ['Agenda y recordatorios', 'Expediente y recetas', 'Hasta 2 usuarios de apoyo'] },
-                { n: 'Clínica', p: 24, d: 'De 2 a 15 médicos con equipo completo.', f: ['Todo lo de Consultorio', 'Triaje y sala de espera', 'Roles y bitácora', 'Indicadores'], featured: true },
+                { n: 'Consultorio', p: 29, d: 'Un médico con su asistente.', f: ['Agenda y reserva en línea', 'Expediente, recetas y constancias', 'Hasta 2 usuarios de apoyo'] },
+                { n: 'Clínica', p: 24, d: 'De 2 a 15 médicos con equipo completo.', f: ['Todo lo de Consultorio', 'Triaje y sala de espera', 'Caja, recibos y reportes', 'Roles, bitácora y verificación en dos pasos'], featured: true },
                 { n: 'Red', p: null, d: 'Varias sedes bajo una misma administración.', f: ['Todo lo de Clínica', 'Expediente compartido entre sedes', 'Integraciones a medida'] },
               ].map((pl) => (
                 <div key={pl.n} className={`plan ${pl.featured ? 'plan--featured' : ''}`}>

@@ -1,28 +1,32 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { CalendarDays, FileText, House, KeyRound, LogOut, Menu, Armchair, Users, UserCog } from 'lucide-react'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import {
+  Armchair, BarChart3, CalendarDays, FileText, House, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, UserCog, Users,
+} from 'lucide-react'
 import { Logo } from '../components/Logo'
-import { Avatar, Modal } from '../components/ui'
+import { Avatar } from '../components/ui'
+import { SearchPalette } from '../components/Search'
 import { useStore } from '../lib/store'
 import { ROLE_LABEL, type Permission } from '../lib/permissions'
-import { CLINIC } from '../lib/seed'
 import { cap, sameDay } from '../lib/format'
 
-const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean }[] = [
+const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean; group?: string }[] = [
   { to: '/app', label: 'Inicio', icon: House, end: true },
   { to: '/app/agenda', label: 'Agenda', icon: CalendarDays, perm: 'agenda.view' },
   { to: '/app/sala', label: 'Sala de espera', icon: Armchair, perm: 'checkin.manage' },
   { to: '/app/pacientes', label: 'Pacientes', icon: Users, perm: 'patients.view' },
   { to: '/app/recetas', label: 'Recetas', icon: FileText, perm: 'rx.view' },
-  { to: '/app/personal', label: 'Personal y roles', icon: UserCog, perm: 'staff.manage' },
+  { to: '/app/caja', label: 'Caja', icon: Receipt, perm: 'billing.manage' },
+  { to: '/app/reportes', label: 'Reportes', icon: BarChart3, perm: 'reports.view', group: 'Administración' },
+  { to: '/app/personal', label: 'Personal y roles', icon: UserCog, perm: 'staff.manage', group: 'Administración' },
+  { to: '/app/configuracion', label: 'Configuración', icon: SettingsIcon, perm: 'settings.manage', group: 'Administración' },
 ]
 
 export default function AppShell() {
-  const { user, can, signOut, appointments, refresh } = useStore()
+  const { user, can, signOut, appointments, refresh, settings } = useStore()
   const nav = useNavigate()
   const loc = useLocation()
   const [open, setOpen] = useState(false)
-  const [pwOpen, setPwOpen] = useState(false)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setOpen(false), [loc.pathname])
 
@@ -33,8 +37,11 @@ export default function AppShell() {
   }, [refresh])
 
   if (!user) return null
-  const waiting = appointments.filter((a) => sameDay(a.start, new Date()) && a.status === 'arrived').length
-  const today = new Date().toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })
+  const today = new Date()
+  const waiting = appointments.filter((a) => sameDay(a.start, today) && a.status === 'arrived').length
+  const toCharge = appointments.filter((a) => a.status === 'done' && a.paid === false && sameDay(a.start, today)).length
+  const items = NAV.filter((n) => !n.perm || can(n.perm))
+  const label = today.toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
     <div className="shell">
@@ -42,60 +49,49 @@ export default function AppShell() {
         <div className="side__clinic">
           <Logo size={28} />
           <small>Clínica</small>
-          <strong>{CLINIC.name}</strong>
+          <strong>{settings.name}</strong>
         </div>
         <nav>
-          {NAV.filter((n) => !n.perm || can(n.perm)).map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end} className="side__link">
-              <n.icon size={18} strokeWidth={1.9} />
-              {n.label}
-              {n.to === '/app/sala' && waiting > 0 && <span className="count" aria-label={`${waiting} en sala`}>{waiting}</span>}
-            </NavLink>
+          {items.map((n, i) => (
+            <div key={n.to} style={{ display: 'contents' }}>
+              {n.group && items[i - 1]?.group !== n.group && <span className="side__group">{n.group}</span>}
+              <NavLink to={n.to} end={n.end} className="side__link">
+                <n.icon size={18} strokeWidth={1.9} />
+                {n.label}
+                {n.to === '/app/sala' && waiting > 0 && <span className="count" aria-label={`${waiting} en sala`}>{waiting}</span>}
+                {n.to === '/app/caja' && toCharge > 0 && <span className="count" aria-label={`${toCharge} por cobrar hoy`}>{toCharge}</span>}
+              </NavLink>
+            </div>
           ))}
         </nav>
         <div className="side__user">
-          <Avatar name={user.name} color={user.color} />
-          <div>
-            <strong>{user.name}</strong>
-            <small>{ROLE_LABEL[user.role]}</small>
-          </div>
-          <button className="icon-btn" aria-label="Cambiar contraseña" title="Cambiar contraseña" onClick={() => setPwOpen(true)}>
-            <KeyRound size={17} />
-          </button>
+          <Link to="/app/cuenta" className="side__me" title="Mi cuenta">
+            <Avatar name={user.name} color={user.color} />
+            <div>
+              <strong>{user.name}</strong>
+              <small>{ROLE_LABEL[user.role]}</small>
+            </div>
+          </Link>
           <button className="icon-btn" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={async () => { await signOut(); nav('/login') }}>
             <LogOut size={17} />
           </button>
         </div>
       </aside>
+      {open && <div className="side__scrim" onClick={() => setOpen(false)} aria-hidden="true" />}
 
       <div className="main">
         <div className="topbar">
           <button className="icon-btn topbar__menu" aria-label="Abrir menú" onClick={() => setOpen((o) => !o)}><Menu size={20} /></button>
-          <span style={{ color: 'var(--muted)', fontSize: 14 }}>{cap(today)}</span>
+          <span className="topbar__date">{cap(label)}</span>
+          {can('patients.view') && (
+            <button className="search-btn" onClick={() => window.dispatchEvent(new Event('open-search'))}>
+              <Search size={16} /><span>Buscar paciente</span><kbd>Ctrl K</kbd>
+            </button>
+          )}
         </div>
         <Outlet />
       </div>
-      {pwOpen && <ChangePassword onClose={() => setPwOpen(false)} />}
+      <SearchPalette />
     </div>
-  )
-}
-
-function ChangePassword({ onClose }: { onClose: () => void }) {
-  const { changePassword } = useStore()
-  const [current, setCurrent] = useState('')
-  const [next, setNext] = useState('')
-  const [repeat, setRepeat] = useState('')
-  const mismatch = repeat.length > 0 && next !== repeat
-  const valid = current && next.length >= 8 && next === repeat
-  return (
-    <Modal title="Cambiar contraseña" onClose={onClose} footer={<>
-      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={!valid} onClick={async () => { if (await changePassword(current, next)) onClose() }}>Cambiar contraseña</button>
-    </>}>
-      <label className="field"><span>Contraseña actual</span><input className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} /></label>
-      <label className="field"><span>Nueva contraseña, mínimo 8 caracteres</span><input className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} /></label>
-      <label className="field"><span>Repite la nueva contraseña</span><input className="input" type="password" autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)} aria-invalid={mismatch} /></label>
-      {mismatch && <p style={{ color: 'var(--red-ink)', fontSize: 13.5 }}>Las contraseñas no coinciden.</p>}
-    </Modal>
   )
 }

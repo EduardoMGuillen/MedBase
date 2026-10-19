@@ -15,5 +15,5 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["server", "src/lib/types.ts", "src/lib/permissions.ts", "src/lib/seed.ts"]
+  "include": ["server", "src/lib/types.ts", "src/lib/permissions.ts", "src/lib/seed.ts", "src/lib/catalogs.ts"]
 }
