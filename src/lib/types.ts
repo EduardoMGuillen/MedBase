@@ -1,4 +1,7 @@
-export type Role = 'admin' | 'doctor' | 'nurse' | 'reception'
+export type Role = 'superadmin' | 'admin' | 'doctor' | 'nurse' | 'reception'
+
+/** Roles que pertenecen a una clínica (el superadministrador no tiene clínica). */
+export type ClinicRole = Exclude<Role, 'superadmin'>
 
 /** Horario de atención de un médico. `days` usa 0 = domingo … 6 = sábado. */
 export interface Schedule {
@@ -10,6 +13,7 @@ export interface Schedule {
 
 export interface Staff {
   id: string
+  clinicId?: string // vacío sólo para la administración de la plataforma
   name: string
   role: Role
   specialty?: string
@@ -20,6 +24,15 @@ export interface Staff {
   schedule?: Schedule
   serviceId?: string // servicio que se cobra por defecto en sus consultas
   twoFactor?: boolean
+}
+
+/** Una clínica dentro de la plataforma. */
+export interface Clinic extends ClinicSettings {
+  id: string
+  slug: string // dirección de la reserva en línea: /reservar/<slug>
+  active: boolean
+  createdAt: string
+  stats?: { staff: number; patients: number; appointments30: number; consultations30: number; lastActivity?: string }
 }
 
 export interface ClinicSettings {

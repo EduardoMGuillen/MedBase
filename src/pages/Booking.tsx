@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
-import { CalendarCheck, ChevronLeft, Phone } from 'lucide-react'
+import { Link, Navigate, useParams } from 'react-router-dom'
+import { Building2, CalendarCheck, ChevronLeft, ChevronRight, Phone } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar, Loading } from '../components/ui'
 import { api } from '../lib/api'
@@ -11,7 +11,37 @@ interface Clinic { name: string; address: string; phone: string; doctors: { id: 
 
 const DAYS_AHEAD = 21
 
+/** Sin clínica en la dirección: lista de clínicas que reciben reservas (o entra directo si hay una sola). */
+function ClinicChooser() {
+  const [list, setList] = useState<{ slug: string; name: string; address: string }[] | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => { api<{ slug: string; name: string; address: string }[]>('/public/clinics').then(setList).catch((e: Error) => setError(e.message)) }, [])
+  if (list?.length === 1) return <Navigate to={`/reservar/${list[0].slug}`} replace />
+  return (
+    <div className="booking">
+      <header className="booking__nav"><div className="lp-wrap"><Link to="/" aria-label="Inicio"><Logo /></Link></div></header>
+      <main className="lp-wrap booking__main">
+        <div className="booking__intro"><h1>Reserva tu cita</h1><p>Elige la clínica donde quieres atenderte.</p></div>
+        {error ? <div className="auth__err">{error}</div> : !list ? <Loading /> : list.length ? (
+          <div className="doc-grid">{list.map((c) => (
+            <Link key={c.slug} to={`/reservar/${c.slug}`} className="doc-card" style={{ textDecoration: 'none', color: 'inherit' }}>
+              <span className="clinic-ico"><Building2 size={20} /></span>
+              <span style={{ flex: 1 }}><strong>{c.name}</strong><small>{c.address}</small></span><ChevronRight size={18} color="var(--faint)" />
+            </Link>
+          ))}</div>
+        ) : <div className="empty">Por ahora ninguna clínica recibe reservas en línea.</div>}
+        <p className="booking__back"><Link to="/"><ChevronLeft size={14} style={{ display: 'inline', verticalAlign: '-2px' }} />Volver al sitio</Link></p>
+      </main>
+    </div>
+  )
+}
+
 export default function Booking() {
+  const { slug } = useParams()
+  return slug ? <ClinicBooking slug={slug} /> : <ClinicChooser />
+}
+
+function ClinicBooking({ slug }: { slug: string }) {
   const [clinic, setClinic] = useState<Clinic | null>(null)
   const [error, setError] = useState('')
   const [doctorId, setDoctorId] = useState('')
@@ -22,12 +52,12 @@ export default function Booking() {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ code: string; doctor: string; start: string } | null>(null)
 
-  useEffect(() => { api<Clinic>('/public/clinic').then(setClinic).catch((e: Error) => setError(e.message)) }, [])
+  useEffect(() => { api<Clinic>(`/public/${slug}/clinic`).then(setClinic).catch((e: Error) => setError(e.message)) }, [slug])
   useEffect(() => {
     if (!doctorId || !day) return
     setSlots(null); setTime('')
-    api<{ slots: string[] }>(`/public/slots?doctorId=${doctorId}&date=${day}`).then((r) => setSlots(r.slots)).catch((e: Error) => setError(e.message))
-  }, [doctorId, day])
+    api<{ slots: string[] }>(`/public/${slug}/slots?doctorId=${doctorId}&date=${day}`).then((r) => setSlots(r.slots)).catch((e: Error) => setError(e.message))
+  }, [doctorId, day, slug])
 
   const doctor = clinic?.doctors.find((d) => d.id === doctorId)
   const dates = useMemo(() => Array.from({ length: DAYS_AHEAD }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d }), [])
@@ -39,11 +69,11 @@ export default function Booking() {
     if (!f.sex) { setError('Indica el sexo del paciente.'); return }
     setBusy(true)
     try {
-      setDone(await api('/public/book', { body: { doctorId, date: day, time, ...f } }))
+      setDone(await api(`/public/${slug}/book`, { body: { doctorId, date: day, time, ...f } }))
       window.scrollTo({ top: 0 })
     } catch (err) {
       setError((err as Error).message)
-      if (/ocuparse/.test((err as Error).message)) { setTime(''); setSlots(null); api<{ slots: string[] }>(`/public/slots?doctorId=${doctorId}&date=${day}`).then((r) => setSlots(r.slots)) }
+      if (/ocuparse/.test((err as Error).message)) { setTime(''); setSlots(null); api<{ slots: string[] }>(`/public/${slug}/slots?doctorId=${doctorId}&date=${day}`).then((r) => setSlots(r.slots)) }
     } finally { setBusy(false) }
   }
 

@@ -22,6 +22,7 @@ import Reports from './app/Reports'
 import Settings from './app/Settings'
 import StaffPage from './app/Staff'
 import Account from './app/Account'
+import Platform, { ClinicDetail } from './app/Platform'
 
 function Guard({ perm, children }: { perm?: Permission; children: ReactNode }) {
   const { user, can, checking } = useStore()
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/reservar" element={<Booking />} />
+          <Route path="/reservar/:slug" element={<Booking />} />
           <Route path="/app" element={<Guard><AppShell /></Guard>}>
             <Route index element={<Dashboard />} />
             <Route path="agenda" element={<Guard perm="agenda.view"><Agenda /></Guard>} />
@@ -56,6 +58,8 @@ export default function App() {
             <Route path="personal" element={<Guard perm="staff.manage"><StaffPage /></Guard>} />
             <Route path="configuracion" element={<Guard perm="settings.manage"><Settings /></Guard>} />
             <Route path="cuenta" element={<Account />} />
+            <Route path="plataforma" element={<Guard perm="platform.manage"><Platform /></Guard>} />
+            <Route path="clinicas/:id" element={<Guard perm="platform.manage"><ClinicDetail /></Guard>} />
             <Route path="*" element={<NotFound inApp />} />
           </Route>
           <Route path="*" element={<NotFound />} />

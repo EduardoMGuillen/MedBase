@@ -197,3 +197,13 @@
   .sticky-top { position: static; box-shadow: none; margin: 0; padding: 0; }
   .clinical-note .facts { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ---------- Plataforma ---------- */
+.clinic-ico { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--ink-soft); color: var(--ink-deep); flex: none; }
+.slug-input { display: flex; align-items: center; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); overflow: hidden; }
+.slug-input span { padding: 0 2px 0 12px; color: var(--muted); font-size: 14px; white-space: nowrap; }
+.slug-input .input { border: 0; box-shadow: none !important; padding-left: 2px; }
+.slug-input:focus-within { border-color: var(--ink); box-shadow: 0 0 0 3px var(--ink-soft); }
+.back-link { display: inline-flex; align-items: center; gap: 2px; font-size: 13.5px; color: var(--muted); text-decoration: none; margin-bottom: 6px; }
+.back-link:hover { color: var(--ink); }
+.page-head p .badge { margin-right: 8px; }

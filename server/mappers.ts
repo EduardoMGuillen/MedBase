@@ -1,11 +1,12 @@
-import type { Appointment, Attachment, AuditEntry, Background, Consultation, Patient, Payment, Prescription, Service, Staff, Vitals } from '../src/lib/types.js'
+import type { Appointment, Attachment, AuditEntry, Background, Clinic, ClinicSettings, Consultation, Patient, Payment, Prescription, Service, Staff, Vitals } from '../src/lib/types.js'
+import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
 
 type Row = Record<string, unknown>
 const s = (v: unknown) => (v == null ? undefined : String(v))
 const j = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(String(v)) as T : fallback } catch { return fallback } }
 
 export const toStaff = (r: Row): Staff => ({
-  id: String(r.id), name: String(r.name), role: r.role as Staff['role'], specialty: s(r.specialty), email: String(r.email),
+  id: String(r.id), clinicId: s(r.clinic_id), name: String(r.name), role: r.role as Staff['role'], specialty: s(r.specialty), email: String(r.email),
   license: s(r.license), color: String(r.color), active: Boolean(r.active),
   schedule: r.schedule ? j(r.schedule, undefined) : undefined, serviceId: s(r.service_id), twoFactor: Boolean(r.totp_enabled),
 })
@@ -65,4 +66,19 @@ export const toPayment = (r: Row): Payment => ({
 export const toAttachment = (r: Row): Attachment => ({
   id: String(r.id), patientId: String(r.patient_id), name: String(r.name), mime: String(r.mime), size: Number(r.size),
   category: r.category as Attachment['category'], uploadedBy: String(r.uploaded_by), uploadedAt: String(r.uploaded_at),
+})
+
+/** Configuración que ve la clínica (encabezado de recetas, recibos y recordatorios). */
+export const clinicSettings = (r: Row): ClinicSettings => ({
+  name: String(r.name ?? DEFAULT_SETTINGS.name), address: String(r.address ?? ''), phone: String(r.phone ?? ''), email: String(r.email ?? ''),
+  currency: String(r.currency ?? DEFAULT_SETTINGS.currency), rxValidityDays: Number(r.rx_validity_days ?? DEFAULT_SETTINGS.rxValidityDays),
+  reminderTemplate: String(r.reminder_template || DEFAULT_SETTINGS.reminderTemplate),
+})
+
+export const toClinic = (r: Row): Clinic => ({
+  ...clinicSettings(r), id: String(r.id), slug: String(r.slug), active: Boolean(r.active), createdAt: String(r.created_at),
+  stats: r.staff_count == null ? undefined : {
+    staff: Number(r.staff_count), patients: Number(r.patient_count), appointments30: Number(r.appt30), consultations30: Number(r.cons30),
+    lastActivity: s(r.last_activity),
+  },
 })

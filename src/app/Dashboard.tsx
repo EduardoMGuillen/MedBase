@@ -7,6 +7,7 @@ import { ReminderButton } from '../components/Reminder'
 import { HBars } from '../components/Charts'
 import { date, fullName, localISODate, money, sameDay, time } from '../lib/format'
 import type { Appointment } from '../lib/types'
+import Platform from './Platform'
 
 function greeting() {
   const h = new Date().getHours()
@@ -55,6 +56,8 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appointments.length, fetchPayments])
   if (!user) return null
+  // La administración de la plataforma no pertenece a una clínica: su inicio es la lista de clínicas
+  if (user.role === 'superadmin') return <Platform />
 
   const now = new Date()
   const today = appointments.filter((a) => sameDay(a.start, now)).sort((a, b) => a.start.localeCompare(b.start))

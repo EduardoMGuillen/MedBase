@@ -17,7 +17,7 @@ export default function Login() {
   const [busy, setBusy] = useState(false)
   const [code, setCode] = useState('')
   const [needCode, setNeedCode] = useState(false)
-  const [demo, setDemo] = useState<{ accounts: Staff[]; password: string | null }>({ accounts: [], password: null })
+  const [demo, setDemo] = useState<{ accounts: (Staff & { clinicName?: string })[]; password: string | null }>({ accounts: [], password: null })
 
   useEffect(() => {
     api<typeof demo>('/demo-accounts').then(setDemo).catch((e: Error) => setError(e.message))
@@ -89,12 +89,12 @@ export default function Login() {
           {!needCode && demo.accounts.length > 0 && demo.password && (
             <div className="auth__demo">
               <span>Cuentas de demo (contraseña {demo.password})</span>
-              {demo.accounts.filter((s) => s.id !== 's-paz' && s.id !== 's-zuniga').map((s) => (
+              {demo.accounts.filter((s) => ['s-super', 's-herrera', 's-rios', 's-mejia', 's-admin', 's2-rosales'].includes(s.id) || !s.email.endsWith('@demo.clinara')).map((s) => (
                 <button key={s.id} className="demo-role" disabled={busy} onClick={() => enter(s.email, demo.password!)}>
                   <Avatar name={s.name} color={s.color} />
                   <span>
                     <strong>{s.name}</strong>
-                    <small>{ROLE_LABEL[s.role]}{s.specialty ? `, ${s.specialty}` : ''}</small>
+                    <small>{ROLE_LABEL[s.role]}{s.specialty ? `, ${s.specialty}` : ''}{s.clinicName ? `. ${s.clinicName}` : ''}</small>
                   </span>
                   <ChevronRight size={18} />
                 </button>

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Check, Minus, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { Logo } from '../components/Logo'
-import { PERMISSIONS, ROLE_LABEL, ROLE_PERMISSIONS, ROLE_SUMMARY, type Permission } from '../lib/permissions'
+import { CLINIC_PERMISSIONS, PERMISSIONS, ROLE_LABEL, ROLE_PERMISSIONS, ROLE_SUMMARY } from '../lib/permissions'
 import type { Role } from '../lib/types'
 
 const BEATS = [
@@ -35,7 +35,7 @@ const JOURNEY = [
 ]
 
 const ROLES: Role[] = ['doctor', 'nurse', 'reception', 'admin']
-const ALL_PERMS = Object.keys(PERMISSIONS) as Permission[]
+const ALL_PERMS = CLINIC_PERMISSIONS
 
 export default function Landing() {
   const [role, setRole] = useState<Role>('doctor')

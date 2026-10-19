@@ -21,11 +21,14 @@ export const PERMISSIONS = {
   'settings.manage': 'Configurar la clínica y servicios',
   'reports.view': 'Ver indicadores de la clínica',
   'audit.view': 'Ver bitácora de accesos',
+  'platform.manage': 'Administrar clínicas y usuarios de la plataforma',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
+  // Administra la plataforma; no tiene acceso a datos clínicos de ninguna clínica
+  superadmin: ['platform.manage'],
   admin: [
     'agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage',
     'staff.manage', 'settings.manage', 'reports.view', 'audit.view',
@@ -39,6 +42,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
+  superadmin: 'Administración de Clinara',
   admin: 'Administración',
   doctor: 'Médico',
   nurse: 'Enfermería',
@@ -46,6 +50,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 }
 
 export const ROLE_SUMMARY: Record<Role, string> = {
+  superadmin: 'Crea y administra clínicas y sus usuarios. No ve expedientes de pacientes.',
   admin: 'Configura la clínica, el personal y los precios, y revisa indicadores. Sin acceso a notas clínicas.',
   doctor: 'Atiende su agenda, escribe consultas, diagnostica y emite recetas firmadas.',
   nurse: 'Recibe al paciente, toma signos vitales y lo deja listo para consulta.',
@@ -53,3 +58,6 @@ export const ROLE_SUMMARY: Record<Role, string> = {
 }
 
 export const can = (role: Role, p: Permission) => ROLE_PERMISSIONS[role].includes(p)
+
+/** Permisos que se muestran en la matriz de una clínica (sin los de plataforma). */
+export const CLINIC_PERMISSIONS = (Object.keys(PERMISSIONS) as Permission[]).filter((p) => p !== 'platform.manage')

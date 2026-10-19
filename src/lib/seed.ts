@@ -7,13 +7,22 @@ export const CLINIC = {
   phone: '+504 2232-7710',
 }
 
+export const MAIN_CLINIC = 'c-sb'
+export const SECOND_CLINIC = 'c-sl'
+
 export const STAFF: Staff[] = [
-  { id: 's-admin', name: 'Roberto Aguilar', role: 'admin', email: 'admin@demo.clinara', color: '#5B6472', active: true },
-  { id: 's-herrera', name: 'Dra. Lucía Herrera', role: 'doctor', specialty: 'Medicina interna', email: 'lherrera@demo.clinara', license: 'CMH-08812', color: '#2335C9', active: true },
-  { id: 's-paz', name: 'Dr. Andrés Paz', role: 'doctor', specialty: 'Pediatría', email: 'apaz@demo.clinara', license: 'CMH-11420', color: '#0F8A6E', active: true },
-  { id: 's-zuniga', name: 'Dra. Mariela Zúniga', role: 'doctor', specialty: 'Ginecología y obstetricia', email: 'mzuniga@demo.clinara', license: 'CMH-09931', color: '#B4407A', active: true },
-  { id: 's-rios', name: 'Lic. Carmen Ríos', role: 'nurse', email: 'crios@demo.clinara', color: '#C27A12', active: true },
-  { id: 's-mejia', name: 'Sofía Mejía', role: 'reception', email: 'smejia@demo.clinara', color: '#6A4BC4', active: true },
+  { id: 's-super', name: 'Soporte Clinara', role: 'superadmin', email: 'superadmin@demo.clinara', color: '#0E2233', active: true },
+  { id: 's-admin', clinicId: 'c-sb', name: 'Roberto Aguilar', role: 'admin', email: 'admin@demo.clinara', color: '#5B6472', active: true },
+  { id: 's-herrera', clinicId: 'c-sb', name: 'Dra. Lucía Herrera', role: 'doctor', specialty: 'Medicina interna', email: 'lherrera@demo.clinara', license: 'CMH-08812', color: '#2335C9', active: true },
+  { id: 's-paz', clinicId: 'c-sb', name: 'Dr. Andrés Paz', role: 'doctor', specialty: 'Pediatría', email: 'apaz@demo.clinara', license: 'CMH-11420', color: '#0F8A6E', active: true },
+  { id: 's-zuniga', clinicId: 'c-sb', name: 'Dra. Mariela Zúniga', role: 'doctor', specialty: 'Ginecología y obstetricia', email: 'mzuniga@demo.clinara', license: 'CMH-09931', color: '#B4407A', active: true },
+  { id: 's-rios', clinicId: 'c-sb', name: 'Lic. Carmen Ríos', role: 'nurse', email: 'crios@demo.clinara', color: '#C27A12', active: true },
+  { id: 's-mejia', clinicId: 'c-sb', name: 'Sofía Mejía', role: 'reception', email: 'smejia@demo.clinara', color: '#6A4BC4', active: true },
+  // Segunda clínica de demostración, para comprobar que los datos no se mezclan
+  { id: 's2-admin', clinicId: 'c-sl', name: 'Gloria Paredes', role: 'admin', email: 'admin.sanlucas@demo.clinara', color: '#5B6472', active: true },
+  { id: 's2-rosales', clinicId: 'c-sl', name: 'Dr. Esteban Rosales', role: 'doctor', specialty: 'Medicina general', email: 'erosales@demo.clinara', license: 'CMH-13002', color: '#2C7DA0', active: true },
+  { id: 's2-enamorado', clinicId: 'c-sl', name: 'Lic. Patricia Enamorado', role: 'nurse', email: 'penamorado@demo.clinara', color: '#C27A12', active: true },
+  { id: 's2-calix', clinicId: 'c-sl', name: 'Iris Cálix', role: 'reception', email: 'icalix@demo.clinara', color: '#6A4BC4', active: true },
 ]
 
 const p = (
@@ -242,4 +251,35 @@ export function seedHistory(days = 60) {
     }
   }
   return { patients, appointments, consultations, payments, lastReceipt: receipt }
+}
+
+
+// ---------- Clínicas de demostración ----------
+export const DEMO_CLINICS: (ClinicSettings & { id: string; slug: string })[] = [
+  { id: MAIN_CLINIC, slug: 'santa-brigida', ...DEFAULT_SETTINGS },
+  {
+    id: SECOND_CLINIC, slug: 'san-lucas', name: 'Centro Médico San Lucas', address: 'San Pedro Sula, Barrio Río de Piedras, 7 calle',
+    phone: '+504 2550-1188', email: 'citas@sanlucas.hn', currency: 'L', rxValidityDays: 30, reminderTemplate: DEFAULT_SETTINGS.reminderTemplate,
+  },
+]
+
+/** Datos mínimos de la segunda clínica: algunos pacientes y la agenda de hoy. */
+export function seedSecondClinic() {
+  const patients: Patient[] = [
+    p('q1', 'EXP-00401', 'Óscar Daniel', 'Paz Reyes', '1979-08-15', 'M', '9512-3344', { dni: '0501-1979-04411', civilStatus: 'Casado', occupation: 'Mecánico', address: 'San Pedro Sula, Col. Trejo', allergies: ['Ibuprofeno'], conditions: ['Gota'] }),
+    p('q2', 'EXP-00402', 'Wendy Carolina', 'Mejía Lara', '1992-02-27', 'F', '3388-1020', { dni: '0501-1992-00982', civilStatus: 'Soltera', occupation: 'Enfermera', address: 'San Pedro Sula, Res. Los Álamos' }),
+    p('q3', 'EXP-00403', 'Roberto', 'Bú Hándal', '1955-12-03', 'M', '9901-7766', { dni: '0501-1955-02210', civilStatus: 'Casado', occupation: 'Comerciante', address: 'San Pedro Sula, Barrio Guamilito', conditions: ['Hipertensión arterial', 'Diabetes tipo 2'] }),
+  ]
+  n = 100
+  const appointments: Appointment[] = [
+    a('q3', 's2-rosales', 0, 8, 30, 30, 'Control de presión arterial', 'done'),
+    a('q1', 's2-rosales', 0, 10, 0, 30, 'Dolor en el dedo gordo del pie', 'arrived'),
+    a('q2', 's2-rosales', 0, 15, 0, 30, 'Chequeo general', 'confirmed', 'first'),
+    a('q3', 's2-rosales', 7, 9, 0, 30, 'Control de glucosa', 'scheduled'),
+  ].map((x) => ({ ...x, id: x.id.replace('a', 'b') }))
+  const services: Service[] = SERVICES.filter((x) => ['svc-gen', 'svc-ecg', 'svc-cur', 'svc-vac'].includes(x.id)).map((x) => ({ ...x, id: `sl-${x.id}` }))
+  const setup: Record<string, { schedule: Schedule; serviceId: string }> = {
+    's2-rosales': { schedule: { days: [1, 2, 3, 4, 5], start: '07:00', end: '15:00', slot: 30 }, serviceId: 'sl-svc-gen' },
+  }
+  return { patients, appointments, services, setup }
 }

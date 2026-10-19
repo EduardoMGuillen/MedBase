@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Check, Minus, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead } from '../components/ui'
-import { PERMISSIONS, ROLE_LABEL, ROLE_PERMISSIONS, ROLE_SUMMARY, type Permission } from '../lib/permissions'
+import { CLINIC_PERMISSIONS, PERMISSIONS, ROLE_LABEL, ROLE_PERMISSIONS, ROLE_SUMMARY } from '../lib/permissions'
 import { date, time } from '../lib/format'
 import type { Role, Staff } from '../lib/types'
 
@@ -10,7 +10,7 @@ const ROLES: Role[] = ['admin', 'doctor', 'nurse', 'reception']
 type Tab = 'people' | 'roles' | 'audit'
 
 export default function StaffPage() {
-  const { staff, updateStaff, resetStaffPassword, audit, staffById, user, demo, resetDemo } = useStore()
+  const { staff, updateStaff, resetStaffPassword, audit, staffById, user } = useStore()
   const [tab, setTab] = useState<Tab>('people')
   const [creating, setCreating] = useState(false)
   const [secret, setSecret] = useState<{ name: string; email: string; password: string } | null>(null)
@@ -21,7 +21,6 @@ export default function StaffPage() {
     <div className="page">
       <PageHead title="Personal y roles" sub="Quién trabaja en la clínica, qué puede hacer cada rol y quién hizo qué."
         actions={<>
-          {demo && <button className="btn btn--ghost" onClick={() => { if (confirm('Esto borra todos los cambios y vuelve a cargar la clínica de demo.')) resetDemo() }}>Restablecer demo</button>}
           <button className="btn btn--primary" onClick={() => setCreating(true)}><UserPlus size={17} />Nuevo usuario</button>
         </>} />
       <div className="tabs" role="tablist">
@@ -71,7 +70,7 @@ export default function StaffPage() {
         <section className="panel table-wrap">
           <table className="table matrix">
             <thead><tr><th>Permiso</th>{ROLES.map((r) => <th key={r}>{ROLE_LABEL[r]}</th>)}</tr></thead>
-            <tbody>{(Object.keys(PERMISSIONS) as Permission[]).map((p) => (
+            <tbody>{CLINIC_PERMISSIONS.map((p) => (
               <tr key={p}>
                 <td>{PERMISSIONS[p]}</td>
                 {ROLES.map((r) => <td key={r}>{ROLE_PERMISSIONS[r].includes(p)
@@ -89,7 +88,7 @@ export default function StaffPage() {
           <table className="table">
             <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th></tr></thead>
             <tbody>{log.map((e) => (
-              <tr key={e.id}><td className="num" style={{ whiteSpace: 'nowrap' }}>{date(e.at)} {time(e.at)}</td><td>{e.userId === 'online' ? 'Reserva en línea' : staffById(e.userId)?.name ?? 'Usuario eliminado'}</td><td>{e.action}</td></tr>
+              <tr key={e.id}><td className="num" style={{ whiteSpace: 'nowrap' }}>{date(e.at)} {time(e.at)}</td><td>{e.userId === 'online' ? 'Reserva en línea' : staffById(e.userId)?.name ?? 'Administración de Clinara'}</td><td>{e.action}</td></tr>
             ))}</tbody>
           </table>
           {!log.length && <div className="empty">{q ? 'Nada coincide con el filtro.' : 'La bitácora se llena a medida que el equipo usa el sistema.'}</div>}

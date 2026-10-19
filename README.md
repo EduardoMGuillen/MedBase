@@ -36,6 +36,8 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
 | Enfermería | crios@demo.clinara | Sala de espera, triaje, expediente, archivos |
 | Recepción | smejia@demo.clinara | Agenda, pacientes, recordatorios, caja |
 | Administración | admin@demo.clinara | Reportes, personal, configuración, bitácora |
+| Administración de Clinara | superadmin@demo.clinara | Clínicas y sus usuarios (sin expedientes) |
+| Médico de otra clínica (San Lucas) | erosales@demo.clinara | Sólo los pacientes de su clínica |
 
 ## Recorrido sugerido (15 minutos)
 
@@ -72,6 +74,30 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
 | Configuración | Datos de la clínica, plantilla del recordatorio, servicios y precios, horario y servicio por defecto de cada médico |
 | Seguridad | Roles con permisos validados en el servidor, verificación en dos pasos, cierre de sesión tras 30 minutos sin actividad, bitácora inalterable |
 
+## Varias clínicas
+
+Clinara funciona como plataforma: una sola instalación atiende a varias clínicas y **cada una sólo ve sus propios datos** (personal, pacientes, citas, consultas, recetas, cobros, archivos y bitácora). El servidor valida la clínica en cada consulta a la base de datos.
+
+| Rol | Alcance |
+|---|---|
+| Administración de Clinara | Crea, edita, desactiva y reactiva clínicas; crea usuarios en cualquier clínica, cambia roles, restablece contraseñas. **No ve expedientes de pacientes.** |
+| Administración de una clínica | Personal, configuración, precios, horarios, reportes y bitácora de su clínica |
+| Médico, enfermería, recepción | El trabajo diario de su clínica |
+
+- Al crear una clínica se crea también su usuario de administración y se muestra su contraseña temporal una sola vez.
+- Cada clínica tiene su reserva en línea en `/reservar/<dirección>`; `/reservar` muestra la lista de clínicas.
+- Los expedientes, folios de receta y recibos se numeran por clínica.
+- Al desactivar una clínica se cierran las sesiones de su personal y desaparece de la reserva en línea. Los datos se conservan.
+
+### Cuenta de Administración de Clinara
+
+- En la demo: `superadmin@demo.clinara` / `demo1234`.
+- Para uso real, crea tu propia cuenta (genera una contraseña temporal):
+  ```bash
+  npm run superadmin -- tu-correo@dominio.com "Tu Nombre"
+  ```
+  Si existe `.env.neon.local`, la crea en la base de Neon; si no, en la base local.
+
 ## Comandos
 
 | Comando | Qué hace |
@@ -82,6 +108,7 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
 | `npm start` | Sirve la app compilada y la API en http://localhost:3001 (ejecuta antes `npm run build`) |
 | `npm run db:reset` | Borra la base local y vuelve a cargar la demo con la agenda de hoy (detén antes el servidor) |
 | `npm run db:neon` | Crea las tablas y recarga la demo en Neon, usando la cadena de `.env.neon.local` |
+| `npm run superadmin -- correo "Nombre"` | Crea o restablece una cuenta de Administración de Clinara |
 
 La agenda de demo se genera con la fecha del día en que se crea la base. Si lo pruebas otro día, usa `npm run db:reset` o, como administración, el botón *Restablecer demo*.
 

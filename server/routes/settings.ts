@@ -4,7 +4,8 @@ import { z } from 'zod'
 import { type Ctx, fail, parse } from '../http.js'
 import { toService } from '../mappers.js'
 
-export function registerSettings(app: Express, { sql, auth, need, userOf, audit, settings }: Ctx) {
+/** Configuración y servicios de la clínica de quien hace la petición. */
+export function registerSettings(app: Express, { sql, auth, need, userOf, clinicOf, audit, settings }: Ctx) {
   app.put('/api/settings', auth, need('settings.manage'), async (req, res) => {
     const s = parse(z.object({
       name: z.string().trim().min(2, 'Escribe el nombre de la clínica.'),
@@ -15,13 +16,11 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, audit,
       rxValidityDays: z.number().int().min(1).max(365),
       reminderTemplate: z.string().trim().min(10, 'El mensaje de recordatorio es muy corto.').max(600),
     }), req.body)
-    await sql.tx(async (q) => {
-      for (const [k, v] of Object.entries(s)) {
-        await q.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', [k, JSON.stringify(v)])
-      }
-    })
-    await audit(userOf(req).id, 'Actualizó la configuración de la clínica')
-    res.json(await settings())
+    const cid = clinicOf(req)
+    await sql.run(`UPDATE clinics SET name = ?, address = ?, phone = ?, email = ?, currency = ?, rx_validity_days = ?, reminder_template = ? WHERE id = ?`,
+      [s.name, s.address, s.phone, s.email, s.currency, s.rxValidityDays, s.reminderTemplate, cid])
+    await audit(userOf(req), 'Actualizó la configuración de la clínica')
+    res.json(await settings(cid))
   })
 
   const serviceBody = z.object({
@@ -33,18 +32,19 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, audit,
   app.post('/api/services', auth, need('settings.manage'), async (req, res) => {
     const s = parse(serviceBody, req.body)
     const id = randomUUID()
-    await sql.run('INSERT INTO services (id, name, price, active) VALUES (?, ?, ?, ?)', [id, s.name, s.price, s.active])
-    await audit(userOf(req).id, `Creó el servicio ${s.name}`)
+    await sql.run('INSERT INTO services (id, name, price, active, clinic_id) VALUES (?, ?, ?, ?, ?)', [id, s.name, s.price, s.active, clinicOf(req)])
+    await audit(userOf(req), `Creó el servicio ${s.name}`)
     res.status(201).json(toService((await sql.one('SELECT * FROM services WHERE id = ?', [id]))!))
   })
 
   app.patch('/api/services/:id', auth, need('settings.manage'), async (req, res) => {
     const id = String(req.params.id)
-    const row = (await sql.one('SELECT * FROM services WHERE id = ?', [id])) ?? fail(404, 'El servicio no existe.')
+    const cid = clinicOf(req)
+    const row = (await sql.one('SELECT * FROM services WHERE id = ? AND clinic_id = ?', [id, cid])) ?? fail(404, 'El servicio no existe.')
     const s = parse(serviceBody.partial(), req.body)
-    await sql.run('UPDATE services SET name = ?, price = ?, active = ? WHERE id = ?',
-      [s.name ?? String(row!.name), s.price ?? Number(row!.price), 'active' in req.body ? Boolean(s.active) : Boolean(row!.active), id])
-    await audit(userOf(req).id, `Actualizó el servicio ${s.name ?? row!.name}`)
+    await sql.run('UPDATE services SET name = ?, price = ?, active = ? WHERE id = ? AND clinic_id = ?',
+      [s.name ?? String(row!.name), s.price ?? Number(row!.price), 'active' in req.body ? Boolean(s.active) : Boolean(row!.active), id, cid])
+    await audit(userOf(req), `Actualizó el servicio ${s.name ?? row!.name}`)
     res.json(toService((await sql.one('SELECT * FROM services WHERE id = ?', [id]))!))
   })
 }

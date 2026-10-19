@@ -112,8 +112,9 @@ export default function PatientChart() {
   const [tab, setTab] = useState<Tab>('history')
   const [editing, setEditing] = useState<null | 'id' | 'allergies' | 'background'>(null)
   const clinical = can('chart.view')
-  const { chart, reload } = useChart(id, clinical)
   const p = patient(id!)
+  // Sólo se pide el expediente de pacientes de la propia clínica
+  const { chart, reload } = useChart(id, clinical && !!p)
   if (!p) return <div className="page"><div className="empty">Este expediente no existe. Vuelve a <Link to="/app/pacientes">Pacientes</Link>.</div></div>
 
   const cs = chart?.consultations ?? []

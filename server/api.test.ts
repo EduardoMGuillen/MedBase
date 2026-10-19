@@ -182,19 +182,19 @@ describe('reserva en línea', () => {
   }
 
   test('muestra médicos y horarios libres sin sesión, y la cita aparece en la agenda', async () => {
-    const clinic = await (await fetch(`${base}/api/public/clinic`)).json() as any
+    const clinic = await (await fetch(`${base}/api/public/santa-brigida/clinic`)).json() as any
     assert.ok(clinic.doctors.some((d: any) => d.id === 's-herrera'))
     assert.equal(clinic.doctors[0].email, undefined)
     const date = nextWeekday()
-    const { slots } = await (await fetch(`${base}/api/public/slots?doctorId=s-herrera&date=${date}`)).json() as any
+    const { slots } = await (await fetch(`${base}/api/public/santa-brigida/slots?doctorId=s-herrera&date=${date}`)).json() as any
     assert.ok(slots.length > 0)
-    const book = await fetch(`${base}/api/public/book`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+    const book = await fetch(`${base}/api/public/santa-brigida/book`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
       doctorId: 's-herrera', date, time: slots[0], firstName: 'Paciente', lastName: 'En Línea', birthDate: '1985-02-02', sex: 'F', phone: '9900-1122', reason: 'Chequeo general',
     }) })
     assert.equal(book.status, 201)
-    const again = await (await fetch(`${base}/api/public/slots?doctorId=s-herrera&date=${date}`)).json() as any
+    const again = await (await fetch(`${base}/api/public/santa-brigida/slots?doctorId=s-herrera&date=${date}`)).json() as any
     assert.ok(!again.slots.includes(slots[0]))
-    const dup = await fetch(`${base}/api/public/book`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+    const dup = await fetch(`${base}/api/public/santa-brigida/book`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
       doctorId: 's-herrera', date, time: slots[0], firstName: 'Otra', lastName: 'Persona', birthDate: '1990-02-02', sex: 'M', phone: '9900-3344', reason: 'Chequeo general',
     }) })
     assert.equal(dup.status, 409)
@@ -259,7 +259,7 @@ describe('reportes y configuración', () => {
     const d = new Date(); d.setDate(d.getDate() + 1)
     while (d.getDay() === 2) d.setDate(d.getDate() + 1)
     const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    const { slots } = await (await fetch(`${base}/api/public/slots?doctorId=s-zuniga&date=${date}`)).json() as any
+    const { slots } = await (await fetch(`${base}/api/public/santa-brigida/slots?doctorId=s-zuniga&date=${date}`)).json() as any
     assert.deepEqual(slots, [])
   })
 })
@@ -334,5 +334,65 @@ describe('formato de historia clínica', () => {
     const r = await rec.get(`/api/appointments?from=${from}&to=${today()}`)
     assert.equal(r.status, 200)
     assert.ok(r.body.length > 100)
+  })
+})
+
+describe('varias clínicas', () => {
+  test('el personal de una clínica no ve pacientes, consultas ni citas de otra', async () => {
+    const otro = await as('erosales@demo.clinara')
+    assert.equal(otro.status, 200)
+    const boot = await otro.get('/api/bootstrap')
+    assert.ok(boot.body.patients.length > 0)
+    assert.ok(boot.body.patients.every((x: any) => x.id.startsWith('q')))
+    assert.ok(!boot.body.staff.some((x: any) => x.id === 's-herrera'))
+    assert.equal(boot.body.settings.name, 'Centro Médico San Lucas')
+    assert.equal((await otro.get('/api/patients/p1/chart')).status, 404)
+    assert.equal((await otro.get('/api/consultations/c1')).status, 404)
+    assert.equal((await otro.get('/api/prescriptions/rx1')).status, 404)
+    const r = await otro.get(`/api/appointments?from=${today()}&to=${today()}`)
+    assert.ok(r.body.every((a: any) => a.doctorId === 's2-rosales'))
+    const cross = await otro.post('/api/appointments', { patientId: 'p1', doctorId: 's2-rosales', start: `${today()}T18:00`, minutes: 30, reason: 'x', type: 'followup' })
+    assert.equal(cross.status, 400)
+    const admin2 = await as('admin.sanlucas@demo.clinara')
+    assert.equal((await admin2.patch('/api/staff/s-herrera', { active: false })).status, 404)
+    const audit = (await admin2.get('/api/bootstrap')).body.audit
+    assert.ok(audit.every((e: any) => !String(e.action).includes('María José')))
+  })
+
+  test('la administración de Clinara crea una clínica y su personal, sin ver expedientes', async () => {
+    const sa = await as('superadmin@demo.clinara')
+    assert.equal(sa.status, 200)
+    assert.equal(sa.login.user.role, 'superadmin')
+    const boot = await sa.get('/api/bootstrap')
+    assert.equal(boot.body.patients.length, 0)
+    assert.equal((await sa.get('/api/patients/p1/chart')).status, 403)
+    const list = await sa.get('/api/platform/clinics')
+    assert.equal(list.body.length, 2)
+    assert.ok(list.body[0].stats.patients > 0)
+
+    const created = await sa.post('/api/platform/clinics', { name: 'Clínica Nueva Esperanza', address: 'La Ceiba', phone: '2440-0000', admin: { name: 'Ana Admin', email: 'ana@esperanza.test' } })
+    assert.equal(created.status, 201)
+    assert.equal(created.body.clinic.slug, 'clinica-nueva-esperanza')
+    const doc = await sa.post(`/api/platform/clinics/${created.body.clinic.id}/staff`, { name: 'Dr. Nuevo Médico', role: 'doctor', email: 'nuevo@esperanza.test', license: 'CMH-1' })
+    assert.equal(doc.status, 201)
+
+    const ana = await as('ana@esperanza.test', created.body.password)
+    assert.equal(ana.status, 200)
+    const anaBoot = await ana.get('/api/bootstrap')
+    assert.equal(anaBoot.body.patients.length, 0)
+    assert.equal(anaBoot.body.settings.name, 'Clínica Nueva Esperanza')
+    assert.ok(anaBoot.body.services.length > 0)
+    const pt = await ana.post('/api/patients', { firstName: 'Primer', lastName: 'Paciente', birthDate: '2000-01-01', sex: 'F', phone: '99990000' })
+    assert.equal(pt.body.record, 'EXP-00401')
+    assert.equal((await ana.get('/api/platform/clinics')).status, 403)
+    assert.equal((await ana.post('/api/staff', { name: 'Intruso', role: 'superadmin', email: 'x@x.test' })).status, 400)
+
+    // Al desactivar la clínica su personal pierde el acceso y la reserva en línea desaparece
+    await sa.patch(`/api/platform/clinics/${created.body.clinic.id}`, { active: false })
+    assert.equal((await ana.get('/api/bootstrap')).status, 401)
+    assert.equal((await as('ana@esperanza.test', created.body.password)).status, 403)
+    assert.equal((await fetch(`${base}/api/public/clinica-nueva-esperanza/clinic`)).status, 404)
+    const pub = await (await fetch(`${base}/api/public/clinics`)).json() as any
+    assert.ok(!pub.some((c: any) => c.slug === 'clinica-nueva-esperanza'))
   })
 })

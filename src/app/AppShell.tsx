@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  Armchair, BarChart3, CalendarDays, FileText, House, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, UserCog, Users,
+  Armchair, BarChart3, Building2, CalendarDays, FileText, House, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, UserCog, Users,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
@@ -11,7 +11,7 @@ import { ROLE_LABEL, type Permission } from '../lib/permissions'
 import { cap, sameDay } from '../lib/format'
 
 const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean; group?: string }[] = [
-  { to: '/app', label: 'Inicio', icon: House, end: true },
+  { to: '/app', label: 'Inicio', icon: House, end: true, perm: undefined },
   { to: '/app/agenda', label: 'Agenda', icon: CalendarDays, perm: 'agenda.view' },
   { to: '/app/sala', label: 'Sala de espera', icon: Armchair, perm: 'checkin.manage' },
   { to: '/app/pacientes', label: 'Pacientes', icon: Users, perm: 'patients.view' },
@@ -40,7 +40,10 @@ export default function AppShell() {
   const today = new Date()
   const waiting = appointments.filter((a) => sameDay(a.start, today) && a.status === 'arrived').length
   const toCharge = appointments.filter((a) => a.status === 'done' && a.paid === false && sameDay(a.start, today)).length
-  const items = NAV.filter((n) => !n.perm || can(n.perm))
+  const platform = user.role === 'superadmin'
+  const items = platform
+    ? [{ to: '/app', label: 'Clínicas', icon: Building2, end: true }]
+    : NAV.filter((n) => !n.perm || can(n.perm))
   const label = today.toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
@@ -48,7 +51,7 @@ export default function AppShell() {
       <aside className={`side ${open ? 'open' : ''}`} aria-label="Navegación principal">
         <div className="side__clinic">
           <Logo size={28} />
-          <small>Clínica</small>
+          <small>{platform ? 'Plataforma' : 'Clínica'}</small>
           <strong>{settings.name}</strong>
         </div>
         <nav>
@@ -83,7 +86,7 @@ export default function AppShell() {
         <div className="topbar">
           <button className="icon-btn topbar__menu" aria-label="Abrir menú" onClick={() => setOpen((o) => !o)}><Menu size={20} /></button>
           <span className="topbar__date">{cap(label)}</span>
-          {can('patients.view') && (
+          {!platform && can('patients.view') && (
             <button className="search-btn" onClick={() => window.dispatchEvent(new Event('open-search'))}>
               <Search size={16} /><span>Buscar paciente</span><kbd>Ctrl K</kbd>
             </button>

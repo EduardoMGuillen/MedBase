@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { type Ctx, fail, localDate, parse, type Row } from '../http.js'
 
 /** Indicadores agregados para administración. No incluye datos clínicos individuales. */
-export function registerReports(app: Express, { sql, auth, need }: Ctx) {
+export function registerReports(app: Express, { sql, auth, need, clinicOf }: Ctx) {
   app.get('/api/reports', auth, need('reports.view'), async (req, res) => {
     const q = parse(z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }), req.query, 'Elige un rango de fechas.')
     if (q.from > q.to) fail(400, 'La fecha inicial debe ser anterior a la final.')
@@ -12,13 +12,14 @@ export function registerReports(app: Express, { sql, auth, need }: Ctx) {
     const lo = new Date(`${q.from}T00:00:00`); lo.setDate(lo.getDate() - 1)
     const hi = new Date(`${q.to}T23:59:59`); hi.setDate(hi.getDate() + 1)
 
+    const cid = clinicOf(req)
     const [appts, payRows, consRows, patRows, doctors] = await Promise.all([
-      sql.query(`SELECT id, doctor_id, start, status, source FROM appointments WHERE start >= ? AND start < ?`, [q.from, `${q.to}T99`]),
+      sql.query(`SELECT id, doctor_id, start, status, source FROM appointments WHERE clinic_id = ? AND start >= ? AND start < ?`, [cid, q.from, `${q.to}T99`]),
       sql.query(`SELECT p.total, p.method, p.paid_at, a.doctor_id FROM payments p LEFT JOIN appointments a ON a.id = p.appointment_id
-        WHERE NOT p.voided AND p.paid_at BETWEEN ? AND ?`, [lo.toISOString(), hi.toISOString()]),
-      sql.query(`SELECT diagnoses, date FROM consultations WHERE date BETWEEN ? AND ?`, [localDate(lo), hi.toISOString()]),
-      sql.query(`SELECT created_at FROM patients WHERE created_at BETWEEN ? AND ?`, [localDate(lo), hi.toISOString()]),
-      sql.query(`SELECT id, name FROM staff WHERE role = 'doctor' ORDER BY name`),
+        WHERE p.clinic_id = ? AND NOT p.voided AND p.paid_at BETWEEN ? AND ?`, [cid, lo.toISOString(), hi.toISOString()]),
+      sql.query(`SELECT diagnoses, date FROM consultations WHERE clinic_id = ? AND date BETWEEN ? AND ?`, [cid, localDate(lo), hi.toISOString()]),
+      sql.query(`SELECT created_at FROM patients WHERE clinic_id = ? AND created_at BETWEEN ? AND ?`, [cid, localDate(lo), hi.toISOString()]),
+      sql.query(`SELECT id, name FROM staff WHERE clinic_id = ? AND role = 'doctor' ORDER BY name`, [cid]),
     ])
     const payments = payRows.filter((p) => inRange(String(p.paid_at)))
     const consults = consRows.filter((c) => inRange(String(c.date)))

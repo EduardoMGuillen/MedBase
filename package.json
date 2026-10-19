@@ -1,7 +1,7 @@
 {
   "name": "clinara",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
@@ -13,7 +13,8 @@
     "db:reset": "tsx server/reset-db.ts",
     "lint": "oxlint",
     "preview": "vite preview",
-    "db:neon": "tsx server/reset-db.ts .env.neon.local"
+    "db:neon": "tsx server/reset-db.ts .env.neon.local",
+    "superadmin": "tsx server/create-superadmin.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",

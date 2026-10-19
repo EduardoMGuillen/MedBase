@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
-  Appointment, ApptStatus, Attachment, AuditEntry, ClinicSettings, Consultation, Patient, Payment, PaymentMethod,
+  Appointment, ApptStatus, Attachment, AuditEntry, Clinic, ClinicRole, ClinicSettings, Consultation, Patient, Payment, PaymentMethod,
   Prescription, PrescriptionItem, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
@@ -124,6 +124,10 @@ function useStoreValue() {
   const fetchPayment = useCallback((id: string) => api<{ payment: Payment; patient: Patient }>(`/payments/${id}`), [])
   const fetchReport = useCallback((from: string, to: string) => api<Report>(`/reports?from=${from}&to=${to}`), [])
   const fetchAttachments = useCallback((patientId: string) => api<Attachment[]>(`/patients/${patientId}/attachments`), [])
+  // Administración de la plataforma
+  const fetchClinics = useCallback(() => api<Clinic[]>('/platform/clinics'), [])
+  const fetchClinicStaff = useCallback((clinicId: string) => api<Staff[]>(`/platform/clinics/${clinicId}/staff`), [])
+  const fetchPlatformActivity = useCallback(() => api<(AuditEntry & { clinicName?: string })[]>('/platform/activity'), [])
 
   return {
     ...data, user, checking, demo: session?.demo ?? false, toast, notify, clearToast: () => setToast(null), refresh,
@@ -132,6 +136,7 @@ function useStoreValue() {
     patient: (id: string) => data.patients.find((p) => p.id === id),
     staffById: (id: string) => data.staff.find((s) => s.id === id),
     fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
+    fetchClinics, fetchClinicStaff, fetchPlatformActivity,
 
     setStatus: (id: string, status: Exclude<ApptStatus, 'scheduled' | 'triaged' | 'done'>, success?: string) =>
       run(() => api<Appointment>(`/appointments/${id}/status`, { body: { status } }), success),
@@ -180,6 +185,15 @@ function useStoreValue() {
       setSession(me)
     }, 'Verificación en dos pasos desactivada'),
     resetDemo: () => run(() => api('/admin/reset-demo', { method: 'POST' }), 'Datos de demo restablecidos'),
+    createClinic: (c: Pick<Clinic, 'name' | 'address' | 'phone' | 'email'> & { slug?: string; admin: { name: string; email: string } }) =>
+      run(() => api<{ clinic: Clinic; admin: Staff; password: string }>('/platform/clinics', { body: c }), 'Clínica creada'),
+    updateClinic: (id: string, c: Partial<Pick<Clinic, 'name' | 'slug' | 'address' | 'phone' | 'email' | 'currency' | 'active'>>, success = 'Clínica actualizada') =>
+      run(() => api<Clinic>(`/platform/clinics/${id}`, { method: 'PATCH', body: c }), success),
+    createClinicStaff: (clinicId: string, s: { name: string; role: ClinicRole; email: string; specialty?: string; license?: string }) =>
+      run(() => api<{ user: Staff; password: string }>(`/platform/clinics/${clinicId}/staff`, { body: s }), 'Usuario creado'),
+    updatePlatformStaff: (id: string, b: { active?: boolean; role?: ClinicRole; twoFactor?: false }) =>
+      run(() => api<Staff>(`/platform/staff/${id}`, { method: 'PATCH', body: b }), 'Usuario actualizado'),
+    resetPlatformStaffPassword: (id: string) => run(() => api<{ password: string }>(`/platform/staff/${id}/reset-password`, { method: 'POST' })),
   }
 }
 

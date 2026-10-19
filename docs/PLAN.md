@@ -49,7 +49,6 @@ Principios que resultan de esa revisión:
 La fuente de verdad está en `src/lib/permissions.ts`.
 
 ### Roles previstos para fases siguientes
-- **Superadmin de plataforma**: gestiona clínicas (multiempresa), planes y facturación. No accede a datos clínicos.
 - **Farmacia**: ve recetas emitidas y marca la dispensación.
 - **Laboratorio**: recibe órdenes y sube resultados al expediente.
 - **Paciente (portal)**: ve sus citas, recetas y resultados, y reserva en línea.
@@ -123,7 +122,8 @@ Los tipos están en `src/lib/types.ts`.
 | **0. Prototipo** (hecho) | Landing, login, 4 roles, agenda, sala de espera, triaje, consulta SOAP, CIE-10, recetas con cruce de alergias, expediente, personal, bitácora |
 | **1. MVP funcional** (hecho) | Backend con base de datos, login real, permisos en servidor, edición de pacientes, reprogramación con detección de choques, alta de usuarios con contraseña temporal, cambio de contraseña, pruebas automáticas |
 | **2. Operación** (hecho) | Reserva en línea con horarios por médico, recordatorios por WhatsApp (enlace), caja con recibos y cierre, reportes con exportación, archivos en el expediente, constancias médicas, configuración de clínica y precios, verificación en dos pasos, cierre por inactividad, buscador Ctrl+K |
-| **3. Pendiente para producción** | Envío automático de recordatorios (WhatsApp Business API), alta de varias clínicas, respaldos automáticos programados, facturación fiscal (CAI/SAR), adjuntos en almacenamiento de objetos (Vercel Blob o S3) para archivos de más de 3 MB |
+| **2b. Multiclínica** (hecho) | Administración de la plataforma, clínicas aisladas entre sí, reserva en línea por clínica, numeración por clínica |
+| **3. Pendiente para producción** | Envío automático de recordatorios (WhatsApp Business API), respaldos automáticos programados, planes y facturación por clínica, facturación fiscal (CAI/SAR), adjuntos en almacenamiento de objetos (Vercel Blob o S3) para archivos de más de 3 MB |
 | **4. Pacientes** | Portal del paciente con historial, receta digital con código QR verificable, plantillas de nota por especialidad, órdenes de laboratorio |
 | **5. Escala** | Multisede, farmacia, integraciones (HL7 FHIR), app móvil para médicos |
 

@@ -10,13 +10,14 @@ import { z } from 'zod'
 import { attempts, createPatient, DEMO_PASSWORD, ensureDb, hit, resetDemo } from './db.js'
 import type { Sql } from './sql.js'
 import { type Ctx, fail, HttpError, localDate, parse, type Row } from './http.js'
-import { toAppointment, toAudit, toConsultation, toPatient, toPrescription, toService, toStaff, toVitals } from './mappers.js'
+import { clinicSettings, toAppointment, toAudit, toConsultation, toPatient, toPrescription, toService, toStaff, toVitals } from './mappers.js'
 import { newSecret, otpauthUrl, verifyTotp } from './totp.js'
 import { registerSettings } from './routes/settings.js'
 import { registerPublic } from './routes/public.js'
 import { registerBilling } from './routes/billing.js'
 import { registerReports } from './routes/reports.js'
 import { registerFiles } from './routes/files.js'
+import { registerPlatform } from './routes/platform.js'
 import { can, ROLE_PERMISSIONS, type Permission } from '../src/lib/permissions.js'
 import type { ApptStatus, Staff } from '../src/lib/types.js'
 
@@ -77,15 +78,21 @@ export function createApp(opts: AppOptions) {
     next()
   })
 
-  const audit = async (userId: string, action: string, q: Sql = sql) => {
-    await q.run('INSERT INTO audit (at, user_id, action) VALUES (?, ?, ?)', [new Date().toISOString(), userId, action])
+  /** Registra una acción en la bitácora, ligada a la clínica de quien la hizo. */
+  const audit = async (actor: { id: string; clinicId?: string | null }, action: string, q: Sql = sql) => {
+    await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?, ?, ?, ?)', [new Date().toISOString(), actor.id, action, actor.clinicId ?? null])
   }
   const staffRow = (id: string) => sql.one('SELECT * FROM staff WHERE id = ?', [id])
-  const patientRow = (id: string) => sql.one('SELECT * FROM patients WHERE id = ?', [id])
-  const apptRow = (id: string) => sql.one('SELECT * FROM appointments WHERE id = ?', [id])
-  const patientName = async (id: string) => { const p = await patientRow(id); return p ? `${p.first_name} ${p.last_name}` : id }
-  const settings = async () => Object.fromEntries((await sql.query('SELECT key, value FROM settings'))
-    .map((r) => [String(r.key), JSON.parse(String(r.value))]))
+  // Todo lo que pertenece a una clínica se busca siempre junto con la clínica de quien pregunta
+  const clinicStaffRow = (cid: string, id: string) => sql.one('SELECT * FROM staff WHERE id = ? AND clinic_id = ?', [id, cid])
+  const patientRow = (cid: string, id: string) => sql.one('SELECT * FROM patients WHERE id = ? AND clinic_id = ?', [id, cid])
+  const apptRow = (cid: string, id: string) => sql.one('SELECT * FROM appointments WHERE id = ? AND clinic_id = ?', [id, cid])
+  const patientName = async (id: string) => { const p = await sql.one('SELECT first_name, last_name FROM patients WHERE id = ?', [id]); return p ? `${p.first_name} ${p.last_name}` : id }
+  const settings = async (cid: string) => {
+    const c = await sql.one('SELECT * FROM clinics WHERE id = ?', [cid])
+    return c ? clinicSettings(c) : fail(404, 'La clínica no existe.')
+  }
+  const clinicOf = (req: Request) => userOf(req).clinicId ?? fail(403, 'Esta acción es para el personal de una clínica.')
 
   // ---------- Autenticación ----------
   function issue(res: Response, row: Row) {
@@ -98,8 +105,9 @@ export function createApp(opts: AppOptions) {
     if (!token) return null
     let payload: { sub: string; v: number }
     try { payload = jwt.verify(token, secret!) as { sub: string; v: number } } catch { return null }
-    const row = await staffRow(payload.sub)
+    const row = await sql.one(`SELECT s.*, c.active AS clinic_active FROM staff s LEFT JOIN clinics c ON c.id = s.clinic_id WHERE s.id = ?`, [payload.sub])
     if (!row || !row.active || Number(row.token_version) !== payload.v) return null
+    if (row.clinic_id && !row.clinic_active) return null
     return toStaff(row)
   }
 
@@ -129,7 +137,7 @@ export function createApp(opts: AppOptions) {
     if (clash) fail(409, `${(await staffRow(doctorId))?.name} ya tiene una cita a las ${String(clash.start).slice(11, 16)}. Elige otra hora.`)
   }
 
-  const ctx: Ctx = { sql, demoMode, auth, need, userOf, audit, patientName, staffRow, patientRow, apptRow, assertFree, settings }
+  const ctx: Ctx = { sql, demoMode, auth, need, userOf, clinicOf, audit, patientName, staffRow, clinicStaffRow, patientRow, apptRow, assertFree, settings }
 
   const session = (row: Row) => {
     const user = toStaff(row)
@@ -147,6 +155,7 @@ export function createApp(opts: AppOptions) {
       fail(401, 'El correo o la contraseña no coinciden.')
     }
     if (!row!.active) fail(403, 'Esta cuenta está desactivada. Pide a administración que la reactive.')
+    if (row!.clinic_id && !(await sql.one('SELECT 1 FROM clinics WHERE id = ? AND active', [row!.clinic_id]))) fail(403, 'Tu clínica está desactivada en Clinara. Comunícate con administración.')
     if (row!.totp_enabled) {
       if (!body.code) return res.json({ twoFactor: true })
       if (!verifyTotp(String(row!.totp_secret), body.code)) {
@@ -156,13 +165,13 @@ export function createApp(opts: AppOptions) {
     }
     await sql.run('DELETE FROM rate_limits WHERE key = ?', [key])
     issue(res, row!)
-    await audit(String(row!.id), 'Inició sesión')
+    await audit({ id: String(row!.id), clinicId: row!.clinic_id as string | null }, 'Inició sesión')
     res.json(session(row!))
   })
 
   app.post('/api/auth/logout', async (req, res) => {
     const user = await authenticate(req)
-    if (user) await audit(user.id, 'Cerró sesión')
+    if (user) await audit(user, 'Cerró sesión')
     res.clearCookie(COOKIE, { path: '/' })
     res.json({ ok: true })
   })
@@ -179,7 +188,7 @@ export function createApp(opts: AppOptions) {
     if (!bcrypt.compareSync(body.current, String(row.password_hash))) fail(400, 'La contraseña actual no es correcta.')
     await sql.run('UPDATE staff SET password_hash = ?, token_version = token_version + 1 WHERE id = ?', [bcrypt.hashSync(body.next, 10), user.id])
     issue(res, (await staffRow(user.id))!)
-    await audit(user.id, 'Cambió su contraseña')
+    await audit(user, 'Cambió su contraseña')
     res.json({ ok: true })
   })
 
@@ -188,7 +197,7 @@ export function createApp(opts: AppOptions) {
     const user = userOf(req)
     const s = newSecret()
     await sql.run('UPDATE staff SET totp_secret = ? WHERE id = ? AND NOT totp_enabled', [s, user.id])
-    const url = otpauthUrl(s, user.email, String((await settings()).name ?? 'Clinara'))
+    const url = otpauthUrl(s, user.email, user.clinicId ? (await settings(user.clinicId)).name : 'Clinara')
     res.json({ secret: s, qr: await QRCode.toString(url, { type: 'svg', margin: 1, color: { dark: '#0e2233', light: '#ffffff' } }) })
   })
 
@@ -199,7 +208,7 @@ export function createApp(opts: AppOptions) {
     if (!row.totp_secret) fail(400, 'Primero genera el código QR.')
     if (!verifyTotp(String(row.totp_secret), code)) fail(400, 'El código no coincide. Revisa que la hora de tu teléfono sea correcta e inténtalo con el código actual.')
     await sql.run('UPDATE staff SET totp_enabled = TRUE WHERE id = ?', [user.id])
-    await audit(user.id, 'Activó la verificación en dos pasos')
+    await audit(user, 'Activó la verificación en dos pasos')
     res.json({ ok: true })
   })
 
@@ -208,33 +217,41 @@ export function createApp(opts: AppOptions) {
     const user = userOf(req)
     if (!bcrypt.compareSync(password, String((await staffRow(user.id))!.password_hash))) fail(400, 'La contraseña no es correcta.')
     await sql.run('UPDATE staff SET totp_enabled = FALSE, totp_secret = NULL WHERE id = ?', [user.id])
-    await audit(user.id, 'Desactivó la verificación en dos pasos')
+    await audit(user, 'Desactivó la verificación en dos pasos')
     res.json({ ok: true })
   })
 
   app.get('/api/demo-accounts', async (_req, res) => {
     if (!demoMode) return res.json({ accounts: [], password: null })
-    const rows = await sql.query(`SELECT * FROM staff WHERE active AND email LIKE '%@demo.clinara' ORDER BY CASE role WHEN 'doctor' THEN 0 WHEN 'nurse' THEN 1 WHEN 'reception' THEN 2 ELSE 3 END, name`)
-    res.json({ accounts: rows.map(toStaff), password: DEMO_PASSWORD })
+    const rows = await sql.query(`SELECT s.*, c.name AS clinic_name FROM staff s LEFT JOIN clinics c ON c.id = s.clinic_id
+      WHERE s.active AND s.email LIKE '%@demo.clinara' AND (c.active IS NULL OR c.active)
+      ORDER BY c.created_at NULLS FIRST, CASE s.role WHEN 'doctor' THEN 0 WHEN 'nurse' THEN 1 WHEN 'reception' THEN 2 WHEN 'admin' THEN 3 ELSE 4 END, s.name`)
+    res.json({ accounts: rows.map((r) => ({ ...toStaff(r), clinicName: r.clinic_name ?? undefined })), password: DEMO_PASSWORD })
   })
 
   // ---------- Datos iniciales según el rol ----------
   app.get('/api/bootstrap', auth, async (req, res) => {
     const user = userOf(req)
+    // La administración de la plataforma no carga datos de ninguna clínica
+    if (!user.clinicId) {
+      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [],
+        settings: { ...clinicSettings({ name: 'Clinara' }) } })
+    }
+    const cid = user.clinicId
     const clinical = can(user.role, 'chart.view')
     const billing = can(user.role, 'billing.manage')
     const since = new Date(); since.setDate(since.getDate() - 90)
     const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg] = await Promise.all([
-      sql.query('SELECT * FROM staff ORDER BY name'),
-      sql.query('SELECT * FROM patients ORDER BY last_name'),
+      sql.query('SELECT * FROM staff WHERE clinic_id = ? ORDER BY name', [cid]),
+      sql.query('SELECT * FROM patients WHERE clinic_id = ? ORDER BY last_name', [cid]),
       // Ventana de agenda: 90 días atrás y todo lo futuro
       sql.query(`SELECT a.*, EXISTS(SELECT 1 FROM payments p WHERE p.appointment_id = a.id AND NOT p.voided) AS paid
-        FROM appointments a WHERE a.start >= ? ORDER BY a.start`, [localDate(since)]),
-      can(user.role, 'rx.view') ? sql.query('SELECT * FROM prescriptions ORDER BY issued_at DESC LIMIT 500') : Promise.resolve([]),
-      can(user.role, 'audit.view') ? sql.query('SELECT * FROM audit ORDER BY id DESC LIMIT 500') : Promise.resolve([]),
-      clinical ? sql.query(`SELECT v.* FROM vitals v JOIN appointments a ON a.id = v.appointment_id WHERE a.start LIKE ?`, [`${localDate(new Date())}%`]) : Promise.resolve([]),
-      sql.query('SELECT * FROM services ORDER BY name'),
-      settings(),
+        FROM appointments a WHERE a.clinic_id = ? AND a.start >= ? ORDER BY a.start`, [cid, localDate(since)]),
+      can(user.role, 'rx.view') ? sql.query('SELECT * FROM prescriptions WHERE clinic_id = ? ORDER BY issued_at DESC LIMIT 500', [cid]) : Promise.resolve([]),
+      can(user.role, 'audit.view') ? sql.query('SELECT * FROM audit WHERE clinic_id = ? ORDER BY id DESC LIMIT 500', [cid]) : Promise.resolve([]),
+      clinical ? sql.query(`SELECT v.* FROM vitals v JOIN appointments a ON a.id = v.appointment_id WHERE v.clinic_id = ? AND a.start LIKE ?`, [cid, `${localDate(new Date())}%`]) : Promise.resolve([]),
+      sql.query('SELECT * FROM services WHERE clinic_id = ? ORDER BY name', [cid]),
+      settings(cid),
     ])
     res.json({
       staff: staff.map(toStaff),
@@ -274,15 +291,17 @@ export function createApp(opts: AppOptions) {
 
   app.post('/api/patients', auth, need('patients.manage'), async (req, res) => {
     const p = parse(patientBody, req.body)
-    const id = await createPatient(sql, p)
-    const record = String((await patientRow(id))!.record)
-    await audit(userOf(req).id, `Registró al paciente ${p.firstName} ${p.lastName} (${record})`)
+    const cid = clinicOf(req)
+    const id = await sql.tx((q) => createPatient(q, cid, p))
+    const record = String((await patientRow(cid, id))!.record)
+    await audit(userOf(req), `Registró al paciente ${p.firstName} ${p.lastName} (${record})`)
     res.status(201).json({ id, record })
   })
 
   app.patch('/api/patients/:id', auth, need('patients.manage', 'chart.view'), async (req, res) => {
     const user = userOf(req)
-    const row = (await patientRow(String(req.params.id))) ?? fail(404, 'El paciente no existe.')
+    const cid = clinicOf(req)
+    const row = (await patientRow(cid, String(req.params.id))) ?? fail(404, 'El paciente no existe.')
     const body = parse(patientBody.partial(), req.body)
     const demographic = ['firstName', 'lastName', 'birthDate', 'sex', 'phone', 'email', 'insurance', 'dni', 'civilStatus', 'occupation', 'education',
       'religion', 'address', 'emergencyName', 'emergencyPhone', 'emergencyRelation'] as const
@@ -300,20 +319,21 @@ export function createApp(opts: AppOptions) {
       sets.push(`${col} = ?`)
       vals.push(typeof v === 'object' && v !== null ? JSON.stringify(v) : v == null || v === '' ? null : String(v))
     }
-    if (sets.length) await sql.run(`UPDATE patients SET ${sets.join(', ')} WHERE id = ?`, [...vals, String(row!.id)])
-    await audit(user.id, `Actualizó la ficha de ${row!.first_name} ${row!.last_name}`)
-    res.json(toPatient((await patientRow(String(row!.id)))!, can(user.role, 'chart.view')))
+    if (sets.length) await sql.run(`UPDATE patients SET ${sets.join(', ')} WHERE id = ? AND clinic_id = ?`, [...vals, String(row!.id), cid])
+    await audit(user, `Actualizó la ficha de ${row!.first_name} ${row!.last_name}`)
+    res.json(toPatient((await patientRow(cid, String(row!.id)))!, can(user.role, 'chart.view')))
   })
 
   app.get('/api/patients/:id/chart', auth, need('chart.view'), async (req, res) => {
     const id = String(req.params.id)
-    ;(await patientRow(id)) ?? fail(404, 'El paciente no existe.')
+    const cid = clinicOf(req)
+    ;(await patientRow(cid, id)) ?? fail(404, 'El paciente no existe.')
     const [vitals, consultations, prescriptions] = await Promise.all([
-      sql.query('SELECT * FROM vitals WHERE patient_id = ? ORDER BY taken_at DESC', [id]),
-      sql.query('SELECT * FROM consultations WHERE patient_id = ? ORDER BY date DESC', [id]),
-      sql.query('SELECT * FROM prescriptions WHERE patient_id = ? ORDER BY issued_at DESC', [id]),
+      sql.query('SELECT * FROM vitals WHERE patient_id = ? AND clinic_id = ? ORDER BY taken_at DESC', [id, cid]),
+      sql.query('SELECT * FROM consultations WHERE patient_id = ? AND clinic_id = ? ORDER BY date DESC', [id, cid]),
+      sql.query('SELECT * FROM prescriptions WHERE patient_id = ? AND clinic_id = ? ORDER BY issued_at DESC', [id, cid]),
     ])
-    await audit(userOf(req).id, `Consultó el expediente de ${await patientName(id)}`)
+    await audit(userOf(req), `Consultó el expediente de ${await patientName(id)}`)
     res.json({ vitals: vitals.map(toVitals), consultations: consultations.map(toConsultation), prescriptions: prescriptions.map(toPrescription) })
   })
 
@@ -331,7 +351,7 @@ export function createApp(opts: AppOptions) {
     const q = parse(z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }), req.query, 'Elige un rango de fechas.')
     const user = userOf(req)
     const rows = await sql.query(`SELECT a.*, EXISTS(SELECT 1 FROM payments p WHERE p.appointment_id = a.id AND NOT p.voided) AS paid
-      FROM appointments a WHERE a.start >= ? AND a.start < ? ORDER BY a.start`, [q.from, `${q.to}T99`])
+      FROM appointments a WHERE a.clinic_id = ? AND a.start >= ? AND a.start < ? ORDER BY a.start`, [clinicOf(req), q.from, `${q.to}T99`])
     const billing = can(user.role, 'billing.manage')
     res.json(rows.map((r) => ({ ...toAppointment(r), paid: billing ? Boolean(r.paid) : undefined })))
   })
@@ -339,19 +359,21 @@ export function createApp(opts: AppOptions) {
   app.post('/api/appointments', auth, need('agenda.manage'), async (req, res) => {
     const a = parse(apptBody, req.body)
     const start = a.start.length === 16 ? `${a.start}:00` : a.start
-    ;(await patientRow(a.patientId)) ?? fail(400, 'El paciente no existe.')
-    const doc = await staffRow(a.doctorId)
+    const cid = clinicOf(req)
+    ;(await patientRow(cid, a.patientId)) ?? fail(400, 'El paciente no existe.')
+    const doc = await clinicStaffRow(cid, a.doctorId)
     if (!doc || doc.role !== 'doctor' || !doc.active) fail(400, 'El médico elegido no está disponible.')
     await assertFree(a.doctorId, start, a.minutes)
     const id = randomUUID()
-    await sql.run(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,source) VALUES (?,?,?,?,?,?,?, 'scheduled', 'staff')`,
-      [id, a.patientId, a.doctorId, start, a.minutes, a.reason, a.type])
-    await audit(userOf(req).id, `Agendó cita de ${await patientName(a.patientId)} con ${doc!.name} el ${start.slice(0, 10)} a las ${start.slice(11, 16)}`)
-    res.status(201).json(toAppointment((await apptRow(id))!))
+    await sql.run(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,source,clinic_id) VALUES (?,?,?,?,?,?,?, 'scheduled', 'staff', ?)`,
+      [id, a.patientId, a.doctorId, start, a.minutes, a.reason, a.type, cid])
+    await audit(userOf(req), `Agendó cita de ${await patientName(a.patientId)} con ${doc!.name} el ${start.slice(0, 10)} a las ${start.slice(11, 16)}`)
+    res.status(201).json(toAppointment((await apptRow(cid, id))!))
   })
 
   app.patch('/api/appointments/:id', auth, need('agenda.manage'), async (req, res) => {
-    const row = (await apptRow(String(req.params.id))) ?? fail(404, 'La cita no existe.')
+    const cid = clinicOf(req)
+    const row = (await apptRow(cid, String(req.params.id))) ?? fail(404, 'La cita no existe.')
     if (!['scheduled', 'confirmed'].includes(String(row!.status))) fail(409, 'Sólo se pueden reprogramar citas que aún no empiezan.')
     const b = parse(apptBody.pick({ doctorId: true, start: true, minutes: true, reason: true }).partial(), req.body)
     const next = {
@@ -360,11 +382,13 @@ export function createApp(opts: AppOptions) {
       minutes: b.minutes ?? Number(row!.minutes),
       reason: b.reason ?? String(row!.reason),
     }
+    const doc = await clinicStaffRow(cid, next.doctorId)
+    if (!doc || doc.role !== 'doctor' || !doc.active) fail(400, 'El médico elegido no está disponible.')
     await assertFree(next.doctorId, next.start, next.minutes, String(row!.id))
     await sql.run('UPDATE appointments SET doctor_id = ?, start = ?, minutes = ?, reason = ?, status = ?, reminded_at = NULL WHERE id = ?',
       [next.doctorId, next.start, next.minutes, next.reason, 'scheduled', String(row!.id)])
-    await audit(userOf(req).id, `Reprogramó la cita de ${await patientName(String(row!.patient_id))} al ${next.start.slice(0, 10)} ${next.start.slice(11, 16)}`)
-    res.json(toAppointment((await apptRow(String(row!.id)))!))
+    await audit(userOf(req), `Reprogramó la cita de ${await patientName(String(row!.patient_id))} al ${next.start.slice(0, 10)} ${next.start.slice(11, 16)}`)
+    res.json(toAppointment((await apptRow(cid, String(row!.id)))!))
   })
 
   /** Transiciones permitidas: estado destino → estados de origen y permiso necesario. */
@@ -379,7 +403,8 @@ export function createApp(opts: AppOptions) {
   app.post('/api/appointments/:id/status', auth, async (req, res) => {
     const user = userOf(req)
     const { status } = parse(z.object({ status: z.enum(['confirmed', 'cancelled', 'arrived', 'no_show', 'in_consult']) }), req.body)
-    const row = (await apptRow(String(req.params.id))) ?? fail(404, 'La cita no existe.')
+    const cid = clinicOf(req)
+    const row = (await apptRow(cid, String(req.params.id))) ?? fail(404, 'La cita no existe.')
     const t = TRANSITIONS[status]!
     if (!can(user.role, t.perm)) fail(403, 'Tu rol no tiene permiso para esta acción.')
     if (row!.status === status) return res.json(toAppointment(row!))
@@ -387,15 +412,16 @@ export function createApp(opts: AppOptions) {
     if (status === 'in_consult' && row!.doctor_id !== user.id) fail(403, 'Sólo el médico asignado puede atender esta cita.')
     await sql.run('UPDATE appointments SET status = ?, arrived_at = COALESCE(?, arrived_at) WHERE id = ?',
       [status, status === 'arrived' ? new Date().toISOString() : null, String(row!.id)])
-    await audit(user.id, `${t.label} la cita de ${await patientName(String(row!.patient_id))}`)
-    res.json(toAppointment((await apptRow(String(row!.id)))!))
+    await audit(user, `${t.label} la cita de ${await patientName(String(row!.patient_id))}`)
+    res.json(toAppointment((await apptRow(cid, String(row!.id)))!))
   })
 
   app.post('/api/appointments/:id/reminded', auth, need('agenda.manage', 'checkin.manage'), async (req, res) => {
-    const row = (await apptRow(String(req.params.id))) ?? fail(404, 'La cita no existe.')
+    const cid = clinicOf(req)
+    const row = (await apptRow(cid, String(req.params.id))) ?? fail(404, 'La cita no existe.')
     await sql.run('UPDATE appointments SET reminded_at = ? WHERE id = ?', [new Date().toISOString(), String(row!.id)])
-    await audit(userOf(req).id, `Envió recordatorio por WhatsApp a ${await patientName(String(row!.patient_id))}`)
-    res.json(toAppointment((await apptRow(String(row!.id)))!))
+    await audit(userOf(req), `Envió recordatorio por WhatsApp a ${await patientName(String(row!.patient_id))}`)
+    res.json(toAppointment((await apptRow(cid, String(row!.id)))!))
   })
 
   // ---------- Triaje ----------
@@ -412,20 +438,21 @@ export function createApp(opts: AppOptions) {
       glucose: z.number().int().min(10, 'Revisa la glucometría.').max(900, 'Revisa la glucometría.').optional(),
       chiefComplaint: z.string().trim().max(500).optional(),
     }), req.body)
-    ;(await patientRow(v.patientId)) ?? fail(404, 'El paciente no existe.')
+    const cid = clinicOf(req)
+    ;(await patientRow(cid, v.patientId)) ?? fail(404, 'El paciente no existe.')
     if (v.appointmentId) {
-      const a = await apptRow(v.appointmentId)
+      const a = await apptRow(cid, v.appointmentId)
       if (!a || a.patient_id !== v.patientId) fail(400, 'La cita no corresponde a este paciente.')
     }
     const id = randomUUID()
     const name = await patientName(v.patientId)
     await sql.tx(async (q) => {
-      await q.run(`INSERT INTO vitals (id,patient_id,appointment_id,taken_by,taken_at,systolic,diastolic,heart_rate,temperature,spo2,weight_kg,height_cm,pain_scale,notes,resp_rate,glucose,chief_complaint)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      await q.run(`INSERT INTO vitals (id,patient_id,appointment_id,taken_by,taken_at,systolic,diastolic,heart_rate,temperature,spo2,weight_kg,height_cm,pain_scale,notes,resp_rate,glucose,chief_complaint,clinic_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [id, v.patientId, v.appointmentId ?? null, user.id, new Date().toISOString(), v.systolic, v.diastolic, v.heartRate, v.temperature, v.spo2,
-          v.weightKg, v.heightCm, v.painScale ?? null, v.notes || null, v.respRate ?? null, v.glucose ?? null, v.chiefComplaint || null])
+          v.weightKg, v.heightCm, v.painScale ?? null, v.notes || null, v.respRate ?? null, v.glucose ?? null, v.chiefComplaint || null, cid])
       if (v.appointmentId) await q.run(`UPDATE appointments SET status = 'triaged' WHERE id = ? AND status = 'arrived'`, [v.appointmentId])
-      await audit(user.id, `Registró signos vitales de ${name}`, q)
+      await audit(user, `Registró signos vitales de ${name}`, q)
     })
     res.status(201).json(toVitals((await sql.one('SELECT * FROM vitals WHERE id = ?', [id]))!))
   })
@@ -448,58 +475,60 @@ export function createApp(opts: AppOptions) {
         frequency: z.string().min(1), duration: z.string().trim().min(1, 'Escribe la duración.'), instructions: z.string().optional(),
       })).default([]),
     }), req.body)
-    const appt = (await apptRow(c.appointmentId)) ?? fail(404, 'La cita no existe.')
+    const cid = clinicOf(req)
+    const appt = (await apptRow(cid, c.appointmentId)) ?? fail(404, 'La cita no existe.')
     if (appt!.doctor_id !== user.id) fail(403, 'Sólo el médico asignado puede firmar esta consulta.')
     if (['done', 'cancelled', 'no_show'].includes(String(appt!.status))) fail(409, 'Esta cita ya está cerrada.')
     const patientId = String(appt!.patient_id)
     const name = await patientName(patientId)
-    const cid = randomUUID()
+    const consultId = randomUUID()
     const rxId = c.items.length ? randomUUID() : null
     const now = new Date()
     let folio: string | null = null
     await sql.tx(async (q) => {
-      // Evita que dos médicos tomen el mismo folio al mismo tiempo
-      await q.run('SELECT pg_advisory_xact_lock(7272742)')
+      // Evita que dos médicos de la clínica tomen el mismo folio al mismo tiempo
+      await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`rx:${cid}`])
       const closed = await q.one(`SELECT 1 FROM appointments WHERE id = ? AND status = 'done'`, [c.appointmentId])
       if (closed) fail(409, 'Esta cita ya está cerrada.')
       if (rxId) {
         const year = now.getFullYear()
-        const last = await q.one(`SELECT folio FROM prescriptions WHERE folio LIKE ? ORDER BY folio DESC LIMIT 1`, [`RX-${year}-%`])
+        const last = await q.one(`SELECT folio FROM prescriptions WHERE clinic_id = ? AND folio LIKE ? ORDER BY folio DESC LIMIT 1`, [cid, `RX-${year}-%`])
         const seq = last ? Number(String(last.folio).split('-')[2]) + 1 : 1001
         folio = `RX-${year}-${String(seq).padStart(4, '0')}`
-        await q.run(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items) VALUES (?,?,?,?,?,?,?)`,
-          [rxId, folio, patientId, user.id, cid, now.toISOString(), JSON.stringify(c.items)])
+        await q.run(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items,clinic_id) VALUES (?,?,?,?,?,?,?,?)`,
+          [rxId, folio, patientId, user.id, consultId, now.toISOString(), JSON.stringify(c.items), cid])
       }
-      await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id,orders)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [cid, patientId, user.id, c.appointmentId, now.toISOString(), c.reason, JSON.stringify(c.symptoms), c.symptomOnset ?? null,
-          c.history, c.exam, JSON.stringify(c.diagnoses), c.orders.map((o, i) => `${i + 1}. ${o}`).join('\n'), c.vitalsId ?? null, rxId, JSON.stringify(c.orders)])
+      await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id,orders,clinic_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [consultId, patientId, user.id, c.appointmentId, now.toISOString(), c.reason, JSON.stringify(c.symptoms), c.symptomOnset ?? null,
+          c.history, c.exam, JSON.stringify(c.diagnoses), c.orders.map((o, i) => `${i + 1}. ${o}`).join('\n'), c.vitalsId ?? null, rxId, JSON.stringify(c.orders), cid])
       await q.run(`UPDATE appointments SET status = 'done' WHERE id = ?`, [c.appointmentId])
-      await audit(user.id, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
+      await audit(user, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
     })
-    res.status(201).json({ consultationId: cid, prescriptionId: rxId, folio })
+    res.status(201).json({ consultationId: consultId, prescriptionId: rxId, folio })
   })
 
   app.get('/api/consultations/:id', auth, need('chart.view'), async (req, res) => {
-    const row = (await sql.one('SELECT * FROM consultations WHERE id = ?', [String(req.params.id)])) ?? fail(404, 'La consulta no existe.')
+    const cid = clinicOf(req)
+    const row = (await sql.one('SELECT * FROM consultations WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La consulta no existe.')
     const c = toConsultation(row!)
-    const vitals = c.vitalsId ? await sql.one('SELECT * FROM vitals WHERE id = ?', [c.vitalsId]) : undefined
+    const vitals = c.vitalsId ? await sql.one('SELECT * FROM vitals WHERE id = ? AND clinic_id = ?', [c.vitalsId, cid]) : undefined
     const what = req.query.purpose === 'certificate' ? 'Emitió constancia médica de' : 'Abrió la nota de consulta de'
-    await audit(userOf(req).id, `${what} ${await patientName(c.patientId)}`)
-    res.json({ consultation: c, patient: toPatient((await patientRow(c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null })
+    await audit(userOf(req), `${what} ${await patientName(c.patientId)}`)
+    res.json({ consultation: c, patient: toPatient((await patientRow(cid, c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null })
   })
 
   app.get('/api/prescriptions/:id', auth, need('rx.view'), async (req, res) => {
-    const row = (await sql.one('SELECT * FROM prescriptions WHERE id = ?', [String(req.params.id)])) ?? fail(404, 'La receta no existe.')
+    const cid = clinicOf(req)
+    const row = (await sql.one('SELECT * FROM prescriptions WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La receta no existe.')
     const rx = toPrescription(row!)
-    const cons = await sql.one('SELECT * FROM consultations WHERE id = ?', [rx.consultationId])
-    const patient = toPatient((await patientRow(rx.patientId))!, true)
-    await audit(userOf(req).id, `Abrió la receta ${rx.folio}`)
+    const cons = await sql.one('SELECT * FROM consultations WHERE id = ? AND clinic_id = ?', [rx.consultationId, cid])
+    const patient = toPatient((await patientRow(cid, rx.patientId))!, true)
+    await audit(userOf(req), `Abrió la receta ${rx.folio}`)
     res.json({ prescription: rx, consultation: cons ? toConsultation(cons) : null, patient })
   })
 
   // ---------- Personal ----------
-  const tempPassword = () => randomBytes(6).toString('base64url')
 
   app.post('/api/staff', auth, need('staff.manage'), async (req, res) => {
     const s = parse(z.object({
@@ -509,22 +538,14 @@ export function createApp(opts: AppOptions) {
       specialty: z.string().trim().optional(),
       license: z.string().trim().optional(),
     }), req.body)
-    if (s.role === 'doctor' && !s.license) fail(400, 'Para un médico escribe su número de colegiación.')
-    if (await sql.one('SELECT 1 FROM staff WHERE lower(email) = lower(?)', [s.email])) fail(409, 'Ya existe un usuario con ese correo.')
-    const id = randomUUID()
-    const password = tempPassword()
-    const count = Number((await sql.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM staff'))!.n)
-    const schedule = s.role === 'doctor' ? JSON.stringify({ days: [1, 2, 3, 4, 5], start: '08:00', end: '17:00', slot: 30 }) : null
-    await sql.run(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id) VALUES (?,?,?,?,?,?,?,TRUE,?,?,?)`,
-      [id, s.name, s.role, s.specialty || null, s.email, s.license || null, COLORS[count % COLORS.length], bcrypt.hashSync(password, 10),
-        schedule, s.role === 'doctor' ? 'svc-gen' : null])
-    await audit(userOf(req).id, `Creó el usuario ${s.name} (${s.role})`)
-    res.status(201).json({ user: toStaff((await staffRow(id))!), password })
+    const { user: created, password } = await createStaffMember(sql, clinicOf(req), s)
+    await audit(userOf(req), `Creó el usuario ${s.name} (${s.role})`)
+    res.status(201).json({ user: created, password })
   })
 
   app.patch('/api/staff/:id', auth, need('staff.manage'), async (req, res) => {
     const me = userOf(req)
-    const row = (await staffRow(String(req.params.id))) ?? fail(404, 'El usuario no existe.')
+    const row = (await clinicStaffRow(clinicOf(req), String(req.params.id))) ?? fail(404, 'El usuario no existe.')
     const b = parse(z.object({
       active: z.boolean().optional(),
       role: z.enum(ROLES).optional(),
@@ -550,23 +571,23 @@ export function createApp(opts: AppOptions) {
       if (b.serviceId !== undefined) await q.run('UPDATE staff SET service_id = ? WHERE id = ?', [b.serviceId || null, id])
       if (b.schedule) { await q.run('UPDATE staff SET schedule = ? WHERE id = ?', [JSON.stringify(b.schedule), id]); changes.push('Actualizó el horario de') }
     })
-    await audit(me.id, `${changes[0] ?? 'Actualizó los datos de'} ${row!.name}`)
+    await audit(me, `${changes[0] ?? 'Actualizó los datos de'} ${row!.name}`)
     res.json(toStaff((await staffRow(id))!))
   })
 
   app.post('/api/staff/:id/reset-password', auth, need('staff.manage'), async (req, res) => {
-    const row = (await staffRow(String(req.params.id))) ?? fail(404, 'El usuario no existe.')
+    const row = (await clinicStaffRow(clinicOf(req), String(req.params.id))) ?? fail(404, 'El usuario no existe.')
     const password = tempPassword()
     await sql.run('UPDATE staff SET password_hash = ?, token_version = token_version + 1 WHERE id = ?', [bcrypt.hashSync(password, 10), String(row!.id)])
-    await audit(userOf(req).id, `Restableció la contraseña de ${row!.name}`)
+    await audit(userOf(req), `Restableció la contraseña de ${row!.name}`)
     res.json({ password })
   })
 
-  app.post('/api/admin/reset-demo', auth, need('staff.manage'), async (req, res) => {
+  app.post('/api/admin/reset-demo', auth, need('platform.manage'), async (req, res) => {
     if (!demoMode) fail(403, 'Esta acción sólo está disponible en modo demo.')
     const me = userOf(req)
     await resetDemo(sql)
-    await audit(me.id, 'Restableció los datos de demo')
+    await audit(me, 'Restableció los datos de demo')
     res.json({ ok: true })
   })
 
@@ -575,6 +596,7 @@ export function createApp(opts: AppOptions) {
   registerBilling(app, ctx)
   registerReports(app, ctx)
   registerFiles(app, ctx)
+  registerPlatform(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))
 
@@ -596,6 +618,25 @@ export function createApp(opts: AppOptions) {
 
   return app
 }
+
+export const tempPassword = () => randomBytes(6).toString('base64url')
+
+/** Crea un usuario dentro de una clínica y devuelve su contraseña temporal. */
+export async function createStaffMember(sql: Sql, clinicId: string, s: { name: string; role: (typeof ROLES)[number]; email: string; specialty?: string; license?: string }) {
+  if (s.role === 'doctor' && !s.license) fail(400, 'Para un médico escribe su número de colegiación.')
+  if (await sql.one('SELECT 1 FROM staff WHERE lower(email) = lower(?)', [s.email])) fail(409, 'Ya existe un usuario con ese correo.')
+  const id = randomUUID()
+  const password = tempPassword()
+  const count = Number((await sql.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM staff WHERE clinic_id = ?', [clinicId]))!.n)
+  const service = s.role === 'doctor' ? await sql.one(`SELECT id FROM services WHERE clinic_id = ? AND active ORDER BY name LIMIT 1`, [clinicId]) : undefined
+  const schedule = s.role === 'doctor' ? JSON.stringify({ days: [1, 2, 3, 4, 5], start: '08:00', end: '17:00', slot: 30 }) : null
+  await sql.run(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id,clinic_id) VALUES (?,?,?,?,?,?,?,TRUE,?,?,?,?)`,
+    [id, s.name, s.role, s.specialty || null, s.email, s.license || null, COLORS[count % COLORS.length], bcrypt.hashSync(password, 10),
+      schedule, service ? String(service.id) : null, clinicId])
+  return { user: toStaff((await sql.one('SELECT * FROM staff WHERE id = ?', [id]))!), password }
+}
+
+export const CLINIC_ROLES = ROLES
 
 /** Traduce los errores de conexión más comunes a un mensaje que indica qué revisar. */
 export function describeDbError(e: unknown) {

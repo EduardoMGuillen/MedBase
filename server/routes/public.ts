@@ -1,18 +1,24 @@
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { type Ctx, fail, localDate, parse } from '../http.js'
+import { type Ctx, fail, localDate, parse, type Row } from '../http.js'
 import { createPatient, hit } from '../db.js'
-import { toStaff } from '../mappers.js'
+import { clinicSettings, toStaff } from '../mappers.js'
 import type { Schedule } from '../../src/lib/types.js'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
 
-/** Reserva en línea para pacientes, sin sesión. Sólo expone nombres de médicos y horarios libres. */
-export function registerPublic(app: Express, { sql, settings, staffRow, audit }: Ctx) {
-  async function freeSlots(doctorId: string, date: string) {
-    const doc = await staffRow(doctorId)
+/**
+ * Reserva en línea para pacientes, sin sesión. Cada clínica tiene su dirección: /reservar/<slug>.
+ * Sólo expone nombres de médicos y horarios libres.
+ */
+export function registerPublic(app: Express, { sql, audit }: Ctx) {
+  const clinicBySlug = async (slug: string) =>
+    (await sql.one('SELECT * FROM clinics WHERE slug = ? AND active', [slug])) ?? fail(404, 'Esta clínica no existe o no recibe reservas en línea.')
+
+  async function freeSlots(clinicId: string, doctorId: string, date: string) {
+    const doc = await sql.one('SELECT * FROM staff WHERE id = ? AND clinic_id = ?', [doctorId, clinicId])
     if (!doc || doc.role !== 'doctor' || !doc.active || !doc.schedule) return []
     const sch = JSON.parse(String(doc.schedule)) as Schedule
     const day = new Date(`${date}T12:00:00`)
@@ -34,20 +40,30 @@ export function registerPublic(app: Express, { sql, settings, staffRow, audit }:
     return slots
   }
 
-  app.get('/api/public/clinic', async (_req, res) => {
-    const s = await settings()
-    const doctors = (await sql.query(`SELECT * FROM staff WHERE role = 'doctor' AND active ORDER BY name`)).map(toStaff)
+  app.get('/api/public/clinics', async (_req, res) => {
+    const rows = await sql.query(`SELECT c.slug, c.name, c.address FROM clinics c
+      WHERE c.active AND EXISTS (SELECT 1 FROM staff s WHERE s.clinic_id = c.id AND s.role = 'doctor' AND s.active) ORDER BY c.name`)
+    res.json(rows.map((r: Row) => ({ slug: String(r.slug), name: String(r.name), address: String(r.address) })))
+  })
+
+  app.get('/api/public/:slug/clinic', async (req, res) => {
+    const c = await clinicBySlug(String(req.params.slug))
+    const s = clinicSettings(c!)
+    const doctors = (await sql.query(`SELECT * FROM staff WHERE clinic_id = ? AND role = 'doctor' AND active ORDER BY name`, [c!.id])).map(toStaff)
       .map((d) => ({ id: d.id, name: d.name, specialty: d.specialty, color: d.color, schedule: d.schedule }))
     res.json({ name: s.name, address: s.address, phone: s.phone, doctors })
   })
 
-  app.get('/api/public/slots', async (req, res) => {
+  app.get('/api/public/:slug/slots', async (req, res) => {
+    const c = await clinicBySlug(String(req.params.slug))
     const q = parse(z.object({ doctorId: z.string().min(1), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }), req.query, 'Elige médico y fecha.')
     if (q.date < localDate(new Date())) return res.json({ slots: [] })
-    res.json({ slots: await freeSlots(q.doctorId, q.date) })
+    res.json({ slots: await freeSlots(String(c!.id), q.doctorId, q.date) })
   })
 
-  app.post('/api/public/book', async (req, res) => {
+  app.post('/api/public/:slug/book', async (req, res) => {
+    const c = await clinicBySlug(String(req.params.slug))
+    const clinicId = String(c!.id)
     const b = parse(z.object({
       doctorId: z.string().min(1, 'Elige un médico.'),
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Elige una fecha.'),
@@ -62,8 +78,8 @@ export function registerPublic(app: Express, { sql, settings, staffRow, audit }:
       website: z.string().max(0).optional(), // campo trampa para bots
     }), req.body)
     if (await hit(sql, `book:${req.ip ?? 'unknown'}`, 60 * 60_000) > 8) fail(429, 'Has hecho demasiadas reservas seguidas. Llama a la clínica para agendar.')
-    if (!(await freeSlots(b.doctorId, b.date)).includes(b.time)) fail(409, 'Ese horario acaba de ocuparse. Elige otro, por favor.')
-    const doc = (await staffRow(b.doctorId))!
+    if (!(await freeSlots(clinicId, b.doctorId, b.date)).includes(b.time)) fail(409, 'Ese horario acaba de ocuparse. Elige otro, por favor.')
+    const doc = (await sql.one('SELECT * FROM staff WHERE id = ? AND clinic_id = ?', [b.doctorId, clinicId]))!
     const sch = JSON.parse(String(doc.schedule)) as Schedule
     const start = `${b.date}T${b.time}:00`
     const id = randomUUID()
@@ -72,15 +88,15 @@ export function registerPublic(app: Express, { sql, settings, staffRow, audit }:
       await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`book:${b.doctorId}:${b.date}`])
       const clash = await q.one(`SELECT 1 FROM appointments WHERE doctor_id = ? AND start = ? AND status NOT IN ('cancelled','no_show')`, [b.doctorId, start])
       if (clash) fail(409, 'Ese horario acaba de ocuparse. Elige otro, por favor.')
-      // Si ya existe un paciente con el mismo teléfono y fecha de nacimiento, se reutiliza su expediente
+      // Si ya existe un paciente de esta clínica con el mismo teléfono y fecha de nacimiento, se reutiliza su expediente
       const digits = b.phone.replace(/\D/g, '')
-      const existing = (await q.query('SELECT id, phone FROM patients WHERE birth_date = ?', [b.birthDate]))
+      const existing = (await q.query('SELECT id, phone FROM patients WHERE clinic_id = ? AND birth_date = ?', [clinicId, b.birthDate]))
         .find((p) => String(p.phone).replace(/\D/g, '') === digits)
-      const patientId = existing ? String(existing.id) : await createPatient(q, b)
-      await q.run(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,source) VALUES (?,?,?,?,?,?,?, 'scheduled', 'online')`,
-        [id, patientId, b.doctorId, start, sch.slot, b.reason, existing ? 'followup' : 'first'])
-      await audit('online', `Reserva en línea: ${b.firstName} ${b.lastName} con ${doc.name} el ${b.date} a las ${b.time}`, q)
+      const patientId = existing ? String(existing.id) : await createPatient(q, clinicId, b)
+      await q.run(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,source,clinic_id) VALUES (?,?,?,?,?,?,?, 'scheduled', 'online', ?)`,
+        [id, patientId, b.doctorId, start, sch.slot, b.reason, existing ? 'followup' : 'first', clinicId])
+      await audit({ id: 'online', clinicId }, `Reserva en línea: ${b.firstName} ${b.lastName} con ${doc.name} el ${b.date} a las ${b.time}`, q)
     })
-    res.status(201).json({ code: id.slice(0, 8).toUpperCase(), doctor: doc.name, start })
+    res.status(201).json({ code: id.slice(0, 8).toUpperCase(), doctor: doc.name, start, clinic: c!.name })
   })
 }

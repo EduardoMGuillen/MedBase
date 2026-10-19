@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 import { z } from 'zod'
 import type { Row, Sql } from './sql.js'
 import type { Permission } from '../src/lib/permissions.js'
-import type { Staff } from '../src/lib/types.js'
+import type { ClinicSettings, Staff } from '../src/lib/types.js'
 
 export type { Row }
 
@@ -34,11 +34,14 @@ export interface Ctx {
   auth: Middleware
   need: (...perms: Permission[]) => Middleware
   userOf: (req: Request) => Staff
-  audit: (userId: string, action: string, q?: Sql) => Promise<void>
+  /** Clínica de quien hace la petición; falla con 403 para la administración de la plataforma. */
+  clinicOf: (req: Request) => string
+  audit: (actor: { id: string; clinicId?: string | null }, action: string, q?: Sql) => Promise<void>
   patientName: (id: string) => Promise<string>
   staffRow: (id: string) => Promise<Row | undefined>
-  patientRow: (id: string) => Promise<Row | undefined>
-  apptRow: (id: string) => Promise<Row | undefined>
+  clinicStaffRow: (clinicId: string, id: string) => Promise<Row | undefined>
+  patientRow: (clinicId: string, id: string) => Promise<Row | undefined>
+  apptRow: (clinicId: string, id: string) => Promise<Row | undefined>
   assertFree: (doctorId: string, start: string, minutes: number, ignoreId?: string) => Promise<void>
-  settings: () => Promise<Record<string, unknown>>
+  settings: (clinicId: string) => Promise<ClinicSettings>
 }
