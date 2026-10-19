@@ -54,10 +54,26 @@ export function createApp(opts: AppOptions) {
     res.setHeader('Referrer-Policy', 'same-origin')
     next()
   })
+  // Diagnóstico: dice si la base responde y, si no, por qué (sin revelar credenciales)
+  app.get('/api/health', async (_req, res) => {
+    try {
+      await ensureDb(sql)
+      const r = await sql.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM staff')
+      res.json({ ok: true, database: sql.kind, staff: Number(r?.n ?? 0), jwtSecret: opts.jwtSecret ? 'configurado' : 'guardado en la base', demoMode })
+    } catch (e) {
+      res.status(503).json({ ok: false, database: sql.kind, error: describeDbError(e) })
+    }
+  })
+
   // La primera petición de cada instancia crea o actualiza el esquema si hace falta
   app.use('/api', async (_req, _res, next) => {
-    await ensureDb(sql)
-    secret ??= await persistentSecret(sql)
+    try {
+      await ensureDb(sql)
+      secret ??= await persistentSecret(sql)
+    } catch (e) {
+      console.error('Base de datos no disponible:', e)
+      return next(new HttpError(503, describeDbError(e)))
+    }
     next()
   })
 
@@ -550,6 +566,20 @@ export function createApp(opts: AppOptions) {
   })
 
   return app
+}
+
+/** Traduce los errores de conexión más comunes a un mensaje que indica qué revisar. */
+export function describeDbError(e: unknown) {
+  const err = e as { code?: string; message?: string }
+  switch (err?.code) {
+    case 'NO_DATABASE_URL': return 'Falta la variable DATABASE_URL en Vercel, o se agregó después del último deploy. Agrégala y vuelve a desplegar.'
+    case '28P01': return 'Neon rechazó la contraseña de DATABASE_URL. Copia de nuevo la cadena de conexión y vuelve a desplegar.'
+    case '3D000': return 'La base de datos indicada en DATABASE_URL no existe en Neon.'
+    case 'ENOTFOUND': case 'EAI_AGAIN': return 'No se encontró el servidor de la base de datos. Revisa que DATABASE_URL esté completa.'
+    case 'ECONNREFUSED': case 'ETIMEDOUT': return 'No se pudo conectar a la base de datos. Revisa que el proyecto de Neon esté activo.'
+    case 'EROFS': case 'ENOENT': case 'EACCES': return 'No hay una base de datos configurada en este servidor. Define DATABASE_URL.'
+    default: return `No se pudo usar la base de datos: ${err?.message ?? 'error desconocido'}`
+  }
 }
 
 /** Sin JWT_SECRET en el entorno, genera uno y lo guarda en la base para que todas las instancias lo compartan. */

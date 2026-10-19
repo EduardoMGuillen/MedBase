@@ -77,15 +77,27 @@ async function pglite(dataDir?: string): Promise<Sql> {
 }
 
 /**
+ * Extrae la URL de Postgres aunque se haya pegado con `psql '…'`, comillas o el prefijo `DATABASE_URL=`.
+ */
+export function cleanDatabaseUrl(raw?: string) {
+  if (!raw?.trim()) return undefined
+  return raw.match(/postgres(?:ql)?:\/\/[^\s'"]+/)?.[0] ?? raw.trim()
+}
+
+/**
  * Crea la conexión de forma perezosa: la primera consulta espera a que esté lista.
  * `memory: true` crea una base temporal (pruebas).
  */
 export function createSql(opts: { url?: string; dataDir?: string; memory?: boolean } = {}): Sql {
-  const url = opts.url ?? process.env.DATABASE_URL
+  const url = cleanDatabaseUrl(opts.url ?? process.env.DATABASE_URL)
   let ready: Promise<Sql> | null = null
-  const get = () => (ready ??= url ? neon(url) : pglite(opts.memory ? undefined : resolve(opts.dataDir ?? process.env.PGLITE_DIR ?? 'data/pglite')))
+  const get = () => (ready ??= url ? neon(url) : process.env.VERCEL
+    // En Vercel no hay disco donde guardar una base local: hace falta DATABASE_URL
+    ? Promise.reject(Object.assign(new Error('Falta DATABASE_URL'), { code: 'NO_DATABASE_URL' }))
+    : pglite(opts.memory ? undefined : resolve(opts.dataDir ?? process.env.PGLITE_DIR ?? 'data/pglite')))
   return {
     kind: url ? 'neon' : 'pglite',
+
     query: async (t, p) => (await get()).query(t, p),
     one: async (t, p) => (await get()).one(t, p),
     run: async (t, p) => (await get()).run(t, p),
