@@ -252,7 +252,10 @@ async function adoptSingleClinic(q: Sql) {
   await q.run(`INSERT INTO clinics (id, slug, name, address, phone, email, currency, rx_validity_days, reminder_template, active, created_at) VALUES (?,?,?,?,?,?,?,?,?,TRUE,?)`,
     [id, slugify(String(cfg.name)), cfg.name, cfg.address, cfg.phone, cfg.email, cfg.currency, Number(cfg.rxValidityDays), cfg.reminderTemplate, new Date().toISOString()])
   await q.run(`UPDATE staff SET clinic_id = ? WHERE clinic_id IS NULL AND role <> 'superadmin'`, [id])
+  // La bitácora no admite UPDATE; sólo para asignarle la clínica se suspende el bloqueo dentro de esta transacción
+  await q.exec('ALTER TABLE audit DISABLE TRIGGER audit_no_change')
   for (const t of TENANT_TABLES) await q.run(`UPDATE ${t} SET clinic_id = ? WHERE clinic_id IS NULL`, [id])
+  await q.exec('ALTER TABLE audit ENABLE TRIGGER audit_no_change')
   // En una base de demostración se agrega también la cuenta de administración de la plataforma
   if (await q.one(`SELECT 1 FROM staff WHERE email LIKE '%@demo.clinara' LIMIT 1`)) {
     const sa = STAFF.find((x) => x.role === 'superadmin')!

@@ -164,6 +164,29 @@ describe('pacientes y personal', () => {
     await assert.rejects(sql.run(`UPDATE audit SET action = 'x'`), /append-only/)
   })
 
+  test('una base anterior a la v6 se actualiza aunque la bitácora tenga registros', async () => {
+    const old = createSql({ memory: true })
+    try {
+      await ensureDb(old)
+      // Estado de una base v5: una sola clínica implícita, sin clinic_id
+      await old.exec(`
+        TRUNCATE audit;
+        INSERT INTO audit (at, user_id, action) VALUES ('2026-01-01T00:00:00Z', 's-mejia', 'Inició sesión');
+        UPDATE staff SET clinic_id = NULL;
+        ${['patients', 'appointments', 'vitals', 'consultations', 'prescriptions', 'payments', 'attachments', 'services'].map((t) => `UPDATE ${t} SET clinic_id = NULL;`).join('\n')}
+        DELETE FROM clinics;
+        UPDATE meta SET value = '5' WHERE key = 'schema';
+      `)
+      // Copia del cliente: ensureDb recuerda por instancia que ya inicializó
+      await ensureDb({ ...old })
+      const row = await old.one<{ clinic_id: string | null }>('SELECT clinic_id FROM audit')
+      assert.ok(row?.clinic_id)
+      await assert.rejects(old.run(`UPDATE audit SET action = 'x'`), /append-only/)
+    } finally {
+      await old.close()
+    }
+  })
+
   test('el bloqueo por intentos fallidos se guarda en la base', async () => {
     for (let i = 0; i < 5; i++) await as('apaz@demo.clinara', 'mala')
     const blocked = await as('apaz@demo.clinara')
