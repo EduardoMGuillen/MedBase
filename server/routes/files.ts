@@ -7,7 +7,7 @@ import { toAttachment } from '../mappers.js'
 /** Vercel acepta peticiones de hasta 4,5 MB; en base64 un archivo de 3 MB ocupa unos 4 MB. */
 export const MAX_FILE_BYTES = 3 * 1024 * 1024
 const ALLOWED = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp']
-const META = 'id, patient_id, name, mime, size, category, uploaded_by, uploaded_at'
+const META = 'id, patient_id, name, mime, size, category, uploaded_by, uploaded_at, title, taken_at, hospitalization_id'
 
 /** Archivos del expediente (laboratorios, imágenes, documentos). Se guardan dentro de la base de datos. */
 export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf, audit, patientRow, patientName }: Ctx) {
@@ -25,15 +25,26 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
       mime: z.string(),
       category: z.enum(['lab', 'imaging', 'document', 'other']),
       data: z.string().min(1, 'El archivo está vacío.'),
+      // Laboratorio subido a mano: qué examen es y cuándo se tomó
+      title: z.string().trim().max(120).optional(),
+      takenAt: z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'La fecha del examen no es válida.').optional(),
+      hospitalizationId: z.string().optional(),
     }), req.body)
     if (!ALLOWED.includes(b.mime)) fail(400, 'Sólo se aceptan PDF e imágenes (PNG, JPG o WEBP).')
+    if (b.hospitalizationId) {
+      if (!(await sql.one('SELECT 1 FROM hospitalizations WHERE id = ? AND patient_id = ? AND clinic_id = ?', [b.hospitalizationId, patientId, cid]))) {
+        fail(400, 'La hospitalización no corresponde a este paciente.')
+      }
+      if (!b.title || !b.takenAt) fail(400, 'Indica qué examen es y la fecha y hora en que se tomó.')
+    }
     const buf = Buffer.from(b.data, 'base64')
     if (buf.length > MAX_FILE_BYTES) fail(413, 'El archivo es demasiado grande. El máximo es 3 MB.')
     const id = randomUUID()
     const user = userOf(req)
-    await sql.run('INSERT INTO attachments (id, patient_id, name, mime, size, category, data, uploaded_by, uploaded_at, clinic_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [id, patientId, b.name, b.mime, buf.length, b.category, new Uint8Array(buf), user.id, new Date().toISOString(), cid])
-    await audit(user, `Adjuntó "${b.name}" al expediente de ${await patientName(patientId)}`)
+    await sql.run('INSERT INTO attachments (id, patient_id, name, mime, size, category, data, uploaded_by, uploaded_at, clinic_id, title, taken_at, hospitalization_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [id, patientId, b.name, b.mime, buf.length, b.category, new Uint8Array(buf), user.id, new Date().toISOString(), cid,
+        b.title || null, b.takenAt ? new Date(b.takenAt).toISOString() : null, b.hospitalizationId ?? null])
+    await audit(user, `Adjuntó "${b.title || b.name}" al expediente de ${await patientName(patientId)}`)
     res.status(201).json(toAttachment((await sql.one(`SELECT ${META} FROM attachments WHERE id = ?`, [id]))!))
   })
 

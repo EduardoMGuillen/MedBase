@@ -7,10 +7,12 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { attempts, createPatient, DEMO_PASSWORD, ensureDb, hit, resetDemo } from './db.js'
+import { attempts, createPatient, DEMO_PASSWORD, ensureDb, hit, nextFolio, resetDemo } from './db.js'
 import type { Sql } from './sql.js'
 import { type Ctx, fail, HttpError, localDate, parse, type Row } from './http.js'
-import { clinicSettings, toAppointment, toAudit, toConsultation, toPatient, toPrescription, toService, toStaff, toVitals } from './mappers.js'
+import {
+  clinicSettings, toAppointment, toAudit, toBed, toConsultation, toFollowup, toHospitalization, toPatient, toPrescription, toService, toStaff, toVitals,
+} from './mappers.js'
 import { newSecret, otpauthUrl, verifyTotp } from './totp.js'
 import { registerSettings } from './routes/settings.js'
 import { registerPublic } from './routes/public.js'
@@ -18,7 +20,10 @@ import { registerBilling } from './routes/billing.js'
 import { registerReports } from './routes/reports.js'
 import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
+import { registerInpatient } from './routes/inpatient.js'
+import { followupInput, insertFollowup, registerFollowups } from './routes/followups.js'
 import { can, ROLE_PERMISSIONS, type Permission } from '../src/lib/permissions.js'
+import { yearsOld } from '../src/lib/inpatient.js'
 import type { ApptStatus, Staff } from '../src/lib/types.js'
 
 export interface AppOptions {
@@ -137,7 +142,13 @@ export function createApp(opts: AppOptions) {
     if (clash) fail(409, `${(await staffRow(doctorId))?.name} ya tiene una cita a las ${String(clash.start).slice(11, 16)}. Elige otra hora.`)
   }
 
-  const ctx: Ctx = { sql, demoMode, auth, need, userOf, clinicOf, audit, patientName, staffRow, clinicStaffRow, patientRow, apptRow, assertFree, settings }
+  /** La receta lleva el número de identidad del paciente; en adultos es obligatorio. */
+  async function assertRxIdentity(cid: string, patientId: string) {
+    const p = (await patientRow(cid, patientId)) ?? fail(404, 'El paciente no existe.')
+    if (!p!.dni && yearsOld(String(p!.birth_date)) >= 18) fail(400, 'Para emitir la receta registra el número de identidad del paciente.')
+  }
+
+  const ctx: Ctx = { sql, demoMode, auth, need, userOf, clinicOf, audit, patientName, staffRow, clinicStaffRow, patientRow, apptRow, assertFree, assertRxIdentity, settings }
 
   const session = (row: Row) => {
     const user = toStaff(row)
@@ -234,14 +245,15 @@ export function createApp(opts: AppOptions) {
     const user = userOf(req)
     // La administración de la plataforma no carga datos de ninguna clínica
     if (!user.clinicId) {
-      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [],
+      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], beds: [], inpatients: [], followups: [],
         settings: { ...clinicSettings({ name: 'Clinara' }) } })
     }
     const cid = user.clinicId
     const clinical = can(user.role, 'chart.view')
     const billing = can(user.role, 'billing.manage')
     const since = new Date(); since.setDate(since.getDate() - 90)
-    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg] = await Promise.all([
+    const none = Promise.resolve([] as Row[])
+    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups] = await Promise.all([
       sql.query('SELECT * FROM staff WHERE clinic_id = ? ORDER BY name', [cid]),
       sql.query('SELECT * FROM patients WHERE clinic_id = ? ORDER BY last_name', [cid]),
       // Ventana de agenda: 90 días atrás y todo lo futuro
@@ -252,6 +264,9 @@ export function createApp(opts: AppOptions) {
       clinical ? sql.query(`SELECT v.* FROM vitals v JOIN appointments a ON a.id = v.appointment_id WHERE v.clinic_id = ? AND a.start LIKE ?`, [cid, `${localDate(new Date())}%`]) : Promise.resolve([]),
       sql.query('SELECT * FROM services WHERE clinic_id = ? ORDER BY name', [cid]),
       settings(cid),
+      can(user.role, 'inpatient.view') || can(user.role, 'settings.manage') ? sql.query('SELECT * FROM beds WHERE clinic_id = ? ORDER BY specialty, room, label', [cid]) : none,
+      can(user.role, 'inpatient.view') ? sql.query(`SELECT * FROM hospitalizations WHERE clinic_id = ? AND status = 'active' ORDER BY admitted_at`, [cid]) : none,
+      can(user.role, 'followups.view') ? sql.query('SELECT * FROM followups WHERE clinic_id = ? AND active ORDER BY due_date', [cid]) : none,
     ])
     res.json({
       staff: staff.map(toStaff),
@@ -262,6 +277,9 @@ export function createApp(opts: AppOptions) {
       vitals: vitals.map(toVitals),
       services: services.map(toService),
       settings: cfg,
+      beds: beds.map(toBed),
+      inpatients: inpatients.map(toHospitalization),
+      followups: followups.map(toFollowup),
     })
   })
 
@@ -328,13 +346,15 @@ export function createApp(opts: AppOptions) {
     const id = String(req.params.id)
     const cid = clinicOf(req)
     ;(await patientRow(cid, id)) ?? fail(404, 'El paciente no existe.')
-    const [vitals, consultations, prescriptions] = await Promise.all([
+    const [vitals, consultations, prescriptions, hospitalizations] = await Promise.all([
       sql.query('SELECT * FROM vitals WHERE patient_id = ? AND clinic_id = ? ORDER BY taken_at DESC', [id, cid]),
       sql.query('SELECT * FROM consultations WHERE patient_id = ? AND clinic_id = ? ORDER BY date DESC', [id, cid]),
       sql.query('SELECT * FROM prescriptions WHERE patient_id = ? AND clinic_id = ? ORDER BY issued_at DESC', [id, cid]),
+      sql.query('SELECT * FROM hospitalizations WHERE patient_id = ? AND clinic_id = ? ORDER BY admitted_at DESC', [id, cid]),
     ])
     await audit(userOf(req), `Consultó el expediente de ${await patientName(id)}`)
-    res.json({ vitals: vitals.map(toVitals), consultations: consultations.map(toConsultation), prescriptions: prescriptions.map(toPrescription) })
+    res.json({ vitals: vitals.map(toVitals), consultations: consultations.map(toConsultation), prescriptions: prescriptions.map(toPrescription),
+      hospitalizations: hospitalizations.map(toHospitalization) })
   })
 
   // ---------- Citas ----------
@@ -416,6 +436,27 @@ export function createApp(opts: AppOptions) {
     res.json(toAppointment((await apptRow(cid, String(row!.id)))!))
   })
 
+  // Paciente que llega sin cita: entra directo a la consulta externa del día, ya en sala
+  app.post('/api/appointments/walk-in', auth, need('checkin.manage'), async (req, res) => {
+    const b = parse(z.object({
+      patientId: z.string().min(1, 'Elige un paciente.'),
+      doctorId: z.string().min(1, 'Elige un médico.'),
+      reason: z.string().trim().min(1, 'Escribe el motivo de consulta.').max(300),
+    }), req.body)
+    const cid = clinicOf(req)
+    ;(await patientRow(cid, b.patientId)) ?? fail(400, 'El paciente no existe.')
+    const doc = await clinicStaffRow(cid, b.doctorId)
+    if (!doc || doc.role !== 'doctor' || !doc.active) fail(400, 'El médico elegido no está disponible.')
+    const now = new Date()
+    const id = randomUUID()
+    const start = `${localDate(now)}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:00`
+    const seen = await sql.one('SELECT 1 FROM consultations WHERE patient_id = ? AND clinic_id = ? LIMIT 1', [b.patientId, cid])
+    await sql.run(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,arrived_at,source,clinic_id) VALUES (?,?,?,?,30,?,?,'arrived',?,'walkin',?)`,
+      [id, b.patientId, b.doctorId, start, b.reason, seen ? 'followup' : 'first', now.toISOString(), cid])
+    await audit(userOf(req), `Registró a ${await patientName(b.patientId)} sin cita para consulta externa con ${doc!.name}`)
+    res.status(201).json(toAppointment((await apptRow(cid, id))!))
+  })
+
   app.post('/api/appointments/:id/reminded', auth, need('agenda.manage', 'checkin.manage'), async (req, res) => {
     const cid = clinicOf(req)
     const row = (await apptRow(cid, String(req.params.id))) ?? fail(404, 'La cita no existe.')
@@ -469,6 +510,8 @@ export function createApp(opts: AppOptions) {
       exam: z.string().default(''),
       diagnoses: z.array(z.object({ code: z.string(), label: z.string() })).min(1, 'Agrega al menos un diagnóstico.'),
       orders: z.array(z.string().trim().min(1)).min(1, 'Agrega al menos una orden médica en el manejo.'),
+      observations: z.string().max(4000).default(''),
+      followups: z.array(followupInput).max(5).default([]),
       vitalsId: z.string().optional(),
       items: z.array(z.object({
         drug: z.string().trim().min(1), presentation: z.string().default(''), dose: z.string().trim().min(1, 'Escribe la dosis.'),
@@ -485,24 +528,23 @@ export function createApp(opts: AppOptions) {
     const rxId = c.items.length ? randomUUID() : null
     const now = new Date()
     let folio: string | null = null
+    if (rxId) await assertRxIdentity(cid, patientId)
     await sql.tx(async (q) => {
-      // Evita que dos médicos de la clínica tomen el mismo folio al mismo tiempo
-      await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`rx:${cid}`])
+      // El candado del folio también evita que la misma cita se firme dos veces al mismo tiempo
+      if (rxId) folio = await nextFolio(q, cid, now)
+      else await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`rx:${cid}`])
       const closed = await q.one(`SELECT 1 FROM appointments WHERE id = ? AND status = 'done'`, [c.appointmentId])
       if (closed) fail(409, 'Esta cita ya está cerrada.')
       if (rxId) {
-        const year = now.getFullYear()
-        const last = await q.one(`SELECT folio FROM prescriptions WHERE clinic_id = ? AND folio LIKE ? ORDER BY folio DESC LIMIT 1`, [cid, `RX-${year}-%`])
-        const seq = last ? Number(String(last.folio).split('-')[2]) + 1 : 1001
-        folio = `RX-${year}-${String(seq).padStart(4, '0')}`
         await q.run(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items,clinic_id) VALUES (?,?,?,?,?,?,?,?)`,
           [rxId, folio, patientId, user.id, consultId, now.toISOString(), JSON.stringify(c.items), cid])
       }
-      await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id,orders,clinic_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id,orders,observations,clinic_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [consultId, patientId, user.id, c.appointmentId, now.toISOString(), c.reason, JSON.stringify(c.symptoms), c.symptomOnset ?? null,
-          c.history, c.exam, JSON.stringify(c.diagnoses), c.orders.map((o, i) => `${i + 1}. ${o}`).join('\n'), c.vitalsId ?? null, rxId, JSON.stringify(c.orders), cid])
+          c.history, c.exam, JSON.stringify(c.diagnoses), c.orders.map((o, i) => `${i + 1}. ${o}`).join('\n'), c.vitalsId ?? null, rxId, JSON.stringify(c.orders), c.observations, cid])
       await q.run(`UPDATE appointments SET status = 'done' WHERE id = ?`, [c.appointmentId])
+      for (const f of c.followups) await insertFollowup(q, cid, user.id, { ...f, patientId })
       await audit(user, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
     })
     res.status(201).json({ consultationId: consultId, prescriptionId: rxId, folio })
@@ -523,9 +565,10 @@ export function createApp(opts: AppOptions) {
     const row = (await sql.one('SELECT * FROM prescriptions WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La receta no existe.')
     const rx = toPrescription(row!)
     const cons = await sql.one('SELECT * FROM consultations WHERE id = ? AND clinic_id = ?', [rx.consultationId, cid])
+    const hosp = rx.hospitalizationId ? await sql.one('SELECT * FROM hospitalizations WHERE id = ? AND clinic_id = ?', [rx.hospitalizationId, cid]) : undefined
     const patient = toPatient((await patientRow(cid, rx.patientId))!, true)
     await audit(userOf(req), `Abrió la receta ${rx.folio}`)
-    res.json({ prescription: rx, consultation: cons ? toConsultation(cons) : null, patient })
+    res.json({ prescription: rx, consultation: cons ? toConsultation(cons) : null, hospitalization: hosp ? toHospitalization(hosp) : null, patient })
   })
 
   // ---------- Personal ----------
@@ -597,6 +640,8 @@ export function createApp(opts: AppOptions) {
   registerReports(app, ctx)
   registerFiles(app, ctx)
   registerPlatform(app, ctx)
+  registerInpatient(app, ctx)
+  registerFollowups(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))
 

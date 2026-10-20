@@ -43,6 +43,9 @@ export interface ClinicSettings {
   currency: string // símbolo, p. ej. "L"
   rxValidityDays: number
   reminderTemplate: string
+  /** Si es verdadero, el número de identidad hace de número de expediente en recetas y documentos. */
+  recordUsesDni: boolean
+  logo?: string // imagen en data URL, para recetas y constancias
 }
 
 export interface Service {
@@ -78,6 +81,9 @@ export interface Attachment {
   category: 'lab' | 'imaging' | 'document' | 'other'
   uploadedBy: string
   uploadedAt: string
+  title?: string // qué examen es, p. ej. "Hemograma"
+  takenAt?: string // fecha y hora del examen
+  hospitalizationId?: string
 }
 
 /** Antecedentes en el orden de la historia clínica. Todos son texto libre opcional. */
@@ -151,7 +157,7 @@ export interface Appointment {
   type: 'first' | 'followup' | 'urgent'
   status: ApptStatus
   arrivedAt?: string
-  source?: 'staff' | 'online'
+  source?: 'staff' | 'online' | 'walkin'
   remindedAt?: string
   paid?: boolean
 }
@@ -192,6 +198,7 @@ export interface Prescription {
   patientId: string
   doctorId: string
   consultationId: string
+  hospitalizationId?: string // receta de egreso
   issuedAt: string
   items: PrescriptionItem[]
 }
@@ -205,8 +212,9 @@ export interface Consultation {
   reason: string // motivo de consulta
   symptoms: string[] // (sin uso desde la v0.5; se conserva por compatibilidad)
   symptomOnset?: string
-  history: string // enfermedad actual (EA)
+  history: string // historia de la enfermedad actual (HEA)
   exam: string // examen físico
+  observations?: string
   diagnoses: { code: string; label: string }[] // impresión diagnóstica
   orders: string[] // manejo: órdenes médicas numeradas
   plan: string // manejo en texto (consultas anteriores a la v0.5)
@@ -219,4 +227,125 @@ export interface AuditEntry {
   at: string
   userId: string
   action: string
+}
+
+// ---------- Hospitalización ----------
+
+export interface Bed {
+  id: string
+  room: string // número de cuarto
+  label: string // cama dentro del cuarto, p. ej. "A"
+  specialty: string // las camas se asignan por especialidad, no por médico
+  active: boolean
+}
+
+export interface Hospitalization {
+  id: string
+  patientId: string
+  bedId: string
+  consultationId?: string // consulta externa de la que salió el ingreso
+  admittedAt: string
+  admittedBy: string
+  reason: string
+  diagnoses: { code: string; label: string }[]
+  companionName?: string
+  companionRelation?: string
+  companionPhone?: string
+  patientPhone?: string
+  status: 'active' | 'discharged'
+  dischargedAt?: string
+  dischargedBy?: string
+  prescriptionId?: string // receta de egreso
+}
+
+export interface DischargeData {
+  diagnoses: { code: string; label: string }[]
+  summary: string // por qué entró y qué se le hizo
+  condition: string // condición al egreso
+  instructions: string
+  followUp?: string
+}
+
+/** Nota médica (ingreso y evolución en formato SOAP), de egreso o de enfermería. */
+export interface InpatientNote {
+  id: string
+  hospitalizationId: string
+  kind: 'admission' | 'evolution' | 'discharge' | 'nursing'
+  authorId: string
+  at: string
+  subjective: string
+  objective: string
+  assessment: string
+  plan: string
+  text: string // notas de enfermería
+  discharge?: DischargeData
+}
+
+/** Medicamento indicado en una nota médica. Su horario se calcula a partir de la primera dosis. */
+export interface InpatientMed {
+  id: string
+  hospitalizationId: string
+  noteId?: string
+  drug: string
+  presentation?: string
+  dose: string
+  route: string
+  everyHours?: number // vacío: dosis única (o PRN sin intervalo mínimo)
+  prn: boolean // según necesidad: sin horario fijo
+  firstAt: string
+  instructions?: string
+  orderedBy: string
+  orderedAt: string
+  stoppedAt?: string // a partir de aquí las dosis quedan omitidas
+  stoppedBy?: string
+}
+
+export interface Dose {
+  id: string
+  medId: string
+  scheduledAt?: string // vacío en medicamentos PRN
+  givenAt: string
+  givenBy: string
+  status: 'given' | 'skipped'
+  note?: string
+}
+
+export interface HospProcedure {
+  id: string
+  hospitalizationId: string
+  kind: 'procedure' | 'authorization'
+  name: string
+  scheduledAt?: string
+  status: 'pending' | 'authorized' | 'done' | 'denied'
+  notes?: string
+  createdBy: string
+  createdAt: string
+  updatedBy?: string
+  updatedAt?: string
+}
+
+export interface InpatientFile {
+  hospitalization: Hospitalization
+  notes: InpatientNote[]
+  meds: InpatientMed[]
+  doses: Dose[]
+  procedures: HospProcedure[]
+  labs: Attachment[]
+}
+
+// ---------- Crónicos y seguimientos ----------
+
+export interface Followup {
+  id: string
+  patientId: string
+  kind: 'chronic' | 'reminder' | 'procedure'
+  title: string // padecimiento crónico, motivo del recordatorio o procedimiento
+  dueDate: string // YYYY-MM-DD: próximo control, recordatorio o procedimiento
+  everyDays?: number // crónicos: cada cuánto se repite el control
+  notes?: string
+  createdBy: string
+  createdAt: string
+  notifiedAt?: string
+  doneAt?: string
+  active: boolean
 }

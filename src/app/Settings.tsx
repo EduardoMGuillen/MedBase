@@ -5,23 +5,79 @@ import { Avatar, PageHead } from '../components/ui'
 import { DAY_NAMES, fillTemplate, money } from '../lib/format'
 import type { ClinicSettings, Schedule, Service, Staff } from '../lib/types'
 
-type Tab = 'clinic' | 'services' | 'schedules'
+type Tab = 'clinic' | 'services' | 'schedules' | 'beds'
 
 export default function Settings() {
   const [tab, setTab] = useState<Tab>('clinic')
   return (
     <div className="page">
-      <PageHead title="Configuración" sub="Datos que aparecen en recetas y recibos, precios y horarios de atención." />
+      <PageHead title="Configuración" sub="Datos que aparecen en recetas y recibos, precios, horarios de atención y camas." />
       <div className="tabs" role="tablist">
         <button className="tab" role="tab" aria-selected={tab === 'clinic'} onClick={() => setTab('clinic')}>Clínica</button>
         <button className="tab" role="tab" aria-selected={tab === 'services'} onClick={() => setTab('services')}>Servicios y precios</button>
         <button className="tab" role="tab" aria-selected={tab === 'schedules'} onClick={() => setTab('schedules')}>Horarios de médicos</button>
+        <button className="tab" role="tab" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}>Camas</button>
       </div>
       {tab === 'clinic' && <ClinicForm />}
       {tab === 'services' && <Services />}
       {tab === 'schedules' && <Schedules />}
+      {tab === 'beds' && <Beds />}
     </div>
   )
+}
+
+/** Camas de hospitalización. Cada cama tiene especialidad; cualquier médico puede atender a quien esté en ella. */
+function Beds() {
+  const { beds, createBed, updateBed } = useStore()
+  const [room, setRoom] = useState('')
+  const [label, setLabel] = useState('')
+  const [specialty, setSpecialty] = useState(beds[0]?.specialty ?? 'Medicina interna')
+  const specialties = [...new Set(['Medicina interna', 'Cirugía', 'Pediatría', 'Ginecología y obstetricia', 'Observación', ...beds.map((b) => b.specialty)])]
+  const sorted = [...beds].sort((a, b) => a.room.localeCompare(b.room, 'es', { numeric: true }) || a.label.localeCompare(b.label))
+  return (
+    <section className="panel table-wrap">
+      <table className="table">
+        <thead><tr><th>Cuarto</th><th>Cama</th><th>Especialidad</th><th>Estado</th></tr></thead>
+        <tbody>
+          {sorted.map((b) => (
+            <tr key={b.id}>
+              <td className="num">{b.room}</td><td>{b.label || '—'}</td>
+              <td><select className="select" value={b.specialty} onChange={(e) => updateBed(b.id, { specialty: e.target.value })}>{specialties.map((s) => <option key={s}>{s}</option>)}</select></td>
+              <td><button className={`btn btn--sm ${b.active ? 'btn--ghost' : 'btn--soft'}`} onClick={() => updateBed(b.id, { active: !b.active })}>{b.active ? 'Desactivar' : 'Activar'}</button>
+                {!b.active && <span className="muted" style={{ marginLeft: 8 }}>Inactiva</span>}</td>
+            </tr>
+          ))}
+          <tr>
+            <td><input className="input" placeholder="Ej. 106" value={room} onChange={(e) => setRoom(e.target.value)} aria-label="Cuarto" /></td>
+            <td><input className="input" placeholder="Opcional, ej. A" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Cama" /></td>
+            <td><input className="input" list="bed-specialties" value={specialty} onChange={(e) => setSpecialty(e.target.value)} aria-label="Especialidad" />
+              <datalist id="bed-specialties">{specialties.map((s) => <option key={s} value={s} />)}</datalist></td>
+            <td><button className="btn btn--soft btn--sm" disabled={!room.trim() || specialty.trim().length < 2} onClick={async () => {
+              if (await createBed({ room: room.trim(), label: label.trim(), specialty: specialty.trim(), active: true })) { setRoom(''); setLabel('') }
+            }}><Plus size={14} />Agregar cama</button></td>
+          </tr>
+        </tbody>
+      </table>
+      {!beds.length && <div className="empty">Agrega las camas de la clínica con su número de cuarto y especialidad.</div>}
+    </section>
+  )
+}
+
+/** Reduce el logo a 240 px de alto como máximo para que no pese en cada carga. */
+function shrinkLogo(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const scale = Math.min(1, 240 / img.height, 480 / img.width)
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale); canvas.height = Math.round(img.height * scale)
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+      URL.revokeObjectURL(img.src)
+      resolve(canvas.toDataURL('image/png'))
+    }
+    img.onerror = () => reject(new Error('No se pudo leer la imagen.'))
+    img.src = URL.createObjectURL(file)
+  })
 }
 
 function ClinicForm() {
@@ -44,17 +100,32 @@ function ClinicForm() {
           <label className="field"><span>Correo</span><input className="input" type="email" value={f.email} onChange={(e) => set('email', e.target.value)} /></label>
           <label className="field"><span>Símbolo de moneda</span><input className="input" value={f.currency} maxLength={4} onChange={(e) => set('currency', e.target.value)} /></label>
           <label className="field"><span>Vigencia de recetas (días)</span><input className="input num" type="number" min={1} max={365} value={f.rxValidityDays} onChange={(e) => set('rxValidityDays', Number(e.target.value))} /></label>
+          <label className="field span-2" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <input type="checkbox" checked={f.recordUsesDni} onChange={(e) => set('recordUsesDni', e.target.checked)} />
+            <span style={{ margin: 0 }}>Usar el número de identidad como número de expediente en recetas y constancias</span></label>
+          <div className="field span-2"><span>Logo (aparece en recetas y constancias)</span>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              {f.logo ? <img src={f.logo} alt="Logo de la clínica" style={{ height: 48, maxWidth: 160, objectFit: 'contain', border: '1px solid var(--line)', borderRadius: 8, padding: 4 }} />
+                : <span className="muted">Sin logo; se usa el de Clinara.</span>}
+              <label className="btn btn--soft btn--sm">{f.logo ? 'Cambiar' : 'Subir logo'}
+                <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (file) set('logo', await shrinkLogo(file).catch(() => f.logo))
+                }} /></label>
+              {f.logo && <button className="btn btn--ghost btn--sm" onClick={() => set('logo', undefined)}>Quitar</button>}
+            </div>
+          </div>
         </div>
       </section>
       <section className="panel">
         <div className="panel__head"><div><h2>Recordatorio por WhatsApp</h2><p>Variables: {'{paciente} {clinica} {medico} {fecha} {hora} {telefono}'}</p></div></div>
         <div className="panel__body" style={{ display: 'grid', gap: 14 }}>
           <textarea className="textarea" rows={5} value={f.reminderTemplate} onChange={(e) => set('reminderTemplate', e.target.value)} aria-label="Plantilla del recordatorio" />
-          <div className="wa-preview"><span>Así lo recibirá el paciente</span><p>{preview}</p></div>
+          <div className="wa-preview"><span>Ejemplo con una cita ficticia</span><p>{preview}</p></div>
         </div>
       </section>
       <div className="span-all" style={{ display: 'flex', gap: 8 }}>
-        <button className="btn btn--primary" disabled={!dirty || busy} onClick={async () => { setBusy(true); await saveSettings(f); setBusy(false) }}>Guardar cambios</button>
+        <button className="btn btn--primary" disabled={!dirty || busy} onClick={async () => { setBusy(true); await saveSettings({ ...f, logo: f.logo ?? '' }); setBusy(false) }}>Guardar cambios</button>
         {dirty && <button className="btn btn--ghost" onClick={() => setF(settings)}>Descartar</button>}
       </div>
     </div>

@@ -30,3 +30,4 @@ data/
 # Simulación local del runtime de Vercel
 .sim/
 .vercel
+Review/

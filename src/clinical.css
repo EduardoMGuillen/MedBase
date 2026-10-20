@@ -207,3 +207,83 @@
 .back-link { display: inline-flex; align-items: center; gap: 2px; font-size: 13.5px; color: var(--muted); text-decoration: none; margin-bottom: 6px; }
 .back-link:hover { color: var(--ink); }
 .page-head p .badge { margin-right: 8px; }
+
+/* ---------- Hospitalización ---------- */
+.beds { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.bed { display: grid; gap: 4px; align-content: start; padding: 14px 16px; background: var(--paper); border: 1px solid var(--line); border-left: 4px solid var(--ink); border-radius: var(--r-md); color: inherit; text-decoration: none; }
+a.bed:hover { box-shadow: var(--shadow-lift); }
+.bed--free { border-left-color: var(--line); background: #fbfcfc; }
+.bed__head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 13px; }
+.bed__head b { font-family: var(--display); font-size: 16px; }
+.bed__head span { color: var(--muted); }
+.bed__name { font-size: 15.5px; }
+.bed__meta { font-size: 13px; color: var(--muted); }
+.bed__dx { font-size: 13.5px; }
+.bed .chip { justify-self: start; }
+.hosp-bar { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding: 8px 2px 4px; font-size: 13.5px; }
+.day-nav { display: flex; align-items: center; gap: 4px; }
+.day-nav b { min-width: 90px; text-align: center; font-size: 14px; }
+.medsheet { display: grid; }
+.med { padding: 14px 22px; border-top: 1px solid var(--line-soft); display: grid; gap: 10px; }
+.med--stopped .med__head strong { text-decoration: line-through; color: var(--muted); }
+.med__head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.med__head > div { display: grid; gap: 2px; }
+.med__head .muted { font-size: 13px; }
+.med__head .chip { justify-self: start; margin-top: 4px; display: inline-flex; gap: 4px; align-items: center; }
+.slots { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.slot2 { display: grid; justify-items: center; min-width: 84px; padding: 6px 10px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--paper); font: inherit; color: inherit; }
+.slot2 b { font-size: 15px; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 2px; }
+.slot2 small { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+button.slot2:not(:disabled) { cursor: pointer; }
+button.slot2:not(:disabled):hover { border-color: var(--ink); }
+.slot2--given { background: var(--mint); border-color: var(--mint-strong); }
+.slot2--given small { color: var(--mint-ink); }
+.slot2--due { background: var(--amber); border-color: #e7b45b; }
+.slot2--due small { color: var(--amber-ink); font-weight: 600; }
+.slot2--late { background: var(--red); border-color: var(--red-ink); }
+.slot2--late small { color: var(--red-ink); font-weight: 600; }
+.slot2--skipped { background: #f3f4f5; border-style: dashed; }
+.slot2--omitted { background: transparent; border-style: dashed; color: var(--faint); }
+.slot2--omitted b { text-decoration: line-through; }
+.slot2--prn { border-style: dashed; border-color: var(--ink); color: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 12px 22px 16px; border-top: 1px solid var(--line-soft); font-size: 12.5px; color: var(--muted); }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.legend i { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--line); display: inline-block; }
+.omit-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 2px; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+.omit-row span:last-child { font-weight: 700; color: var(--red-ink); white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.struck { text-decoration: line-through; color: var(--muted); }
+.nnote { display: grid; grid-template-columns: 70px 1fr; gap: 14px; padding: 14px 22px; border-bottom: 1px solid var(--line-soft); }
+.nnote:last-child { border-bottom: 0; }
+.nnote__when { display: grid; font-size: 13px; color: var(--muted); }
+.nnote__when b { color: var(--petrol); }
+.nnote p { white-space: pre-wrap; }
+.picked { display: flex; gap: 10px; align-items: center; min-height: 42px; padding: 6px 6px 6px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--ward); }
+.picked .muted { font-size: 13px; margin-right: auto; }
+.check-line { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-md); cursor: pointer; }
+.check-line input { margin-top: 4px; }
+.check-line small { display: block; color: var(--muted); font-size: 12.5px; }
+.dni-ask { display: grid; gap: 8px; padding: 10px 12px; border-radius: var(--r-md); background: var(--amber); }
+
+/* WhatsApp simulado: así lo vería el paciente en su teléfono */
+.phone { max-width: 340px; margin: 0 auto 4px; border: 8px solid #1d2a33; border-radius: 26px; overflow: hidden; background: #efe7dd; }
+.phone__bar { display: grid; padding: 10px 14px; background: #075e54; color: #fff; font-size: 13px; }
+.phone__bar span { opacity: .8; font-size: 12px; }
+.phone__chat { padding: 16px 12px 22px; min-height: 160px; }
+.phone__bubble { position: relative; max-width: 92%; padding: 8px 10px 18px; border-radius: 0 10px 10px 10px; background: #fff; font-size: 14px; white-space: pre-wrap; box-shadow: 0 1px 1px rgba(0,0,0,.08); }
+.phone__bubble small { position: absolute; right: 8px; bottom: 3px; font-size: 11px; color: #8a9aa0; }
+
+/* Receta en media carta (5.5 × 8.5 pulgadas) */
+.rx-sheet--half { max-width: 560px; padding: 28px 30px; font-size: 13.5px; }
+.rx-sheet--half .rx-sheet__doc h2 { font-size: 18px; }
+.rx-sheet--half .rx-sheet__pt { grid-template-columns: repeat(3, auto); padding: 10px 0; }
+.rx-sheet--half .rx-sheet__rx { font-size: 30px; margin: 12px 0 4px; }
+.rx-sheet--half ol { gap: 10px; }
+@page half-letter { size: 5.5in 8.5in; margin: 8mm; }
+@media print {
+  .rx-sheet--half { page: half-letter; max-width: none; padding: 0; font-size: 11.5px; }
+}
+@media (max-width: 640px) {
+  .med { padding: 12px 16px; }
+  .nnote { grid-template-columns: 1fr; gap: 4px; padding: 12px 16px; }
+  .rx-sheet--half .rx-sheet__pt { grid-template-columns: 1fr 1fr; }
+}

@@ -1,19 +1,28 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Activity, ArrowDown, ArrowUp, ClipboardList, Pencil, Pill, Plus, TriangleAlert, X } from 'lucide-react'
-import { useStore } from '../lib/store'
+import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ClipboardList, Pencil, Pill, Plus, TriangleAlert, X } from 'lucide-react'
+import { useStore, type FollowupInput } from '../lib/store'
 import { PatientHeader } from '../components/PatientHeader'
 import { date, defaultRoute, medicationOrder, ROUTES, time } from '../lib/format'
 import { DRUGS, FREQUENCIES, ICD10, allergyConflict } from '../lib/catalogs'
+import { FOLLOWUP_KIND } from '../lib/followups'
+import { yearsOld } from '../lib/inpatient'
 import { BackgroundView, useChart, VitalsGrid } from './PatientChart'
 import { BackgroundForm } from './PatientForms'
 import { VitalsModal } from './WaitingRoom'
+import { emptyFollowup, FollowupFields } from './Followups'
 import type { PrescriptionItem } from '../lib/types'
 
 /** Una orden del manejo. Si trae `rx`, además va a la receta. */
 interface Order { text: string; rx?: PrescriptionItem }
 
-interface Draft { reason: string; history: string; exam: string; dx: { code: string; label: string }[]; orders: Order[] }
+interface Draft {
+  reason: string; history: string; exam: string; observations: string; dx: { code: string; label: string }[]; orders: Order[]
+  followups: FollowupInput[]; admit: boolean
+}
+
+const PATHOLOGICAL = ['Personales patológicos', 'Heredofamiliares', 'Gineco-obstétricos']
+const NON_PATHOLOGICAL = ['Personales no patológicos']
 const draftKey = (id?: string) => `clinara.nota.${id}`
 function loadDraft(id?: string): Partial<Draft> {
   try { return JSON.parse(localStorage.getItem(draftKey(id)) ?? '{}') } catch { return {} }
@@ -45,6 +54,11 @@ export default function Consultation() {
   const [reason, setReason] = useState(saved.reason ?? todayVitals?.chiefComplaint ?? appt?.reason ?? '')
   const [history, setHistory] = useState(saved.history ?? '')
   const [exam, setExam] = useState(saved.exam ?? '')
+  const [observations, setObservations] = useState(saved.observations ?? '')
+  const [followups, setFollowups] = useState<FollowupInput[]>(saved.followups ?? [])
+  const [newFollowup, setNewFollowup] = useState<FollowupInput | null>(null)
+  const [admit, setAdmit] = useState(saved.admit ?? false)
+  const [dni, setDni] = useState('')
   const [dx, setDx] = useState<{ code: string; label: string }[]>(saved.dx ?? [])
   const [dxQuery, setDxQuery] = useState('')
   const [orders, setOrders] = useState<Order[]>(saved.orders ?? [])
@@ -76,8 +90,8 @@ export default function Consultation() {
   }, [todayVitals?.id])
 
   useEffect(() => {
-    const d: Draft = { reason, history, exam, dx, orders }
-    const blank = !history && !exam && !dx.length && !orders.length
+    const d: Draft = { reason, history, exam, observations, dx, orders, followups, admit }
+    const blank = !history && !exam && !observations && !dx.length && !orders.length && !followups.length
     const t = setTimeout(() => {
       try {
         if (blank) localStorage.removeItem(draftKey(apptId))
@@ -85,7 +99,7 @@ export default function Consultation() {
       } catch { /* sin almacenamiento local */ }
     }, 600)
     return () => clearTimeout(t)
-  }, [apptId, reason, history, exam, dx, orders])
+  }, [apptId, reason, history, exam, observations, dx, orders, followups, admit])
 
   if (!appt || !p || !user) return <div className="page"><div className="empty">No se encontró la cita. Vuelve a la <Link to="/app/agenda">agenda</Link>.</div></div>
   if (appt.status === 'done') return <div className="page"><div className="empty">Esta consulta ya fue firmada. Puedes verla en el <Link to={`/app/pacientes/${p.id}`}>expediente</Link>.</div></div>
@@ -97,8 +111,12 @@ export default function Consultation() {
     : []
   const drugMatches = draft.drug ? DRUGS.filter((d) => d.name.toLowerCase().includes(draft.drug.toLowerCase())).slice(0, 6) : DRUGS.slice(0, 6)
   const conflict = draft.drug ? allergyConflict(p.allergies, draft.drug) : null
-  const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !orders.length && 'al menos una orden en el manejo'].filter(Boolean)
   const rxCount = orders.filter((o) => o.rx).length
+  // La receta lleva la identidad del paciente; en adultos es obligatoria
+  const needsDni = rxCount > 0 && !p.dni && yearsOld(p.birthDate) >= 18
+  const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !orders.length && 'al menos una orden en el manejo',
+    needsDni && 'el número de identidad para la receta'].filter(Boolean)
+  const hospitalized = store.inpatientOf(p.id)
 
   const addOrder = (text: string) => {
     const t = text.trim()
@@ -122,12 +140,15 @@ export default function Consultation() {
   const sign = async () => {
     setSigning(true)
     const r = await store.finishConsult({
-      appointmentId: appt.id, reason: reason.trim(), symptoms: [], history, exam, diagnoses: dx, orders: orders.map((o) => o.text), plan: '', vitalsId: todayVitals?.id,
+      appointmentId: appt.id, reason: reason.trim(), symptoms: [], history, exam, observations: observations.trim(), diagnoses: dx, orders: orders.map((o) => o.text),
+      plan: '', vitalsId: todayVitals?.id, followups,
     }, orders.flatMap((o) => (o.rx ? [o.rx] : [])))
     setSigning(false)
     if (r) {
       try { localStorage.removeItem(draftKey(apptId)) } catch { /* noop */ }
-      nav(r.prescriptionId ? `/app/recetas/${r.prescriptionId}` : `/app/pacientes/${p.id}`)
+      // Ingreso a hospitalización: se abre la hoja de ingreso con los diagnósticos de esta consulta
+      if (admit && !hospitalized) nav(`/app/hospitalizados?paciente=${p.id}&consulta=${r.consultationId}`)
+      else nav(r.prescriptionId ? `/app/recetas/${r.prescriptionId}` : `/app/pacientes/${p.id}`)
     }
   }
 
@@ -142,31 +163,42 @@ export default function Consultation() {
       <div className="consult2">
         <div className="consult2__left">
           <details className="panel csec" open={!last}>
-            <summary className="panel__head"><h2>Antecedentes</h2>
+            <summary className="panel__head"><h2>Antecedentes patológicos</h2>
               <button className="btn btn--ghost btn--sm" onClick={(e) => { e.preventDefault(); setEditBg(true) }}><Pencil size={14} />Editar</button></summary>
             <div className="panel__body">
-              <BackgroundView p={p} compact />
+              <BackgroundView p={p} compact only={PATHOLOGICAL} />
               {last && <p className="csec__last">Última consulta, {date(last.date)}: <b>{last.diagnoses.map((d) => d.label).join('; ')}</b></p>}
             </div>
           </details>
 
+          <details className="panel csec" open={!last}>
+            <summary className="panel__head"><h2>Antecedentes no patológicos</h2>
+              <button className="btn btn--ghost btn--sm" onClick={(e) => { e.preventDefault(); setEditBg(true) }}><Pencil size={14} />Editar</button></summary>
+            <div className="panel__body"><BackgroundView p={p} compact only={NON_PATHOLOGICAL} /></div>
+          </details>
+
           <section className="panel csec">
-            <div className="panel__head"><div><h2>Motivo de consulta y signos vitales</h2>
-              <p>{todayVitals ? `Registrado por enfermería a las ${time(todayVitals.takenAt)}` : 'Enfermería aún no registra el triaje'}</p></div>
+            <div className="panel__head"><div><h2>Signos vitales</h2>
+              <p>{todayVitals ? `Registrados por enfermería a las ${time(todayVitals.takenAt)}` : 'Enfermería aún no abre el perfil de consulta externa'}</p></div>
               {!todayVitals && <button className="btn btn--soft btn--sm" onClick={() => setTriage(true)}><Activity size={15} />Tomar signos</button>}
             </div>
-            <div className="panel__body csec__body">
-              <label className="field"><span>Motivo de consulta</span>
-                <textarea className="textarea textarea--sm" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></label>
-              {todayVitals && <VitalsGrid v={todayVitals} />}
-              {todayVitals?.notes && <p className="muted" style={{ fontSize: 14 }}>Nota de enfermería: {todayVitals.notes}</p>}
+            {todayVitals && <div className="panel__body csec__body">
+              <VitalsGrid v={todayVitals} />
+              {todayVitals.notes && <p className="muted" style={{ fontSize: 14 }}>Nota de enfermería: {todayVitals.notes}</p>}
+            </div>}
+          </section>
+
+          <section className="panel csec">
+            <div className="panel__head"><h2>Motivo de consulta</h2></div>
+            <div className="panel__body">
+              <textarea className="textarea textarea--sm" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Motivo de consulta" />
             </div>
           </section>
 
           <section className="panel csec">
-            <div className="panel__head"><h2>Enfermedad actual</h2></div>
+            <div className="panel__head"><h2>Historia de la enfermedad actual (HEA)</h2></div>
             <div className="panel__body">
-              <textarea className="textarea textarea--lg" value={history} onChange={(e) => setHistory(e.target.value)} aria-label="Enfermedad actual"
+              <textarea className="textarea textarea--lg" value={history} onChange={(e) => setHistory(e.target.value)} aria-label="Historia de la enfermedad actual"
                 placeholder="Inicio, evolución, características, factores que agravan o alivian, síntomas acompañantes y tratamientos recibidos." />
             </div>
           </section>
@@ -176,6 +208,14 @@ export default function Consultation() {
               {!exam.trim() && <button className="btn btn--ghost btn--sm" onClick={() => setExam(EXAM_GUIDE)}><ClipboardList size={15} />Guía por sistemas</button>}</div>
             <div className="panel__body">
               <textarea className="textarea textarea--lg" value={exam} onChange={(e) => setExam(e.target.value)} aria-label="Examen físico" placeholder="Hallazgos por aparatos y sistemas." />
+            </div>
+          </section>
+
+          <section className="panel csec">
+            <div className="panel__head"><h2>Observaciones</h2></div>
+            <div className="panel__body">
+              <textarea className="textarea textarea--sm" rows={3} value={observations} onChange={(e) => setObservations(e.target.value)} aria-label="Observaciones"
+                placeholder="Lo que no cabe en otro apartado: quién acompaña, actitud, información dada al paciente." />
             </div>
           </section>
 
@@ -200,7 +240,7 @@ export default function Consultation() {
 
         <aside className="consult2__right">
           <section className="panel orders-panel">
-            <div className="panel__head"><div><h2>Manejo</h2><p>Órdenes médicas en el orden en que se indican</p></div></div>
+            <div className="panel__head"><div><h2>Plan y manejo</h2><p>Órdenes médicas en el orden en que se indican</p></div></div>
             <div className="panel__body csec__body">
               {orders.length ? (
                 <ol className="orders">
@@ -272,10 +312,47 @@ export default function Consultation() {
             </div>
           </section>
 
+          {store.can('followups.manage') && (
+            <section className="panel">
+              <div className="panel__head"><div><h2>Seguimiento</h2><p>Crónicos, recordatorios por WhatsApp y procedimientos</p></div>
+                {!newFollowup && <button className="btn btn--ghost btn--sm" onClick={() => setNewFollowup(emptyFollowup(p.conditions.length ? 'chronic' : 'reminder'))}><CalendarClock size={15} />Programar</button>}
+              </div>
+              <div className="panel__body csec__body">
+                {followups.length > 0 && <ul className="note__list">{followups.map((f, i) => (
+                  <li key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ flex: 1 }}><b>{FOLLOWUP_KIND[f.kind].label}:</b> {f.title}, {date(`${f.dueDate}T12:00:00`)}</span>
+                    <button className="icon-btn" aria-label="Quitar" onClick={() => setFollowups(followups.filter((_, j) => j !== i))}><X size={14} /></button>
+                  </li>
+                ))}</ul>}
+                {newFollowup ? (<>
+                  <FollowupFields value={newFollowup} onChange={setNewFollowup} />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn--soft btn--sm" disabled={newFollowup.title.trim().length < 3 || !newFollowup.dueDate}
+                      onClick={() => { setFollowups([...followups, { ...newFollowup, title: newFollowup.title.trim(), notes: newFollowup.notes?.trim() || undefined }]); setNewFollowup(null) }}><Plus size={14} />Agregar</button>
+                    <button className="btn btn--ghost btn--sm" onClick={() => setNewFollowup(null)}>Cancelar</button>
+                  </div>
+                </>) : !followups.length && <p className="muted" style={{ fontSize: 14 }}>Sin seguimiento programado.</p>}
+              </div>
+            </section>
+          )}
+
           <section className="panel sign-box">
             <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
+              {needsDni && (
+                <form className="dni-ask" onSubmit={async (e) => { e.preventDefault(); if (dni.trim().length >= 6) await updatePatient(p.id, { dni: dni.trim() }) }}>
+                  <label className="field"><span>La receta lleva el número de identidad del paciente</span>
+                    <input className="input" value={dni} onChange={(e) => setDni(e.target.value)} placeholder="0801-1990-00000" inputMode="numeric" /></label>
+                  <button className="btn btn--soft" disabled={dni.trim().length < 6}>Guardar identidad</button>
+                </form>
+              )}
+              {store.can('inpatient.orders') && (
+                hospitalized
+                  ? <p style={{ fontSize: 14 }}><BedDouble size={15} style={{ verticalAlign: '-3px' }} /> {p.firstName} ya está hospitalizado. <Link to={`/app/hospitalizados/${hospitalized.id}`}>Abrir su expediente</Link>.</p>
+                  : <label className="check-line"><input type="checkbox" checked={admit} onChange={(e) => setAdmit(e.target.checked)} />
+                    <span><b>Ingreso a hospitalización</b><small>Al firmar se abre la hoja de ingreso con los diagnósticos de esta consulta.</small></span></label>
+              )}
               <p style={{ fontSize: 14, color: 'var(--muted)' }}>
-                {missing.length ? `Para firmar falta ${missing.join(', ')}.` : `Al firmar se cierra la cita${rxCount ? ` y se emite una receta con ${rxCount} medicamento${rxCount > 1 ? 's' : ''}` : ''}.`}
+                {missing.length ? `Para firmar falta ${missing.join(', ')}.` : `Al firmar se cierra la cita${rxCount ? ` y se emite una receta con ${rxCount} medicamento${rxCount > 1 ? 's' : ''}` : ''}${admit && !hospitalized ? ' y pasas al ingreso hospitalario' : ''}.`}
               </p>
               <button className="btn btn--primary btn--lg" disabled={missing.length > 0 || signing} onClick={sign}>Firmar consulta{rxCount ? ' y receta' : ''}</button>
             </div>

@@ -26,6 +26,8 @@
     "src/lib/types.ts",
     "src/lib/permissions.ts",
     "src/lib/seed.ts",
-    "src/lib/catalogs.ts"
+    "src/lib/catalogs.ts",
+    "src/lib/inpatient.ts",
+    "src/lib/followups.ts"
   ]
 }

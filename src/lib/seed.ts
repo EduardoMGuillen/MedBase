@@ -1,5 +1,9 @@
-import type { Appointment, ClinicSettings, Consultation, Patient, Payment, Prescription, Schedule, Service, Staff, Vitals } from './types.js'
+import type {
+  Appointment, Bed, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote, Patient, Payment, Prescription,
+  Schedule, Service, Staff, Vitals,
+} from './types.js'
 import { ICD10 } from './catalogs.js'
+import { doseTimes, HOUR, LATE_AFTER_MIN } from './inpatient.js'
 
 export const CLINIC = {
   name: 'Clínica Santa Brígida',
@@ -170,6 +174,7 @@ export const DEFAULT_SETTINGS: ClinicSettings = {
   currency: 'L',
   rxValidityDays: 30,
   reminderTemplate: 'Hola {paciente}, le recordamos su cita en {clinica} con {medico} el {fecha} a las {hora}. Responda SÍ para confirmar o llámenos al {telefono} si necesita cambiarla.',
+  recordUsesDni: false,
 }
 
 export const SERVICES: Service[] = [
@@ -259,7 +264,7 @@ export const DEMO_CLINICS: (ClinicSettings & { id: string; slug: string })[] = [
   { id: MAIN_CLINIC, slug: 'santa-brigida', ...DEFAULT_SETTINGS },
   {
     id: SECOND_CLINIC, slug: 'san-lucas', name: 'Centro Médico San Lucas', address: 'San Pedro Sula, Barrio Río de Piedras, 7 calle',
-    phone: '+504 2550-1188', email: 'citas@sanlucas.hn', currency: 'L', rxValidityDays: 30, reminderTemplate: DEFAULT_SETTINGS.reminderTemplate,
+    phone: '+504 2550-1188', email: 'citas@sanlucas.hn', currency: 'L', rxValidityDays: 30, reminderTemplate: DEFAULT_SETTINGS.reminderTemplate, recordUsesDni: true,
   },
 ]
 
@@ -282,4 +287,152 @@ export function seedSecondClinic() {
     's2-rosales': { schedule: { days: [1, 2, 3, 4, 5], start: '07:00', end: '15:00', slot: 30 }, serviceId: 'sl-svc-gen' },
   }
   return { patients, appointments, services, setup }
+}
+
+// ---------- Hospitalización y seguimientos de demostración ----------
+
+/** Pacientes que están hospitalizados en la demo; no tienen citas en la agenda de hoy. */
+export const INPATIENT_PATIENTS: Patient[] = [
+  p('p11', 'EXP-00480', 'Marcos Antonio', 'Velásquez Ruiz', '1979-05-17', 'M', '9812-4471', {
+    dni: '0801-1979-05521', civilStatus: 'Casado', occupation: 'Motorista', education: 'Secundaria completa', address: 'Tegucigalpa, Col. San Ángel',
+    emergencyName: 'Iris Velásquez', emergencyPhone: '9812-0090', emergencyRelation: 'Esposa', bloodType: 'O+', insurance: 'Seguros Atlántida',
+    background: { pathological: 'Negados.', surgical: 'Negados.', smoking: 'Negado.', alcohol: 'Ocasional.' },
+  }),
+  p('p12', 'EXP-00481', 'Gloria Estela', 'Funes de Mejía', '1950-09-03', 'F', '2234-8810', {
+    dni: '0801-1950-01277', civilStatus: 'Viuda', occupation: 'Ama de casa', address: 'Tegucigalpa, Barrio La Hoya',
+    emergencyName: 'Rina Mejía', emergencyPhone: '9933-1204', emergencyRelation: 'Hija', bloodType: 'A+', conditions: ['Hipertensión arterial'],
+    background: { pathological: 'HTA desde 2010.', medications: 'Enalapril 10 mg cada 12 horas.', immunizations: 'Sin vacuna de influenza este año.' },
+  }),
+  p('p13', 'EXP-00482', 'Santos Rubén', 'Hernández Ochoa', '1962-02-11', 'M', '9540-3318', {
+    dni: '0801-1962-00841', civilStatus: 'Casado', occupation: 'Agricultor', address: 'Valle de Ángeles',
+    emergencyName: 'Marta Ochoa', emergencyPhone: '9540-7712', emergencyRelation: 'Esposa', conditions: ['Hipertensión arterial'],
+    background: { pathological: 'HTA de 8 años, abandonó el tratamiento hace 6 meses.', smoking: 'Fumador, 15 paquetes/año.' },
+  }),
+  p('p14', 'EXP-00483', 'Ana Lucía', 'Bonilla Cruz', '1988-11-25', 'F', '3345-9902', {
+    dni: '0801-1988-12034', civilStatus: 'Casada', occupation: 'Cajera', education: 'Secundaria completa', address: 'Tegucigalpa, Col. Kennedy',
+    emergencyName: 'Javier Bonilla', emergencyPhone: '3345-1180', emergencyRelation: 'Esposo', bloodType: 'B+', allergies: ['Sulfas'],
+    background: { gpac: 'G2 P2 A0 C0', surgical: 'Negados.' },
+  }),
+]
+
+/** Camas por especialidad: 5 de medicina interna y 10 de cirugía, como en el ejemplo del médico. */
+export const BEDS: (Bed & { clinicId: string })[] = [
+  ...[101, 102, 103, 104, 105].map((r) => ({ id: `bed-${r}`, clinicId: MAIN_CLINIC, room: String(r), label: '', specialty: 'Medicina interna', active: true })),
+  ...[201, 202, 203, 204, 205, 206, 207, 208, 209, 210].map((r) => ({ id: `bed-${r}`, clinicId: MAIN_CLINIC, room: String(r), label: '', specialty: 'Cirugía', active: true })),
+  ...[1, 2, 3, 4].map((r) => ({ id: `sl-bed-${r}`, clinicId: SECOND_CLINIC, room: String(r), label: '', specialty: 'Medicina general', active: true })),
+]
+
+/** Hospitalizados de la clínica principal, con horarios relativos a `now` para que la hoja siempre esté viva. */
+export function seedInpatient(now = new Date()) {
+  const iso = (d: Date) => d.toISOString()
+  const plus = (d: Date, h: number) => new Date(d.getTime() + h * HOUR)
+  const dayAt = (offset: number, h: number, m = 0) => { const d = new Date(now); d.setDate(d.getDate() + offset); d.setHours(h, m, 0, 0); return d }
+  // El caso que describió el médico: ingresó hace unas 6 horas con ondansetrón y acetaminofén
+  const t0 = new Date(now); t0.setMinutes(0, 0, 0); t0.setHours(t0.getHours() - 6)
+  const nurse = 's-rios'
+  const doc = 's-herrera'
+
+  const hospitalizations: Hospitalization[] = [
+    { id: 'hz1', patientId: 'p11', bedId: 'bed-203', admittedAt: iso(t0), admittedBy: doc, reason: 'Dolor abdominal en fosa ilíaca derecha de 18 horas, con náuseas y fiebre.',
+      diagnoses: [{ code: 'K35.8', label: 'Apendicitis aguda, otra y la no especificada' }], companionName: 'Iris Velásquez', companionRelation: 'Esposa', companionPhone: '9812-0090',
+      patientPhone: '9812-4471', status: 'active' },
+    { id: 'hz2', patientId: 'p12', bedId: 'bed-102', admittedAt: iso(dayAt(-1, 16)), admittedBy: doc, reason: 'Tos productiva, fiebre y dificultad respiratoria de 4 días.',
+      diagnoses: [{ code: 'J18.9', label: 'Neumonía, no especificada' }], companionName: 'Rina Mejía', companionRelation: 'Hija', companionPhone: '9933-1204', patientPhone: '2234-8810', status: 'active' },
+    { id: 'hz3', patientId: 'p13', bedId: 'bed-104', admittedAt: iso(dayAt(-2, 21)), admittedBy: doc, reason: 'Cefalea intensa y presión arterial de 210/120 mmHg.',
+      diagnoses: [{ code: 'I16.9', label: 'Crisis hipertensiva, no especificada' }], companionName: 'Marta Ochoa', companionRelation: 'Esposa', companionPhone: '9540-7712', patientPhone: '9540-3318', status: 'active' },
+    { id: 'hz4', patientId: 'p14', bedId: 'bed-207', admittedAt: iso(dayAt(-1, 10)), admittedBy: doc, reason: 'Dolor en hipocondrio derecho, vómitos y fiebre de 2 días.',
+      diagnoses: [{ code: 'K81.0', label: 'Colecistitis aguda' }], companionName: 'Javier Bonilla', companionRelation: 'Esposo', companionPhone: '3345-1180', patientPhone: '3345-9902', status: 'active' },
+  ]
+
+  const note = (id: string, hospitalizationId: string, kind: InpatientNote['kind'], at: Date, s: string, o: string, a: string, pl: string): InpatientNote =>
+    ({ id, hospitalizationId, kind, authorId: doc, at: iso(at), subjective: s, objective: o, assessment: a, plan: pl, text: '' })
+  const nursing = (id: string, hospitalizationId: string, at: Date, text: string): InpatientNote =>
+    ({ id, hospitalizationId, kind: 'nursing', authorId: nurse, at: iso(at), subjective: '', objective: '', assessment: '', plan: '', text })
+
+  const notes: InpatientNote[] = [
+    note('hn1', 'hz1', 'admission', plus(t0, 0.25), 'Masculino de 47 años con dolor abdominal que inició en epigastrio y migró a fosa ilíaca derecha hace 18 horas, con náuseas, 2 vómitos y fiebre no cuantificada.',
+      'PA 128/82, FC 104, FR 20, T 38.3 °C. Abdomen con dolor a la palpación en fosa ilíaca derecha, McBurney y Blumberg positivos.',
+      'Apendicitis aguda.', 'Nada por boca. Canalizar vena periférica. Hemograma y examen general de orina. Valoración por cirugía para apendicectomía. Medicamentos según indicaciones.'),
+    note('hn2', 'hz1', 'evolution', plus(t0, 2.85), 'Refiere dolor intenso, 8 de 10, que no cede con acetaminofén.', 'PA 132/84, FC 98, T 37.9 °C. Abdomen con defensa en fosa ilíaca derecha.',
+      'Apendicitis aguda con dolor no controlado.', 'Se agrega tramadol para el dolor intenso. Continúa en espera de cirugía.'),
+    note('hn3', 'hz1', 'evolution', plus(t0, 3), 'Paciente con náuseas tras la dosis de tramadol.', 'Signos vitales estables.', 'Intolerancia al tramadol.',
+      'OMITIR tramadol. Continúa ondansetrón y acetaminofén PRN.'),
+    note('hn4', 'hz2', 'admission', dayAt(-1, 16, 20), 'Femenina de 76 años con tos productiva amarillenta, fiebre de 38.8 °C y disnea de medianos esfuerzos de 4 días de evolución.',
+      'PA 138/86, FC 102, FR 24, T 38.6 °C, SpO₂ 90 % al aire. Crépitos en base pulmonar derecha.', 'Neumonía adquirida en la comunidad, CURB-65 de 2.',
+      'Oxígeno por cánula nasal a 2 l/min para SpO₂ mayor de 92 %. Hemograma, radiografía de tórax. Antibiótico según indicaciones.'),
+    note('hn5', 'hz2', 'evolution', dayAt(0, 7, 30), 'Refiere menos tos y que durmió mejor.', 'PA 130/80, FC 92, FR 20, T 37.4 °C, SpO₂ 94 % con 2 l/min. Crépitos persisten en base derecha.',
+      'Neumonía en mejoría clínica, leucocitos en descenso.', 'Continúa antibiótico. Destetar oxígeno según saturación. Control de hemograma mañana.'),
+    note('hn6', 'hz3', 'admission', dayAt(-2, 21, 15), 'Masculino de 64 años con cefalea occipital intensa y visión borrosa. Abandonó el tratamiento antihipertensivo.',
+      'PA 210/120, FC 88. Fondo de ojo sin papiledema. Sin déficit neurológico.', 'Crisis hipertensiva sin daño a órgano blanco evidente.',
+      'Reposo, dieta hiposódica, control de PA cada 4 horas. Antihipertensivos según indicaciones.'),
+    note('hn7', 'hz3', 'evolution', dayAt(0, 8), 'Sin cefalea.', 'PA 142/88, FC 76.', 'Crisis hipertensiva controlada.', 'Continúa tratamiento oral. Probable egreso mañana con control en consulta externa.'),
+    note('hn8', 'hz4', 'admission', dayAt(-1, 10, 20), 'Femenina de 37 años con dolor en hipocondrio derecho, vómitos y fiebre de 2 días.',
+      'T 38.4 °C, Murphy positivo. Ultrasonido con vesícula de pared engrosada y litos.', 'Colecistitis aguda litiásica.', 'Nada por boca, líquidos IV, antibiótico y analgesia. Colecistectomía laparoscópica hoy.'),
+    note('hn9', 'hz4', 'evolution', dayAt(0, 7), 'Dolor leve en heridas quirúrgicas. Tolera líquidos claros.', 'Afebril, heridas limpias, abdomen blando.',
+      'Postoperatorio día 1 de colecistectomía laparoscópica, evolución satisfactoria.', 'Dieta blanda. Deambulación. Continuar analgesia.'),
+    nursing('hn10', 'hz1', plus(t0, 0.15), 'Paciente ingresa a sala en camilla, consciente y orientado. Se canaliza vena periférica en antebrazo izquierdo con catéter 18. Se toman muestras de laboratorio.'),
+    nursing('hn11', 'hz1', plus(t0, 3.1), 'Paciente refiere náuseas después del tramadol. Se informa al médico de turno.'),
+    nursing('hn12', 'hz2', dayAt(0, 6), 'Paciente pasó la noche tranquila, afebril. Saturación de 93 % con oxígeno a 2 l/min. Se toma muestra para hemograma de control.'),
+    nursing('hn13', 'hz4', dayAt(-1, 17), 'Paciente regresa de sala de operaciones consciente, con heridas limpias y secas. Signos vitales estables.'),
+  ]
+
+  const med = (id: string, hospitalizationId: string, noteId: string, drug: string, presentation: string, dose: string, route: string, everyHours: number | undefined,
+    prn: boolean, firstAt: Date, instructions?: string, stoppedAt?: Date): InpatientMed => ({
+    id, hospitalizationId, noteId, drug, presentation, dose, route, everyHours, prn, firstAt: iso(firstAt), instructions, orderedBy: doc,
+    orderedAt: iso(firstAt), stoppedAt: stoppedAt ? iso(stoppedAt) : undefined, stoppedBy: stoppedAt ? doc : undefined,
+  })
+  const meds: InpatientMed[] = [
+    med('hm1', 'hz1', 'hn1', 'Ondansetrón', 'Ampolla 8 mg/4 ml', '8 mg', 'Intravenosa', 8, false, t0),
+    med('hm2', 'hz1', 'hn1', 'Acetaminofén', 'Frasco 1 g/100 ml', '1 g', 'Intravenosa', 6, true, t0, 'Si hay dolor o fiebre mayor de 38 °C.'),
+    med('hm3', 'hz1', 'hn2', 'Tramadol', 'Ampolla 50 mg/ml', '50 mg', 'Subcutánea', 12, true, plus(t0, 2.85), 'Dolor intenso.', plus(t0, 3)),
+    med('hm4', 'hz2', 'hn4', 'Ceftriaxona', 'Vial 1 g', '1 g', 'Intravenosa', 24, false, dayAt(-1, 17)),
+    med('hm5', 'hz2', 'hn4', 'Azitromicina', 'Tableta 500 mg', '500 mg', 'Oral', 24, false, dayAt(-1, 17)),
+    med('hm6', 'hz2', 'hn4', 'Acetaminofén', 'Frasco 1 g/100 ml', '1 g', 'Intravenosa', 8, true, dayAt(-1, 17), 'Si la temperatura es mayor de 38 °C.'),
+    med('hm7', 'hz2', 'hn4', 'Enoxaparina', 'Jeringa 40 mg/0,4 ml', '40 mg', 'Subcutánea', 24, false, dayAt(-1, 20)),
+    med('hm8', 'hz3', 'hn6', 'Losartán', 'Tableta 50 mg', '50 mg', 'Oral', 12, false, dayAt(-2, 22)),
+    med('hm9', 'hz3', 'hn6', 'Amlodipino', 'Tableta 5 mg', '5 mg', 'Oral', 24, false, dayAt(-2, 22)),
+    med('hm10', 'hz4', 'hn8', 'Cefazolina', 'Vial 1 g', '1 g', 'Intravenosa', 8, false, dayAt(-1, 11)),
+    med('hm11', 'hz4', 'hn8', 'Ketorolaco', 'Ampolla 30 mg/ml', '30 mg', 'Intravenosa', 8, false, dayAt(-1, 11)),
+    med('hm12', 'hz4', 'hn8', 'Omeprazol IV', 'Vial 40 mg', '40 mg', 'Intravenosa', 24, false, dayAt(-1, 11)),
+  ]
+
+  // Enfermería aplicó las dosis indicadas hasta hace una hora; las más recientes quedan por aplicar
+  const doses: Dose[] = []
+  for (const m of meds) {
+    for (const s of doseTimes(m, new Date(m.firstAt), new Date(now.getTime() - LATE_AFTER_MIN * 60_000))) {
+      if (s.omitted) continue
+      doses.push({ id: `hd${doses.length + 1}`, medId: m.id, scheduledAt: iso(s.at), givenAt: iso(new Date(s.at.getTime() + (5 + (doses.length % 4) * 4) * 60_000)), givenBy: nurse, status: 'given' })
+    }
+  }
+  doses.push({ id: `hd${doses.length + 1}`, medId: 'hm2', givenAt: iso(plus(t0, 1.5)), givenBy: nurse, status: 'given', note: 'Dolor 7/10.' })
+  doses.push({ id: `hd${doses.length + 1}`, medId: 'hm3', givenAt: iso(plus(t0, 2.92)), givenBy: nurse, status: 'given' })
+  doses.push({ id: `hd${doses.length + 1}`, medId: 'hm6', givenAt: iso(dayAt(-1, 23, 10)), givenBy: nurse, status: 'given', note: 'T 38.5 °C.' })
+
+  const procedures: HospProcedure[] = [
+    { id: 'hp1', hospitalizationId: 'hz1', kind: 'authorization', name: 'Autorización de Seguros Atlántida para apendicectomía', status: 'pending', createdBy: doc, createdAt: iso(plus(t0, 0.5)) },
+    { id: 'hp2', hospitalizationId: 'hz1', kind: 'procedure', name: 'Apendicectomía laparoscópica', scheduledAt: iso(plus(t0, 9)), status: 'pending', createdBy: doc, createdAt: iso(plus(t0, 0.5)) },
+    { id: 'hp3', hospitalizationId: 'hz4', kind: 'procedure', name: 'Colecistectomía laparoscópica', scheduledAt: iso(dayAt(-1, 14)), status: 'done', notes: 'Sin complicaciones. Sangrado mínimo.',
+      createdBy: doc, createdAt: iso(dayAt(-1, 10, 30)), updatedBy: doc, updatedAt: iso(dayAt(-1, 15, 30)) },
+  ]
+
+  // Laboratorios subidos a mano: el hemograma del ingreso y el de control salen juntos
+  const labs = [
+    { id: 'hl1', patientId: 'p12', hospitalizationId: 'hz2', title: 'Hemograma', takenAt: iso(dayAt(-1, 17)), lines: ['Leucocitos 16 800 /mm3', 'Neutrofilos 86 %', 'Hemoglobina 12.1 g/dl', 'Plaquetas 310 000 /mm3'] },
+    { id: 'hl2', patientId: 'p12', hospitalizationId: 'hz2', title: 'Hemograma', takenAt: iso(dayAt(0, 6)), lines: ['Leucocitos 11 200 /mm3', 'Neutrofilos 74 %', 'Hemoglobina 11.8 g/dl', 'Plaquetas 298 000 /mm3'] },
+    { id: 'hl3', patientId: 'p11', hospitalizationId: 'hz1', title: 'Hemograma', takenAt: iso(plus(t0, 0.3)), lines: ['Leucocitos 15 400 /mm3', 'Neutrofilos 88 %', 'Hemoglobina 14.6 g/dl', 'Plaquetas 254 000 /mm3'] },
+  ]
+
+  const day = (offset: number) => at(offset, 12).slice(0, 10)
+  const followups: Followup[] = [
+    { id: 'fu1', patientId: 'p1', kind: 'chronic', title: 'Hipertensión arterial', dueDate: day(5), everyDays: 90, createdBy: doc, createdAt: at(-62, 10, 30), active: true },
+    { id: 'fu2', patientId: 'p2', kind: 'chronic', title: 'Diabetes mellitus tipo 2', dueDate: day(-3), everyDays: 90, createdBy: doc, createdAt: at(-90, 9), active: true },
+    { id: 'fu3', patientId: 'p9', kind: 'chronic', title: 'Hipotiroidismo', dueDate: day(40), everyDays: 180, createdBy: doc, createdAt: at(-140, 9), active: true },
+    { id: 'fu4', patientId: 'p6', kind: 'chronic', title: 'EPOC', dueDate: day(12), everyDays: 90, notes: 'Espirometría antes del control.', createdBy: doc, createdAt: at(-78, 9),
+      notifiedAt: iso(dayAt(-2, 10)), active: true },
+    { id: 'fu5', patientId: 'p12', kind: 'chronic', title: 'Hipertensión arterial', dueDate: day(20), everyDays: 90, createdBy: doc, createdAt: at(-30, 9), active: true },
+    { id: 'fu6', patientId: 'p7', kind: 'reminder', title: 'Traer resultados de hemograma y perfil tiroideo a su cita de control', dueDate: day(3), createdBy: doc, createdAt: at(-4, 15, 50), active: true },
+    { id: 'fu7', patientId: 'p4', kind: 'procedure', title: 'Hernioplastia inguinal derecha', dueDate: day(10), notes: 'Ayuno de 8 horas. Traer exámenes prequirúrgicos.', createdBy: doc, createdAt: at(-1, 10, 30), active: true },
+  ]
+
+  return { hospitalizations, notes, meds, doses, procedures, labs, followups }
 }

@@ -43,5 +43,7 @@ export interface Ctx {
   patientRow: (clinicId: string, id: string) => Promise<Row | undefined>
   apptRow: (clinicId: string, id: string) => Promise<Row | undefined>
   assertFree: (doctorId: string, start: string, minutes: number, ignoreId?: string) => Promise<void>
+  /** Falla si el paciente es adulto y no tiene número de identidad, que la receta exige. */
+  assertRxIdentity: (clinicId: string, patientId: string) => Promise<void>
   settings: (clinicId: string) => Promise<ClinicSettings>
 }

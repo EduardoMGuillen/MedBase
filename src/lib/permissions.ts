@@ -21,6 +21,11 @@ export const PERMISSIONS = {
   'settings.manage': 'Configurar la clínica y servicios',
   'reports.view': 'Ver indicadores de la clínica',
   'audit.view': 'Ver bitácora de accesos',
+  'inpatient.view': 'Ver pacientes hospitalizados',
+  'inpatient.orders': 'Ingresar, evolucionar y dar de alta',
+  'inpatient.care': 'Administrar medicamentos y escribir notas de enfermería',
+  'followups.view': 'Ver crónicos y recordatorios',
+  'followups.manage': 'Programar seguimientos de pacientes',
   'platform.manage': 'Administrar clínicas y usuarios de la plataforma',
 } as const
 
@@ -35,10 +40,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ],
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'chart.view', 'vitals.record',
-    'consult.write', 'rx.write', 'rx.view',
+    'consult.write', 'rx.write', 'rx.view', 'inpatient.view', 'inpatient.orders', 'followups.view', 'followups.manage',
   ],
-  nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'chart.view', 'vitals.record', 'rx.view'],
-  reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage'],
+  nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'chart.view', 'vitals.record', 'rx.view', 'inpatient.view', 'inpatient.care', 'followups.view'],
+  reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view'],
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -52,8 +57,8 @@ export const ROLE_LABEL: Record<Role, string> = {
 export const ROLE_SUMMARY: Record<Role, string> = {
   superadmin: 'Crea y administra clínicas y sus usuarios. No ve expedientes de pacientes.',
   admin: 'Configura la clínica, el personal y los precios, y revisa indicadores. Sin acceso a notas clínicas.',
-  doctor: 'Atiende su agenda, escribe consultas, diagnostica y emite recetas firmadas.',
-  nurse: 'Recibe al paciente, toma signos vitales y lo deja listo para consulta.',
+  doctor: 'Atiende su agenda, escribe consultas, diagnostica, emite recetas e ingresa y evoluciona a pacientes hospitalizados.',
+  nurse: 'Recibe al paciente, toma signos vitales y, en hospitalización, administra medicamentos y escribe notas de enfermería.',
   reception: 'Agenda citas, registra pacientes, controla la sala de espera y cobra.',
 }
 

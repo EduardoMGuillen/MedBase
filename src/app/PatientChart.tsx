@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { FileBadge, FileText, Lock, NotebookPen, Pencil } from 'lucide-react'
+import { BedDouble, FileBadge, FileText, Lock, NotebookPen, Pencil } from 'lucide-react'
+import { FOLLOWUP_KIND } from '../lib/followups'
+import { bedLabel } from './Inpatients'
 import { useStore, type Chart } from '../lib/store'
 import { Loading, StatusBadge } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
@@ -64,10 +66,12 @@ export function Identification({ p }: { p: Patient }) {
   ]} />
 }
 
-export function BackgroundView({ p, compact = false }: { p: Patient; compact?: boolean }) {
+/** Antecedentes del paciente; `only` limita a ciertos grupos (p. ej. sólo los no patológicos). */
+export function BackgroundView({ p, compact = false, only }: { p: Patient; compact?: boolean; only?: string[] }) {
   const b = p.background ?? {}
-  const groups = BACKGROUND_GROUPS.filter((g) => !g.female || p.sex === 'F')
-  const any = groups.some((g) => g.fields.some((f) => b[f.key])) || p.conditions.length > 0
+  const groups = BACKGROUND_GROUPS.filter((g) => (!g.female || p.sex === 'F') && (!only || only.includes(g.title)))
+  const withConditions = groups.some((g) => g.title === 'Personales patológicos') && p.conditions.length > 0
+  const any = groups.some((g) => g.fields.some((f) => b[f.key])) || withConditions
   if (!any) return <p className="muted">Sin antecedentes registrados.</p>
   return (
     <div className={`bg-groups ${compact ? 'bg-groups--compact' : ''}`}>
@@ -87,15 +91,16 @@ export function ConsultationBody({ c, vitals }: { c: Consultation; vitals?: Vita
   return (
     <div className="note">
       <div className="note__sec"><h4>Motivo de consulta</h4><p>{c.reason}</p></div>
-      {c.history && <div className="note__sec"><h4>Enfermedad actual</h4><p>{c.history}</p></div>}
+      {c.history && <div className="note__sec"><h4>Historia de la enfermedad actual</h4><p>{c.history}</p></div>}
       <div className="note__sec"><h4>Examen físico</h4>
         {vitals && <p className="note__vitals">PA {vitals.systolic}/{vitals.diastolic} mmHg, FC {vitals.heartRate} lpm{vitals.respRate ? `, FR ${vitals.respRate} rpm` : ''}, T {vitals.temperature.toFixed(1)} °C, SpO₂ {vitals.spo2}%{vitals.weightKg ? `, Peso ${vitals.weightKg} kg` : ''}{vitals.glucose ? `, Glucometría ${vitals.glucose} mg/dL` : ''}</p>}
         {c.exam ? <p>{c.exam}</p> : !vitals && <p className="muted">Sin registro.</p>}
       </div>
+      {c.observations && <div className="note__sec"><h4>Observaciones</h4><p>{c.observations}</p></div>}
       <div className="note__sec"><h4>Impresión diagnóstica</h4>
         <ol className="note__list">{c.diagnoses.map((d) => <li key={d.code}>{d.label} <span className="muted">({d.code})</span></li>)}</ol>
       </div>
-      <div className="note__sec"><h4>Manejo</h4>
+      <div className="note__sec"><h4>Plan y manejo</h4>
         {c.orders.length
           ? <ol className="note__list">{c.orders.map((o, i) => <li key={i}>{o}</li>)}</ol>
           : <p>{c.plan || <span className="muted">Sin registro.</span>}</p>}
@@ -104,11 +109,11 @@ export function ConsultationBody({ c, vitals }: { c: Consultation; vitals?: Vita
   )
 }
 
-type Tab = 'history' | 'consults' | 'vitals' | 'rx' | 'files'
+type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'rx' | 'files'
 
 export default function PatientChart() {
   const { id } = useParams()
-  const { patient, appointments, staffById, can, updatePatient } = useStore()
+  const { patient, appointments, staffById, can, updatePatient, followups, bed, inpatientOf } = useStore()
   const [tab, setTab] = useState<Tab>('history')
   const [editing, setEditing] = useState<null | 'id' | 'allergies' | 'background'>(null)
   const clinical = can('chart.view')
@@ -120,17 +125,24 @@ export default function PatientChart() {
   const cs = chart?.consultations ?? []
   const rxs = chart?.prescriptions ?? []
   const vs = chart?.vitals ?? []
+  const hs = chart?.hospitalizations ?? []
+  const pending = followups.filter((f) => f.patientId === p.id)
+  const hospitalized = inpatientOf(p.id)
   const appts = appointments.filter((a) => a.patientId === p.id).sort((a, b) => b.start.localeCompare(a.start))
+  // Mientras carga el expediente no se muestra "(0)", que parecería que no hay datos
+  const n = (k: unknown[]) => (chart ? ` (${k.length})` : '')
   const tabs: [Tab, string, boolean][] = [
-    ['history', 'Historia clínica', true], ['consults', `Consultas (${cs.length})`, clinical],
-    ['vitals', 'Signos vitales', clinical], ['rx', `Recetas (${rxs.length})`, clinical && can('rx.view')], ['files', 'Archivos', clinical],
+    ['history', 'Historia clínica', true], ['consults', `Consultas${n(cs)}`, clinical], ['hosp', `Hospitalizaciones${n(hs)}`, clinical && (!chart || hs.length > 0)],
+    ['vitals', 'Signos vitales', clinical], ['rx', `Recetas${n(rxs)}`, clinical && can('rx.view')], ['files', 'Archivos', clinical],
   ]
   const save = async (data: Partial<Patient>) => { if (await updatePatient(p.id, data)) { setEditing(null); reload() } }
 
   return (
     <div className="page page--chart">
       <div className="sticky-top">
-        <PatientHeader p={p} clinical={clinical} />
+        <PatientHeader p={p} clinical={clinical}>
+          {hospitalized && <Link className="btn btn--soft btn--sm" to={`/app/hospitalizados/${hospitalized.id}`}><BedDouble size={15} />Hospitalizado, {bedLabel(bed(hospitalized.bedId))}</Link>}
+        </PatientHeader>
         <div className="tabs tabs--scroll" role="tablist">
           {tabs.filter((t) => t[2]).map(([k, label]) => (
             <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>
@@ -174,6 +186,18 @@ export default function PatientChart() {
             <section className="panel"><div className="empty"><Lock size={20} style={{ margin: '0 auto 8px' }} />Alergias, antecedentes y consultas sólo están disponibles para médicos y enfermería.</div></section>
           )}
 
+          {pending.length > 0 && (
+            <section className="panel hc__sec">
+              <div className="panel__head"><h2>Seguimientos programados</h2><Link className="btn btn--ghost btn--sm" to="/app/seguimientos">Ver todos</Link></div>
+              <div className="rows">{pending.map((f) => (
+                <div key={f.id} className="row" style={{ gridTemplateColumns: '120px 1fr' }}>
+                  <span className="num" style={{ fontSize: 13.5 }}>{date(`${f.dueDate}T12:00:00`)}</span>
+                  <div className="row__who"><strong>{f.title}</strong><span>{FOLLOWUP_KIND[f.kind].label}{f.everyDays ? `, control cada ${f.everyDays} días` : ''}</span></div>
+                </div>
+              ))}</div>
+            </section>
+          )}
+
           <section className="panel hc__sec">
             <div className="panel__head"><h2>Citas</h2></div>
             {appts.length ? <div className="rows">{appts.slice(0, 12).map((a) => (
@@ -203,6 +227,18 @@ export default function PatientChart() {
             </article>
           )) : <section className="panel"><div className="empty">Este paciente aún no tiene consultas firmadas.</div></section>}
         </div>
+      )}
+
+      {tab === 'hosp' && chart && (
+        <section className="panel">
+          {hs.length ? <div className="rows">{hs.map((h) => (
+            <Link key={h.id} to={`/app/hospitalizados/${h.id}`} className="row" style={{ gridTemplateColumns: '150px 1fr auto' }}>
+              <span className="num" style={{ fontSize: 13.5 }}>{date(h.admittedAt)}{h.dischargedAt ? ` al ${date(h.dischargedAt)}` : ''}</span>
+              <div className="row__who"><strong>{h.diagnoses.map((d) => d.label).join('; ')}</strong><span>{bedLabel(bed(h.bedId))}, ingresó {staffById(h.admittedBy)?.name}</span></div>
+              <span className={`badge ${h.status === 'active' ? 'badge--mint' : 'badge--done'}`}>{h.status === 'active' ? 'Hospitalizado' : 'Egresado'}</span>
+            </Link>
+          ))}</div> : <div className="empty">Sin hospitalizaciones.</div>}
+        </section>
       )}
 
       {tab === 'vitals' && chart && (

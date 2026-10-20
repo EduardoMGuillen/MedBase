@@ -1,13 +1,16 @@
 import bcrypt from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
-import { DEFAULT_SETTINGS, DEMO_CLINICS, DOCTOR_SETUP, MAIN_CLINIC, PATIENTS, SECOND_CLINIC, SERVICES, STAFF, seedAppointments, seedClinical, seedHistory, seedSecondClinic } from '../src/lib/seed.js'
+import {
+  BEDS, DEFAULT_SETTINGS, DEMO_CLINICS, DOCTOR_SETUP, INPATIENT_PATIENTS, MAIN_CLINIC, PATIENTS, SECOND_CLINIC, SERVICES, STAFF,
+  seedAppointments, seedClinical, seedHistory, seedInpatient, seedSecondClinic,
+} from '../src/lib/seed.js'
 import type { Appointment, Patient, Payment, Schedule } from '../src/lib/types.js'
 import type { Row, Sql } from './sql.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '6'
+const SCHEMA_VERSION = '7'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -198,6 +201,105 @@ CREATE INDEX IF NOT EXISTS staff_clinic ON staff (clinic_id);
 CREATE INDEX IF NOT EXISTS patients_clinic ON patients (clinic_id);
 CREATE INDEX IF NOT EXISTS appt_clinic ON appointments (clinic_id, start);
 CREATE INDEX IF NOT EXISTS audit_clinic ON audit (clinic_id, id);
+
+-- v7: consulta externa, hospitalización, crónicos y seguimientos
+ALTER TABLE clinics
+  ADD COLUMN IF NOT EXISTS record_uses_dni BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS logo TEXT;
+ALTER TABLE consultations ADD COLUMN IF NOT EXISTS observations TEXT NOT NULL DEFAULT '';
+ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS hospitalization_id TEXT;
+ALTER TABLE attachments
+  ADD COLUMN IF NOT EXISTS title TEXT,
+  ADD COLUMN IF NOT EXISTS taken_at TEXT,
+  ADD COLUMN IF NOT EXISTS hospitalization_id TEXT;
+CREATE TABLE IF NOT EXISTS beds (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  room TEXT NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
+  specialty TEXT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS beds_clinic_room ON beds (clinic_id, room, label);
+CREATE TABLE IF NOT EXISTS hospitalizations (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  bed_id TEXT NOT NULL REFERENCES beds(id),
+  consultation_id TEXT,
+  admitted_at TEXT NOT NULL,
+  admitted_by TEXT NOT NULL REFERENCES staff(id),
+  reason TEXT NOT NULL,
+  diagnoses TEXT NOT NULL DEFAULT '[]',
+  companion_name TEXT, companion_relation TEXT, companion_phone TEXT, patient_phone TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','discharged')),
+  discharged_at TEXT, discharged_by TEXT, prescription_id TEXT
+);
+-- Una cama sólo puede tener un paciente, y un paciente sólo una hospitalización abierta
+CREATE UNIQUE INDEX IF NOT EXISTS hosp_bed_active ON hospitalizations (bed_id) WHERE status = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS hosp_patient_active ON hospitalizations (patient_id) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS hosp_clinic ON hospitalizations (clinic_id, status);
+CREATE TABLE IF NOT EXISTS hosp_notes (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  hospitalization_id TEXT NOT NULL REFERENCES hospitalizations(id),
+  kind TEXT NOT NULL CHECK (kind IN ('admission','evolution','discharge','nursing')),
+  author_id TEXT NOT NULL REFERENCES staff(id),
+  at TEXT NOT NULL,
+  subjective TEXT NOT NULL DEFAULT '', objective TEXT NOT NULL DEFAULT '', assessment TEXT NOT NULL DEFAULT '', plan TEXT NOT NULL DEFAULT '',
+  text TEXT NOT NULL DEFAULT '',
+  data TEXT
+);
+CREATE INDEX IF NOT EXISTS hosp_notes_h ON hosp_notes (hospitalization_id, at);
+CREATE TABLE IF NOT EXISTS hosp_meds (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  hospitalization_id TEXT NOT NULL REFERENCES hospitalizations(id),
+  note_id TEXT,
+  drug TEXT NOT NULL, presentation TEXT, dose TEXT NOT NULL, route TEXT NOT NULL,
+  every_hours INTEGER, prn BOOLEAN NOT NULL DEFAULT FALSE,
+  first_at TEXT NOT NULL, instructions TEXT,
+  ordered_by TEXT NOT NULL REFERENCES staff(id), ordered_at TEXT NOT NULL,
+  stopped_at TEXT, stopped_by TEXT
+);
+CREATE INDEX IF NOT EXISTS hosp_meds_h ON hosp_meds (hospitalization_id);
+CREATE TABLE IF NOT EXISTS hosp_doses (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  med_id TEXT NOT NULL REFERENCES hosp_meds(id),
+  scheduled_at TEXT,
+  given_at TEXT NOT NULL,
+  given_by TEXT NOT NULL REFERENCES staff(id),
+  status TEXT NOT NULL CHECK (status IN ('given','skipped')),
+  note TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS hosp_doses_slot ON hosp_doses (med_id, scheduled_at) WHERE scheduled_at IS NOT NULL;
+CREATE TABLE IF NOT EXISTS hosp_procedures (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  hospitalization_id TEXT NOT NULL REFERENCES hospitalizations(id),
+  kind TEXT NOT NULL CHECK (kind IN ('procedure','authorization')),
+  name TEXT NOT NULL,
+  scheduled_at TEXT,
+  status TEXT NOT NULL CHECK (status IN ('pending','authorized','done','denied')),
+  notes TEXT,
+  created_by TEXT NOT NULL REFERENCES staff(id), created_at TEXT NOT NULL,
+  updated_by TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS followups (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  kind TEXT NOT NULL CHECK (kind IN ('chronic','reminder','procedure')),
+  title TEXT NOT NULL,
+  due_date TEXT NOT NULL,
+  every_days INTEGER,
+  notes TEXT,
+  created_by TEXT NOT NULL REFERENCES staff(id), created_at TEXT NOT NULL,
+  notified_at TEXT, done_at TEXT,
+  active BOOLEAN NOT NULL DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS followups_clinic ON followups (clinic_id, active, due_date);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -226,7 +328,10 @@ export function ensureDb(sql: Sql) {
       await q.run('SELECT pg_advisory_xact_lock(7272741)')
       await q.exec(SCHEMA)
       if (!(await q.one(`SELECT 1 FROM meta WHERE key = 'seeded'`))) await seed(q)
-      else await adoptSingleClinic(q)
+      else {
+        await adoptSingleClinic(q)
+        await addDemoInpatients(q)
+      }
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -319,13 +424,92 @@ export async function seed(q: Sql) {
   await insertMany(q, 'payments', ['id', 'receipt_no', 'appointment_id', 'patient_id', 'items', 'discount', 'total', 'method', 'reference', 'received_by', 'paid_at', 'clinic_id'],
     payments.map((p) => [p.id, p.receiptNo, p.appointmentId ?? null, p.patientId, JSON.stringify(p.items), p.discount, p.total, p.method, p.reference ?? null, p.receivedBy, p.paidAt, A]))
 
+  await insertInpatients(q)
   await q.run(`INSERT INTO meta (key, value) VALUES ('seeded', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [now])
+}
+
+/** Camas, hospitalizados y seguimientos de la demo. */
+async function insertInpatients(q: Sql) {
+  const A = MAIN_CLINIC
+  const d = seedInpatient()
+  // Una base que venía de una sola clínica no tiene la segunda clínica de demostración
+  const clinics = new Set((await q.query('SELECT id FROM clinics')).map((r) => String(r.id)))
+  await insertMany(q, 'beds', ['id', 'clinic_id', 'room', 'label', 'specialty', 'active'],
+    BEDS.filter((b) => clinics.has(b.clinicId)).map((b) => [b.id, b.clinicId, b.room, b.label, b.specialty, b.active]))
+  await insertMany(q, 'patients', ['id', 'record', 'first_name', 'last_name', 'birth_date', 'sex', 'phone', 'blood_type', 'allergies', 'conditions', 'insurance', 'created_at',
+    'dni', 'civil_status', 'occupation', 'education', 'address', 'emergency_name', 'emergency_phone', 'emergency_relation', 'background', 'clinic_id'],
+    INPATIENT_PATIENTS.map((p) => [p.id, p.record, p.firstName, p.lastName, p.birthDate, p.sex, p.phone, p.bloodType ?? null, JSON.stringify(p.allergies), JSON.stringify(p.conditions),
+      p.insurance ?? null, p.createdAt, p.dni ?? null, p.civilStatus ?? null, p.occupation ?? null, p.education ?? null, p.address ?? null, p.emergencyName ?? null,
+      p.emergencyPhone ?? null, p.emergencyRelation ?? null, JSON.stringify(p.background ?? {}), A]))
+  await insertMany(q, 'hospitalizations', ['id', 'clinic_id', 'patient_id', 'bed_id', 'admitted_at', 'admitted_by', 'reason', 'diagnoses', 'companion_name', 'companion_relation',
+    'companion_phone', 'patient_phone', 'status'],
+    d.hospitalizations.map((h) => [h.id, A, h.patientId, h.bedId, h.admittedAt, h.admittedBy, h.reason, JSON.stringify(h.diagnoses), h.companionName ?? null,
+      h.companionRelation ?? null, h.companionPhone ?? null, h.patientPhone ?? null, h.status]))
+  await insertMany(q, 'hosp_notes', ['id', 'clinic_id', 'hospitalization_id', 'kind', 'author_id', 'at', 'subjective', 'objective', 'assessment', 'plan', 'text'],
+    d.notes.map((n) => [n.id, A, n.hospitalizationId, n.kind, n.authorId, n.at, n.subjective, n.objective, n.assessment, n.plan, n.text]))
+  await insertMany(q, 'hosp_meds', ['id', 'clinic_id', 'hospitalization_id', 'note_id', 'drug', 'presentation', 'dose', 'route', 'every_hours', 'prn', 'first_at', 'instructions',
+    'ordered_by', 'ordered_at', 'stopped_at', 'stopped_by'],
+    d.meds.map((m) => [m.id, A, m.hospitalizationId, m.noteId ?? null, m.drug, m.presentation ?? null, m.dose, m.route, m.everyHours ?? null, m.prn, m.firstAt,
+      m.instructions ?? null, m.orderedBy, m.orderedAt, m.stoppedAt ?? null, m.stoppedBy ?? null]))
+  await insertMany(q, 'hosp_doses', ['id', 'clinic_id', 'med_id', 'scheduled_at', 'given_at', 'given_by', 'status', 'note'],
+    d.doses.map((x) => [x.id, A, x.medId, x.scheduledAt ?? null, x.givenAt, x.givenBy, x.status, x.note ?? null]))
+  await insertMany(q, 'hosp_procedures', ['id', 'clinic_id', 'hospitalization_id', 'kind', 'name', 'scheduled_at', 'status', 'notes', 'created_by', 'created_at', 'updated_by', 'updated_at'],
+    d.procedures.map((x) => [x.id, A, x.hospitalizationId, x.kind, x.name, x.scheduledAt ?? null, x.status, x.notes ?? null, x.createdBy, x.createdAt, x.updatedBy ?? null, x.updatedAt ?? null]))
+  for (const l of d.labs) {
+    const pdf = textPdf(`${l.title} - Laboratorio de demostracion`, [`Fecha de toma: ${new Date(l.takenAt).toLocaleString('es-HN')}`, '', ...l.lines])
+    await q.run('INSERT INTO attachments (id, patient_id, name, mime, size, category, data, uploaded_by, uploaded_at, clinic_id, title, taken_at, hospitalization_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [l.id, l.patientId, `${l.title}.pdf`, 'application/pdf', pdf.length, 'lab', new Uint8Array(pdf), 's-rios', l.takenAt, A, l.title, l.takenAt, l.hospitalizationId])
+  }
+  await insertMany(q, 'followups', ['id', 'clinic_id', 'patient_id', 'kind', 'title', 'due_date', 'every_days', 'notes', 'created_by', 'created_at', 'notified_at', 'active'],
+    d.followups.map((f) => [f.id, A, f.patientId, f.kind, f.title, f.dueDate, f.everyDays ?? null, f.notes ?? null, f.createdBy, f.createdAt, f.notifiedAt ?? null, f.active]))
+}
+
+/**
+ * Una base de demostración creada antes de la v7 no tiene camas: se le agregan los hospitalizados
+ * de la demo para que el módulo se pueda probar sin reiniciar los datos.
+ */
+async function addDemoInpatients(q: Sql) {
+  if (!(await q.one(`SELECT 1 FROM clinics WHERE id = ?`, [MAIN_CLINIC]))) return
+  if (!(await q.one(`SELECT 1 FROM staff WHERE id = 's-herrera' AND email LIKE '%@demo.clinara'`))) return
+  if (await q.one('SELECT 1 FROM beds LIMIT 1')) return
+  if (await q.one(`SELECT 1 FROM patients WHERE id IN (${INPATIENT_PATIENTS.map(() => '?').join(',')}) LIMIT 1`, INPATIENT_PATIENTS.map((p) => p.id))) return
+  await insertInpatients(q)
+}
+
+/** PDF de una página con texto plano, para los laboratorios de demostración. */
+function textPdf(title: string, lines: string[]) {
+  const esc = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7e]/g, '').replace(/([\\()])/g, '\\$1')
+  const body = [`BT /F1 16 Tf 56 760 Td (${esc(title)}) Tj ET`, ...lines.map((l, i) => `BT /F1 12 Tf 56 ${724 - i * 18} Td (${esc(l)}) Tj ET`)].join('\n')
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${body.length} >>\nstream\n${body}\nendstream`,
+  ]
+  let out = '%PDF-1.4\n'
+  const offsets: number[] = []
+  objs.forEach((o, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n` })
+  const xref = out.length
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  return Buffer.from(out, 'latin1')
+}
+
+/** Siguiente folio de receta de la clínica. Llamar dentro de una transacción: el candado evita folios repetidos. */
+export async function nextFolio(q: Sql, clinicId: string, now: Date) {
+  await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`rx:${clinicId}`])
+  const year = now.getFullYear()
+  const last = await q.one(`SELECT folio FROM prescriptions WHERE clinic_id = ? AND folio LIKE ? ORDER BY folio DESC LIMIT 1`, [clinicId, `RX-${year}-%`])
+  const seq = last ? Number(String(last.folio).split('-')[2]) + 1 : 1001
+  return `RX-${year}-${String(seq).padStart(4, '0')}`
 }
 
 /** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
 export async function resetDemo(sql: Sql) {
   await sql.tx(async (q) => {
-    await q.exec(`TRUNCATE attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
+    await q.exec(`TRUNCATE hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
+      attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
     await seed(q)
   })

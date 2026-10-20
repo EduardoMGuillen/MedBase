@@ -110,3 +110,11 @@ export function medicationOrder(i: PrescriptionItem) {
   const route = i.route ? ` vía ${i.route.toLowerCase()}` : ''
   return `${i.drug}${i.presentation ? ` (${i.presentation.toLowerCase()})` : ''}: ${i.dose}${route} ${i.frequency.toLowerCase()} por ${i.duration}.${i.instructions ? ` ${i.instructions}` : ''}`
 }
+
+/** Número que identifica el expediente en documentos: la identidad si la clínica así lo configuró. */
+export const recordNumber = (p: Pick<Patient, 'record' | 'dni'>, s: { recordUsesDni: boolean }) => (s.recordUsesDni && p.dni ? p.dni : p.record)
+
+/** Valor para un `<input type="datetime-local">` en hora local. */
+export const inputDateTime = (d: Date) => `${localISODate(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+
+export const dateTime = (iso: string) => `${date(iso, { day: 'numeric', month: 'short' })}, ${time(iso)}`

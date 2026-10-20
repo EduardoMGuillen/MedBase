@@ -33,7 +33,7 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
 | Médico (medicina interna) | lherrera@demo.clinara | Su agenda, consultas, recetas, constancias, expediente |
 | Médico (pediatría) | apaz@demo.clinara | Igual, con su propia agenda |
 | Médico (ginecología) | mzuniga@demo.clinara | Igual, con su propia agenda |
-| Enfermería | crios@demo.clinara | Sala de espera, triaje, expediente, archivos |
+| Enfermería | crios@demo.clinara | Consulta externa, perfil CE (triaje), hospitalizados: hoja de medicamentos y notas de enfermería |
 | Recepción | smejia@demo.clinara | Agenda, pacientes, recordatorios, caja |
 | Administración | admin@demo.clinara | Reportes, personal, configuración, bitácora |
 | Administración de Clinara | superadmin@demo.clinara | Clínicas y sus usuarios (sin expedientes) |
@@ -55,7 +55,12 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
    - Firma la consulta y, en el expediente, emite una *Constancia médica* con días de reposo.
    - En *Mi cuenta* (clic en tu nombre), activa la verificación en dos pasos con Google o Microsoft Authenticator.
    - Prueba `Ctrl + K` para buscar pacientes desde cualquier pantalla.
-5. **Administración**:
+5. **Hospitalización** (Dra. Herrera y Lic. Ríos):
+   - En *Hospitalizados* abre a Marcos Antonio Velásquez, cuarto 203. En *Medicamentos* verás el ondansetrón cada 8 horas, el acetaminofén PRN y el tramadol omitido.
+   - Como enfermería, toca una hora pendiente para registrar la dosis.
+   - Como médico, escribe una nota de evolución: agrega un medicamento y marca *OMITIR* en otro; la hoja se actualiza sola.
+   - En *Egreso*, escribe la nota de egreso con medicamentos para la casa: se cierra el expediente y se emite la receta.
+6. **Administración**:
    - Revisa *Reportes* (ingresos, asistencia, diagnósticos frecuentes) y exporta a CSV.
    - En *Configuración*, cambia el nombre de la clínica, los precios y los horarios de cada médico. El horario define qué horas se ofrecen en la reserva en línea.
    - En *Personal y roles*, crea usuarios y revisa la *Bitácora*.
@@ -66,12 +71,15 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
 |---|---|
 | Reserva en línea (`/reservar`) | El paciente elige médico, día y hora según el horario configurado. Si ya existe, se reutiliza su expediente (mismo teléfono y fecha de nacimiento). Tiene protección contra spam y reservas dobles. |
 | Agenda | Vistas de día, semana y mes; salto a cualquier fecha y filtro por médico; detección de choques, reprogramación, reservas en línea y recordatorio por WhatsApp |
-| Sala de espera | Llegada y triaje: enfermería registra el motivo de consulta y los signos vitales (PA, FC, FR, T, SpO₂, peso, talla, glucometría) con alertas de rango |
-| Consulta | Datos generales siempre visibles. A la izquierda: antecedentes, motivo y signos del triaje, enfermedad actual, examen físico e impresión diagnóstica (CIE-10). A la derecha: manejo como órdenes médicas numeradas; los medicamentos van también a la receta, con cruce de alergias. Borrador automático |
+| Consulta externa | Pacientes del día con cita y los que llegan sin cita. Enfermería abre el perfil de consulta externa: motivo y signos vitales (PA, FC, FR, T, SpO₂, peso, talla, glucometría) con alertas de rango |
+| Nota de consulta externa | Datos generales siempre visibles. A la izquierda: antecedentes patológicos y no patológicos, signos vitales, motivo de consulta, HEA, examen físico, observaciones e impresión diagnóstica (CIE-10). A la derecha: plan y manejo como órdenes médicas numeradas (los medicamentos van a la receta, con cruce de alergias), seguimiento y la casilla de ingreso a hospitalización. Borrador automático |
+| Hospitalización | Tablero de camas por cuarto y especialidad. Expediente del hospitalizado: hoja de hospitalización, hoja de medicamentos con horario automático (enfermería marca cada dosis; los PRN se registran cuando se aplican; lo omitido por el médico aparece omitido), notas de ingreso y evolución SOAP, notas de enfermería, laboratorios subidos con foto y fecha, procedimientos y autorizaciones, y nota de egreso con receta. Cualquier médico o enfermera de la clínica puede abrirlo |
+| Crónicos y seguimientos | Pacientes crónicos con control periódico, recordatorios y procedimientos programados. El mensaje de WhatsApp se ve como le llegaría al paciente; el envío es una simulación hasta conectar WhatsApp Business |
+| Recetas y constancias | Receta en media carta con logo, nombre, identidad, edad, expediente, medicamentos y firma. Constancia de atención o de incapacidad (reposo relativo o absoluto) sin diagnóstico, salvo que se pida |
 | Expediente | Formato de historia clínica: ficha de identificación, alergias, antecedentes (patológicos, quirúrgicos, traumáticos, hospitalarios, transfusionales, medicamentos, no patológicos, heredofamiliares, gineco-obstétricos) y consultas en orden legal con el manejo al final. Nota de consulta imprimible, recetas, archivos y constancias |
 | Caja | Por cobrar, cobro con varios servicios, descuento, efectivo con cambio, tarjeta, transferencia o aseguradora, recibos imprimibles, cierre del día y anulación (sólo administración) |
 | Reportes | Ingresos, asistencia, reservas en línea, carga por médico, formas de pago y diagnósticos frecuentes, con exportación CSV |
-| Configuración | Datos de la clínica, plantilla del recordatorio, servicios y precios, horario y servicio por defecto de cada médico |
+| Configuración | Datos de la clínica, logo, identidad como número de expediente, plantilla del recordatorio, servicios y precios, horario de cada médico y camas por especialidad |
 | Seguridad | Roles con permisos validados en el servidor, verificación en dos pasos, cierre de sesión tras 30 minutos sin actividad, bitácora inalterable |
 
 ## Varias clínicas

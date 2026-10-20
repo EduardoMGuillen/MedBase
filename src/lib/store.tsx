@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
-  Appointment, ApptStatus, Attachment, AuditEntry, Clinic, ClinicRole, ClinicSettings, Consultation, Patient, Payment, PaymentMethod,
-  Prescription, PrescriptionItem, Service, Staff, Vitals,
+  Appointment, ApptStatus, Attachment, AuditEntry, Bed, Clinic, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, HospProcedure, Hospitalization,
+  InpatientFile, InpatientMed, InpatientNote, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
 import { api, ApiError } from './api'
@@ -16,11 +16,18 @@ interface Data {
   vitals: Vitals[] // signos tomados hoy
   services: Service[]
   settings: ClinicSettings
+  beds: Bed[]
+  inpatients: Hospitalization[] // hospitalizaciones abiertas
+  followups: Followup[] // seguimientos activos
 }
 
 interface Session { user: Staff; permissions: Permission[]; demo: boolean }
 
-export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescriptions: Prescription[] }
+export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescriptions: Prescription[]; hospitalizations: Hospitalization[] }
+
+/** Medicamento que el médico indica en una nota de hospitalización. */
+export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'instructions'> & { firstAt?: string }
+export type FollowupInput = Pick<Followup, 'kind' | 'title' | 'dueDate' | 'everyDays' | 'notes'>
 
 export interface Report {
   range: { from: string; to: string }
@@ -33,7 +40,7 @@ export interface Report {
 
 export type NewPayment = Pick<Payment, 'patientId' | 'items' | 'discount' | 'method'> & { appointmentId?: string; reference?: string }
 
-const EMPTY: Data = { staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], settings: DEFAULT_SETTINGS }
+const EMPTY: Data = { staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], settings: DEFAULT_SETTINGS, beds: [], inpatients: [], followups: [] }
 
 /** Minutos sin actividad antes de cerrar la sesión automáticamente. */
 const IDLE_MINUTES = 30
@@ -116,7 +123,8 @@ function useStoreValue() {
   // Estables entre renders para poder usarlos como dependencias de efectos
   const fetchChart = useCallback((patientId: string) => api<Chart>(`/patients/${patientId}/chart`), [])
   const fetchPrescription = useCallback((id: string) =>
-    api<{ prescription: Prescription; consultation: Consultation | null; patient: Patient }>(`/prescriptions/${id}`), [])
+    api<{ prescription: Prescription; consultation: Consultation | null; hospitalization: Hospitalization | null; patient: Patient }>(`/prescriptions/${id}`), [])
+  const fetchInpatient = useCallback((id: string) => api<InpatientFile>(`/inpatient/${id}`), [])
   const fetchConsultation = useCallback((id: string, purpose: 'note' | 'certificate' = 'note') =>
     api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null }>(`/consultations/${id}?purpose=${purpose}`), [])
   const fetchAppointments = useCallback((from: string, to: string) => api<Appointment[]>(`/appointments?from=${from}&to=${to}`), [])
@@ -136,7 +144,36 @@ function useStoreValue() {
     patient: (id: string) => data.patients.find((p) => p.id === id),
     staffById: (id: string) => data.staff.find((s) => s.id === id),
     fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
-    fetchClinics, fetchClinicStaff, fetchPlatformActivity,
+    fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient,
+    bed: (id: string) => data.beds.find((b) => b.id === id),
+    /** Hospitalización abierta del paciente, si la tiene. */
+    inpatientOf: (patientId: string) => data.inpatients.find((h) => h.patientId === patientId),
+
+    walkIn: (b: { patientId: string; doctorId: string; reason: string }) =>
+      run(() => api<Appointment>('/appointments/walk-in', { body: b }), 'Paciente agregado a la consulta externa de hoy'),
+
+    // Hospitalización
+    admit: (b: Pick<Hospitalization, 'patientId' | 'bedId' | 'reason' | 'diagnoses' | 'consultationId' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'> & { admittedAt?: string }) =>
+      run(() => api<Hospitalization>('/inpatient', { body: b }), 'Paciente ingresado'),
+    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[] }) =>
+      run(() => api<InpatientNote>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
+    addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),
+    recordDose: (medId: string, b: { scheduledAt?: string; givenAt?: string; status: Dose['status']; note?: string }) =>
+      run(() => api<Dose>(`/inpatient/meds/${medId}/doses`, { body: b }), b.status === 'given' ? 'Dosis registrada' : 'Dosis marcada como no administrada'),
+    addProcedure: (id: string, b: Pick<HospProcedure, 'kind' | 'name' | 'scheduledAt' | 'notes'>) =>
+      run(() => api<HospProcedure>(`/inpatient/${id}/procedures`, { body: b }), 'Registrado'),
+    updateProcedure: (pid: string, b: Pick<HospProcedure, 'status' | 'notes'>) =>
+      run(() => api<HospProcedure>(`/inpatient/procedures/${pid}`, { method: 'PATCH', body: b }), 'Estado actualizado'),
+    discharge: (id: string, b: DischargeData & { items: PrescriptionItem[] }) =>
+      run(() => api<{ hospitalization: Hospitalization; prescriptionId: string | null; folio: string | null }>(`/inpatient/${id}/discharge`, { body: b }), 'Paciente dado de alta'),
+    createBed: (b: Omit<Bed, 'id'>) => run(() => api<Bed>('/beds', { body: b }), 'Cama agregada'),
+    updateBed: (id: string, b: Partial<Omit<Bed, 'id'>>) => run(() => api<Bed>(`/beds/${id}`, { method: 'PATCH', body: b }), 'Cama actualizada'),
+
+    // Crónicos y seguimientos (el envío por WhatsApp es simulado)
+    createFollowup: (b: FollowupInput & { patientId: string }) => run(() => api<Followup>('/followups', { body: b }), 'Seguimiento programado'),
+    notifyFollowup: (id: string) => run(() => api<Followup>(`/followups/${id}/notify`, { method: 'POST' }), 'Envío simulado registrado'),
+    completeFollowup: (id: string) => run(() => api<Followup>(`/followups/${id}/done`, { method: 'POST' }), 'Seguimiento actualizado'),
+    removeFollowup: (id: string) => run(() => api<Followup>(`/followups/${id}`, { method: 'PATCH', body: { active: false } }), 'Seguimiento quitado'),
 
     setStatus: (id: string, status: Exclude<ApptStatus, 'scheduled' | 'triaged' | 'done'>, success?: string) =>
       run(() => api<Appointment>(`/appointments/${id}/status`, { body: { status } }), success),
@@ -151,14 +188,14 @@ function useStoreValue() {
       run(() => api<Patient>(`/patients/${id}`, { method: 'PATCH', body: p }), 'Ficha actualizada'),
     addVitals: (v: Omit<Vitals, 'id' | 'takenAt' | 'takenBy'>) =>
       run(() => api<Vitals>('/vitals', { body: v }), 'Signos vitales guardados'),
-    finishConsult: (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string }, items: PrescriptionItem[]) =>
+    finishConsult: (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[] }, items: PrescriptionItem[]) =>
       run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null }>('/consultations', { body: { ...c, items } }),
         items.length ? 'Consulta y receta firmadas' : 'Consulta firmada'),
 
     pay: (p: NewPayment) => run(() => api<Payment>('/payments', { body: p }), 'Cobro registrado'),
     voidPayment: (id: string, reason: string) => run(() => api<Payment>(`/payments/${id}/void`, { body: { reason } }), 'Recibo anulado'),
 
-    uploadAttachment: (patientId: string, a: { name: string; mime: string; category: Attachment['category']; data: string }) =>
+    uploadAttachment: (patientId: string, a: { name: string; mime: string; category: Attachment['category']; data: string; title?: string; takenAt?: string; hospitalizationId?: string }) =>
       run(() => api<Attachment>(`/patients/${patientId}/attachments`, { body: a }), 'Archivo adjuntado'),
     deleteAttachment: (id: string) => run(() => api(`/attachments/${id}`, { method: 'DELETE' }), 'Archivo eliminado'),
 

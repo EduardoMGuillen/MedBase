@@ -1,4 +1,7 @@
-import type { Appointment, Attachment, AuditEntry, Background, Clinic, ClinicSettings, Consultation, Patient, Payment, Prescription, Service, Staff, Vitals } from '../src/lib/types.js'
+import type {
+  Appointment, Attachment, AuditEntry, Background, Bed, Clinic, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
+  Patient, Payment, Prescription, Service, Staff, Vitals,
+} from '../src/lib/types.js'
 import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
 
 type Row = Record<string, unknown>
@@ -44,13 +47,14 @@ export const toVitals = (r: Row): Vitals => ({
 export const toConsultation = (r: Row): Consultation => ({
   id: String(r.id), patientId: String(r.patient_id), doctorId: String(r.doctor_id), appointmentId: s(r.appointment_id),
   date: String(r.date), reason: String(r.reason), symptoms: j(r.symptoms, []), symptomOnset: s(r.symptom_onset),
-  history: String(r.history ?? ''), exam: String(r.exam ?? ''), diagnoses: j(r.diagnoses, []), plan: String(r.plan ?? ''), orders: j(r.orders, []),
+  history: String(r.history ?? ''), exam: String(r.exam ?? ''), observations: s(r.observations) || undefined,
+  diagnoses: j(r.diagnoses, []), plan: String(r.plan ?? ''), orders: j(r.orders, []),
   vitalsId: s(r.vitals_id), prescriptionId: s(r.prescription_id),
 })
 
 export const toPrescription = (r: Row): Prescription => ({
   id: String(r.id), folio: String(r.folio), patientId: String(r.patient_id), doctorId: String(r.doctor_id),
-  consultationId: String(r.consultation_id), issuedAt: String(r.issued_at), items: j(r.items, []),
+  consultationId: String(r.consultation_id), hospitalizationId: s(r.hospitalization_id), issuedAt: String(r.issued_at), items: j(r.items, []),
 })
 
 export const toAudit = (r: Row): AuditEntry => ({ id: String(r.id), at: String(r.at), userId: String(r.user_id), action: String(r.action) })
@@ -66,6 +70,45 @@ export const toPayment = (r: Row): Payment => ({
 export const toAttachment = (r: Row): Attachment => ({
   id: String(r.id), patientId: String(r.patient_id), name: String(r.name), mime: String(r.mime), size: Number(r.size),
   category: r.category as Attachment['category'], uploadedBy: String(r.uploaded_by), uploadedAt: String(r.uploaded_at),
+  title: s(r.title), takenAt: s(r.taken_at), hospitalizationId: s(r.hospitalization_id),
+})
+
+export const toBed = (r: Row): Bed => ({ id: String(r.id), room: String(r.room), label: String(r.label ?? ''), specialty: String(r.specialty), active: Boolean(r.active) })
+
+export const toHospitalization = (r: Row): Hospitalization => ({
+  id: String(r.id), patientId: String(r.patient_id), bedId: String(r.bed_id), consultationId: s(r.consultation_id), admittedAt: String(r.admitted_at),
+  admittedBy: String(r.admitted_by), reason: String(r.reason), diagnoses: j(r.diagnoses, []), companionName: s(r.companion_name),
+  companionRelation: s(r.companion_relation), companionPhone: s(r.companion_phone), patientPhone: s(r.patient_phone),
+  status: r.status as Hospitalization['status'], dischargedAt: s(r.discharged_at), dischargedBy: s(r.discharged_by), prescriptionId: s(r.prescription_id),
+})
+
+export const toInpatientNote = (r: Row): InpatientNote => ({
+  id: String(r.id), hospitalizationId: String(r.hospitalization_id), kind: r.kind as InpatientNote['kind'], authorId: String(r.author_id), at: String(r.at),
+  subjective: String(r.subjective ?? ''), objective: String(r.objective ?? ''), assessment: String(r.assessment ?? ''), plan: String(r.plan ?? ''), text: String(r.text ?? ''),
+  discharge: r.kind === 'discharge' ? j(r.data, undefined) : undefined,
+})
+
+export const toInpatientMed = (r: Row): InpatientMed => ({
+  id: String(r.id), hospitalizationId: String(r.hospitalization_id), noteId: s(r.note_id), drug: String(r.drug), presentation: s(r.presentation), dose: String(r.dose),
+  route: String(r.route), everyHours: r.every_hours == null ? undefined : Number(r.every_hours), prn: Boolean(r.prn), firstAt: String(r.first_at),
+  instructions: s(r.instructions), orderedBy: String(r.ordered_by), orderedAt: String(r.ordered_at), stoppedAt: s(r.stopped_at), stoppedBy: s(r.stopped_by),
+})
+
+export const toDose = (r: Row): Dose => ({
+  id: String(r.id), medId: String(r.med_id), scheduledAt: s(r.scheduled_at), givenAt: String(r.given_at), givenBy: String(r.given_by),
+  status: r.status as Dose['status'], note: s(r.note),
+})
+
+export const toProcedure = (r: Row): HospProcedure => ({
+  id: String(r.id), hospitalizationId: String(r.hospitalization_id), kind: r.kind as HospProcedure['kind'], name: String(r.name), scheduledAt: s(r.scheduled_at),
+  status: r.status as HospProcedure['status'], notes: s(r.notes), createdBy: String(r.created_by), createdAt: String(r.created_at),
+  updatedBy: s(r.updated_by), updatedAt: s(r.updated_at),
+})
+
+export const toFollowup = (r: Row): Followup => ({
+  id: String(r.id), patientId: String(r.patient_id), kind: r.kind as Followup['kind'], title: String(r.title), dueDate: String(r.due_date),
+  everyDays: r.every_days == null ? undefined : Number(r.every_days), notes: s(r.notes), createdBy: String(r.created_by), createdAt: String(r.created_at),
+  notifiedAt: s(r.notified_at), doneAt: s(r.done_at), active: Boolean(r.active),
 })
 
 /** Configuración que ve la clínica (encabezado de recetas, recibos y recordatorios). */
@@ -73,6 +116,7 @@ export const clinicSettings = (r: Row): ClinicSettings => ({
   name: String(r.name ?? DEFAULT_SETTINGS.name), address: String(r.address ?? ''), phone: String(r.phone ?? ''), email: String(r.email ?? ''),
   currency: String(r.currency ?? DEFAULT_SETTINGS.currency), rxValidityDays: Number(r.rx_validity_days ?? DEFAULT_SETTINGS.rxValidityDays),
   reminderTemplate: String(r.reminder_template || DEFAULT_SETTINGS.reminderTemplate),
+  recordUsesDni: Boolean(r.record_uses_dni), logo: s(r.logo),
 })
 
 export const toClinic = (r: Row): Clinic => ({

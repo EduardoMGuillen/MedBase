@@ -3,8 +3,14 @@ import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, FileText, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading, PageHead } from '../components/ui'
-import { age, date, fullName, time } from '../lib/format'
+import { age, date, fullName, recordNumber, time } from '../lib/format'
 import { LogoMark } from '../components/Logo'
+import type { ClinicSettings } from '../lib/types'
+
+/** Logo de la clínica en recetas y constancias; si no hay uno cargado, el de Clinara. */
+export function ClinicLogo({ settings, size = 26 }: { settings: ClinicSettings; size?: number }) {
+  return settings.logo ? <img src={settings.logo} alt="" style={{ height: size * 1.6, maxWidth: 160, objectFit: 'contain' }} /> : <LogoMark size={size} />
+}
 
 export default function Prescriptions() {
   const { prescriptions, patient, staffById, user } = useStore()
@@ -47,31 +53,33 @@ export function PrescriptionSheet() {
   }, [id, fetchPrescription])
   if (missing) return <div className="page"><div className="empty">Esta receta no existe. Vuelve a <Link to="/app/recetas">Recetas</Link>.</div></div>
   if (!data) return <Loading label="Cargando receta" />
-  const { prescription: rx, consultation: c, patient: p } = data
+  const { prescription: rx, consultation: c, hospitalization: h, patient: p } = data
   const doc = staffById(rx.doctorId)!
+  const dx = c?.diagnoses ?? []
 
   return (
     <div className="page">
       <div className="page-head no-print">
-        <Link className="btn btn--ghost" to={`/app/pacientes/${p.id}`}><ChevronLeft size={16} />Expediente de {p.firstName}</Link>
-        <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir receta</button>
+        <Link className="btn btn--ghost" to={h ? `/app/hospitalizados/${h.id}` : `/app/pacientes/${p.id}`}><ChevronLeft size={16} />Expediente de {p.firstName}</Link>
+        <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir receta (media carta)</button>
       </div>
-      <article className="rx-sheet">
+      <article className="rx-sheet rx-sheet--half">
         <header className="rx-sheet__head">
           <div className="rx-sheet__doc">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}><LogoMark size={26} /><b>{settings.name}</b></div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}><ClinicLogo settings={settings} /><b>{settings.name}</b></div>
             <h2>{doc.name}</h2>
             <p>{doc.specialty}, colegiación {doc.license}</p>
             <p>{settings.address}, tel. {settings.phone}</p>
           </div>
-          <div className="rx-sheet__folio">Folio<b>{rx.folio}</b>{date(rx.issuedAt)}, {time(rx.issuedAt)}</div>
+          <div className="rx-sheet__folio">Folio<b>{rx.folio}</b>{date(rx.issuedAt)}, {time(rx.issuedAt)}{h && <><br />Receta de egreso</>}</div>
         </header>
         <div className="rx-sheet__pt">
-          <div><span>Paciente</span>{fullName(p)}</div>
+          <div style={{ gridColumn: '1 / -1' }}><span>Nombre completo</span>{fullName(p)}</div>
+          <div><span>Identidad</span>{p.dni || 'Sin registrar'}</div>
           <div><span>Edad</span>{age(p.birthDate)}</div>
-          <div><span>Expediente</span>{p.record}</div>
-          <div><span>Alergias</span>{p.allergies.join(', ') || 'Ninguna conocida'}</div>
-          {c && <div style={{ gridColumn: '1 / -1' }}><span>Diagnóstico</span>{c.diagnoses.map((d) => `${d.label} (${d.code})`).join('; ')}</div>}
+          <div><span>Expediente</span>{recordNumber(p, settings)}</div>
+          {p.allergies.length > 0 && <div><span>Alergias</span>{p.allergies.join(', ')}</div>}
+          {dx.length > 0 && <div style={{ gridColumn: '1 / -1' }}><span>Diagnóstico</span>{dx.map((d) => d.label).join('; ')}</div>}
         </div>
         <div className="rx-sheet__rx" aria-hidden="true">Rx</div>
         <ol>

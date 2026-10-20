@@ -26,6 +26,18 @@ export const ICD10 = [
   { code: 'Z00.0', label: 'Examen médico general' },
   { code: 'O26.9', label: 'Control prenatal, afección no especificada' },
   { code: 'R51', label: 'Cefalea' },
+  { code: 'K35.8', label: 'Apendicitis aguda, otra y la no especificada' },
+  { code: 'K81.0', label: 'Colecistitis aguda' },
+  { code: 'K80.2', label: 'Cálculo de la vesícula biliar sin colecistitis' },
+  { code: 'J18.9', label: 'Neumonía, no especificada' },
+  { code: 'J44.1', label: 'EPOC con exacerbación aguda' },
+  { code: 'I16.9', label: 'Crisis hipertensiva, no especificada' },
+  { code: 'E11.6', label: 'Diabetes mellitus tipo 2 con otras complicaciones especificadas' },
+  { code: 'N18.9', label: 'Enfermedad renal crónica, no especificada' },
+  { code: 'E03.9', label: 'Hipotiroidismo, no especificado' },
+  { code: 'E05.9', label: 'Tirotoxicosis, no especificada' },
+  { code: 'K40.9', label: 'Hernia inguinal unilateral, sin obstrucción ni gangrena' },
+  { code: 'R10.4', label: 'Otros dolores abdominales y los no especificados' },
 ]
 
 /** Vademécum reducido. `group` permite cruzar contra alergias del paciente. */
@@ -52,6 +64,19 @@ export const DRUGS = [
   { name: 'Sulfato ferroso', presentation: 'Tableta 200 mg', group: 'hierro' },
   { name: 'Ambroxol', presentation: 'Jarabe 30 mg/5 ml', group: 'mucolítico' },
   { name: 'Metamizol', presentation: 'Tableta 500 mg', group: 'pirazolona' },
+  // Uso hospitalario
+  { name: 'Acetaminofén', presentation: 'Frasco 1 g/100 ml', group: 'analgésico' },
+  { name: 'Ondansetrón', presentation: 'Ampolla 8 mg/4 ml', group: 'antiemético' },
+  { name: 'Metoclopramida', presentation: 'Ampolla 10 mg/2 ml', group: 'antiemético' },
+  { name: 'Tramadol', presentation: 'Ampolla 50 mg/ml', group: 'opioide' },
+  { name: 'Ketorolaco', presentation: 'Ampolla 30 mg/ml', group: 'aine' },
+  { name: 'Ceftriaxona', presentation: 'Vial 1 g', group: 'cefalosporina' },
+  { name: 'Cefazolina', presentation: 'Vial 1 g', group: 'cefalosporina' },
+  { name: 'Omeprazol IV', presentation: 'Vial 40 mg', group: 'ibp' },
+  { name: 'Enoxaparina', presentation: 'Jeringa 40 mg/0,4 ml', group: 'anticoagulante' },
+  { name: 'Solución salina 0,9 %', presentation: 'Bolsa 1000 ml', group: 'solución' },
+  { name: 'Lactato de Ringer', presentation: 'Bolsa 1000 ml', group: 'solución' },
+  { name: 'Insulina cristalina', presentation: 'Vial 100 UI/ml', group: 'insulina' },
 ]
 
 /** Relaciona el texto libre de alergias con grupos farmacológicos. */

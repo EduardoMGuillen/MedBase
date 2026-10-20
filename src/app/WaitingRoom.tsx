@@ -1,47 +1,81 @@
 import { useState } from 'react'
-import { Activity, LogIn } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Activity, BedDouble, LogIn, NotebookPen, Stethoscope, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Modal, PageHead, StatusBadge } from '../components/ui'
 import { age, fullName, sameDay, time } from '../lib/format'
-import type { Appointment } from '../lib/types'
+import type { Appointment, Patient } from '../lib/types'
+import { PatientPicker } from './Inpatients'
+import { IdentificationForm } from './PatientForms'
 
 const minutesSince = (iso?: string) => (iso ? Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)) : null)
 
+/**
+ * Consulta externa del día: los que tienen cita y los que van llegando sin cita. Enfermería les
+ * abre el perfil de consulta externa (triaje) y el médico los atiende.
+ */
 export default function WaitingRoom() {
-  const { appointments, patient, staffById, can, setStatus } = useStore()
+  const { appointments, patient, staffById, can, setStatus, user, inpatientOf } = useStore()
+  const nav = useNavigate()
   const [triage, setTriage] = useState<Appointment | null>(null)
-  const today = appointments.filter((a) => sameDay(a.start, new Date())).sort((a, b) => a.start.localeCompare(b.start))
+  const [walkIn, setWalkIn] = useState(false)
+  const [mine, setMine] = useState(user?.role === 'doctor')
+  const today = appointments
+    .filter((a) => sameDay(a.start, new Date()) && !['cancelled'].includes(a.status) && (!mine || a.doctorId === user?.id))
+    .sort((a, b) => a.start.localeCompare(b.start))
   const lanes = [
-    { title: 'Por llegar', hint: 'Registra la llegada cuando el paciente se presente.', list: today.filter((a) => ['scheduled', 'confirmed'].includes(a.status)) },
-    { title: 'En sala', hint: 'Esperan triaje de enfermería.', list: today.filter((a) => a.status === 'arrived') },
-    { title: 'Listos para consulta', hint: 'Con signos vitales; el médico los llamará.', list: today.filter((a) => ['triaged', 'in_consult'].includes(a.status)) },
+    { title: 'Por llegar', hint: 'Citas del día que aún no llegan.', list: today.filter((a) => ['scheduled', 'confirmed'].includes(a.status)) },
+    { title: 'En sala', hint: 'Esperan que enfermería les abra el perfil de consulta externa.', list: today.filter((a) => a.status === 'arrived') },
+    { title: 'Listos para consulta', hint: 'Con signos vitales y motivo; el médico los llamará.', list: today.filter((a) => ['triaged', 'in_consult'].includes(a.status)) },
+    { title: 'Atendidos', hint: 'Consultas firmadas hoy.', list: today.filter((a) => a.status === 'done') },
   ]
 
   return (
     <div className="page">
-      <PageHead title="Sala de espera" sub="El paciente avanza de izquierda a derecha durante su visita." />
-      <div className="grid-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+      <PageHead title="Consulta externa" sub="Pacientes de hoy: con cita y los que llegan sin cita. Avanzan de izquierda a derecha."
+        actions={<>
+          {user?.role === 'doctor' && (
+            <div className="segmented" role="radiogroup" aria-label="Qué pacientes ver">
+              <button role="radio" aria-checked={mine} onClick={() => setMine(true)}>Mis pacientes</button>
+              <button role="radio" aria-checked={!mine} onClick={() => setMine(false)}>Toda la clínica</button>
+            </div>
+          )}
+          {can('checkin.manage') && <button className="btn btn--primary" onClick={() => setWalkIn(true)}><UserPlus size={17} />Paciente sin cita</button>}
+        </>} />
+      <div className="grid-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))' }}>
         {lanes.map((lane) => (
           <section key={lane.title} className="panel">
             <div className="panel__head"><div><h2>{lane.title} <span className="num" style={{ color: 'var(--faint)' }}>{lane.list.length}</span></h2><p>{lane.hint}</p></div></div>
             {lane.list.length ? lane.list.map((a) => {
-              const p = patient(a.patientId)!
+              const p = patient(a.patientId)
+              if (!p) return null
               const wait = a.status === 'arrived' ? minutesSince(a.arrivedAt) : null
+              const own = a.doctorId === user?.id
+              const hosp = inpatientOf(p.id)
               return (
                 <div key={a.id} className="queue-card" style={{ gridTemplateColumns: '1fr auto' }}>
                   <div className="row__who">
-                    <strong>{time(a.start)} {fullName(p)}</strong>
+                    <strong>{time(a.start)} <Link to={`/app/pacientes/${p.id}`}>{fullName(p)}</Link></strong>
                     <span>{age(p.birthDate)}, con {staffById(a.doctorId)?.name}</span>
+                    <span>{a.reason}</span>
                     <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <StatusBadge status={a.status} />
+                      {a.source === 'walkin' && <span className="badge badge--neutral">Sin cita</span>}
                       {a.type === 'urgent' && <span className="badge badge--red">Urgente</span>}
+                      {hosp && <Link to={`/app/hospitalizados/${hosp.id}`} className="badge badge--ink"><BedDouble size={12} />Ingresado</Link>}
                       {wait !== null && <span className="wait">{wait} min esperando</span>}
                     </div>
                   </div>
-                  {['scheduled', 'confirmed'].includes(a.status) && can('checkin.manage') &&
-                    <button className="btn btn--soft btn--sm" onClick={() => setStatus(a.id, 'arrived', `Llegada de ${p.firstName} registrada`)}><LogIn size={15} />Registrar llegada</button>}
-                  {a.status === 'arrived' && can('vitals.record') &&
-                    <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Tomar signos</button>}
+                  <div style={{ display: 'grid', gap: 6, alignContent: 'start' }}>
+                    {['scheduled', 'confirmed'].includes(a.status) && can('checkin.manage') &&
+                      <button className="btn btn--soft btn--sm" onClick={() => setStatus(a.id, 'arrived', `Llegada de ${p.firstName} registrada`)}><LogIn size={15} />Llegó</button>}
+                    {a.status === 'arrived' && can('vitals.record') &&
+                      <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Perfil CE</button>}
+                    {['arrived', 'triaged', 'in_consult'].includes(a.status) && own && can('consult.write') &&
+                      <button className="btn btn--primary btn--sm" onClick={() => nav(`/app/consulta/${a.id}`)}><Stethoscope size={15} />{a.status === 'in_consult' ? 'Continuar' : 'Atender'}</button>}
+                    {a.status === 'done' && can('chart.view') &&
+                      <Link className="btn btn--ghost btn--sm" to={`/app/pacientes/${p.id}`}><NotebookPen size={15} />Expediente</Link>}
+                  </div>
                 </div>
               )
             }) : <div className="empty">Nadie en esta etapa.</div>}
@@ -49,7 +83,45 @@ export default function WaitingRoom() {
         ))}
       </div>
       {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}
+      {walkIn && <WalkInModal onClose={() => setWalkIn(false)} />}
     </div>
+  )
+}
+
+/** Paciente que llega de pie: se busca o se registra y entra a la sala de espera. */
+function WalkInModal({ onClose }: { onClose: () => void }) {
+  const { staff, walkIn, addPatient, can, user } = useStore()
+  const doctors = staff.filter((s) => s.role === 'doctor' && s.active)
+  const [patientId, setPatientId] = useState('')
+  const [doctorId, setDoctorId] = useState(user?.role === 'doctor' ? user.id : doctors[0]?.id ?? '')
+  const [reason, setReason] = useState('')
+  const [registering, setRegistering] = useState(false)
+  const [busy, setBusy] = useState(false)
+  if (registering) {
+    return <IdentificationForm title="Registrar paciente nuevo" submitLabel="Registrar y continuar" withAllergies onClose={() => setRegistering(false)} onSave={async (p) => {
+      const r = await addPatient(p as Omit<Patient, 'id' | 'record' | 'createdAt'>)
+      if (r) { setPatientId(r.id); setRegistering(false) }
+    }} />
+  }
+  return (
+    <Modal title="Paciente sin cita" onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={!patientId || !doctorId || !reason.trim() || busy} onClick={async () => {
+        setBusy(true)
+        const ok = await walkIn({ patientId, doctorId, reason: reason.trim() })
+        setBusy(false)
+        if (ok) onClose()
+      }}>Pasar a sala de espera</button>
+    </>}>
+      <PatientPicker value={patientId} onChange={setPatientId} />
+      {can('patients.manage') && <button className="linklike" style={{ justifySelf: 'start' }} onClick={() => setRegistering(true)}>¿No está registrado? Registrar paciente nuevo</button>}
+      <label className="field"><span>Médico</span>
+        <select className="select" value={doctorId} onChange={(e) => setDoctorId(e.target.value)}>
+          {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? `, ${d.specialty.toLowerCase()}` : ''}</option>)}
+        </select></label>
+      <label className="field"><span>Motivo de consulta</span>
+        <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Fiebre y dolor de garganta" /></label>
+    </Modal>
   )
 }
 

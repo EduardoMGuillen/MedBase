@@ -23,6 +23,9 @@ import Settings from './app/Settings'
 import StaffPage from './app/Staff'
 import Account from './app/Account'
 import Platform, { ClinicDetail } from './app/Platform'
+import Inpatients from './app/Inpatients'
+import InpatientFile from './app/InpatientFile'
+import Followups from './app/Followups'
 
 function Guard({ perm, children }: { perm?: Permission; children: ReactNode }) {
   const { user, can, checking } = useStore()
@@ -44,7 +47,11 @@ export default function App() {
           <Route path="/app" element={<Guard><AppShell /></Guard>}>
             <Route index element={<Dashboard />} />
             <Route path="agenda" element={<Guard perm="agenda.view"><Agenda /></Guard>} />
-            <Route path="sala" element={<Guard perm="checkin.manage"><WaitingRoom /></Guard>} />
+            <Route path="consulta-externa" element={<Guard perm="agenda.view"><WaitingRoom /></Guard>} />
+            <Route path="sala" element={<Navigate to="/app/consulta-externa" replace />} />
+            <Route path="hospitalizados" element={<Guard perm="inpatient.view"><Inpatients /></Guard>} />
+            <Route path="hospitalizados/:id" element={<Guard perm="inpatient.view"><InpatientFile /></Guard>} />
+            <Route path="seguimientos" element={<Guard perm="followups.view"><Followups /></Guard>} />
             <Route path="pacientes" element={<Guard perm="patients.view"><Patients /></Guard>} />
             <Route path="pacientes/:id" element={<Guard perm="patients.view"><PatientChart /></Guard>} />
             <Route path="consulta/:apptId" element={<Guard perm="consult.write"><Consultation /></Guard>} />

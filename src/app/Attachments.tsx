@@ -9,7 +9,8 @@ const CATEGORY: Record<Attachment['category'], string> = { lab: 'Laboratorio', i
 const MAX = 3 * 1024 * 1024
 const TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp']
 
-const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+// eslint-disable-next-line react-refresh/only-export-components
+export const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
   const r = new FileReader()
   r.onload = () => resolve(String(r.result).split(',')[1] ?? '')
   r.onerror = () => reject(new Error('No se pudo leer el archivo.'))

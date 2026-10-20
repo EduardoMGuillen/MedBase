@@ -1,29 +1,32 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  Armchair, BarChart3, Building2, CalendarDays, FileText, House, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, UserCog, Users,
+  BarChart3, BedDouble, BellRing, Building2, CalendarDays, FileText, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, Stethoscope, UserCog,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
 import { SearchPalette } from '../components/Search'
 import { useStore } from '../lib/store'
 import { ROLE_LABEL, type Permission } from '../lib/permissions'
-import { cap, sameDay } from '../lib/format'
+import { cap, localISODate, sameDay } from '../lib/format'
 
 const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean; group?: string }[] = [
   { to: '/app', label: 'Inicio', icon: House, end: true, perm: undefined },
   { to: '/app/agenda', label: 'Agenda', icon: CalendarDays, perm: 'agenda.view' },
-  { to: '/app/sala', label: 'Sala de espera', icon: Armchair, perm: 'checkin.manage' },
-  { to: '/app/pacientes', label: 'Pacientes', icon: Users, perm: 'patients.view' },
   { to: '/app/recetas', label: 'Recetas', icon: FileText, perm: 'rx.view' },
   { to: '/app/caja', label: 'Caja', icon: Receipt, perm: 'billing.manage' },
+  // Pacientes se divide en las tres áreas que pidió el médico, más los crónicos
+  { to: '/app/consulta-externa', label: 'Consulta externa', icon: Stethoscope, perm: 'agenda.view', group: 'Pacientes' },
+  { to: '/app/hospitalizados', label: 'Hospitalizados', icon: BedDouble, perm: 'inpatient.view', group: 'Pacientes' },
+  { to: '/app/pacientes', label: 'Biblioteca de pacientes', icon: LibraryBig, perm: 'patients.view', group: 'Pacientes' },
+  { to: '/app/seguimientos', label: 'Crónicos y seguimientos', icon: BellRing, perm: 'followups.view', group: 'Pacientes' },
   { to: '/app/reportes', label: 'Reportes', icon: BarChart3, perm: 'reports.view', group: 'Administración' },
   { to: '/app/personal', label: 'Personal y roles', icon: UserCog, perm: 'staff.manage', group: 'Administración' },
   { to: '/app/configuracion', label: 'Configuración', icon: SettingsIcon, perm: 'settings.manage', group: 'Administración' },
 ]
 
 export default function AppShell() {
-  const { user, can, signOut, appointments, refresh, settings } = useStore()
+  const { user, can, signOut, appointments, followups, refresh, settings } = useStore()
   const nav = useNavigate()
   const loc = useLocation()
   const [open, setOpen] = useState(false)
@@ -40,6 +43,7 @@ export default function AppShell() {
   const today = new Date()
   const waiting = appointments.filter((a) => sameDay(a.start, today) && a.status === 'arrived').length
   const toCharge = appointments.filter((a) => a.status === 'done' && a.paid === false && sameDay(a.start, today)).length
+  const due = followups.filter((f) => f.dueDate <= localISODate(today) && !f.notifiedAt).length
   const platform = user.role === 'superadmin'
   const items = platform
     ? [{ to: '/app', label: 'Clínicas', icon: Building2, end: true }]
@@ -61,7 +65,8 @@ export default function AppShell() {
               <NavLink to={n.to} end={n.end} className="side__link">
                 <n.icon size={18} strokeWidth={1.9} />
                 {n.label}
-                {n.to === '/app/sala' && waiting > 0 && <span className="count" aria-label={`${waiting} en sala`}>{waiting}</span>}
+                {n.to === '/app/consulta-externa' && waiting > 0 && <span className="count" aria-label={`${waiting} en sala`}>{waiting}</span>}
+                {n.to === '/app/seguimientos' && due > 0 && <span className="count" aria-label={`${due} seguimientos vencidos o de hoy`}>{due}</span>}
                 {n.to === '/app/caja' && toCharge > 0 && <span className="count" aria-label={`${toCharge} por cobrar hoy`}>{toCharge}</span>}
               </NavLink>
             </div>

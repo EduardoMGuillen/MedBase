@@ -168,8 +168,11 @@ describe('pacientes y personal', () => {
     const old = createSql({ memory: true })
     try {
       await ensureDb(old)
-      // Estado de una base v5: una sola clínica implícita, sin clinic_id
+      // Estado de una base v5: una sola clínica implícita, sin clinic_id ni hospitalización
       await old.exec(`
+        TRUNCATE hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups;
+        DELETE FROM attachments WHERE patient_id IN ('p11', 'p12', 'p13', 'p14');
+        DELETE FROM patients WHERE id IN ('p11', 'p12', 'p13', 'p14');
         TRUNCATE audit;
         INSERT INTO audit (at, user_id, action) VALUES ('2026-01-01T00:00:00Z', 's-mejia', 'Inició sesión');
         UPDATE staff SET clinic_id = NULL;
@@ -182,6 +185,10 @@ describe('pacientes y personal', () => {
       const row = await old.one<{ clinic_id: string | null }>('SELECT clinic_id FROM audit')
       assert.ok(row?.clinic_id)
       await assert.rejects(old.run(`UPDATE audit SET action = 'x'`), /append-only/)
+      // La demo recibe las camas y los hospitalizados de la v7 sin reiniciar sus datos
+      const beds = await old.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM beds')
+      assert.equal(Number(beds?.n), 15)
+      assert.ok(await old.one(`SELECT 1 FROM hospitalizations WHERE status = 'active'`))
     } finally {
       await old.close()
     }
