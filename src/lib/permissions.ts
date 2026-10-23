@@ -39,7 +39,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'staff.manage', 'settings.manage', 'reports.view', 'audit.view',
   ],
   doctor: [
-    'agenda.view', 'agenda.manage', 'patients.view', 'chart.view', 'vitals.record',
+    'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',
     'consult.write', 'rx.write', 'rx.view', 'billing.manage', 'inpatient.view', 'inpatient.orders', 'followups.view', 'followups.manage',
   ],
   nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage', 'inpatient.view', 'inpatient.care', 'followups.view'],
@@ -57,7 +57,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 export const ROLE_SUMMARY: Record<Role, string> = {
   superadmin: 'Crea y administra clínicas y sus usuarios. No ve expedientes de pacientes.',
   admin: 'Configura la clínica, el personal y los precios, y revisa indicadores. Sin acceso a notas clínicas.',
-  doctor: 'Atiende su agenda, escribe consultas, diagnostica, emite recetas, cobra cuando hace falta e ingresa y evoluciona a pacientes hospitalizados.',
+  doctor: 'Atiende su agenda, registra pacientes nuevos, escribe consultas, diagnostica, emite recetas, cobra cuando hace falta e ingresa y evoluciona a pacientes hospitalizados.',
   nurse: 'Recibe al paciente, lo registra si llega sin expediente, toma la preclínica y, en hospitalización, administra medicamentos y escribe notas de enfermería. También puede cobrar.',
   reception: 'Agenda citas, registra pacientes, controla la sala de espera y cobra.',
 }
