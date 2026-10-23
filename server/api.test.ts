@@ -235,7 +235,7 @@ describe('reserva en línea', () => {
 })
 
 describe('caja', () => {
-  test('recepción cobra una consulta atendida una sola vez; el médico no puede cobrar', async () => {
+  test('recepción cobra una consulta atendida una sola vez; el médico también cobra, sin repetir el cobro', async () => {
     const rec = await as('smejia@demo.clinara')
     const boot = await rec.get('/api/bootstrap')
     const pending = boot.body.appointments.find((a: any) => a.id === 'a2')
@@ -249,7 +249,7 @@ describe('caja', () => {
     const card = await rec.post('/api/payments', { ...body, appointmentId: undefined, method: 'card' })
     assert.equal(card.status, 400)
     const doc = await as('lherrera@demo.clinara')
-    assert.equal((await doc.post('/api/payments', body)).status, 403)
+    assert.equal((await doc.post('/api/payments', body)).status, 409)
     assert.equal((await rec.post(`/api/payments/${pay.body.id}/void`, { reason: 'Cobro duplicado' })).status, 403)
     const admin = await as('admin@demo.clinara')
     assert.equal((await admin.post(`/api/payments/${pay.body.id}/void`, { reason: 'Cobro de prueba' })).body.voided, true)

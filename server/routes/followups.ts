@@ -15,6 +15,30 @@ export const followupInput = z.object({
   notes: z.string().trim().max(500).optional(),
 }).refine((f) => f.kind !== 'chronic' || f.everyDays, 'Indica cada cuánto se repite el control del paciente crónico.')
 
+/**
+ * Registra los avisos que ya tocaban: una semana antes, un día antes y el día del control.
+ * El día del control recepción ve al paciente en su inicio para llamarlo.
+ */
+export async function sweepFollowupReminders(sql: Sql, clinicId: string) {
+  const today = localDate(new Date())
+  const horizon = addDays(today, 7)
+  const eve = addDays(today, 1)
+  const now = new Date().toISOString()
+  const rows = await sql.query(
+    `SELECT id, due_date, reminded_week, reminded_eve, reminded_day FROM followups
+     WHERE clinic_id = ? AND active AND due_date <= ? AND (reminded_week IS NULL OR reminded_eve IS NULL OR reminded_day IS NULL)`,
+    [clinicId, horizon])
+  for (const f of rows) {
+    const due = String(f.due_date)
+    const sets: string[] = []
+    const vals: string[] = []
+    if (!f.reminded_week) { sets.push('reminded_week = ?'); vals.push(now) }
+    if (!f.reminded_eve && due <= eve) { sets.push('reminded_eve = ?'); vals.push(now) }
+    if (!f.reminded_day && due <= today) { sets.push('reminded_day = ?'); vals.push(now) }
+    if (sets.length) await sql.run(`UPDATE followups SET ${sets.join(', ')} WHERE id = ?`, [...vals, String(f.id)])
+  }
+}
+
 export async function insertFollowup(q: Sql, clinicId: string, userId: string, f: z.infer<typeof followupInput> & { patientId: string }) {
   const id = randomUUID()
   await q.run(`INSERT INTO followups (id, clinic_id, patient_id, kind, title, due_date, every_days, notes, created_by, created_at, active) VALUES (?,?,?,?,?,?,?,?,?,?,TRUE)`,
@@ -55,7 +79,7 @@ export function registerFollowups(app: Express, { sql, auth, need, userOf, clini
     if (f!.kind === 'chronic') {
       const today = localDate(new Date())
       const next = addDays(today, Number(f!.every_days))
-      await sql.run('UPDATE followups SET due_date = ?, notified_at = NULL WHERE id = ?', [next, String(f!.id)])
+      await sql.run('UPDATE followups SET due_date = ?, notified_at = NULL, reminded_week = NULL, reminded_eve = NULL, reminded_day = NULL WHERE id = ?', [next, String(f!.id)])
       await audit(userOf(req), `Registró el control de "${f!.title}" de ${await patientName(String(f!.patient_id))}; el siguiente es el ${next}`)
     } else {
       await sql.run('UPDATE followups SET done_at = ?, active = FALSE WHERE id = ?', [new Date().toISOString(), String(f!.id)])

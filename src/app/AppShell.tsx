@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, BedDouble, BellRing, Building2, CalendarDays, FileText, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, Stethoscope, UserCog,
+  BarChart3, BedDouble, BellRing, Building2, CalendarDays, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, Stethoscope, UserCog,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
@@ -13,7 +13,6 @@ import { cap, localISODate, sameDay } from '../lib/format'
 const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean; group?: string }[] = [
   { to: '/app', label: 'Inicio', icon: House, end: true, perm: undefined },
   { to: '/app/agenda', label: 'Agenda', icon: CalendarDays, perm: 'agenda.view' },
-  { to: '/app/recetas', label: 'Recetas', icon: FileText, perm: 'rx.view' },
   { to: '/app/caja', label: 'Caja', icon: Receipt, perm: 'billing.manage' },
   // Pacientes se divide en las tres áreas que pidió el médico, más los crónicos
   { to: '/app/consulta-externa', label: 'Consulta externa', icon: Stethoscope, perm: 'agenda.view', group: 'Pacientes' },
@@ -47,7 +46,13 @@ export default function AppShell() {
   const platform = user.role === 'superadmin'
   const items = platform
     ? [{ to: '/app', label: 'Clínicas', icon: Building2, end: true }]
-    : NAV.filter((n) => !n.perm || can(n.perm))
+    : NAV.filter((n) => {
+      if (n.perm && !can(n.perm)) return false
+      // Enfermería entra al paciente: no usa la agenda. Médico y enfermería cobran, pero desde un acceso más discreto.
+      if (user.role === 'nurse' && n.to === '/app/agenda') return false
+      if ((user.role === 'doctor' || user.role === 'nurse') && n.to === '/app/caja') return false
+      return true
+    })
   const label = today.toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
@@ -71,6 +76,9 @@ export default function AppShell() {
               </NavLink>
             </div>
           ))}
+          {(user.role === 'doctor' || user.role === 'nurse') && can('billing.manage') && (
+            <NavLink to="/app/caja" className="side__link side__link--quiet"><Receipt size={16} strokeWidth={1.9} />Cobrar</NavLink>
+          )}
         </nav>
         <div className="side__user">
           <Link to="/app/cuenta" className="side__me" title="Mi cuenta">

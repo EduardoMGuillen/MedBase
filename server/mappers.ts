@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
 
 type Row = Record<string, unknown>
 const s = (v: unknown) => (v == null ? undefined : String(v))
+const n = (v: unknown) => (v == null || v === '' ? undefined : Number(v))
 const j = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(String(v)) as T : fallback } catch { return fallback } }
 
 export const toStaff = (r: Row): Staff => ({
@@ -37,8 +38,8 @@ export const toAppointment = (r: Row): Appointment => ({
 
 export const toVitals = (r: Row): Vitals => ({
   id: String(r.id), patientId: String(r.patient_id), appointmentId: s(r.appointment_id), takenBy: String(r.taken_by),
-  takenAt: String(r.taken_at), systolic: Number(r.systolic), diastolic: Number(r.diastolic), heartRate: Number(r.heart_rate),
-  temperature: Number(r.temperature), spo2: Number(r.spo2), weightKg: Number(r.weight_kg), heightCm: Number(r.height_cm),
+  takenAt: String(r.taken_at), systolic: n(r.systolic), diastolic: n(r.diastolic), heartRate: n(r.heart_rate),
+  temperature: n(r.temperature), spo2: n(r.spo2), weightKg: n(r.weight_kg), heightCm: n(r.height_cm),
   painScale: r.pain_scale == null ? undefined : Number(r.pain_scale), notes: s(r.notes),
   respRate: r.resp_rate == null ? undefined : Number(r.resp_rate), glucose: r.glucose == null ? undefined : Number(r.glucose),
   chiefComplaint: s(r.chief_complaint),
@@ -86,6 +87,7 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
   id: String(r.id), hospitalizationId: String(r.hospitalization_id), kind: r.kind as InpatientNote['kind'], authorId: String(r.author_id), at: String(r.at),
   subjective: String(r.subjective ?? ''), objective: String(r.objective ?? ''), assessment: String(r.assessment ?? ''), plan: String(r.plan ?? ''), text: String(r.text ?? ''),
   discharge: r.kind === 'discharge' ? j(r.data, undefined) : undefined,
+  orders: r.kind === 'admission' || r.kind === 'evolution' ? j<{ orders?: string[] }>(r.data, {}).orders ?? [] : undefined,
 })
 
 export const toInpatientMed = (r: Row): InpatientMed => ({
@@ -109,6 +111,7 @@ export const toFollowup = (r: Row): Followup => ({
   id: String(r.id), patientId: String(r.patient_id), kind: r.kind as Followup['kind'], title: String(r.title), dueDate: String(r.due_date),
   everyDays: r.every_days == null ? undefined : Number(r.every_days), notes: s(r.notes), createdBy: String(r.created_by), createdAt: String(r.created_at),
   notifiedAt: s(r.notified_at), doneAt: s(r.done_at), active: Boolean(r.active),
+  remindedWeek: s(r.reminded_week), remindedEve: s(r.reminded_eve), remindedDay: s(r.reminded_day),
 })
 
 /** Configuración que ve la clínica (encabezado de recetas, recibos y recordatorios). */

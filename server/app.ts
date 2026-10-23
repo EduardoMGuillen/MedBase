@@ -21,7 +21,7 @@ import { registerReports } from './routes/reports.js'
 import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
 import { registerInpatient } from './routes/inpatient.js'
-import { followupInput, insertFollowup, registerFollowups } from './routes/followups.js'
+import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { can, ROLE_PERMISSIONS, type Permission } from '../src/lib/permissions.js'
 import { yearsOld } from '../src/lib/inpatient.js'
 import type { ApptStatus, Staff } from '../src/lib/types.js'
@@ -245,7 +245,7 @@ export function createApp(opts: AppOptions) {
     const user = userOf(req)
     // La administración de la plataforma no carga datos de ninguna clínica
     if (!user.clinicId) {
-      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], beds: [], inpatients: [], followups: [],
+      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], beds: [], inpatients: [], followups: [], discharges: [],
         settings: { ...clinicSettings({ name: 'Clinara' }) } })
     }
     const cid = user.clinicId
@@ -253,7 +253,8 @@ export function createApp(opts: AppOptions) {
     const billing = can(user.role, 'billing.manage')
     const since = new Date(); since.setDate(since.getDate() - 90)
     const none = Promise.resolve([] as Row[])
-    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups] = await Promise.all([
+    if (can(user.role, 'followups.view')) await sweepFollowupReminders(sql, cid)
+    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges] = await Promise.all([
       sql.query('SELECT * FROM staff WHERE clinic_id = ? ORDER BY name', [cid]),
       sql.query('SELECT * FROM patients WHERE clinic_id = ? ORDER BY last_name', [cid]),
       // Ventana de agenda: 90 días atrás y todo lo futuro
@@ -267,6 +268,8 @@ export function createApp(opts: AppOptions) {
       can(user.role, 'inpatient.view') || can(user.role, 'settings.manage') ? sql.query('SELECT * FROM beds WHERE clinic_id = ? ORDER BY specialty, room, label', [cid]) : none,
       can(user.role, 'inpatient.view') ? sql.query(`SELECT * FROM hospitalizations WHERE clinic_id = ? AND status = 'active' ORDER BY admitted_at`, [cid]) : none,
       can(user.role, 'followups.view') ? sql.query('SELECT * FROM followups WHERE clinic_id = ? AND active ORDER BY due_date', [cid]) : none,
+      sql.query(`SELECT DISTINCT ON (patient_id) patient_id, discharged_at FROM hospitalizations
+        WHERE clinic_id = ? AND status = 'discharged' AND discharged_at IS NOT NULL ORDER BY patient_id, discharged_at DESC`, [cid]),
     ])
     res.json({
       staff: staff.map(toStaff),
@@ -280,6 +283,7 @@ export function createApp(opts: AppOptions) {
       beds: beds.map(toBed),
       inpatients: inpatients.map(toHospitalization),
       followups: followups.map(toFollowup),
+      discharges: discharges.map((r) => ({ patientId: String(r.patient_id), at: String(r.discharged_at) })),
     })
   })
 
@@ -468,12 +472,12 @@ export function createApp(opts: AppOptions) {
   // ---------- Triaje ----------
   app.post('/api/vitals', auth, need('vitals.record'), async (req, res) => {
     const user = userOf(req)
-    const n = (min: number, max: number, label: string) => z.number({ error: `Escribe ${label}.` }).min(min, `Revisa ${label}.`).max(max, `Revisa ${label}.`)
+    const n = (min: number, max: number, label: string) => z.number({ error: `Revisa ${label}.` }).min(min, `Revisa ${label}.`).max(max, `Revisa ${label}.`).optional()
     const v = parse(z.object({
       patientId: z.string(), appointmentId: z.string().optional(),
       systolic: n(50, 260, 'la presión sistólica'), diastolic: n(30, 160, 'la presión diastólica'),
       heartRate: n(25, 250, 'la frecuencia cardíaca'), temperature: n(32, 43, 'la temperatura'), spo2: n(50, 100, 'la saturación'),
-      weightKg: z.number().min(0).max(400).default(0), heightCm: z.number().min(0).max(250).default(0),
+      weightKg: z.number().min(0.1, 'Revisa el peso.').max(400, 'Revisa el peso.').optional(), heightCm: z.number().min(20, 'Revisa la talla.').max(250, 'Revisa la talla.').optional(),
       painScale: z.number().int().min(0).max(10).optional(), notes: z.string().max(2000).optional(),
       respRate: z.number().int().min(4, 'Revisa la frecuencia respiratoria.').max(80, 'Revisa la frecuencia respiratoria.').optional(),
       glucose: z.number().int().min(10, 'Revisa la glucometría.').max(900, 'Revisa la glucometría.').optional(),
@@ -490,8 +494,8 @@ export function createApp(opts: AppOptions) {
     await sql.tx(async (q) => {
       await q.run(`INSERT INTO vitals (id,patient_id,appointment_id,taken_by,taken_at,systolic,diastolic,heart_rate,temperature,spo2,weight_kg,height_cm,pain_scale,notes,resp_rate,glucose,chief_complaint,clinic_id)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [id, v.patientId, v.appointmentId ?? null, user.id, new Date().toISOString(), v.systolic, v.diastolic, v.heartRate, v.temperature, v.spo2,
-          v.weightKg, v.heightCm, v.painScale ?? null, v.notes || null, v.respRate ?? null, v.glucose ?? null, v.chiefComplaint || null, cid])
+        [id, v.patientId, v.appointmentId ?? null, user.id, new Date().toISOString(), v.systolic ?? null, v.diastolic ?? null, v.heartRate ?? null, v.temperature ?? null, v.spo2 ?? null,
+          v.weightKg ?? null, v.heightCm ?? null, v.painScale ?? null, v.notes || null, v.respRate ?? null, v.glucose ?? null, v.chiefComplaint || null, cid])
       if (v.appointmentId) await q.run(`UPDATE appointments SET status = 'triaged' WHERE id = ? AND status = 'arrived'`, [v.appointmentId])
       await audit(user, `Registró signos vitales de ${name}`, q)
     })

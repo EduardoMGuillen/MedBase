@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Globe, Receipt, Stethoscope } from 'lucide-react'
+import { Activity, Globe, Phone, Receipt, Stethoscope } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { PageHead, StatusBadge } from '../components/ui'
 import { ReminderButton } from '../components/Reminder'
@@ -8,6 +8,37 @@ import { HBars } from '../components/Charts'
 import { date, fullName, localISODate, money, sameDay, time } from '../lib/format'
 import type { Appointment } from '../lib/types'
 import Platform from './Platform'
+import { VitalsModal } from './WaitingRoom'
+
+/** Recepción llama el día del control. Los avisos de la semana y de la víspera ya salieron solos. */
+function FollowupCalls() {
+  const { followups, patient } = useStore()
+  const today = localISODate(new Date())
+  const due = followups.filter((f) => f.dueDate <= today).sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  return (
+    <section className="panel">
+      <div className="panel__head">
+        <div><h2>Llamar hoy: crónicos y seguimientos</h2>
+          <p>{due.length ? 'Conviene llamar a estos pacientes para confirmar que vienen a su control.' : 'Hoy no hay controles que avisar. Los mensajes salen solos una semana antes, un día antes y el mismo día.'}</p></div>
+        <Link className="btn btn--ghost btn--sm" to="/app/seguimientos">Ver seguimientos</Link>
+      </div>
+      {due.length ? <div className="rows">{due.map((f) => {
+        const p = patient(f.patientId)
+        if (!p) return null
+        const late = f.dueDate < today
+        return (
+          <div key={f.id} className="row" style={{ gridTemplateColumns: '1fr auto' }}>
+            <div className="row__who">
+              <strong>{fullName(p)}</strong>
+              <span>{f.title} · {p.phone} · {late ? `venció el ${date(`${f.dueDate}T12:00:00`)}` : 'hoy'}</span>
+            </div>
+            <a className="btn btn--soft btn--sm" href={`tel:${p.phone.replace(/\s/g, '')}`}><Phone size={14} />Llamar</a>
+          </div>
+        )
+      })}</div> : <div className="empty">Nadie pendiente de llamada.</div>}
+    </section>
+  )
+}
 
 function greeting() {
   const h = new Date().getHours()
@@ -49,6 +80,7 @@ export function ApptRows({ list, showDoctor = false, action, empty = 'No hay cit
 export default function Dashboard() {
   const { user, appointments, patients, staff, audit, staffById, settings, can, fetchPayments } = useStore()
   const [todayRevenue, setTodayRevenue] = useState<number | null>(null)
+  const [triage, setTriage] = useState<Appointment | null>(null)
   useEffect(() => {
     if (!can('billing.manage')) return
     const k = localISODate(new Date())
@@ -64,60 +96,66 @@ export default function Dashboard() {
   const first = user.name.split(' ').slice(0, 2).join(' ')
 
   if (user.role === 'doctor') {
-    const mine = today.filter((a) => a.doctorId === user.id)
+    const mine = today.filter((a) => a.doctorId === user.id && a.status !== 'cancelled')
+    const waiting = mine.filter((a) => a.status === 'arrived')
     const ready = mine.filter((a) => a.status === 'triaged')
-    const next = mine.find((a) => ['scheduled', 'confirmed', 'arrived', 'triaged'].includes(a.status))
+    const done = mine.filter((a) => a.status === 'done')
+    const next = mine.find((a) => ['scheduled', 'confirmed', 'arrived', 'triaged', 'in_consult'].includes(a.status))
+    const nextPatient = next && patients.find((x) => x.id === next.patientId)
     return (
       <div className="page">
-        <PageHead title={`${greeting()}, ${first}`} sub={next ? `Tu próxima cita es a las ${time(next.start)}.` : 'No tienes más citas pendientes hoy.'} />
+        <PageHead title={`${greeting()}, ${first}`} sub={next ? `Tu próxima cita es a las ${time(next.start)}.` : 'No tienes más citas pendientes hoy.'}
+          actions={<Link className="btn btn--primary" to="/app/consulta-externa">Ir a consulta externa</Link>} />
         <div className="stats">
-          <div className="stat"><b>{mine.filter((a) => a.status !== 'cancelled').length}</b><span>Citas hoy</span></div>
-          <div className="stat"><b>{mine.filter((a) => a.status === 'done').length}</b><span>Atendidas</span></div>
-          <div className="stat"><b>{ready.length}</b><span>Listas para consulta</span>{ready.length > 0 && <small>Con signos vitales tomados</small>}</div>
-          <div className="stat"><b>{mine.filter((a) => a.status === 'arrived').length}</b><span>En sala de espera</span></div>
+          <Link className="stat" to="/app/consulta-externa"><b>{mine.length}</b><span>Citas hoy</span></Link>
+          <Link className="stat" to="/app/consulta-externa"><b>{waiting.length}</b><span>En sala de espera</span></Link>
+          <Link className="stat" to="/app/consulta-externa"><b>{ready.length}</b><span>Listos para consulta</span>{ready.length > 0 && <small>Con preclínica hecha</small>}</Link>
+          <Link className="stat" to="/app/consulta-externa"><b>{done.length}</b><span>Atendidos</span></Link>
         </div>
-        <div className="grid-2">
+        {next && nextPatient && (
           <section className="panel">
-            <div className="panel__head"><h2>Tu agenda de hoy</h2><Link className="btn btn--ghost btn--sm" to="/app/agenda">Ver agenda</Link></div>
-            <ApptRows list={mine.filter((a) => a.status !== 'cancelled')} empty="No tienes citas hoy." action={(a) => ['triaged', 'arrived', 'in_consult'].includes(a.status) && (
-              <Link className="btn btn--primary btn--sm" to={`/app/consulta/${a.id}`}><Stethoscope size={15} />{a.status === 'in_consult' ? 'Continuar' : 'Atender'}</Link>
-            )} />
+            <div className="panel__head">
+              <div><h2>Siguiente paciente</h2><p>{time(next.start)} · {next.reason}</p></div>
+              {['triaged', 'arrived', 'in_consult'].includes(next.status)
+                ? <Link className="btn btn--primary" to={`/app/consulta/${next.id}`}><Stethoscope size={16} />{next.status === 'in_consult' ? 'Continuar' : 'Atender'}</Link>
+                : <Link className="btn btn--ghost" to="/app/agenda">Ver en la agenda</Link>}
+            </div>
+            <div className="panel__body"><strong>{fullName(nextPatient)}</strong><p className="muted" style={{ marginTop: 4 }}>{nextPatient.record}</p></div>
           </section>
-          <section className="panel">
-            <div className="panel__head"><h2>Listos para consulta</h2></div>
-            {ready.length ? ready.map((a) => {
-              const p = patients.find((x) => x.id === a.patientId)!
-              return (
-                <div key={a.id} className="queue-card" style={{ gridTemplateColumns: '1fr auto' }}>
-                  <div className="row__who"><strong>{fullName(p)}</strong><span>{a.reason}</span>
-                    {p.allergies.length > 0 && <div className="chips" style={{ marginTop: 6 }}>{p.allergies.map((x) => <span key={x} className="chip chip--red">Alergia: {x}</span>)}</div>}
-                  </div>
-                  <Link className="btn btn--soft btn--sm" to={`/app/consulta/${a.id}`}>Atender</Link>
-                </div>
-              )
-            }) : <div className="empty">Cuando enfermería termine el triaje, el paciente aparecerá aquí.</div>}
-          </section>
-        </div>
+        )}
       </div>
     )
   }
 
   if (user.role === 'nurse') {
-    const arrived = today.filter((a) => a.status === 'arrived')
+    const active = today.filter((a) => a.status !== 'cancelled')
+    const inRoom = active.filter((a) => ['arrived', 'triaged', 'in_consult'].includes(a.status))
+    const triageQueue = active.filter((a) => a.status === 'arrived')
+    const done = active.filter((a) => a.status === 'done')
     return (
       <div className="page">
-        <PageHead title={`${greeting()}, ${first}`} sub={arrived.length ? `${arrived.length} pacientes esperan triaje.` : 'Nadie espera triaje en este momento.'}
-          actions={<Link className="btn btn--primary" to="/app/sala">Abrir sala de espera</Link>} />
+        <PageHead title={`${greeting()}, ${first}`} sub={triageQueue.length ? `${triageQueue.length} pacientes esperan preclínica.` : 'Nadie espera preclínica en este momento.'}
+          actions={<Link className="btn btn--primary" to="/app/consulta-externa">Abrir consulta externa</Link>} />
         <div className="stats">
-          <div className="stat"><b>{today.filter((a) => a.status !== 'cancelled').length}</b><span>Citas hoy</span></div>
-          <div className="stat"><b>{today.filter((a) => ['scheduled', 'confirmed'].includes(a.status)).length}</b><span>Por llegar</span></div>
-          <div className="stat"><b>{arrived.length}</b><span>Esperan triaje</span></div>
-          <div className="stat"><b>{today.filter((a) => a.status === 'done').length}</b><span>Atendidas</span></div>
+          <Link className="stat" to="/app/consulta-externa"><b>{active.length}</b><span>Citas hoy</span></Link>
+          <Link className="stat" to="/app/consulta-externa"><b>{inRoom.length}</b><span>En sala de espera</span></Link>
+          <Link className="stat" to="/app/consulta-externa"><b>{triageQueue.length}</b><span>Espera de triaje</span></Link>
+          <Link className="stat" to="/app/consulta-externa"><b>{done.length}</b><span>Atendidas</span></Link>
         </div>
         <section className="panel">
-          <div className="panel__head"><h2>Agenda de la clínica hoy</h2></div>
-          <ApptRows list={today.filter((a) => a.status !== 'cancelled')} showDoctor />
+          <div className="panel__head"><h2>Espera de triaje</h2><p>Abre la preclínica de quien ya llegó.</p></div>
+          {triageQueue.length ? triageQueue.map((a) => {
+            const p = patients.find((x) => x.id === a.patientId)
+            if (!p) return null
+            return (
+              <div key={a.id} className="queue-card" style={{ gridTemplateColumns: '1fr auto' }}>
+                <div className="row__who"><strong>{time(a.start)} {fullName(p)}</strong><span>{a.reason}</span></div>
+                <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Preclínica</button>
+              </div>
+            )
+          }) : <div className="empty">Cuando un paciente llegue a sala, aparecerá aquí.</div>}
         </section>
+        {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}
       </div>
     )
   }
@@ -138,6 +176,7 @@ export default function Dashboard() {
           <div className="stat"><b>{toCharge.length}</b><span>Por cobrar</span>{toCharge.length > 0 && <small><Link to="/app/caja">Ir a caja</Link></small>}</div>
           <div className="stat"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></div>
         </div>
+        <FollowupCalls />
         <div className="grid-2">
           <section className="panel">
             <div className="panel__head"><h2>Agenda de la clínica hoy</h2></div>

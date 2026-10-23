@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BedDouble, FileBadge, FileText, Lock, NotebookPen, Pencil } from 'lucide-react'
+import { MedAlertBanner } from './MedAlerts'
+import type { InpatientFile } from '../lib/types'
 import { FOLLOWUP_KIND } from '../lib/followups'
 import { bedLabel } from './Inpatients'
 import { useStore, type Chart } from '../lib/store'
@@ -13,21 +15,32 @@ import type { Consultation, Patient, Vitals } from '../lib/types'
 
 export function VitalsGrid({ v }: { v: Vitals }) {
   const warn = (x: boolean) => (x ? 'vital vital--warn' : 'vital')
-  return (
-    <div className="vitals">
-      <div className={warn(v.systolic >= 140 || v.diastolic >= 90)}><span>Presión arterial</span><b>{v.systolic}/{v.diastolic}<small>mmHg</small></b></div>
-      <div className={warn(v.heartRate > 100 || v.heartRate < 60)}><span>Frec. cardíaca</span><b>{v.heartRate}<small>lpm</small></b></div>
-      <div className={warn(v.respRate != null && (v.respRate > 20 || v.respRate < 12))}><span>Frec. respiratoria</span><b>{v.respRate ?? '—'}<small>rpm</small></b></div>
-      <div className={warn(v.temperature >= 37.6)}><span>Temperatura</span><b>{v.temperature.toFixed(1)}<small>°C</small></b></div>
-      <div className={warn(v.spo2 < 94)}><span>Saturación</span><b>{v.spo2}<small>%</small></b></div>
-      <div className="vital"><span>Peso / IMC</span><b>{v.weightKg || '—'}<small>kg</small>{v.weightKg && v.heightCm ? <small> (IMC {bmi(v.weightKg, v.heightCm)})</small> : null}</b></div>
-      {v.glucose != null && <div className={warn(v.glucose > 180 || v.glucose < 70)}><span>Glucometría</span><b>{v.glucose}<small>mg/dL</small></b></div>}
-      {v.painScale != null && v.painScale > 0 && <div className={warn(v.painScale >= 7)}><span>Dolor</span><b>{v.painScale}<small>/10</small></b></div>}
-    </div>
-  )
+  const cells = [
+    v.systolic != null && v.diastolic != null && <div key="pa" className={warn(v.systolic >= 140 || v.diastolic >= 90)}><span>Presión arterial</span><b>{v.systolic}/{v.diastolic}<small>mmHg</small></b></div>,
+    v.heartRate != null && <div key="fc" className={warn(v.heartRate > 100 || v.heartRate < 60)}><span>Frec. cardíaca</span><b>{v.heartRate}<small>lpm</small></b></div>,
+    v.respRate != null && <div key="fr" className={warn(v.respRate > 20 || v.respRate < 12)}><span>Frec. respiratoria</span><b>{v.respRate}<small>rpm</small></b></div>,
+    v.temperature != null && <div key="t" className={warn(v.temperature >= 37.6)}><span>Temperatura</span><b>{v.temperature.toFixed(1)}<small>°C</small></b></div>,
+    v.spo2 != null && <div key="spo2" className={warn(v.spo2 < 94)}><span>Saturación</span><b>{v.spo2}<small>%</small></b></div>,
+    (v.weightKg != null || v.heightCm != null) && <div key="peso" className="vital"><span>Peso / IMC</span><b>{v.weightKg ?? '—'}<small>kg</small>{v.weightKg && v.heightCm ? <small> (IMC {bmi(v.weightKg, v.heightCm)})</small> : null}</b></div>,
+    v.glucose != null && <div key="glu" className={warn(v.glucose > 180 || v.glucose < 70)}><span>Glucometría</span><b>{v.glucose}<small>mg/dL</small></b></div>,
+    v.painScale != null && v.painScale > 0 && <div key="dolor" className={warn(v.painScale >= 7)}><span>Dolor</span><b>{v.painScale}<small>/10</small></b></div>,
+  ].filter(Boolean)
+  if (!cells.length) return <p className="muted">Sin signos registrados en esta preclínica.</p>
+  return <div className="vitals">{cells}</div>
 }
 
 /** Carga el expediente clínico de un paciente. Cada carga queda en la bitácora del servidor. */
+function HospAlerts({ id }: { id?: string }) {
+  const { fetchInpatient } = useStore()
+  const [file, setFile] = useState<InpatientFile | null>(null)
+  useEffect(() => {
+    if (!id) { setFile(null); return }
+    fetchInpatient(id).then(setFile).catch(() => setFile(null))
+  }, [id, fetchInpatient])
+  if (!file) return null
+  return <MedAlertBanner file={file} />
+}
+
 export function useChart(patientId: string | undefined, enabled: boolean) {
   const { fetchChart, notify } = useStore()
   const [chart, setChart] = useState<Chart | null>(null)
@@ -93,7 +106,15 @@ export function ConsultationBody({ c, vitals }: { c: Consultation; vitals?: Vita
       <div className="note__sec"><h4>Motivo de consulta</h4><p>{c.reason}</p></div>
       {c.history && <div className="note__sec"><h4>Historia de la enfermedad actual</h4><p>{c.history}</p></div>}
       <div className="note__sec"><h4>Examen físico</h4>
-        {vitals && <p className="note__vitals">PA {vitals.systolic}/{vitals.diastolic} mmHg, FC {vitals.heartRate} lpm{vitals.respRate ? `, FR ${vitals.respRate} rpm` : ''}, T {vitals.temperature.toFixed(1)} °C, SpO₂ {vitals.spo2}%{vitals.weightKg ? `, Peso ${vitals.weightKg} kg` : ''}{vitals.glucose ? `, Glucometría ${vitals.glucose} mg/dL` : ''}</p>}
+        {vitals && <p className="note__vitals">{[
+          vitals.systolic != null && vitals.diastolic != null && `PA ${vitals.systolic}/${vitals.diastolic} mmHg`,
+          vitals.heartRate != null && `FC ${vitals.heartRate} lpm`,
+          vitals.respRate != null && `FR ${vitals.respRate} rpm`,
+          vitals.temperature != null && `T ${vitals.temperature.toFixed(1)} °C`,
+          vitals.spo2 != null && `SpO₂ ${vitals.spo2}%`,
+          vitals.weightKg != null && `Peso ${vitals.weightKg} kg`,
+          vitals.glucose != null && `Glucometría ${vitals.glucose} mg/dL`,
+        ].filter(Boolean).join(', ') || 'Sin signos en la preclínica.'}</p>}
         {c.exam ? <p>{c.exam}</p> : !vitals && <p className="muted">Sin registro.</p>}
       </div>
       {c.observations && <div className="note__sec"><h4>Observaciones</h4><p>{c.observations}</p></div>}
@@ -149,6 +170,8 @@ export default function PatientChart() {
           ))}
         </div>
       </div>
+
+      {clinical && <HospAlerts id={hospitalized?.id ?? hs[0]?.id} />}
 
       {clinical && !chart && tab !== 'history' && <Loading label="Cargando expediente" />}
 
@@ -231,6 +254,12 @@ export default function PatientChart() {
 
       {tab === 'hosp' && chart && (
         <section className="panel">
+          {hs[0] && (
+            <div className="panel__head">
+              <h2>Hospitalizaciones</h2>
+              <Link className="btn btn--primary btn--sm" to={`/app/hospitalizados/${hs[0].id}/expediente`}><FileText size={15} />Expediente completo</Link>
+            </div>
+          )}
           {hs.length ? <div className="rows">{hs.map((h) => (
             <Link key={h.id} to={`/app/hospitalizados/${h.id}`} className="row" style={{ gridTemplateColumns: '150px 1fr auto' }}>
               <span className="num" style={{ fontSize: 13.5 }}>{date(h.admittedAt)}{h.dischargedAt ? ` al ${date(h.dischargedAt)}` : ''}</span>
@@ -247,8 +276,8 @@ export default function PatientChart() {
             <thead><tr><th>Fecha</th><th>PA</th><th>FC</th><th>FR</th><th>Temp.</th><th>SpO₂</th><th>Peso</th><th>Motivo</th><th>Tomó</th></tr></thead>
             <tbody>{vs.map((v) => (
               <tr key={v.id} className="num">
-                <td style={{ whiteSpace: 'nowrap' }}>{date(v.takenAt)} {time(v.takenAt)}</td><td>{v.systolic}/{v.diastolic}</td><td>{v.heartRate}</td><td>{v.respRate ?? '—'}</td>
-                <td>{v.temperature.toFixed(1)} °C</td><td>{v.spo2}%</td><td>{v.weightKg ? `${v.weightKg} kg` : '—'}</td><td style={{ minWidth: 180 }}>{v.chiefComplaint ?? '—'}</td><td>{staffById(v.takenBy)?.name}</td>
+                <td style={{ whiteSpace: 'nowrap' }}>{date(v.takenAt)} {time(v.takenAt)}</td><td>{v.systolic != null ? `${v.systolic}/${v.diastolic}` : '—'}</td><td>{v.heartRate ?? '—'}</td><td>{v.respRate ?? '—'}</td>
+                <td>{v.temperature != null ? `${v.temperature.toFixed(1)} °C` : '—'}</td><td>{v.spo2 != null ? `${v.spo2}%` : '—'}</td><td>{v.weightKg ? `${v.weightKg} kg` : '—'}</td><td style={{ minWidth: 180 }}>{v.chiefComplaint ?? '—'}</td><td>{staffById(v.takenBy)?.name}</td>
               </tr>
             ))}</tbody>
           </table>

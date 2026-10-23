@@ -29,7 +29,7 @@ export default function Followups() {
         actions={can('followups.manage') && <button className="btn btn--primary" onClick={() => setAdding(true)}><Plus size={17} />Programar seguimiento</button>} />
       <div className="alert-strip alert-strip--calm" style={{ marginBottom: 16 }}>
         <Smartphone size={18} style={{ flex: 'none' }} />
-        Simulación: los mensajes de WhatsApp todavía no se envían. Puedes ver cómo le llegaría al paciente y registrar el envío; al contratar WhatsApp Business se enviarán solos.
+        Los avisos se registran solos: una semana antes, un día antes y el día del control. Ese día recepción lo ve en su inicio para llamar al paciente. El WhatsApp sigue en simulación hasta conectar la línea de la clínica.
       </div>
       <div className="tabs" role="tablist">
         {(['chronic', 'reminder', 'procedure'] as Kind[]).map((k) => (
@@ -58,7 +58,13 @@ export default function Followups() {
                     {soon && <span className="badge badge--amber" style={{ marginLeft: 6 }}>Esta semana</span>}
                   </td>
                   {kind === 'chronic' && <td className="num">{f.everyDays && f.everyDays % 30 === 0 ? `${f.everyDays / 30} ${f.everyDays === 30 ? 'mes' : 'meses'}` : `${f.everyDays} días`}</td>}
-                  <td>{f.notifiedAt ? dateTime(f.notifiedAt) : <span style={{ color: 'var(--faint)' }}>Sin aviso</span>}</td>
+                  <td>
+                    {f.remindedWeek && <div>1 semana antes</div>}
+                    {f.remindedEve && <div>Un día antes</div>}
+                    {f.remindedDay && <div>El día del control</div>}
+                    {f.notifiedAt && <div>WhatsApp {dateTime(f.notifiedAt)}</div>}
+                    {!f.remindedWeek && !f.remindedEve && !f.remindedDay && !f.notifiedAt && <span style={{ color: 'var(--faint)' }}>Aún no toca</span>}
+                  </td>
                   <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
                     <button className={`btn ${f.notifiedAt ? 'btn--ghost' : 'btn--soft'} btn--sm`} onClick={() => setSending(f)}><MessageCircle size={15} />WhatsApp</button>{' '}
                     <CompleteButton f={f} />

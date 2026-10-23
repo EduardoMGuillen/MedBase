@@ -300,6 +300,17 @@ CREATE TABLE IF NOT EXISTS followups (
   active BOOLEAN NOT NULL DEFAULT TRUE
 );
 CREATE INDEX IF NOT EXISTS followups_clinic ON followups (clinic_id, active, due_date);
+ALTER TABLE followups
+  ADD COLUMN IF NOT EXISTS reminded_week TEXT,
+  ADD COLUMN IF NOT EXISTS reminded_eve TEXT,
+  ADD COLUMN IF NOT EXISTS reminded_day TEXT;
+ALTER TABLE vitals ALTER COLUMN systolic DROP NOT NULL;
+ALTER TABLE vitals ALTER COLUMN diastolic DROP NOT NULL;
+ALTER TABLE vitals ALTER COLUMN heart_rate DROP NOT NULL;
+ALTER TABLE vitals ALTER COLUMN temperature DROP NOT NULL;
+ALTER TABLE vitals ALTER COLUMN spo2 DROP NOT NULL;
+ALTER TABLE vitals ALTER COLUMN weight_kg DROP NOT NULL;
+ALTER TABLE vitals ALTER COLUMN height_cm DROP NOT NULL;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

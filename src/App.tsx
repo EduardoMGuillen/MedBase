@@ -25,6 +25,7 @@ import Account from './app/Account'
 import Platform, { ClinicDetail } from './app/Platform'
 import Inpatients from './app/Inpatients'
 import InpatientFile from './app/InpatientFile'
+import FullRecord from './app/FullRecord'
 import Followups from './app/Followups'
 
 function Guard({ perm, children }: { perm?: Permission; children: ReactNode }) {
@@ -50,6 +51,7 @@ export default function App() {
             <Route path="consulta-externa" element={<Guard perm="agenda.view"><WaitingRoom /></Guard>} />
             <Route path="sala" element={<Navigate to="/app/consulta-externa" replace />} />
             <Route path="hospitalizados" element={<Guard perm="inpatient.view"><Inpatients /></Guard>} />
+            <Route path="hospitalizados/:id/expediente" element={<Guard perm="inpatient.view"><FullRecord /></Guard>} />
             <Route path="hospitalizados/:id" element={<Guard perm="inpatient.view"><InpatientFile /></Guard>} />
             <Route path="seguimientos" element={<Guard perm="followups.view"><Followups /></Guard>} />
             <Route path="pacientes" element={<Guard perm="patients.view"><Patients /></Guard>} />

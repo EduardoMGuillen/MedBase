@@ -11,39 +11,26 @@ import type { Bed, Hospitalization } from '../lib/types'
 export const bedLabel = (b?: Pick<Bed, 'room' | 'label'>) => (b ? `Cuarto ${b.room}${b.label ? `-${b.label}` : ''}` : 'Sin cama')
 
 /**
- * Hospitalizados: tablero de camas ordenado por cuarto. Las camas tienen especialidad, no médico,
- * y cualquier médico o enfermera de la clínica puede abrir el expediente.
+ * Hospitalizados: tablero de cuartos. Cualquier especialidad puede ocupar cualquier cama.
+ * El conteo es de la clínica: ocupadas/total.
  */
 export default function Inpatients() {
   const { beds, inpatients, patient, can } = useStore()
   const [params, setParams] = useSearchParams()
   const nav = useNavigate()
-  const specialties = [...new Set(beds.filter((b) => b.active).map((b) => b.specialty))]
-  const [area, setArea] = useState<string>('all')
   const admitFor = params.get('paciente')
   const [admitting, setAdmitting] = useState<{ bedId?: string } | null>(admitFor ? {} : null)
 
   const shown = beds
-    .filter((b) => b.active && (area === 'all' || b.specialty === area))
+    .filter((b) => b.active)
     .sort((a, b) => a.room.localeCompare(b.room, 'es', { numeric: true }) || a.label.localeCompare(b.label))
   const byBed = new Map(inpatients.map((h) => [h.bedId, h]))
   const occupied = shown.filter((b) => byBed.has(b.id)).length
 
   return (
     <div className="page">
-      <PageHead title="Hospitalizados" sub={`${occupied} de ${shown.length} camas ocupadas${area === 'all' ? '' : ` en ${area.toLowerCase()}`}`}
+      <PageHead title="Hospitalizados" sub={`${occupied}/${shown.length} camas`}
         actions={can('inpatient.orders') && <button className="btn btn--primary" onClick={() => setAdmitting({})}><Plus size={17} />Ingresar paciente</button>} />
-
-      {specialties.length > 1 && (
-        <div className="segmented" role="radiogroup" aria-label="Especialidad" style={{ marginBottom: 16 }}>
-          <button role="radio" aria-checked={area === 'all'} onClick={() => setArea('all')}>Todas</button>
-          {specialties.map((s) => (
-            <button key={s} role="radio" aria-checked={area === s} onClick={() => setArea(s)}>
-              {s} <span className="num" style={{ opacity: .6 }}>{beds.filter((b) => b.active && b.specialty === s && byBed.has(b.id)).length}/{beds.filter((b) => b.active && b.specialty === s).length}</span>
-            </button>
-          ))}
-        </div>
-      )}
 
       {!beds.length ? (
         <section className="panel"><div className="empty">La clínica todavía no tiene camas. Administración las agrega en Configuración, pestaña Camas.</div></section>
@@ -55,15 +42,15 @@ export default function Inpatients() {
             if (!h || !p) {
               return (
                 <div key={b.id} className="bed bed--free">
-                  <div className="bed__head"><b>{bedLabel(b)}</b><span>{b.specialty}</span></div>
-                  <p className="muted">Disponible</p>
+                  <div className="bed__head"><b>{bedLabel(b)}</b><span>Libre</span></div>
+                  <p className="muted">Cualquier especialidad</p>
                   {can('inpatient.orders') && <button className="btn btn--ghost btn--sm" onClick={() => setAdmitting({ bedId: b.id })}><Plus size={14} />Ingresar aquí</button>}
                 </div>
               )
             }
             return (
               <Link key={b.id} to={`/app/hospitalizados/${h.id}`} className="bed">
-                <div className="bed__head"><b>{bedLabel(b)}</b><span>{b.specialty}</span></div>
+                <div className="bed__head"><b>{bedLabel(b)}</b><span>Ocupado</span></div>
                 <strong className="bed__name">{fullName(p)}</strong>
                 <span className="bed__meta">{age(p.birthDate)}, {p.sex === 'F' ? 'femenino' : 'masculino'} · Día {stayDay(h.admittedAt)} de estancia</span>
                 <span className="bed__dx">{h.diagnoses.map((d) => d.label).join('; ')}</span>
@@ -148,7 +135,7 @@ export function AdmitModal({ initialPatientId, consultationId, bedId, onClose, o
   const [patientId, setPatientId] = useState(initialPatientId ?? '')
   const p = patientId ? patient(patientId) : undefined
   const free = beds.filter((b) => b.active && !inpatients.some((h) => h.bedId === b.id))
-    .sort((a, b) => a.specialty.localeCompare(b.specialty) || a.room.localeCompare(b.room, 'es', { numeric: true }))
+    .sort((a, b) => a.room.localeCompare(b.room, 'es', { numeric: true }) || a.label.localeCompare(b.label))
   const [f, setF] = useState({
     bedId: bedId ?? '', admittedAt: inputDateTime(new Date()), reason: '', companionName: '', companionRelation: '', companionPhone: '', patientPhone: '',
   })
@@ -194,10 +181,8 @@ export function AdmitModal({ initialPatientId, consultationId, bedId, onClose, o
       <div className="form-grid">
         <label className="field"><span>Cama</span>
           <select className="select" value={f.bedId} onChange={set('bedId')}>
-            <option value="">Elige una cama libre</option>
-            {[...new Set(free.map((b) => b.specialty))].map((s) => (
-              <optgroup key={s} label={s}>{free.filter((b) => b.specialty === s).map((b) => <option key={b.id} value={b.id}>{bedLabel(b)}</option>)}</optgroup>
-            ))}
+            <option value="">Elige un cuarto libre</option>
+            {free.map((b) => <option key={b.id} value={b.id}>{bedLabel(b)}</option>)}
           </select></label>
         <label className="field"><span>Fecha y hora del ingreso</span><input className="input" type="datetime-local" value={f.admittedAt} onChange={set('admittedAt')} /></label>
         <label className="field span-2"><span>Motivo del ingreso</span><textarea className="textarea textarea--sm" rows={2} value={f.reason} onChange={set('reason')} /></label>

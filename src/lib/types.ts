@@ -168,13 +168,13 @@ export interface Vitals {
   appointmentId?: string
   takenBy: string
   takenAt: string
-  systolic: number
-  diastolic: number
-  heartRate: number
-  temperature: number
-  spo2: number
-  weightKg: number
-  heightCm: number
+  systolic?: number
+  diastolic?: number
+  heartRate?: number
+  temperature?: number
+  spo2?: number
+  weightKg?: number
+  heightCm?: number
   respRate?: number // frecuencia respiratoria
   glucose?: number // glucometría capilar (mg/dL)
   painScale?: number
@@ -279,6 +279,8 @@ export interface InpatientNote {
   plan: string
   text: string // notas de enfermería
   discharge?: DischargeData
+  /** Órdenes y manejo vigentes al firmar la nota: medicamentos y el resto. */
+  orders?: string[]
 }
 
 /** Medicamento indicado en una nota médica. Su horario se calcula a partir de la primera dosis. */
@@ -347,5 +349,8 @@ export interface Followup {
   createdAt: string
   notifiedAt?: string
   doneAt?: string
+  remindedWeek?: string
+  remindedEve?: string
+  remindedDay?: string
   active: boolean
 }

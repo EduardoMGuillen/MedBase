@@ -10,25 +10,44 @@ import type { Patient } from '../lib/types'
 const PALETTE = ['#2335C9', '#0F8A6E', '#B4407A', '#C27A12', '#6A4BC4', '#2C7DA0']
 export const patientColor = (id: string) => PALETTE[[...id].reduce((s, c) => s + c.charCodeAt(0), 0) % PALETTE.length]
 
+type SortKey = 'name' | 'age' | 'last' | 'next'
+
 export default function Patients() {
-  const { patients, appointments, can, addPatient } = useStore()
+  const { patients, appointments, discharges = [], can, addPatient } = useStore()
   const nav = useNavigate()
   const [q, setQ] = useState('')
   const [adding, setAdding] = useState(false)
-
-  const list = useMemo(() => {
-    const s = q.trim().toLowerCase()
-    return patients
-      .filter((p) => !s || fullName(p).toLowerCase().includes(s) || p.record.toLowerCase().includes(s) || p.phone.includes(s))
-      .sort((a, b) => a.lastName.localeCompare(b.lastName))
-  }, [patients, q])
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'name', dir: 1 })
 
   const lastVisit = (id: string) => appointments
     .filter((a) => a.patientId === id && a.status === 'done')
     .sort((a, b) => b.start.localeCompare(a.start))[0]?.start
+  const dischargeOf = (id: string) => discharges.find((d) => d.patientId === id)?.at
   const nextAppt = (id: string) => appointments
     .filter((a) => a.patientId === id && new Date(a.start) > new Date() && ['scheduled', 'confirmed'].includes(a.status))
     .sort((a, b) => a.start.localeCompare(b.start))[0]
+  const lastStamp = (id: string) => [lastVisit(id), dischargeOf(id)].filter(Boolean).sort().at(-1) ?? ''
+
+  const list = useMemo(() => {
+    const s = q.trim().toLowerCase()
+    const filtered = patients.filter((p) => !s || fullName(p).toLowerCase().includes(s) || p.record.toLowerCase().includes(s) || p.phone.includes(s))
+    const cmp = (a: Patient, b: Patient) => {
+      if (sort.key === 'name') return fullName(a).localeCompare(fullName(b), 'es') * sort.dir
+      if (sort.key === 'age') return a.birthDate.localeCompare(b.birthDate) * -sort.dir
+      const emptyLast = (av: string, bv: string) => {
+        if (!av && !bv) return 0
+        if (!av) return 1
+        if (!bv) return -1
+        return av.localeCompare(bv) * sort.dir
+      }
+      if (sort.key === 'last') return emptyLast(lastStamp(a.id), lastStamp(b.id))
+      return emptyLast(nextAppt(a.id)?.start ?? '', nextAppt(b.id)?.start ?? '')
+    }
+    return [...filtered].sort(cmp)
+  }, [patients, q, sort, appointments, discharges])
+
+  const toggle = (key: SortKey) => setSort((s) => s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: 1 })
+  const mark = (key: SortKey) => sort.key === key ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''
 
   return (
     <div className="page">
@@ -42,11 +61,18 @@ export default function Patients() {
 
       <section className="panel table-wrap">
         <table className="table">
-          <thead><tr><th>Paciente</th><th>Edad</th><th>Teléfono</th>{can('chart.view') && <th>Alergias</th>}<th>Última consulta</th><th>Próxima cita</th></tr></thead>
+          <thead><tr>
+            <th><button className="th-sort" onClick={() => toggle('name')}>Paciente{mark('name')}</button></th>
+            <th><button className="th-sort" onClick={() => toggle('age')}>Edad{mark('age')}</button></th>
+            <th>Teléfono</th>
+            <th><button className="th-sort" onClick={() => toggle('last')}>Última consulta{mark('last')}</button></th>
+            <th><button className="th-sort" onClick={() => toggle('next')}>Próxima cita{mark('next')}</button></th>
+          </tr></thead>
           <tbody>
             {list.map((p) => {
               const nx = nextAppt(p.id)
               const lv = lastVisit(p.id)
+              const eg = dischargeOf(p.id)
               return (
                 <tr key={p.id}>
                   <td>
@@ -57,8 +83,11 @@ export default function Patients() {
                   </td>
                   <td className="num">{age(p.birthDate)}</td>
                   <td className="num">{p.phone}</td>
-                  {can('chart.view') && <td>{p.allergies.length ? <div className="chips">{p.allergies.map((a) => <span key={a} className="chip chip--red">{a}</span>)}</div> : <span style={{ color: 'var(--faint)' }}>Ninguna conocida</span>}</td>}
-                  <td>{lv ? date(lv) : <span style={{ color: 'var(--faint)' }}>Sin consultas</span>}</td>
+                  <td>
+                    {lv && <div>Consulta {date(lv)}</div>}
+                    {eg && <div>Egreso {date(eg)}</div>}
+                    {!lv && !eg && <span style={{ color: 'var(--faint)' }}>Sin consultas</span>}
+                  </td>
                   <td>{nx ? date(nx.start, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : <span style={{ color: 'var(--faint)' }}>Sin agendar</span>}</td>
                 </tr>
               )

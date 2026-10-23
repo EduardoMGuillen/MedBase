@@ -1,24 +1,25 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { Camera, ChevronLeft, ChevronRight, FileText, LogOut, NotebookPen, Pill, Plus, TriangleAlert, X } from 'lucide-react'
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, fullName, inputDateTime, ROUTES, time } from '../lib/format'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
-import { doseTimes, INPATIENT_FREQUENCIES, medLabel, slotState, stayDay, type SlotState } from '../lib/inpatient'
+import { doseTimes, INPATIENT_FREQUENCIES, medLabel, noteOrders, slotState, stayDay, type SlotState } from '../lib/inpatient'
+import { MedAlertBanner } from './MedAlerts'
 import type { Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
 import { bedLabel, DxPicker } from './Inpatients'
 import { Identification } from './PatientChart'
 import { toBase64 } from './Attachments'
 
-type Tab = 'sheet' | 'meds' | 'notes' | 'nursing' | 'labs' | 'procedures' | 'discharge'
+type Tab = 'sheet' | 'notes' | 'meds' | 'nursing' | 'labs'
 
 export default function InpatientFile() {
   const { id } = useParams()
-  const { fetchInpatient, notify, patient, bed, staffById, can } = useStore()
+  const { fetchInpatient, notify, patient, bed, staffById } = useStore()
   const [file, setFile] = useState<File | null>(null)
-  const [tab, setTab] = useState<Tab>('meds')
+  const [tab, setTab] = useState<Tab>('sheet')
   const [missing, setMissing] = useState(false)
   const load = useCallback(() => {
     if (!id) return
@@ -36,18 +37,21 @@ export default function InpatientFile() {
   const medical = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution')
   const nursing = file.notes.filter((n) => n.kind === 'nursing')
   const tabs: [Tab, string][] = [
-    ['sheet', 'Hoja de hospitalización'], ['meds', 'Medicamentos'], ['notes', `Notas médicas (${medical.length})`], ['nursing', `Enfermería (${nursing.length})`],
-    ['labs', `Laboratorios (${file.labs.length})`], ['procedures', `Procedimientos (${file.procedures.length})`], ['discharge', open ? 'Egreso' : 'Nota de egreso'],
+    ['sheet', 'Hoja de hospitalización'],
+    ['notes', `Notas de evolución (${medical.length})`],
+    ['meds', 'Medicamentos'],
+    ['nursing', `Notas de enfermería (${nursing.length})`],
+    ['labs', `Laboratorios (${file.labs.length})`],
   ]
 
   return (
     <div className="page page--chart">
       <div className="sticky-top">
         <PatientHeader p={p} clinical link>
-          {open && can('inpatient.orders') && <button className="btn btn--ghost btn--sm" onClick={() => setTab('discharge')}><LogOut size={15} />Nota de egreso</button>}
+          <Link className="btn btn--primary btn--sm" to={`/app/hospitalizados/${h.id}/expediente`}><FileText size={15} />Expediente completo</Link>
         </PatientHeader>
         <div className="hosp-bar">
-          <span><b>{bedLabel(b)}</b>, {b?.specialty}</span>
+          <span><b>{bedLabel(b)}</b></span>
           <span>Ingresó {dateTime(h.admittedAt)}</span>
           {open ? <span className="badge badge--mint">Día {stayDay(h.admittedAt)} de estancia</span>
             : <span className="badge badge--done">Egresó {h.dischargedAt && dateTime(h.dischargedAt)}</span>}
@@ -57,6 +61,7 @@ export default function InpatientFile() {
           {tabs.map(([k, label]) => <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>)}
         </div>
       </div>
+      <MedAlertBanner file={file} />
 
       {tab === 'sheet' && (
         <div className="hc">
@@ -65,7 +70,7 @@ export default function InpatientFile() {
             <div className="panel__body">
               <dl className="facts">
                 <div><dt>Fecha y hora del ingreso</dt><dd>{date(h.admittedAt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(h.admittedAt)}</dd></div>
-                <div><dt>Cama</dt><dd>{bedLabel(b)}, {b?.specialty}</dd></div>
+                <div><dt>Cuarto</dt><dd>{bedLabel(b)}</dd></div>
                 <div><dt>Ingresado por</dt><dd>{staffById(h.admittedBy)?.name}</dd></div>
                 <div><dt>Procedencia</dt><dd>{h.consultationId ? <Link to={`/app/nota/${h.consultationId}`}>Consulta externa</Link> : 'Emergencia o ingreso directo'}</dd></div>
                 <div><dt>Quién lo acompaña</dt><dd>{h.companionName ? `${h.companionName}${h.companionRelation ? ` (${h.companionRelation})` : ''}` : <span className="muted">Sin dato</span>}</dd></div>
@@ -88,8 +93,6 @@ export default function InpatientFile() {
       {tab === 'notes' && <MedicalNotes file={file} p={p} reload={load} />}
       {tab === 'nursing' && <NursingNotes file={file} reload={load} />}
       {tab === 'labs' && <Labs file={file} reload={load} />}
-      {tab === 'procedures' && <Procedures file={file} reload={load} />}
-      {tab === 'discharge' && <Discharge file={file} p={p} reload={load} />}
     </div>
   )
 }
@@ -228,24 +231,57 @@ const SOAP: { key: 'subjective' | 'objective' | 'assessment' | 'plan'; letter: s
 ]
 
 function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () => void }) {
-  const { staffById, can } = useStore()
-  const notes = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution')
+  const { staffById, can, updateProcedure } = useStore()
+  const notes = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'discharge')
   const hasAdmission = notes.some((n) => n.kind === 'admission')
-  const [writing, setWriting] = useState(false)
+  const discharged = notes.some((n) => n.kind === 'discharge')
+  const [writing, setWriting] = useState<null | 'note' | 'procedure' | 'discharge'>(null)
   const open = file.hospitalization.status === 'active'
+  const timeline = [
+    ...notes.map((n) => ({ at: n.at, key: n.id, note: n as InpatientNote | undefined, procedure: undefined as HospProcedure | undefined })),
+    ...file.procedures.map((x) => ({ at: x.createdAt, key: x.id, note: undefined as InpatientNote | undefined, procedure: x })),
+  ].sort((a, b) => a.at.localeCompare(b.at) || a.key.localeCompare(b.key))
   return (
     <div className="hc">
       {open && can('inpatient.orders') && (
         <section className="panel">
           <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-            <p className="muted">{hasAdmission ? 'Cada nota de evolución lleva subjetivo, objetivo, análisis y plan. Los medicamentos que indiques pasan a la hoja de enfermería.' : 'Lo primero es la nota de ingreso, con las indicaciones de medicamentos.'}</p>
-            <button className="btn btn--primary" onClick={() => setWriting(true)}><NotebookPen size={16} />{hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso'}</button>
+            <p className="muted">{hasAdmission ? 'Las notas quedan en orden, de la más antigua a la más reciente. Procedimientos y egreso también son notas de evolución.' : 'Lo primero es la nota de ingreso, con las indicaciones de medicamentos.'}</p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn--primary" onClick={() => setWriting('note')}><NotebookPen size={16} />{hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso'}</button>
+              {hasAdmission && <button className="btn btn--primary" onClick={() => setWriting('procedure')}>Procedimiento</button>}
+              {hasAdmission && !discharged && <button className="btn btn--primary" onClick={() => setWriting('discharge')}><LogOut size={16} />Egreso</button>}
+            </div>
           </div>
         </section>
       )}
-      {notes.length ? notes.map((n) => {
-        const added = file.meds.filter((m) => m.noteId === n.id)
-        const stopped = file.meds.filter((m) => m.stoppedAt === n.at && m.stoppedBy === n.authorId)
+      {writing === 'procedure' && <Procedures file={file} reload={() => { setWriting(null); reload() }} onlyForm />}
+      {writing === 'discharge' && <Discharge file={file} p={p} reload={() => { setWriting(null); reload() }} />}
+      {timeline.length ? timeline.map((item) => {
+        if (item.procedure) {
+          const x = item.procedure
+          return (
+            <article key={x.id} className="panel consult-entry">
+              <div className="panel__head">
+                <div><h2>{x.kind === 'procedure' ? 'Procedimiento' : 'Autorización'}</h2>
+                  <p>{date(x.createdAt, { weekday: 'long', day: 'numeric', month: 'long' })}, {time(x.createdAt)}, {staffById(x.createdBy)?.name}</p></div>
+                {open ? (
+                  <select className="select" value={x.status} aria-label={`Estado de ${x.name}`} onChange={async (e) => { if (await updateProcedure(x.id, { status: e.target.value as HospProcedure['status'] })) reload() }}>
+                    {Object.entries(PROC_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                ) : <span className={`badge badge--${PROC_STATUS[x.status].tone}`}>{PROC_STATUS[x.status].label}</span>}
+              </div>
+              <div className="panel__body">
+                <p>{x.name}</p>
+                {x.scheduledAt && <p className="muted">Programado {dateTime(x.scheduledAt)}</p>}
+                {x.notes && <p>{x.notes}</p>}
+              </div>
+            </article>
+          )
+        }
+        const n = item.note!
+        if (n.kind === 'discharge') return <Discharge key={n.id} file={file} p={p} reload={reload} />
+        const orders = noteOrders(n, file)
         return (
           <article key={n.id} className="panel consult-entry">
             <div className="panel__head">
@@ -254,20 +290,17 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
             <div className="panel__body">
               <div className="note">
                 {SOAP.map((s) => <div key={s.key} className="note__sec"><h4>{s.letter}. {s.label}</h4><p>{n[s.key]}</p></div>)}
-                {(added.length > 0 || stopped.length > 0) && (
-                  <div className="note__sec"><h4>Indicaciones de medicamentos</h4>
-                    <ul className="note__list">
-                      {added.map((m) => <li key={m.id}>{medLabel(m)}{m.instructions ? `. ${m.instructions}` : ''}</li>)}
-                      {stopped.map((m) => <li key={m.id}><b>OMITIR</b> {m.drug}</li>)}
-                    </ul>
+                {orders.length > 0 && (
+                  <div className="note__sec"><h4>Órdenes y manejo</h4>
+                    <ol className="note__list">{orders.map((o, i) => <li key={i}>{o}</li>)}</ol>
                   </div>
                 )}
               </div>
             </div>
           </article>
         )
-      }) : <section className="panel"><div className="empty">Todavía no hay notas médicas.</div></section>}
-      {writing && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(false)} onSaved={() => { setWriting(false); reload() }} />}
+      }) : <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
+      {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }} />}
     </div>
   )
 }
@@ -280,36 +313,63 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   const [meds, setMeds] = useState<NewMed[]>([])
   const [stop, setStop] = useState<string[]>([])
   const [adding, setAdding] = useState(kind === 'admission')
+  const [replacing, setReplacing] = useState<string | null>(null)
+  const [extra, setExtra] = useState<string[]>(() => carriedOrders(file))
+  const [extraText, setExtraText] = useState('')
   const [busy, setBusy] = useState(false)
   const active = file.meds.filter((m) => !m.stoppedAt)
   const ready = SOAP.every((s) => n[s.key].trim())
+  const addExtra = () => {
+    const t = extraText.trim()
+    if (!t) return
+    setExtra([...extra, /[.!?]$/.test(t) ? t : `${t}.`])
+    setExtraText('')
+  }
   return (
     <Modal title={kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'} wide onClose={onClose} footer={<>
       <span className="muted" style={{ marginRight: 'auto', fontSize: 13.5 }}>{meds.length ? `${meds.length} medicamento(s) nuevo(s)` : ''}{stop.length ? `${meds.length ? ', ' : ''}${stop.length} omitido(s)` : ''}</span>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
-        const ok = await addInpatientNote(file.hospitalization.id, { kind, ...n, meds, stopMedIds: stop })
+        const kept = active.filter((m) => !stop.includes(m.id)).map((m) => medLabel(m))
+        const added = meds.map((m) => medLabel(m))
+        const omitted = active.filter((m) => stop.includes(m.id)).map((m) => `OMITIR ${m.drug}`)
+        const ok = await addInpatientNote(file.hospitalization.id, { kind, ...n, meds, stopMedIds: stop, orders: [...extra, ...kept, ...added, ...omitted] })
         setBusy(false)
         if (ok) onSaved()
       }}>Guardar nota</button>
     </>}>
       {p.allergies.length > 0 && <div className="alert-strip"><TriangleAlert size={16} />Alergias: {p.allergies.join(', ')}</div>}
-      <div className="form-grid">
+      <div className="soap-stack">
         {SOAP.map((s) => (
           <label key={s.key} className="field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
             <textarea className="textarea" rows={3} value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} /></label>
         ))}
       </div>
+      <fieldset className="fs"><legend>Órdenes y manejo</legend>
+        <p className="muted" style={{ fontSize: 13.5 }}>Dieta, estudios y cuidados. En la nota salen estas órdenes y todos los medicamentos vigentes, no sólo el que cambies.</p>
+        {extra.length > 0 && <ol className="orders">{extra.map((o, i) => (
+          <li key={i}><span className="orders__n">{i + 1}.</span>
+            <input className="input" value={o} aria-label={`Orden ${i + 1}`} onChange={(e) => setExtra(extra.map((x, j) => j === i ? e.target.value : x))} />
+            <span className="orders__tools"><button type="button" className="icon-btn" aria-label="Quitar orden" onClick={() => setExtra(extra.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
+        ))}</ol>}
+        <form className="order-add" onSubmit={(e) => { e.preventDefault(); addExtra() }}>
+          <input className="input" value={extraText} onChange={(e) => setExtraText(e.target.value)} placeholder="Escribe una orden y presiona Enter" aria-label="Nueva orden" />
+          <button className="btn btn--soft" disabled={!extraText.trim()} type="submit" aria-label="Agregar orden"><Plus size={16} /></button>
+        </form>
+      </fieldset>
       {active.length > 0 && (
         <fieldset className="fs"><legend>Medicamentos activos</legend>
           <p className="muted" style={{ fontSize: 13.5 }}>Marca OMITIR para suspender un medicamento; desde ahora la hoja de enfermería lo mostrará omitido.</p>
           <div className="rows">
             {active.map((m) => (
-              <label key={m.id} className="omit-row">
+              <div key={m.id} className="omit-row">
                 <span className={stop.includes(m.id) ? 'struck' : ''}>{medLabel(m)}</span>
-                <span><input type="checkbox" checked={stop.includes(m.id)} onChange={(e) => setStop(e.target.checked ? [...stop, m.id] : stop.filter((x) => x !== m.id))} /> OMITIR</span>
-              </label>
+                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button type="button" className="btn btn--ghost btn--sm" disabled={stop.includes(m.id)} onClick={() => { setReplacing(m.id); setAdding(false) }}>Cambiar</button>
+                  <label><input type="checkbox" checked={stop.includes(m.id)} onChange={(e) => { setStop(e.target.checked ? [...stop, m.id] : stop.filter((x) => x !== m.id)); if (e.target.checked) setReplacing(null) }} /> OMITIR</label>
+                </span>
+              </div>
             ))}
           </div>
         </fieldset>
@@ -319,16 +379,29 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
           <li key={i}><span className="orders__n">{i + 1}.</span><span className="orders__text"><Pill size={13} className="orders__pill" />{medLabel(m)}{m.instructions ? `. ${m.instructions}` : ''}</span>
             <span className="orders__tools"><button className="icon-btn" aria-label="Quitar" onClick={() => setMeds(meds.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
         ))}</ol>}
-        {adding ? <MedForm p={p} onAdd={(m) => { setMeds([...meds, m]); setAdding(false) }} onCancel={() => setAdding(false)} />
+        {replacing && <p className="muted" style={{ fontSize: 13.5 }}>La indicación nueva reemplaza a {active.find((m) => m.id === replacing)?.drug}. La nota conservará el resto de órdenes.</p>}
+        {replacing ? <MedForm p={p} initial={medToNew(active.find((m) => m.id === replacing)!)} onAdd={(m) => { setStop(stop.includes(replacing) ? stop : [...stop, replacing]); setMeds([...meds, m]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
+          : adding ? <MedForm p={p} onAdd={(m) => { setMeds([...meds, m]); setAdding(false) }} onCancel={() => setAdding(false)} />
           : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
       </fieldset>
     </Modal>
   )
 }
 
-function MedForm({ p, onAdd, onCancel }: { p: Patient; onAdd: (m: NewMed) => void; onCancel: () => void }) {
-  const [m, setM] = useState<NewMed>({ ...EMPTY_MED, firstAt: inputDateTime(new Date()) })
-  const [freq, setFreq] = useState('8')
+function carriedOrders(file: File) {
+  const last = [...file.notes].reverse().find((n) => (n.kind === 'admission' || n.kind === 'evolution') && n.orders?.length)
+  if (!last?.orders?.length) return []
+  const drugs = file.meds.map((m) => m.drug)
+  return last.orders.filter((o) => !o.startsWith('OMITIR ') && !drugs.some((d) => o.startsWith(d)))
+}
+
+function medToNew(m: InpatientMed): NewMed {
+  return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, instructions: m.instructions ?? '', firstAt: inputDateTime(new Date()) }
+}
+
+function MedForm({ p, initial, onAdd, onCancel }: { p: Patient; initial?: NewMed; onAdd: (m: NewMed) => void; onCancel: () => void }) {
+  const [m, setM] = useState<NewMed>({ ...EMPTY_MED, firstAt: inputDateTime(new Date()), ...initial })
+  const [freq, setFreq] = useState(initial?.everyHours ? String(initial.everyHours) : 'once')
   const [open, setOpen] = useState(false)
   const [override, setOverride] = useState(false)
   const conflict = m.drug ? allergyConflict(p.allergies, m.drug) : null
@@ -491,7 +564,7 @@ const PROC_STATUS: Record<HospProcedure['status'], { label: string; tone: string
   pending: { label: 'Pendiente', tone: 'amber' }, authorized: { label: 'Autorizado', tone: 'ink' }, done: { label: 'Realizado', tone: 'mint' }, denied: { label: 'Denegado', tone: 'red' },
 }
 
-function Procedures({ file, reload }: { file: File; reload: () => void }) {
+function Procedures({ file, reload, onlyForm = false }: { file: File; reload: () => void; onlyForm?: boolean }) {
   const { addProcedure, updateProcedure, staffById } = useStore()
   const [kind, setKind] = useState<HospProcedure['kind']>('procedure')
   const [name, setName] = useState('')
@@ -521,7 +594,7 @@ function Procedures({ file, reload }: { file: File; reload: () => void }) {
           </div>
         </section>
       )}
-      <section className="panel">
+      {!onlyForm && <section className="panel">
         {file.procedures.length ? <div className="rows">{file.procedures.map((x) => (
           <div key={x.id} className="row" style={{ gridTemplateColumns: '1fr auto' }}>
             <div className="row__who">
@@ -537,7 +610,7 @@ function Procedures({ file, reload }: { file: File; reload: () => void }) {
             ) : <span className={`badge badge--${PROC_STATUS[x.status].tone}`}>{PROC_STATUS[x.status].label}</span>}
           </div>
         ))}</div> : <div className="empty">Sin procedimientos ni autorizaciones.</div>}
-      </section>
+      </section>}
     </div>
   )
 }
@@ -549,7 +622,6 @@ const EMPTY_RX: PrescriptionItem = { drug: '', presentation: '', dose: '1 tablet
 
 function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => void }) {
   const { can, discharge, staffById } = useStore()
-  const nav = useNavigate()
   const h = file.hospitalization
   const note = file.notes.find((n) => n.kind === 'discharge')
   const [dx, setDx] = useState(h.diagnoses)
@@ -564,7 +636,10 @@ function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => 
       <article className="panel consult-entry">
         <div className="panel__head">
           <div><h2>Nota de egreso</h2><p>{dateTime(note.at)}, {staffById(note.authorId)?.name}</p></div>
-          {h.prescriptionId && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${h.prescriptionId}`}><FileText size={15} />Receta de egreso</Link>}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Link className="btn btn--primary btn--sm" to={`/app/hospitalizados/${h.id}/expediente`}><FileText size={15} />Expediente completo</Link>
+            {h.prescriptionId && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${h.prescriptionId}`}>Receta de egreso</Link>}
+          </div>
         </div>
         <div className="panel__body"><div className="note">
           <div className="note__sec"><h4>Resumen</h4><p>{d.summary}</p></div>
@@ -613,7 +688,7 @@ function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => 
           setBusy(true)
           const r = await discharge(h.id, { diagnoses: dx, summary: f.summary.trim(), condition: f.condition, instructions: f.instructions.trim(), followUp: f.followUp.trim() || undefined, items })
           setBusy(false)
-          if (r) { if (r.prescriptionId) nav(`/app/recetas/${r.prescriptionId}`); else reload() }
+          if (r) reload()
         }}><LogOut size={17} />Dar de alta a {fullName(p).split(' ')[0]}</button>
       </div>
     </section>

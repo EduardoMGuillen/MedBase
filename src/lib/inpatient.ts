@@ -1,4 +1,4 @@
-import type { Dose, InpatientMed } from './types.js'
+import type { Dose, InpatientFile, InpatientMed, InpatientNote } from './types.js'
 
 /**
  * Horario de medicamentos en hospitalización. Lo usan el servidor (para validar que la dosis que
@@ -80,4 +80,44 @@ export function yearsOld(birthDate: string, now = new Date()) {
   let y = now.getFullYear() - b.getFullYear()
   if (now.getMonth() < b.getMonth() || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate())) y--
   return y
+}
+
+export interface MedAlert { level: 'bad' | 'warn'; text: string }
+
+/** Dosis no administradas y atrasadas, para el expediente de médicos y enfermería. */
+export function collectMedAlerts(file: InpatientFile, now = new Date()): MedAlert[] {
+  const out: MedAlert[] = []
+  for (const d of file.doses) {
+    if (d.status !== 'skipped') continue
+    const m = file.meds.find((x) => x.id === d.medId)
+    const when = new Date(d.givenAt).toLocaleString('es-HN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
+    out.push({ level: 'bad', text: `No se administró ${m ? medLabel(m) : 'un medicamento'} (${when})${d.note ? `. ${d.note}` : ''}` })
+  }
+  if (file.hospitalization.status === 'active') {
+    const start = new Date(now); start.setHours(0, 0, 0, 0)
+    const end = new Date(start); end.setDate(end.getDate() + 1)
+    for (const m of file.meds.filter((x) => !x.stoppedAt && !x.prn)) {
+      for (const s of doseTimes(m, start, end)) {
+        const dose = file.doses.find((d) => d.medId === m.id && d.scheduledAt && new Date(d.scheduledAt).getTime() === s.at.getTime())
+        if (slotState(s.at, s.omitted, dose, now) === 'late') {
+          const hh = s.at.toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })
+          out.push({ level: 'warn', text: `Atrasada: ${medLabel(m)} de las ${hh}` })
+        }
+      }
+    }
+  }
+  return out
+}
+
+/** Órdenes que deben leerse en la nota: las guardadas, o si no hay, los medicamentos vigentes en ese momento. */
+export function noteOrders(n: InpatientNote, file: Pick<InpatientFile, 'meds'>): string[] {
+  if (n.orders && n.orders.length) return n.orders
+  const lines: string[] = []
+  for (const m of file.meds) {
+    if (m.orderedAt > n.at) continue
+    if (m.stoppedAt && m.stoppedAt < n.at) continue
+    if (m.stoppedAt === n.at) lines.push(`OMITIR ${m.drug}`)
+    else lines.push(medLabel(m))
+  }
+  return lines
 }

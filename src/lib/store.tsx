@@ -19,6 +19,7 @@ interface Data {
   beds: Bed[]
   inpatients: Hospitalization[] // hospitalizaciones abiertas
   followups: Followup[] // seguimientos activos
+  discharges: { patientId: string; at: string }[] // último egreso de cada paciente
 }
 
 interface Session { user: Staff; permissions: Permission[]; demo: boolean }
@@ -40,7 +41,7 @@ export interface Report {
 
 export type NewPayment = Pick<Payment, 'patientId' | 'items' | 'discount' | 'method'> & { appointmentId?: string; reference?: string }
 
-const EMPTY: Data = { staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], settings: DEFAULT_SETTINGS, beds: [], inpatients: [], followups: [] }
+const EMPTY: Data = { staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], settings: DEFAULT_SETTINGS, beds: [], inpatients: [], followups: [], discharges: [] }
 
 /** Minutos sin actividad antes de cerrar la sesión automáticamente. */
 const IDLE_MINUTES = 30
@@ -155,7 +156,7 @@ function useStoreValue() {
     // Hospitalización
     admit: (b: Pick<Hospitalization, 'patientId' | 'bedId' | 'reason' | 'diagnoses' | 'consultationId' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'> & { admittedAt?: string }) =>
       run(() => api<Hospitalization>('/inpatient', { body: b }), 'Paciente ingresado'),
-    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[] }) =>
+    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[] }) =>
       run(() => api<InpatientNote>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),
     recordDose: (medId: string, b: { scheduledAt?: string; givenAt?: string; status: Dose['status']; note?: string }) =>
@@ -187,7 +188,7 @@ function useStoreValue() {
     updatePatient: (id: string, p: Partial<Patient>) =>
       run(() => api<Patient>(`/patients/${id}`, { method: 'PATCH', body: p }), 'Ficha actualizada'),
     addVitals: (v: Omit<Vitals, 'id' | 'takenAt' | 'takenBy'>) =>
-      run(() => api<Vitals>('/vitals', { body: v }), 'Signos vitales guardados'),
+      run(() => api<Vitals>('/vitals', { body: v }), 'Preclínica guardada'),
     finishConsult: (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[] }, items: PrescriptionItem[]) =>
       run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null }>('/consultations', { body: { ...c, items } }),
         items.length ? 'Consulta y receta firmadas' : 'Consulta firmada'),

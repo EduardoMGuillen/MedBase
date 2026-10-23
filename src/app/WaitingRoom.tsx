@@ -11,8 +11,8 @@ import { IdentificationForm } from './PatientForms'
 const minutesSince = (iso?: string) => (iso ? Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)) : null)
 
 /**
- * Consulta externa del día: los que tienen cita y los que van llegando sin cita. Enfermería les
- * abre el perfil de consulta externa (triaje) y el médico los atiende.
+ * Consulta externa del día: los que tienen cita y los que van llegando sin cita. Enfermería abre
+ * la preclínica y el médico los atiende. No se muestra "por llegar": esa lista no aporta aquí.
  */
 export default function WaitingRoom() {
   const { appointments, patient, staffById, can, setStatus, user, inpatientOf } = useStore()
@@ -24,9 +24,8 @@ export default function WaitingRoom() {
     .filter((a) => sameDay(a.start, new Date()) && !['cancelled'].includes(a.status) && (!mine || a.doctorId === user?.id))
     .sort((a, b) => a.start.localeCompare(b.start))
   const lanes = [
-    { title: 'Por llegar', hint: 'Citas del día que aún no llegan.', list: today.filter((a) => ['scheduled', 'confirmed'].includes(a.status)) },
-    { title: 'En sala', hint: 'Esperan que enfermería les abra el perfil de consulta externa.', list: today.filter((a) => a.status === 'arrived') },
-    { title: 'Listos para consulta', hint: 'Con signos vitales y motivo; el médico los llamará.', list: today.filter((a) => ['triaged', 'in_consult'].includes(a.status)) },
+    { title: 'En sala', hint: 'Esperan que enfermería les abra la preclínica.', list: today.filter((a) => a.status === 'arrived') },
+    { title: 'Listos para consulta', hint: 'Con preclínica hecha; el médico los llamará.', list: today.filter((a) => ['triaged', 'in_consult'].includes(a.status)) },
     { title: 'Atendidos', hint: 'Consultas firmadas hoy.', list: today.filter((a) => a.status === 'done') },
   ]
 
@@ -70,7 +69,9 @@ export default function WaitingRoom() {
                     {['scheduled', 'confirmed'].includes(a.status) && can('checkin.manage') &&
                       <button className="btn btn--soft btn--sm" onClick={() => setStatus(a.id, 'arrived', `Llegada de ${p.firstName} registrada`)}><LogIn size={15} />Llegó</button>}
                     {a.status === 'arrived' && can('vitals.record') &&
-                      <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Perfil CE</button>}
+                      <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Preclínica</button>}
+                    {a.status === 'done' && a.paid === false && can('billing.manage') &&
+                      <Link className="btn btn--ghost btn--sm" to="/app/caja">Cobrar</Link>}
                     {['arrived', 'triaged', 'in_consult'].includes(a.status) && own && can('consult.write') &&
                       <button className="btn btn--primary btn--sm" onClick={() => nav(`/app/consulta/${a.id}`)}><Stethoscope size={15} />{a.status === 'in_consult' ? 'Continuar' : 'Atender'}</button>}
                     {a.status === 'done' && can('chart.view') &&
@@ -114,7 +115,7 @@ function WalkInModal({ onClose }: { onClose: () => void }) {
       }}>Pasar a sala de espera</button>
     </>}>
       <PatientPicker value={patientId} onChange={setPatientId} />
-      {can('patients.manage') && <button className="linklike" style={{ justifySelf: 'start' }} onClick={() => setRegistering(true)}>¿No está registrado? Registrar paciente nuevo</button>}
+      {can('patients.manage') && <button className="btn btn--primary" style={{ justifySelf: 'start' }} onClick={() => setRegistering(true)}><UserPlus size={16} />Registrar paciente nuevo</button>}
       <label className="field"><span>Médico</span>
         <select className="select" value={doctorId} onChange={(e) => setDoctorId(e.target.value)}>
           {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? `, ${d.specialty.toLowerCase()}` : ''}</option>)}
@@ -142,7 +143,8 @@ export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onC
   const num = (k: keyof typeof v) => Number(v[k])
   const opt = (k: keyof typeof v) => (v[k] === '' ? undefined : Number(v[k]))
   const out = (k: keyof typeof RANGES) => v[k] !== '' && (num(k) < RANGES[k][0] || num(k) > RANGES[k][1])
-  const ready = reason.trim() && ['systolic', 'diastolic', 'heartRate', 'respRate', 'temperature', 'spo2'].every((k) => v[k as keyof typeof v] !== '')
+  // El motivo siempre se pide. Los signos no: hay pacientes a los que no les aplica peso, glucometría u otro dato.
+  const ready = reason.trim().length > 0
   const F = (k: keyof typeof v, label: string, unit: string, step = '1') => (
     <label className="field">
       <span>{label} <small style={{ fontWeight: 400 }}>({unit})</small></span>
@@ -154,20 +156,21 @@ export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onC
   const flags = (Object.keys(RANGES) as (keyof typeof RANGES)[]).filter(out)
 
   return (
-    <Modal title={`Triaje de ${fullName(p)}`} onClose={onClose} footer={<>
+    <Modal title={`Preclínica de ${fullName(p)}`} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
         const ok = await addVitals({
-          patientId: p.id, appointmentId: appt.id, chiefComplaint: reason.trim(), systolic: num('systolic'), diastolic: num('diastolic'), heartRate: num('heartRate'),
-          respRate: opt('respRate'), temperature: num('temperature'), spo2: num('spo2'), glucose: opt('glucose'), weightKg: num('weightKg'), heightCm: num('heightCm'),
-          painScale: num('painScale'), notes: v.notes || undefined,
+          patientId: p.id, appointmentId: appt.id, chiefComplaint: reason.trim(), systolic: opt('systolic'), diastolic: opt('diastolic'), heartRate: opt('heartRate'),
+          respRate: opt('respRate'), temperature: opt('temperature'), spo2: opt('spo2'), glucose: opt('glucose'), weightKg: opt('weightKg'), heightCm: opt('heightCm'),
+          painScale: v.painScale === '' ? undefined : num('painScale'), notes: v.notes || undefined,
         })
         setBusy(false)
         if (ok) onSaved()
-      }}>Guardar triaje</button>
+      }}>Guardar preclínica</button>
     </>}>
       {p.allergies.length > 0 && <div className="alert-strip">Alergias: {p.allergies.join(', ')}</div>}
+      <p className="muted" style={{ fontSize: 13.5 }}>Registra el motivo y sólo los signos que apliquen. Ningún signo es obligatorio.</p>
       <label className="field"><span>Motivo de consulta, en palabras del paciente</span>
         <textarea className="textarea textarea--sm" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Dolor de garganta y fiebre desde hace 3 días" /></label>
       <div className="form-grid">
@@ -179,7 +182,7 @@ export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onC
         {F('spo2', 'Saturación O₂', '%')}
         {F('weightKg', 'Peso', 'kg', '0.1')}
         {F('heightCm', 'Talla', 'cm')}
-        {F('glucose', 'Glucometría (opcional)', 'mg/dL')}
+        {F('glucose', 'Glucometría', 'mg/dL')}
         {F('painScale', 'Dolor', '0 a 10')}
       </div>
       {flags.length > 0 && <div className="alert-strip" role="status">Fuera de rango: {flags.map((f) => RANGE_LABEL[f]).join(', ')}. El médico verá la alerta.</div>}

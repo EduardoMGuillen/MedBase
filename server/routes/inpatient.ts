@@ -155,6 +155,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       subjective: soap('el subjetivo (S)'), objective: soap('el objetivo (O)'), assessment: soap('el análisis (A)'), plan: soap('el plan (P)'),
       meds: z.array(medInput).max(20).default([]),
       stopMedIds: z.array(z.string()).max(30).default([]),
+      orders: z.array(z.string().trim().min(1).max(500)).max(40).default([]),
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
@@ -167,8 +168,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const at = new Date().toISOString()
     const name = await patientName(String(h.patient_id))
     await sql.tx(async (q) => {
-      await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-        [noteId, cid, id, b.kind, user.id, at, b.subjective, b.objective, b.assessment, b.plan])
+      await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan, data) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [noteId, cid, id, b.kind, user.id, at, b.subjective, b.objective, b.assessment, b.plan, JSON.stringify({ orders: b.orders })])
       await applyMeds(q, cid, id, noteId, user.id, at, b.meds, b.stopMedIds)
       const what = b.kind === 'admission' ? 'nota de ingreso' : 'nota de evolución'
       const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`].filter(Boolean).join(', ')

@@ -162,24 +162,24 @@ export default function Consultation() {
 
       <div className="consult2">
         <div className="consult2__left">
-          <details className="panel csec" open={!last}>
-            <summary className="panel__head"><h2>Antecedentes patológicos</h2>
-              <button className="btn btn--ghost btn--sm" onClick={(e) => { e.preventDefault(); setEditBg(true) }}><Pencil size={14} />Editar</button></summary>
+          <section className="panel csec">
+            <div className="panel__head"><h2>Antecedentes patológicos</h2>
+              <button className="btn btn--ghost btn--sm" onClick={() => setEditBg(true)}><Pencil size={14} />Editar</button></div>
             <div className="panel__body">
               <BackgroundView p={p} compact only={PATHOLOGICAL} />
               {last && <p className="csec__last">Última consulta, {date(last.date)}: <b>{last.diagnoses.map((d) => d.label).join('; ')}</b></p>}
             </div>
-          </details>
+          </section>
 
-          <details className="panel csec" open={!last}>
-            <summary className="panel__head"><h2>Antecedentes no patológicos</h2>
-              <button className="btn btn--ghost btn--sm" onClick={(e) => { e.preventDefault(); setEditBg(true) }}><Pencil size={14} />Editar</button></summary>
+          <section className="panel csec">
+            <div className="panel__head"><h2>Antecedentes no patológicos</h2>
+              <button className="btn btn--ghost btn--sm" onClick={() => setEditBg(true)}><Pencil size={14} />Editar</button></div>
             <div className="panel__body"><BackgroundView p={p} compact only={NON_PATHOLOGICAL} /></div>
-          </details>
+          </section>
 
           <section className="panel csec">
             <div className="panel__head"><div><h2>Signos vitales</h2>
-              <p>{todayVitals ? `Registrados por enfermería a las ${time(todayVitals.takenAt)}` : 'Enfermería aún no abre el perfil de consulta externa'}</p></div>
+              <p>{todayVitals ? `Registrados en preclínica a las ${time(todayVitals.takenAt)}` : 'Enfermería aún no abre la preclínica'}</p></div>
               {!todayVitals && <button className="btn btn--soft btn--sm" onClick={() => setTriage(true)}><Activity size={15} />Tomar signos</button>}
             </div>
             {todayVitals && <div className="panel__body csec__body">
