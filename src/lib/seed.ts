@@ -1,6 +1,6 @@
 import type {
   Appointment, Bed, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote, Patient, Payment, Prescription,
-  Schedule, Service, Staff, Vitals,
+  PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types.js'
 import { ICD10 } from './catalogs.js'
 import { doseTimes, HOUR, LATE_AFTER_MIN } from './inpatient.js'
@@ -435,4 +435,417 @@ export function seedInpatient(now = new Date()) {
   ]
 
   return { hospitalizations, notes, meds, doses, procedures, labs, followups }
+}
+
+// ---------- Casos completos de demostración ----------
+
+/** Pacientes con su historia completa, de la ficha al cobro. */
+export const CASE_PATIENT_IDS = ['p15', 'p16', 'p17', 'p18', 'p19', 'p20']
+/** Cama del caso que ya egresó. */
+export const CASE_BED = 'bed-105'
+/** Personal que firma los casos; deben existir en la base para cargarlos. */
+export const CASE_STAFF = ['s-herrera', 's-paz', 's-zuniga', 's-rios', 's-mejia']
+
+/** Primer número libre de expediente, folio de receta y recibo; la base los calcula para no chocar con lo que ya existe. */
+export interface CaseNumbers { record: number; folio: number; receipt: number }
+
+/**
+ * Casos completos: consulta externa, crónicos con varios controles, un diabético que se hospitalizó y ya
+ * egresó, control de niño sano y control prenatal. Cada consulta lleva preclínica, receta y cobro.
+ */
+export function seedCases(next: CaseNumbers, now = new Date()) {
+  const iso = (d: Date) => d.toISOString()
+  const dayAt = (offset: number, h: number, m = 0) => { const d = new Date(now); d.setDate(d.getDate() + offset); d.setHours(h, m, 0, 0); return d }
+  const day = (offset: number) => at(offset, 12).slice(0, 10)
+  const nurse = 's-rios'
+  const internist = 's-herrera'
+
+  const patients: Patient[] = [
+    p('p15', '', 'Iris Marisol', 'Cáceres Amador', '1993-04-18', 'F', '9741-2286', {
+      dni: '0801-1993-06620', civilStatus: 'Soltera', occupation: 'Cajera de banco', education: 'Universitaria', religion: 'Evangélica',
+      address: 'Tegucigalpa, Col. Alameda, 4a calle', emergencyName: 'Norma Amador', emergencyPhone: '9741-0035', emergencyRelation: 'Madre',
+      bloodType: 'A+', createdAt: at(-6, 9, 50),
+      background: { pathological: 'Negados.', surgical: 'Negados.', medications: 'Ninguno.', family: 'Madre con HTA.', smoking: 'Negado.', alcohol: 'Negado.',
+        menarche: '12 años', gpac: 'G0 P0 A0 C0', contraception: 'Ninguno' },
+    }),
+    p('p16', '', 'Kevin Josué', 'Zelaya Ortiz', '1985-08-09', 'M', '3302-7719', {
+      dni: '0801-1985-08847', civilStatus: 'Casado', occupation: 'Bodeguero', education: 'Secundaria completa', address: 'Comayagüela, Col. Villa Adela',
+      emergencyName: 'Lesly Ortiz', emergencyPhone: '3302-1145', emergencyRelation: 'Esposa', bloodType: 'O+', createdAt: at(-3, 14, 50),
+      background: { pathological: 'Negados.', surgical: 'Negados.', traumatic: 'Esguince de tobillo izquierdo (2018).', smoking: 'Negado.', alcohol: 'Fines de semana.' },
+    }),
+    p('p17', '', 'Julio César', 'Maradiaga Flores', '1961-01-22', 'M', '9734-5508', {
+      dni: '0801-1961-00219', civilStatus: 'Casado', occupation: 'Taxista', education: 'Secundaria completa', religion: 'Católica',
+      address: 'Tegucigalpa, Col. Hato de Enmedio, bloque 12', emergencyName: 'Marlen Flores', emergencyPhone: '9734-2210', emergencyRelation: 'Esposa',
+      bloodType: 'B+', insurance: 'Mapfre', conditions: ['Diabetes tipo 2', 'Hipertensión arterial', 'Dislipidemia'], createdAt: at(-175, 8, 45),
+      background: {
+        pathological: 'DM2 e HTA diagnosticadas en esta clínica hace 6 meses. Dislipidemia.', surgical: 'Negados.', traumatic: 'Herida con clavo en tobillo derecho, complicada con celulitis.',
+        hospitalizations: 'Celulitis de pierna derecha, 4 días en medicina interna.', transfusions: 'Negados.',
+        medications: 'Metformina 850 mg cada 12 horas. Losartán 50 mg cada 24 horas. Atorvastatina 20 mg cada noche.',
+        family: 'Madre con DM2. Hermano con infarto a los 60 años.', smoking: 'Negado.', alcohol: 'Ocasional.', drugs: 'Negado.',
+        lifestyle: 'Sedentario, maneja 10 horas al día. Empezó a caminar 30 minutos diarios.', immunizations: 'Influenza 2026. Td 2024.',
+      },
+    }),
+    p('p18', '', 'Dora Alicia', 'Espinoza de Sosa', '1957-06-30', 'F', '2231-6094', {
+      dni: '0801-1957-03318', civilStatus: 'Casada', occupation: 'Ama de casa', education: 'Primaria completa', religion: 'Católica', address: 'Tegucigalpa, Col. Las Colinas',
+      emergencyName: 'Claudia Sosa', emergencyPhone: '9902-4471', emergencyRelation: 'Hija', bloodType: 'O+', allergies: ['Ácido acetilsalicílico'],
+      conditions: ['Hipertensión arterial', 'Hipotiroidismo'], insurance: 'Seguros Atlántida', createdAt: at(-120, 10, 15),
+      background: {
+        pathological: 'HTA desde 2012. Hipotiroidismo desde 2019.', surgical: 'Histerectomía abdominal por miomatosis (2005).', traumatic: 'Negados.',
+        medications: 'Amlodipino 10 mg cada 24 horas. Levotiroxina 50 mcg en ayunas.', family: 'Hermana con cáncer de mama.', smoking: 'Negado.', alcohol: 'Negado.',
+        immunizations: 'Influenza 2026. Neumococo 2025.', menarche: '13 años', gpac: 'G4 P4 A0 C0',
+      },
+    }),
+    p('p19', '', 'Sofía Isabel', 'Murillo Bonilla', '2024-04-12', 'F', '9688-3150', {
+      address: 'Tegucigalpa, Col. Villa Olímpica', emergencyName: 'Paola Bonilla', emergencyPhone: '9688-3150', emergencyRelation: 'Madre', bloodType: 'O+',
+      createdAt: at(-14, 8, 20),
+      background: {
+        pathological: 'Producto de embarazo a término, parto vaginal, peso al nacer 3.2 kg. Sin enfermedades.', surgical: 'Negados.', family: 'Negados.',
+        lifestyle: 'Asiste a guardería. Come con la familia y toma 2 vasos de leche entera al día.', immunizations: 'Esquema nacional al día.',
+      },
+    }),
+    p('p20', '', 'Karla Vanessa', 'Ramos Aguilar', '1998-02-14', 'F', '9871-6643', {
+      dni: '0801-1998-02761', civilStatus: 'Unión libre', occupation: 'Estilista', education: 'Secundaria completa', address: 'Tegucigalpa, Col. Cerro Grande, zona 3',
+      emergencyName: 'Marvin Cruz', emergencyPhone: '9871-3302', emergencyRelation: 'Pareja', bloodType: 'A+', conditions: ['Embarazo de 28 semanas'], createdAt: at(-32, 8, 40),
+      background: {
+        pathological: 'Negados.', surgical: 'Negados.', medications: 'Ácido fólico, sulfato ferroso y calcio.', family: 'Madre con DM2.', smoking: 'Negado.', alcohol: 'Negado.',
+        immunizations: 'Td 2 dosis y Tdpa en este embarazo.', menarche: '12 años', lmp: day(-198), gpac: 'G2 P1 A0 C0', contraception: 'Ninguno (embarazo actual)',
+      },
+    }),
+  ]
+
+  const appointments: Appointment[] = []
+  const vitals: Vitals[] = []
+  const consultations: Consultation[] = []
+  const prescriptions: Prescription[] = []
+  const payments: Payment[] = []
+  const labs: { id: string; patientId: string; hospitalizationId?: string; category: 'lab' | 'imaging'; title: string; takenAt: string; lines: string[] }[] = []
+  const charge = (...ids: string[]) => ids.map((id) => { const s = SERVICES.find((x) => x.id === id)!; return { serviceId: s.id, name: s.name, price: s.price, qty: 1 } })
+  const total = (items: Payment['items']) => items.reduce((s, i) => s + i.price * i.qty, 0)
+  const oral = (drug: string, presentation: string, dose: string, frequency: string, duration: string, instructions?: string): PrescriptionItem =>
+    ({ drug, presentation, dose, frequency, duration, route: 'Oral', instructions })
+
+  /** Una consulta completa: cita atendida, preclínica, consulta firmada, receta y cobro. */
+  const visit = (v: {
+    patientId: string; doctorId: string; day: number; h: number; m?: number; reason: string; type?: Appointment['type']
+    vitals: Omit<Vitals, 'id' | 'patientId' | 'appointmentId' | 'takenBy' | 'takenAt'>
+    history: string; exam: string; observations?: string; diagnoses: { code: string; label: string }[]; orders: string[]
+    rx?: PrescriptionItem[]; items: Payment['items']; method: Payment['method']; reference?: string
+  }) => {
+    const k = consultations.length + 1
+    const m = v.m ?? 0
+    const ids = { appt: `ca${k}`, vitals: `cv${k}`, cons: `cc${k}`, rx: v.rx ? `crx${k}` : undefined }
+    appointments.push({ id: ids.appt, patientId: v.patientId, doctorId: v.doctorId, start: at(v.day, v.h, m), minutes: 30, reason: v.reason, type: v.type ?? 'followup', status: 'done' })
+    vitals.push({ id: ids.vitals, patientId: v.patientId, appointmentId: ids.appt, takenBy: nurse, takenAt: at(v.day, v.h, m + 5), ...v.vitals })
+    consultations.push({ id: ids.cons, patientId: v.patientId, doctorId: v.doctorId, appointmentId: ids.appt, date: at(v.day, v.h, m + 15), reason: v.reason, symptoms: [],
+      history: v.history, exam: v.exam, observations: v.observations, diagnoses: v.diagnoses, orders: v.orders, plan: '', vitalsId: ids.vitals, prescriptionId: ids.rx })
+    if (v.rx) prescriptions.push({ id: ids.rx!, folio: '', patientId: v.patientId, doctorId: v.doctorId, consultationId: ids.cons, issuedAt: at(v.day, v.h, m + 35), items: v.rx })
+    payments.push({ id: `cp${k}`, receiptNo: '', appointmentId: ids.appt, patientId: v.patientId, items: v.items, discount: 0, total: total(v.items), method: v.method,
+      reference: v.reference, receivedBy: 's-mejia', paidAt: at(v.day, v.h, m + 45) })
+    return ids.cons
+  }
+
+  const DX = {
+    cystitis: { code: 'N30.0', label: 'Cistitis aguda' },
+    lumbago: { code: 'M54.5', label: 'Lumbago no especificado' },
+    dm2: { code: 'E11.9', label: 'Diabetes mellitus tipo 2 sin complicaciones' },
+    htn: { code: 'I10', label: 'Hipertensión esencial (primaria)' },
+    lipids: { code: 'E78.5', label: 'Hiperlipidemia, no especificada' },
+    obesity: { code: 'E66.9', label: 'Obesidad, no especificada' },
+    cellulitis: { code: 'L03.1', label: 'Celulitis de otras partes de los miembros' },
+    thyroid: { code: 'E03.9', label: 'Hipotiroidismo, no especificado' },
+    child: { code: 'Z00.1', label: 'Control de salud de rutina del niño' },
+    prenatal: { code: 'Z34.8', label: 'Supervisión de otros embarazos normales' },
+  }
+  const metformin = oral('Metformina', 'Tableta 850 mg', '1 tableta', 'Cada 12 horas', '90 días', 'Con el desayuno y la cena.')
+  const losartan = oral('Losartán', 'Tableta 50 mg', '1 tableta', 'Cada 24 horas', '90 días', 'Por la mañana.')
+  const atorvastatin = oral('Atorvastatina', 'Tableta 20 mg', '1 tableta', 'Cada 24 horas', '90 días', 'Por la noche.')
+
+  // Consulta externa: cistitis
+  visit({
+    patientId: 'p15', doctorId: internist, day: -6, h: 10, reason: 'Ardor al orinar', type: 'first',
+    vitals: { systolic: 118, diastolic: 76, heartRate: 88, respRate: 16, temperature: 37.6, spo2: 99, weightKg: 61, heightCm: 158, painScale: 4,
+      chiefComplaint: 'Ardor al orinar y ganas de orinar a cada rato desde hace 2 días.' },
+    history: 'Femenina de 33 años, sin antecedentes patológicos, con disuria, polaquiuria y urgencia urinaria de 2 días de evolución. Niega fiebre, dolor lumbar, flujo vaginal y sangrado. FUM hace 12 días. Sin infecciones urinarias en el último año.',
+    exam: 'Buen estado general, hidratada. Abdomen blando, dolor leve a la palpación suprapúbica, sin masas. Puño percusión renal negativa bilateral.',
+    observations: 'Examen general de orina en el laboratorio de la clínica: nitritos positivos, leucocitos de 25 a 30 por campo y bacterias abundantes.',
+    diagnoses: [DX.cystitis],
+    orders: ['Abundantes líquidos orales, al menos 2 litros al día.', 'Nitrofurantoína 100 mg, 1 cápsula vía oral cada 12 horas por 5 días.',
+      'Fenazopiridina 200 mg, 1 tableta vía oral cada 8 horas por 2 días.', 'Urocultivo si los síntomas siguen 48 horas después de terminar el antibiótico.',
+      'Regresar antes si presenta fiebre, dolor lumbar o vómitos.'],
+    rx: [oral('Nitrofurantoína', 'Cápsula 100 mg', '1 cápsula', 'Cada 12 horas', '5 días', 'Con alimentos.'),
+      oral('Fenazopiridina', 'Tableta 200 mg', '1 tableta', 'Cada 8 horas', '2 días', 'Tiñe la orina de color naranja.')],
+    items: charge('svc-mi'), method: 'cash',
+  })
+  labs.push({ id: 'cl1', patientId: 'p15', category: 'lab', title: 'Examen general de orina', takenAt: at(-6, 10, 10),
+    lines: ['Aspecto turbio, color amarillo', 'Densidad 1.020, pH 6.0', 'Nitritos positivos', 'Esterasa leucocitaria positiva', 'Leucocitos 25-30 por campo', 'Eritrocitos 3-5 por campo', 'Bacterias abundantes'] })
+
+  // Consulta externa: lumbalgia mecánica, con control agendado
+  visit({
+    patientId: 'p16', doctorId: internist, day: -3, h: 15, reason: 'Dolor de espalda baja', type: 'first',
+    vitals: { systolic: 132, diastolic: 84, heartRate: 80, respRate: 16, temperature: 36.6, spo2: 98, weightKg: 84, heightCm: 172, painScale: 7,
+      chiefComplaint: 'Dolor en la espalda baja desde que levantó unas cajas hace 4 días.' },
+    history: 'Masculino de 41 años, bodeguero, con dolor lumbar de 4 días que inició al levantar cajas pesadas. Dolor punzante, 7 de 10, que aumenta al agacharse y mejora en reposo. Sin irradiación a miembros inferiores, sin adormecimiento y sin alteraciones para orinar o defecar. Niega fiebre y pérdida de peso.',
+    exam: 'Marcha antálgica. Contractura de músculos paravertebrales lumbares bilateral. Lasègue negativo bilateral. Fuerza 5/5, reflejos rotulianos y aquíleos conservados y simétricos. Sensibilidad sin alteraciones.',
+    diagnoses: [DX.lumbago],
+    orders: ['Reposo relativo por 3 días; no cargar objetos pesados por 2 semanas.', 'Calor local por 20 minutos, 3 veces al día.',
+      'Naproxeno 550 mg, 1 tableta vía oral cada 12 horas por 5 días.', 'Ciclobenzaprina 10 mg, 1 tableta vía oral cada noche por 5 días.', 'Incapacidad laboral por 3 días.',
+      'Fisioterapia si no mejora en una semana.', 'Consultar de inmediato si aparece debilidad en las piernas o pierde el control para orinar o defecar.'],
+    rx: [oral('Naproxeno', 'Tableta 550 mg', '1 tableta', 'Cada 12 horas', '5 días', 'Con alimentos.'),
+      oral('Ciclobenzaprina', 'Tableta 10 mg', '1 tableta', 'Cada 24 horas', '5 días', 'Por la noche. Da sueño: no manejar después de tomarla.')],
+    items: charge('svc-mi'), method: 'card', reference: 'POS 004512',
+  })
+  appointments.push({ id: 'ca-next1', patientId: 'p16', doctorId: internist, start: at(8, 14, 30), minutes: 30, reason: 'Control de lumbalgia', type: 'followup', status: 'scheduled' })
+
+  // Crónico: diabetes e hipertensión desde el diagnóstico hasta el control posterior al egreso
+  visit({
+    patientId: 'p17', doctorId: internist, day: -175, h: 9, reason: 'Chequeo general', type: 'first',
+    vitals: { systolic: 152, diastolic: 94, heartRate: 82, respRate: 16, temperature: 36.5, spo2: 97, weightKg: 96, heightCm: 170, glucose: 212,
+      chiefComplaint: 'Viene a chequeo; tiene mucha sed y orina seguido.' },
+    history: 'Masculino de 65 años, taxista, que acude a chequeo general. Refiere polidipsia y poliuria de 3 meses y visión borrosa ocasional. No se controlaba desde hace 5 años. Madre diabética.',
+    exam: 'Obeso, IMC 33.2. Ruidos cardíacos rítmicos, sin soplos. Pulsos periféricos presentes. Pies sin lesiones, sensibilidad conservada con monofilamento.',
+    observations: 'Glucometría capilar de 212 mg/dL con síntomas clásicos. HbA1c de 8.9 %. PA elevada en dos tomas.',
+    diagnoses: [DX.dm2, DX.htn, DX.obesity],
+    orders: ['Dieta para diabético de 1800 kcal, baja en sal.', 'Caminar 30 minutos al día, 5 días a la semana.', 'Metformina 850 mg, 1 tableta vía oral cada 12 horas.',
+      'Losartán 50 mg, 1 tableta vía oral cada 24 horas.', 'Perfil lipídico, creatinina y examen general de orina.', 'Valoración por oftalmología (fondo de ojo).',
+      'Control en 3 meses con HbA1c.'],
+    rx: [metformin, losartan], items: charge('svc-mi', 'svc-ecg'), method: 'insurance', reference: 'Mapfre',
+  })
+  labs.push({ id: 'cl2', patientId: 'p17', category: 'lab', title: 'Química sanguínea y HbA1c', takenAt: at(-175, 9, 40),
+    lines: ['Hemoglobina glicosilada (HbA1c) 8.9 %', 'Glucosa en ayunas 171 mg/dl', 'Creatinina 0.9 mg/dl', 'Colesterol total 238 mg/dl', 'LDL 152 mg/dl', 'HDL 38 mg/dl', 'Trigliceridos 260 mg/dl'] })
+  visit({
+    patientId: 'p17', doctorId: internist, day: -84, h: 9, m: 30, reason: 'Control de diabetes',
+    vitals: { systolic: 138, diastolic: 86, heartRate: 78, respRate: 16, temperature: 36.4, spo2: 98, weightKg: 92.5, heightCm: 170, glucose: 146, chiefComplaint: 'Control de azúcar y presión.' },
+    history: 'Masculino de 65 años con DM2 e HTA de 3 meses de diagnóstico. Cumple el tratamiento; ya no tiene sed ni orina en exceso. Bajó 3.5 kg. Glucometrías en ayunas de 130 a 150 mg/dL. Trae laboratorios.',
+    exam: 'Buen estado general. IMC 32. Pies sin lesiones, pulsos pedios presentes.',
+    observations: 'HbA1c de 7.8 % (antes 8.9 %). LDL de 148 mg/dL. Oftalmología reporta fondo de ojo sin retinopatía.',
+    diagnoses: [DX.dm2, DX.htn, DX.lipids],
+    orders: ['Continuar dieta y ejercicio; meta de bajar 5 kg más.', 'Metformina 850 mg, 1 tableta vía oral cada 12 horas.', 'Losartán 50 mg, 1 tableta vía oral cada 24 horas.',
+      'Atorvastatina 20 mg, 1 tableta vía oral cada noche.', 'Revisarse los pies todos los días y consultar ante cualquier herida.', 'Control en 3 meses con HbA1c y perfil lipídico.'],
+    rx: [metformin, losartan, atorvastatin], items: charge('svc-mi'), method: 'insurance', reference: 'Mapfre',
+  })
+  labs.push({ id: 'cl3', patientId: 'p17', category: 'lab', title: 'Hemoglobina glicosilada y perfil lipídico', takenAt: at(-85, 7, 30),
+    lines: ['Hemoglobina glicosilada (HbA1c) 7.8 %', 'Glucosa en ayunas 139 mg/dl', 'Colesterol total 221 mg/dl', 'LDL 148 mg/dl', 'Trigliceridos 214 mg/dl'] })
+  const fromConsult = visit({
+    patientId: 'p17', doctorId: internist, day: -9, h: 10, reason: 'Pierna derecha roja e hinchada', type: 'urgent',
+    vitals: { systolic: 146, diastolic: 90, heartRate: 104, respRate: 20, temperature: 38.6, spo2: 96, weightKg: 91, heightCm: 170, glucose: 286, painScale: 7,
+      chiefComplaint: 'Pierna derecha roja, caliente e hinchada desde hace 3 días, con fiebre.' },
+    history: 'Masculino de 65 años con DM2 e HTA. Hace 5 días se hirió el tobillo derecho con un clavo; hace 3 días inició enrojecimiento, calor y dolor que sube hacia la pantorrilla, con fiebre de 38.5 °C desde anoche. Se aplicó remedios caseros.',
+    exam: 'Febril, taquicárdico. Pierna derecha con eritema, calor y edema desde el tobillo hasta el tercio medio, bordes mal definidos, sin crepitación ni ampollas. Herida puntiforme en maléolo externo con escasa secreción purulenta. Pulsos pedios presentes.',
+    observations: 'Glucometría de 286 mg/dL. Se decide ingreso por celulitis extensa con fiebre en paciente diabético.',
+    diagnoses: [DX.cellulitis, DX.dm2],
+    orders: ['Ingreso a sala de medicina interna.', 'Hemograma, glucosa, creatinina y proteína C reactiva.', 'Ultrasonido Doppler venoso de miembro inferior derecho.', 'Manejo según nota de ingreso.'],
+    items: charge('svc-mi'), method: 'insurance', reference: 'Mapfre',
+  })
+
+  // La hospitalización de ese paciente: 4 días con antibiótico IV, cambio a vía oral y egreso con receta
+  const admitted = dayAt(-9, 11)
+  const discharged = dayAt(-5, 11)
+  const hospitalizations: Hospitalization[] = [{
+    id: 'chz1', patientId: 'p17', bedId: CASE_BED, consultationId: fromConsult, admittedAt: iso(admitted), admittedBy: internist,
+    reason: 'Celulitis de pierna derecha con fiebre, de 3 días de evolución, en paciente diabético.', diagnoses: [DX.cellulitis, DX.dm2],
+    companionName: 'Marlen Flores', companionRelation: 'Esposa', companionPhone: '9734-2210', patientPhone: '9734-5508',
+    status: 'discharged', dischargedAt: iso(discharged), dischargedBy: internist, prescriptionId: 'crx-egreso',
+  }]
+  const soap = (id: string, kind: 'admission' | 'evolution', when: Date, s: string, o: string, a: string, pl: string, orders: string[]): InpatientNote =>
+    ({ id, hospitalizationId: 'chz1', kind, authorId: internist, at: iso(when), subjective: s, objective: o, assessment: a, plan: pl, text: '', orders })
+  const nursing = (id: string, when: Date, text: string): InpatientNote =>
+    ({ id, hospitalizationId: 'chz1', kind: 'nursing', authorId: nurse, at: iso(when), subjective: '', objective: '', assessment: '', plan: '', text })
+  const discharge = {
+    diagnoses: [DX.cellulitis, DX.dm2, DX.htn],
+    summary: 'Ingresó por celulitis de pierna derecha con fiebre, secundaria a herida con clavo en el tobillo, y glucosa de 286 mg/dL. Recibió clindamicina IV por 3 días con buena respuesta y se pasó a amoxicilina con ácido clavulánico oral. Doppler venoso sin trombosis. La glucosa se controló con insulina NPH y se reinició metformina. Afebril desde el segundo día.',
+    condition: 'Mejorado, afebril y deambulando.',
+    instructions: 'Completar el antibiótico por 7 días más. Elevar la pierna al estar sentado. Lavar la herida con agua y jabón una vez al día. Revisarse los pies a diario y usar calzado cerrado. Glucometría en ayunas cada día, anotarla y traer el registro. Regresar si vuelve la fiebre, aumenta el enrojecimiento o sale pus.',
+    followUp: 'Control en consulta externa con la Dra. Herrera en 4 días.',
+  }
+  const notes: InpatientNote[] = [
+    soap('chn1', 'admission', dayAt(-9, 11, 20),
+      'Masculino de 65 años, diabético e hipertenso, con eritema, calor, edema y dolor en pierna derecha de 3 días, tras herida con clavo en el tobillo hace 5 días. Fiebre de 38.5 °C desde anoche.',
+      'PA 146/90, FC 104, FR 20, T 38.6 °C, SpO₂ 96 %. Glucometría 286 mg/dL. Eritema y edema del tobillo al tercio medio de la pierna derecha; herida puntiforme con secreción purulenta en maléolo externo. Pulsos pedios presentes.',
+      'Celulitis de pierna derecha sin datos de fascitis, en paciente con DM2 descompensada.',
+      'Elevar el miembro y marcar los bordes del eritema. Antibiótico IV, analgesia, insulina y tromboprofilaxis según indicaciones. Suspender metformina durante la hospitalización. Hemograma, química y Doppler venoso.',
+      ['Dieta para diabético, 1800 kcal.', 'Signos vitales cada 4 horas.', 'Glucometría antes de cada comida y a las 22:00.', 'Elevar miembro inferior derecho.',
+        'Marcar bordes del eritema en cada turno.', 'Curación de la herida del tobillo cada 24 horas.', 'Clindamicina 600 mg IV c/8h', 'Acetaminofén 1 g IV c/8h PRN',
+        'Insulina NPH 10 UI SC c/12h', 'Enoxaparina 40 mg SC c/24h', 'Losartán 50 mg VO c/24h']),
+    soap('chn2', 'evolution', dayAt(-8, 8, 30), 'Durmió bien. Dolor 5 de 10. Sin fiebre desde la madrugada.',
+      'PA 138/84, FC 90, T 37.6 °C. Eritema dentro de los bordes marcados, sin progresión. Leucocitos 17 300. Doppler sin trombosis venosa profunda. Glucometrías de 190 a 240 mg/dL.',
+      'Celulitis con respuesta inicial al antibiótico. Hiperglucemia aún fuera de metas.', 'Continúa clindamicina. Se aumenta insulina NPH a 14 UI cada 12 horas.',
+      ['Dieta para diabético, 1800 kcal.', 'Signos vitales cada 4 horas.', 'Glucometría antes de cada comida y a las 22:00.', 'Elevar miembro inferior derecho.',
+        'Clindamicina 600 mg IV c/8h', 'Acetaminofén 1 g IV c/8h PRN', 'Insulina NPH 14 UI SC c/12h', 'Enoxaparina 40 mg SC c/24h', 'Losartán 50 mg VO c/24h']),
+    soap('chn3', 'evolution', dayAt(-7, 8, 30), 'Sin fiebre. Dolor 3 de 10. Ya camina al baño.',
+      'Afebril 36 horas. El eritema retrocedió unos 4 cm de los bordes marcados. Herida limpia, sin secreción. Glucometría de 68 mg/dL en ayunas, sin síntomas; se omitió la NPH de la mañana. Resto de glucometrías de 130 a 170 mg/dL.',
+      'Celulitis en mejoría. Hipoglucemia leve aislada.', 'Continúa el mismo manejo; vigilar glucometrías antes de cada dosis de NPH. Si sigue afebril, mañana pasa a antibiótico oral.',
+      ['Glucometría antes de cada dosis de NPH; no aplicarla si es menor de 90 mg/dL y avisar.', 'Clindamicina 600 mg IV c/8h', 'Acetaminofén 1 g IV c/8h PRN',
+        'Insulina NPH 14 UI SC c/12h', 'Enoxaparina 40 mg SC c/24h', 'Losartán 50 mg VO c/24h']),
+    soap('chn4', 'evolution', dayAt(-6, 8), 'Se siente bien, con apetito.',
+      'Afebril 60 horas. Eritema residual leve en el tercio inferior. Leucocitos 9 800. Glucometrías de 110 a 160 mg/dL.',
+      'Celulitis en resolución.', 'Se omite clindamicina IV y se inicia amoxicilina con ácido clavulánico oral. Reinicia metformina. Egreso en 24 a 48 horas.',
+      ['Amoxicilina con ácido clavulánico 875 mg VO c/12h', 'Metformina 850 mg VO c/12h', 'Acetaminofén 1 g IV c/8h PRN', 'Insulina NPH 14 UI SC c/12h',
+        'Enoxaparina 40 mg SC c/24h', 'Losartán 50 mg VO c/24h']),
+    { id: 'chn5', hospitalizationId: 'chz1', kind: 'discharge', authorId: internist, at: iso(discharged), subjective: '', objective: '', assessment: '', plan: discharge.instructions, text: '', discharge },
+    nursing('chn6', dayAt(-9, 11, 10), 'Ingresa a sala en silla de ruedas, consciente y orientado. Se canaliza vena periférica en antebrazo izquierdo con catéter 20. Se marcan los bordes del eritema y se toman muestras de laboratorio.'),
+    nursing('chn7', dayAt(-9, 23), 'Temperatura de 38.4 °C; se aplica acetaminofén según indicación. Glucometría de 241 mg/dL.'),
+    nursing('chn8', dayAt(-7, 7, 50), 'Glucometría de 68 mg/dL antes del desayuno, asintomático. Se le da jugo, se avisa al médico y no se aplica la NPH de las 08:00.'),
+    nursing('chn9', dayAt(-5, 10, 30), 'Se retira catéter periférico sin complicaciones. Se explican al paciente y a su esposa las indicaciones de egreso y la receta. Egresa caminando.'),
+  ]
+  const med = (id: string, noteId: string, drug: string, presentation: string, dose: string, route: string, everyHours: number, prn: boolean, firstAt: Date,
+    instructions?: string, stoppedAt = discharged): InpatientMed => ({
+    id, hospitalizationId: 'chz1', noteId, drug, presentation, dose, route, everyHours, prn, firstAt: iso(firstAt), instructions, orderedBy: internist,
+    orderedAt: iso(firstAt), stoppedAt: iso(stoppedAt), stoppedBy: internist,
+  })
+  const meds: InpatientMed[] = [
+    med('chm1', 'chn1', 'Clindamicina', 'Vial 600 mg/4 ml', '600 mg', 'Intravenosa', 8, false, dayAt(-9, 13), undefined, dayAt(-6, 8)),
+    med('chm2', 'chn1', 'Acetaminofén', 'Frasco 1 g/100 ml', '1 g', 'Intravenosa', 8, true, dayAt(-9, 13), 'Si la temperatura es mayor de 38 °C o hay dolor.'),
+    med('chm3', 'chn1', 'Insulina NPH', 'Frasco 100 UI/ml', '10 UI', 'Subcutánea', 12, false, dayAt(-9, 20), undefined, dayAt(-8, 8, 30)),
+    med('chm4', 'chn2', 'Insulina NPH', 'Frasco 100 UI/ml', '14 UI', 'Subcutánea', 12, false, dayAt(-8, 20), 'Glucometría antes de aplicarla.'),
+    med('chm5', 'chn1', 'Enoxaparina', 'Jeringa 40 mg/0,4 ml', '40 mg', 'Subcutánea', 24, false, dayAt(-9, 20)),
+    med('chm6', 'chn1', 'Losartán', 'Tableta 50 mg', '50 mg', 'Oral', 24, false, dayAt(-8, 8)),
+    med('chm7', 'chn4', 'Amoxicilina con ácido clavulánico', 'Tableta 875/125 mg', '875 mg', 'Oral', 12, false, dayAt(-6, 9), 'Con alimentos.'),
+    med('chm8', 'chn4', 'Metformina', 'Tableta 850 mg', '850 mg', 'Oral', 12, false, dayAt(-6, 13), 'Con los alimentos.'),
+  ]
+  // Hoja de enfermería completa hasta el egreso; la NPH del día de la hipoglucemia quedó sin aplicar
+  const skipped = iso(dayAt(-7, 8))
+  const doses: Dose[] = []
+  for (const m of meds) {
+    for (const s of doseTimes(m, new Date(m.firstAt), new Date(m.stoppedAt!))) {
+      const slot = iso(s.at)
+      doses.push(m.id === 'chm4' && slot === skipped
+        ? { id: `chd${doses.length + 1}`, medId: m.id, scheduledAt: slot, givenAt: iso(dayAt(-7, 8, 5)), givenBy: nurse, status: 'skipped', note: 'Glucometría de 68 mg/dL. Se avisó al médico.' }
+        : { id: `chd${doses.length + 1}`, medId: m.id, scheduledAt: slot, givenAt: iso(new Date(s.at.getTime() + (5 + (doses.length % 3) * 5) * 60_000)), givenBy: nurse, status: 'given' })
+    }
+  }
+  for (const [when, note] of [[dayAt(-9, 13, 30), 'T 38.6 °C.'], [dayAt(-9, 23, 5), 'T 38.4 °C.'], [dayAt(-8, 4, 10), 'Dolor 6/10.']] as const) {
+    doses.push({ id: `chd${doses.length + 1}`, medId: 'chm2', givenAt: iso(when), givenBy: nurse, status: 'given', note })
+  }
+  const procedures: HospProcedure[] = [
+    { id: 'chp1', hospitalizationId: 'chz1', kind: 'authorization', name: 'Autorización de Mapfre para hospitalización', status: 'authorized', notes: 'Autorización 55-80213.',
+      createdBy: internist, createdAt: iso(dayAt(-9, 11, 40)), updatedBy: internist, updatedAt: iso(dayAt(-9, 13, 15)) },
+    { id: 'chp2', hospitalizationId: 'chz1', kind: 'procedure', name: 'Ultrasonido Doppler venoso de miembro inferior derecho', scheduledAt: iso(dayAt(-9, 15)), status: 'done',
+      notes: 'Sin trombosis venosa profunda. Edema del tejido celular subcutáneo.', createdBy: internist, createdAt: iso(dayAt(-9, 11, 30)), updatedBy: internist, updatedAt: iso(dayAt(-9, 15, 40)) },
+  ]
+  labs.push(
+    { id: 'cl4', patientId: 'p17', hospitalizationId: 'chz1', category: 'lab', title: 'Hemograma', takenAt: iso(dayAt(-9, 11, 30)),
+      lines: ['Leucocitos 17 300 /mm3', 'Neutrofilos 84 %', 'Hemoglobina 13.9 g/dl', 'Plaquetas 286 000 /mm3'] },
+    { id: 'cl5', patientId: 'p17', hospitalizationId: 'chz1', category: 'lab', title: 'Química sanguínea', takenAt: iso(dayAt(-9, 11, 30)),
+      lines: ['Glucosa 279 mg/dl', 'Creatinina 1.0 mg/dl', 'Nitrogeno ureico 18 mg/dl', 'Proteina C reactiva 96 mg/l'] },
+    { id: 'cl6', patientId: 'p17', hospitalizationId: 'chz1', category: 'lab', title: 'Hemograma', takenAt: iso(dayAt(-6, 6)),
+      lines: ['Leucocitos 9 800 /mm3', 'Neutrofilos 68 %', 'Hemoglobina 13.5 g/dl', 'Plaquetas 301 000 /mm3', 'Proteina C reactiva 21 mg/l'] },
+  )
+  prescriptions.push({ id: 'crx-egreso', folio: '', patientId: 'p17', doctorId: internist, consultationId: 'chn5', hospitalizationId: 'chz1', issuedAt: iso(discharged), items: [
+    oral('Amoxicilina con ácido clavulánico', 'Tableta 875/125 mg', '1 tableta', 'Cada 12 horas', '7 días', 'Con alimentos. No dejarlo aunque se sienta bien.'),
+    oral('Acetaminofén', 'Tableta 500 mg', '2 tabletas', 'Cada 8 horas', '5 días', 'Sólo si hay dolor o fiebre.'),
+    { ...metformin, duration: '30 días' }, { ...losartan, duration: '30 días' }, { ...atorvastatin, duration: '30 días' },
+  ] })
+  const stay = [{ name: 'Hospitalización en sala de medicina interna (por día)', price: 1800, qty: 4 }, { name: 'Medicamentos e insumos', price: 3150, qty: 1 },
+    { ...charge('svc-cur')[0], qty: 4 }]
+  payments.push({ id: 'cp-hosp', receiptNo: '', patientId: 'p17', items: stay, discount: 0, total: total(stay), method: 'insurance', reference: 'Mapfre, autorización 55-80213',
+    receivedBy: 's-mejia', paidAt: iso(dayAt(-5, 11, 40)) })
+  visit({
+    patientId: 'p17', doctorId: internist, day: -1, h: 9, reason: 'Control después del egreso',
+    vitals: { systolic: 134, diastolic: 82, heartRate: 76, respRate: 16, temperature: 36.6, spo2: 98, weightKg: 90.5, heightCm: 170, glucose: 132, painScale: 1,
+      chiefComplaint: 'Control de la pierna; ya casi no le duele.' },
+    history: 'Masculino de 65 años, egresado hace 4 días por celulitis de pierna derecha. Cumple amoxicilina con ácido clavulánico, va en el día 4 de 7. Sin fiebre. Glucometrías en ayunas de 118 a 140 mg/dL según su registro.',
+    exam: 'Pierna derecha sin eritema ni calor, edema leve residual en el tobillo. Herida del maléolo externo cerrada, sin secreción. Pulsos pedios presentes.',
+    observations: 'HbA1c de control de 7.2 %. Celulitis resuelta.',
+    diagnoses: [DX.dm2, DX.htn, DX.lipids],
+    orders: ['Terminar amoxicilina con ácido clavulánico hasta completar los 7 días.', 'Metformina 850 mg, 1 tableta vía oral cada 12 horas.', 'Losartán 50 mg, 1 tableta vía oral cada 24 horas.',
+      'Atorvastatina 20 mg, 1 tableta vía oral cada noche.', 'Cuidado de los pies: revisión diaria, calzado cerrado, no caminar descalzo.',
+      'Control de crónicos en 3 meses con HbA1c, perfil lipídico y microalbuminuria.'],
+    rx: [metformin, losartan, atorvastatin], items: charge('svc-mi'), method: 'insurance', reference: 'Mapfre',
+  })
+  labs.push({ id: 'cl7', patientId: 'p17', category: 'lab', title: 'Hemoglobina glicosilada', takenAt: at(-2, 7, 15), lines: ['Hemoglobina glicosilada (HbA1c) 7.2 %', 'Glucosa en ayunas 124 mg/dl'] })
+
+  // Crónico: hipertensión e hipotiroidismo, con su control de mañana
+  visit({
+    patientId: 'p18', doctorId: internist, day: -120, h: 10, m: 30, reason: 'Control de presión arterial',
+    vitals: { systolic: 148, diastolic: 92, heartRate: 72, respRate: 16, temperature: 36.4, spo2: 97, weightKg: 72, heightCm: 155, chiefComplaint: 'Control; se le olvidan algunas pastillas.' },
+    history: 'Femenina de 69 años con HTA de 14 años e hipotiroidismo. Olvida el amlodipino 2 o 3 veces por semana. Cefalea occipital ocasional. Niega dolor torácico, disnea y edema.',
+    exam: 'Buen estado general. Ruidos cardíacos rítmicos, sin soplos. Tiroides no palpable. Extremidades sin edema.',
+    observations: 'TSH de 3.1 mUI/L. Electrocardiograma en ritmo sinusal, sin hipertrofia ventricular izquierda.',
+    diagnoses: [DX.htn, DX.thyroid],
+    orders: ['Dieta hiposódica.', 'Amlodipino 10 mg, 1 tableta vía oral cada 24 horas (se aumenta la dosis).', 'Levotiroxina 50 mcg, 1 tableta en ayunas.',
+      'Usar pastillero semanal; su hija le recordará las tomas.', 'Tomarse la presión en casa 3 veces por semana y anotarla.', 'Control en 3 meses con creatinina y perfil lipídico.'],
+    rx: [oral('Amlodipino', 'Tableta 10 mg', '1 tableta', 'Cada 24 horas', '90 días', 'Por la mañana.'),
+      oral('Levotiroxina', 'Tableta 50 mcg', '1 tableta', 'Cada 24 horas', '90 días', 'En ayunas, 30 minutos antes del desayuno.')],
+    items: charge('svc-mi', 'svc-ecg'), method: 'cash',
+  })
+  visit({
+    patientId: 'p18', doctorId: internist, day: -30, h: 10, m: 30, reason: 'Control de presión arterial',
+    vitals: { systolic: 132, diastolic: 80, heartRate: 70, respRate: 16, temperature: 36.5, spo2: 98, weightKg: 71, heightCm: 155, chiefComplaint: 'Control de presión; trae su registro.' },
+    history: 'Con el pastillero ya no olvida dosis. Presiones en casa de 125 a 135 / 78 a 84 mmHg. Sin cefalea. Trae laboratorios.',
+    exam: 'Buen estado general. Sin edema en miembros inferiores. Sin otros hallazgos.',
+    observations: 'Creatinina de 0.8 mg/dL. LDL de 118 mg/dL.',
+    diagnoses: [DX.htn, DX.thyroid],
+    orders: ['Continuar amlodipino 10 mg cada 24 horas.', 'Continuar levotiroxina 50 mcg en ayunas.', 'Mamografía de tamizaje por antecedente familiar.', 'Control en 1 mes con el resultado de la mamografía.'],
+    rx: [oral('Amlodipino', 'Tableta 10 mg', '1 tableta', 'Cada 24 horas', '90 días', 'Por la mañana.'),
+      oral('Levotiroxina', 'Tableta 50 mcg', '1 tableta', 'Cada 24 horas', '90 días', 'En ayunas, 30 minutos antes del desayuno.')],
+    items: charge('svc-mi'), method: 'cash',
+  })
+  appointments.push({ id: 'ca-next2', patientId: 'p18', doctorId: internist, start: at(1, 10, 30), minutes: 30, reason: 'Control de presión arterial', type: 'followup', status: 'confirmed' })
+
+  // Pediatría: control de niño sano con vacuna
+  visit({
+    patientId: 'p19', doctorId: 's-paz', day: -14, h: 8, m: 30, reason: 'Control de niño sano',
+    vitals: { heartRate: 112, respRate: 26, temperature: 36.7, spo2: 99, weightKg: 12.6, heightCm: 89, chiefComplaint: 'Control de los 2 años y medio y vacunas.' },
+    history: 'Femenina de 2 años 6 meses que acude a control de niño sano. Come bien y duerme toda la noche. Dice frases de 3 palabras, corre y sube escaleras. Sin enfermedades desde el último control. La madre refiere que juega con tierra en la guardería.',
+    exam: 'Activa, reactiva, bien hidratada. Peso de 12.6 kg y talla de 89 cm, ambos en el percentil 50 para la edad. Otoscopia normal. Ruidos cardíacos rítmicos, sin soplos. Abdomen blando. Genitales normales.',
+    observations: 'Desarrollo psicomotor adecuado para la edad. Se aplica la vacuna que corresponde según el esquema nacional.',
+    diagnoses: [DX.child],
+    orders: ['Alimentación variada con la familia; limitar jugos y golosinas.', 'Albendazol 400 mg, dosis única vía oral (desparasitación).',
+      'Sulfato ferroso, 15 mg de hierro elemental al día por 3 meses.', 'Lavado de manos antes de comer y después de jugar.', 'Próximo control de niño sano a los 3 años.'],
+    rx: [oral('Albendazol', 'Suspensión 400 mg/10 ml', '10 ml', 'Dosis única', '1 día', 'Por la mañana.'),
+      oral('Sulfato ferroso', 'Gotas 25 mg/ml de hierro elemental', '0.6 ml', 'Cada 24 horas', '90 días', 'Entre comidas, con jugo de naranja. Oscurece las heces.')],
+    items: charge('svc-ped', 'svc-vac'), method: 'transfer', reference: 'BAC 7781204',
+  })
+
+  // Ginecología: control prenatal de un segundo embarazo
+  const prenatalRx = [oral('Ácido fólico', 'Tableta 1 mg', '1 tableta', 'Cada 24 horas', '30 días'),
+    oral('Sulfato ferroso', 'Tableta 300 mg', '1 tableta', 'Cada 24 horas', '30 días', 'Con jugo de naranja, lejos de la leche.'),
+    oral('Carbonato de calcio', 'Tableta 600 mg', '1 tableta', 'Cada 12 horas', '30 días', 'Separado 2 horas del hierro.')]
+  visit({
+    patientId: 'p20', doctorId: 's-zuniga', day: -32, h: 9, reason: 'Control prenatal',
+    vitals: { systolic: 108, diastolic: 68, heartRate: 84, respRate: 18, temperature: 36.6, spo2: 99, weightKg: 63.5, heightCm: 160, chiefComplaint: 'Control del embarazo; se siente bien.' },
+    history: 'Femenina de 28 años, G2 P1, con embarazo de 23.5 semanas por FUM confiable. Percibe movimientos fetales. Niega sangrado, salida de líquido, contracciones, cefalea y edema. Las náuseas desaparecieron en el segundo trimestre.',
+    exam: 'Altura uterina de 23 cm. Frecuencia cardíaca fetal de 146 lpm. Sin dinámica uterina. Sin edema en miembros inferiores.',
+    observations: 'Ultrasonido obstétrico: feto único vivo, cefálico, biometría acorde a 23 semanas 4 días, placenta posterior normoinserta, líquido amniótico normal.',
+    diagnoses: [DX.prenatal],
+    orders: ['Ácido fólico 1 mg, 1 tableta vía oral al día.', 'Sulfato ferroso 300 mg, 1 tableta vía oral al día.', 'Carbonato de calcio 600 mg, 1 tableta vía oral cada 12 horas.',
+      'Curva de tolerancia a la glucosa de 75 g entre las semanas 24 y 28, por antecedente de madre diabética.', 'Hemograma y examen general de orina.',
+      'Signos de alarma: sangrado, salida de líquido, dolor de cabeza intenso, visión borrosa o menos movimientos del bebé.', 'Control prenatal en 4 semanas.'],
+    rx: prenatalRx, items: charge('svc-gin'), method: 'card', reference: 'POS 004133',
+  })
+  labs.push({ id: 'cl8', patientId: 'p20', category: 'imaging', title: 'Ultrasonido obstétrico', takenAt: at(-32, 9, 20),
+    lines: ['Feto unico vivo, presentacion cefalica', 'DBP, CC, CA y LF acordes a 23 semanas 4 dias', 'Peso fetal estimado 610 g', 'Frecuencia cardiaca fetal 146 lpm',
+      'Placenta posterior, normoinserta, grado I', 'Liquido amniotico normal (ILA 14 cm)', 'Sin malformaciones evidentes'] })
+  labs.push({ id: 'cl9', patientId: 'p20', category: 'lab', title: 'Curva de tolerancia a la glucosa y hemograma', takenAt: at(-6, 7, 30),
+    lines: ['Glucosa en ayunas 84 mg/dl', 'Glucosa 1 hora post carga 152 mg/dl', 'Glucosa 2 horas post carga 128 mg/dl', 'Hemoglobina 11.4 g/dl', 'Plaquetas 245 000 /mm3'] })
+  visit({
+    patientId: 'p20', doctorId: 's-zuniga', day: -4, h: 9, reason: 'Control prenatal',
+    vitals: { systolic: 112, diastolic: 70, heartRate: 86, respRate: 18, temperature: 36.5, spo2: 99, weightKg: 65.2, heightCm: 160, chiefComplaint: 'Control del embarazo; trae resultados.' },
+    history: 'Embarazo de 27.5 semanas. Movimientos fetales presentes. Sin síntomas de alarma. Cumple los suplementos. Trae curva de tolerancia a la glucosa y hemograma.',
+    exam: 'Altura uterina de 27 cm. Frecuencia cardíaca fetal de 142 lpm. Presentación cefálica. Sin edema.',
+    observations: 'Curva de tolerancia a la glucosa normal (84, 152 y 128 mg/dL). Hemoglobina de 11.4 g/dL. Se aplica Tdpa.',
+    diagnoses: [DX.prenatal],
+    orders: ['Continuar ácido fólico, sulfato ferroso y calcio.', 'Vacuna Tdpa aplicada hoy.', 'Inscribirse en el curso de preparación para el parto.', 'Control prenatal en 2 semanas.'],
+    rx: prenatalRx, items: charge('svc-gin', 'svc-vac'), method: 'card', reference: 'POS 004871',
+  })
+  appointments.push({ id: 'ca-next3', patientId: 'p20', doctorId: 's-zuniga', start: at(10, 9, 0), minutes: 45, reason: 'Control prenatal', type: 'followup', status: 'scheduled' })
+
+  const followups: Followup[] = [
+    { id: 'cfu1', patientId: 'p15', kind: 'reminder', title: 'Llamar para confirmar que terminó el antibiótico y ya no tiene molestias', dueDate: day(1), createdBy: internist, createdAt: at(-6, 10, 40), active: true },
+    { id: 'cfu2', patientId: 'p17', kind: 'chronic', title: 'Diabetes mellitus tipo 2 e hipertensión arterial', dueDate: day(89), everyDays: 90, notes: 'Traer HbA1c, perfil lipídico y microalbuminuria.',
+      createdBy: internist, createdAt: at(-175, 9, 40), active: true },
+    { id: 'cfu3', patientId: 'p18', kind: 'chronic', title: 'Hipertensión arterial e hipotiroidismo', dueDate: day(1), everyDays: 90, notes: 'Traer el resultado de la mamografía.',
+      createdBy: internist, createdAt: at(-120, 11), active: true },
+    { id: 'cfu4', patientId: 'p18', kind: 'procedure', title: 'Mamografía de tamizaje', dueDate: day(-2), notes: 'Por antecedente de hermana con cáncer de mama.', createdBy: internist, createdAt: at(-30, 11), active: true },
+    { id: 'cfu5', patientId: 'p19', kind: 'reminder', title: 'Control de niño sano de los 3 años', dueDate: day(166), createdBy: 's-paz', createdAt: at(-14, 9), active: true },
+    { id: 'cfu6', patientId: 'p20', kind: 'reminder', title: 'Control prenatal de la semana 30 con ultrasonido', dueDate: day(10), createdBy: 's-zuniga', createdAt: at(-4, 9, 30), active: true },
+  ]
+
+  // Expedientes, folios y recibos siguen la numeración de la clínica en orden cronológico
+  const time = (s: string) => new Date(s).getTime()
+  patients.forEach((x, i) => { x.record = `EXP-${String(next.record + i).padStart(5, '0')}` })
+  prescriptions.sort((x, y) => time(x.issuedAt) - time(y.issuedAt)).forEach((x, i) => { x.folio = `RX-${now.getFullYear()}-${String(next.folio + i).padStart(4, '0')}` })
+  payments.sort((x, y) => time(x.paidAt) - time(y.paidAt)).forEach((x, i) => { x.receiptNo = `R-${String(next.receipt + i).padStart(6, '0')}` })
+
+  return { patients, appointments, vitals, consultations, prescriptions, payments, hospitalizations, notes, meds, doses, procedures, labs, followups }
 }

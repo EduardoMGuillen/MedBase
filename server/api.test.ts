@@ -145,6 +145,16 @@ describe('pacientes y personal', () => {
     assert.deepEqual(upd.body.allergies, ['Penicilina'])
   })
 
+  test('médicos y enfermería registran pacientes con el formulario completo', async () => {
+    // Mismo cuerpo que arma IdentificationForm: los campos que no se llenan llegan como ''
+    const form = { lastName: 'Formulario', birthDate: '1990-05-05', sex: 'F', phone: '9999-8888', email: '', dni: '', civilStatus: '', occupation: '',
+      education: '', religion: '', address: '', emergencyName: '', emergencyPhone: '', emergencyRelation: '', insurance: '', allergies: [] }
+    for (const email of ['lherrera@demo.clinara', 'crios@demo.clinara']) {
+      const r = await (await as(email)).post('/api/patients', { ...form, firstName: email.split('@')[0] })
+      assert.equal(r.status, 201, `${email}: ${JSON.stringify(r.body)}`)
+    }
+  })
+
   test('administración crea un usuario que puede iniciar sesión, y al desactivarlo pierde acceso', async () => {
     const admin = await as('admin@demo.clinara')
     const u = await admin.post('/api/staff', { name: 'Lic. Nueva Enfermera', role: 'nurse', email: 'nueva@clinica.test' })
@@ -189,6 +199,52 @@ describe('pacientes y personal', () => {
       const beds = await old.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM beds')
       assert.equal(Number(beds?.n), 15)
       assert.ok(await old.one(`SELECT 1 FROM hospitalizations WHERE status = 'active'`))
+    } finally {
+      await old.close()
+    }
+  })
+
+  test('la demo trae casos completos, de la preclínica al egreso', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const chart = await doc.get('/api/patients/p17/chart')
+    assert.equal(chart.status, 200)
+    assert.equal(chart.body.consultations.length, 4)
+    assert.ok(chart.body.consultations.every((c: any) => c.vitalsId && c.diagnoses.length && c.orders.length))
+    assert.equal(chart.body.hospitalizations[0].status, 'discharged')
+    const file = await doc.get(`/api/inpatient/${chart.body.hospitalizations[0].id}`)
+    assert.ok(file.body.notes.some((n: any) => n.kind === 'discharge' && n.discharge?.summary))
+    assert.ok(file.body.notes.some((n: any) => n.kind === 'evolution' && n.orders?.length))
+    assert.ok(file.body.doses.some((d: any) => d.status === 'skipped'))
+    assert.equal(file.body.labs.length, 3)
+    const boot = await doc.get('/api/bootstrap')
+    assert.ok(boot.body.discharges.some((d: any) => d.patientId === 'p17'))
+    assert.ok(boot.body.followups.some((f: any) => f.patientId === 'p18' && f.kind === 'chronic'))
+    // Cada consulta de los casos quedó cobrada
+    const rec = await as('smejia@demo.clinara')
+    const appts = (await rec.get('/api/bootstrap')).body.appointments.filter((a: any) => a.id.startsWith('ca') && a.status === 'done')
+    assert.ok(appts.length >= 8 && appts.every((a: any) => a.paid))
+  })
+
+  test('una base v8 recibe los casos sin chocar con expedientes ya registrados', async () => {
+    const old = createSql({ memory: true })
+    try {
+      await ensureDb(old)
+      // Estado de una base v8: sin los casos, y con un paciente que el personal registró al probar
+      await old.exec(`
+        DELETE FROM followups WHERE id LIKE 'cfu%'; DELETE FROM attachments WHERE id LIKE 'cl%'; DELETE FROM hosp_doses WHERE id LIKE 'chd%';
+        DELETE FROM hosp_meds WHERE id LIKE 'chm%'; DELETE FROM hosp_procedures WHERE id LIKE 'chp%'; DELETE FROM hosp_notes WHERE id LIKE 'chn%';
+        DELETE FROM hospitalizations WHERE id LIKE 'chz%'; DELETE FROM payments WHERE id LIKE 'cp%'; DELETE FROM prescriptions WHERE id LIKE 'crx%';
+        DELETE FROM consultations WHERE id LIKE 'cc%'; DELETE FROM vitals WHERE id LIKE 'cv%'; DELETE FROM appointments WHERE id LIKE 'ca%';
+        DELETE FROM patients WHERE id IN ('p15', 'p16', 'p17', 'p18', 'p19', 'p20');
+        INSERT INTO patients (id, record, first_name, last_name, birth_date, sex, phone, created_at, clinic_id)
+          VALUES ('real1', 'EXP-00484', 'Registrado', 'Antes', '1990-01-01', 'F', '99990000', '2026-10-01T09:00:00', 'c-sb');
+        UPDATE meta SET value = '8' WHERE key = 'schema';
+      `)
+      await ensureDb({ ...old })
+      const cases = await old.query(`SELECT record FROM patients WHERE id IN ('p15', 'p16', 'p17', 'p18', 'p19', 'p20') ORDER BY record`)
+      assert.equal(cases.length, 6)
+      assert.equal(cases[0].record, 'EXP-00485')
+      assert.ok(await old.one(`SELECT 1 FROM hospitalizations WHERE id = 'chz1' AND status = 'discharged'`))
     } finally {
       await old.close()
     }

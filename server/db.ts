@@ -1,8 +1,8 @@
 import bcrypt from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
 import {
-  BEDS, DEFAULT_SETTINGS, DEMO_CLINICS, DOCTOR_SETUP, INPATIENT_PATIENTS, MAIN_CLINIC, PATIENTS, SECOND_CLINIC, SERVICES, STAFF,
-  seedAppointments, seedClinical, seedHistory, seedInpatient, seedSecondClinic,
+  BEDS, CASE_BED, CASE_PATIENT_IDS, CASE_STAFF, DEFAULT_SETTINGS, DEMO_CLINICS, DOCTOR_SETUP, INPATIENT_PATIENTS, MAIN_CLINIC, PATIENTS, SECOND_CLINIC, SERVICES, STAFF,
+  seedAppointments, seedCases, seedClinical, seedHistory, seedInpatient, seedSecondClinic,
 } from '../src/lib/seed.js'
 import type { Appointment, Patient, Payment, Schedule } from '../src/lib/types.js'
 import type { Row, Sql } from './sql.js'
@@ -10,7 +10,7 @@ import type { Row, Sql } from './sql.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '8'
+const SCHEMA_VERSION = '9'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -342,6 +342,7 @@ export function ensureDb(sql: Sql) {
       else {
         await adoptSingleClinic(q)
         await addDemoInpatients(q)
+        await addDemoCases(q)
       }
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
@@ -380,6 +381,13 @@ async function adoptSingleClinic(q: Sql) {
   }
 }
 
+const PATIENT_COLUMNS = ['id', 'record', 'first_name', 'last_name', 'birth_date', 'sex', 'phone', 'email', 'blood_type', 'allergies', 'conditions', 'insurance', 'created_at',
+  'dni', 'civil_status', 'occupation', 'education', 'religion', 'address', 'emergency_name', 'emergency_phone', 'emergency_relation', 'background', 'clinic_id']
+const patientRow = (p: Patient, clinic: string) => [p.id, p.record, p.firstName, p.lastName, p.birthDate, p.sex, p.phone, p.email ?? null, p.bloodType ?? null,
+  JSON.stringify(p.allergies), JSON.stringify(p.conditions), p.insurance ?? null, p.createdAt,
+  p.dni ?? null, p.civilStatus ?? null, p.occupation ?? null, p.education ?? null, p.religion ?? null, p.address ?? null,
+  p.emergencyName ?? null, p.emergencyPhone ?? null, p.emergencyRelation ?? null, JSON.stringify(p.background ?? {}), clinic]
+
 /** Carga la clínica de demostración. La agenda queda relativa al día en que se crea la base. */
 export async function seed(q: Sql) {
   const hash = bcrypt.hashSync(DEMO_PASSWORD, 10)
@@ -401,13 +409,7 @@ export async function seed(q: Sql) {
       const setup = setups[x.id]
       return [x.id, x.name, x.role, x.specialty ?? null, x.email, x.license ?? null, x.color, x.active, hash, setup ? JSON.stringify(setup.schedule) : null, setup?.serviceId ?? null, x.clinicId ?? null]
     }))
-  const patientRow = (p: Patient, clinic: string) => [p.id, p.record, p.firstName, p.lastName, p.birthDate, p.sex, p.phone, p.email ?? null, p.bloodType ?? null,
-    JSON.stringify(p.allergies), JSON.stringify(p.conditions), p.insurance ?? null, p.createdAt,
-    p.dni ?? null, p.civilStatus ?? null, p.occupation ?? null, p.education ?? null, p.religion ?? null, p.address ?? null,
-    p.emergencyName ?? null, p.emergencyPhone ?? null, p.emergencyRelation ?? null, JSON.stringify(p.background ?? {}), clinic]
-  await insertMany(q, 'patients', ['id', 'record', 'first_name', 'last_name', 'birth_date', 'sex', 'phone', 'email', 'blood_type', 'allergies', 'conditions', 'insurance', 'created_at',
-    'dni', 'civil_status', 'occupation', 'education', 'religion', 'address', 'emergency_name', 'emergency_phone', 'emergency_relation', 'background', 'clinic_id'],
-    [...[...PATIENTS, ...history.patients].map((p) => patientRow(p, A)), ...second.patients.map((p) => patientRow(p, B))])
+  await insertMany(q, 'patients', PATIENT_COLUMNS, [...[...PATIENTS, ...history.patients].map((p) => patientRow(p, A)), ...second.patients.map((p) => patientRow(p, B))])
   const arrived = new Date(Date.now() - 12 * 60000).toISOString()
   const apptRow = (a: Appointment, clinic: string) => [a.id, a.patientId, a.doctorId, a.start, a.minutes, a.reason, a.type, a.status,
     a.status === 'arrived' || a.status === 'triaged' ? arrived : null, ['a7', 'a13'].includes(a.id) ? 'online' : a.source ?? 'staff', clinic]
@@ -436,6 +438,7 @@ export async function seed(q: Sql) {
     payments.map((p) => [p.id, p.receiptNo, p.appointmentId ?? null, p.patientId, JSON.stringify(p.items), p.discount, p.total, p.method, p.reference ?? null, p.receivedBy, p.paidAt, A]))
 
   await insertInpatients(q)
+  await insertCases(q)
   await q.run(`INSERT INTO meta (key, value) VALUES ('seeded', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [now])
 }
 
@@ -485,6 +488,73 @@ async function addDemoInpatients(q: Sql) {
   if (await q.one('SELECT 1 FROM beds LIMIT 1')) return
   if (await q.one(`SELECT 1 FROM patients WHERE id IN (${INPATIENT_PATIENTS.map(() => '?').join(',')}) LIMIT 1`, INPATIENT_PATIENTS.map((p) => p.id))) return
   await insertInpatients(q)
+}
+
+/**
+ * Casos completos de la demo. Expedientes, folios y recibos siguen después de los que ya tenga la
+ * clínica, para no chocar con los que el personal haya registrado al probar.
+ */
+async function insertCases(q: Sql) {
+  const A = MAIN_CLINIC
+  const year = new Date().getFullYear()
+  const rec = await q.one<{ n: number }>(`SELECT COALESCE(MAX(CAST(SUBSTR(record, 5) AS INTEGER)), 400)::int AS n FROM patients WHERE clinic_id = ? AND record ~ '^EXP-[0-9]+$'`, [A])
+  const rx = await q.one(`SELECT folio FROM prescriptions WHERE clinic_id = ? AND folio LIKE ? ORDER BY folio DESC LIMIT 1`, [A, `RX-${year}-%`])
+  const pay = await q.one(`SELECT receipt_no FROM payments WHERE clinic_id = ? ORDER BY receipt_no DESC LIMIT 1`, [A])
+  const d = seedCases({
+    record: Number(rec!.n) + 1,
+    folio: rx ? Number(String(rx.folio).split('-')[2]) + 1 : 1001,
+    receipt: (pay ? Number(String(pay.receipt_no).slice(2)) : 0) + 1,
+  })
+  await insertMany(q, 'patients', PATIENT_COLUMNS, d.patients.map((p) => patientRow(p, A)))
+  await insertMany(q, 'appointments', ['id', 'patient_id', 'doctor_id', 'start', 'minutes', 'reason', 'type', 'status', 'source', 'clinic_id'],
+    d.appointments.map((a) => [a.id, a.patientId, a.doctorId, a.start, a.minutes, a.reason, a.type, a.status, 'staff', A]))
+  await insertMany(q, 'vitals', ['id', 'patient_id', 'appointment_id', 'taken_by', 'taken_at', 'systolic', 'diastolic', 'heart_rate', 'temperature', 'spo2', 'weight_kg', 'height_cm', 'pain_scale', 'notes', 'resp_rate', 'glucose', 'chief_complaint', 'clinic_id'],
+    d.vitals.map((v) => [v.id, v.patientId, v.appointmentId ?? null, v.takenBy, v.takenAt, v.systolic ?? null, v.diastolic ?? null, v.heartRate ?? null, v.temperature ?? null, v.spo2 ?? null,
+      v.weightKg ?? null, v.heightCm ?? null, v.painScale ?? null, v.notes ?? null, v.respRate ?? null, v.glucose ?? null, v.chiefComplaint ?? null, A]))
+  await insertMany(q, 'consultations', ['id', 'patient_id', 'doctor_id', 'appointment_id', 'date', 'reason', 'symptoms', 'history', 'exam', 'observations', 'diagnoses', 'plan', 'vitals_id', 'prescription_id', 'orders', 'clinic_id'],
+    d.consultations.map((c) => [c.id, c.patientId, c.doctorId, c.appointmentId ?? null, c.date, c.reason, JSON.stringify(c.symptoms), c.history, c.exam, c.observations ?? '',
+      JSON.stringify(c.diagnoses), c.plan, c.vitalsId ?? null, c.prescriptionId ?? null, JSON.stringify(c.orders), A]))
+  await insertMany(q, 'prescriptions', ['id', 'folio', 'patient_id', 'doctor_id', 'consultation_id', 'hospitalization_id', 'issued_at', 'items', 'clinic_id'],
+    d.prescriptions.map((r) => [r.id, r.folio, r.patientId, r.doctorId, r.consultationId, r.hospitalizationId ?? null, r.issuedAt, JSON.stringify(r.items), A]))
+  await insertMany(q, 'payments', ['id', 'receipt_no', 'appointment_id', 'patient_id', 'items', 'discount', 'total', 'method', 'reference', 'received_by', 'paid_at', 'clinic_id'],
+    d.payments.map((p) => [p.id, p.receiptNo, p.appointmentId ?? null, p.patientId, JSON.stringify(p.items), p.discount, p.total, p.method, p.reference ?? null, p.receivedBy, p.paidAt, A]))
+  await insertMany(q, 'hospitalizations', ['id', 'clinic_id', 'patient_id', 'bed_id', 'consultation_id', 'admitted_at', 'admitted_by', 'reason', 'diagnoses', 'companion_name',
+    'companion_relation', 'companion_phone', 'patient_phone', 'status', 'discharged_at', 'discharged_by', 'prescription_id'],
+    d.hospitalizations.map((h) => [h.id, A, h.patientId, h.bedId, h.consultationId ?? null, h.admittedAt, h.admittedBy, h.reason, JSON.stringify(h.diagnoses), h.companionName ?? null,
+      h.companionRelation ?? null, h.companionPhone ?? null, h.patientPhone ?? null, h.status, h.dischargedAt ?? null, h.dischargedBy ?? null, h.prescriptionId ?? null]))
+  // Igual que la API: las notas médicas guardan sus órdenes y la de egreso sus datos
+  await insertMany(q, 'hosp_notes', ['id', 'clinic_id', 'hospitalization_id', 'kind', 'author_id', 'at', 'subjective', 'objective', 'assessment', 'plan', 'text', 'data'],
+    d.notes.map((n) => [n.id, A, n.hospitalizationId, n.kind, n.authorId, n.at, n.subjective, n.objective, n.assessment, n.plan, n.text,
+      n.discharge ? JSON.stringify(n.discharge) : n.orders ? JSON.stringify({ orders: n.orders }) : null]))
+  await insertMany(q, 'hosp_meds', ['id', 'clinic_id', 'hospitalization_id', 'note_id', 'drug', 'presentation', 'dose', 'route', 'every_hours', 'prn', 'first_at', 'instructions',
+    'ordered_by', 'ordered_at', 'stopped_at', 'stopped_by'],
+    d.meds.map((m) => [m.id, A, m.hospitalizationId, m.noteId ?? null, m.drug, m.presentation ?? null, m.dose, m.route, m.everyHours ?? null, m.prn, m.firstAt,
+      m.instructions ?? null, m.orderedBy, m.orderedAt, m.stoppedAt ?? null, m.stoppedBy ?? null]))
+  await insertMany(q, 'hosp_doses', ['id', 'clinic_id', 'med_id', 'scheduled_at', 'given_at', 'given_by', 'status', 'note'],
+    d.doses.map((x) => [x.id, A, x.medId, x.scheduledAt ?? null, x.givenAt, x.givenBy, x.status, x.note ?? null]))
+  await insertMany(q, 'hosp_procedures', ['id', 'clinic_id', 'hospitalization_id', 'kind', 'name', 'scheduled_at', 'status', 'notes', 'created_by', 'created_at', 'updated_by', 'updated_at'],
+    d.procedures.map((x) => [x.id, A, x.hospitalizationId, x.kind, x.name, x.scheduledAt ?? null, x.status, x.notes ?? null, x.createdBy, x.createdAt, x.updatedBy ?? null, x.updatedAt ?? null]))
+  for (const l of d.labs) {
+    const pdf = textPdf(`${l.title} - Estudio de demostracion`, [`Fecha de toma: ${new Date(l.takenAt).toLocaleString('es-HN')}`, '', ...l.lines])
+    await q.run('INSERT INTO attachments (id, patient_id, name, mime, size, category, data, uploaded_by, uploaded_at, clinic_id, title, taken_at, hospitalization_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [l.id, l.patientId, `${l.title}.pdf`, 'application/pdf', pdf.length, l.category, new Uint8Array(pdf), 's-rios', l.takenAt, A, l.title, l.takenAt, l.hospitalizationId ?? null])
+  }
+  await insertMany(q, 'followups', ['id', 'clinic_id', 'patient_id', 'kind', 'title', 'due_date', 'every_days', 'notes', 'created_by', 'created_at', 'notified_at', 'active'],
+    d.followups.map((f) => [f.id, A, f.patientId, f.kind, f.title, f.dueDate, f.everyDays ?? null, f.notes ?? null, f.createdBy, f.createdAt, f.notifiedAt ?? null, f.active]))
+}
+
+/**
+ * Una base de demostración que ya existía recibe los casos completos sin reiniciar sus datos.
+ * Si falta algo de lo que usan (personal de demo, la cama) no se cargan, para no romper la actualización.
+ */
+async function addDemoCases(q: Sql) {
+  if (!(await q.one(`SELECT 1 FROM clinics WHERE id = ?`, [MAIN_CLINIC]))) return
+  const list = (ids: string[]) => ids.map(() => '?').join(',')
+  const staff = await q.query(`SELECT id FROM staff WHERE id IN (${list(CASE_STAFF)}) AND clinic_id = ? AND email LIKE '%@demo.clinara'`, [...CASE_STAFF, MAIN_CLINIC])
+  if (staff.length < CASE_STAFF.length) return
+  if (!(await q.one(`SELECT 1 FROM beds WHERE id = ? AND clinic_id = ?`, [CASE_BED, MAIN_CLINIC]))) return
+  if (await q.one(`SELECT 1 FROM patients WHERE id IN (${list(CASE_PATIENT_IDS)}) LIMIT 1`, CASE_PATIENT_IDS)) return
+  await insertCases(q)
 }
 
 /** PDF de una página con texto plano, para los laboratorios de demostración. */
