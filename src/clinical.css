@@ -377,3 +377,13 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 @media (max-width: 720px) {
   .meds-list li { grid-template-columns: 22px 1fr; }
 }
+
+/* ---------- Recetas ---------- */
+.rx-filters { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; border-bottom: 1px solid var(--line-soft); }
+.rx-row { grid-template-columns: 120px 1fr auto; align-items: center; }
+.rx-row__when { font-size: 13.5px; text-decoration: none; color: inherit; }
+@media (max-width: 720px) {
+  .rx-filters { grid-template-columns: 1fr 1fr; }
+  .rx-filters > :first-child { grid-column: 1 / -1; }
+  .rx-row { grid-template-columns: 1fr; gap: 6px; }
+}

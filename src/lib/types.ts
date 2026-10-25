@@ -217,6 +217,9 @@ export interface Prescription {
   hospitalizationId?: string // receta de egreso
   issuedAt: string
   items: PrescriptionItem[]
+  /** Receta emitida desde "Recetas", sin consulta. */
+  standalone?: boolean
+  indications?: string[]
 }
 
 export interface Consultation {

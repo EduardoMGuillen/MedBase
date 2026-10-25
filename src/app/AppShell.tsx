@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, BedDouble, BellRing, Building2, CalendarDays, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, Stethoscope, UserCog,
+  BarChart3, BedDouble, BellRing, Building2, CalendarDays, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, Stethoscope, UserCog,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
@@ -19,6 +19,8 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
   { to: '/app/hospitalizados', label: 'Hospitalizados', icon: BedDouble, perm: 'inpatient.view', group: 'Pacientes' },
   { to: '/app/pacientes', label: 'Biblioteca de pacientes', icon: LibraryBig, perm: 'patients.view', group: 'Pacientes' },
   { to: '/app/seguimientos', label: 'Crónicos y seguimientos', icon: BellRing, perm: 'followups.view', group: 'Pacientes' },
+  // Recetas sin consulta: renovar un tratamiento sin abrir una consulta completa
+  { to: '/app/recetas', label: 'Recetas', icon: FilePen, perm: 'rx.write', group: 'Pacientes' },
   { to: '/app/reportes', label: 'Reportes', icon: BarChart3, perm: 'reports.view', group: 'Administración' },
   { to: '/app/personal', label: 'Personal y roles', icon: UserCog, perm: 'staff.manage', group: 'Administración' },
   { to: '/app/configuracion', label: 'Configuración', icon: SettingsIcon, perm: 'settings.manage', group: 'Administración' },

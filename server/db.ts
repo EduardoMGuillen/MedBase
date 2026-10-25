@@ -10,7 +10,7 @@ import type { Row, Sql } from './sql.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '15'
+const SCHEMA_VERSION = '16'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -351,6 +351,11 @@ CREATE TABLE IF NOT EXISTS clinic_drugs (
   updated_by TEXT, updated_at TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS clinic_drugs_key ON clinic_drugs (clinic_id, norm_key);
+
+-- v16: receta sin consulta (renovar el tratamiento de un crónico) con sus indicaciones
+ALTER TABLE prescriptions
+  ADD COLUMN IF NOT EXISTS standalone BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS indications TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

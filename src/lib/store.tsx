@@ -216,6 +216,8 @@ function useStoreValue() {
       run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null }>('/consultations', { body: { ...c, items } }),
         items.length ? 'Consulta y receta firmadas' : 'Consulta firmada'),
 
+    issuePrescription: (b: { patientId: string; items: PrescriptionItem[]; indications: string[] }) =>
+      run(() => api<{ prescriptionId: string; folio: string }>('/prescriptions', { body: b }), 'Receta emitida'),
     pay: (p: NewPayment) => run(() => api<Payment>('/payments', { body: p }), 'Cobro registrado'),
     voidPayment: (id: string, reason: string) => run(() => api<Payment>(`/payments/${id}/void`, { body: { reason } }), 'Recibo anulado'),
 

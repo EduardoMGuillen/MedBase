@@ -694,6 +694,30 @@ export function createApp(opts: AppOptions) {
     res.json({ consultation: c, patient: toPatient((await patientRow(cid, c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null })
   })
 
+  /** Receta sin consulta: el médico renueva un tratamiento sin abrir una consulta completa. */
+  app.post('/api/prescriptions', auth, need('rx.write'), async (req, res) => {
+    const user = userOf(req)
+    const b = parse(z.object({
+      patientId: z.string().min(1, 'Elige al paciente.'),
+      items: z.array(rxItem).min(1, 'Agrega al menos un medicamento.').max(20),
+      indications: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
+    }), req.body)
+    const cid = clinicOf(req)
+    const p = (await patientRow(cid, b.patientId)) ?? fail(404, 'El paciente no existe.')
+    if (p!.pending) fail(409, 'Completa el registro del paciente antes de emitirle una receta.')
+    await assertRxIdentity(cid, b.patientId)
+    const id = randomUUID()
+    const now = new Date()
+    let folio = ''
+    await sql.tx(async (q) => {
+      folio = await nextFolio(q, cid, now)
+      await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, issued_at, items, clinic_id, standalone, indications) VALUES (?,?,?,?,?,?,?,?,TRUE,?)`,
+        [id, folio, b.patientId, user.id, '', now.toISOString(), JSON.stringify(b.items), cid, JSON.stringify(b.indications)])
+      await audit(user, `Emitió la receta sin consulta ${folio} de ${p!.first_name} ${p!.last_name}`, q)
+    })
+    res.status(201).json({ prescriptionId: id, folio })
+  })
+
   app.get('/api/prescriptions/:id', auth, need('rx.view'), async (req, res) => {
     const cid = clinicOf(req)
     const row = (await sql.one('SELECT * FROM prescriptions WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La receta no existe.')

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Modal } from '../components/ui'
+import { useStore } from '../lib/store'
 import { BACKGROUND_GROUPS, CIVIL_STATUS, EDUCATION, formatDni, formatPhone } from '../lib/format'
 import { yearsOld } from '../lib/inpatient'
 import type { Background, Patient } from '../lib/types'
@@ -81,6 +82,26 @@ export function IdentificationForm({ title, submitLabel, initial, withAllergies 
           <input className="input" value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Ej. Penicilina, AINEs" /></label>
       )}
     </Modal>
+  )
+}
+
+/** 13 dígitos de la identidad hondureña o un pasaporte (letras y números). */
+const validDni = (v: string) => v.replace(/\D/g, '').length === 13 || (/[A-Z]/.test(v) && v.trim().length >= 6)
+
+/**
+ * La receta lleva la identidad del paciente. Sólo se pide si el expediente realmente no la tiene y el
+ * paciente es adulto; al guardarla queda en el expediente y no se vuelve a pedir.
+ */
+export function IdentityPrompt({ p }: { p: Patient }) {
+  const { updatePatient } = useStore()
+  const [dni, setDni] = useState('')
+  if (p.dni || !p.birthDate || yearsOld(p.birthDate) < 18) return null
+  return (
+    <form className="dni-ask" onSubmit={async (e) => { e.preventDefault(); if (validDni(dni)) await updatePatient(p.id, { dni }) }}>
+      <label className="field"><span>{p.firstName} no tiene número de identidad en su expediente y la receta lo lleva. Se guarda en el expediente y no se vuelve a pedir.</span>
+        <input className="input" value={dni} onChange={(e) => setDni(formatDni(e.target.value))} placeholder="0000-0000-00000" inputMode="numeric" /></label>
+      <button className="btn btn--soft" disabled={!validDni(dni)}>Guardar identidad</button>
+    </form>
   )
 }
 

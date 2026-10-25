@@ -258,3 +258,23 @@ describe('M3 vademécum de la clínica', () => {
     assert.ok(!(await other.get('/api/drugs')).body.some((d: any) => d.id === a.body.id))
   })
 })
+
+describe('M7 recetas sin consulta', () => {
+  test('el médico emite una receta sin consulta; enfermería y recepción no', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const item = { drug: 'Losartán', presentation: 'Tableta 50 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 24 horas', duration: '90 días' }
+    const r = await doc.post('/api/prescriptions', { patientId: 'p2', items: [item], indications: ['Control en 3 meses.'] })
+    assert.equal(r.status, 201)
+    const rx = await doc.get(`/api/prescriptions/${r.body.prescriptionId}`)
+    assert.equal(rx.body.prescription.standalone, true)
+    assert.deepEqual(rx.body.prescription.indications, ['Control en 3 meses.'])
+    const chart = await doc.get('/api/patients/p2/chart')
+    assert.ok(chart.body.prescriptions.some((x: any) => x.id === r.body.prescriptionId), 'queda en el expediente')
+    // Adulto sin identidad: la receta la exige
+    assert.equal((await doc.post('/api/prescriptions', { patientId: 'p7', items: [item] })).status, 400)
+    const nurse = await as('crios@demo.clinara')
+    assert.equal((await nurse.post('/api/prescriptions', { patientId: 'p2', items: [item] })).status, 403)
+    const rec = await as('smejia@demo.clinara')
+    assert.equal((await rec.post('/api/prescriptions', { patientId: 'p2', items: [item] })).status, 403)
+  })
+})

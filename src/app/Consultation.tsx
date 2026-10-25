@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ClipboardList, Pencil, Pill, Plus, X } from 'lucide-react'
 import { useStore, type FollowupInput } from '../lib/store'
 import { PatientHeader } from '../components/PatientHeader'
-import { date, formatDni, medicationOrder, time } from '../lib/format'
+import { date, medicationOrder, time } from '../lib/format'
 import { ICD10 } from '../lib/catalogs'
 import { normalize } from '../lib/patients'
 import { useVademecum } from '../lib/vademecum'
@@ -11,7 +11,7 @@ import { MedicationForm, MedicationList } from '../components/Medications'
 import { FOLLOWUP_KIND } from '../lib/followups'
 import { yearsOld } from '../lib/inpatient'
 import { BackgroundView, useChart, VitalsGrid } from './PatientChart'
-import { BackgroundForm } from './PatientForms'
+import { BackgroundForm, IdentityPrompt } from './PatientForms'
 import { VitalsModal } from './WaitingRoom'
 import { emptyFollowup, FollowupFields } from './Followups'
 import type { PrescriptionItem } from '../lib/types'
@@ -51,9 +51,6 @@ const FREQUENT_ORDERS = [
   'Cita de control en 1 semana.', 'Cita de control en 1 mes.', 'Cita de control con resultados de laboratorio.',
 ]
 
-/** 13 dígitos de la identidad hondureña o un pasaporte (letras y números). */
-const validDni = (v: string) => v.replace(/\D/g, '').length === 13 || (/[A-Z]/.test(v) && v.trim().length >= 6)
-
 
 export default function Consultation() {
   const { apptId } = useParams()
@@ -73,7 +70,6 @@ export default function Consultation() {
   const [followups, setFollowups] = useState<FollowupInput[]>(saved.followups ?? [])
   const [newFollowup, setNewFollowup] = useState<FollowupInput | null>(null)
   const [admit, setAdmit] = useState(saved.admit ?? false)
-  const [dni, setDni] = useState('')
   const [dx, setDx] = useState<{ code: string; label: string }[]>(saved.dx ?? [])
   const [dxQuery, setDxQuery] = useState('')
   const [indications, setIndications] = useState<string[]>(saved.indications ?? [])
@@ -334,13 +330,7 @@ export default function Consultation() {
 
           <section className="panel sign-box">
             <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
-              {needsDni && (
-                <form className="dni-ask" onSubmit={async (e) => { e.preventDefault(); if (validDni(dni)) await updatePatient(p.id, { dni }) }}>
-                  <label className="field"><span>{p.firstName} no tiene número de identidad en su expediente y la receta lo lleva. Se guarda en el expediente y no se vuelve a pedir.</span>
-                    <input className="input" value={dni} onChange={(e) => setDni(formatDni(e.target.value))} placeholder="0000-0000-00000" inputMode="numeric" /></label>
-                  <button className="btn btn--soft" disabled={!validDni(dni)}>Guardar identidad</button>
-                </form>
-              )}
+              {needsDni && <IdentityPrompt p={p} />}
               {store.can('inpatient.orders') && (
                 hospitalized
                   ? <p style={{ fontSize: 14 }}><BedDouble size={15} style={{ verticalAlign: '-3px' }} /> {p.firstName} ya está hospitalizado. <Link to={`/app/hospitalizados/${hospitalized.id}`}>Abrir su expediente</Link>.</p>

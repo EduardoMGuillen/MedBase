@@ -58,6 +58,7 @@ export const toConsultation = (r: Row): Consultation => ({
 export const toPrescription = (r: Row): Prescription => ({
   id: String(r.id), folio: String(r.folio), patientId: String(r.patient_id), doctorId: String(r.doctor_id),
   consultationId: String(r.consultation_id), hospitalizationId: s(r.hospitalization_id), issuedAt: String(r.issued_at), items: j(r.items, []),
+  standalone: Boolean(r.standalone) || undefined, indications: r.indications == null ? undefined : j<string[]>(r.indications, []),
 })
 
 export const toClinicDrug = (r: Row): ClinicDrug => ({
