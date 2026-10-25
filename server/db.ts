@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
 import {
   BEDS, CASE_BED, CASE_PATIENT_IDS, CASE_STAFF, DEFAULT_SETTINGS, DEMO_CLINICS, DOCTOR_SETUP, INPATIENT_PATIENTS, MAIN_CLINIC, PATIENTS, SECOND_CLINIC, SERVICES, STAFF,
-  seedAppointments, seedCases, seedClinical, seedHistory, seedInpatient, seedSecondClinic,
+  seedAppointments, seedCases, seedClinical, seedHistory, seedInpatient, seedSecondClinic, seedUpcoming,
 } from '../src/lib/seed.js'
 import type { Appointment, Patient, Payment, Schedule } from '../src/lib/types.js'
 import type { Row, Sql } from './sql.js'
@@ -505,6 +505,7 @@ export async function seed(q: Sql) {
   const { vitals, consultations, prescriptions } = seedClinical()
   const history = seedHistory()
   const today = seedAppointments()
+  const upcoming = seedUpcoming(history.patients, today)
   const second = seedSecondClinic()
   const setups: Record<string, { schedule: Schedule; serviceId: string }> = { ...DOCTOR_SETUP, ...second.setup }
   const A = MAIN_CLINIC
@@ -525,7 +526,7 @@ export async function seed(q: Sql) {
   const apptRow = (a: Appointment, clinic: string) => [a.id, a.patientId, a.doctorId, a.start, a.minutes, a.reason, a.type, a.status,
     a.status === 'arrived' || a.status === 'triaged' ? arrived : null, ['a7', 'a13'].includes(a.id) ? 'online' : a.source ?? 'staff', clinic]
   await insertMany(q, 'appointments', ['id', 'patient_id', 'doctor_id', 'start', 'minutes', 'reason', 'type', 'status', 'arrived_at', 'source', 'clinic_id'],
-    [...[...history.appointments, ...today].map((a) => apptRow(a, A)), ...second.appointments.map((a) => apptRow(a, B))])
+    [...[...history.appointments, ...today, ...upcoming].map((a) => apptRow(a, A)), ...second.appointments.map((a) => apptRow(a, B))])
   await insertMany(q, 'vitals', ['id', 'patient_id', 'appointment_id', 'taken_by', 'taken_at', 'systolic', 'diastolic', 'heart_rate', 'temperature', 'spo2', 'weight_kg', 'height_cm', 'pain_scale', 'notes', 'resp_rate', 'glucose', 'chief_complaint', 'clinic_id'],
     vitals.map((v) => [v.id, v.patientId, v.appointmentId ?? null, v.takenBy, v.takenAt, v.systolic, v.diastolic, v.heartRate, v.temperature, v.spo2, v.weightKg, v.heightCm, v.painScale ?? null, v.notes ?? null,
       v.respRate ?? null, v.glucose ?? null, v.chiefComplaint ?? null, A]))

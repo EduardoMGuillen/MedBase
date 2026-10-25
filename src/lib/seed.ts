@@ -3,7 +3,8 @@ import type {
   PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types.js'
 import { ICD10 } from './catalogs.js'
-import { doseTimes, HOUR, LATE_AFTER_MIN } from './inpatient.js'
+import { doseTimes, HOUR, LATE_AFTER_MIN, yearsOld } from './inpatient.js'
+import { slotsOn } from './schedule.js'
 
 export const CLINIC = {
   name: 'Clínica Santa Brígida',
@@ -259,6 +260,41 @@ export function seedHistory(days = 60) {
   return { patients, appointments, consultations, payments, lastReceipt: receipt }
 }
 
+
+/**
+ * Citas de los próximos 5 días, dentro del horario de cada médico, para que la agenda de la demo
+ * nunca se vea vacía hacia adelante. La pediatría atiende niños; ginecología, mujeres adultas.
+ */
+export function seedUpcoming(historyPatients: Patient[], existing: Appointment[], days = 5): Appointment[] {
+  const rand = rng(20261101)
+  const all = [...PATIENTS, ...historyPatients].filter((p) => p.birthDate)
+  const kids = all.filter((p) => yearsOld(p.birthDate) < 15)
+  const adults = all.filter((p) => yearsOld(p.birthDate) >= 18)
+  const pools: Record<string, Patient[]> = { 's-herrera': adults, 's-paz': kids, 's-zuniga': adults.filter((p) => p.sex === 'F') }
+  const out: Appointment[] = []
+  for (let d = 1; d <= days; d++) {
+    const date = at(d, 12).slice(0, 10)
+    for (const [doc, setup] of Object.entries(DOCTOR_SETUP)) {
+      const pool = pools[doc]
+      const taken = new Set(existing.filter((x) => x.doctorId === doc && x.start.startsWith(date)).map((x) => x.start.slice(11, 16)))
+      const free = slotsOn(setup.schedule, date).filter((t) => !taken.has(t))
+      if (!free.length || !pool.length) continue
+      const count = Math.min(free.length, 4 + Math.floor(rand() * 3))
+      const used = new Set<number>()
+      for (let k = 0; k < count; k++) {
+        let i = Math.floor(rand() * free.length)
+        while (used.has(i)) i = (i + 1) % free.length
+        used.add(i)
+        const [h, m] = free[i].split(':').map(Number)
+        const [reason] = REASONS[doc][Math.floor(rand() * REASONS[doc].length)]
+        const pt = pool[Math.floor(rand() * pool.length)]
+        out.push({ id: `up${out.length + 1}`, patientId: pt.id, doctorId: doc, start: at(d, h, m), minutes: 30, reason,
+          type: rand() < 0.3 ? 'first' : 'followup', status: d === 1 && rand() < 0.5 ? 'confirmed' : 'scheduled', source: rand() < 0.25 ? 'online' : 'staff' })
+      }
+    }
+  }
+  return out.sort((x, y) => x.start.localeCompare(y.start))
+}
 
 // ---------- Clínicas de demostración ----------
 export const DEMO_CLINICS: (ClinicSettings & { id: string; slug: string })[] = [
