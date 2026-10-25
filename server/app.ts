@@ -472,15 +472,17 @@ export function createApp(opts: AppOptions) {
   // ---------- Triaje ----------
   app.post('/api/vitals', auth, need('vitals.record'), async (req, res) => {
     const user = userOf(req)
-    const n = (min: number, max: number, label: string) => z.number({ error: `Revisa ${label}.` }).min(min, `Revisa ${label}.`).max(max, `Revisa ${label}.`).optional()
+    // Los límites son sólo de cordura: un valor improbable que enfermería confirmó se guarda (la preclínica avisa antes)
+    const int = (max: number, label: string) => z.number({ error: `Revisa ${label}.` }).min(0, `Revisa ${label}.`).max(max, `Revisa ${label}.`).transform(Math.round).optional()
+    const dec = (max: number, label: string) => z.number({ error: `Revisa ${label}.` }).min(0, `Revisa ${label}.`).max(max, `Revisa ${label}.`).optional()
     const v = parse(z.object({
       patientId: z.string(), appointmentId: z.string().optional(),
-      systolic: n(50, 260, 'la presión sistólica'), diastolic: n(30, 160, 'la presión diastólica'),
-      heartRate: n(25, 250, 'la frecuencia cardíaca'), temperature: n(32, 43, 'la temperatura'), spo2: n(50, 100, 'la saturación'),
-      weightKg: z.number().min(0.1, 'Revisa el peso.').max(400, 'Revisa el peso.').optional(), heightCm: z.number().min(20, 'Revisa la talla.').max(250, 'Revisa la talla.').optional(),
+      systolic: int(400, 'la presión sistólica'), diastolic: int(300, 'la presión diastólica'),
+      heartRate: int(400, 'la frecuencia cardíaca'), temperature: dec(50, 'la temperatura'), spo2: int(100, 'la saturación'),
+      weightKg: dec(500, 'el peso'), heightCm: dec(300, 'la talla'),
       painScale: z.number().int().min(0).max(10).optional(), notes: z.string().max(2000).optional(),
-      respRate: z.number().int().min(4, 'Revisa la frecuencia respiratoria.').max(80, 'Revisa la frecuencia respiratoria.').optional(),
-      glucose: z.number().int().min(10, 'Revisa la glucometría.').max(900, 'Revisa la glucometría.').optional(),
+      respRate: int(150, 'la frecuencia respiratoria'),
+      glucose: dec(3000, 'la glucometría'),
       chiefComplaint: z.string().trim().max(500).optional(),
     }), req.body)
     const cid = clinicOf(req)

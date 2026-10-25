@@ -12,18 +12,23 @@ import { age, BACKGROUND_GROUPS, bmi, date, time } from '../lib/format'
 import { Attachments } from './Attachments'
 import { AllergiesForm, BackgroundForm, IdentificationForm } from './PatientForms'
 import type { Consultation, Patient, Vitals } from '../lib/types'
+import { vitalLevel, type VitalKey } from '../lib/vitals'
+import { yearsOld } from '../lib/inpatient'
 
-export function VitalsGrid({ v }: { v: Vitals }) {
+/** Signos de una preclínica. Resalta lo que está fuera de rango según la edad (`src/lib/vitals.ts`). */
+export function VitalsGrid({ v, birthDate }: { v: Vitals; birthDate?: string }) {
+  const ageYears = birthDate ? yearsOld(birthDate) : undefined
+  const off = (k: VitalKey) => v[k] != null && vitalLevel(k, v[k]!, ageYears) !== 'ok'
   const warn = (x: boolean) => (x ? 'vital vital--warn' : 'vital')
   const cells = [
-    v.systolic != null && v.diastolic != null && <div key="pa" className={warn(v.systolic >= 140 || v.diastolic >= 90)}><span>Presión arterial</span><b>{v.systolic}/{v.diastolic}<small>mmHg</small></b></div>,
-    v.heartRate != null && <div key="fc" className={warn(v.heartRate > 100 || v.heartRate < 60)}><span>Frec. cardíaca</span><b>{v.heartRate}<small>lpm</small></b></div>,
-    v.respRate != null && <div key="fr" className={warn(v.respRate > 20 || v.respRate < 12)}><span>Frec. respiratoria</span><b>{v.respRate}<small>rpm</small></b></div>,
-    v.temperature != null && <div key="t" className={warn(v.temperature >= 37.6)}><span>Temperatura</span><b>{v.temperature.toFixed(1)}<small>°C</small></b></div>,
-    v.spo2 != null && <div key="spo2" className={warn(v.spo2 < 94)}><span>Saturación</span><b>{v.spo2}<small>%</small></b></div>,
+    v.systolic != null && v.diastolic != null && <div key="pa" className={warn(off('systolic') || off('diastolic'))}><span>Presión arterial</span><b>{v.systolic}/{v.diastolic}<small>mmHg</small></b></div>,
+    v.heartRate != null && <div key="fc" className={warn(off('heartRate'))}><span>Frec. cardíaca</span><b>{v.heartRate}<small>lpm</small></b></div>,
+    v.respRate != null && <div key="fr" className={warn(off('respRate'))}><span>Frec. respiratoria</span><b>{v.respRate}<small>rpm</small></b></div>,
+    v.temperature != null && <div key="t" className={warn(off('temperature'))}><span>Temperatura</span><b>{v.temperature.toFixed(1)}<small>°C</small></b></div>,
+    v.spo2 != null && <div key="spo2" className={warn(off('spo2'))}><span>Saturación</span><b>{v.spo2}<small>%</small></b></div>,
     (v.weightKg != null || v.heightCm != null) && <div key="peso" className="vital"><span>Peso / IMC</span><b>{v.weightKg ?? '—'}<small>kg</small>{v.weightKg && v.heightCm ? <small> (IMC {bmi(v.weightKg, v.heightCm)})</small> : null}</b></div>,
-    v.glucose != null && <div key="glu" className={warn(v.glucose > 180 || v.glucose < 70)}><span>Glucometría</span><b>{v.glucose}<small>mg/dL</small></b></div>,
-    v.painScale != null && v.painScale > 0 && <div key="dolor" className={warn(v.painScale >= 7)}><span>Dolor</span><b>{v.painScale}<small>/10</small></b></div>,
+    v.glucose != null && <div key="glu" className={warn(off('glucose'))}><span>Glucometría</span><b>{v.glucose}<small>mg/dL</small></b></div>,
+    v.painScale != null && <div key="dolor" className={warn(off('painScale'))}><span>Dolor</span><b>{v.painScale}<small>/10</small></b></div>,
   ].filter(Boolean)
   if (!cells.length) return <p className="muted">Sin signos registrados en esta preclínica.</p>
   return <div className="vitals">{cells}</div>
@@ -203,7 +208,7 @@ export default function PatientChart() {
 
             <section className="panel hc__sec">
               <div className="panel__head"><h2><span className="hc__n">IV.</span> Últimos signos vitales</h2>{vs[0] && <p>{date(vs[0].takenAt)}, {time(vs[0].takenAt)}</p>}</div>
-              <div className="panel__body">{!chart ? <Loading /> : vs[0] ? <VitalsGrid v={vs[0]} /> : <p className="muted">Sin registros todavía.</p>}</div>
+              <div className="panel__body">{!chart ? <Loading /> : vs[0] ? <VitalsGrid v={vs[0]} birthDate={p.birthDate} /> : <p className="muted">Sin registros todavía.</p>}</div>
             </section>
           </>) : (
             <section className="panel"><div className="empty"><Lock size={20} style={{ margin: '0 auto 8px' }} />Alergias, antecedentes y consultas sólo están disponibles para médicos y enfermería.</div></section>

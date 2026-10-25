@@ -10,7 +10,7 @@ import type { Row, Sql } from './sql.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '9'
+const SCHEMA_VERSION = '10'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -311,6 +311,9 @@ ALTER TABLE vitals ALTER COLUMN temperature DROP NOT NULL;
 ALTER TABLE vitals ALTER COLUMN spo2 DROP NOT NULL;
 ALTER TABLE vitals ALTER COLUMN weight_kg DROP NOT NULL;
 ALTER TABLE vitals ALTER COLUMN height_cm DROP NOT NULL;
+
+-- v10: la glucometría acepta decimales (ampliar el tipo no pierde datos)
+ALTER TABLE vitals ALTER COLUMN glucose TYPE DOUBLE PRECISION;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

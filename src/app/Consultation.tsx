@@ -183,7 +183,7 @@ export default function Consultation() {
               {!todayVitals && <button className="btn btn--soft btn--sm" onClick={() => setTriage(true)}><Activity size={15} />Tomar signos</button>}
             </div>
             {todayVitals && <div className="panel__body csec__body">
-              <VitalsGrid v={todayVitals} />
+              <VitalsGrid v={todayVitals} birthDate={p.birthDate} />
               {todayVitals.notes && <p className="muted" style={{ fontSize: 14 }}>Nota de enfermería: {todayVitals.notes}</p>}
             </div>}
           </section>
