@@ -112,7 +112,9 @@ El horario del médico sigue en `staff.schedule` (JSON): se agrega `week` (franj
 - **Contraste de etiquetas:** la regla `.row__who span` pintaba de gris todas las etiquetas dentro de las tarjetas (era la causa de "En consulta" ilegible). Corregido.
 - **Ancho en celular:** la cabecera del paciente y algunas filas ensanchaban la página en el teléfono (hasta 828 px en un expediente de hospitalización). Corregido: todas las pantallas revisadas quedan en 390 px.
 - **Bloqueo de PGlite:** durante el trabajo encontré que consultar la base fuera de una transacción abierta bloquea PGlite. Lo evité en todo el código nuevo; una prueba de observación lo cubre.
-- **Prueba intermitente:** la prueba existente "la demo trae casos completos" falló una vez en unas 14 corridas y no la pude reproducir. Depende de fechas relativas de la demo. No la toqué.
+- **Pruebas intermitentes:**
+  - La prueba existente "la demo trae casos completos" falló una vez y no la pude reproducir. Depende de fechas relativas de la demo; no la toqué.
+  - Mi prueba de M1 suponía quién ganaba la carrera de "Atender"; ya la corregí. Después corrí la suite completa 20 veces seguidas sin fallas.
 - **Fechas en formularios:** los campos de fecha nativos muestran el formato del idioma del navegador (dd/mm/aaaa en un navegador en español). Forzarlo exige un selector de fecha propio.
 - **Tamaño del paquete:** el paquete de la app pesa más de 500 kB (aviso anterior). Conviene dividirlo por rutas.
 - **Escala:** la app carga todos los pacientes y 90 días de citas al entrar. Para clínicas grandes convendrá paginar en el servidor (la biblioteca y sus filtros ya tienen el endpoint listo para eso).

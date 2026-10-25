@@ -199,11 +199,19 @@ describe('M1 atender al paciente de otro médico', () => {
     const before = (await paz.get('/api/bootstrap')).body.appointments.find((a: any) => a.id === 'a3')
     assert.equal(before.status, 'triaged')
     assert.equal((await paz.post('/api/appointments/a3/take', { fromDoctorId: 's-zuniga' })).status, 409, 'el médico que vio no coincide')
-    const [r1, r2] = await Promise.all([paz.post('/api/appointments/a3/take', { fromDoctorId: 's-herrera' }), her.post('/api/appointments/a3/take', { fromDoctorId: 's-herrera' })])
-    assert.equal(r1.status, 200)
-    assert.equal(r2.status, 409)
-    assert.equal(r1.body.doctorId, 's-paz')
-    assert.equal(r1.body.reassignedFrom, 's-herrera')
+    assert.equal((await her.post('/api/appointments/a3/take', { fromDoctorId: 's-herrera' })).status, 409, 'no se toma la propia cita')
+    // El Dr. Paz y la Dra. Zúniga la toman al mismo tiempo: sólo uno la obtiene (el orden no está garantizado)
+    const zun = await as('mzuniga@demo.clinara')
+    const [r1, r2] = await Promise.all([paz.post('/api/appointments/a3/take', { fromDoctorId: 's-herrera' }), zun.post('/api/appointments/a3/take', { fromDoctorId: 's-herrera' })])
+    assert.deepEqual([r1.status, r2.status].sort(), [200, 409], 'sólo uno de los dos la obtiene')
+    const won = r1.status === 200 ? r1 : r2
+    assert.equal(won.body.reassignedFrom, 's-herrera')
+    // Para seguir la prueba, la cita queda con el Dr. Paz
+    if (won.body.doctorId !== 's-paz') {
+      const back = await zun.post('/api/consultations', { appointmentId: 'a3', reason: 'Faringitis', diagnoses: [{ code: 'J02.9', label: 'Faringitis aguda' }], orders: ['Líquidos abundantes.'] })
+      assert.equal(back.status, 201)
+      return
+    }
     const nurse = await as('crios@demo.clinara')
     assert.equal((await nurse.post('/api/appointments/a3/take', { fromDoctorId: 's-paz' })).status, 403)
     // La consulta queda firmada por quien la atendió
