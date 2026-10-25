@@ -10,7 +10,7 @@ import type { Row, Sql } from './sql.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '12'
+const SCHEMA_VERSION = '13'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -329,6 +329,12 @@ ALTER TABLE patients
   ADD COLUMN IF NOT EXISTS merged_into TEXT;
 ALTER TABLE patients ALTER COLUMN birth_date DROP NOT NULL;
 ALTER TABLE patients ALTER COLUMN sex DROP NOT NULL;
+
+-- v13: un médico atiende al paciente de otro: se guarda a quién estaba asignado, quién lo tomó y cuándo
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS reassigned_from TEXT,
+  ADD COLUMN IF NOT EXISTS reassigned_by TEXT,
+  ADD COLUMN IF NOT EXISTS reassigned_at TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

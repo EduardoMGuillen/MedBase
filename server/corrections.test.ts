@@ -190,3 +190,24 @@ describe('R2 agendar sin que el paciente exista', () => {
     assert.equal((await nurse.patch('/api/staff/s-paz/schedule', { slot: 30, week: { '1': [{ start: '08:00', end: '12:00' }] } })).status, 403)
   })
 })
+
+describe('M1 atender al paciente de otro médico', () => {
+  test('sólo uno lo obtiene y queda registrado a quién estaba asignado', async () => {
+    const paz = await as('apaz@demo.clinara')
+    const her = await as('lherrera@demo.clinara')
+    // a3: María José, lista para consulta con la Dra. Herrera en la demo
+    const before = (await paz.get('/api/bootstrap')).body.appointments.find((a: any) => a.id === 'a3')
+    assert.equal(before.status, 'triaged')
+    assert.equal((await paz.post('/api/appointments/a3/take', { fromDoctorId: 's-zuniga' })).status, 409, 'el médico que vio no coincide')
+    const [r1, r2] = await Promise.all([paz.post('/api/appointments/a3/take', { fromDoctorId: 's-herrera' }), her.post('/api/appointments/a3/take', { fromDoctorId: 's-herrera' })])
+    assert.equal(r1.status, 200)
+    assert.equal(r2.status, 409)
+    assert.equal(r1.body.doctorId, 's-paz')
+    assert.equal(r1.body.reassignedFrom, 's-herrera')
+    const nurse = await as('crios@demo.clinara')
+    assert.equal((await nurse.post('/api/appointments/a3/take', { fromDoctorId: 's-paz' })).status, 403)
+    // La consulta queda firmada por quien la atendió
+    const signed = await paz.post('/api/consultations', { appointmentId: 'a3', reason: 'Faringitis', diagnoses: [{ code: 'J02.9', label: 'Faringitis aguda' }], orders: ['Líquidos abundantes.'] })
+    assert.equal(signed.status, 201)
+  })
+})

@@ -540,6 +540,30 @@ export function createApp(opts: AppOptions) {
     res.json(toAppointment((await apptRow(cid, String(row!.id)))!))
   })
 
+  /**
+   * Un médico atiende al paciente listo para consulta de otro médico. Sólo uno lo obtiene: la
+   * actualización exige que la cita siga asignada al médico que se vio en pantalla y lista para consulta.
+   */
+  app.post('/api/appointments/:id/take', auth, need('consult.write'), async (req, res) => {
+    const user = userOf(req)
+    if (user.role !== 'doctor') fail(403, 'Sólo un médico puede atender al paciente.')
+    const { fromDoctorId } = parse(z.object({ fromDoctorId: z.string().min(1) }), req.body, 'Falta el médico asignado.')
+    const cid = clinicOf(req)
+    const row = (await apptRow(cid, String(req.params.id))) ?? fail(404, 'La cita no existe.')
+    if (row!.doctor_id === user.id) fail(409, 'Este paciente ya está asignado a ti.')
+    const now = new Date().toISOString()
+    const taken = await sql.one(`UPDATE appointments SET doctor_id = ?, status = 'in_consult', reassigned_from = doctor_id, reassigned_by = ?, reassigned_at = ?
+      WHERE id = ? AND clinic_id = ? AND doctor_id = ? AND status = 'triaged' RETURNING id`, [user.id, user.id, now, String(row!.id), cid, fromDoctorId])
+    if (!taken) {
+      const fresh = (await apptRow(cid, String(row!.id)))!
+      const who = (await staffRow(String(fresh.doctor_id)))?.name ?? 'otro médico'
+      fail(409, fresh.doctor_id !== fromDoctorId ? `${who} ya está atendiendo a este paciente.` : 'Este paciente ya no está listo para consulta. Actualiza la página.')
+    }
+    const from = (await staffRow(fromDoctorId))?.name ?? fromDoctorId
+    await audit(user, `Tomó a ${await patientName(String(row!.patient_id))} para atenderlo; estaba asignado a ${from}`)
+    res.json(toAppointment((await apptRow(cid, String(row!.id)))!))
+  })
+
   // Paciente que llega sin cita: entra directo a la consulta externa del día, ya en sala
   app.post('/api/appointments/walk-in', auth, need('checkin.manage'), async (req, res) => {
     const b = parse(z.object({

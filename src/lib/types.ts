@@ -172,6 +172,9 @@ export interface Appointment {
   source?: 'staff' | 'online' | 'walkin'
   remindedAt?: string
   paid?: boolean
+  /** Médico al que estaba asignada antes de que otro la tomara desde 'Toda la clínica'. */
+  reassignedFrom?: string
+  reassignedAt?: string
 }
 
 export interface Vitals {

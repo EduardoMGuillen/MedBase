@@ -18,14 +18,23 @@ const minutesSince = (iso?: string) => (iso ? Math.max(0, Math.round((Date.now()
  * la preclínica y el médico los atiende. No se muestra "por llegar": esa lista no aporta aquí.
  */
 export default function WaitingRoom() {
-  const { appointments, patient, staffById, can, setStatus, user, inpatientOf } = useStore()
+  const { appointments, patient, staffById, can, setStatus, user, inpatientOf, takeAppointment } = useStore()
   const nav = useNavigate()
+  const [taking, setTaking] = useState<Appointment | null>(null)
+  const [busy, setBusy] = useState(false)
   const [triage, setTriage] = useState<Appointment | null>(null)
   const [walkIn, setWalkIn] = useState(false)
   const [completing, setCompleting] = useState<Appointment | null>(null)
-  const [mine, setMine] = useState(user?.role === 'doctor')
+  // El médico ve "Mis pacientes" por defecto y se recuerda su última elección en este navegador
+  const viewKey = `clinara.ce.${user?.id}`
+  const [mine, setMineState] = useState(() => {
+    if (user?.role !== 'doctor') return false
+    try { return localStorage.getItem(viewKey) !== 'clinica' } catch { return true }
+  })
+  const setMine = (v: boolean) => { setMineState(v); try { localStorage.setItem(viewKey, v ? 'mios' : 'clinica') } catch { /* sin almacenamiento */ } }
   const today = appointments
-    .filter((a) => sameDay(a.start, new Date()) && !['cancelled'].includes(a.status) && (!mine || a.doctorId === user?.id))
+    // En "Mis pacientes" también sale el que otro médico tomó, para que se vea quién lo atiende
+    .filter((a) => sameDay(a.start, new Date()) && !['cancelled'].includes(a.status) && (!mine || a.doctorId === user?.id || a.reassignedFrom === user?.id))
     .sort((a, b) => a.start.localeCompare(b.start))
   const lanes = [
     { title: 'En sala', hint: 'Esperan que enfermería les abra la preclínica.', list: today.filter((a) => a.status === 'arrived') },
@@ -55,6 +64,7 @@ export default function WaitingRoom() {
               const wait = a.status === 'arrived' ? minutesSince(a.arrivedAt) : null
               const own = a.doctorId === user?.id
               const hosp = inpatientOf(p.id)
+              const takenFromMe = a.reassignedFrom === user?.id && !own
               return (
                 <div key={a.id} className="queue-card" style={{ gridTemplateColumns: '1fr auto' }}>
                   <div className="row__who">
@@ -65,6 +75,7 @@ export default function WaitingRoom() {
                       {a.source === 'walkin' && <span className="badge badge--neutral">Sin cita</span>}
                       {a.type === 'urgent' && <span className="badge badge--red">Urgente</span>}
                       {hosp && <Link to={`/app/hospitalizados/${hosp.id}`} className="badge badge--ink"><BedDouble size={12} />Ingresado</Link>}
+                      {a.reassignedFrom && <span className="badge badge--amber">{takenFromMe ? `Lo atiende ${staffById(a.doctorId)?.name}` : `Atendido por ${staffById(a.doctorId)?.name}, estaba con ${staffById(a.reassignedFrom)?.name}`}</span>}
                       {wait !== null && <span className="wait">{wait} min esperando</span>}
                     </div>
                   </div>
@@ -77,6 +88,8 @@ export default function WaitingRoom() {
                       <Link className="btn btn--ghost btn--sm" to="/app/caja">Cobrar</Link>}
                     {['arrived', 'triaged', 'in_consult'].includes(a.status) && own && can('consult.write') &&
                       <button className="btn btn--primary btn--sm" onClick={() => nav(`/app/consulta/${a.id}`)}><Stethoscope size={15} />{a.status === 'in_consult' ? 'Continuar' : 'Atender'}</button>}
+                    {a.status === 'triaged' && !own && user?.role === 'doctor' && can('consult.write') &&
+                      <button className="btn btn--ghost btn--sm" onClick={() => setTaking(a)}><Stethoscope size={15} />Atender</button>}
                     {a.status === 'done' && can('chart.view') &&
                       <Link className="btn btn--ghost btn--sm" to={`/app/pacientes/${p.id}`}><NotebookPen size={15} />Expediente</Link>}
                   </div>
@@ -88,6 +101,21 @@ export default function WaitingRoom() {
       </div>
       {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}
       {walkIn && <WalkInModal onClose={() => setWalkIn(false)} />}
+      {taking && (
+        <Modal title="Atender paciente de otro médico" onClose={() => setTaking(null)} footer={<>
+          <button className="btn btn--ghost" onClick={() => setTaking(null)}>Cancelar</button>
+          <button className="btn btn--primary" disabled={busy} onClick={async () => {
+            setBusy(true)
+            const r = await takeAppointment(taking.id, taking.doctorId)
+            setBusy(false)
+            setTaking(null)
+            if (r) nav(`/app/consulta/${taking.id}`)
+          }}><Stethoscope size={16} />Sí, lo atiendo yo</button>
+        </>}>
+          <p>Este paciente está asignado {staffById(taking.doctorId)?.name.startsWith('Dra') ? 'a la' : 'al'} <b>{staffById(taking.doctorId)?.name}</b>. ¿Desea atenderlo usted?</p>
+          <p className="muted" style={{ fontSize: 13.5 }}>La consulta quedará a su nombre y la bitácora registrará que usted lo tomó y a quién estaba asignado.</p>
+        </Modal>
+      )}
       {completing && patient(completing.patientId) && <CompleteRegistration patient={patient(completing.patientId)!} onClose={() => setCompleting(null)}
         onDone={async () => { setCompleting(null); await setStatus(completing.id, 'arrived', 'Registro completado y llegada registrada') }} />}
     </div>

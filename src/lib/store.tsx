@@ -197,6 +197,8 @@ function useStoreValue() {
     updateSchedule: (id: string, schedule: Schedule) => run(() => api<Staff>(`/staff/${id}/schedule`, { method: 'PATCH', body: schedule }), 'Horario guardado'),
     reschedule: (id: string, a: Partial<Pick<Appointment, 'doctorId' | 'start' | 'reason'>>) =>
       run(() => api<Appointment>(`/appointments/${id}`, { method: 'PATCH', body: a }), 'Cita reprogramada'),
+    /** Atender al paciente listo para consulta de otro médico. */
+    takeAppointment: (id: string, fromDoctorId: string) => run(() => api<Appointment>(`/appointments/${id}/take`, { body: { fromDoctorId } })),
     markReminded: (id: string) => run(() => api<Appointment>(`/appointments/${id}/reminded`, { method: 'POST' })),
     addPatient: (p: Omit<Patient, 'id' | 'record' | 'createdAt'>) =>
       run(() => api<{ id: string; record: string }>('/patients', { body: p }), 'Paciente registrado'),

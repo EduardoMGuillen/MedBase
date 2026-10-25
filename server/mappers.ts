@@ -35,6 +35,7 @@ export const toAppointment = (r: Row): Appointment => ({
   status: r.status as Appointment['status'], arrivedAt: s(r.arrived_at),
   source: (r.source as Appointment['source']) ?? 'staff', remindedAt: s(r.reminded_at),
   paid: r.paid == null ? undefined : Boolean(r.paid),
+  reassignedFrom: s(r.reassigned_from), reassignedAt: s(r.reassigned_at),
 })
 
 export const toVitals = (r: Row): Vitals => ({
