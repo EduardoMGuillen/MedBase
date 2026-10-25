@@ -400,6 +400,7 @@ export interface Authorization {
   createdBy: string
   createdAt: string
   fileId?: string // foto o PDF de la hoja firmada
+  fileMime?: string
   statusAt?: string
   statusBy?: string
   statusNote?: string

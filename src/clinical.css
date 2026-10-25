@@ -477,3 +477,55 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .obs-row--over { background: linear-gradient(90deg, var(--red), transparent 60%); }
 .obs-row .badge { display: inline-flex; gap: 4px; align-items: center; }
 .obs-row .row__who > span { display: block; }
+
+/* ---------- Expediente completo: pantalla e impresión ---------- */
+.fr-index ol { margin: 0; padding: 12px 22px 18px 40px; display: grid; gap: 4px; }
+.fr-index a { color: var(--ink-deep); font-weight: 600; }
+.fr-doc { display: grid; gap: 18px; }
+.fr-page { width: 100%; border-collapse: collapse; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.fr-page > thead > tr > td { padding: 10px 22px; border-bottom: 1px solid var(--line-soft); }
+.fr-page > tbody > tr > td { padding: 18px 22px 24px; vertical-align: top; }
+.fr-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.fr-head b { color: var(--petrol); }
+.fr-title { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; font-size: 13px; }
+.fr-h { font-size: 18px; color: var(--ink-deep); margin: 0 0 12px; break-after: avoid; }
+.fr-h3 { font-size: 15px; margin: 16px 0 8px; color: var(--ink-deep); break-after: avoid; }
+.fr-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 18px; margin: 0; }
+.fr-facts dt { font-size: 12px; font-weight: 600; color: var(--muted); }
+.fr-facts dd { margin: 0; font-size: 13.5px; }
+.fr-facts .fr-wide { grid-column: 1 / -1; }
+.fr-allergy { margin-top: 12px; font-size: 13.5px; }
+.fr-note-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 12px; break-after: avoid; }
+.fr-note-head span { font-size: 13px; color: var(--muted); }
+.fr-nursing { padding: 6px 0; border-bottom: 1px dashed var(--line-soft); font-size: 13.5px; break-inside: avoid; }
+.fr-nursing p { white-space: pre-wrap; }
+.fr-meds { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.fr-meds th, .fr-meds td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+.fr-meds tr { break-inside: avoid; }
+.fr-doses { margin: 0; padding-left: 14px; }
+.fr-lab { padding: 8px 0; border-bottom: 1px dashed var(--line-soft); font-size: 13px; break-inside: avoid; }
+.fr-lab img, .fr-annex { display: block; max-width: 100%; max-height: 220mm; margin-top: 8px; border: 1px solid var(--line); }
+@media (max-width: 720px) {
+  .fr-facts { grid-template-columns: 1fr 1fr; }
+  .fr-page > tbody > tr > td, .fr-page > thead > tr > td { padding-left: 14px; padding-right: 14px; }
+}
+/* Carta, con encabezado repetido (thead) y "Página X de Y" (Chrome 131 o posterior) */
+@page expediente {
+  size: letter;
+  margin: 12mm 12mm 16mm;
+  @bottom-center { content: "Página " counter(page) " de " counter(pages); font-size: 9pt; color: #555; }
+}
+@media print {
+  .fr .fr-doc { page: expediente; display: block; }
+  .fr-page { border: 0; border-radius: 0; break-before: page; background: #fff; }
+  .fr-page:first-child { break-before: auto; }
+  .fr-page > thead > tr > td { padding: 0 0 6px; border-bottom: 1px solid #999; }
+  .fr-page > tbody > tr > td { padding: 10px 0 0; }
+  .fr-head { font-size: 8.5pt; color: #333; }
+  .fr-doc { font-size: 10.5pt; color: #000; }
+  .fr .note__sec h4, .fr .note-orders h4 { color: #000; }
+  .fr .note-2col { grid-template-columns: 62fr 38fr; }
+  .fr .note-orders { border-left: 1px solid #999; border-top: 0; padding: 0 0 0 12px; }
+  .fr .order-check__mark { color: #000; }
+  .fr .page { padding: 0; }
+}

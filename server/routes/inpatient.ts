@@ -201,7 +201,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       sql.query(`SELECT ${ATTACH_META} FROM attachments WHERE clinic_id = ? AND patient_id = ? AND category = 'lab' AND (hospitalization_id = ? OR (taken_at >= ? AND taken_at <= ?))
         ORDER BY COALESCE(taken_at, uploaded_at) DESC`, [cid, String(h.patient_id), id, String(h.admitted_at), String(h.discharged_at ?? '9999')]),
       sql.query('SELECT * FROM order_marks WHERE hospitalization_id = ? ORDER BY at, id', [id]),
-      sql.query('SELECT * FROM authorizations WHERE hospitalization_id = ? ORDER BY created_at', [id]),
+      sql.query('SELECT a.*, t.mime AS file_mime FROM authorizations a LEFT JOIN attachments t ON t.id = a.file_id WHERE a.hospitalization_id = ? ORDER BY a.created_at', [id]),
     ])
     await audit(userOf(req), `Consultó el expediente de hospitalización de ${await patientName(String(h.patient_id))}`)
     res.json({

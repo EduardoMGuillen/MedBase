@@ -120,7 +120,7 @@ export const toOrderMark = (r: Row) => ({
 export const toAuthorization = (r: Row): Authorization => ({
   id: String(r.id), hospitalizationId: String(r.hospitalization_id), patientId: String(r.patient_id), template: r.template as Authorization['template'],
   data: j<AuthorizationData>(r.data, {} as AuthorizationData), status: r.status as Authorization['status'], createdBy: String(r.created_by), createdAt: String(r.created_at),
-  fileId: s(r.file_id), statusAt: s(r.status_at), statusBy: s(r.status_by), statusNote: s(r.status_note),
+  fileId: s(r.file_id), fileMime: s(r.file_mime), statusAt: s(r.status_at), statusBy: s(r.status_by), statusNote: s(r.status_note),
 })
 
 export const toDose = (r: Row): Dose => ({
