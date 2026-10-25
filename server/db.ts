@@ -10,7 +10,7 @@ import type { Row, Sql } from './sql.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '17'
+const SCHEMA_VERSION = '18'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -372,6 +372,11 @@ CREATE TABLE IF NOT EXISTS certificates (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS certificates_number ON certificates (clinic_id, number);
 CREATE INDEX IF NOT EXISTS certificates_patient ON certificates (patient_id);
+
+-- v18: la nota de procedimiento es una nota de evolución en texto libre (hosp_notes.kind = 'procedure').
+-- Los procedimientos registrados antes en hosp_procedures se conservan y se muestran como notas sin estado.
+ALTER TABLE hosp_notes DROP CONSTRAINT IF EXISTS hosp_notes_kind_check;
+ALTER TABLE hosp_notes ADD CONSTRAINT hosp_notes_kind_check CHECK (kind IN ('admission','evolution','discharge','nursing','procedure'));
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

@@ -102,6 +102,7 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
   subjective: String(r.subjective ?? ''), objective: String(r.objective ?? ''), assessment: String(r.assessment ?? ''), plan: String(r.plan ?? ''), text: String(r.text ?? ''),
   discharge: r.kind === 'discharge' ? j(r.data, undefined) : undefined,
   orders: r.kind === 'admission' || r.kind === 'evolution' ? j<{ orders?: string[] }>(r.data, {}).orders ?? [] : undefined,
+  procedure: r.kind === 'procedure' ? j(r.data, undefined) : undefined,
 })
 
 export const toInpatientMed = (r: Row): InpatientMed => ({

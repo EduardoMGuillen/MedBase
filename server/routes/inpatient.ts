@@ -230,7 +230,51 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     res.status(201).json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [id]))!))
   })
 
-  // ---------- Procedimientos y autorizaciones ----------
+  /** ¿Hay una autorización firmada para esta estancia en las 24 horas anteriores al procedimiento? */
+  async function signedAuthorization(hospId: string, performedAt: Date) {
+    const since = new Date(performedAt.getTime() - 24 * 3_600_000).toISOString()
+    // Registros anteriores: autorización marcada como "autorizada"
+    return sql.one(`SELECT id FROM hosp_procedures WHERE hospitalization_id = ? AND kind = 'authorization' AND status = 'authorized' AND COALESCE(updated_at, created_at) >= ? LIMIT 1`, [hospId, since])
+  }
+
+  /** La autorización elegida, si es de esta estancia y está firmada. */
+  async function authorizationFor(hospId: string, id: string) {
+    return sql.one(`SELECT id FROM hosp_procedures WHERE id = ? AND hospitalization_id = ? AND kind = 'authorization' AND status = 'authorized'`, [id, hospId])
+  }
+
+  /**
+   * Nota de procedimiento: el procedimiento ya se hizo. Un solo texto (técnica, hallazgos, complicaciones),
+   * con la fecha y hora del procedimiento (obligatoria, no futura) y la hora en que se escribe la nota.
+   * Sin autorización firmada en las últimas 24 h, sólo se acepta como urgencia con justificación.
+   */
+  app.post('/api/inpatient/:id/procedure-notes', auth, need('inpatient.orders'), async (req, res) => {
+    const b = parse(z.object({
+      name: z.string().trim().min(3, 'Escribe el nombre del procedimiento.').max(200),
+      performedAt: when,
+      text: z.string().trim().min(10, 'Describe el procedimiento: técnica, hallazgos y complicaciones.').max(8000),
+      authorizationId: z.string().optional(),
+      urgent: z.boolean().default(false),
+      justification: z.string().trim().max(1000).optional(),
+    }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const h = await activeHosp(cid, String(req.params.id))
+    const performedAt = new Date(b.performedAt)
+    if (performedAt.getTime() > Date.now() + 2 * 60_000) fail(400, 'La hora del procedimiento no puede ser en el futuro.')
+    if (performedAt.getTime() < new Date(String(h.admitted_at)).getTime() - 24 * 3_600_000) fail(400, 'La hora del procedimiento es anterior al ingreso. Revísala.')
+    const hasAuth = b.authorizationId ? await authorizationFor(String(h.id), b.authorizationId) : await signedAuthorization(String(h.id), performedAt)
+    if (!hasAuth && !(b.urgent && (b.justification ?? '').length >= 10)) {
+      fail(409, 'No hay autorización firmada registrada para este procedimiento. Regístrala o marca "Urgencia, sin autorización previa" con la justificación.')
+    }
+    const noteId = randomUUID()
+    const data = { name: b.name, performedAt: performedAt.toISOString(), authorizationId: b.authorizationId, urgent: !hasAuth && b.urgent ? true : undefined, justification: !hasAuth && b.urgent ? b.justification : undefined }
+    await sql.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, text, data) VALUES (?,?,?,'procedure',?,?,?,?)`,
+      [noteId, cid, String(h.id), user.id, new Date().toISOString(), b.text, JSON.stringify(data)])
+    await audit(user, `Escribió la nota del procedimiento "${b.name}" de ${await patientName(String(h.patient_id))} (realizado ${performedAt.toISOString()})${data.urgent ? ', urgencia sin autorización previa' : ''}`)
+    res.status(201).json(toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [noteId]))!))
+  })
+
+  // ---------- Procedimientos y autorizaciones (registros anteriores) ----------
   app.post('/api/inpatient/:id/procedures', auth, need('inpatient.view'), async (req, res) => {
     const b = parse(z.object({
       kind: z.enum(['procedure', 'authorization']),

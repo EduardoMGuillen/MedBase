@@ -9,6 +9,7 @@ import { ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
 import { doseTimes, INPATIENT_FREQUENCIES, medLabel, noteOrders, slotState, stayDay, type SlotState } from '../lib/inpatient'
 import { MedAlertBanner } from './MedAlerts'
+import { useNow } from '../lib/hooks'
 import type { Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
 import { bedLabel, DxPicker } from './Inpatients'
 import { Identification } from './PatientChart'
@@ -35,7 +36,7 @@ export default function InpatientFile() {
   if (!p) return <Loading />
   const b = bed(h.bedId)
   const open = h.status === 'active'
-  const medical = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution')
+  const medical = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'procedure')
   const nursing = file.notes.filter((n) => n.kind === 'nursing')
   const tabs: [Tab, string][] = [
     ['sheet', 'Hoja de hospitalización'],
@@ -233,16 +234,23 @@ const SOAP: { key: 'subjective' | 'objective' | 'assessment' | 'plan'; letter: s
   { key: 'plan', letter: 'P', label: 'Plan', hint: 'Dieta, cuidados, estudios. Los medicamentos van abajo.' },
 ]
 
+/** "22/10 18:10": la fecha corta con la hora, como se escribe en la nota en papel. */
+const dm = (iso: string) => `${date(iso, { day: '2-digit', month: '2-digit' })} ${time(iso)}`
+
+/** Una entrada de la línea de tiempo: nota médica (SOAP, procedimiento o egreso) o registro anterior de procedimiento. */
+type TimelineItem = { at: string; key: string; note?: InpatientNote; legacy?: HospProcedure }
+
 function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () => void }) {
-  const { staffById, can, updateProcedure } = useStore()
-  const notes = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'discharge')
+  const { staffById, can } = useStore()
+  const notes = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'discharge' || n.kind === 'procedure')
   const hasAdmission = notes.some((n) => n.kind === 'admission')
   const discharged = notes.some((n) => n.kind === 'discharge')
   const [writing, setWriting] = useState<null | 'note' | 'procedure' | 'discharge'>(null)
   const open = file.hospitalization.status === 'active'
-  const timeline = [
-    ...notes.map((n) => ({ at: n.at, key: n.id, note: n as InpatientNote | undefined, procedure: undefined as HospProcedure | undefined })),
-    ...file.procedures.map((x) => ({ at: x.createdAt, key: x.id, note: undefined as InpatientNote | undefined, procedure: x })),
+  // Los procedimientos y autorizaciones registrados antes de las notas de procedimiento se conservan, sin estado
+  const timeline: TimelineItem[] = [
+    ...notes.map((n) => ({ at: n.at, key: n.id, note: n })),
+    ...file.procedures.map((x) => ({ at: x.createdAt, key: x.id, legacy: x })),
   ].sort((a, b) => a.at.localeCompare(b.at) || a.key.localeCompare(b.key))
   return (
     <div className="hc">
@@ -258,25 +266,20 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
           </div>
         </section>
       )}
-      {writing === 'procedure' && <Procedures file={file} reload={() => { setWriting(null); reload() }} onlyForm />}
+      {writing === 'procedure' && <ProcedureNoteForm file={file} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }} />}
       {writing === 'discharge' && <Discharge file={file} p={p} reload={() => { setWriting(null); reload() }} />}
       {timeline.length ? timeline.map((item) => {
-        if (item.procedure) {
-          const x = item.procedure
+        if (item.legacy) {
+          const x = item.legacy
           return (
             <article key={x.id} className="panel consult-entry">
               <div className="panel__head">
-                <div><h2>{x.kind === 'procedure' ? 'Procedimiento' : 'Autorización'}</h2>
+                <div><h2>{x.kind === 'procedure' ? 'Procedimiento' : 'Autorización'} <span className="badge">Registro anterior</span></h2>
                   <p>{date(x.createdAt, { weekday: 'long', day: 'numeric', month: 'long' })}, {time(x.createdAt)}, {staffById(x.createdBy)?.name}</p></div>
-                {open ? (
-                  <select className="select" value={x.status} aria-label={`Estado de ${x.name}`} onChange={async (e) => { if (await updateProcedure(x.id, { status: e.target.value as HospProcedure['status'] })) reload() }}>
-                    {Object.entries(PROC_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                ) : <span className={`badge badge--${PROC_STATUS[x.status].tone}`}>{PROC_STATUS[x.status].label}</span>}
               </div>
               <div className="panel__body">
-                <p>{x.name}</p>
-                {x.scheduledAt && <p className="muted">Programado {dateTime(x.scheduledAt)}</p>}
+                <p><b>{x.name}</b></p>
+                {x.scheduledAt && <p className="muted">Fecha anotada: {dateTime(x.scheduledAt)}</p>}
                 {x.notes && <p>{x.notes}</p>}
               </div>
             </article>
@@ -284,6 +287,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         }
         const n = item.note!
         if (n.kind === 'discharge') return <Discharge key={n.id} file={file} p={p} reload={reload} />
+        if (n.kind === 'procedure') return <ProcedureNote key={n.id} n={n} />
         const orders = noteOrders(n, file)
         return (
           <article key={n.id} className="panel consult-entry">
@@ -305,6 +309,76 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
       }) : <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
       {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }} />}
     </div>
+  )
+}
+
+/** Nota de procedimiento en la línea de tiempo: las dos horas, el texto y la autorización. */
+function ProcedureNote({ n }: { n: InpatientNote }) {
+  const { staffById } = useStore()
+  const x = n.procedure!
+  return (
+    <article className="panel consult-entry">
+      <div className="panel__head">
+        <div><h2>Nota de procedimiento <span className="badge badge--ink">Procedimiento</span></h2>
+          <p>Procedimiento: <b>{dm(x.performedAt)}</b> · Nota escrita: {dm(n.at)} · {staffById(n.authorId)?.name}</p></div>
+      </div>
+      <div className="panel__body note">
+        <div className="note__sec"><h4>{x.name}</h4><p>{n.text}</p></div>
+        {x.urgent && <p className="badge badge--amber" style={{ whiteSpace: 'normal' }}>Urgencia, sin autorización previa: {x.justification}</p>}
+      </div>
+    </article>
+  )
+}
+
+/**
+ * Nota de procedimiento: nombre, fecha y hora (por defecto ahora; se corrige si se escribe después) y un
+ * solo cuadro de texto. Si no hay autorización firmada en las últimas 24 horas se avisa antes de guardar.
+ */
+function ProcedureNoteForm({ file, onClose, onSaved }: { file: File; onClose: () => void; onSaved: () => void }) {
+  const { addProcedureNote } = useStore()
+  const now = useNow()
+  const [f, setF] = useState(() => ({ name: '', performedAt: inputDateTime(new Date()), text: '', urgent: false, justification: '' }))
+  const [busy, setBusy] = useState(false)
+  const performed = new Date(f.performedAt)
+  const future = performed.getTime() > now.getTime() + 60_000
+  // Autorizaciones firmadas en las 24 horas anteriores al procedimiento (registros anteriores marcados como autorizados)
+  const auths = file.procedures.filter((x) => x.kind === 'authorization' && x.status === 'authorized'
+    && new Date(x.updatedAt ?? x.createdAt).getTime() >= performed.getTime() - 24 * 3_600_000)
+  const covered = auths.length > 0
+  const ready = f.name.trim().length >= 3 && f.performedAt && !future && f.text.trim().length >= 10 && (covered || (f.urgent && f.justification.trim().length >= 10))
+  return (
+    <Modal title="Nota de procedimiento" wide onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
+        setBusy(true)
+        const ok = await addProcedureNote(file.hospitalization.id, {
+          name: f.name.trim(), performedAt: performed.toISOString(), text: f.text.trim(), authorizationId: covered ? auths[0].id : undefined,
+          urgent: !covered && f.urgent, justification: !covered && f.urgent ? f.justification.trim() : undefined,
+        })
+        setBusy(false)
+        if (ok) onSaved()
+      }}>Guardar nota</button>
+    </>}>
+      <div className="form-grid">
+        <label className="field"><span>Procedimiento</span><input className="input" autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Ej. Colocación de sonda vesical" /></label>
+        <label className="field"><span>Fecha y hora del procedimiento</span>
+          <input className={`input ${future ? 'input--error' : ''}`} type="datetime-local" value={f.performedAt} max={inputDateTime(now)} onChange={(e) => setF({ ...f, performedAt: e.target.value })} />
+          {future && <small className="field__msg field__msg--error">No puede ser en el futuro.</small>}
+          <small className="muted">Si escribes la nota después del procedimiento, corrige la hora. La hora en que escribes la nota se guarda sola.</small></label>
+      </div>
+      <label className="field"><span>Nota</span>
+        <textarea className="textarea textarea--lg" value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} placeholder="Indicación, técnica, hallazgos, complicaciones, estado del paciente al terminar." /></label>
+      {covered ? (
+        <div className="alert-strip alert-strip--calm">Autorización firmada ✓ ({dm(auths[0].updatedAt ?? auths[0].createdAt)}): {auths[0].name}</div>
+      ) : (
+        <div className="alert-strip alert-strip--amber" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+          <span>No hay autorización firmada registrada para este procedimiento en las últimas 24 horas.</span>
+          <label className="check-line" style={{ background: '#fff' }}><input type="checkbox" checked={f.urgent} onChange={(e) => setF({ ...f, urgent: e.target.checked })} />
+            <span><b>Urgencia, sin autorización previa</b><small>Escribe por qué no se pudo obtener antes.</small></span></label>
+          {f.urgent && <textarea className="textarea textarea--sm" rows={2} value={f.justification} onChange={(e) => setF({ ...f, justification: e.target.value })} placeholder="Justificación" aria-label="Justificación de la urgencia" />}
+        </div>
+      )}
+    </Modal>
   )
 }
 
@@ -557,63 +631,6 @@ function Labs({ file, reload }: { file: File; reload: () => void }) {
           </div>
         </section>
       )) : <section className="panel"><div className="empty">Sin resultados de laboratorio en esta hospitalización.</div></section>}
-    </div>
-  )
-}
-
-// ---------- Procedimientos y autorizaciones ----------
-
-const PROC_STATUS: Record<HospProcedure['status'], { label: string; tone: string }> = {
-  pending: { label: 'Pendiente', tone: 'amber' }, authorized: { label: 'Autorizado', tone: 'ink' }, done: { label: 'Realizado', tone: 'mint' }, denied: { label: 'Denegado', tone: 'red' },
-}
-
-function Procedures({ file, reload, onlyForm = false }: { file: File; reload: () => void; onlyForm?: boolean }) {
-  const { addProcedure, updateProcedure, staffById } = useStore()
-  const [kind, setKind] = useState<HospProcedure['kind']>('procedure')
-  const [name, setName] = useState('')
-  const [when, setWhen] = useState('')
-  const [notes, setNotes] = useState('')
-  const open = file.hospitalization.status === 'active'
-  return (
-    <div className="hc">
-      {open && (
-        <section className="panel">
-          <div className="panel__head"><h2>Registrar</h2></div>
-          <div className="panel__body form-grid">
-            <div className="field span-2"><span>Tipo</span>
-              <div className="segmented" role="radiogroup">
-                <button role="radio" aria-checked={kind === 'procedure'} onClick={() => setKind('procedure')}>Procedimiento</button>
-                <button role="radio" aria-checked={kind === 'authorization'} onClick={() => setKind('authorization')}>Autorización</button>
-              </div></div>
-            <label className="field"><span>{kind === 'procedure' ? 'Procedimiento' : 'Qué se solicita y a quién'}</span>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={kind === 'procedure' ? 'Ej. Apendicectomía laparoscópica' : 'Ej. Autorización de la aseguradora para cirugía'} /></label>
-            <label className="field"><span>Fecha y hora programada (opcional)</span><input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></label>
-            <label className="field span-2"><span>Notas (opcional)</span><input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
-            <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={name.trim().length < 3} onClick={async () => {
-              if (await addProcedure(file.hospitalization.id, { kind, name: name.trim(), scheduledAt: when ? new Date(when).toISOString() : undefined, notes: notes.trim() || undefined })) {
-                setName(''); setWhen(''); setNotes(''); reload()
-              }
-            }}><Plus size={15} />Registrar</button>
-          </div>
-        </section>
-      )}
-      {!onlyForm && <section className="panel">
-        {file.procedures.length ? <div className="rows">{file.procedures.map((x) => (
-          <div key={x.id} className="row" style={{ gridTemplateColumns: '1fr auto' }}>
-            <div className="row__who">
-              <strong>{x.name}</strong>
-              <span>{x.kind === 'procedure' ? 'Procedimiento' : 'Autorización'}{x.scheduledAt ? `, programado ${dateTime(x.scheduledAt)}` : ''}. Registró {staffById(x.createdBy)?.name}.
-                {x.updatedBy ? ` Último cambio: ${staffById(x.updatedBy)?.name}, ${dateTime(x.updatedAt!)}.` : ''}</span>
-              {x.notes && <span>{x.notes}</span>}
-            </div>
-            {open ? (
-              <select className="select" value={x.status} aria-label={`Estado de ${x.name}`} onChange={async (e) => { if (await updateProcedure(x.id, { status: e.target.value as HospProcedure['status'] })) reload() }}>
-                {Object.entries(PROC_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-            ) : <span className={`badge badge--${PROC_STATUS[x.status].tone}`}>{PROC_STATUS[x.status].label}</span>}
-          </div>
-        ))}</div> : <div className="empty">Sin procedimientos ni autorizaciones.</div>}
-      </section>}
     </div>
   )
 }

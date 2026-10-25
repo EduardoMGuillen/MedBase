@@ -307,3 +307,29 @@ describe('M4 constancias', () => {
     assert.equal((await rec.get(`/api/certificates/${b.body.id}`)).status, 403)
   })
 })
+
+describe('H2 nota de procedimiento', () => {
+  test('fecha y hora obligatorias y no futuras; sin autorización sólo como urgencia justificada', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const h = (await doc.get('/api/bootstrap')).body.inpatients[0]
+    const at = new Date(Date.now() - 2 * 3_600_000).toISOString()
+    const base = { name: 'Sonda vesical', text: 'Se coloca sonda Foley 16 Fr sin complicaciones.' }
+    assert.equal((await doc.post(`/api/inpatient/${h.id}/procedure-notes`, base)).status, 400, 'sin hora')
+    assert.equal((await doc.post(`/api/inpatient/${h.id}/procedure-notes`, { ...base, performedAt: new Date(Date.now() + 3_600_000).toISOString() })).status, 400, 'futura')
+    assert.equal((await doc.post(`/api/inpatient/${h.id}/procedure-notes`, { ...base, performedAt: at })).status, 409, 'sin autorización')
+    const ok = await doc.post(`/api/inpatient/${h.id}/procedure-notes`, { ...base, performedAt: at, urgent: true, justification: 'Retención urinaria aguda.' })
+    assert.equal(ok.status, 201)
+    assert.equal(ok.body.kind, 'procedure')
+    assert.equal(ok.body.procedure.performedAt, at)
+    assert.notEqual(ok.body.at, at, 'la hora de la nota es la de escritura')
+    const nurse = await as('crios@demo.clinara')
+    assert.equal((await nurse.post(`/api/inpatient/${h.id}/procedure-notes`, { ...base, performedAt: at, urgent: true, justification: 'x'.repeat(12) })).status, 403)
+  })
+  test('los procedimientos registrados antes se conservan', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const boot = (await doc.get('/api/bootstrap')).body
+    let legacy = 0
+    for (const h of boot.inpatients) legacy += (await doc.get(`/api/inpatient/${h.id}`)).body.procedures.length
+    assert.ok(legacy > 0)
+  })
+})

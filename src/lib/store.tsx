@@ -175,6 +175,8 @@ function useStoreValue() {
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),
     recordDose: (medId: string, b: { scheduledAt?: string; givenAt?: string; status: Dose['status']; note?: string }) =>
       run(() => api<Dose>(`/inpatient/meds/${medId}/doses`, { body: b }), b.status === 'given' ? 'Dosis registrada' : 'Dosis marcada como no administrada'),
+    addProcedureNote: (id: string, b: { name: string; performedAt: string; text: string; authorizationId?: string; urgent?: boolean; justification?: string }) =>
+      run(() => api<InpatientNote>(`/inpatient/${id}/procedure-notes`, { body: b }), 'Nota de procedimiento guardada'),
     addProcedure: (id: string, b: Pick<HospProcedure, 'kind' | 'name' | 'scheduledAt' | 'notes'>) =>
       run(() => api<HospProcedure>(`/inpatient/${id}/procedures`, { body: b }), 'Registrado'),
     updateProcedure: (pid: string, b: Pick<HospProcedure, 'status' | 'notes'>) =>

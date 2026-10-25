@@ -351,11 +351,20 @@ export interface DischargeData {
   followUp?: string
 }
 
-/** Nota médica (ingreso y evolución en formato SOAP), de egreso o de enfermería. */
+/** Nota de procedimiento: un solo texto, con la hora del procedimiento aparte de la hora en que se escribió. */
+export interface ProcedureData {
+  name: string
+  performedAt: string // fecha y hora del procedimiento (la nota se escribe después: `at`)
+  authorizationId?: string
+  urgent?: boolean // urgencia, sin autorización previa
+  justification?: string
+}
+
+/** Nota médica (ingreso y evolución en formato SOAP), de egreso, de procedimiento o de enfermería. */
 export interface InpatientNote {
   id: string
   hospitalizationId: string
-  kind: 'admission' | 'evolution' | 'discharge' | 'nursing'
+  kind: 'admission' | 'evolution' | 'discharge' | 'nursing' | 'procedure'
   authorId: string
   at: string
   subjective: string
@@ -366,6 +375,7 @@ export interface InpatientNote {
   discharge?: DischargeData
   /** Órdenes y manejo vigentes al firmar la nota: medicamentos y el resto. */
   orders?: string[]
+  procedure?: ProcedureData
 }
 
 /** Medicamento indicado en una nota médica. Su horario se calcula a partir de la primera dosis. */

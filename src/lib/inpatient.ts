@@ -111,6 +111,7 @@ export function collectMedAlerts(file: InpatientFile, now = new Date()): MedAler
 
 /** Órdenes que deben leerse en la nota: las guardadas, o si no hay, los medicamentos vigentes en ese momento. */
 export function noteOrders(n: InpatientNote, file: Pick<InpatientFile, 'meds'>): string[] {
+  if (n.kind !== 'admission' && n.kind !== 'evolution') return []
   if (n.orders && n.orders.length) return n.orders
   const lines: string[] = []
   for (const m of file.meds) {

@@ -73,10 +73,10 @@ export default function FullRecord() {
         {notes.map((n) => (
           <section key={n.id}>
             <p className="cn__when">
-              {n.kind === 'admission' ? 'Nota de ingreso' : n.kind === 'evolution' ? 'Nota de evolución' : n.kind === 'nursing' ? 'Nota de enfermería' : 'Nota de egreso'}
+              {n.kind === 'admission' ? 'Nota de ingreso' : n.kind === 'evolution' ? 'Nota de evolución' : n.kind === 'nursing' ? 'Nota de enfermería' : n.kind === 'procedure' ? `Nota de procedimiento: ${n.procedure?.name}` : 'Nota de egreso'}
               {' · '}{dateTime(n.at)} · {staffById(n.authorId)?.name}
             </p>
-            {n.kind === 'nursing' ? <p>{n.text}</p> : n.kind === 'discharge' && n.discharge ? (
+            {n.kind === 'nursing' ? <p>{n.text}</p> : n.kind === 'procedure' ? <p>Procedimiento: {n.procedure && dateTime(n.procedure.performedAt)}. {n.text}</p> : n.kind === 'discharge' && n.discharge ? (
               <div className="note">
                 <div className="note__sec"><h4>Resumen</h4><p>{n.discharge.summary}</p></div>
                 <div className="note__sec"><h4>Diagnóstico de egreso</h4><p>{n.discharge.diagnoses.map((d) => d.label).join('; ')}</p></div>
