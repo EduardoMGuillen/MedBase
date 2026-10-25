@@ -1,5 +1,5 @@
 import type {
-  Appointment, Attachment, AuditEntry, Background, Bed, Clinic, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
+  Appointment, Attachment, AuditEntry, Background, Bed, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
   Patient, Payment, Prescription, Service, Staff, Vitals,
 } from '../src/lib/types.js'
 import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
@@ -58,6 +58,11 @@ export const toConsultation = (r: Row): Consultation => ({
 export const toPrescription = (r: Row): Prescription => ({
   id: String(r.id), folio: String(r.folio), patientId: String(r.patient_id), doctorId: String(r.doctor_id),
   consultationId: String(r.consultation_id), hospitalizationId: s(r.hospitalization_id), issuedAt: String(r.issued_at), items: j(r.items, []),
+})
+
+export const toClinicDrug = (r: Row): ClinicDrug => ({
+  id: String(r.id), name: String(r.name), brand: s(r.brand), presentation: s(r.presentation), concentration: s(r.concentration), route: s(r.route),
+  active: Boolean(r.active), createdBy: String(r.created_by), createdAt: String(r.created_at), updatedBy: s(r.updated_by), updatedAt: s(r.updated_at),
 })
 
 export const toAudit = (r: Row): AuditEntry => ({ id: String(r.id), at: String(r.at), userId: String(r.user_id), action: String(r.action) })

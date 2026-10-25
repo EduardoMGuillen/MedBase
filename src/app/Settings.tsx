@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { Avatar, PageHead } from '../components/ui'
-import { fillTemplate, money } from '../lib/format'
-import type { ClinicSettings, Service, Staff } from '../lib/types'
+import { Avatar, Modal, PageHead } from '../components/ui'
+import { date, fillTemplate, money, ROUTES } from '../lib/format'
+import type { ClinicDrug, ClinicSettings, Service, Staff } from '../lib/types'
 import { ScheduleEditor } from './ScheduleEditor'
 
-type Tab = 'clinic' | 'services' | 'schedules' | 'beds'
+type Tab = 'clinic' | 'services' | 'schedules' | 'beds' | 'drugs'
 
 export default function Settings() {
   const [tab, setTab] = useState<Tab>('clinic')
@@ -18,12 +18,62 @@ export default function Settings() {
         <button className="tab" role="tab" aria-selected={tab === 'services'} onClick={() => setTab('services')}>Servicios y precios</button>
         <button className="tab" role="tab" aria-selected={tab === 'schedules'} onClick={() => setTab('schedules')}>Horarios de médicos</button>
         <button className="tab" role="tab" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}>Camas</button>
+        <button className="tab" role="tab" aria-selected={tab === 'drugs'} onClick={() => setTab('drugs')}>Vademécum</button>
       </div>
       {tab === 'clinic' && <ClinicForm />}
       {tab === 'services' && <Services />}
       {tab === 'schedules' && <Schedules />}
       {tab === 'beds' && <Beds />}
+      {tab === 'drugs' && <ClinicDrugs />}
     </div>
+  )
+}
+
+/** Medicamentos que agregaron los médicos porque no estaban en el vademécum. Se editan o desactivan; no se borran. */
+function ClinicDrugs() {
+  const { clinicDrugs = [], staffById } = useStore()
+  const [editing, setEditing] = useState<ClinicDrug | null>(null)
+  return (
+    <section className="panel table-wrap">
+      <div className="panel__head"><div><h2>Agregados por la clínica</h2><p>Los médicos los agregan desde la consulta cuando no aparecen en el vademécum. Un medicamento desactivado ya no se ofrece en las búsquedas.</p></div></div>
+      {clinicDrugs.length ? (
+        <table className="table">
+          <thead><tr><th>Nombre genérico</th><th>Comercial</th><th>Presentación</th><th>Vía</th><th>Agregado por</th><th>Estado</th><th /></tr></thead>
+          <tbody>{clinicDrugs.map((d) => (
+            <tr key={d.id} style={d.active ? undefined : { opacity: 0.55 }}>
+              <td><b>{d.name}</b></td><td>{d.brand ?? '—'}</td><td>{[d.presentation, d.concentration].filter(Boolean).join(' ') || '—'}</td><td>{d.route ?? '—'}</td>
+              <td>{staffById(d.createdBy)?.name}<br /><small className="muted">{date(d.createdAt)}</small></td>
+              <td>{d.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Desactivado</span>}</td>
+              <td style={{ textAlign: 'right' }}><button className="btn btn--ghost btn--sm" onClick={() => setEditing(d)}>Editar</button></td>
+            </tr>
+          ))}</tbody>
+        </table>
+      ) : <div className="empty">Todavía no se ha agregado ningún medicamento.</div>}
+      {editing && <ClinicDrugForm d={editing} onClose={() => setEditing(null)} />}
+    </section>
+  )
+}
+
+function ClinicDrugForm({ d, onClose }: { d: ClinicDrug; onClose: () => void }) {
+  const { updateClinicDrug } = useStore()
+  const [f, setF] = useState({ name: d.name, brand: d.brand ?? '', presentation: d.presentation ?? '', concentration: d.concentration ?? '', route: d.route ?? 'Oral' })
+  const save = async (extra: Partial<ClinicDrug> = {}) => {
+    if (await updateClinicDrug(d.id, { name: f.name.trim(), brand: f.brand.trim(), presentation: f.presentation.trim(), concentration: f.concentration.trim(), route: f.route, ...extra })) onClose()
+  }
+  return (
+    <Modal title="Medicamento de la clínica" onClose={onClose} footer={<>
+      <button className={`btn ${d.active ? 'btn--danger' : 'btn--soft'}`} style={{ marginRight: 'auto' }} onClick={() => save({ active: !d.active })}>{d.active ? 'Desactivar' : 'Reactivar'}</button>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={f.name.trim().length < 2} onClick={() => save()}>Guardar</button>
+    </>}>
+      <div className="form-grid">
+        <label className="field span-2"><span>Nombre genérico</span><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
+        <label className="field span-2"><span>Nombre comercial</span><input className="input" value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })} /></label>
+        <label className="field"><span>Presentación</span><input className="input" value={f.presentation} onChange={(e) => setF({ ...f, presentation: e.target.value })} /></label>
+        <label className="field"><span>Concentración</span><input className="input" value={f.concentration} onChange={(e) => setF({ ...f, concentration: e.target.value })} /></label>
+        <label className="field span-2"><span>Vía habitual</span><select className="select" value={f.route} onChange={(e) => setF({ ...f, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
+      </div>
+    </Modal>
   )
 }
 

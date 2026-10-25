@@ -179,6 +179,11 @@ function useStoreValue() {
       run(() => api<HospProcedure>(`/inpatient/procedures/${pid}`, { method: 'PATCH', body: b }), 'Estado actualizado'),
     discharge: (id: string, b: DischargeData & { items: PrescriptionItem[] }) =>
       run(() => api<{ hospitalization: Hospitalization; prescriptionId: string | null; folio: string | null }>(`/inpatient/${id}/discharge`, { body: b }), 'Paciente dado de alta'),
+    // Vademécum de la clínica
+    addClinicDrug: (b: Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route'>) =>
+      run(() => api<ClinicDrug>('/drugs', { body: b }), 'Medicamento agregado al vademécum de la clínica'),
+    updateClinicDrug: (id: string, b: Partial<Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route' | 'active'>>) =>
+      run(() => api<ClinicDrug>(`/drugs/${id}`, { method: 'PATCH', body: b }), 'Vademécum actualizado'),
     createBed: (b: Omit<Bed, 'id'>) => run(() => api<Bed>('/beds', { body: b }), 'Cama agregada'),
     updateBed: (id: string, b: Partial<Omit<Bed, 'id'>>) => run(() => api<Bed>(`/beds/${id}`, { method: 'PATCH', body: b }), 'Cama actualizada'),
 

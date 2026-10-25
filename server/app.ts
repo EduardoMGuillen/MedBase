@@ -11,7 +11,7 @@ import { attempts, completePendingPatient, createPatient, createPendingPatient, 
 import type { Sql } from './sql.js'
 import { type Ctx, fail, HttpError, localDate, parse, type Row } from './http.js'
 import {
-  clinicSettings, toAppointment, toAudit, toBed, toConsultation, toFollowup, toHospitalization, toPatient, toPrescription, toService, toStaff, toVitals,
+  clinicSettings, toAppointment, toAudit, toBed, toClinicDrug, toConsultation, toFollowup, toHospitalization, toPatient, toPrescription, toService, toStaff, toVitals,
 } from './mappers.js'
 import { newSecret, otpauthUrl, verifyTotp } from './totp.js'
 import { registerSettings } from './routes/settings.js'
@@ -21,6 +21,7 @@ import { registerReports } from './routes/reports.js'
 import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
 import { registerInpatient } from './routes/inpatient.js'
+import { registerDrugs } from './routes/drugs.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { can, ROLE_PERMISSIONS, type Permission } from '../src/lib/permissions.js'
 import { yearsOld } from '../src/lib/inpatient.js'
@@ -249,7 +250,7 @@ export function createApp(opts: AppOptions) {
     const user = userOf(req)
     // La administración de la plataforma no carga datos de ninguna clínica
     if (!user.clinicId) {
-      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], beds: [], inpatients: [], followups: [], discharges: [],
+      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], beds: [], inpatients: [], followups: [], discharges: [], clinicDrugs: [],
         settings: { ...clinicSettings({ name: 'Clinara' }) } })
     }
     const cid = user.clinicId
@@ -258,7 +259,7 @@ export function createApp(opts: AppOptions) {
     const since = new Date(); since.setDate(since.getDate() - 90)
     const none = Promise.resolve([] as Row[])
     if (can(user.role, 'followups.view')) await sweepFollowupReminders(sql, cid)
-    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges] = await Promise.all([
+    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges, clinicDrugs] = await Promise.all([
       sql.query('SELECT * FROM staff WHERE clinic_id = ? ORDER BY name', [cid]),
       // Los pendientes de registro sí viajan (agenda y 'Por llegar'); los que se unieron a otro expediente no
       sql.query('SELECT * FROM patients WHERE clinic_id = ? AND merged_into IS NULL ORDER BY last_name', [cid]),
@@ -275,6 +276,7 @@ export function createApp(opts: AppOptions) {
       can(user.role, 'followups.view') ? sql.query('SELECT * FROM followups WHERE clinic_id = ? AND active ORDER BY due_date', [cid]) : none,
       sql.query(`SELECT DISTINCT ON (patient_id) patient_id, discharged_at FROM hospitalizations
         WHERE clinic_id = ? AND status = 'discharged' AND discharged_at IS NOT NULL ORDER BY patient_id, discharged_at DESC`, [cid]),
+      can(user.role, 'rx.write') || can(user.role, 'drugs.manage') ? sql.query('SELECT * FROM clinic_drugs WHERE clinic_id = ? ORDER BY name', [cid]) : none,
     ])
     res.json({
       staff: staff.map(toStaff),
@@ -289,6 +291,7 @@ export function createApp(opts: AppOptions) {
       inpatients: inpatients.map(toHospitalization),
       followups: followups.map(toFollowup),
       discharges: discharges.map((r) => ({ patientId: String(r.patient_id), at: String(r.discharged_at) })),
+      clinicDrugs: clinicDrugs.map(toClinicDrug),
     })
   })
 
@@ -780,6 +783,7 @@ export function createApp(opts: AppOptions) {
   registerFiles(app, ctx)
   registerPlatform(app, ctx)
   registerInpatient(app, ctx)
+  registerDrugs(app, ctx)
   registerFollowups(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))

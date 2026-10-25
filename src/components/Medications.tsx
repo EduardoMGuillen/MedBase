@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from 'react'
+import { useStore } from '../lib/store'
+import { Modal } from './ui'
 import { Pencil, Pill, Plus, TriangleAlert, X } from 'lucide-react'
 import { allergyConflict, EMPTY_MED, FREQUENCIES, type Drug } from '../lib/catalogs'
 import { defaultRoute, medicationLine, ROUTES } from '../lib/format'
@@ -39,13 +41,16 @@ export function MedicationList({ items, patient, onEdit, onRemove, editing }: {
  * Formulario de un medicamento: buscador en el vademécum (catálogo base y medicamentos agregados por la
  * clínica), presentación, dosis, vía, frecuencia, duración, cantidad e indicaciones. Al elegir del
  * vademécum se precargan los valores habituales. Avisa si el paciente es alérgico o si ya está en la lista.
- * `onNewDrug` ofrece registrar un medicamento que no aparece en el vademécum.
+ * Si un medicamento no aparece, el médico lo registra y queda en el vademécum de la clínica.
  */
-export function MedicationForm({ patient, current, initial, onSave, onCancel, onNewDrug, submitLabel }: {
+export function MedicationForm({ patient, current, initial, onSave, onCancel, submitLabel }: {
   patient: Pick<Patient, 'firstName' | 'allergies'>; current: PrescriptionItem[]; initial?: PrescriptionItem
-  onSave: (item: PrescriptionItem) => void; onCancel: () => void; onNewDrug?: (name: string, pick: (d: Drug) => void) => void; submitLabel?: string
+  onSave: (item: PrescriptionItem) => void; onCancel: () => void; submitLabel?: string
 }) {
   const drugs = useVademecum()
+  const { can } = useStore()
+  const canAdd = can('rx.write') || can('drugs.manage')
+  const [newDrug, setNewDrug] = useState<string | null>(null)
   const [m, setM] = useState<PrescriptionItem>({ ...EMPTY_MED, ...initial })
   const [open, setOpen] = useState(!initial)
   const [overrideAllergy, setOverrideAllergy] = useState(false)
@@ -71,13 +76,13 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, on
       instructions: m.instructions?.trim() || undefined, quantity: m.quantity?.trim() || undefined })
   }
   const freqs = FREQUENCIES.includes(m.frequency) ? FREQUENCIES : [m.frequency, ...FREQUENCIES]
-  return (
+  return (<>
     <form className="rx-form" onSubmit={submit}>
       <div className="field suggest">
         <span>Medicamento</span>
         <input className="input" autoFocus={!initial} value={m.drug} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} autoComplete="off"
           onChange={(e) => { setM({ ...m, drug: e.target.value }); setOverrideAllergy(false); setOverrideDup(false); setOpen(true) }} placeholder="Busca en el vademécum por nombre genérico o comercial" />
-        {open && (matches.length > 0 || (onNewDrug && q.length >= 3 && !exact)) && (
+        {open && (matches.length > 0 || (canAdd && q.length >= 3 && !exact)) && (
           <div className="suggest__list">
             {matches.map((d) => (
               <button type="button" key={`${d.name}|${d.presentation}`} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(d)}>
@@ -85,8 +90,8 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, on
                 <span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{d.presentation}{d.clinicId ? ' · de la clínica' : ''}</span>
               </button>
             ))}
-            {onNewDrug && q.length >= 3 && !exact && (
-              <button type="button" className="suggest__new" onMouseDown={(e) => e.preventDefault()} onClick={() => { setOpen(false); onNewDrug(m.drug.trim(), pick) }}>
+            {canAdd && q.length >= 3 && !exact && (
+              <button type="button" className="suggest__new" onMouseDown={(e) => e.preventDefault()} onClick={() => { setOpen(false); setNewDrug(m.drug.trim()) }}>
                 <Plus size={15} />{matches.length ? 'No está en la lista: ' : ''}agregar «{m.drug.trim()}» como nuevo medicamento</button>
             )}
           </div>
@@ -119,5 +124,38 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, on
         <button type="button" className="btn btn--ghost" onClick={onCancel}>Cancelar</button>
       </div>
     </form>
+    {newDrug !== null && <NewDrugModal name={newDrug} onClose={() => setNewDrug(null)} onCreated={(d) => { setNewDrug(null); pick(d) }} />}
+    </>
+  )
+}
+
+const FORMS = ['Tableta', 'Cápsula', 'Jarabe', 'Suspensión', 'Gotas', 'Ampolla', 'Vial', 'Crema', 'Ungüento', 'Gel', 'Inhalador', 'Supositorio', 'Óvulo', 'Parche', 'Solución']
+
+/** Registra un medicamento que no está en el vademécum: queda disponible para todos los médicos de la clínica. */
+export function NewDrugModal({ name, onClose, onCreated }: { name: string; onClose: () => void; onCreated: (d: Drug) => void }) {
+  const { addClinicDrug } = useStore()
+  const [f, setF] = useState({ name, brand: '', presentation: 'Tableta', concentration: '', route: 'Oral' })
+  const [busy, setBusy] = useState(false)
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
+  return (
+    <Modal title="Nuevo medicamento" onClose={onClose} footer={<>
+      <button type="button" className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button type="button" className="btn btn--primary" disabled={f.name.trim().length < 2 || busy} onClick={async () => {
+        setBusy(true)
+        const d = await addClinicDrug({ name: f.name.trim(), brand: f.brand.trim() || undefined, presentation: f.presentation || undefined, concentration: f.concentration.trim() || undefined, route: f.route })
+        setBusy(false)
+        if (d) onCreated({ name: d.name, brand: d.brand, presentation: [d.presentation, d.concentration].filter(Boolean).join(' '), group: 'clínica', clinicId: d.id,
+          usual: { dose: '', route: d.route ?? 'Oral', frequency: 'Cada 8 horas', duration: '' } })
+      }}><Plus size={16} />Agregar al vademécum</button>
+    </>}>
+      <p className="muted" style={{ fontSize: 13.5 }}>No está en el vademécum. Al guardarlo queda disponible para todos los médicos de la clínica, marcado como agregado por la clínica.</p>
+      <div className="form-grid">
+        <label className="field span-2"><span>Nombre genérico</span><input className="input" autoFocus value={f.name} onChange={set('name')} /></label>
+        <label className="field span-2"><span>Nombre comercial (opcional)</span><input className="input" value={f.brand} onChange={set('brand')} placeholder="Ej. Tylenol" /></label>
+        <label className="field"><span>Presentación</span><select className="select" value={f.presentation} onChange={set('presentation')}>{FORMS.map((x) => <option key={x}>{x}</option>)}</select></label>
+        <label className="field"><span>Concentración</span><input className="input" value={f.concentration} onChange={set('concentration')} placeholder="Ej. 500 mg, 250 mg/5 ml" /></label>
+        <label className="field span-2"><span>Vía habitual</span><select className="select" value={f.route} onChange={set('route')}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
+      </div>
+    </Modal>
   )
 }

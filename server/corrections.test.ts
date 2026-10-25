@@ -238,3 +238,23 @@ describe('M2 plan y manejo', () => {
     assert.equal(none.status, 400)
   })
 })
+
+describe('M3 vademécum de la clínica', () => {
+  test('el médico agrega, no se duplica, otro médico lo ve y administración lo desactiva', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const a = await doc.post('/api/drugs', { name: 'Dexametasona', presentation: 'Ampolla', concentration: '4 mg/ml', route: 'Intramuscular' })
+    assert.equal(a.status, 201)
+    const again = await doc.post('/api/drugs', { name: '  DEXAMETASÓNA ', presentation: 'ampolla', concentration: '4 mg/ml' })
+    assert.equal(again.body.id, a.body.id, 'mismo medicamento escrito distinto')
+    assert.equal((await doc.post('/api/drugs', { name: 'acetaminofen', presentation: 'Tableta', concentration: '500 mg' })).status, 409)
+    const paz = await as('apaz@demo.clinara')
+    assert.ok((await paz.get('/api/bootstrap')).body.clinicDrugs.some((d: any) => d.id === a.body.id))
+    assert.equal((await paz.patch(`/api/drugs/${a.body.id}`, { active: false })).status, 403)
+    const admin = await as('admin@demo.clinara')
+    const off = await admin.patch(`/api/drugs/${a.body.id}`, { active: false })
+    assert.equal(off.body.active, false)
+    // Otra clínica no lo ve
+    const other = await as('erosales@demo.clinara')
+    assert.ok(!(await other.get('/api/drugs')).body.some((d: any) => d.id === a.body.id))
+  })
+})
