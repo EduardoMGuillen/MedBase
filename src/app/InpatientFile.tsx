@@ -471,6 +471,7 @@ function OrderChecklist({ n, orders, file, reload }: { n: InpatientNote; orders:
 /** Para enfermería: todas las órdenes sin revisar de todas las notas, en orden de hora. */
 function PendingOrdersPanel({ file, reload }: { file: File; reload: () => void }) {
   const { staffById, reviewOrder } = useStore()
+  const [saving, setSaving] = useState(false)
   const pending = pendingOrdersOf(file)
   if (file.hospitalization.status !== 'active') return null
   return (
@@ -480,7 +481,12 @@ function PendingOrdersPanel({ file, reload }: { file: File; reload: () => void }
       {pending.length > 0 && (
         <div className="rows">{pending.map(({ note, index, text }) => (
           <label key={`${note.id}:${index}`} className="row pending-orders__row">
-            <input type="checkbox" onChange={async (e) => { if (e.target.checked && await reviewOrder(note.id, index, true)) reload() }} aria-label={`Marcar como revisada: ${text}`} />
+            <input type="checkbox" disabled={saving} onChange={async (e) => {
+              if (!e.target.checked) return
+              setSaving(true)
+              if (await reviewOrder(note.id, index, true)) reload()
+              setSaving(false)
+            }} aria-label={`Marcar como revisada: ${text}`} />
             <span className="row__who"><strong>{index + 1}. {text}</strong><span>{shortStaff(staffById(note.authorId)?.name)}, {dateTime(note.at)}</span></span>
           </label>
         ))}</div>
