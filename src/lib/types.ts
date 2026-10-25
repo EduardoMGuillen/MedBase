@@ -128,6 +128,10 @@ export interface Patient {
   emergencyPhone?: string
   emergencyRelation?: string
   insurance?: string
+  // Menor sin identidad: la receta y las constancias llevan los datos del responsable
+  guardianName?: string
+  guardianDni?: string
+  guardianRelation?: string
   // Datos clínicos (sólo para personal con acceso al expediente)
   bloodType?: string
   allergies: string[]

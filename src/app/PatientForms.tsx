@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { Modal } from '../components/ui'
-import { BACKGROUND_GROUPS, CIVIL_STATUS, EDUCATION } from '../lib/format'
+import { BACKGROUND_GROUPS, CIVIL_STATUS, EDUCATION, formatDni, formatPhone } from '../lib/format'
+import { yearsOld } from '../lib/inpatient'
 import type { Background, Patient } from '../lib/types'
 
 type Identification = Pick<Patient, 'firstName' | 'lastName' | 'birthDate' | 'sex' | 'phone' | 'email' | 'dni' | 'civilStatus' | 'occupation' | 'education'
-  | 'religion' | 'address' | 'emergencyName' | 'emergencyPhone' | 'emergencyRelation' | 'insurance'>
+  | 'religion' | 'address' | 'emergencyName' | 'emergencyPhone' | 'emergencyRelation' | 'insurance' | 'guardianName' | 'guardianDni' | 'guardianRelation'>
 
 /** Ficha de identificación: el primer bloque de la historia clínica. */
 export function IdentificationForm({ title, submitLabel, initial, withAllergies = false, onClose, onSave }: {
-  title: string; submitLabel: string; initial?: Patient; withAllergies?: boolean
+  title: string; submitLabel: string; initial?: Partial<Patient>; withAllergies?: boolean
   onClose: () => void; onSave: (p: Partial<Patient>) => Promise<void>
 }) {
   const [f, setF] = useState<Record<keyof Identification, string>>({
@@ -16,10 +17,14 @@ export function IdentificationForm({ title, submitLabel, initial, withAllergies 
     phone: initial?.phone ?? '', email: initial?.email ?? '', dni: initial?.dni ?? '', civilStatus: initial?.civilStatus ?? '', occupation: initial?.occupation ?? '',
     education: initial?.education ?? '', religion: initial?.religion ?? '', address: initial?.address ?? '', emergencyName: initial?.emergencyName ?? '',
     emergencyPhone: initial?.emergencyPhone ?? '', emergencyRelation: initial?.emergencyRelation ?? '', insurance: initial?.insurance ?? '',
+    guardianName: initial?.guardianName ?? '', guardianDni: initial?.guardianDni ?? '', guardianRelation: initial?.guardianRelation ?? '',
   })
   const [allergies, setAllergies] = useState('')
   const [busy, setBusy] = useState(false)
-  const set = (k: keyof Identification) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
+  // La identidad y los teléfonos se formatean mientras se escriben: 0000-0000-00000 y 0000-0000
+  const MASK: Partial<Record<keyof Identification, (v: string) => string>> = { dni: formatDni, guardianDni: formatDni, phone: formatPhone, emergencyPhone: formatPhone }
+  const set = (k: keyof Identification) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: MASK[k] ? MASK[k](e.target.value) : e.target.value })
+  const minor = !!f.birthDate && yearsOld(f.birthDate) < 18
   const valid = f.firstName.trim() && f.lastName.trim() && f.birthDate && f.phone.trim().length >= 7
   const field = (k: keyof Identification, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}, cls = '') => (
     <label className={`field ${cls}`}><span>{label}</span><input className="input" value={f[k]} onChange={set(k)} {...props} /></label>
@@ -39,7 +44,7 @@ export function IdentificationForm({ title, submitLabel, initial, withAllergies 
         <div className="form-grid">
           {field('firstName', 'Nombres', { autoComplete: 'given-name' })}
           {field('lastName', 'Apellidos', { autoComplete: 'family-name' })}
-          {field('dni', 'Número de identidad', { placeholder: '0801-1990-00000', inputMode: 'numeric' })}
+          {field('dni', minor ? 'Número de identidad (si ya tiene)' : 'Número de identidad', { placeholder: '0000-0000-00000', inputMode: 'numeric' })}
           {field('birthDate', 'Fecha de nacimiento', { type: 'date' })}
           <label className="field"><span>Sexo</span><select className="select" value={f.sex} onChange={set('sex')}><option value="F">Femenino</option><option value="M">Masculino</option></select></label>
           <label className="field"><span>Estado civil</span><select className="select" value={f.civilStatus} onChange={set('civilStatus')}>
@@ -54,13 +59,23 @@ export function IdentificationForm({ title, submitLabel, initial, withAllergies 
       </fieldset>
       <fieldset className="fs"><legend>Contacto</legend>
         <div className="form-grid">
-          {field('phone', 'Teléfono', { inputMode: 'tel', autoComplete: 'tel' })}
+          {field('phone', 'Teléfono', { inputMode: 'tel', autoComplete: 'tel', placeholder: '0000-0000' })}
           {field('email', 'Correo (opcional)', { type: 'email', autoComplete: 'email' })}
           {field('emergencyName', 'Contacto de emergencia')}
           {field('emergencyRelation', 'Parentesco')}
-          {field('emergencyPhone', 'Teléfono de emergencia', { inputMode: 'tel' })}
+          {field('emergencyPhone', 'Teléfono de emergencia', { inputMode: 'tel', placeholder: '0000-0000' })}
         </div>
       </fieldset>
+      {minor && !f.dni && (
+        <fieldset className="fs"><legend>Menor sin identidad: responsable</legend>
+          <p className="muted" style={{ fontSize: 13.5 }}>La receta y las constancias llevarán los datos del padre, la madre o el responsable.</p>
+          <div className="form-grid">
+            {field('guardianName', 'Nombre del responsable')}
+            {field('guardianRelation', 'Parentesco', { placeholder: 'Ej. Madre' })}
+            {field('guardianDni', 'Identidad del responsable', { placeholder: '0000-0000-00000', inputMode: 'numeric' })}
+          </div>
+        </fieldset>
+      )}
       {withAllergies && (
         <label className="field"><span>Alergias conocidas, separadas por coma</span>
           <input className="input" value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Ej. Penicilina, AINEs" /></label>

@@ -74,6 +74,7 @@ export function registerPublic(app: Express, { sql, audit }: Ctx) {
       sex: z.enum(['F', 'M'], { error: 'Indica el sexo.' }),
       phone: z.string().trim().regex(/^[\d\s+()-]{7,20}$/, 'Escribe un teléfono válido.'),
       email: z.string().trim().email('El correo no es válido.').optional().or(z.literal('').transform(() => undefined)),
+      dni: z.string().trim().max(30).optional().or(z.literal('').transform(() => undefined)),
       reason: z.string().trim().min(3, 'Cuéntanos brevemente el motivo.').max(200),
       website: z.string().max(0).optional(), // campo trampa para bots
     }), req.body)
@@ -90,9 +91,11 @@ export function registerPublic(app: Express, { sql, audit }: Ctx) {
       if (clash) fail(409, 'Ese horario acaba de ocuparse. Elige otro, por favor.')
       // Si ya existe un paciente de esta clínica con el mismo teléfono y fecha de nacimiento, se reutiliza su expediente
       const digits = b.phone.replace(/\D/g, '')
-      const existing = (await q.query('SELECT id, phone FROM patients WHERE clinic_id = ? AND birth_date = ?', [clinicId, b.birthDate]))
-        .find((p) => String(p.phone).replace(/\D/g, '') === digits)
+      const existing = (await q.query('SELECT id, phone, dni FROM patients WHERE clinic_id = ? AND birth_date = ?', [clinicId, b.birthDate]))
+        .find((p) => String(p.phone).replace(/\D/g, '') === digits || (b.dni && p.dni === b.dni))
       const patientId = existing ? String(existing.id) : await createPatient(q, clinicId, b)
+      // Si el expediente existía sin identidad, se completa con la que escribió el paciente
+      if (existing && b.dni && !existing.dni) await q.run('UPDATE patients SET dni = ? WHERE id = ?', [b.dni, patientId])
       await q.run(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,source,clinic_id) VALUES (?,?,?,?,?,?,?, 'scheduled', 'online', ?)`,
         [id, patientId, b.doctorId, start, sch.slot, b.reason, existing ? 'followup' : 'first', clinicId])
       await audit({ id: 'online', clinicId }, `Reserva en línea: ${b.firstName} ${b.lastName} con ${doc.name} el ${b.date} a las ${b.time}`, q)

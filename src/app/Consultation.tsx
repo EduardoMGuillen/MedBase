@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ClipboardList, Pencil, Pill, Plus, TriangleAlert, X } from 'lucide-react'
 import { useStore, type FollowupInput } from '../lib/store'
 import { PatientHeader } from '../components/PatientHeader'
-import { date, defaultRoute, medicationOrder, ROUTES, time } from '../lib/format'
+import { date, defaultRoute, formatDni, medicationOrder, ROUTES, time } from '../lib/format'
 import { DRUGS, FREQUENCIES, ICD10, allergyConflict } from '../lib/catalogs'
 import { FOLLOWUP_KIND } from '../lib/followups'
 import { yearsOld } from '../lib/inpatient'
@@ -37,6 +37,9 @@ const FREQUENT_ORDERS = [
   'Control de presión arterial en casa, registro diario.', 'Signos de alarma explicados; acudir a emergencia si empeora.',
   'Cita de control en 1 semana.', 'Cita de control en 1 mes.', 'Cita de control con resultados de laboratorio.',
 ]
+
+/** 13 dígitos de la identidad hondureña o un pasaporte (letras y números). */
+const validDni = (v: string) => v.replace(/\D/g, '').length === 13 || (/[A-Z]/.test(v) && v.trim().length >= 6)
 
 const EMPTY_RX: PrescriptionItem = { drug: '', presentation: '', dose: '1 tableta', route: 'Oral', frequency: 'Cada 8 horas', duration: '5 días', instructions: '' }
 
@@ -339,10 +342,10 @@ export default function Consultation() {
           <section className="panel sign-box">
             <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
               {needsDni && (
-                <form className="dni-ask" onSubmit={async (e) => { e.preventDefault(); if (dni.trim().length >= 6) await updatePatient(p.id, { dni: dni.trim() }) }}>
-                  <label className="field"><span>La receta lleva el número de identidad del paciente</span>
-                    <input className="input" value={dni} onChange={(e) => setDni(e.target.value)} placeholder="0801-1990-00000" inputMode="numeric" /></label>
-                  <button className="btn btn--soft" disabled={dni.trim().length < 6}>Guardar identidad</button>
+                <form className="dni-ask" onSubmit={async (e) => { e.preventDefault(); if (validDni(dni)) await updatePatient(p.id, { dni }) }}>
+                  <label className="field"><span>{p.firstName} no tiene número de identidad en su expediente y la receta lo lleva. Se guarda en el expediente y no se vuelve a pedir.</span>
+                    <input className="input" value={dni} onChange={(e) => setDni(formatDni(e.target.value))} placeholder="0000-0000-00000" inputMode="numeric" /></label>
+                  <button className="btn btn--soft" disabled={!validDni(dni)}>Guardar identidad</button>
                 </form>
               )}
               {store.can('inpatient.orders') && (

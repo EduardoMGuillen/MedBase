@@ -308,6 +308,9 @@ export function createApp(opts: AppOptions) {
     emergencyName: z.string().trim().max(100).optional(),
     emergencyPhone: z.string().trim().max(30).optional(),
     emergencyRelation: z.string().trim().max(40).optional(),
+    guardianName: z.string().trim().max(100).optional(),
+    guardianDni: z.string().trim().max(30).optional(),
+    guardianRelation: z.string().trim().max(40).optional(),
     background: z.record(z.string(), z.string().max(2000)).optional(),
   })
 
@@ -326,13 +329,14 @@ export function createApp(opts: AppOptions) {
     const row = (await patientRow(cid, String(req.params.id))) ?? fail(404, 'El paciente no existe.')
     const body = parse(patientBody.partial(), req.body)
     const demographic = ['firstName', 'lastName', 'birthDate', 'sex', 'phone', 'email', 'insurance', 'dni', 'civilStatus', 'occupation', 'education',
-      'religion', 'address', 'emergencyName', 'emergencyPhone', 'emergencyRelation'] as const
+      'religion', 'address', 'emergencyName', 'emergencyPhone', 'emergencyRelation', 'guardianName', 'guardianDni', 'guardianRelation'] as const
     const clinicalKeys = ['allergies', 'conditions', 'bloodType', 'background'] as const
     if (demographic.some((k) => k in req.body) && !can(user.role, 'patients.manage')) fail(403, 'Tu rol no puede editar los datos generales del paciente.')
     if (clinicalKeys.some((k) => k in req.body) && !can(user.role, 'chart.view')) fail(403, 'Tu rol no puede editar datos clínicos.')
     const cols: Record<string, string> = { firstName: 'first_name', lastName: 'last_name', birthDate: 'birth_date', sex: 'sex', phone: 'phone', email: 'email', insurance: 'insurance',
       bloodType: 'blood_type', allergies: 'allergies', conditions: 'conditions', background: 'background', dni: 'dni', civilStatus: 'civil_status', occupation: 'occupation',
-      education: 'education', religion: 'religion', address: 'address', emergencyName: 'emergency_name', emergencyPhone: 'emergency_phone', emergencyRelation: 'emergency_relation' }
+      education: 'education', religion: 'religion', address: 'address', emergencyName: 'emergency_name', emergencyPhone: 'emergency_phone', emergencyRelation: 'emergency_relation',
+      guardianName: 'guardian_name', guardianDni: 'guardian_dni', guardianRelation: 'guardian_relation' }
     const sets: string[] = []
     const vals: (string | null)[] = []
     for (const [k, col] of Object.entries(cols)) {

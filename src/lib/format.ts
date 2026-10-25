@@ -58,6 +58,29 @@ export function fillTemplate(tpl: string, v: Record<string, string>) {
   return tpl.replace(/\{(\w+)\}/g, (m, k: string) => v[k] ?? m)
 }
 
+/** Identidad hondureña mientras se escribe: 0801199012345 → 0801-1990-12345. Un pasaporte (con letras) se deja como viene. */
+export function formatDni(raw: string) {
+  if (/[a-z]/i.test(raw)) return raw.toUpperCase().slice(0, 30)
+  const d = raw.replace(/\D/g, '').slice(0, 13)
+  return [d.slice(0, 4), d.slice(4, 8), d.slice(8)].filter(Boolean).join('-')
+}
+
+/** Teléfono de 8 dígitos mientras se escribe: 98761123 → 9876-1123. Con código de país se deja como viene. */
+export function formatPhone(raw: string) {
+  if (/^\s*\+/.test(raw)) return raw
+  const d = raw.replace(/\D/g, '')
+  if (d.length > 8) return raw
+  return d.length > 4 ? `${d.slice(0, 4)}-${d.slice(4)}` : d
+}
+
+/** Cómo se identifica al paciente en recetas y constancias: su identidad o, si es menor sin identidad, la del responsable. */
+export function identityLine(p: Pick<Patient, 'dni' | 'birthDate' | 'guardianName' | 'guardianDni' | 'guardianRelation'>, isMinor: boolean) {
+  if (p.dni) return p.dni
+  if (!isMinor) return 'Sin registrar'
+  const who = p.guardianName ? `${p.guardianName}${p.guardianRelation ? ` (${p.guardianRelation.toLowerCase()})` : ''}` : ''
+  return `Menor sin identidad${who ? `. Responsable: ${who}` : ''}${p.guardianDni ? `, ID ${p.guardianDni}` : ''}`
+}
+
 /** Enlace de WhatsApp. Números de 8 dígitos se asumen de Honduras (+504). */
 export function whatsappUrl(phone: string, text: string) {
   let digits = phone.replace(/\D/g, '')

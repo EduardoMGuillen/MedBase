@@ -59,3 +59,24 @@ describe('E1 preclínica', () => {
     assert.equal(r.body.painScale, undefined)
   })
 })
+
+describe('M5 identidad', () => {
+  test('la reserva en línea guarda la identidad y la receta la toma del expediente', async () => {
+    const d = new Date(); d.setDate(d.getDate() + 1); while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1)
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const slots = await (await fetch(`${base}/api/public/santa-brigida/slots?doctorId=s-herrera&date=${date}`)).json() as { slots: string[] }
+    const r = await fetch(`${base}/api/public/santa-brigida/book`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ doctorId: 's-herrera', date, time: slots.slots.at(-1), firstName: 'Lesbia', lastName: 'Ponce', birthDate: '1980-02-02', sex: 'F', phone: '9555-1212', dni: '0801-1980-55555', reason: 'Control general' }) })
+    assert.equal(r.status, 201)
+    const doc = await as('lherrera@demo.clinara')
+    const boot = await doc.get('/api/bootstrap')
+    assert.equal(boot.body.patients.find((p: any) => p.lastName === 'Ponce')?.dni, '0801-1980-55555')
+  })
+  test('un menor sin identidad guarda los datos del responsable', async () => {
+    const rec = await as('smejia@demo.clinara')
+    const r = await rec.post('/api/patients', { firstName: 'Luis', lastName: 'Ponce', birthDate: '2021-03-03', sex: 'M', phone: '9555-1212', guardianName: 'Lesbia Ponce', guardianDni: '0801-1980-55555', guardianRelation: 'Madre' })
+    assert.equal(r.status, 201)
+    const boot = await rec.get('/api/bootstrap')
+    assert.equal(boot.body.patients.find((p: any) => p.id === r.body.id)?.guardianDni, '0801-1980-55555')
+  })
+})

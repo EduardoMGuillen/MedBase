@@ -3,7 +3,8 @@ import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, FileText, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading, PageHead } from '../components/ui'
-import { age, date, fullName, recordNumber, time } from '../lib/format'
+import { age, date, fullName, identityLine, recordNumber, time } from '../lib/format'
+import { yearsOld } from '../lib/inpatient'
 import { LogoMark } from '../components/Logo'
 import type { ClinicSettings } from '../lib/types'
 
@@ -75,7 +76,7 @@ export function PrescriptionSheet() {
         </header>
         <div className="rx-sheet__pt">
           <div style={{ gridColumn: '1 / -1' }}><span>Nombre completo</span>{fullName(p)}</div>
-          <div><span>Identidad</span>{p.dni || 'Sin registrar'}</div>
+          <div style={!p.dni && p.guardianName ? { gridColumn: '1 / -1' } : undefined}><span>Identidad</span>{identityLine(p, yearsOld(p.birthDate) < 18)}</div>
           <div><span>Edad</span>{age(p.birthDate)}</div>
           <div><span>Expediente</span>{recordNumber(p, settings)}</div>
           {p.allergies.length > 0 && <div><span>Alergias</span>{p.allergies.join(', ')}</div>}

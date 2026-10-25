@@ -4,7 +4,7 @@ import { Building2, CalendarCheck, ChevronLeft, ChevronRight, Phone } from 'luci
 import { Logo } from '../components/Logo'
 import { Avatar, Loading } from '../components/ui'
 import { api } from '../lib/api'
-import { cap, DAY_NAMES, localISODate } from '../lib/format'
+import { cap, DAY_NAMES, formatDni, formatPhone, localISODate } from '../lib/format'
 import type { Schedule } from '../lib/types'
 
 interface Clinic { name: string; address: string; phone: string; doctors: { id: string; name: string; specialty?: string; color: string; schedule?: Schedule }[] }
@@ -48,7 +48,7 @@ function ClinicBooking({ slug }: { slug: string }) {
   const [day, setDay] = useState('')
   const [slots, setSlots] = useState<string[] | null>(null)
   const [time, setTime] = useState('')
-  const [f, setF] = useState({ firstName: '', lastName: '', birthDate: '', sex: '' as '' | 'F' | 'M', phone: '', email: '', reason: '', website: '' })
+  const [f, setF] = useState({ firstName: '', lastName: '', birthDate: '', sex: '' as '' | 'F' | 'M', phone: '', email: '', dni: '', reason: '', website: '' })
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ code: string; doctor: string; start: string } | null>(null)
 
@@ -61,7 +61,8 @@ function ClinicBooking({ slug }: { slug: string }) {
 
   const doctor = clinic?.doctors.find((d) => d.id === doctorId)
   const dates = useMemo(() => Array.from({ length: DAYS_AHEAD }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d }), [])
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value })
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setF({ ...f, [k]: k === 'dni' ? formatDni(e.target.value) : k === 'phone' ? formatPhone(e.target.value) : e.target.value })
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -151,6 +152,7 @@ function ClinicBooking({ slug }: { slug: string }) {
                   <label className="field"><span>Fecha de nacimiento</span><input className="input" type="date" required max={localISODate(new Date())} value={f.birthDate} onChange={set('birthDate')} /></label>
                   <label className="field"><span>Sexo</span><select className="select" required value={f.sex} onChange={set('sex')}><option value="">Elige</option><option value="F">Femenino</option><option value="M">Masculino</option></select></label>
                   <label className="field"><span>Teléfono con WhatsApp</span><input className="input" required inputMode="tel" autoComplete="tel" value={f.phone} onChange={set('phone')} placeholder="9876-5432" /></label>
+                  <label className="field"><span>Número de identidad (opcional)</span><input className="input" inputMode="numeric" value={f.dni} onChange={set('dni')} placeholder="0000-0000-00000" /></label>
                   <label className="field"><span>Correo (opcional)</span><input className="input" type="email" autoComplete="email" value={f.email} onChange={set('email')} /></label>
                   <label className="field span-2"><span>Motivo de la consulta</span><input className="input" required value={f.reason} onChange={set('reason')} placeholder="Ej. Dolor de garganta desde hace 3 días" /></label>
                   <input type="text" name="website" value={f.website} onChange={set('website')} tabIndex={-1} autoComplete="off" className="hp" aria-hidden="true" />

@@ -10,7 +10,7 @@ import type { Row, Sql } from './sql.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '10'
+const SCHEMA_VERSION = '11'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -314,6 +314,12 @@ ALTER TABLE vitals ALTER COLUMN height_cm DROP NOT NULL;
 
 -- v10: la glucometría acepta decimales (ampliar el tipo no pierde datos)
 ALTER TABLE vitals ALTER COLUMN glucose TYPE DOUBLE PRECISION;
+
+-- v11: menor sin identidad: la receta y las constancias llevan los datos del responsable
+ALTER TABLE patients
+  ADD COLUMN IF NOT EXISTS guardian_name TEXT,
+  ADD COLUMN IF NOT EXISTS guardian_dni TEXT,
+  ADD COLUMN IF NOT EXISTS guardian_relation TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -606,12 +612,13 @@ export async function createPatient(q: Sql, clinicId: string, p: Partial<Patient
   await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`record:${clinicId}`])
   const max = await q.one<{ n: number }>(`SELECT COALESCE(MAX(CAST(SUBSTR(record, 5) AS INTEGER)), 400)::int AS n FROM patients WHERE clinic_id = ?`, [clinicId])
   await q.run(`INSERT INTO patients (id,record,first_name,last_name,birth_date,sex,phone,email,blood_type,allergies,conditions,insurance,created_at,
-      dni,civil_status,occupation,education,religion,address,emergency_name,emergency_phone,emergency_relation,background,clinic_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      dni,civil_status,occupation,education,religion,address,emergency_name,emergency_phone,emergency_relation,background,clinic_id,guardian_name,guardian_dni,guardian_relation)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, `EXP-${String(Number(max!.n) + 1).padStart(5, '0')}`, p.firstName, p.lastName, p.birthDate, p.sex, p.phone, p.email || null, p.bloodType || null,
       JSON.stringify(p.allergies ?? []), JSON.stringify(p.conditions ?? []), p.insurance || null, new Date().toISOString(),
       p.dni || null, p.civilStatus || null, p.occupation || null, p.education || null, p.religion || null, p.address || null,
-      p.emergencyName || null, p.emergencyPhone || null, p.emergencyRelation || null, JSON.stringify(p.background ?? {}), clinicId])
+      p.emergencyName || null, p.emergencyPhone || null, p.emergencyRelation || null, JSON.stringify(p.background ?? {}), clinicId,
+      p.guardianName || null, p.guardianDni || null, p.guardianRelation || null])
   return id
 }
 

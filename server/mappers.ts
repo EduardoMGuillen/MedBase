@@ -21,6 +21,7 @@ export const toPatient = (r: Row, clinical: boolean): Patient => ({
   insurance: s(r.insurance), createdAt: String(r.created_at),
   dni: s(r.dni), civilStatus: s(r.civil_status), occupation: s(r.occupation), education: s(r.education), religion: s(r.religion),
   address: s(r.address), emergencyName: s(r.emergency_name), emergencyPhone: s(r.emergency_phone), emergencyRelation: s(r.emergency_relation),
+  guardianName: s(r.guardian_name), guardianDni: s(r.guardian_dni), guardianRelation: s(r.guardian_relation),
   // Los datos clínicos sólo viajan a quien tiene acceso al expediente
   bloodType: clinical ? s(r.blood_type) : undefined,
   allergies: clinical ? j<string[]>(r.allergies, []) : [],
