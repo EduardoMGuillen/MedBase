@@ -43,6 +43,28 @@ function FollowupCalls() {
   )
 }
 
+/** Enfermería: notas con órdenes médicas sin revisar. Desaparece cuando todas las órdenes de la nota están marcadas. */
+function NewOrders() {
+  const { pendingOrders = [], patient, bed, staffById } = useStore()
+  if (!pendingOrders.length) return null
+  return (
+    <section className="panel pending-orders">
+      <div className="panel__head"><div><h2>Órdenes nuevas</h2><p>Revisa y marca cada orden en la nota del paciente.</p></div></div>
+      <div className="rows">{pendingOrders.map((x) => {
+        const p = patient(x.patientId)
+        const b = x.bedId ? bed(x.bedId) : undefined
+        return (
+          <Link key={x.noteId} className="row" to={`/app/hospitalizados/${x.hospitalizationId}?tab=notas`} style={{ gridTemplateColumns: '1fr auto' }}>
+            <div className="row__who"><strong>{x.pending} {x.pending === 1 ? 'orden nueva' : 'órdenes nuevas'} — {p ? fullName(p) : ''}{b ? `, cuarto ${b.room}${b.label ? `-${b.label}` : ''}` : ''}</strong>
+              <span>{staffById(x.authorId)?.name}, {time(x.at)}</span></div>
+            <span className="btn btn--soft btn--sm">Revisar</span>
+          </Link>
+        )
+      })}</div>
+    </section>
+  )
+}
+
 function greeting() {
   const h = new Date().getHours()
   return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'
@@ -160,6 +182,7 @@ export default function Dashboard() {
             )
           }) : <div className="empty">Cuando un paciente llegue a sala, aparecerá aquí.</div>}
         </section>
+        <NewOrders />
         <ArrivalsPanel />
         {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}
       </div>

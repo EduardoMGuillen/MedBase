@@ -1,4 +1,4 @@
-import type { Dose, InpatientFile, InpatientMed, InpatientNote } from './types.js'
+import type { Dose, InpatientFile, InpatientMed, InpatientNote, OrderMark } from './types.js'
 
 /**
  * Horario de medicamentos en hospitalización. Lo usan el servidor (para validar que la dosis que
@@ -105,6 +105,23 @@ export function collectMedAlerts(file: InpatientFile, now = new Date()): MedAler
         }
       }
     }
+  }
+  return out
+}
+
+/** Última marca de una orden: si es 'check', la orden está revisada. */
+export function orderMark(marks: OrderMark[], noteId: string, index: number): OrderMark | undefined {
+  let last: OrderMark | undefined
+  for (const m of marks) if (m.noteId === noteId && m.index === index && (!last || m.at >= last.at)) last = m
+  return last
+}
+
+/** Órdenes de notas con checklist que enfermería todavía no revisa, de la más antigua a la más reciente. */
+export function pendingOrdersOf(file: Pick<InpatientFile, 'notes' | 'marks'>) {
+  const out: { note: InpatientNote; index: number; text: string }[] = []
+  for (const n of [...file.notes].sort((a, b) => a.at.localeCompare(b.at))) {
+    if (!n.checklist) continue
+    n.orders?.forEach((text, index) => { if (orderMark(file.marks, n.id, index)?.action !== 'check') out.push({ note: n, index, text }) })
   }
   return out
 }

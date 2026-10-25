@@ -375,7 +375,31 @@ export interface InpatientNote {
   discharge?: DischargeData
   /** Órdenes y manejo vigentes al firmar la nota: medicamentos y el resto. */
   orders?: string[]
+  /** Las órdenes de esta nota se revisan una por una (enfermería las marca). */
+  checklist?: boolean
   procedure?: ProcedureData
+}
+
+/** Marca de enfermería sobre una orden médica. El estado de la orden es su última marca. */
+export interface OrderMark {
+  id: string
+  noteId: string
+  index: number
+  action: 'check' | 'uncheck'
+  reason?: string
+  by: string
+  at: string
+}
+
+/** Nota con órdenes nuevas sin revisar, para las alertas de enfermería. */
+export interface PendingOrders {
+  hospitalizationId: string
+  patientId: string
+  bedId?: string
+  noteId: string
+  authorId: string
+  at: string
+  pending: number
 }
 
 /** Medicamento indicado en una nota médica. Su horario se calcula a partir de la primera dosis. */
@@ -428,6 +452,7 @@ export interface InpatientFile {
   doses: Dose[]
   procedures: HospProcedure[]
   labs: Attachment[]
+  marks: OrderMark[]
 }
 
 // ---------- Crónicos y seguimientos ----------

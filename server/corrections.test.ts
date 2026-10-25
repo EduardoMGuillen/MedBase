@@ -333,3 +333,30 @@ describe('H2 nota de procedimiento', () => {
     assert.ok(legacy > 0)
   })
 })
+
+describe('H1 órdenes médicas como checklist', () => {
+  test('enfermería marca y desmarca con motivo; las alertas bajan; el médico no marca', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const h = (await doc.get('/api/bootstrap')).body.inpatients[0]
+    const before = (await nurse.get('/api/bootstrap')).body.pendingOrders.length
+    const note = await doc.post(`/api/inpatient/${h.id}/notes`, { kind: 'evolution', subjective: 'S', objective: 'O', assessment: 'A', plan: 'P', orders: ['Dieta blanda.', 'Signos vitales cada 4 horas.'] })
+    assert.equal(note.status, 201)
+    assert.equal(note.body.checklist, true)
+    const boot = (await nurse.get('/api/bootstrap')).body
+    assert.equal(boot.pendingOrders.length, before + 1)
+    assert.equal(boot.pendingOrders.find((x: any) => x.noteId === note.body.id).pending, 2)
+    assert.equal((await doc.post(`/api/inpatient/notes/${note.body.id}/orders/0/review`, { checked: true })).status, 403)
+    const m = await nurse.post(`/api/inpatient/notes/${note.body.id}/orders/0/review`, { checked: true })
+    assert.equal(m.status, 201)
+    assert.equal(m.body.by, 's-rios')
+    assert.equal((await nurse.post(`/api/inpatient/notes/${note.body.id}/orders/0/review`, { checked: false })).status, 400, 'desmarcar pide motivo')
+    assert.equal((await nurse.post(`/api/inpatient/notes/${note.body.id}/orders/0/review`, { checked: false, reason: 'Marcada por error' })).status, 201)
+    await nurse.post(`/api/inpatient/notes/${note.body.id}/orders/0/review`, { checked: true })
+    await nurse.post(`/api/inpatient/notes/${note.body.id}/orders/1/review`, { checked: true })
+    assert.ok(!(await nurse.get('/api/bootstrap')).body.pendingOrders.some((x: any) => x.noteId === note.body.id), 'la alerta desaparece')
+    assert.equal((await nurse.post(`/api/inpatient/notes/${note.body.id}/orders/5/review`, { checked: true })).status, 400)
+    const file = (await nurse.get(`/api/inpatient/${h.id}`)).body
+    assert.equal(file.marks.filter((x: any) => x.noteId === note.body.id).length, 4, 'cada marca queda guardada')
+  })
+})

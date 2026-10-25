@@ -10,7 +10,7 @@ import type { Row, Sql } from './sql.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '18'
+const SCHEMA_VERSION = '19'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -377,6 +377,23 @@ CREATE INDEX IF NOT EXISTS certificates_patient ON certificates (patient_id);
 -- Los procedimientos registrados antes en hosp_procedures se conservan y se muestran como notas sin estado.
 ALTER TABLE hosp_notes DROP CONSTRAINT IF EXISTS hosp_notes_kind_check;
 ALTER TABLE hosp_notes ADD CONSTRAINT hosp_notes_kind_check CHECK (kind IN ('admission','evolution','discharge','nursing','procedure'));
+
+-- v19: enfermería marca cada orden médica como revisada (o la desmarca con motivo). Sólo se agregan filas:
+-- el estado de una orden es su última marca. Las notas escritas antes no piden revisión (data.checklist).
+CREATE TABLE IF NOT EXISTS order_marks (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  hospitalization_id TEXT NOT NULL REFERENCES hospitalizations(id),
+  note_id TEXT NOT NULL REFERENCES hosp_notes(id),
+  order_index INTEGER NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('check','uncheck')),
+  reason TEXT,
+  by_id TEXT NOT NULL REFERENCES staff(id),
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS order_marks_note ON order_marks (note_id, order_index, at);
+DROP TRIGGER IF EXISTS order_marks_no_change ON order_marks;
+CREATE TRIGGER order_marks_no_change BEFORE UPDATE OR DELETE ON order_marks FOR EACH ROW EXECUTE FUNCTION audit_append_only();
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -655,7 +672,7 @@ export async function nextFolio(q: Sql, clinicId: string, now: Date) {
 /** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
 export async function resetDemo(sql: Sql) {
   await sql.tx(async (q) => {
-    await q.exec(`TRUNCATE certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
+    await q.exec(`TRUNCATE order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
       attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
     await seed(q)

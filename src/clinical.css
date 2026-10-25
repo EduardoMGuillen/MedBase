@@ -395,3 +395,42 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
   .cert { page-break-inside: avoid; }
   .cert .void-stamp { display: block; }
 }
+
+/* ---------- Nota de evolución en dos columnas (como en papel) ---------- */
+.note-2col { display: grid; grid-template-columns: minmax(0, 63fr) minmax(0, 37fr); gap: 20px; align-items: start; }
+.note-orders { border-left: 2px solid var(--line); padding-left: 16px; display: grid; gap: 8px; }
+.note-orders h4 { font-family: var(--display); font-size: 14px; font-weight: 650; color: var(--ink-deep); margin: 0; }
+.order-check { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.order-check li { display: grid; grid-template-columns: 24px 1fr auto; gap: 6px; align-items: start; font-size: 14px; padding: 4px 0; border-bottom: 1px dashed var(--line-soft); }
+.order-check li:last-child { border-bottom: 0; }
+.order-check li.is-checked .order-check__order { text-decoration: line-through; text-decoration-color: var(--mint-ink); text-decoration-thickness: 1.5px; }
+.order-check li.is-pending .orders__n { color: var(--amber-ink); }
+.order-check__text { line-height: 1.45; }
+.order-check__mark { display: block; color: var(--mint-ink); font-weight: 700; font-size: 12px; text-decoration: none; }
+.order-check__mark--undo { color: var(--amber-ink); font-weight: 600; }
+.order-check__box { width: 20px; height: 20px; margin-top: 1px; accent-color: var(--mint-ink); cursor: pointer; }
+.pending-orders { border-left: 4px solid #e7b45b; }
+.pending-orders__row { grid-template-columns: 24px 1fr; cursor: pointer; align-items: start; }
+.pending-orders__row input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--mint-ink); }
+.modal--wide:has(.note-editor) { width: min(1120px, 100%); }
+.note-editor { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 4fr); gap: 20px; align-items: start; }
+.note-editor__orders { display: grid; gap: 16px; padding-left: 16px; border-left: 2px solid var(--line); }
+.note-editor .order-add { align-items: start; }
+@media (max-width: 860px) {
+  .note-2col, .note-editor { grid-template-columns: 1fr; }
+  .note-orders, .note-editor__orders { border-left: 0; padding-left: 0; border-top: 2px solid var(--line); padding-top: 14px; }
+}
+.side__link .count--alert { background: var(--red); color: var(--red-ink); }
+
+/* La cabecera del paciente nunca ensancha la página en el teléfono */
+.ph__id > a { display: block; min-width: 0; overflow: hidden; }
+@media (max-width: 720px) {
+  .ph__main { flex-wrap: wrap; }
+  .ph__actions { width: 100%; flex-wrap: wrap; }
+}
+/* Los hijos de una grilla no se estiran más allá de la pantalla por un texto sin cortes */
+.page > *, .main { min-width: 0; }
+.badge--amber, .badge--red { white-space: normal; }
+.hc > *, .rx-filters > * { min-width: 0; }
+.rx-filters .input { min-width: 0; width: 100%; }
+.row > * { min-width: 0; }

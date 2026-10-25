@@ -27,7 +27,7 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
 ]
 
 export default function AppShell() {
-  const { user, can, signOut, appointments, followups, refresh, settings } = useStore()
+  const { user, can, signOut, appointments, followups, refresh, settings, pendingOrders = [] } = useStore()
   const nav = useNavigate()
   const loc = useLocation()
   const [open, setOpen] = useState(false)
@@ -45,6 +45,8 @@ export default function AppShell() {
   const waiting = appointments.filter((a) => sameDay(a.start, today) && a.status === 'arrived').length
   const toCharge = appointments.filter((a) => a.status === 'done' && a.paid === false && sameDay(a.start, today)).length
   const due = followups.filter((f) => f.dueDate <= localISODate(today) && !f.notifiedAt).length
+  // Enfermería: órdenes médicas nuevas sin revisar
+  const newOrders = pendingOrders.reduce((s, x) => s + x.pending, 0)
   const platform = user.role === 'superadmin'
   const items = platform
     ? [{ to: '/app', label: 'Clínicas', icon: Building2, end: true }]
@@ -75,6 +77,7 @@ export default function AppShell() {
                 {n.to === '/app/consulta-externa' && waiting > 0 && <span className="count" aria-label={`${waiting} en sala`}>{waiting}</span>}
                 {n.to === '/app/seguimientos' && due > 0 && <span className="count" aria-label={`${due} seguimientos vencidos o de hoy`}>{due}</span>}
                 {n.to === '/app/caja' && toCharge > 0 && <span className="count" aria-label={`${toCharge} por cobrar hoy`}>{toCharge}</span>}
+                {n.to === '/app/hospitalizados' && newOrders > 0 && <span className="count count--alert" aria-label={`${newOrders} órdenes nuevas sin revisar`}>{newOrders}</span>}
               </NavLink>
             </div>
           ))}

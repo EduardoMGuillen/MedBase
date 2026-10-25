@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Camera, ChevronLeft, ChevronRight, FileText, LogOut, NotebookPen, Pill, Plus, TriangleAlert, X } from 'lucide-react'
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
@@ -7,7 +7,7 @@ import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, fullName, inputDateTime, ROUTES, shortStaff, time } from '../lib/format'
 import { ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
-import { doseTimes, INPATIENT_FREQUENCIES, medLabel, noteOrders, slotState, stayDay, type SlotState } from '../lib/inpatient'
+import { doseTimes, INPATIENT_FREQUENCIES, medLabel, noteOrders, orderMark, pendingOrdersOf, slotState, stayDay, type SlotState } from '../lib/inpatient'
 import { MedAlertBanner } from './MedAlerts'
 import { useNow } from '../lib/hooks'
 import type { Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
@@ -21,7 +21,9 @@ export default function InpatientFile() {
   const { id } = useParams()
   const { fetchInpatient, notify, patient, bed, staffById } = useStore()
   const [file, setFile] = useState<File | null>(null)
-  const [tab, setTab] = useState<Tab>('sheet')
+  // Desde la alerta de órdenes nuevas se entra directo a las notas
+  const [params] = useSearchParams()
+  const [tab, setTab] = useState<Tab>(params.get('tab') === 'notas' ? 'notes' : 'sheet')
   const [missing, setMissing] = useState(false)
   const load = useCallback(() => {
     if (!id) return
@@ -266,6 +268,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
           </div>
         </section>
       )}
+      {can('orders.review') && <PendingOrdersPanel file={file} reload={reload} />}
       {writing === 'procedure' && <ProcedureNoteForm file={file} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }} />}
       {writing === 'discharge' && <Discharge file={file} p={p} reload={() => { setWriting(null); reload() }} />}
       {timeline.length ? timeline.map((item) => {
@@ -288,27 +291,107 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         const n = item.note!
         if (n.kind === 'discharge') return <Discharge key={n.id} file={file} p={p} reload={reload} />
         if (n.kind === 'procedure') return <ProcedureNote key={n.id} n={n} />
-        const orders = noteOrders(n, file)
-        return (
-          <article key={n.id} className="panel consult-entry">
-            <div className="panel__head">
-              <div><h2>{n.kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'}</h2><p>{date(n.at, { weekday: 'long', day: 'numeric', month: 'long' })}, {time(n.at)}, {staffById(n.authorId)?.name}</p></div>
-            </div>
-            <div className="panel__body">
-              <div className="note">
-                {SOAP.map((s) => <div key={s.key} className="note__sec"><h4>{s.letter}. {s.label}</h4><p>{n[s.key]}</p></div>)}
-                {orders.length > 0 && (
-                  <div className="note__sec"><h4>Órdenes y manejo</h4>
-                    <ol className="note__list">{orders.map((o, i) => <li key={i}>{o}</li>)}</ol>
-                  </div>
-                )}
-              </div>
-            </div>
-          </article>
-        )
+        return <SoapNote key={n.id} n={n} file={file} reload={reload} />
       }) : <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
       {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }} />}
     </div>
+  )
+}
+
+/**
+ * Nota de ingreso o de evolución como en papel: arriba quién escribe, con su rol, la fecha y la hora;
+ * a la izquierda el SOAP y a la derecha las órdenes médicas numeradas. En las notas con checklist,
+ * enfermería marca cada orden y queda su nombre y la hora junto a la orden.
+ */
+function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: () => void }) {
+  const { staffById } = useStore()
+  const orders = noteOrders(n, file)
+  const author = staffById(n.authorId)
+  return (
+    <article className="panel consult-entry">
+      <div className="panel__head">
+        <div><h2>{n.kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'}</h2>
+          <p>{author?.name}{author ? `, ${ROLE_LABEL[author.role].toLowerCase()}` : ''} · {date(n.at, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(n.at)}</p></div>
+      </div>
+      <div className="panel__body note-2col">
+        <div className="note">
+          {SOAP.map((s) => <div key={s.key} className="note__sec"><h4>{s.letter}. {s.label}</h4><p>{n[s.key]}</p></div>)}
+        </div>
+        <aside className="note-orders" aria-label="Órdenes médicas">
+          <h4>Órdenes médicas</h4>
+          {orders.length ? <OrderChecklist n={n} orders={orders} file={file} reload={reload} /> : <p className="muted">Sin órdenes.</p>}
+        </aside>
+      </div>
+    </article>
+  )
+}
+
+/** Órdenes numeradas; en las notas con checklist, cada una con su casilla y la marca de enfermería. */
+function OrderChecklist({ n, orders, file, reload }: { n: InpatientNote; orders: string[]; file: File; reload: () => void }) {
+  const { can, staffById, reviewOrder } = useStore()
+  const [undo, setUndo] = useState<number | null>(null)
+  const [reason, setReason] = useState('')
+  // Mientras el servidor responde, la casilla ya se ve marcada
+  const [saving, setSaving] = useState<number | null>(null)
+  const canMark = can('orders.review') && n.checklist && file.hospitalization.status === 'active'
+  return (
+    <>
+      <ol className="order-check">
+        {orders.map((o, i) => {
+          const mark = n.checklist ? orderMark(file.marks, n.id, i) : undefined
+          const checked = mark?.action === 'check'
+          const who = mark && staffById(mark.by)
+          return (
+            <li key={i} className={checked ? 'is-checked' : n.checklist ? 'is-pending' : ''}>
+              <span className="orders__n">{i + 1}.</span>
+              <span className="order-check__text"><span className="order-check__order">{o}</span>
+                {checked && <small className="order-check__mark">✓ {shortStaff(who?.name)} {time(mark.at)}</small>}
+                {mark?.action === 'uncheck' && <small className="order-check__mark order-check__mark--undo">Desmarcada por {shortStaff(who?.name)} {time(mark.at)}: {mark.reason}</small>}
+              </span>
+              {canMark && (
+                <input type="checkbox" className="order-check__box" checked={checked || saving === i} disabled={saving !== null} aria-label={`Orden ${i + 1} revisada`}
+                  onChange={async (e) => {
+                    if (!e.target.checked) { setUndo(i); setReason(''); return }
+                    setSaving(i)
+                    if (await reviewOrder(n.id, i, true)) reload()
+                    setSaving(null)
+                  }} />
+              )}
+            </li>
+          )
+        })}
+      </ol>
+      {undo !== null && (
+        <Modal title={`Desmarcar la orden ${undo + 1}`} onClose={() => setUndo(null)} footer={<>
+          <button className="btn btn--ghost" onClick={() => setUndo(null)}>Cancelar</button>
+          <button className="btn btn--danger" disabled={reason.trim().length < 5} onClick={async () => { if (await reviewOrder(n.id, undo, false, reason.trim())) { setUndo(null); reload() } }}>Desmarcar</button>
+        </>}>
+          <p>«{orders[undo]}»</p>
+          <label className="field"><span>¿Por qué la desmarcas? Queda en la bitácora.</span><input className="input" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. La marqué por error" /></label>
+        </Modal>
+      )}
+    </>
+  )
+}
+
+/** Para enfermería: todas las órdenes sin revisar de todas las notas, en orden de hora. */
+function PendingOrdersPanel({ file, reload }: { file: File; reload: () => void }) {
+  const { staffById, reviewOrder } = useStore()
+  const pending = pendingOrdersOf(file)
+  if (file.hospitalization.status !== 'active') return null
+  return (
+    <section className={`panel ${pending.length ? 'pending-orders' : ''}`}>
+      <div className="panel__head"><div><h2>Órdenes por revisar <span className="num" style={{ color: 'var(--faint)' }}>{pending.length}</span></h2>
+        <p>{pending.length ? 'Marca cada orden cuando la hayas revisado; queda tu nombre y la hora.' : 'Todas las órdenes médicas están revisadas.'}</p></div></div>
+      {pending.length > 0 && (
+        <div className="rows">{pending.map(({ note, index, text }) => (
+          <label key={`${note.id}:${index}`} className="row pending-orders__row">
+            <input type="checkbox" onChange={async (e) => { if (e.target.checked && await reviewOrder(note.id, index, true)) reload() }} aria-label={`Marcar como revisada: ${text}`} />
+            <span className="row__who"><strong>{index + 1}. {text}</strong><span>{shortStaff(staffById(note.authorId)?.name)}, {dateTime(note.at)}</span></span>
+          </label>
+        ))}</div>
+      )}
+    </section>
   )
 }
 
@@ -396,12 +479,15 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   const [busy, setBusy] = useState(false)
   const active = file.meds.filter((m) => !m.stoppedAt)
   const ready = SOAP.every((s) => n[s.key].trim())
-  const addExtra = () => {
-    const t = extraText.trim()
-    if (!t) return
-    setExtra([...extra, /[.!?]$/.test(t) ? t : `${t}.`])
+  // Cada línea es una orden; se quita la numeración o viñeta con que venga pegada
+  const clean = (line: string) => line.replace(/^\s*(\d+\s*[.)-]|[-•*])\s*/, '').trim()
+  const addLines = (text: string) => {
+    const lines = text.split(/\r?\n/).map(clean).filter(Boolean)
+    if (!lines.length) return
+    setExtra((x) => [...x, ...lines.map((t) => (/[.!?]$/.test(t) ? t : `${t}.`))])
     setExtraText('')
   }
+  const addExtra = () => addLines(extraText)
   return (
     <Modal title={kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'} wide onClose={onClose} footer={<>
       <span className="muted" style={{ marginRight: 'auto', fontSize: 13.5 }}>{meds.length ? `${meds.length} medicamento(s) nuevo(s)` : ''}{stop.length ? `${meds.length ? ', ' : ''}${stop.length} omitido(s)` : ''}</span>
@@ -417,23 +503,34 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
       }}>Guardar nota</button>
     </>}>
       {p.allergies.length > 0 && <div className="alert-strip"><TriangleAlert size={16} />Alergias: {p.allergies.join(', ')}</div>}
+      <div className="note-editor">
       <div className="soap-stack">
         {SOAP.map((s) => (
           <label key={s.key} className="field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
-            <textarea className="textarea" rows={3} value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} /></label>
+            <textarea className="textarea" rows={4} value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} /></label>
         ))}
       </div>
-      <fieldset className="fs"><legend>Órdenes y manejo</legend>
-        <p className="muted" style={{ fontSize: 13.5 }}>Dieta, estudios y cuidados. En la nota salen estas órdenes y todos los medicamentos vigentes, no sólo el que cambies.</p>
+      <div className="note-editor__orders">
+      <fieldset className="fs"><legend>Órdenes médicas</legend>
+        <p className="muted" style={{ fontSize: 13.5 }}>Una por línea: dieta, cuidados, estudios. Puedes pegar una lista completa. En la nota salen también los medicamentos vigentes.</p>
         {extra.length > 0 && <ol className="orders">{extra.map((o, i) => (
           <li key={i}><span className="orders__n">{i + 1}.</span>
             <input className="input" value={o} aria-label={`Orden ${i + 1}`} onChange={(e) => setExtra(extra.map((x, j) => j === i ? e.target.value : x))} />
             <span className="orders__tools"><button type="button" className="icon-btn" aria-label="Quitar orden" onClick={() => setExtra(extra.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
         ))}</ol>}
-        <form className="order-add" onSubmit={(e) => { e.preventDefault(); addExtra() }}>
-          <input className="input" value={extraText} onChange={(e) => setExtraText(e.target.value)} placeholder="Escribe una orden y presiona Enter" aria-label="Nueva orden" />
-          <button className="btn btn--soft" disabled={!extraText.trim()} type="submit" aria-label="Agregar orden"><Plus size={16} /></button>
-        </form>
+        <div className="order-add">
+          <textarea className="textarea textarea--sm" rows={2} value={extraText} aria-label="Nueva orden"
+            placeholder={`${extra.length + 1}. Escribe una orden y presiona Enter, o pega varias líneas`}
+            onChange={(e) => setExtraText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addExtra() } }}
+            onPaste={(e) => {
+              const text = e.clipboardData.getData('text')
+              if (!text.includes('\n')) return
+              e.preventDefault()
+              addLines(text)
+            }} />
+          <button className="btn btn--soft" disabled={!extraText.trim()} type="button" onClick={addExtra} aria-label="Agregar orden"><Plus size={16} /></button>
+        </div>
       </fieldset>
       {active.length > 0 && (
         <fieldset className="fs"><legend>Medicamentos activos</legend>
@@ -461,6 +558,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
           : adding ? <MedForm p={p} onAdd={(m) => { setMeds([...meds, m]); setAdding(false) }} onCancel={() => setAdding(false)} />
           : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
       </fieldset>
+      </div>
+      </div>
     </Modal>
   )
 }

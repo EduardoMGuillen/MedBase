@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
   Appointment, ApptStatus, Attachment, AuditEntry, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, HospProcedure, Hospitalization,
-  InpatientFile, InpatientMed, InpatientNote, Patient, PatientIndex, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
+  InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
 import { api, ApiError } from './api'
@@ -21,6 +21,7 @@ interface Data {
   followups: Followup[] // seguimientos activos
   discharges: { patientId: string; at: string }[] // último egreso de cada paciente
   clinicDrugs?: ClinicDrug[] // vademécum propio de la clínica
+  pendingOrders?: PendingOrders[] // órdenes médicas sin revisar (enfermería)
 }
 
 interface Session { user: Staff; permissions: Permission[]; demo: boolean }
@@ -175,6 +176,8 @@ function useStoreValue() {
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),
     recordDose: (medId: string, b: { scheduledAt?: string; givenAt?: string; status: Dose['status']; note?: string }) =>
       run(() => api<Dose>(`/inpatient/meds/${medId}/doses`, { body: b }), b.status === 'given' ? 'Dosis registrada' : 'Dosis marcada como no administrada'),
+    reviewOrder: (noteId: string, index: number, checked: boolean, reason?: string) =>
+      run(() => api<OrderMark>(`/inpatient/notes/${noteId}/orders/${index}/review`, { body: { checked, reason } }), checked ? 'Orden marcada como revisada' : 'Orden desmarcada'),
     addProcedureNote: (id: string, b: { name: string; performedAt: string; text: string; authorizationId?: string; urgent?: boolean; justification?: string }) =>
       run(() => api<InpatientNote>(`/inpatient/${id}/procedure-notes`, { body: b }), 'Nota de procedimiento guardada'),
     addProcedure: (id: string, b: Pick<HospProcedure, 'kind' | 'name' | 'scheduledAt' | 'notes'>) =>

@@ -26,6 +26,7 @@ export const PERMISSIONS = {
   'inpatient.view': 'Ver pacientes hospitalizados',
   'inpatient.orders': 'Ingresar, evolucionar y dar de alta',
   'inpatient.care': 'Administrar medicamentos y escribir notas de enfermería',
+  'orders.review': 'Marcar como revisadas las órdenes médicas',
   'followups.view': 'Ver crónicos y recordatorios',
   'followups.manage': 'Programar seguimientos de pacientes',
   'platform.manage': 'Administrar clínicas y usuarios de la plataforma',
@@ -44,7 +45,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',
     'consult.write', 'rx.write', 'rx.view', 'billing.manage', 'inpatient.view', 'inpatient.orders', 'followups.view', 'followups.manage',
   ],
-  nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage', 'inpatient.view', 'inpatient.care', 'followups.view'],
+  nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage', 'inpatient.view', 'inpatient.care', 'orders.review', 'followups.view'],
   reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view'],
 }
 

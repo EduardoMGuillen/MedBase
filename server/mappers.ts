@@ -102,6 +102,7 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
   subjective: String(r.subjective ?? ''), objective: String(r.objective ?? ''), assessment: String(r.assessment ?? ''), plan: String(r.plan ?? ''), text: String(r.text ?? ''),
   discharge: r.kind === 'discharge' ? j(r.data, undefined) : undefined,
   orders: r.kind === 'admission' || r.kind === 'evolution' ? j<{ orders?: string[] }>(r.data, {}).orders ?? [] : undefined,
+  checklist: r.kind === 'admission' || r.kind === 'evolution' ? j<{ checklist?: boolean }>(r.data, {}).checklist || undefined : undefined,
   procedure: r.kind === 'procedure' ? j(r.data, undefined) : undefined,
 })
 
@@ -109,6 +110,10 @@ export const toInpatientMed = (r: Row): InpatientMed => ({
   id: String(r.id), hospitalizationId: String(r.hospitalization_id), noteId: s(r.note_id), drug: String(r.drug), presentation: s(r.presentation), dose: String(r.dose),
   route: String(r.route), everyHours: r.every_hours == null ? undefined : Number(r.every_hours), prn: Boolean(r.prn), firstAt: String(r.first_at),
   instructions: s(r.instructions), orderedBy: String(r.ordered_by), orderedAt: String(r.ordered_at), stoppedAt: s(r.stopped_at), stoppedBy: s(r.stopped_by),
+})
+
+export const toOrderMark = (r: Row) => ({
+  id: String(r.id), noteId: String(r.note_id), index: Number(r.order_index), action: r.action as 'check' | 'uncheck', reason: s(r.reason), by: String(r.by_id), at: String(r.at),
 })
 
 export const toDose = (r: Row): Dose => ({

@@ -20,7 +20,7 @@ import { registerBilling } from './routes/billing.js'
 import { registerReports } from './routes/reports.js'
 import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
-import { registerInpatient } from './routes/inpatient.js'
+import { pendingOrders, registerInpatient } from './routes/inpatient.js'
 import { registerDrugs } from './routes/drugs.js'
 import { registerCertificates } from './routes/certificates.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
@@ -251,7 +251,7 @@ export function createApp(opts: AppOptions) {
     const user = userOf(req)
     // La administración de la plataforma no carga datos de ninguna clínica
     if (!user.clinicId) {
-      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], beds: [], inpatients: [], followups: [], discharges: [], clinicDrugs: [],
+      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], beds: [], inpatients: [], followups: [], discharges: [], clinicDrugs: [], pendingOrders: [],
         settings: { ...clinicSettings({ name: 'Clinara' }) } })
     }
     const cid = user.clinicId
@@ -260,7 +260,7 @@ export function createApp(opts: AppOptions) {
     const since = new Date(); since.setDate(since.getDate() - 90)
     const none = Promise.resolve([] as Row[])
     if (can(user.role, 'followups.view')) await sweepFollowupReminders(sql, cid)
-    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges, clinicDrugs] = await Promise.all([
+    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges, clinicDrugs, pending] = await Promise.all([
       sql.query('SELECT * FROM staff WHERE clinic_id = ? ORDER BY name', [cid]),
       // Los pendientes de registro sí viajan (agenda y 'Por llegar'); los que se unieron a otro expediente no
       sql.query('SELECT * FROM patients WHERE clinic_id = ? AND merged_into IS NULL ORDER BY last_name', [cid]),
@@ -278,6 +278,7 @@ export function createApp(opts: AppOptions) {
       sql.query(`SELECT DISTINCT ON (patient_id) patient_id, discharged_at FROM hospitalizations
         WHERE clinic_id = ? AND status = 'discharged' AND discharged_at IS NOT NULL ORDER BY patient_id, discharged_at DESC`, [cid]),
       can(user.role, 'rx.write') || can(user.role, 'drugs.manage') ? sql.query('SELECT * FROM clinic_drugs WHERE clinic_id = ? ORDER BY name', [cid]) : none,
+      can(user.role, 'orders.review') ? pendingOrders(sql, cid) : Promise.resolve([]),
     ])
     res.json({
       staff: staff.map(toStaff),
@@ -293,6 +294,7 @@ export function createApp(opts: AppOptions) {
       followups: followups.map(toFollowup),
       discharges: discharges.map((r) => ({ patientId: String(r.patient_id), at: String(r.discharged_at) })),
       clinicDrugs: clinicDrugs.map(toClinicDrug),
+      pendingOrders: pending,
     })
   })
 

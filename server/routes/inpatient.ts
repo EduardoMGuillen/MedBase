@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
-import { toAttachment, toBed, toDose, toHospitalization, toInpatientMed, toInpatientNote, toProcedure } from '../mappers.js'
+import { toAttachment, toBed, toDose, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure } from '../mappers.js'
 import type { Sql } from '../sql.js'
 import { isScheduled, medLabel } from '../../src/lib/inpatient.js'
 
@@ -23,6 +23,27 @@ const medInput = z.object({
 })
 
 /**
+ * Notas con órdenes que enfermería todavía no revisa, de los pacientes internados ahora. Alimenta el
+ * contador del menú y la lista "Órdenes nuevas" del inicio de enfermería.
+ */
+export async function pendingOrders(sql: Sql, cid: string) {
+  const notes = await sql.query(`SELECT n.id, n.hospitalization_id, n.author_id, n.at, n.data, h.patient_id, h.bed_id FROM hosp_notes n
+    JOIN hospitalizations h ON h.id = n.hospitalization_id
+    WHERE n.clinic_id = ? AND h.status = 'active' AND n.kind IN ('admission','evolution') AND n.data LIKE '%"checklist":true%'`, [cid])
+  if (!notes.length) return []
+  const marks = await sql.query(`SELECT note_id, order_index, action FROM order_marks WHERE clinic_id = ? AND note_id IN (${notes.map(() => '?').join(',')}) ORDER BY at, id`,
+    [cid, ...notes.map((n) => String(n.id))])
+  const state = new Map<string, string>()
+  for (const m of marks) state.set(`${m.note_id}:${m.order_index}`, String(m.action))
+  return notes.map((n) => {
+    const orders = (JSON.parse(String(n.data)) as { orders?: string[] }).orders ?? []
+    const pending = orders.filter((_, i) => state.get(`${n.id}:${i}`) !== 'check').length
+    return { hospitalizationId: String(n.hospitalization_id), patientId: String(n.patient_id), bedId: n.bed_id ? String(n.bed_id) : undefined,
+      noteId: String(n.id), authorId: String(n.author_id), at: String(n.at), pending }
+  }).filter((x) => x.pending > 0).sort((a, b) => b.at.localeCompare(a.at))
+}
+
+/**
  * Hospitalización: camas por especialidad, ingreso, notas médicas SOAP con indicaciones de
  * medicamentos, hoja de medicamentos que enfermería va marcando, laboratorios, procedimientos y egreso.
  * Cualquier médico o enfermera de la clínica ve a los hospitalizados: de noche los atiende quien esté de turno.
@@ -38,6 +59,12 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     return h
   }
   const bedName = (b: Row) => `cama ${b.room}${b.label ? `-${b.label}` : ''}`
+
+  /** Las órdenes de las notas de hospitalización se revisan una por una (en observación, sólo si la clínica lo activa). */
+  async function checklistFor(h: Row) {
+    void h
+    return true
+  }
 
   /** Inserta los medicamentos que indica una nota y omite los que la nota suspende. */
   async function applyMeds(q: Sql, cid: string, hospId: string, noteId: string, userId: string, at: string, meds: z.infer<typeof medInput>[], stop: string[]) {
@@ -132,18 +159,19 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const cid = clinicOf(req)
     const h = (await hospRow(cid, String(req.params.id)))!
     const id = String(h.id)
-    const [notes, meds, doses, procedures, labs] = await Promise.all([
+    const [notes, meds, doses, procedures, labs, marks] = await Promise.all([
       sql.query('SELECT * FROM hosp_notes WHERE hospitalization_id = ? ORDER BY at, id', [id]),
       sql.query('SELECT * FROM hosp_meds WHERE hospitalization_id = ? ORDER BY ordered_at, id', [id]),
       sql.query('SELECT d.* FROM hosp_doses d JOIN hosp_meds m ON m.id = d.med_id WHERE m.hospitalization_id = ? ORDER BY d.given_at', [id]),
       sql.query('SELECT * FROM hosp_procedures WHERE hospitalization_id = ? ORDER BY created_at', [id]),
       sql.query(`SELECT ${ATTACH_META} FROM attachments WHERE clinic_id = ? AND patient_id = ? AND category = 'lab' AND (hospitalization_id = ? OR (taken_at >= ? AND taken_at <= ?))
         ORDER BY COALESCE(taken_at, uploaded_at) DESC`, [cid, String(h.patient_id), id, String(h.admitted_at), String(h.discharged_at ?? '9999')]),
+      sql.query('SELECT * FROM order_marks WHERE hospitalization_id = ? ORDER BY at, id', [id]),
     ])
     await audit(userOf(req), `Consultó el expediente de hospitalización de ${await patientName(String(h.patient_id))}`)
     res.json({
       hospitalization: toHospitalization(h), notes: notes.map(toInpatientNote), meds: meds.map(toInpatientMed), doses: doses.map(toDose),
-      procedures: procedures.map(toProcedure), labs: labs.map(toAttachment),
+      procedures: procedures.map(toProcedure), labs: labs.map(toAttachment), marks: marks.map(toOrderMark),
     })
   })
 
@@ -169,7 +197,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const name = await patientName(String(h.patient_id))
     await sql.tx(async (q) => {
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan, data) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        [noteId, cid, id, b.kind, user.id, at, b.subjective, b.objective, b.assessment, b.plan, JSON.stringify({ orders: b.orders })])
+        [noteId, cid, id, b.kind, user.id, at, b.subjective, b.objective, b.assessment, b.plan, JSON.stringify({ orders: b.orders, checklist: await checklistFor(h) })])
       await applyMeds(q, cid, id, noteId, user.id, at, b.meds, b.stopMedIds)
       const what = b.kind === 'admission' ? 'nota de ingreso' : 'nota de evolución'
       const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`].filter(Boolean).join(', ')
@@ -188,6 +216,33 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       [noteId, cid, String(h.id), user.id, new Date().toISOString(), text])
     await audit(user, `Escribió nota de enfermería de ${await patientName(String(h.patient_id))}`)
     res.status(201).json(toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [noteId]))!))
+  })
+
+  /**
+   * Enfermería marca una orden médica como revisada; desmarcarla pide motivo. Cada marca queda con
+   * autor y hora, y no se modifica: el estado es la última marca.
+   */
+  app.post('/api/inpatient/notes/:noteId/orders/:index/review', auth, need('orders.review'), async (req, res) => {
+    const b = parse(z.object({ checked: z.boolean(), reason: z.string().trim().max(300).optional() }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const note = (await sql.one('SELECT * FROM hosp_notes WHERE id = ? AND clinic_id = ?', [String(req.params.noteId), cid])) ?? fail(404, 'La nota no existe.')
+    const h = await activeHosp(cid, String(note!.hospitalization_id))
+    const n = toInpatientNote(note!)
+    const index = Number(req.params.index)
+    if (!n.checklist) fail(400, 'Las órdenes de esta nota no se revisan una por una.')
+    if (!Number.isInteger(index) || index < 0 || index >= (n.orders?.length ?? 0)) fail(400, 'La orden no existe.')
+    if (!b.checked && (b.reason ?? '').length < 5) fail(400, 'Escribe por qué desmarcas la orden.')
+    const last = await sql.one('SELECT action FROM order_marks WHERE note_id = ? AND order_index = ? ORDER BY at DESC, id DESC LIMIT 1', [n.id, index])
+    const isChecked = last?.action === 'check'
+    if (isChecked === b.checked) fail(409, b.checked ? 'Esa orden ya estaba marcada. Actualiza la página.' : 'Esa orden no estaba marcada.')
+    const id = randomUUID()
+    await sql.run('INSERT INTO order_marks (id, clinic_id, hospitalization_id, note_id, order_index, action, reason, by_id, at) VALUES (?,?,?,?,?,?,?,?,?)',
+      [id, cid, String(h.id), n.id, index, b.checked ? 'check' : 'uncheck', b.reason || null, user.id, new Date().toISOString()])
+    const order = n.orders![index]
+    await audit(user, b.checked ? `Marcó como revisada la orden ${index + 1} ("${order}") de ${await patientName(String(h.patient_id))}`
+      : `Desmarcó la orden ${index + 1} ("${order}") de ${await patientName(String(h.patient_id))}: ${b.reason}`)
+    res.status(201).json(toOrderMark((await sql.one('SELECT * FROM order_marks WHERE id = ?', [id]))!))
   })
 
   // Enfermería (o el médico, en guardia u observación) marca la dosis de una hora indicada o una dosis PRN
