@@ -2,16 +2,21 @@ import type { ApptStatus, Background, Patient, PrescriptionItem } from './types'
 
 export const fullName = (p: Patient) => `${p.firstName} ${p.lastName}`
 
-export function age(birthDate: string) {
-  const b = new Date(birthDate)
-  const now = new Date()
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/** Edad legible: años desde los 2, meses antes y días en el primer mes ("1 mes", "12 días"). */
+export function age(birthDate: string, now = new Date()) {
+  if (!birthDate) return ''
+  const b = new Date(`${birthDate.slice(0, 10)}T12:00:00`)
   let years = now.getFullYear() - b.getFullYear()
   if (now < new Date(now.getFullYear(), b.getMonth(), b.getDate())) years--
-  if (years < 2) {
-    const months = (now.getFullYear() - b.getFullYear()) * 12 + now.getMonth() - b.getMonth()
-    return `${months} meses`
-  }
-  return `${years} años`
+  if (years >= 2) return plural(years, 'año', 'años')
+  let months = (now.getFullYear() - b.getFullYear()) * 12 + now.getMonth() - b.getMonth()
+  if (now.getDate() < b.getDate()) months--
+  if (months >= 1) return plural(months, 'mes', 'meses')
+  const today = new Date(now); today.setHours(12, 0, 0, 0)
+  const days = Math.max(0, Math.round((today.getTime() - b.getTime()) / 86_400_000))
+  return plural(days, 'día', 'días')
 }
 
 export const time = (iso: string) =>
@@ -23,6 +28,12 @@ export const date = (iso: string, opts: Intl.DateTimeFormatOptions = { day: 'num
 export const sameDay = (iso: string, d: Date) => {
   const x = new Date(iso)
   return x.getFullYear() === d.getFullYear() && x.getMonth() === d.getMonth() && x.getDate() === d.getDate()
+}
+
+/** "Dra. Lucía Herrera" → "Dra. Herrera"; sin título, el primer nombre y el último apellido. */
+export function shortStaff(name = '') {
+  const parts = name.trim().split(/\s+/)
+  return parts.length < 3 ? name : `${parts[0]} ${parts.at(-1)}`
 }
 
 export const initials = (name: string) =>

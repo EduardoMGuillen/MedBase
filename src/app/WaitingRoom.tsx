@@ -57,8 +57,7 @@ export default function WaitingRoom() {
                 <div key={a.id} className="queue-card" style={{ gridTemplateColumns: '1fr auto' }}>
                   <div className="row__who">
                     <strong>{time(a.start)} <Link to={`/app/pacientes/${p.id}`}>{fullName(p)}</Link></strong>
-                    <span>{age(p.birthDate)}, con {staffById(a.doctorId)?.name}</span>
-                    <span>{a.reason}</span>
+                    <span>{[age(p.birthDate), `con ${staffById(a.doctorId)?.name}`, a.reason].filter(Boolean).join(' · ')}</span>
                     <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <StatusBadge status={a.status} />
                       {a.source === 'walkin' && <span className="badge badge--neutral">Sin cita</span>}

@@ -289,7 +289,7 @@ a.stat:hover { background: var(--ward); }
 .row:last-child { border-bottom: 0; }
 .row__time { font-family: var(--display); font-weight: 650; font-size: 17px; font-variant-numeric: tabular-nums; }
 .row__who strong { display: block; font-size: 14.5px; }
-.row__who span { font-size: 13px; color: var(--muted); }
+.row__who > span { font-size: 13px; color: var(--muted); }
 .row__end { display: flex; gap: 8px; align-items: center; }
 .row--now { background: linear-gradient(90deg, var(--ink-soft), transparent 70%); }
 a.row:hover { background: var(--ward); }
