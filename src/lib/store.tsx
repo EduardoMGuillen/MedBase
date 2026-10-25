@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
   Appointment, ApptStatus, Attachment, AuditEntry, Bed, Clinic, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, HospProcedure, Hospitalization,
-  InpatientFile, InpatientMed, InpatientNote, Patient, PatientIndex, Payment, PaymentMethod, Prescription, PrescriptionItem, Service, Staff, Vitals,
+  InpatientFile, InpatientMed, InpatientNote, Patient, PatientIndex, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
 import { api, ApiError } from './api'
@@ -37,6 +37,16 @@ export interface Report {
   byDoctor: { id: string; name: string; appointments: number; done: number; noShow: number; revenue: number }[]
   byMethod: { method: PaymentMethod; count: number; total: number }[]
   topDiagnoses: { code: string; label: string; count: number }[]
+}
+
+/** Cita nueva: con un paciente registrado o con nombre y teléfono de uno nuevo. Motivo y tipo son opcionales. */
+export interface NewAppointment {
+  patientId?: string
+  newPatient?: { firstName: string; lastName: string; phone: string; dni?: string }
+  doctorId: string
+  start: string
+  reason?: string
+  type?: Appointment['type']
 }
 
 export type NewPayment = Pick<Payment, 'patientId' | 'items' | 'discount' | 'method'> & { appointmentId?: string; reference?: string }
@@ -179,9 +189,13 @@ function useStoreValue() {
 
     setStatus: (id: string, status: Exclude<ApptStatus, 'scheduled' | 'triaged' | 'done'>, success?: string) =>
       run(() => api<Appointment>(`/appointments/${id}/status`, { body: { status } }), success),
-    addAppointment: (a: Omit<Appointment, 'id' | 'status' | 'arrivedAt'>) =>
-      run(() => api<Appointment>('/appointments', { body: a }), 'Cita agendada'),
-    reschedule: (id: string, a: Partial<Pick<Appointment, 'doctorId' | 'start' | 'minutes' | 'reason'>>) =>
+    addAppointment: (a: NewAppointment) =>
+      run(() => api<Appointment>('/appointments', { body: a }), a.newPatient ? 'Cita agendada. El paciente completa su registro al llegar.' : 'Cita agendada'),
+    /** Completa el registro de un paciente agendado por teléfono, o lo une a un expediente que ya existía. */
+    completeRegistration: (id: string, b: { mergeInto: string } | Omit<Patient, 'id' | 'record' | 'createdAt'>) =>
+      run(() => api<{ id: string; record: string }>(`/patients/${id}/complete`, { body: b }), 'mergeInto' in b ? 'Cita unida al expediente existente' : 'Registro completado'),
+    updateSchedule: (id: string, schedule: Schedule) => run(() => api<Staff>(`/staff/${id}/schedule`, { method: 'PATCH', body: schedule }), 'Horario guardado'),
+    reschedule: (id: string, a: Partial<Pick<Appointment, 'doctorId' | 'start' | 'reason'>>) =>
       run(() => api<Appointment>(`/appointments/${id}`, { method: 'PATCH', body: a }), 'Cita reprogramada'),
     markReminded: (id: string) => run(() => api<Appointment>(`/appointments/${id}/reminded`, { method: 'POST' })),
     addPatient: (p: Omit<Patient, 'id' | 'record' | 'createdAt'>) =>

@@ -5,8 +5,8 @@ import { type Ctx, fail, localDate, parse, type Row } from '../http.js'
 import { createPatient, hit } from '../db.js'
 import { clinicSettings, toStaff } from '../mappers.js'
 import type { Schedule } from '../../src/lib/types.js'
+import { DEFAULT_SLOT, slotsOn } from '../../src/lib/schedule.js'
 
-const pad = (n: number) => String(n).padStart(2, '0')
 const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
 
 /**
@@ -21,8 +21,9 @@ export function registerPublic(app: Express, { sql, audit }: Ctx) {
     const doc = await sql.one('SELECT * FROM staff WHERE id = ? AND clinic_id = ?', [doctorId, clinicId])
     if (!doc || doc.role !== 'doctor' || !doc.active || !doc.schedule) return []
     const sch = JSON.parse(String(doc.schedule)) as Schedule
-    const day = new Date(`${date}T12:00:00`)
-    if (!sch.days.includes(day.getDay())) return []
+    const step = sch.slot || DEFAULT_SLOT
+    const offered = slotsOn(sch, date, step)
+    if (!offered.length) return []
     const taken = (await sql.query(`SELECT start, minutes FROM appointments WHERE doctor_id = ? AND start LIKE ? AND status NOT IN ('cancelled','no_show')`,
       [doctorId, `${date}%`])).map((a) => {
       const s = toMin(String(a.start).slice(11, 16))
@@ -31,13 +32,12 @@ export function registerPublic(app: Express, { sql, audit }: Ctx) {
     const now = new Date()
     const isToday = date === localDate(now)
     const nowMin = now.getHours() * 60 + now.getMinutes() + 60 // al menos una hora de anticipación
-    const slots: string[] = []
-    for (let m = toMin(sch.start); m + sch.slot <= toMin(sch.end); m += sch.slot) {
-      if (isToday && m < nowMin) continue
-      if (taken.some(([s, e]) => s < m + sch.slot && m < e)) continue
-      slots.push(`${pad(Math.floor(m / 60))}:${pad(m % 60)}`)
-    }
-    return slots
+    // En línea no se ofrece una hora que ya tiene cita: el paciente no ve la agenda
+    return offered.filter((hhmm) => {
+      const m = toMin(hhmm)
+      if (isToday && m < nowMin) return false
+      return !taken.some(([s, e]) => s < m + step && m < e)
+    })
   }
 
   app.get('/api/public/clinics', async (_req, res) => {
@@ -97,7 +97,7 @@ export function registerPublic(app: Express, { sql, audit }: Ctx) {
       // Si el expediente existía sin identidad, se completa con la que escribió el paciente
       if (existing && b.dni && !existing.dni) await q.run('UPDATE patients SET dni = ? WHERE id = ?', [b.dni, patientId])
       await q.run(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,source,clinic_id) VALUES (?,?,?,?,?,?,?, 'scheduled', 'online', ?)`,
-        [id, patientId, b.doctorId, start, sch.slot, b.reason, existing ? 'followup' : 'first', clinicId])
+        [id, patientId, b.doctorId, start, sch.slot || DEFAULT_SLOT, b.reason, existing ? 'followup' : 'first', clinicId])
       await audit({ id: 'online', clinicId }, `Reserva en línea: ${b.firstName} ${b.lastName} con ${doc.name} el ${b.date} a las ${b.time}`, q)
     })
     res.status(201).json({ code: id.slice(0, 8).toUpperCase(), doctor: doc.name, start, clinic: c!.name })

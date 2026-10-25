@@ -10,7 +10,7 @@ import { DEFAULT_SETTINGS } from '../../src/lib/seed.js'
 
 const CLINIC_STATS = `
   (SELECT COUNT(*)::int FROM staff s WHERE s.clinic_id = c.id) AS staff_count,
-  (SELECT COUNT(*)::int FROM patients p WHERE p.clinic_id = c.id) AS patient_count,
+  (SELECT COUNT(*)::int FROM patients p WHERE p.clinic_id = c.id AND NOT p.pending) AS patient_count,
   (SELECT COUNT(*)::int FROM appointments a WHERE a.clinic_id = c.id AND a.start >= ? AND a.status <> 'cancelled') AS appt30,
   (SELECT COUNT(*)::int FROM consultations k WHERE k.clinic_id = c.id AND k.date >= ?) AS cons30,
   (SELECT MAX(at) FROM audit l WHERE l.clinic_id = c.id) AS last_activity`

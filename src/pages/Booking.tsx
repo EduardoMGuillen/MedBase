@@ -6,6 +6,7 @@ import { Avatar, Loading } from '../components/ui'
 import { api } from '../lib/api'
 import { cap, DAY_NAMES, formatDni, formatPhone, localISODate } from '../lib/format'
 import type { Schedule } from '../lib/types'
+import { describeSchedule, rangesOn } from '../lib/schedule'
 
 interface Clinic { name: string; address: string; phone: string; doctors: { id: string; name: string; specialty?: string; color: string; schedule?: Schedule }[] }
 
@@ -115,7 +116,7 @@ function ClinicBooking({ slug }: { slug: string }) {
                   <button key={d.id} className="doc-card" aria-pressed={doctorId === d.id} onClick={() => { setDoctorId(d.id); setDay(''); setSlots(null) }}>
                     <Avatar name={d.name} color={d.color} size={44} />
                     <span><strong>{d.name}</strong><small>{d.specialty}</small>
-                      {d.schedule && <small>{d.schedule.days.map((x) => DAY_NAMES[x].slice(0, 3)).join(', ')}, {d.schedule.start} a {d.schedule.end}</small>}</span>
+                      {d.schedule && <small>{describeSchedule(d.schedule)}</small>}</span>
                   </button>
                 ))}
               </div>
@@ -127,7 +128,7 @@ function ClinicBooking({ slug }: { slug: string }) {
                 <div className="date-strip" role="radiogroup" aria-label="Día">
                   {dates.map((d) => {
                     const key = localISODate(d)
-                    const works = doctor.schedule?.days.includes(d.getDay())
+                    const works = rangesOn(doctor.schedule, key).length > 0
                     return (
                       <button key={key} role="radio" aria-checked={day === key} disabled={!works} className="date-chip" onClick={() => setDay(key)}>
                         <small>{DAY_NAMES[d.getDay()].slice(0, 3)}</small><b className="num">{d.getDate()}</b><small>{d.toLocaleDateString('es-HN', { month: 'short' })}</small>

@@ -332,3 +332,33 @@ button.stat--btn:hover b { color: var(--ink); }
   .lib-bar__count { margin-left: 0; }
   .filters .range-pair { grid-template-columns: 1fr 1fr; }
 }
+
+/* ---------- Horario del médico ---------- */
+.sched { display: grid; gap: 16px; }
+.sched__days { display: grid; border: 1px solid var(--line-soft); border-radius: var(--r-md); }
+.sched__day { display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); }
+.sched__day:last-child { border-bottom: 0; }
+.sched__day.is-off { background: #fafbfb; }
+.sched__name { display: flex; gap: 8px; align-items: center; font-weight: 600; cursor: pointer; }
+.sched__ranges { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.sched__range { display: inline-flex; gap: 6px; align-items: center; }
+.sched__range .input { width: 140px; height: 38px; }
+.sched__foot { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 280px)); gap: 14px; }
+.sched__problems { margin: 0; padding-left: 18px; color: var(--red-ink); font-size: 13.5px; font-weight: 600; }
+@media (max-width: 720px) {
+  .sched__day { grid-template-columns: 1fr; padding: 12px; }
+  .sched__range .input { width: 128px; }
+}
+
+/* ---------- Nueva cita ---------- */
+.more { border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 0 12px; }
+.more > summary { cursor: pointer; padding: 10px 0; font-weight: 600; font-size: 14px; color: var(--ink-deep); }
+.more__body { display: grid; gap: 12px; padding-bottom: 12px; }
+.new-patient { padding: 12px; border: 1px dashed var(--ink); border-radius: var(--r-md); background: #fbfcff; }
+.new-patient legend small { font-weight: 500; font-size: 12.5px; }
+.suggest__new { color: var(--ink-deep) !important; font-weight: 600; gap: 6px; border-top: 1px solid var(--line-soft) !important; }
+.similar { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--r-md); background: var(--amber); color: var(--amber-ink); font-size: 13.5px; }
+.similar__row { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; color: var(--petrol); }
+.similar__row .muted { font-size: 12.5px; }
+/* Enlaces con forma de botón dentro de formularios */
+button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; font-size: 14px; text-decoration: underline; text-underline-offset: 2px; }

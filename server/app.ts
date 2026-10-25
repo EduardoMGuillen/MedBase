@@ -7,7 +7,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { attempts, createPatient, DEMO_PASSWORD, ensureDb, hit, nextFolio, resetDemo } from './db.js'
+import { attempts, completePendingPatient, createPatient, createPendingPatient, DEMO_PASSWORD, ensureDb, hit, nextFolio, resetDemo } from './db.js'
 import type { Sql } from './sql.js'
 import { type Ctx, fail, HttpError, localDate, parse, type Row } from './http.js'
 import {
@@ -24,6 +24,7 @@ import { registerInpatient } from './routes/inpatient.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { can, ROLE_PERMISSIONS, type Permission } from '../src/lib/permissions.js'
 import { yearsOld } from '../src/lib/inpatient.js'
+import { DAY_NAMES_PLURAL, rangesOn, scheduleFromWeek, scheduleProblems, SLOT_OPTIONS, weekday, weekOf, withinSchedule } from '../src/lib/schedule.js'
 import type { ApptStatus, Staff } from '../src/lib/types.js'
 
 export interface AppOptions {
@@ -259,7 +260,8 @@ export function createApp(opts: AppOptions) {
     if (can(user.role, 'followups.view')) await sweepFollowupReminders(sql, cid)
     const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges] = await Promise.all([
       sql.query('SELECT * FROM staff WHERE clinic_id = ? ORDER BY name', [cid]),
-      sql.query('SELECT * FROM patients WHERE clinic_id = ? ORDER BY last_name', [cid]),
+      // Los pendientes de registro sí viajan (agenda y 'Por llegar'); los que se unieron a otro expediente no
+      sql.query('SELECT * FROM patients WHERE clinic_id = ? AND merged_into IS NULL ORDER BY last_name', [cid]),
       // Ventana de agenda: 90 días atrás y todo lo futuro
       sql.query(`SELECT a.*, EXISTS(SELECT 1 FROM payments p WHERE p.appointment_id = a.id AND NOT p.voided) AS paid
         FROM appointments a WHERE a.clinic_id = ? AND a.start >= ? ORDER BY a.start`, [cid, localDate(since)]),
@@ -324,6 +326,42 @@ export function createApp(opts: AppOptions) {
     const record = String((await patientRow(cid, id))!.record)
     await audit(userOf(req), `Registró al paciente ${p.firstName} ${p.lastName} (${record})`)
     res.status(201).json({ id, record })
+  })
+
+  /**
+   * Paciente nuevo que llega: se completa su registro con los datos de siempre y recibe su número de
+   * expediente. Si resulta que ya tenía expediente, sus citas pasan a ese y el pendiente queda unido a él.
+   */
+  app.post('/api/patients/:id/complete', auth, need('patients.manage'), async (req, res) => {
+    const cid = clinicOf(req)
+    const user = userOf(req)
+    const row = (await patientRow(cid, String(req.params.id))) ?? fail(404, 'El paciente no existe.')
+    if (!row!.pending) fail(409, 'Este paciente ya tiene su registro completo.')
+    const id = String(row!.id)
+    const { mergeInto } = parse(z.object({ mergeInto: z.string().optional() }), { mergeInto: req.body?.mergeInto })
+    if (mergeInto) {
+      const target = await patientRow(cid, mergeInto)
+      if (!target || target.pending || target.id === id) fail(400, 'Elige un expediente registrado.')
+      await sql.tx(async (q) => {
+        await q.run('UPDATE appointments SET patient_id = ? WHERE patient_id = ? AND clinic_id = ?', [mergeInto, id, cid])
+        await q.run('UPDATE patients SET merged_into = ? WHERE id = ?', [mergeInto, id])
+        await audit(user, `Unió la cita de ${row!.first_name} ${row!.last_name} (pendiente de registro) al expediente ${target!.record} de ${target!.first_name} ${target!.last_name}`, q)
+      })
+      return res.json({ id: mergeInto, record: String(target!.record) })
+    }
+    const p = parse(patientBody, req.body)
+    const cols = ['first_name', 'last_name', 'birth_date', 'sex', 'phone', 'email', 'blood_type', 'allergies', 'conditions', 'insurance', 'dni', 'civil_status', 'occupation',
+      'education', 'religion', 'address', 'emergency_name', 'emergency_phone', 'emergency_relation', 'guardian_name', 'guardian_dni', 'guardian_relation']
+    const vals = [p.firstName, p.lastName, p.birthDate, p.sex, p.phone, p.email || null, p.bloodType || null, JSON.stringify(p.allergies), JSON.stringify(p.conditions),
+      p.insurance || null, p.dni || null, p.civilStatus || null, p.occupation || null, p.education || null, p.religion || null, p.address || null,
+      p.emergencyName || null, p.emergencyPhone || null, p.emergencyRelation || null, p.guardianName || null, p.guardianDni || null, p.guardianRelation || null]
+    await sql.tx(async (q) => {
+      await q.run(`UPDATE patients SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = ? AND clinic_id = ?`, [...vals, id, cid])
+      await completePendingPatient(q, cid, id)
+    })
+    const done = (await patientRow(cid, id))!
+    await audit(user, `Completó el registro de ${p.firstName} ${p.lastName} (${done.record})`)
+    res.json({ id, record: String(done.record) })
   })
 
   app.patch('/api/patients/:id', auth, need('patients.manage', 'chart.view'), async (req, res) => {
@@ -397,14 +435,31 @@ export function createApp(opts: AppOptions) {
   })
 
   // ---------- Citas ----------
+  // La duración ya no se fija: una consulta dura de 30 minutos a 2 horas. Se guarda 30 sólo para dibujarla.
+  const VISUAL_MINUTES = 30
   const apptBody = z.object({
-    patientId: z.string().min(1, 'Elige un paciente.'),
+    patientId: z.string().optional(),
+    // Paciente que llama por primera vez: basta nombre y teléfono; completa su registro al llegar
+    newPatient: z.object({
+      firstName: z.string().trim().min(2, 'Escribe el nombre del paciente nuevo.').max(60),
+      lastName: z.string().trim().max(60).default(''),
+      phone: z.string().trim().regex(/^[\d\s+()-]{7,20}$/, 'Escribe el teléfono del paciente nuevo.'),
+      dni: z.string().trim().max(30).optional(),
+    }).optional(),
     doctorId: z.string().min(1, 'Elige un médico.'),
     start: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/, 'La fecha u hora no es válida.'),
-    minutes: z.number().int().min(10).max(240),
-    reason: z.string().trim().min(1, 'Escribe el motivo de consulta.'),
-    type: z.enum(['first', 'followup', 'urgent']),
+    minutes: z.number().int().min(10).max(240).optional(),
+    reason: z.string().trim().max(300).default(''),
+    type: z.enum(['first', 'followup', 'urgent']).optional(),
   })
+
+  /** La hora debe caer dentro del horario de atención del médico ese día. */
+  const assertInSchedule = (doc: Row, start: string) => {
+    const staff = toStaff(doc)
+    const date = start.slice(0, 10)
+    if (!rangesOn(staff.schedule, date).length) fail(409, `${staff.name} no atiende los ${DAY_NAMES_PLURAL[weekday(date)]}. Elige otro día.`)
+    if (!withinSchedule(staff.schedule, date, start.slice(11, 16))) fail(409, `${start.slice(11, 16)} está fuera del horario de ${staff.name}. Elige una hora de su horario.`)
+  }
 
   app.get('/api/appointments', auth, need('agenda.view'), async (req, res) => {
     const q = parse(z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }), req.query, 'Elige un rango de fechas.')
@@ -417,16 +472,25 @@ export function createApp(opts: AppOptions) {
 
   app.post('/api/appointments', auth, need('agenda.manage'), async (req, res) => {
     const a = parse(apptBody, req.body)
+    if (!a.patientId && !a.newPatient) fail(400, 'Elige un paciente o escribe los datos del paciente nuevo.')
     const start = a.start.length === 16 ? `${a.start}:00` : a.start
     const cid = clinicOf(req)
-    ;(await patientRow(cid, a.patientId)) ?? fail(400, 'El paciente no existe.')
+    if (a.patientId) (await patientRow(cid, a.patientId)) ?? fail(400, 'El paciente no existe.')
     const doc = await clinicStaffRow(cid, a.doctorId)
     if (!doc || doc.role !== 'doctor' || !doc.active) fail(400, 'El médico elegido no está disponible.')
-    await assertFree(a.doctorId, start, a.minutes)
+    assertInSchedule(doc!, start)
+    // Se permiten dos citas a la misma hora con el mismo médico (pasa en la vida real); la agenda avisa antes
     const id = randomUUID()
-    await sql.run(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,source,clinic_id) VALUES (?,?,?,?,?,?,?, 'scheduled', 'staff', ?)`,
-      [id, a.patientId, a.doctorId, start, a.minutes, a.reason, a.type, cid])
-    await audit(userOf(req), `Agendó cita de ${await patientName(a.patientId)} con ${doc!.name} el ${start.slice(0, 10)} a las ${start.slice(11, 16)}`)
+    const seen = a.patientId ? await sql.one('SELECT 1 FROM consultations WHERE patient_id = ? AND clinic_id = ? LIMIT 1', [a.patientId, cid]) : undefined
+    const type = a.type ?? (seen ? 'followup' : 'first')
+    let patientId = a.patientId ?? ''
+    await sql.tx(async (q) => {
+      if (a.newPatient) patientId = await createPendingPatient(q, cid, a.newPatient)
+      await q.run(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,source,clinic_id) VALUES (?,?,?,?,?,?,?, 'scheduled', 'staff', ?)`,
+        [id, patientId, a.doctorId, start, a.minutes ?? VISUAL_MINUTES, a.reason, type, cid])
+    })
+    const who = a.newPatient ? `${a.newPatient.firstName} ${a.newPatient.lastName}`.trim() + ' (paciente nuevo, pendiente de registro)' : await patientName(patientId)
+    await audit(userOf(req), `Agendó cita de ${who} con ${doc!.name} el ${start.slice(0, 10)} a las ${start.slice(11, 16)}`)
     res.status(201).json(toAppointment((await apptRow(cid, id))!))
   })
 
@@ -439,11 +503,11 @@ export function createApp(opts: AppOptions) {
       doctorId: b.doctorId ?? String(row!.doctor_id),
       start: b.start ? (b.start.length === 16 ? `${b.start}:00` : b.start) : String(row!.start),
       minutes: b.minutes ?? Number(row!.minutes),
-      reason: b.reason ?? String(row!.reason),
+      reason: 'reason' in req.body ? b.reason ?? '' : String(row!.reason),
     }
     const doc = await clinicStaffRow(cid, next.doctorId)
     if (!doc || doc.role !== 'doctor' || !doc.active) fail(400, 'El médico elegido no está disponible.')
-    await assertFree(next.doctorId, next.start, next.minutes, String(row!.id))
+    if (next.doctorId !== row!.doctor_id || next.start !== row!.start) assertInSchedule(doc!, next.start)
     await sql.run('UPDATE appointments SET doctor_id = ?, start = ?, minutes = ?, reason = ?, status = ?, reminded_at = NULL WHERE id = ?',
       [next.doctorId, next.start, next.minutes, next.reason, 'scheduled', String(row!.id)])
     await audit(userOf(req), `Reprogramó la cita de ${await patientName(String(row!.patient_id))} al ${next.start.slice(0, 10)} ${next.start.slice(11, 16)}`)
@@ -469,6 +533,7 @@ export function createApp(opts: AppOptions) {
     if (row!.status === status) return res.json(toAppointment(row!))
     if (!t.from.includes(row!.status as ApptStatus)) fail(409, 'La cita ya avanzó a otra etapa. Actualiza la página.')
     if (status === 'in_consult' && row!.doctor_id !== user.id) fail(403, 'Sólo el médico asignado puede atender esta cita.')
+    if (status === 'arrived' && (await patientRow(cid, String(row!.patient_id)))?.pending) fail(409, 'Completa el registro del paciente nuevo antes de marcar su llegada.')
     await sql.run('UPDATE appointments SET status = ?, arrived_at = COALESCE(?, arrived_at) WHERE id = ?',
       [status, status === 'arrived' ? new Date().toISOString() : null, String(row!.id)])
     await audit(user, `${t.label} la cita de ${await patientName(String(row!.patient_id))}`)
@@ -637,11 +702,7 @@ export function createApp(opts: AppOptions) {
       specialty: z.string().trim().optional(),
       license: z.string().trim().optional(),
       serviceId: z.string().optional(),
-      schedule: z.object({
-        days: z.array(z.number().int().min(0).max(6)).min(1, 'Elige al menos un día de atención.'),
-        start: z.string().regex(/^\d{2}:\d{2}$/), end: z.string().regex(/^\d{2}:\d{2}$/),
-        slot: z.number().int().refine((n) => [15, 20, 30, 45, 60].includes(n), 'La duración de cita no es válida.'),
-      }).refine((s) => s.start < s.end, 'La hora de salida debe ser después de la de entrada.').optional(),
+      schedule: scheduleInput.optional(),
     }), req.body)
     const id = String(row!.id)
     if (id === me.id && (b.active === false || (b.role && b.role !== me.role))) fail(400, 'No puedes desactivar ni cambiar el rol de tu propia cuenta.')
@@ -653,10 +714,22 @@ export function createApp(opts: AppOptions) {
       if (b.specialty !== undefined) await q.run('UPDATE staff SET specialty = ? WHERE id = ?', [b.specialty || null, id])
       if (b.license !== undefined) await q.run('UPDATE staff SET license = ? WHERE id = ?', [b.license || null, id])
       if (b.serviceId !== undefined) await q.run('UPDATE staff SET service_id = ? WHERE id = ?', [b.serviceId || null, id])
-      if (b.schedule) { await q.run('UPDATE staff SET schedule = ? WHERE id = ?', [JSON.stringify(b.schedule), id]); changes.push('Actualizó el horario de') }
+      if (b.schedule) { await q.run('UPDATE staff SET schedule = ? WHERE id = ?', [JSON.stringify(cleanSchedule(b.schedule)), id]); changes.push('Actualizó el horario de') }
     })
     await audit(me, `${changes[0] ?? 'Actualizó los datos de'} ${row!.name}`)
     res.json(toStaff((await staffRow(id))!))
+  })
+
+  /** Horario de atención: administración edita el de cualquier médico y cada médico el suyo. */
+  app.patch('/api/staff/:id/schedule', auth, async (req, res) => {
+    const me = userOf(req)
+    const row = (await clinicStaffRow(clinicOf(req), String(req.params.id))) ?? fail(404, 'El usuario no existe.')
+    if (row!.role !== 'doctor') fail(400, 'Sólo los médicos tienen horario de atención.')
+    if (!can(me.role, 'schedule.manage') && me.id !== row!.id) fail(403, 'Sólo puedes cambiar tu propio horario.')
+    const schedule = cleanSchedule(parse(scheduleInput, req.body))
+    await sql.run('UPDATE staff SET schedule = ? WHERE id = ?', [JSON.stringify(schedule), String(row!.id)])
+    await audit(me, me.id === row!.id ? 'Actualizó su horario de atención' : `Actualizó el horario de ${row!.name}`)
+    res.json(toStaff((await staffRow(String(row!.id)))!))
   })
 
   app.post('/api/staff/:id/reset-password', auth, need('staff.manage'), async (req, res) => {
@@ -707,6 +780,20 @@ export function createApp(opts: AppOptions) {
 
 export const tempPassword = () => randomBytes(6).toString('base64url')
 
+const hhmm = z.string().regex(/^\d{2}:\d{2}$/, 'Escribe la hora como 08:00.')
+/** Horario de un médico: el formato anterior (una franja para todos los días) o franjas por día. */
+const scheduleInput = z.object({
+  days: z.array(z.number().int().min(0).max(6)).optional(),
+  start: hhmm.optional(), end: hhmm.optional(),
+  slot: z.number().int().refine((n) => SLOT_OPTIONS.includes(n), 'El intervalo de la agenda no es válido.'),
+  week: z.record(z.string().regex(/^[0-6]$/), z.array(z.object({ start: hhmm, end: hhmm })).max(4)).optional(),
+}).superRefine((s, ctx) => {
+  const problems = scheduleProblems(weekOf({ days: s.days ?? [], start: s.start ?? '', end: s.end ?? '', slot: s.slot, week: s.week }))
+  if (problems.length) ctx.addIssue({ code: 'custom', message: problems[0] })
+})
+/** Se guarda siempre con las franjas por día y los campos anteriores derivados de ellas. */
+const cleanSchedule = (s: z.infer<typeof scheduleInput>) => scheduleFromWeek(weekOf({ days: s.days ?? [], start: s.start ?? '', end: s.end ?? '', slot: s.slot, week: s.week }), s.slot)
+
 /** Crea un usuario dentro de una clínica y devuelve su contraseña temporal. */
 export async function createStaffMember(sql: Sql, clinicId: string, s: { name: string; role: (typeof ROLES)[number]; email: string; specialty?: string; license?: string }) {
   if (s.role === 'doctor' && !s.license) fail(400, 'Para un médico escribe su número de colegiación.')
@@ -715,7 +802,7 @@ export async function createStaffMember(sql: Sql, clinicId: string, s: { name: s
   const password = tempPassword()
   const count = Number((await sql.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM staff WHERE clinic_id = ?', [clinicId]))!.n)
   const service = s.role === 'doctor' ? await sql.one(`SELECT id FROM services WHERE clinic_id = ? AND active ORDER BY name LIMIT 1`, [clinicId]) : undefined
-  const schedule = s.role === 'doctor' ? JSON.stringify({ days: [1, 2, 3, 4, 5], start: '08:00', end: '17:00', slot: 30 }) : null
+  const schedule = s.role === 'doctor' ? JSON.stringify(scheduleFromWeek({ 1: [{ start: '08:00', end: '17:00' }], 2: [{ start: '08:00', end: '17:00' }], 3: [{ start: '08:00', end: '17:00' }], 4: [{ start: '08:00', end: '17:00' }], 5: [{ start: '08:00', end: '17:00' }] }, 30)) : null
   await sql.run(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id,clinic_id) VALUES (?,?,?,?,?,?,?,TRUE,?,?,?,?)`,
     [id, s.name, s.role, s.specialty || null, s.email, s.license || null, COLORS[count % COLORS.length], bcrypt.hashSync(password, 10),
       schedule, service ? String(service.id) : null, clinicId])

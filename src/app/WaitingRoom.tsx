@@ -9,6 +9,7 @@ import { parseDecimal, VITALS, vitalLevel, type VitalKey } from '../lib/vitals'
 import { yearsOld } from '../lib/inpatient'
 import { PatientPicker } from './Inpatients'
 import { IdentificationForm } from './PatientForms'
+import { CompleteRegistration } from './NewPatient'
 
 const minutesSince = (iso?: string) => (iso ? Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)) : null)
 
@@ -21,6 +22,7 @@ export default function WaitingRoom() {
   const nav = useNavigate()
   const [triage, setTriage] = useState<Appointment | null>(null)
   const [walkIn, setWalkIn] = useState(false)
+  const [completing, setCompleting] = useState<Appointment | null>(null)
   const [mine, setMine] = useState(user?.role === 'doctor')
   const today = appointments
     .filter((a) => sameDay(a.start, new Date()) && !['cancelled'].includes(a.status) && (!mine || a.doctorId === user?.id))
@@ -68,7 +70,7 @@ export default function WaitingRoom() {
                   </div>
                   <div style={{ display: 'grid', gap: 6, alignContent: 'start' }}>
                     {['scheduled', 'confirmed'].includes(a.status) && can('checkin.manage') &&
-                      <button className="btn btn--soft btn--sm" onClick={() => setStatus(a.id, 'arrived', `Llegada de ${p.firstName} registrada`)}><LogIn size={15} />Llegó</button>}
+                      <button className="btn btn--soft btn--sm" onClick={() => p.pending ? setCompleting(a) : setStatus(a.id, 'arrived', `Llegada de ${p.firstName} registrada`)}><LogIn size={15} />Llegó</button>}
                     {a.status === 'arrived' && can('vitals.record') &&
                       <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Preclínica</button>}
                     {a.status === 'done' && a.paid === false && can('billing.manage') &&
@@ -86,6 +88,8 @@ export default function WaitingRoom() {
       </div>
       {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}
       {walkIn && <WalkInModal onClose={() => setWalkIn(false)} />}
+      {completing && patient(completing.patientId) && <CompleteRegistration patient={patient(completing.patientId)!} onClose={() => setCompleting(null)}
+        onDone={async () => { setCompleting(null); await setStatus(completing.id, 'arrived', 'Registro completado y llegada registrada') }} />}
     </div>
   )
 }

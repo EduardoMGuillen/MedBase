@@ -128,7 +128,7 @@ function ChargeModal({ appt, onClose, onPaid }: { appt?: Appointment; onClose: (
   const valid = patientId && lines.length && disc <= subtotal && (!needsRef || reference.trim())
   const matches = useMemo(() => {
     const s = q.trim().toLowerCase()
-    return s.length < 2 ? [] : patients.filter((p) => fullName(p).toLowerCase().includes(s) || p.record.toLowerCase().includes(s)).slice(0, 6)
+    return s.length < 2 ? [] : patients.filter((p) => !p.pending && (fullName(p).toLowerCase().includes(s) || p.record.toLowerCase().includes(s))).slice(0, 6)
   }, [q, patients])
   const chosen = patients.find((p) => p.id === patientId)
 

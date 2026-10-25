@@ -17,7 +17,7 @@ export const toStaff = (r: Row): Staff => ({
 
 export const toPatient = (r: Row, clinical: boolean): Patient => ({
   id: String(r.id), record: String(r.record), firstName: String(r.first_name), lastName: String(r.last_name),
-  birthDate: String(r.birth_date), sex: r.sex as Patient['sex'], phone: String(r.phone), email: s(r.email),
+  birthDate: String(r.birth_date ?? ''), sex: (r.sex ?? 'F') as Patient['sex'], phone: String(r.phone), email: s(r.email), pending: Boolean(r.pending) || undefined,
   insurance: s(r.insurance), createdAt: String(r.created_at),
   dni: s(r.dni), civilStatus: s(r.civil_status), occupation: s(r.occupation), education: s(r.education), religion: s(r.religion),
   address: s(r.address), emergencyName: s(r.emergency_name), emergencyPhone: s(r.emergency_phone), emergencyRelation: s(r.emergency_relation),

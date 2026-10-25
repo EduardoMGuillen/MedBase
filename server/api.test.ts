@@ -85,13 +85,17 @@ describe('permisos por rol', () => {
 describe('flujo de la cita', () => {
   test('agenda, llegada, triaje, consulta y receta', async () => {
     const rec = await as('smejia@demo.clinara')
+    // La hora debe caer en el horario del médico: para que la prueba corra cualquier día, la Dra. Herrera atiende todos los días
+    const admin = await as('admin@demo.clinara')
+    const all = Object.fromEntries(['0', '1', '2', '3', '4', '5', '6'].map((d) => [d, [{ start: '07:00', end: '22:00' }]]))
+    assert.equal((await admin.patch('/api/staff/s-herrera/schedule', { slot: 15, week: all })).status, 200)
     const created = await rec.post('/api/appointments', { patientId: 'p4', doctorId: 's-herrera', start: `${today()}T17:00`, minutes: 30, reason: 'Dolor lumbar', type: 'followup' })
     assert.equal(created.status, 201)
     const id = created.body.id
 
-    // Choque de horario con el mismo médico
-    const clash = await rec.post('/api/appointments', { patientId: 'p7', doctorId: 's-herrera', start: `${today()}T17:15`, minutes: 30, reason: 'x', type: 'followup' })
-    assert.equal(clash.status, 409)
+    // Dos citas a la misma hora con el mismo médico se permiten (la agenda avisa antes de guardar)
+    const clash = await rec.post('/api/appointments', { patientId: 'p7', doctorId: 's-herrera', start: `${today()}T17:15`, reason: 'x' })
+    assert.equal(clash.status, 201)
 
     assert.equal((await rec.post(`/api/appointments/${id}/status`, { status: 'arrived' })).body.status, 'arrived')
 

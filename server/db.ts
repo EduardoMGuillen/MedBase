@@ -10,7 +10,7 @@ import type { Row, Sql } from './sql.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '11'
+const SCHEMA_VERSION = '12'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -320,6 +320,15 @@ ALTER TABLE patients
   ADD COLUMN IF NOT EXISTS guardian_name TEXT,
   ADD COLUMN IF NOT EXISTS guardian_dni TEXT,
   ADD COLUMN IF NOT EXISTS guardian_relation TEXT;
+
+-- v12: paciente agendado por teléfono con nombre y teléfono, pendiente de registro.
+-- No tiene fecha de nacimiento ni sexo hasta que llega; si resulta que ya existía, la cita pasa a ese
+-- expediente y el pendiente queda marcado con merged_into (no se borra).
+ALTER TABLE patients
+  ADD COLUMN IF NOT EXISTS pending BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS merged_into TEXT;
+ALTER TABLE patients ALTER COLUMN birth_date DROP NOT NULL;
+ALTER TABLE patients ALTER COLUMN sex DROP NOT NULL;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -605,21 +614,44 @@ export async function resetDemo(sql: Sql) {
   })
 }
 
+/** Siguiente número de expediente de la clínica. Llamar dentro de una transacción: el candado evita números repetidos. */
+async function nextRecord(q: Sql, clinicId: string) {
+  // Numeración por clínica; el candado evita que dos registros simultáneos tomen el mismo número
+  await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`record:${clinicId}`])
+  // Sólo cuentan los EXP-00000: los pendientes de registro llevan un número provisional
+  const max = await q.one<{ n: number }>(`SELECT COALESCE(MAX(CAST(SUBSTR(record, 5) AS INTEGER)), 400)::int AS n FROM patients WHERE clinic_id = ? AND record ~ '^EXP-[0-9]+$'`, [clinicId])
+  return `EXP-${String(Number(max!.n) + 1).padStart(5, '0')}`
+}
+
 /** Crea un paciente con el siguiente número de expediente libre. */
 export async function createPatient(q: Sql, clinicId: string, p: Partial<Patient> & Pick<Patient, 'firstName' | 'lastName' | 'birthDate' | 'sex' | 'phone'>) {
   const id = randomUUID()
-  // Numeración por clínica; el candado evita que dos registros simultáneos tomen el mismo número
-  await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`record:${clinicId}`])
-  const max = await q.one<{ n: number }>(`SELECT COALESCE(MAX(CAST(SUBSTR(record, 5) AS INTEGER)), 400)::int AS n FROM patients WHERE clinic_id = ?`, [clinicId])
   await q.run(`INSERT INTO patients (id,record,first_name,last_name,birth_date,sex,phone,email,blood_type,allergies,conditions,insurance,created_at,
       dni,civil_status,occupation,education,religion,address,emergency_name,emergency_phone,emergency_relation,background,clinic_id,guardian_name,guardian_dni,guardian_relation)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, `EXP-${String(Number(max!.n) + 1).padStart(5, '0')}`, p.firstName, p.lastName, p.birthDate, p.sex, p.phone, p.email || null, p.bloodType || null,
+    [id, await nextRecord(q, clinicId), p.firstName, p.lastName, p.birthDate, p.sex, p.phone, p.email || null, p.bloodType || null,
       JSON.stringify(p.allergies ?? []), JSON.stringify(p.conditions ?? []), p.insurance || null, new Date().toISOString(),
       p.dni || null, p.civilStatus || null, p.occupation || null, p.education || null, p.religion || null, p.address || null,
       p.emergencyName || null, p.emergencyPhone || null, p.emergencyRelation || null, JSON.stringify(p.background ?? {}), clinicId,
       p.guardianName || null, p.guardianDni || null, p.guardianRelation || null])
   return id
+}
+
+/**
+ * Paciente que llama por primera vez: sólo nombre y teléfono (y la identidad si la da). Lleva un número
+ * provisional y no aparece en la biblioteca hasta que completa su registro al llegar.
+ */
+export async function createPendingPatient(q: Sql, clinicId: string, p: { firstName: string; lastName: string; phone: string; dni?: string }) {
+  const id = randomUUID()
+  await q.run(`INSERT INTO patients (id, record, first_name, last_name, phone, dni, created_at, clinic_id, pending) VALUES (?,?,?,?,?,?,?,?,TRUE)`,
+    [id, `PEND-${id.slice(0, 8).toUpperCase()}`, p.firstName, p.lastName, p.phone, p.dni || null, new Date().toISOString(), clinicId])
+  return id
+}
+
+/** Completa el registro de un paciente pendiente: le asigna su número de expediente definitivo. */
+export async function completePendingPatient(q: Sql, clinicId: string, id: string) {
+  await q.run('UPDATE patients SET record = ?, pending = FALSE, created_at = ? WHERE id = ? AND clinic_id = ? AND pending',
+    [await nextRecord(q, clinicId), new Date().toISOString(), id, clinicId])
 }
 
 /**

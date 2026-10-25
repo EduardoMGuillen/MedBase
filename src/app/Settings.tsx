@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, PageHead } from '../components/ui'
-import { DAY_NAMES, fillTemplate, money } from '../lib/format'
-import type { ClinicSettings, Schedule, Service, Staff } from '../lib/types'
+import { fillTemplate, money } from '../lib/format'
+import type { ClinicSettings, Service, Staff } from '../lib/types'
+import { ScheduleEditor } from './ScheduleEditor'
 
 type Tab = 'clinic' | 'services' | 'schedules' | 'beds'
 
@@ -182,49 +183,27 @@ function Schedules() {
   const doctors = staff.filter((s) => s.role === 'doctor')
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      <p style={{ color: 'var(--muted)' }}>El horario define qué espacios se ofrecen en la reserva en línea. La agenda interna permite agendar fuera de horario si hace falta.</p>
+      <p style={{ color: 'var(--muted)' }}>Cada día puede tener una o más franjas (por ejemplo, de 08:00 a 12:00 y de 14:00 a 17:00). La agenda y la reserva en línea sólo ofrecen horas dentro del horario. Cada médico también puede cambiar el suyo en <i>Mi cuenta</i>.</p>
       {doctors.map((d) => <ScheduleCard key={d.id} d={d} />)}
     </div>
   )
 }
 
-const DEFAULT_SCHEDULE: Schedule = { days: [1, 2, 3, 4, 5], start: '08:00', end: '17:00', slot: 30 }
-
 function ScheduleCard({ d }: { d: Staff }) {
   const { services, updateStaff } = useStore()
-  const [s, setS] = useState<Schedule>(d.schedule ?? DEFAULT_SCHEDULE)
-  const [serviceId, setServiceId] = useState(d.serviceId ?? '')
-  const dirty = JSON.stringify(s) !== JSON.stringify(d.schedule ?? DEFAULT_SCHEDULE) || serviceId !== (d.serviceId ?? '')
-  const toggle = (day: number) => setS({ ...s, days: s.days.includes(day) ? s.days.filter((x) => x !== day) : [...s.days, day].sort() })
   return (
     <section className="panel">
       <div className="panel__head">
         <div className="cell-person"><Avatar name={d.name} color={d.color} /><div><h2 style={{ fontSize: 16 }}>{d.name}</h2><p>{d.specialty}{d.active ? '' : ', desactivado'}</p></div></div>
-        <button className="btn btn--primary btn--sm" disabled={!dirty || !s.days.length || s.start >= s.end}
-          onClick={() => updateStaff(d.id, { schedule: s, serviceId }, 'Horario guardado')}>Guardar horario</button>
       </div>
-      <div className="panel__body schedule">
-        <div className="field">
-          <span>Días de atención</span>
-          <div className="chips">
-            {[1, 2, 3, 4, 5, 6, 0].map((day) => (
-              <button key={day} type="button" className="chip" aria-pressed={s.days.includes(day)} onClick={() => toggle(day)}>{DAY_NAMES[day]}</button>
-            ))}
-          </div>
-        </div>
-        <div className="form-grid form-grid--4">
-          <label className="field"><span>Entrada</span><input className="input" type="time" step={900} value={s.start} onChange={(e) => setS({ ...s, start: e.target.value })} /></label>
-          <label className="field"><span>Salida</span><input className="input" type="time" step={900} value={s.end} onChange={(e) => setS({ ...s, end: e.target.value })} /></label>
-          <label className="field"><span>Duración de cita</span>
-            <select className="select" value={s.slot} onChange={(e) => setS({ ...s, slot: Number(e.target.value) })}>{[15, 20, 30, 45, 60].map((m) => <option key={m} value={m}>{m} min</option>)}</select>
-          </label>
+      <div className="panel__body">
+        <ScheduleEditor d={d} extra={
           <label className="field"><span>Se cobra por defecto</span>
-            <select className="select" value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
+            <select className="select" value={d.serviceId ?? ''} onChange={(e) => updateStaff(d.id, { serviceId: e.target.value }, 'Servicio por defecto guardado')}>
               <option value="">Ninguno</option>{services.filter((x) => x.active).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </select>
           </label>
-        </div>
-        {s.start >= s.end && <p style={{ color: 'var(--red-ink)', fontSize: 13.5 }}>La hora de salida debe ser después de la de entrada.</p>}
+        } />
       </div>
     </section>
   )

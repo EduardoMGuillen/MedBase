@@ -32,7 +32,7 @@ export function SearchPalette() {
     const s = norm(q.trim())
     if (!s) return []
     const digits = s.replace(/\D/g, '')
-    return patients.filter((p) => norm(fullName(p)).includes(s) || p.record.toLowerCase().includes(s) || (digits.length >= 3 && p.phone.replace(/\D/g, '').includes(digits))).slice(0, 8)
+    return patients.filter((p) => !p.pending && (norm(fullName(p)).includes(s) || p.record.toLowerCase().includes(s) || (digits.length >= 3 && p.phone.replace(/\D/g, '').includes(digits)))).slice(0, 8)
   }, [q, patients])
 
   if (!open || !can('patients.view')) return null

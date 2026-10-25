@@ -3,12 +3,18 @@ export type Role = 'superadmin' | 'admin' | 'doctor' | 'nurse' | 'reception'
 /** Roles que pertenecen a una clínica (el superadministrador no tiene clínica). */
 export type ClinicRole = Exclude<Role, 'superadmin'>
 
-/** Horario de atención de un médico. `days` usa 0 = domingo … 6 = sábado. */
+export interface TimeRange { start: string; end: string } // HH:MM
+
+/**
+ * Horario de atención de un médico. `week` (día → franjas, 0 = domingo … 6 = sábado) es el formato
+ * actual; `days/start/end` se conservan para lo guardado antes (ver `src/lib/schedule.ts`).
+ */
 export interface Schedule {
   days: number[]
   start: string // HH:MM
   end: string // HH:MM
-  slot: number // minutos por cita
+  slot: number // cada cuántos minutos se ofrece una hora en la agenda
+  week?: Record<string, TimeRange[]>
 }
 
 export interface Staff {

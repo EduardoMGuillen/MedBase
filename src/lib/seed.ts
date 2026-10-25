@@ -190,7 +190,8 @@ export const SERVICES: Service[] = [
 ]
 
 export const DOCTOR_SETUP: Record<string, { schedule: Schedule; serviceId: string }> = {
-  's-herrera': { schedule: { days: [1, 2, 3, 4, 5], start: '08:00', end: '17:00', slot: 30 }, serviceId: 'svc-mi' },
+  // Mañana y tarde, con la hora de almuerzo libre
+  's-herrera': { schedule: { days: [1, 2, 3, 4, 5], start: '08:00', end: '17:00', slot: 30, week: Object.fromEntries(['1', '2', '3', '4', '5'].map((d) => [d, [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '17:00' }]])) }, serviceId: 'svc-mi' },
   's-paz': { schedule: { days: [1, 2, 3, 4, 5, 6], start: '08:00', end: '14:00', slot: 30 }, serviceId: 'svc-ped' },
   's-zuniga': { schedule: { days: [1, 3, 5], start: '09:00', end: '17:00', slot: 30 }, serviceId: 'svc-gin' },
 }

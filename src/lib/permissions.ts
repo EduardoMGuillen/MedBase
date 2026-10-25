@@ -19,6 +19,7 @@ export const PERMISSIONS = {
   'billing.manage': 'Cobrar y emitir recibos',
   'staff.manage': 'Gestionar personal y roles',
   'settings.manage': 'Configurar la clínica y servicios',
+  'schedule.manage': 'Editar el horario de cualquier médico',
   'reports.view': 'Ver indicadores de la clínica',
   'audit.view': 'Ver bitácora de accesos',
   'inpatient.view': 'Ver pacientes hospitalizados',
@@ -36,7 +37,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   superadmin: ['platform.manage'],
   admin: [
     'agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage',
-    'staff.manage', 'settings.manage', 'reports.view', 'audit.view',
+    'staff.manage', 'settings.manage', 'reports.view', 'audit.view', 'schedule.manage',
   ],
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',

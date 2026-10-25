@@ -18,7 +18,7 @@ export function registerReports(app: Express, { sql, auth, need, clinicOf }: Ctx
       sql.query(`SELECT p.total, p.method, p.paid_at, a.doctor_id FROM payments p LEFT JOIN appointments a ON a.id = p.appointment_id
         WHERE p.clinic_id = ? AND NOT p.voided AND p.paid_at BETWEEN ? AND ?`, [cid, lo.toISOString(), hi.toISOString()]),
       sql.query(`SELECT diagnoses, date FROM consultations WHERE clinic_id = ? AND date BETWEEN ? AND ?`, [cid, localDate(lo), hi.toISOString()]),
-      sql.query(`SELECT created_at FROM patients WHERE clinic_id = ? AND created_at BETWEEN ? AND ?`, [cid, localDate(lo), hi.toISOString()]),
+      sql.query(`SELECT created_at FROM patients WHERE clinic_id = ? AND NOT pending AND created_at BETWEEN ? AND ?`, [cid, localDate(lo), hi.toISOString()]),
       sql.query(`SELECT id, name FROM staff WHERE clinic_id = ? AND role = 'doctor' ORDER BY name`, [cid]),
     ])
     const payments = payRows.filter((p) => inRange(String(p.paid_at)))

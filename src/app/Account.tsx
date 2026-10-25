@@ -3,10 +3,13 @@ import { ShieldCheck } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, PageHead } from '../components/ui'
 import { ROLE_LABEL, ROLE_PERMISSIONS, PERMISSIONS } from '../lib/permissions'
+import { ScheduleEditor } from './ScheduleEditor'
 
 export default function Account() {
-  const { user } = useStore()
+  const { user, staffById } = useStore()
   if (!user) return null
+  // El horario viene de la lista del personal, que se actualiza al guardar
+  const me = staffById(user.id) ?? user
   return (
     <div className="page">
       <PageHead title="Mi cuenta" sub="Tu contraseña y la verificación en dos pasos." />
@@ -21,6 +24,12 @@ export default function Account() {
         <PasswordPanel />
         <TwoFactorPanel />
       </div>
+      {user.role === 'doctor' && (
+        <section className="panel">
+          <div className="panel__head"><div><h2>Mi horario de atención</h2><p>La agenda y la reserva en línea sólo ofrecen horas dentro de tu horario.</p></div></div>
+          <div className="panel__body"><ScheduleEditor key={JSON.stringify(me.schedule)} d={me} /></div>
+        </section>
+      )}
       <section className="panel">
         <div className="panel__head"><h2>Lo que tu rol permite</h2></div>
         <div className="panel__body"><div className="chips">{ROLE_PERMISSIONS[user.role].map((p) => <span key={p} className="chip">{PERMISSIONS[p]}</span>)}</div></div>

@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Globe, Plus, Receipt } from 'lucide-react'
-import { useStore } from '../lib/store'
+import { ChevronLeft, ChevronRight, Globe, Plus, Receipt, Search, UserPlus, X } from 'lucide-react'
+import { useStore, type NewAppointment } from '../lib/store'
 import { Avatar, Modal, PageHead, StatusBadge } from '../components/ui'
 import { ReminderButton } from '../components/Reminder'
-import { cap, fullName, localISODate, time } from '../lib/format'
+import { cap, formatDni, formatPhone, fullName, localISODate, time } from '../lib/format'
+import { DAY_NAMES_PLURAL, describeSchedule, slotsOn, weekday } from '../lib/schedule'
+import { normalize, similarPatients } from '../lib/patients'
+import { CompleteRegistration, SimilarPatients } from './NewPatient'
 import { useIsPhone } from '../lib/hooks'
 import type { Appointment, Patient, Staff } from '../lib/types'
 
 const START_H = 7
 const END_H = 19
 const HOUR_PX = 96
+/** Alto fijo con que se dibuja cada cita (30 min). No bloquea la hora siguiente: la consulta dura lo que dure. */
+const VISUAL_MIN = 30
 const pad = (n: number) => String(n).padStart(2, '0')
 const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
@@ -40,6 +45,7 @@ export default function Agenda() {
   const [creating, setCreating] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [rescheduling, setRescheduling] = useState<Appointment | null>(null)
+  const [completing, setCompleting] = useState<Appointment | null>(null)
 
   const doctors = staff.filter((s) => s.role === 'doctor' && s.active)
   const shown = doctorFilter === 'all' ? doctors : doctors.filter((d) => d.id === doctorFilter)
@@ -116,26 +122,29 @@ export default function Agenda() {
           <Modal title={fullName(p)} onClose={() => setSelectedId(null)} footer={<>
             {can('agenda.manage') && open && <button className="btn btn--danger" onClick={() => act(() => store.setStatus(a.id, 'cancelled', 'Cita cancelada'))}>Cancelar cita</button>}
             {can('agenda.manage') && open && <button className="btn btn--ghost" onClick={() => { setRescheduling(a); setSelectedId(null) }}>Reprogramar</button>}
-            {can('checkin.manage') && open && sameDate(new Date(a.start), new Date()) && <button className="btn btn--soft" onClick={() => act(() => store.setStatus(a.id, 'arrived', 'Llegada registrada'))}>Registrar llegada</button>}
+            {can('checkin.manage') && open && sameDate(new Date(a.start), new Date()) && <button className="btn btn--soft" onClick={() => {
+              if (p.pending) { setCompleting(a); setSelectedId(null) } else act(() => store.setStatus(a.id, 'arrived', 'Llegada registrada'))
+            }}>Registrar llegada</button>}
             {can('consult.write') && a.doctorId === user?.id && ['arrived', 'triaged', 'in_consult'].includes(a.status) &&
               <button className="btn btn--primary" onClick={() => navigate(`/app/consulta/${a.id}`)}>Atender</button>}
             {can('billing.manage') && a.status === 'done' && a.paid === false && <button className="btn btn--primary" onClick={() => navigate('/app/caja')}><Receipt size={15} />Ir a cobrar</button>}
-            <button className="btn btn--ghost" onClick={() => navigate(`/app/pacientes/${p.id}`)}>Abrir expediente</button>
+            {!p.pending && <button className="btn btn--ghost" onClick={() => navigate(`/app/pacientes/${p.id}`)}>Abrir expediente</button>}
           </>}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <StatusBadge status={a.status} />
               {a.type === 'urgent' && <span className="badge badge--red">Urgente</span>}
+              {p.pending && <span className="badge badge--amber">Paciente nuevo, completa su registro al llegar</span>}
               {a.source === 'online' && <span className="badge badge--ink">Reservada en línea</span>}
               {a.remindedAt && open && <span className="badge badge--mint">Recordatorio enviado</span>}
               {a.paid === true && <span className="badge badge--mint">Cobrada</span>}
             </div>
             <div className="chart-meta" style={{ marginTop: 0 }}>
               <span>{cap(new Date(a.start).toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' }))}</span>
-              <span>Hora <b>{time(a.start)}</b></span><span>Duración <b>{a.minutes} min</b></span>
+              <span>Hora <b>{time(a.start)}</b></span>
               <span>{staff.find((s) => s.id === a.doctorId)?.name}</span>
-              <span>Exp. <b>{p.record}</b></span><span>Tel. <b>{p.phone}</b></span>
+              {!p.pending && <span>Exp. <b>{p.record}</b></span>}<span>Tel. <b>{p.phone}</b></span>
             </div>
-            <p><b>Motivo:</b> {a.reason}</p>
+            {a.reason && <p><b>Motivo:</b> {a.reason}</p>}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {open && (can('agenda.manage') || can('checkin.manage')) && <ReminderButton appt={a} />}
               {a.status === 'scheduled' && can('agenda.manage') && (
@@ -149,6 +158,14 @@ export default function Agenda() {
         )
       })()}
 
+      {completing && (() => {
+        const p = patient(completing.patientId)
+        return p && <CompleteRegistration patient={p} onClose={() => setCompleting(null)} onDone={async () => {
+          setCompleting(null)
+          await store.setStatus(completing.id, 'arrived', 'Registro completado y llegada registrada')
+        }} />
+      })()}
+
       {creating && <AppointmentForm title="Nueva cita" submitLabel="Agendar cita" doctors={doctors} patients={patients}
         initial={{ date: creating, doctorId: user?.role === 'doctor' ? user.id : doctorFilter !== 'all' ? doctorFilter : doctors[0]?.id }}
         onClose={() => setCreating(null)}
@@ -157,11 +174,11 @@ export default function Agenda() {
       {rescheduling && <AppointmentForm title="Reprogramar cita" submitLabel="Guardar cambios" doctors={doctors} patients={patients} lockPatient
         initial={{
           patientId: rescheduling.patientId, doctorId: rescheduling.doctorId, date: rescheduling.start.slice(0, 10), time: rescheduling.start.slice(11, 16),
-          minutes: rescheduling.minutes, reason: rescheduling.reason, type: rescheduling.type,
+          reason: rescheduling.reason,
         }}
         onClose={() => setRescheduling(null)}
         onSave={async (a) => {
-          if (await store.reschedule(rescheduling.id, { doctorId: a.doctorId, start: a.start, minutes: a.minutes, reason: a.reason })) setRescheduling(null)
+          if (await store.reschedule(rescheduling.id, { doctorId: a.doctorId, start: a.start, reason: a.reason ?? '' })) setRescheduling(null)
         }} />}
     </div>
   )
@@ -206,9 +223,11 @@ function DayGrid({ day, doctors, list, patient, onPick }: { day: Date; doctors: 
           <Hours />
           {doctors.map((d) => (
             <div key={d.id} className="cal__col" style={{ height: (END_H - START_H) * HOUR_PX }}>
-              {list.filter((a) => a.doctorId === d.id).map((a) => {
+              {/* Dos citas a la misma hora con el mismo médico se dibujan lado a lado */}
+              {layoutLanes(list.filter((a) => a.doctorId === d.id)).map(({ a, lane, lanes }) => {
                 const p = patient(a.patientId)
-                return p && <ApptBlock key={a.id} a={a} p={p} color={d.color} onPick={onPick} style={{ top: top(a.start) + 2, height: a.minutes * (HOUR_PX / 60) - 4 }} />
+                return p && <ApptBlock key={a.id} a={a} p={p} color={d.color} onPick={onPick}
+                  style={{ top: top(a.start) + 2, height: VISUAL_MIN * (HOUR_PX / 60) - 4, ...(lanes > 1 ? { left: `calc(${(lane / lanes) * 100}% + 4px)`, right: 'auto', width: `calc(${100 / lanes}% - 8px)` } : {}) }} />
               })}
               <NowLine day={day} />
             </div>
@@ -243,7 +262,7 @@ function WeekGrid({ start, onDay, doctors, colorOf, patient, onPick, onOpenDay }
               {layoutLanes(onDay(d)).map(({ a, lane, lanes }) => {
                 const p = patient(a.patientId)
                 return p && <ApptBlock key={a.id} a={a} p={p} color={colorOf(a.doctorId)} compact onPick={onPick}
-                  style={{ top: top(a.start) + 2, height: a.minutes * (HOUR_PX / 60) - 4, left: `calc(${(lane / lanes) * 100}% + 3px)`, right: 'auto', width: `calc(${100 / lanes}% - 6px)` }} />
+                  style={{ top: top(a.start) + 2, height: VISUAL_MIN * (HOUR_PX / 60) - 4, left: `calc(${(lane / lanes) * 100}% + 3px)`, right: 'auto', width: `calc(${100 / lanes}% - 6px)` }} />
               })}
               <NowLine day={d} />
             </div>
@@ -259,7 +278,7 @@ function WeekGrid({ start, onDay, doctors, colorOf, patient, onPick, onOpenDay }
  * Reparte en carriles sólo las citas que se superponen; las demás usan todo el ancho del día.
  */
 function layoutLanes(list: Appointment[]) {
-  const span = (a: Appointment) => { const s = new Date(a.start).getTime(); return [s, s + a.minutes * 60_000] as const }
+  const span = (a: Appointment) => { const s = new Date(a.start).getTime(); return [s, s + VISUAL_MIN * 60_000] as const }
   const out: { a: Appointment; lane: number; lanes: number }[] = []
   let cluster: { a: Appointment; lane: number; lanes: number }[] = []
   let ends: number[] = []
@@ -353,54 +372,151 @@ function DayList({ days, onDay, patient, staff, onPick, onOpenDay }: {
   )
 }
 
-interface FormState { patientId: string; doctorId: string; date: string; time: string; minutes: number; reason: string; type: Appointment['type'] }
+interface FormState {
+  patientId: string
+  newPatient: { firstName: string; lastName: string; phone: string; dni: string } | null
+  doctorId: string; date: string; time: string; reason: string; type: Appointment['type'] | ''
+}
 
+/**
+ * Nueva cita o reprogramación. El paciente se busca entre los registrados o se agenda como nuevo con
+ * nombre y teléfono. La hora sólo ofrece el horario del médico ese día. No hay duración: cada consulta
+ * dura lo que tenga que durar; en el calendario se dibuja con 30 minutos.
+ */
 function AppointmentForm({ title, submitLabel, doctors, patients, initial, lockPatient, onClose, onSave }: {
   title: string; submitLabel: string; doctors: Staff[]; patients: Patient[]; initial: Partial<FormState>; lockPatient?: boolean
-  onClose: () => void; onSave: (a: Omit<Appointment, 'id' | 'status' | 'arrivedAt'>) => Promise<void>
+  onClose: () => void; onSave: (a: NewAppointment) => Promise<void>
 }) {
+  const { appointments } = useStore()
   const [f, setF] = useState<FormState>({
-    patientId: patients[0]?.id ?? '', doctorId: doctors[0]?.id ?? '', date: localISODate(new Date()), time: '10:00', minutes: 30, reason: '', type: 'followup', ...initial,
+    patientId: '', newPatient: null, doctorId: doctors[0]?.id ?? '', date: localISODate(new Date()), time: '', reason: '', type: '', ...initial,
   } as FormState)
   const [busy, setBusy] = useState(false)
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((x) => ({ ...x, [k]: v }))
-  const valid = f.patientId && f.doctorId && f.reason.trim() && f.date && f.time
+  const doctor = doctors.find((d) => d.id === f.doctorId)
+  const slots = slotsOn(doctor?.schedule, f.date)
+  // Al reprogramar se conserva la hora que ya tenía aunque hoy quede fuera del horario
+  const keepInitial = !!initial.time && f.doctorId === initial.doctorId && f.date === initial.date && !slots.includes(initial.time)
+  const options = keepInitial ? [initial.time!, ...slots].sort() : slots
+  // Si cambia el médico o el día y la hora ya no se ofrece, se elige la primera del horario
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!options.includes(f.time)) set('time', options[0] ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.doctorId, f.date])
+  const sameTime = (t: string) => appointments.filter((a) => a.doctorId === f.doctorId && a.start.slice(0, 16) === `${f.date}T${t}`
+    && !['cancelled', 'no_show'].includes(a.status) && a.patientId !== f.patientId)
+  const clash = f.time ? sameTime(f.time) : []
+  const np = f.newPatient
+  const similar = np ? similarPatients(patients, { firstName: np.firstName, lastName: np.lastName, phone: np.phone, dni: np.dni }) : []
+  const patientOk = f.patientId || (np && np.firstName.trim().length >= 2 && np.phone.replace(/\D/g, '').length >= 7)
+  const valid = patientOk && f.doctorId && f.date && f.time && options.includes(f.time)
+
   return (
     <Modal title={title} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!valid || busy} onClick={async () => {
         setBusy(true)
-        await onSave({ patientId: f.patientId, doctorId: f.doctorId, start: `${f.date}T${f.time}:00`, minutes: f.minutes, reason: f.reason.trim(), type: f.type })
+        await onSave({
+          patientId: f.patientId || undefined,
+          newPatient: !f.patientId && np ? { firstName: np.firstName.trim(), lastName: np.lastName.trim(), phone: np.phone.trim(), dni: np.dni.trim() || undefined } : undefined,
+          doctorId: f.doctorId, start: `${f.date}T${f.time}:00`, reason: f.reason.trim(), type: f.type || undefined,
+        })
         setBusy(false)
       }}>{submitLabel}</button>
     </>}>
-      <label className="field"><span>Paciente</span>
-        <select className="select" value={f.patientId} disabled={lockPatient} onChange={(e) => set('patientId', e.target.value)}>
-          {[...patients].sort((a, b) => fullName(a).localeCompare(fullName(b))).map((p) => <option key={p.id} value={p.id}>{fullName(p)} ({p.record})</option>)}
-        </select>
-      </label>
+      {lockPatient ? (
+        <div className="field"><span>Paciente</span><div className="picked"><b>{(() => { const p = patients.find((x) => x.id === f.patientId); return p ? fullName(p) : '' })()}</b></div></div>
+      ) : np ? (
+        <fieldset className="fs new-patient">
+          <legend>Paciente nuevo <small className="muted">(completa su registro al llegar)</small></legend>
+          <div className="form-grid">
+            <label className="field"><span>Nombres</span><input className="input" autoFocus value={np.firstName} onChange={(e) => set('newPatient', { ...np, firstName: e.target.value })} /></label>
+            <label className="field"><span>Apellidos</span><input className="input" value={np.lastName} onChange={(e) => set('newPatient', { ...np, lastName: e.target.value })} /></label>
+            <label className="field"><span>Teléfono</span><input className="input" inputMode="tel" placeholder="0000-0000" value={np.phone} onChange={(e) => set('newPatient', { ...np, phone: formatPhone(e.target.value) })} /></label>
+            <label className="field"><span>Identidad (opcional)</span><input className="input" inputMode="numeric" placeholder="0000-0000-00000" value={np.dni} onChange={(e) => set('newPatient', { ...np, dni: formatDni(e.target.value) })} /></label>
+          </div>
+          <SimilarPatients list={similar} onPick={(p) => setF((x) => ({ ...x, patientId: p.id, newPatient: null }))} />
+          <button type="button" className="linklike" style={{ justifySelf: 'start' }} onClick={() => set('newPatient', null)}>Buscar entre los pacientes registrados</button>
+        </fieldset>
+      ) : (
+        <ApptPatientPicker patients={patients} value={f.patientId} onChange={(id) => set('patientId', id)}
+          onNew={(q) => { const [first, ...rest] = q.trim().split(/\s+/); setF((x) => ({ ...x, patientId: '', newPatient: { firstName: first ?? '', lastName: rest.join(' '), phone: '', dni: '' } })) }} />
+      )}
       <label className="field"><span>Médico</span>
         <select className="select" value={f.doctorId} onChange={(e) => set('doctorId', e.target.value)}>
-          {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}, {d.specialty}</option>)}
+          {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? `, ${d.specialty}` : ''}</option>)}
         </select>
       </label>
-      <div className="form-grid form-grid--3">
-        <label className="field"><span>Fecha</span><input className="input" type="date" value={f.date} onChange={(e) => set('date', e.target.value)} /></label>
-        <label className="field"><span>Hora</span><input className="input" type="time" step={900} value={f.time} onChange={(e) => set('time', e.target.value)} /></label>
-        <label className="field"><span>Duración</span>
-          <select className="select" value={f.minutes} onChange={(e) => set('minutes', Number(e.target.value))}>
-            {[15, 30, 45, 60].map((m) => <option key={m} value={m}>{m} min</option>)}
+      <div className="form-grid">
+        <label className="field"><span>Fecha</span><input className="input" type="date" value={f.date} onChange={(e) => e.target.value && set('date', e.target.value)} /></label>
+        <label className="field"><span>Hora</span>
+          <select className="select" value={f.time} disabled={!options.length} onChange={(e) => set('time', e.target.value)}>
+            {!options.length && <option value="">Sin horario</option>}
+            {options.map((t) => {
+              const n = sameTime(t).length
+              return <option key={t} value={t}>{t}{n ? ` · ya hay ${n === 1 ? 'una cita' : `${n} citas`}` : ''}{keepInitial && t === initial.time ? ' (fuera de horario)' : ''}</option>
+            })}
           </select>
         </label>
       </div>
-      <label className="field"><span>Motivo de consulta</span><input className="input" value={f.reason} onChange={(e) => set('reason', e.target.value)} placeholder="Ej. Control de presión arterial" /></label>
-      {!lockPatient && (
-        <label className="field"><span>Tipo</span>
-          <select className="select" value={f.type} onChange={(e) => set('type', e.target.value as Appointment['type'])}>
-            <option value="first">Primera vez</option><option value="followup">Seguimiento</option><option value="urgent">Urgente</option>
-          </select>
-        </label>
+      {doctor && !slots.length && (
+        <div className="alert-strip alert-strip--amber" role="status">
+          {doctor.name} no atiende los {DAY_NAMES_PLURAL[weekday(f.date)]}. {describeSchedule(doctor.schedule) ? `Su horario: ${describeSchedule(doctor.schedule)}.` : 'No tiene horario configurado.'}
+        </div>
       )}
+      {clash.length > 0 && (
+        <div className="alert-strip alert-strip--amber" role="status">
+          A las {f.time} {doctor?.name} ya tiene cita con {clash.map((a) => { const p = patients.find((x) => x.id === a.patientId); return p ? fullName(p) : 'otro paciente' }).join(' y ')}. Puedes agendar igual.
+        </div>
+      )}
+      <details className="more" open={!!(initial.reason || initial.type)}>
+        <summary>Más detalles (opcional)</summary>
+        <div className="more__body">
+          <label className="field"><span>Motivo de consulta</span><input className="input" value={f.reason} onChange={(e) => set('reason', e.target.value)} placeholder="Ej. Control de presión arterial" /></label>
+          {!lockPatient && (
+            <label className="field"><span>Tipo</span>
+              <select className="select" value={f.type} onChange={(e) => set('type', e.target.value as FormState['type'])}>
+                <option value="">Sin especificar</option><option value="first">Primera vez</option><option value="followup">Seguimiento</option><option value="urgent">Urgente</option>
+              </select>
+            </label>
+          )}
+        </div>
+      </details>
     </Modal>
+  )
+}
+
+/** Buscador del paciente de la cita: registrados y pendientes de registro, o "Paciente nuevo". */
+function ApptPatientPicker({ patients, value, onChange, onNew }: { patients: Patient[]; value: string; onChange: (id: string) => void; onNew: (q: string) => void }) {
+  const [q, setQ] = useState('')
+  const chosen = value ? patients.find((p) => p.id === value) : undefined
+  const s = normalize(q)
+  const matches = s.length >= 2 ? patients.filter((p) => normalize(`${fullName(p)} ${p.record} ${p.phone} ${p.dni ?? ''}`).includes(s)
+    || (s.replace(/\D/g, '').length >= 4 && p.phone.replace(/\D/g, '').includes(s.replace(/\D/g, '')))).slice(0, 7) : []
+  if (chosen) {
+    return (
+      <div className="field"><span>Paciente</span>
+        <div className="picked"><b>{fullName(chosen)}</b><span className="muted">{chosen.pending ? 'Pendiente de registro' : chosen.record}, {chosen.phone}</span>
+          <button className="icon-btn" aria-label="Cambiar paciente" onClick={() => onChange('')}><X size={15} /></button></div>
+      </div>
+    )
+  }
+  return (
+    <div className="field suggest"><span>Paciente</span>
+      <Search size={16} style={{ position: 'absolute', left: 12, top: 37, color: 'var(--faint)' }} />
+      <input className="input" style={{ paddingLeft: 36 }} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre, expediente, teléfono o identidad" aria-label="Buscar paciente" />
+      {s.length >= 2 && (
+        <div className="suggest__list">
+          {matches.map((p) => (
+            <button type="button" key={p.id} onClick={() => { onChange(p.id); setQ('') }}>
+              <span>{fullName(p)}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{p.pending ? 'Nuevo, sin registro' : p.record}</span>
+            </button>
+          ))}
+          <button type="button" className="suggest__new" onClick={() => onNew(q)}><UserPlus size={15} />{matches.length ? 'No es ninguno: ' : 'No está registrado: '}agendar a «{q.trim()}» como paciente nuevo</button>
+        </div>
+      )}
+      {s.length < 2 && <button type="button" className="linklike" style={{ justifySelf: 'start', marginTop: 4 }} onClick={() => onNew('')}><UserPlus size={14} style={{ display: 'inline', verticalAlign: '-2px' }} /> Paciente nuevo (sólo nombre y teléfono)</button>}
+    </div>
   )
 }

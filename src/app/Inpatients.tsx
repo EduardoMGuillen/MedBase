@@ -79,7 +79,7 @@ export function PatientPicker({ value, onChange }: { value: string; onChange: (i
   const matches = useMemo(() => {
     const s = q.trim().toLowerCase()
     if (s.length < 2) return []
-    return patients.filter((p) => fullName(p).toLowerCase().includes(s) || p.record.toLowerCase().includes(s) || (p.dni ?? '').includes(s)).slice(0, 8)
+    return patients.filter((p) => !p.pending).filter((p) => fullName(p).toLowerCase().includes(s) || p.record.toLowerCase().includes(s) || (p.dni ?? '').includes(s)).slice(0, 8)
   }, [patients, q])
   if (chosen) {
     return (

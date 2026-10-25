@@ -10,6 +10,7 @@ import type { Appointment } from '../lib/types'
 import Platform from './Platform'
 import { VitalsModal } from './WaitingRoom'
 import { ArrivalsPanel } from './Arrivals'
+import { CompleteRegistration } from './NewPatient'
 import { pendingArrivals } from '../lib/arrivals'
 
 /** Recepción llama el día del control. Los avisos de la semana y de la víspera ya salieron solos. */
@@ -59,7 +60,7 @@ export function ApptRows({ list, showDoctor = false, action, empty = 'No hay cit
         const p = patient(a.patientId)
         if (!p) return null
         const start = new Date(a.start).getTime()
-        const isNow = nowMs >= start && nowMs < start + a.minutes * 60000
+        const isNow = nowMs >= start && nowMs < start + 30 * 60000
         return (
           <div key={a.id} className={`row ${isNow ? 'row--now' : ''}`}>
             <span className="row__time">{time(a.start)}</span>
@@ -83,6 +84,7 @@ export default function Dashboard() {
   const { user, appointments, patients, staff, audit, staffById, settings, can, fetchPayments, setStatus } = useStore()
   const [todayRevenue, setTodayRevenue] = useState<number | null>(null)
   const [triage, setTriage] = useState<Appointment | null>(null)
+  const [completing, setCompleting] = useState<Appointment | null>(null)
   useEffect(() => {
     if (!can('billing.manage')) return
     const k = localISODate(new Date())
@@ -165,7 +167,17 @@ export default function Dashboard() {
   }
 
   // Recepción y administración marcan la llegada desde la lista "Por llegar"
-  const arrive = (a: Appointment) => setStatus(a.id, 'arrived', `Llegada de ${patients.find((x) => x.id === a.patientId)?.firstName ?? 'paciente'} registrada`)
+  const arrive = (a: Appointment) => {
+    const p = patients.find((x) => x.id === a.patientId)
+    // El paciente nuevo agendado por teléfono completa su registro antes de pasar a sala
+    if (p?.pending) setCompleting(a)
+    else setStatus(a.id, 'arrived', `Llegada de ${p?.firstName ?? 'paciente'} registrada`)
+  }
+  const completingPatient = completing ? patients.find((x) => x.id === completing.patientId) : undefined
+  const completion = completing && completingPatient && (
+    <CompleteRegistration patient={completingPatient} onClose={() => setCompleting(null)}
+      onDone={async () => { setCompleting(null); await setStatus(completing.id, 'arrived', 'Registro completado y llegada registrada') }} />
+  )
   const toArrivals = () => document.getElementById('por-llegar')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   if (user.role === 'reception') {
@@ -185,6 +197,7 @@ export default function Dashboard() {
           <div className="stat"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></div>
         </div>
         <ArrivalsPanel id="por-llegar" onArrive={arrive} />
+        {completion}
         <FollowupCalls />
         <div className="grid-2">
           <section className="panel">
@@ -241,6 +254,7 @@ export default function Dashboard() {
         <div className="stat"><b>{patients.filter((p) => !p.pending).length}</b><span>Pacientes registrados</span></div>
       </div>
       <ArrivalsPanel id="por-llegar" onArrive={arrive} />
+      {completion}
       <div className="grid-2">
         <section className="panel">
           <div className="panel__head"><h2>Citas por médico hoy</h2></div>

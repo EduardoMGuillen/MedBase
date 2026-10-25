@@ -126,3 +126,67 @@ describe('R3 filtros de la biblioteca', () => {
     assert.equal((await admin.get('/api/patients/index')).status, 200)
   })
 })
+
+describe('R2 agendar sin que el paciente exista', () => {
+  const nextWeekday = (dow: number) => {
+    const d = new Date(); d.setDate(d.getDate() + 1)
+    while (d.getDay() !== dow) d.setDate(d.getDate() + 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  test('paciente nuevo con nombre y teléfono, sin motivo ni tipo; dos citas a la misma hora', async () => {
+    const rec = await as('smejia@demo.clinara')
+    const date = nextWeekday(2)
+    const a = await rec.post('/api/appointments', { newPatient: { firstName: 'Pedro', lastName: 'Nuevo', phone: '9111-2222' }, doctorId: 's-herrera', start: `${date}T09:00` })
+    assert.equal(a.status, 201)
+    assert.equal(a.body.reason, '')
+    assert.equal(a.body.type, 'first')
+    const b = await rec.post('/api/appointments', { patientId: 'p2', doctorId: 's-herrera', start: `${date}T09:00` })
+    assert.equal(b.status, 201, 'se permite otra cita a la misma hora')
+    const boot = await rec.get('/api/bootstrap')
+    const pedro = boot.body.patients.find((p: any) => p.id === a.body.patientId)
+    assert.equal(pedro.pending, true)
+    assert.match(pedro.record, /^PEND-/)
+  })
+  test('la hora debe estar dentro del horario del médico', async () => {
+    const rec = await as('smejia@demo.clinara')
+    const r = await rec.post('/api/appointments', { patientId: 'p2', doctorId: 's-zuniga', start: `${nextWeekday(2)}T10:00` })
+    assert.equal(r.status, 409)
+    assert.match(r.body.error, /no atiende los martes/)
+    const late = await rec.post('/api/appointments', { patientId: 'p2', doctorId: 's-paz', start: `${nextWeekday(1)}T16:00` })
+    assert.equal(late.status, 409)
+    assert.match(late.body.error, /fuera del horario/)
+  })
+  test('al llegar se completa el registro (o se une a un expediente existente) y no se duplica', async () => {
+    const rec = await as('smejia@demo.clinara')
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    // Un médico que atiende todos los días, para poder probar la llegada hoy
+    const admin = await as('admin@demo.clinara')
+    const all = Object.fromEntries(['0', '1', '2', '3', '4', '5', '6'].map((x) => [x, [{ start: '00:00', end: '23:45' }]]))
+    assert.equal((await admin.patch('/api/staff/s-zuniga/schedule', { slot: 15, week: all })).status, 200)
+    const a = await rec.post('/api/appointments', { newPatient: { firstName: 'Rosa', lastName: 'Duplicada', phone: '9433-5532' }, doctorId: 's-zuniga', start: `${today}T00:15` })
+    assert.equal(a.status, 201)
+    assert.equal((await rec.post(`/api/appointments/${a.body.id}/status`, { status: 'arrived' })).status, 409, 'primero el registro')
+    // Era Rosa Elena (p9): la cita pasa a su expediente y el pendiente no se borra
+    const m = await rec.post(`/api/patients/${a.body.patientId}/complete`, { mergeInto: 'p9' })
+    assert.equal(m.status, 200)
+    assert.equal(m.body.id, 'p9')
+    const boot = await rec.get('/api/bootstrap')
+    assert.equal(boot.body.appointments.find((x: any) => x.id === a.body.id).patientId, 'p9')
+    assert.ok(!boot.body.patients.some((p: any) => p.id === a.body.patientId), 'el pendiente unido ya no aparece')
+    assert.equal((await rec.post(`/api/appointments/${a.body.id}/status`, { status: 'arrived' })).status, 200)
+    // Paciente realmente nuevo: recibe número de expediente
+    const n = await rec.post('/api/appointments', { newPatient: { firstName: 'Tomás', lastName: 'Primera Vez', phone: '9000-0001' }, doctorId: 's-zuniga', start: `${today}T00:30` })
+    const c = await rec.post(`/api/patients/${n.body.patientId}/complete`, { firstName: 'Tomás', lastName: 'Primera Vez', birthDate: '1990-01-01', sex: 'M', phone: '9000-0001' })
+    assert.equal(c.status, 200)
+    assert.match(c.body.record, /^EXP-\d+$/)
+  })
+  test('cada médico edita su horario; otro rol no', async () => {
+    const paz = await as('apaz@demo.clinara')
+    assert.equal((await paz.patch('/api/staff/s-paz/schedule', { slot: 30, week: { '1': [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '17:00' }] } })).status, 200)
+    assert.equal((await paz.patch('/api/staff/s-herrera/schedule', { slot: 30, week: { '1': [{ start: '08:00', end: '12:00' }] } })).status, 403)
+    assert.equal((await paz.patch('/api/staff/s-paz/schedule', { slot: 30, week: { '1': [{ start: '08:00', end: '12:00' }, { start: '11:00', end: '17:00' }] } })).status, 400, 'franjas cruzadas')
+    const nurse = await as('crios@demo.clinara')
+    assert.equal((await nurse.patch('/api/staff/s-paz/schedule', { slot: 30, week: { '1': [{ start: '08:00', end: '12:00' }] } })).status, 403)
+  })
+})
