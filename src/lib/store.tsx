@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
-  Appointment, ApptStatus, Attachment, AuditEntry, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, HospProcedure, Hospitalization,
+  Appointment, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
@@ -144,6 +144,7 @@ function useStoreValue() {
   const fetchPayments = useCallback((from: string, to: string) => api<Payment[]>(`/payments?from=${from}&to=${to}`), [])
   const fetchPayment = useCallback((id: string) => api<{ payment: Payment; patient: Patient }>(`/payments/${id}`), [])
   const fetchReport = useCallback((from: string, to: string) => api<Report>(`/reports?from=${from}&to=${to}`), [])
+  const fetchAuthorization = useCallback((id: string) => api<Authorization>(`/authorizations/${id}`), [])
   const fetchCertificate = useCallback((id: string) => api<Certificate>(`/certificates/${id}`), [])
   const fetchCertificates = useCallback((patientId: string) => api<Certificate[]>(`/patients/${patientId}/certificates`), [])
   const fetchPatientIndex = useCallback(() => api<PatientIndex[]>('/patients/index'), [])
@@ -159,7 +160,7 @@ function useStoreValue() {
     signIn, signOut,
     patient: (id: string) => data.patients.find((p) => p.id === id),
     staffById: (id: string) => data.staff.find((s) => s.id === id),
-    fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
+    fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
     fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient,
     bed: (id: string) => data.beds.find((b) => b.id === id),
     /** Hospitalización abierta del paciente, si la tiene. */
@@ -178,6 +179,10 @@ function useStoreValue() {
       run(() => api<Dose>(`/inpatient/meds/${medId}/doses`, { body: b }), b.status === 'given' ? 'Dosis registrada' : 'Dosis marcada como no administrada'),
     reviewOrder: (noteId: string, index: number, checked: boolean, reason?: string) =>
       run(() => api<OrderMark>(`/inpatient/notes/${noteId}/orders/${index}/review`, { body: { checked, reason } }), checked ? 'Orden marcada como revisada' : 'Orden desmarcada'),
+    createAuthorization: (id: string, b: Omit<AuthorizationData, 'patient' | 'doctor' | 'clinic'> & { template: Authorization['template'] }) =>
+      run(() => api<Authorization>(`/inpatient/${id}/authorizations`, { body: b }), 'Autorización lista para imprimir y firmar'),
+    setAuthorizationStatus: (id: string, b: { status: 'signed' | 'refused' | 'revoked'; fileId?: string; note?: string }) =>
+      run(() => api<Authorization>(`/authorizations/${id}/status`, { body: b }), b.status === 'signed' ? 'Autorización firmada' : b.status === 'refused' ? 'Rechazo registrado' : 'Revocación registrada'),
     addProcedureNote: (id: string, b: { name: string; performedAt: string; text: string; authorizationId?: string; urgent?: boolean; justification?: string }) =>
       run(() => api<InpatientNote>(`/inpatient/${id}/procedure-notes`, { body: b }), 'Nota de procedimiento guardada'),
     addProcedure: (id: string, b: Pick<HospProcedure, 'kind' | 'name' | 'scheduledAt' | 'notes'>) =>

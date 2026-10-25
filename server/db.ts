@@ -10,7 +10,7 @@ import type { Row, Sql } from './sql.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '19'
+const SCHEMA_VERSION = '20'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -394,6 +394,20 @@ CREATE TABLE IF NOT EXISTS order_marks (
 CREATE INDEX IF NOT EXISTS order_marks_note ON order_marks (note_id, order_index, at);
 DROP TRIGGER IF EXISTS order_marks_no_change ON order_marks;
 CREATE TRIGGER order_marks_no_change BEFORE UPDATE OR DELETE ON order_marks FOR EACH ROW EXECUTE FUNCTION audit_append_only();
+
+-- v20: autorizaciones (consentimiento informado). Se imprimen, se firman en papel y se sube la foto o el PDF.
+CREATE TABLE IF NOT EXISTS authorizations (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  hospitalization_id TEXT NOT NULL REFERENCES hospitalizations(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  template TEXT NOT NULL CHECK (template IN ('general','procedure')),
+  data TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','signed','refused','revoked')),
+  created_by TEXT NOT NULL REFERENCES staff(id), created_at TEXT NOT NULL,
+  file_id TEXT, status_at TEXT, status_by TEXT, status_note TEXT
+);
+CREATE INDEX IF NOT EXISTS authorizations_h ON authorizations (hospitalization_id, created_at);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -672,7 +686,7 @@ export async function nextFolio(q: Sql, clinicId: string, now: Date) {
 /** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
 export async function resetDemo(sql: Sql) {
   await sql.tx(async (q) => {
-    await q.exec(`TRUNCATE order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
+    await q.exec(`TRUNCATE authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
       attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
     await seed(q)

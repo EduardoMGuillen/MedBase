@@ -380,6 +380,38 @@ export interface InpatientNote {
   procedure?: ProcedureData
 }
 
+/** Autorización (consentimiento informado) de la estancia. */
+export interface Authorization {
+  id: string
+  hospitalizationId: string
+  patientId: string
+  template: 'general' | 'procedure'
+  data: AuthorizationData
+  status: 'pending' | 'signed' | 'refused' | 'revoked'
+  createdBy: string
+  createdAt: string
+  fileId?: string // foto o PDF de la hoja firmada
+  statusAt?: string
+  statusBy?: string
+  statusNote?: string
+}
+
+export interface AuthorizationData {
+  procedure?: string
+  diagnosis?: string
+  description?: string
+  benefits?: string
+  risks?: string
+  alternatives?: string
+  notDoing?: string
+  anesthesia?: string
+  representative?: { name: string; dni?: string; relation?: string }
+  // Lo que se imprime, congelado al crearla
+  patient: { name: string; dni?: string; age: string; sex: 'F' | 'M'; record: string; minor: boolean }
+  doctor: { name: string; license?: string }
+  clinic: { name: string; address: string; phone: string; logo?: string }
+}
+
 /** Marca de enfermería sobre una orden médica. El estado de la orden es su última marca. */
 export interface OrderMark {
   id: string
@@ -453,6 +485,7 @@ export interface InpatientFile {
   procedures: HospProcedure[]
   labs: Attachment[]
   marks: OrderMark[]
+  authorizations: Authorization[]
 }
 
 // ---------- Crónicos y seguimientos ----------

@@ -3,9 +3,10 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
-import { toAttachment, toBed, toDose, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure } from '../mappers.js'
+import { toAttachment, toAuthorization, toBed, toDose, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure } from '../mappers.js'
+import { age as ageText } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
-import { isScheduled, medLabel } from '../../src/lib/inpatient.js'
+import { isScheduled, medLabel, yearsOld } from '../../src/lib/inpatient.js'
 
 const dx = z.array(z.object({ code: z.string().trim().min(1), label: z.string().trim().min(1) }))
 const when = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'La fecha u hora no es válida.')
@@ -159,7 +160,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const cid = clinicOf(req)
     const h = (await hospRow(cid, String(req.params.id)))!
     const id = String(h.id)
-    const [notes, meds, doses, procedures, labs, marks] = await Promise.all([
+    const [notes, meds, doses, procedures, labs, marks, auths] = await Promise.all([
       sql.query('SELECT * FROM hosp_notes WHERE hospitalization_id = ? ORDER BY at, id', [id]),
       sql.query('SELECT * FROM hosp_meds WHERE hospitalization_id = ? ORDER BY ordered_at, id', [id]),
       sql.query('SELECT d.* FROM hosp_doses d JOIN hosp_meds m ON m.id = d.med_id WHERE m.hospitalization_id = ? ORDER BY d.given_at', [id]),
@@ -167,11 +168,12 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       sql.query(`SELECT ${ATTACH_META} FROM attachments WHERE clinic_id = ? AND patient_id = ? AND category = 'lab' AND (hospitalization_id = ? OR (taken_at >= ? AND taken_at <= ?))
         ORDER BY COALESCE(taken_at, uploaded_at) DESC`, [cid, String(h.patient_id), id, String(h.admitted_at), String(h.discharged_at ?? '9999')]),
       sql.query('SELECT * FROM order_marks WHERE hospitalization_id = ? ORDER BY at, id', [id]),
+      sql.query('SELECT * FROM authorizations WHERE hospitalization_id = ? ORDER BY created_at', [id]),
     ])
     await audit(userOf(req), `Consultó el expediente de hospitalización de ${await patientName(String(h.patient_id))}`)
     res.json({
       hospitalization: toHospitalization(h), notes: notes.map(toInpatientNote), meds: meds.map(toInpatientMed), doses: doses.map(toDose),
-      procedures: procedures.map(toProcedure), labs: labs.map(toAttachment), marks: marks.map(toOrderMark),
+      procedures: procedures.map(toProcedure), labs: labs.map(toAttachment), marks: marks.map(toOrderMark), authorizations: auths.map(toAuthorization),
     })
   })
 
@@ -285,16 +287,21 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     res.status(201).json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [id]))!))
   })
 
-  /** ¿Hay una autorización firmada para esta estancia en las 24 horas anteriores al procedimiento? */
+  /**
+   * ¿Hay una autorización firmada para esta estancia en las 24 horas anteriores al procedimiento? La hora del
+   * procedimiento se escribe al minuto, así que se toleran 2 minutos.
+   */
   async function signedAuthorization(hospId: string, performedAt: Date) {
     const since = new Date(performedAt.getTime() - 24 * 3_600_000).toISOString()
-    // Registros anteriores: autorización marcada como "autorizada"
-    return sql.one(`SELECT id FROM hosp_procedures WHERE hospitalization_id = ? AND kind = 'authorization' AND status = 'authorized' AND COALESCE(updated_at, created_at) >= ? LIMIT 1`, [hospId, since])
+    return (await sql.one(`SELECT id FROM authorizations WHERE hospitalization_id = ? AND status = 'signed' AND status_at >= ? AND status_at <= ? LIMIT 1`, [hospId, since, new Date(performedAt.getTime() + 2 * 60_000).toISOString()]))
+      // Registros anteriores: autorización marcada como "autorizada"
+      ?? sql.one(`SELECT id FROM hosp_procedures WHERE hospitalization_id = ? AND kind = 'authorization' AND status = 'authorized' AND COALESCE(updated_at, created_at) >= ? LIMIT 1`, [hospId, since])
   }
 
   /** La autorización elegida, si es de esta estancia y está firmada. */
   async function authorizationFor(hospId: string, id: string) {
-    return sql.one(`SELECT id FROM hosp_procedures WHERE id = ? AND hospitalization_id = ? AND kind = 'authorization' AND status = 'authorized'`, [id, hospId])
+    return (await sql.one(`SELECT id FROM authorizations WHERE id = ? AND hospitalization_id = ? AND status = 'signed'`, [id, hospId]))
+      ?? sql.one(`SELECT id FROM hosp_procedures WHERE id = ? AND hospitalization_id = ? AND kind = 'authorization' AND status = 'authorized'`, [id, hospId])
   }
 
   /**
@@ -327,6 +334,68 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       [noteId, cid, String(h.id), user.id, new Date().toISOString(), b.text, JSON.stringify(data)])
     await audit(user, `Escribió la nota del procedimiento "${b.name}" de ${await patientName(String(h.patient_id))} (realizado ${performedAt.toISOString()})${data.urgent ? ', urgencia sin autorización previa' : ''}`)
     res.status(201).json(toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [noteId]))!))
+  })
+
+  // ---------- Autorizaciones (consentimiento informado) ----------
+  const text = (max: number) => z.string().trim().max(max).optional()
+  app.post('/api/inpatient/:id/authorizations', auth, need('inpatient.orders'), async (req, res) => {
+    const b = parse(z.object({
+      template: z.enum(['general', 'procedure']),
+      procedure: text(200), diagnosis: text(300), description: text(2000), benefits: text(1500), risks: text(2500), alternatives: text(1500),
+      notDoing: text(1500), anesthesia: text(120),
+      representative: z.object({ name: z.string().trim().min(3, 'Escribe el nombre del representante.').max(120), dni: text(30), relation: text(40) }).optional(),
+    }), req.body)
+    if (b.template === 'procedure' && (!b.procedure || b.procedure.length < 3)) fail(400, 'Escribe el procedimiento a realizar.')
+    if (b.template === 'procedure' && (!b.description || !b.risks)) fail(400, 'Explica en qué consiste el procedimiento y sus riesgos.')
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const h = await activeHosp(cid, String(req.params.id))
+    const p = (await patientRow(cid, String(h.patient_id)))!
+    const doc = (await ctx.staffRow(user.id))!
+    const cfg = await ctx.settings(cid)
+    const birth = String(p.birth_date ?? '')
+    const minor = birth ? yearsOld(birth) < 18 : false
+    if (minor && !b.representative) fail(400, 'El paciente es menor de edad: escribe los datos de su representante.')
+    const data = {
+      ...b, template: undefined,
+      patient: { name: `${p.first_name} ${p.last_name}`, dni: p.dni ? String(p.dni) : undefined, age: ageText(birth), sex: (p.sex ?? 'F') as 'F' | 'M',
+        record: cfg.recordUsesDni && p.dni ? String(p.dni) : String(p.record), minor },
+      doctor: { name: String(doc.name), license: doc.license ? String(doc.license) : undefined },
+      clinic: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo },
+    }
+    const id = randomUUID()
+    await sql.run(`INSERT INTO authorizations (id, clinic_id, hospitalization_id, patient_id, template, data, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+      [id, cid, String(h.id), String(h.patient_id), b.template, JSON.stringify(data), user.id, new Date().toISOString()])
+    await audit(user, `Generó la autorización ${b.template === 'general' ? 'general de ingreso y atención' : `para "${b.procedure}"`} de ${data.patient.name}`)
+    res.status(201).json(toAuthorization((await sql.one('SELECT * FROM authorizations WHERE id = ?', [id]))!))
+  })
+
+  app.get('/api/authorizations/:aid', auth, need('inpatient.view'), async (req, res) => {
+    const row = (await sql.one('SELECT * FROM authorizations WHERE id = ? AND clinic_id = ?', [String(req.params.aid), clinicOf(req)])) ?? fail(404, 'La autorización no existe.')
+    res.json(toAuthorization(row!))
+  })
+
+  /**
+   * Firmada (con la foto o el PDF de la hoja firmada), rechazada ("No autorizo") o revocada. Lo registran
+   * enfermería o el médico; queda quién y cuándo.
+   */
+  app.post('/api/authorizations/:aid/status', auth, need('inpatient.view'), async (req, res) => {
+    const b = parse(z.object({ status: z.enum(['signed', 'refused', 'revoked']), fileId: z.string().optional(), note: z.string().trim().max(500).optional() }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const row = (await sql.one('SELECT * FROM authorizations WHERE id = ? AND clinic_id = ?', [String(req.params.aid), cid])) ?? fail(404, 'La autorización no existe.')
+    const a = toAuthorization(row!)
+    await activeHosp(cid, a.hospitalizationId)
+    const allowed: Record<string, string[]> = { signed: ['pending'], refused: ['pending'], revoked: ['signed'] }
+    if (!allowed[b.status].includes(a.status)) fail(409, b.status === 'revoked' ? 'Sólo se revoca una autorización firmada.' : 'Esta autorización ya no está pendiente de firma.')
+    if (b.status === 'signed' && !b.fileId) fail(400, 'Sube la foto o el PDF de la hoja firmada.')
+    if (b.status !== 'signed' && !(b.note && b.note.length >= 3) && !b.fileId) fail(400, 'Escribe una nota o sube la hoja firmada.')
+    if (b.fileId && !(await sql.one('SELECT 1 FROM attachments WHERE id = ? AND clinic_id = ? AND patient_id = ?', [b.fileId, cid, a.patientId]))) fail(400, 'El archivo no corresponde a este paciente.')
+    await sql.run('UPDATE authorizations SET status = ?, file_id = COALESCE(?, file_id), status_at = ?, status_by = ?, status_note = ? WHERE id = ?',
+      [b.status, b.fileId ?? null, new Date().toISOString(), user.id, b.note || null, a.id])
+    const label = { signed: 'firmada', refused: 'rechazada (no autorizo)', revoked: 'revocada' }[b.status]
+    await audit(user, `Registró como ${label} la autorización ${a.data.procedure ? `"${a.data.procedure}"` : 'general'} de ${a.data.patient.name}`)
+    res.json(toAuthorization((await sql.one('SELECT * FROM authorizations WHERE id = ?', [a.id]))!))
   })
 
   // ---------- Procedimientos y autorizaciones (registros anteriores) ----------

@@ -434,3 +434,40 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .hc > *, .rx-filters > * { min-width: 0; }
 .rx-filters .input { min-width: 0; width: 100%; }
 .row > * { min-width: 0; }
+
+/* ---------- Autorización (consentimiento informado), carta ---------- */
+.consent { font-size: 13.5px; }
+.consent .cert__title { font-size: 20px; margin: 14px 0 12px; }
+.consent__pt { display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.consent__info { display: grid; gap: 6px; margin: 12px 0; }
+.consent__info div { display: grid; grid-template-columns: 190px 1fr; gap: 10px; }
+.consent__info dt { font-weight: 700; color: var(--ink-deep); }
+.consent__info dd { margin: 0; white-space: pre-wrap; }
+.consent__intro { margin: 8px 0 4px; }
+.consent__list { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.consent__signs { display: grid; grid-template-columns: 1fr 110px 1fr; gap: 20px 24px; margin-top: 24px; align-items: start; }
+.consent__signs > .consent__print { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.consent__signs > div { font-size: 12.5px; }
+.consent__signs small { color: var(--muted); }
+.consent__line { display: block; border-top: 1px solid var(--petrol); margin: 34px 0 4px; }
+.consent__print { grid-row: span 2; border: 1px solid var(--petrol); height: 120px; display: grid; place-items: center; text-align: center; color: var(--muted); }
+.consent__box { margin-top: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; }
+@media (max-width: 720px) {
+  .consent__info div { grid-template-columns: 1fr; gap: 0; }
+  .consent__signs { grid-template-columns: 1fr; }
+  .consent__print { grid-row: auto; height: 90px; }
+}
+@media print {
+  .consent { font-size: 10.5px; max-width: none; padding: 0; }
+  .consent .consent__list { gap: 1px; }
+  .consent .cert__title { margin: 6px 0 8px; }
+  .consent .consent__signs { margin-top: 10px; gap: 8px 20px; }
+  .consent .rx-sheet__foot { margin-top: 10px; padding-top: 6px; }
+  .consent .consent__box { margin-top: 8px; padding: 6px 10px; }
+  .consent .consent__info div { grid-template-columns: 170px 1fr; }
+  .consent .consent__signs { grid-template-columns: 1fr 100px 1fr; }
+}
+
+/* Documentos tamaño carta: márgenes de impresión y sin avisos de la app */
+@page { size: letter; margin: 12mm; }
+@media print { .toast { display: none !important; } }

@@ -1,5 +1,5 @@
 import type {
-  Appointment, Attachment, AuditEntry, Background, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
+  Appointment, Attachment, AuditEntry, Authorization, AuthorizationData, Background, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
   Patient, Payment, Prescription, Service, Staff, Vitals,
 } from '../src/lib/types.js'
 import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
@@ -114,6 +114,12 @@ export const toInpatientMed = (r: Row): InpatientMed => ({
 
 export const toOrderMark = (r: Row) => ({
   id: String(r.id), noteId: String(r.note_id), index: Number(r.order_index), action: r.action as 'check' | 'uncheck', reason: s(r.reason), by: String(r.by_id), at: String(r.at),
+})
+
+export const toAuthorization = (r: Row): Authorization => ({
+  id: String(r.id), hospitalizationId: String(r.hospitalization_id), patientId: String(r.patient_id), template: r.template as Authorization['template'],
+  data: j<AuthorizationData>(r.data, {} as AuthorizationData), status: r.status as Authorization['status'], createdBy: String(r.created_by), createdAt: String(r.created_at),
+  fileId: s(r.file_id), statusAt: s(r.status_at), statusBy: s(r.status_by), statusNote: s(r.status_note),
 })
 
 export const toDose = (r: Row): Dose => ({

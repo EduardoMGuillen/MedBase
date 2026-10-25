@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { Camera, ChevronLeft, ChevronRight, FileText, LogOut, NotebookPen, Pill, Plus, TriangleAlert, X } from 'lucide-react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Camera, ChevronLeft, ChevronRight, FileSignature, FileText, LogOut, NotebookPen, Pill, Plus, TriangleAlert, X } from 'lucide-react'
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
@@ -9,8 +9,9 @@ import { ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
 import { doseTimes, INPATIENT_FREQUENCIES, medLabel, noteOrders, orderMark, pendingOrdersOf, slotState, stayDay, type SlotState } from '../lib/inpatient'
 import { MedAlertBanner } from './MedAlerts'
+import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { useNow } from '../lib/hooks'
-import type { Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
+import type { Authorization, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
 import { bedLabel, DxPicker } from './Inpatients'
 import { Identification } from './PatientChart'
 import { toBase64 } from './Attachments'
@@ -240,19 +241,22 @@ const SOAP: { key: 'subjective' | 'objective' | 'assessment' | 'plan'; letter: s
 const dm = (iso: string) => `${date(iso, { day: '2-digit', month: '2-digit' })} ${time(iso)}`
 
 /** Una entrada de la línea de tiempo: nota médica (SOAP, procedimiento o egreso) o registro anterior de procedimiento. */
-type TimelineItem = { at: string; key: string; note?: InpatientNote; legacy?: HospProcedure }
+type TimelineItem = { at: string; key: string; note?: InpatientNote; legacy?: HospProcedure; auth?: Authorization }
 
 function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () => void }) {
   const { staffById, can } = useStore()
   const notes = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'discharge' || n.kind === 'procedure')
   const hasAdmission = notes.some((n) => n.kind === 'admission')
   const discharged = notes.some((n) => n.kind === 'discharge')
-  const [writing, setWriting] = useState<null | 'note' | 'procedure' | 'discharge'>(null)
+  const [writing, setWriting] = useState<null | 'note' | 'procedure' | 'discharge' | 'authorization'>(null)
+  const [authFor, setAuthFor] = useState<string | undefined>()
+  const nav = useNavigate()
   const open = file.hospitalization.status === 'active'
   // Los procedimientos y autorizaciones registrados antes de las notas de procedimiento se conservan, sin estado
   const timeline: TimelineItem[] = [
     ...notes.map((n) => ({ at: n.at, key: n.id, note: n })),
     ...file.procedures.map((x) => ({ at: x.createdAt, key: x.id, legacy: x })),
+    ...file.authorizations.map((a) => ({ at: a.createdAt, key: a.id, auth: a })),
   ].sort((a, b) => a.at.localeCompare(b.at) || a.key.localeCompare(b.key))
   return (
     <div className="hc">
@@ -263,15 +267,20 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button className="btn btn--primary" onClick={() => setWriting('note')}><NotebookPen size={16} />{hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso'}</button>
               {hasAdmission && <button className="btn btn--primary" onClick={() => setWriting('procedure')}>Procedimiento</button>}
+              <button className="btn btn--primary" onClick={() => { setAuthFor(undefined); setWriting('authorization') }}><FileSignature size={16} />Autorización</button>
               {hasAdmission && !discharged && <button className="btn btn--primary" onClick={() => setWriting('discharge')}><LogOut size={16} />Egreso</button>}
             </div>
           </div>
         </section>
       )}
       {can('orders.review') && <PendingOrdersPanel file={file} reload={reload} />}
-      {writing === 'procedure' && <ProcedureNoteForm file={file} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }} />}
+      {writing === 'procedure' && <ProcedureNoteForm file={file} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }}
+        onAuthorize={(name) => { setAuthFor(name); setWriting('authorization') }} />}
+      {writing === 'authorization' && <AuthorizationForm file={file} p={p} initialProcedure={authFor} onClose={() => setWriting(null)}
+        onCreated={(a) => { setWriting(null); nav(`/app/autorizaciones/${a.id}`) }} />}
       {writing === 'discharge' && <Discharge file={file} p={p} reload={() => { setWriting(null); reload() }} />}
       {timeline.length ? timeline.map((item) => {
+        if (item.auth) return <AuthorizationEntry key={item.key} a={item.auth} file={file} reload={reload} />
         if (item.legacy) {
           const x = item.legacy
           return (
@@ -290,7 +299,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         }
         const n = item.note!
         if (n.kind === 'discharge') return <Discharge key={n.id} file={file} p={p} reload={reload} />
-        if (n.kind === 'procedure') return <ProcedureNote key={n.id} n={n} />
+        if (n.kind === 'procedure') return <ProcedureNote key={n.id} n={n} file={file} />
         return <SoapNote key={n.id} n={n} file={file} reload={reload} />
       }) : <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
       {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }} />}
@@ -396,9 +405,12 @@ function PendingOrdersPanel({ file, reload }: { file: File; reload: () => void }
 }
 
 /** Nota de procedimiento en la línea de tiempo: las dos horas, el texto y la autorización. */
-function ProcedureNote({ n }: { n: InpatientNote }) {
+function ProcedureNote({ n, file }: { n: InpatientNote; file: File }) {
   const { staffById } = useStore()
   const x = n.procedure!
+  const auth = x.authorizationId ? file.authorizations.find((a) => a.id === x.authorizationId) : undefined
+  const legacy = x.authorizationId && !auth ? file.procedures.find((a) => a.id === x.authorizationId) : undefined
+  const signedAt = auth?.statusAt ?? legacy?.updatedAt ?? legacy?.createdAt
   return (
     <article className="panel consult-entry">
       <div className="panel__head">
@@ -408,6 +420,7 @@ function ProcedureNote({ n }: { n: InpatientNote }) {
       <div className="panel__body note">
         <div className="note__sec"><h4>{x.name}</h4><p>{n.text}</p></div>
         {x.urgent && <p className="badge badge--amber" style={{ whiteSpace: 'normal' }}>Urgencia, sin autorización previa: {x.justification}</p>}
+        {signedAt && <p className="badge badge--mint" style={{ whiteSpace: 'normal' }}>Autorización firmada ✓ ({dm(signedAt)})</p>}
       </div>
     </article>
   )
@@ -417,16 +430,23 @@ function ProcedureNote({ n }: { n: InpatientNote }) {
  * Nota de procedimiento: nombre, fecha y hora (por defecto ahora; se corrige si se escribe después) y un
  * solo cuadro de texto. Si no hay autorización firmada en las últimas 24 horas se avisa antes de guardar.
  */
-function ProcedureNoteForm({ file, onClose, onSaved }: { file: File; onClose: () => void; onSaved: () => void }) {
+function ProcedureNoteForm({ file, onClose, onSaved, onAuthorize }: { file: File; onClose: () => void; onSaved: () => void; onAuthorize: (procedure: string) => void }) {
   const { addProcedureNote } = useStore()
   const now = useNow()
   const [f, setF] = useState(() => ({ name: '', performedAt: inputDateTime(new Date()), text: '', urgent: false, justification: '' }))
   const [busy, setBusy] = useState(false)
   const performed = new Date(f.performedAt)
   const future = performed.getTime() > now.getTime() + 60_000
-  // Autorizaciones firmadas en las 24 horas anteriores al procedimiento (registros anteriores marcados como autorizados)
-  const auths = file.procedures.filter((x) => x.kind === 'authorization' && x.status === 'authorized'
-    && new Date(x.updatedAt ?? x.createdAt).getTime() >= performed.getTime() - 24 * 3_600_000)
+  // Autorizaciones firmadas en las 24 horas anteriores al procedimiento (y registros anteriores marcados como autorizados)
+  const since = performed.getTime() - 24 * 3_600_000
+  const auths = [
+    ...file.authorizations.filter((a) => a.status === 'signed' && a.statusAt && new Date(a.statusAt).getTime() >= since && new Date(a.statusAt).getTime() <= performed.getTime() + 2 * 60_000)
+      .map((a) => ({ id: a.id, name: a.data.procedure ?? 'Autorización general', at: a.statusAt! })),
+    ...file.procedures.filter((x) => x.kind === 'authorization' && x.status === 'authorized' && new Date(x.updatedAt ?? x.createdAt).getTime() >= since)
+      .map((x) => ({ id: x.id, name: x.name, at: x.updatedAt ?? x.createdAt })),
+  ]
+  const [authId, setAuthId] = useState<string | null>(null)
+  const chosen = auths.find((a) => a.id === authId) ?? auths[0]
   const covered = auths.length > 0
   const ready = f.name.trim().length >= 3 && f.performedAt && !future && f.text.trim().length >= 10 && (covered || (f.urgent && f.justification.trim().length >= 10))
   return (
@@ -435,7 +455,7 @@ function ProcedureNoteForm({ file, onClose, onSaved }: { file: File; onClose: ()
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
         const ok = await addProcedureNote(file.hospitalization.id, {
-          name: f.name.trim(), performedAt: performed.toISOString(), text: f.text.trim(), authorizationId: covered ? auths[0].id : undefined,
+          name: f.name.trim(), performedAt: performed.toISOString(), text: f.text.trim(), authorizationId: covered ? chosen.id : undefined,
           urgent: !covered && f.urgent, justification: !covered && f.urgent ? f.justification.trim() : undefined,
         })
         setBusy(false)
@@ -452,10 +472,14 @@ function ProcedureNoteForm({ file, onClose, onSaved }: { file: File; onClose: ()
       <label className="field"><span>Nota</span>
         <textarea className="textarea textarea--lg" value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} placeholder="Indicación, técnica, hallazgos, complicaciones, estado del paciente al terminar." /></label>
       {covered ? (
-        <div className="alert-strip alert-strip--calm">Autorización firmada ✓ ({dm(auths[0].updatedAt ?? auths[0].createdAt)}): {auths[0].name}</div>
+        <div className="alert-strip alert-strip--calm" style={{ flexWrap: 'wrap' }}>Autorización firmada ✓ ({dm(chosen.at)}):
+          {auths.length > 1
+            ? <select className="select" style={{ width: 'auto' }} value={chosen.id} onChange={(e) => setAuthId(e.target.value)}>{auths.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+            : <b>{chosen.name}</b>}</div>
       ) : (
         <div className="alert-strip alert-strip--amber" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
           <span>No hay autorización firmada registrada para este procedimiento en las últimas 24 horas.</span>
+          <button type="button" className="btn btn--soft btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => onAuthorize(f.name.trim())}><FileSignature size={14} />Crear la autorización</button>
           <label className="check-line" style={{ background: '#fff' }}><input type="checkbox" checked={f.urgent} onChange={(e) => setF({ ...f, urgent: e.target.checked })} />
             <span><b>Urgencia, sin autorización previa</b><small>Escribe por qué no se pudo obtener antes.</small></span></label>
           {f.urgent && <textarea className="textarea textarea--sm" rows={2} value={f.justification} onChange={(e) => setF({ ...f, justification: e.target.value })} placeholder="Justificación" aria-label="Justificación de la urgencia" />}
