@@ -336,13 +336,13 @@ export function seedInpatient(now = new Date()) {
   const hospitalizations: Hospitalization[] = [
     { id: 'hz1', patientId: 'p11', bedId: 'bed-203', admittedAt: iso(t0), admittedBy: doc, reason: 'Dolor abdominal en fosa ilíaca derecha de 18 horas, con náuseas y fiebre.',
       diagnoses: [{ code: 'K35.8', label: 'Apendicitis aguda, otra y la no especificada' }], companionName: 'Iris Velásquez', companionRelation: 'Esposa', companionPhone: '9812-0090',
-      patientPhone: '9812-4471', status: 'active' },
+      patientPhone: '9812-4471', status: 'active', kind: 'hospital' },
     { id: 'hz2', patientId: 'p12', bedId: 'bed-102', admittedAt: iso(dayAt(-1, 16)), admittedBy: doc, reason: 'Tos productiva, fiebre y dificultad respiratoria de 4 días.',
-      diagnoses: [{ code: 'J18.9', label: 'Neumonía, no especificada' }], companionName: 'Rina Mejía', companionRelation: 'Hija', companionPhone: '9933-1204', patientPhone: '2234-8810', status: 'active' },
+      diagnoses: [{ code: 'J18.9', label: 'Neumonía, no especificada' }], companionName: 'Rina Mejía', companionRelation: 'Hija', companionPhone: '9933-1204', patientPhone: '2234-8810', status: 'active', kind: 'hospital' },
     { id: 'hz3', patientId: 'p13', bedId: 'bed-104', admittedAt: iso(dayAt(-2, 21)), admittedBy: doc, reason: 'Cefalea intensa y presión arterial de 210/120 mmHg.',
-      diagnoses: [{ code: 'I16.9', label: 'Crisis hipertensiva, no especificada' }], companionName: 'Marta Ochoa', companionRelation: 'Esposa', companionPhone: '9540-7712', patientPhone: '9540-3318', status: 'active' },
+      diagnoses: [{ code: 'I16.9', label: 'Crisis hipertensiva, no especificada' }], companionName: 'Marta Ochoa', companionRelation: 'Esposa', companionPhone: '9540-7712', patientPhone: '9540-3318', status: 'active', kind: 'hospital' },
     { id: 'hz4', patientId: 'p14', bedId: 'bed-207', admittedAt: iso(dayAt(-1, 10)), admittedBy: doc, reason: 'Dolor en hipocondrio derecho, vómitos y fiebre de 2 días.',
-      diagnoses: [{ code: 'K81.0', label: 'Colecistitis aguda' }], companionName: 'Javier Bonilla', companionRelation: 'Esposo', companionPhone: '3345-1180', patientPhone: '3345-9902', status: 'active' },
+      diagnoses: [{ code: 'K81.0', label: 'Colecistitis aguda' }], companionName: 'Javier Bonilla', companionRelation: 'Esposo', companionPhone: '3345-1180', patientPhone: '3345-9902', status: 'active', kind: 'hospital' },
   ]
 
   const note = (id: string, hospitalizationId: string, kind: InpatientNote['kind'], at: Date, s: string, o: string, a: string, pl: string): InpatientNote =>
@@ -645,7 +645,7 @@ export function seedCases(next: CaseNumbers, now = new Date()) {
     id: 'chz1', patientId: 'p17', bedId: CASE_BED, consultationId: fromConsult, admittedAt: iso(admitted), admittedBy: internist,
     reason: 'Celulitis de pierna derecha con fiebre, de 3 días de evolución, en paciente diabético.', diagnoses: [DX.cellulitis, DX.dm2],
     companionName: 'Marlen Flores', companionRelation: 'Esposa', companionPhone: '9734-2210', patientPhone: '9734-5508',
-    status: 'discharged', dischargedAt: iso(discharged), dischargedBy: internist, prescriptionId: 'crx-egreso',
+    kind: 'hospital', status: 'discharged', dischargedAt: iso(discharged), dischargedBy: internist, prescriptionId: 'crx-egreso',
   }]
   const soap = (id: string, kind: 'admission' | 'evolution', when: Date, s: string, o: string, a: string, pl: string, orders: string[]): InpatientNote =>
     ({ id, hospitalizationId: 'chz1', kind, authorId: internist, at: iso(when), subjective: s, objective: o, assessment: a, plan: pl, text: '', orders })

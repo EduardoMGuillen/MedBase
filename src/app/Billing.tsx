@@ -11,7 +11,7 @@ type Tab = 'pending' | 'today' | 'history'
 const METHODS: PaymentMethod[] = ['cash', 'card', 'transfer', 'insurance']
 
 export default function Billing() {
-  const { appointments, patient, staffById, settings, fetchPayments, notify } = useStore()
+  const { appointments, patient, staffById, settings, fetchPayments, notify, stayOf } = useStore()
   const nav = useNavigate()
   const [tab, setTab] = useState<Tab>('pending')
   const [charging, setCharging] = useState<{ appt?: Appointment } | null>(null)
@@ -55,7 +55,7 @@ export default function Billing() {
             return (
               <div key={a.id} className="row" style={{ gridTemplateColumns: '110px 1fr auto' }}>
                 <span className="num" style={{ fontSize: 13.5 }}>{date(a.start, { day: 'numeric', month: 'short' })} {time(a.start)}</span>
-                <div className="row__who"><strong>{fullName(p)}</strong><span>{a.reason}, con {staffById(a.doctorId)?.name}</span></div>
+                <div className="row__who"><strong>{fullName(p)}{stayOf(p.id) && <span className="badge badge--ink" style={{ marginLeft: 8 }}>{stayOf(p.id) === 'observation' ? 'En observación' : 'Hospitalizado'}</span>}</strong><span>{[a.reason, `con ${staffById(a.doctorId)?.name}`].filter(Boolean).join(', ')}</span></div>
                 <button className="btn btn--primary btn--sm" onClick={() => setCharging({ appt: a })}><Receipt size={15} />Cobrar</button>
               </div>
             )

@@ -23,7 +23,7 @@ import type { PrescriptionItem } from '../lib/types'
 interface Draft {
   reason: string; history: string; exam: string; observations: string; dx: { code: string; label: string }[]
   indications: string[]; meds: PrescriptionItem[]
-  followups: FollowupInput[]; admit: boolean
+  followups: FollowupInput[]; admit: boolean; observe?: boolean
   orders?: { text: string; rx?: PrescriptionItem }[]
 }
 
@@ -70,6 +70,7 @@ export default function Consultation() {
   const [followups, setFollowups] = useState<FollowupInput[]>(saved.followups ?? [])
   const [newFollowup, setNewFollowup] = useState<FollowupInput | null>(null)
   const [admit, setAdmit] = useState(saved.admit ?? false)
+  const [observe, setObserve] = useState(saved.observe ?? false)
   const [dx, setDx] = useState<{ code: string; label: string }[]>(saved.dx ?? [])
   const [dxQuery, setDxQuery] = useState('')
   const [indications, setIndications] = useState<string[]>(saved.indications ?? [])
@@ -101,7 +102,7 @@ export default function Consultation() {
   }, [todayVitals?.id])
 
   useEffect(() => {
-    const d: Draft = { reason, history, exam, observations, dx, indications, meds, followups, admit }
+    const d: Draft = { reason, history, exam, observations, dx, indications, meds, followups, admit, observe }
     const blank = !history && !exam && !observations && !dx.length && !indications.length && !meds.length && !followups.length
     const t = setTimeout(() => {
       try {
@@ -110,7 +111,7 @@ export default function Consultation() {
       } catch { /* sin almacenamiento local */ }
     }, 600)
     return () => clearTimeout(t)
-  }, [apptId, reason, history, exam, observations, dx, indications, meds, followups, admit])
+  }, [apptId, reason, history, exam, observations, dx, indications, meds, followups, admit, observe])
 
   if (!appt || !p || !user) return <div className="page"><div className="empty">No se encontró la cita. Vuelve a la <Link to="/app/agenda">agenda</Link>.</div></div>
   if (appt.status === 'done') return <div className="page"><div className="empty">Esta consulta ya fue firmada. Puedes verla en el <Link to={`/app/pacientes/${p.id}`}>expediente</Link>.</div></div>
@@ -147,13 +148,15 @@ export default function Consultation() {
       appointmentId: appt.id, reason: reason.trim(), symptoms: [], history, exam, observations: observations.trim(), diagnoses: dx,
       // En el expediente el manejo se lee completo: primero las indicaciones y luego los medicamentos
       orders: [...indications, ...meds.map(medicationOrder)], indications,
-      plan: '', vitalsId: todayVitals?.id, followups,
+      plan: '', vitalsId: todayVitals?.id, followups, observe: observe && !hospitalized,
     }, meds)
     setSigning(false)
     if (r) {
       try { localStorage.removeItem(draftKey(apptId)) } catch { /* noop */ }
       // Ingreso a hospitalización: se abre la hoja de ingreso con los diagnósticos de esta consulta
       if (admit && !hospitalized) nav(`/app/hospitalizados?paciente=${p.id}&consulta=${r.consultationId}`)
+      // Ingreso a observación: ya quedó creado al firmar
+      else if (r.observationId) nav(`/app/observacion/${r.observationId}`)
       else nav(r.prescriptionId ? `/app/recetas/${r.prescriptionId}` : `/app/pacientes/${p.id}`)
     }
   }
@@ -333,12 +336,17 @@ export default function Consultation() {
               {needsDni && <IdentityPrompt p={p} />}
               {store.can('inpatient.orders') && (
                 hospitalized
-                  ? <p style={{ fontSize: 14 }}><BedDouble size={15} style={{ verticalAlign: '-3px' }} /> {p.firstName} ya está hospitalizado. <Link to={`/app/hospitalizados/${hospitalized.id}`}>Abrir su expediente</Link>.</p>
-                  : <label className="check-line"><input type="checkbox" checked={admit} onChange={(e) => setAdmit(e.target.checked)} />
-                    <span><b>Ingreso a hospitalización</b><small>Al firmar se abre la hoja de ingreso con los diagnósticos de esta consulta.</small></span></label>
+                  ? <p style={{ fontSize: 14 }}><BedDouble size={15} style={{ verticalAlign: '-3px' }} /> {p.firstName} ya está {hospitalized.kind === 'observation' ? 'en observación' : 'hospitalizado'}. <Link to={`/app/${hospitalized.kind === 'observation' ? 'observacion' : 'hospitalizados'}/${hospitalized.id}`}>Abrir su expediente</Link>.</p>
+                  : <>
+                    {/* Son excluyentes: marcar una desmarca la otra */}
+                    <label className="check-line"><input type="checkbox" checked={observe} onChange={(e) => { setObserve(e.target.checked); if (e.target.checked) setAdmit(false) }} />
+                      <span><b>Ingreso a observación</b><small>Observación corta (hidratar, nebulizar, vigilar). Al firmar se abre su expediente de observación.</small></span></label>
+                    <label className="check-line"><input type="checkbox" checked={admit} onChange={(e) => { setAdmit(e.target.checked); if (e.target.checked) setObserve(false) }} />
+                      <span><b>Ingreso a hospitalización</b><small>Al firmar se abre la hoja de ingreso con los diagnósticos de esta consulta.</small></span></label>
+                  </>
               )}
               <p style={{ fontSize: 14, color: 'var(--muted)' }}>
-                {missing.length ? `Para firmar falta ${missing.join(', ')}.` : `Al firmar se cierra la cita${rxCount ? ` y se emite una receta con ${rxCount} medicamento${rxCount > 1 ? 's' : ''}` : ''}${admit && !hospitalized ? ' y pasas al ingreso hospitalario' : ''}.`}
+                {missing.length ? `Para firmar falta ${missing.join(', ')}.` : `Al firmar se cierra la cita${rxCount ? ` y se emite una receta con ${rxCount} medicamento${rxCount > 1 ? 's' : ''}` : ''}${admit && !hospitalized ? ' y pasas al ingreso hospitalario' : observe && !hospitalized ? ' e ingresa a observación' : ''}.`}
               </p>
               <button className="btn btn--primary btn--lg" disabled={missing.length > 0 || signing} onClick={sign}>Firmar consulta{rxCount ? ' y receta' : ''}</button>
             </div>

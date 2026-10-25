@@ -52,6 +52,10 @@ export interface ClinicSettings {
   /** Si es verdadero, el número de identidad hace de número de expediente en recetas y documentos. */
   recordUsesDni: boolean
   logo?: string // imagen en data URL, para recetas y constancias
+  /** Horas en observación tras las que el paciente se resalta en la lista. */
+  obsAlertHours?: number
+  /** Si es verdadero, las órdenes de las notas de observación también se revisan como checklist. */
+  obsOrderChecklist?: boolean
 }
 
 export interface Service {
@@ -326,8 +330,10 @@ export interface Bed {
 
 export interface Hospitalization {
   id: string
+  /** 'observation': observación corta, sin cama. Al pasar a hospitalización conserva su expediente. */
+  kind: 'hospital' | 'observation'
   patientId: string
-  bedId: string
+  bedId?: string
   consultationId?: string // consulta externa de la que salió el ingreso
   admittedAt: string
   admittedBy: string
@@ -341,6 +347,9 @@ export interface Hospitalization {
   dischargedAt?: string
   dischargedBy?: string
   prescriptionId?: string // receta de egreso
+  observationAt?: string // si vino de observación: cuándo entró a observación
+  convertedAt?: string // cuándo pasó de observación a hospitalización
+  convertedBy?: string
 }
 
 export interface DischargeData {

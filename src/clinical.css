@@ -471,3 +471,9 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 /* Documentos tamaño carta: márgenes de impresión y sin avisos de la app */
 @page { size: letter; margin: 12mm; }
 @media print { .toast { display: none !important; } }
+
+/* ---------- Observación ---------- */
+.obs-row { grid-template-columns: 1fr auto; text-decoration: none; color: inherit; align-items: center; }
+.obs-row--over { background: linear-gradient(90deg, var(--red), transparent 60%); }
+.obs-row .badge { display: inline-flex; gap: 4px; align-items: center; }
+.obs-row .row__who > span { display: block; }

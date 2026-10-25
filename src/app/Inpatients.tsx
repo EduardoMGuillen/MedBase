@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { Modal, PageHead } from '../components/ui'
 import { age, dateTime, fullName, inputDateTime } from '../lib/format'
 import { ICD10 } from '../lib/catalogs'
-import { stayDay } from '../lib/inpatient'
+import { stayDay, stayPath } from '../lib/inpatient'
 import type { Bed, Hospitalization } from '../lib/types'
 
 export const bedLabel = (b?: Pick<Bed, 'room' | 'label'>) => (b ? `Cuarto ${b.room}${b.label ? `-${b.label}` : ''}` : 'Sin cama')
@@ -24,7 +24,8 @@ export default function Inpatients() {
   const shown = beds
     .filter((b) => b.active)
     .sort((a, b) => a.room.localeCompare(b.room, 'es', { numeric: true }) || a.label.localeCompare(b.label))
-  const byBed = new Map(inpatients.map((h) => [h.bedId, h]))
+  // El tablero es de camas: los pacientes en observación no ocupan cama
+  const byBed = new Map(inpatients.filter((h) => h.kind !== 'observation' && h.bedId).map((h) => [h.bedId!, h]))
   const occupied = shown.filter((b) => byBed.has(b.id)).length
 
   return (
@@ -177,7 +178,7 @@ export function AdmitModal({ initialPatientId, consultationId, bedId, onClose, o
     </>}>
       {initialPatientId && p ? <div className="field"><span>Paciente</span><div className="picked"><b>{fullName(p)}</b><span className="muted">{p.record}, {age(p.birthDate)}</span></div></div>
         : <PatientPicker value={patientId} onChange={setPatientId} />}
-      {already && <div className="alert-strip">Este paciente ya está hospitalizado. <Link to={`/app/hospitalizados/${already.id}`}>Abrir su expediente</Link>.</div>}
+      {already && <div className="alert-strip">Este paciente ya está {already.kind === 'observation' ? 'en observación: desde su expediente puedes pasarlo a hospitalización' : 'hospitalizado'}. <Link to={stayPath(already)}>Abrir su expediente</Link>.</div>}
       <div className="form-grid">
         <label className="field"><span>Cama</span>
           <select className="select" value={f.bedId} onChange={set('bedId')}>

@@ -4,7 +4,7 @@ import { ChevronLeft, Copy, FileText, MessageCircle, Plus, Printer, X } from 'lu
 import { useStore } from '../lib/store'
 import { Loading, PageHead } from '../components/ui'
 import { age, date, fullName, identityLine, localISODate, medicationLine, recordNumber, time, whatsappUrl } from '../lib/format'
-import { yearsOld } from '../lib/inpatient'
+import { stayPath, yearsOld } from '../lib/inpatient'
 import { normalize } from '../lib/patients'
 import { MedicationForm, MedicationList } from '../components/Medications'
 import { PatientPicker } from './Inpatients'
@@ -153,7 +153,7 @@ export function PrescriptionSheet() {
   return (
     <div className="page">
       <div className="page-head no-print">
-        <Link className="btn btn--ghost" to={h ? `/app/hospitalizados/${h.id}` : `/app/pacientes/${p.id}`}><ChevronLeft size={16} />Expediente de {p.firstName}</Link>
+        <Link className="btn btn--ghost" to={h ? stayPath(h) : `/app/pacientes/${p.id}`}><ChevronLeft size={16} />Expediente de {p.firstName}</Link>
         <div className="page-head__actions">
           {p.phone && <a className="btn btn--ghost" href={whatsappUrl(p.phone, rxMessage)} target="_blank" rel="noreferrer"><MessageCircle size={16} />Enviar por WhatsApp</a>}
           <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir o guardar PDF (media carta)</button>

@@ -42,8 +42,8 @@ const SESSION_HOURS = 10
 
 interface AuthedRequest extends Request { user: Staff }
 
-/** Tipo de estancia; la columna `kind` llega con el módulo de observación (antes de él, todo es hospitalización). */
-const STAY_KIND = `'hospital'`
+/** Tipo de estancia: hospitalización u observación. */
+const STAY_KIND = 'kind'
 
 const COLORS = ['#2335C9', '#0F8A6E', '#B4407A', '#C27A12', '#6A4BC4', '#2C7DA0', '#5B6472']
 const ROLES = ['admin', 'doctor', 'nurse', 'reception'] as const
@@ -251,7 +251,7 @@ export function createApp(opts: AppOptions) {
     const user = userOf(req)
     // La administración de la plataforma no carga datos de ninguna clínica
     if (!user.clinicId) {
-      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], beds: [], inpatients: [], followups: [], discharges: [], clinicDrugs: [], pendingOrders: [],
+      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], beds: [], inpatients: [], followups: [], discharges: [], clinicDrugs: [], pendingOrders: [], stays: [],
         settings: { ...clinicSettings({ name: 'Clinara' }) } })
     }
     const cid = user.clinicId
@@ -260,7 +260,7 @@ export function createApp(opts: AppOptions) {
     const since = new Date(); since.setDate(since.getDate() - 90)
     const none = Promise.resolve([] as Row[])
     if (can(user.role, 'followups.view')) await sweepFollowupReminders(sql, cid)
-    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges, clinicDrugs, pending] = await Promise.all([
+    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges, clinicDrugs, pending, stays] = await Promise.all([
       sql.query('SELECT * FROM staff WHERE clinic_id = ? ORDER BY name', [cid]),
       // Los pendientes de registro sí viajan (agenda y 'Por llegar'); los que se unieron a otro expediente no
       sql.query('SELECT * FROM patients WHERE clinic_id = ? AND merged_into IS NULL ORDER BY last_name', [cid]),
@@ -279,6 +279,8 @@ export function createApp(opts: AppOptions) {
         WHERE clinic_id = ? AND status = 'discharged' AND discharged_at IS NOT NULL ORDER BY patient_id, discharged_at DESC`, [cid]),
       can(user.role, 'rx.write') || can(user.role, 'drugs.manage') ? sql.query('SELECT * FROM clinic_drugs WHERE clinic_id = ? ORDER BY name', [cid]) : none,
       can(user.role, 'orders.review') ? pendingOrders(sql, cid) : Promise.resolve([]),
+      // Estado del paciente (hospitalizado o en observación) para todos los roles, sin datos clínicos
+      sql.query(`SELECT patient_id, kind FROM hospitalizations WHERE clinic_id = ? AND status = 'active'`, [cid]),
     ])
     res.json({
       staff: staff.map(toStaff),
@@ -295,6 +297,7 @@ export function createApp(opts: AppOptions) {
       discharges: discharges.map((r) => ({ patientId: String(r.patient_id), at: String(r.discharged_at) })),
       clinicDrugs: clinicDrugs.map(toClinicDrug),
       pendingOrders: pending,
+      stays: stays.map((r) => ({ patientId: String(r.patient_id), kind: String(r.kind) })),
     })
   })
 
@@ -649,6 +652,8 @@ export function createApp(opts: AppOptions) {
       indications: z.array(z.string().trim().min(1).max(500)).max(40).optional(),
       observations: z.string().max(4000).default(''),
       followups: z.array(followupInput).max(5).default([]),
+      // Ingreso a observación: se crea en la misma transacción (excluyente con el ingreso a hospitalización)
+      observe: z.boolean().default(false),
       vitalsId: z.string().optional(),
       items: z.array(rxItem).default([]),
     }), req.body)
@@ -661,6 +666,11 @@ export function createApp(opts: AppOptions) {
     const patientId = String(appt!.patient_id)
     const name = await patientName(patientId)
     const consultId = randomUUID()
+    const observationId = c.observe ? randomUUID() : null
+    const patientPhone = c.observe ? String((await patientRow(cid, patientId))?.phone ?? '') : ''
+    if (c.observe && await sql.one(`SELECT 1 FROM hospitalizations WHERE patient_id = ? AND clinic_id = ? AND status = 'active'`, [patientId, cid])) {
+      fail(409, `${name} ya está en observación u hospitalizado.`)
+    }
     const rxId = c.items.length ? randomUUID() : null
     const now = new Date()
     let folio: string | null = null
@@ -683,8 +693,14 @@ export function createApp(opts: AppOptions) {
       await q.run(`UPDATE appointments SET status = 'done' WHERE id = ?`, [c.appointmentId])
       for (const f of c.followups) await insertFollowup(q, cid, user.id, { ...f, patientId })
       await audit(user, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
+      if (observationId) {
+        await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, patient_phone, status, kind)
+          VALUES (?,?,?,NULL,?,?,?,?,?,?,'active','observation')`,
+          [observationId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null])
+        await audit(user, `Ingresó a ${name} a observación desde la consulta externa`, q)
+      }
     })
-    res.status(201).json({ consultationId: consultId, prescriptionId: rxId, folio })
+    res.status(201).json({ consultationId: consultId, prescriptionId: rxId, folio, observationId })
   })
 
   app.get('/api/consultations/:id', auth, need('chart.view'), async (req, res) => {

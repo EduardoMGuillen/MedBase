@@ -10,7 +10,7 @@ import type { Row, Sql } from './sql.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '20'
+const SCHEMA_VERSION = '21'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -408,6 +408,20 @@ CREATE TABLE IF NOT EXISTS authorizations (
   file_id TEXT, status_at TEXT, status_by TEXT, status_note TEXT
 );
 CREATE INDEX IF NOT EXISTS authorizations_h ON authorizations (hospitalization_id, created_at);
+
+-- v21: observación. Es una estancia sin cama en la misma tabla: al pasar a hospitalización se le asigna
+-- cama y conserva sus notas, medicamentos, laboratorios y autorizaciones, en orden y con su autoría.
+ALTER TABLE hospitalizations
+  ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'hospital',
+  ADD COLUMN IF NOT EXISTS observation_at TEXT,
+  ADD COLUMN IF NOT EXISTS converted_at TEXT,
+  ADD COLUMN IF NOT EXISTS converted_by TEXT;
+ALTER TABLE hospitalizations DROP CONSTRAINT IF EXISTS hospitalizations_kind_check;
+ALTER TABLE hospitalizations ADD CONSTRAINT hospitalizations_kind_check CHECK (kind IN ('hospital','observation'));
+ALTER TABLE hospitalizations ALTER COLUMN bed_id DROP NOT NULL;
+ALTER TABLE clinics
+  ADD COLUMN IF NOT EXISTS obs_alert_hours INTEGER NOT NULL DEFAULT 24,
+  ADD COLUMN IF NOT EXISTS obs_order_checklist BOOLEAN NOT NULL DEFAULT FALSE;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

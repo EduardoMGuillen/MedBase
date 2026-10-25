@@ -14,7 +14,7 @@ import { AllergiesForm, BackgroundForm, IdentificationForm } from './PatientForm
 import type { Certificate, Consultation, Patient, Vitals } from '../lib/types'
 import { CERT_KIND } from '../lib/certificates'
 import { vitalLevel, type VitalKey } from '../lib/vitals'
-import { yearsOld } from '../lib/inpatient'
+import { stayPath, yearsOld } from '../lib/inpatient'
 
 /** Signos de una preclínica. Resalta lo que está fuera de rango según la edad (`src/lib/vitals.ts`). */
 export function VitalsGrid({ v, birthDate }: { v: Vitals; birthDate?: string }) {
@@ -151,7 +151,7 @@ type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'rx' | 'certs' | 'files'
 
 export default function PatientChart() {
   const { id } = useParams()
-  const { patient, appointments, staffById, can, updatePatient, followups, bed, inpatientOf, fetchCertificates } = useStore()
+  const { patient, appointments, staffById, can, updatePatient, followups, bed, inpatientOf, stayOf, fetchCertificates } = useStore()
   const [certs, setCerts] = useState<Certificate[] | null>(null)
   const [tab, setTab] = useState<Tab>('history')
   const [editing, setEditing] = useState<null | 'id' | 'allergies' | 'background'>(null)
@@ -184,7 +184,8 @@ export default function PatientChart() {
     <div className="page page--chart">
       <div className="sticky-top">
         <PatientHeader p={p} clinical={clinical}>
-          {hospitalized && <Link className="btn btn--soft btn--sm" to={`/app/hospitalizados/${hospitalized.id}`}><BedDouble size={15} />Hospitalizado, {bedLabel(bed(hospitalized.bedId))}</Link>}
+          {hospitalized && <Link className="btn btn--soft btn--sm" to={stayPath(hospitalized)}><BedDouble size={15} />{hospitalized.kind === 'observation' ? 'En observación' : `Hospitalizado, ${bedLabel(bed(hospitalized.bedId))}`}</Link>}
+          {!hospitalized && stayOf(p.id) && <span className="badge badge--ink">{stayOf(p.id) === 'observation' ? 'En observación' : 'Hospitalizado'}</span>}
         </PatientHeader>
         <div className="tabs tabs--scroll" role="tablist">
           {tabs.filter((t) => t[2]).map(([k, label]) => (
@@ -279,14 +280,14 @@ export default function PatientChart() {
           {hs[0] && (
             <div className="panel__head">
               <h2>Hospitalizaciones</h2>
-              <Link className="btn btn--primary btn--sm" to={`/app/hospitalizados/${hs[0].id}/expediente`}><FileText size={15} />Expediente completo</Link>
+              <Link className="btn btn--primary btn--sm" to={`${stayPath(hs[0])}/expediente`}><FileText size={15} />Expediente completo</Link>
             </div>
           )}
           {hs.length ? <div className="rows">{hs.map((h) => (
-            <Link key={h.id} to={`/app/hospitalizados/${h.id}`} className="row" style={{ gridTemplateColumns: '150px 1fr auto' }}>
+            <Link key={h.id} to={stayPath(h)} className="row" style={{ gridTemplateColumns: '150px 1fr auto' }}>
               <span className="num" style={{ fontSize: 13.5 }}>{date(h.admittedAt)}{h.dischargedAt ? ` al ${date(h.dischargedAt)}` : ''}</span>
-              <div className="row__who"><strong>{h.diagnoses.map((d) => d.label).join('; ')}</strong><span>{bedLabel(bed(h.bedId))}, ingresó {staffById(h.admittedBy)?.name}</span></div>
-              <span className={`badge ${h.status === 'active' ? 'badge--mint' : 'badge--done'}`}>{h.status === 'active' ? 'Hospitalizado' : 'Egresado'}</span>
+              <div className="row__who"><strong>{h.diagnoses.map((d) => d.label).join('; ')}</strong><span>{h.kind === 'observation' ? 'Observación' : bedLabel(bed(h.bedId))}{h.observationAt ? ' (vino de observación)' : ''}, ingresó {staffById(h.admittedBy)?.name}</span></div>
+              <span className={`badge ${h.status === 'active' ? 'badge--mint' : 'badge--done'}`}>{h.status === 'active' ? (h.kind === 'observation' ? 'En observación' : 'Hospitalizado') : 'Egresado'}</span>
             </Link>
           ))}</div> : <div className="empty">Sin hospitalizaciones.</div>}
         </section>

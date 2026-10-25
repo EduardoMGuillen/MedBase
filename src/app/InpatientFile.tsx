@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Camera, ChevronLeft, ChevronRight, FileSignature, FileText, LogOut, NotebookPen, Pill, Plus, TriangleAlert, X } from 'lucide-react'
+import { BedDouble, Camera, ChevronLeft, ChevronRight, FileSignature, FileText, LogOut, NotebookPen, Pill, Plus, TriangleAlert, X } from 'lucide-react'
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, fullName, inputDateTime, ROUTES, shortStaff, time } from '../lib/format'
 import { ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
-import { doseTimes, INPATIENT_FREQUENCIES, medLabel, noteOrders, orderMark, pendingOrdersOf, slotState, stayDay, type SlotState } from '../lib/inpatient'
+import { doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, noteOrders, orderMark, pendingOrdersOf, slotState, stayDay, type SlotState } from '../lib/inpatient'
 import { MedAlertBanner } from './MedAlerts'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { useNow } from '../lib/hooks'
 import type { Authorization, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
 import { bedLabel, DxPicker } from './Inpatients'
-import { Identification } from './PatientChart'
+import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
 import { toBase64 } from './Attachments'
 
 type Tab = 'sheet' | 'notes' | 'meds' | 'nursing' | 'labs'
@@ -26,40 +26,52 @@ export default function InpatientFile() {
   const [params] = useSearchParams()
   const [tab, setTab] = useState<Tab>(params.get('tab') === 'notas' ? 'notes' : 'sheet')
   const [missing, setMissing] = useState(false)
+  const now = useNow()
   const load = useCallback(() => {
     if (!id) return
     fetchInpatient(id).then(setFile).catch((e: Error) => { setMissing(true); notify(e.message, 'error') })
   }, [id, fetchInpatient, notify])
   useEffect(load, [load])
 
-  if (missing) return <div className="page"><div className="empty">No se encontró esta hospitalización. Vuelve a <Link to="/app/hospitalizados">Hospitalizados</Link>.</div></div>
-  if (!file) return <Loading label="Abriendo expediente de hospitalización" />
+  if (missing) return <div className="page"><div className="empty">No se encontró este expediente. Vuelve a <Link to="/app/hospitalizados">Hospitalizados</Link>.</div></div>
+  if (!file) return <Loading label="Abriendo expediente" />
   const h = file.hospitalization
   const p = patient(h.patientId)
   if (!p) return <Loading />
   const b = bed(h.bedId)
   const open = h.status === 'active'
+  // Observación: sin cama, sin notas ni órdenes de enfermería
+  const obs = h.kind === 'observation'
   const medical = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'procedure')
   const nursing = file.notes.filter((n) => n.kind === 'nursing')
-  const tabs: [Tab, string][] = [
+  const tabs: [Tab, string][] = obs ? [
+    ['sheet', 'Datos generales'],
+    ['notes', `Notas de evolución (${medical.length + (h.consultationId ? 1 : 0)})`],
+    ['meds', 'Hoja de medicamentos'],
+    ['labs', `Laboratorio (${file.labs.length})`],
+  ] : [
     ['sheet', 'Hoja de hospitalización'],
-    ['notes', `Notas de evolución (${medical.length})`],
+    ['notes', `Notas de evolución (${medical.length + (h.consultationId ? 1 : 0)})`],
     ['meds', 'Medicamentos'],
     ['nursing', `Notas de enfermería (${nursing.length})`],
     ['labs', `Laboratorios (${file.labs.length})`],
   ]
+  const base = `/app/${obs ? 'observacion' : 'hospitalizados'}/${h.id}`
 
   return (
     <div className="page page--chart">
       <div className="sticky-top">
         <PatientHeader p={p} clinical link>
-          <Link className="btn btn--primary btn--sm" to={`/app/hospitalizados/${h.id}/expediente`}><FileText size={15} />Expediente completo</Link>
+          <Link className="btn btn--primary btn--sm" to={`${base}/expediente`}><FileText size={15} />Expediente completo</Link>
         </PatientHeader>
         <div className="hosp-bar">
-          <span><b>{bedLabel(b)}</b></span>
-          <span>Ingresó {dateTime(h.admittedAt)}</span>
-          {open ? <span className="badge badge--mint">Día {stayDay(h.admittedAt)} de estancia</span>
+          <span><b>{obs ? 'Observación' : bedLabel(b)}</b></span>
+          <span>{obs ? 'Entró a observación' : 'Ingresó'} {dateTime(h.admittedAt)}</span>
+          {open ? (obs
+            ? <span className="badge badge--ink">{elapsed(Math.floor((now.getTime() - new Date(h.admittedAt).getTime()) / 60_000))} en observación</span>
+            : <span className="badge badge--mint">Día {stayDay(h.admittedAt)} de estancia</span>)
             : <span className="badge badge--done">Egresó {h.dischargedAt && dateTime(h.dischargedAt)}</span>}
+          {h.observationAt && <span className="badge badge--amber">Vino de observación ({dateTime(h.observationAt)})</span>}
           <span className="muted">{h.diagnoses.map((d) => d.label).join('; ')}</span>
         </div>
         <div className="tabs tabs--scroll" role="tablist">
@@ -71,24 +83,26 @@ export default function InpatientFile() {
       {tab === 'sheet' && (
         <div className="hc">
           <section className="panel hc__sec">
-            <div className="panel__head"><h2>Hoja de hospitalización</h2></div>
+            <div className="panel__head"><h2>{obs ? 'Ingreso a observación' : 'Hoja de hospitalización'}</h2></div>
             <div className="panel__body">
               <dl className="facts">
                 <div><dt>Fecha y hora del ingreso</dt><dd>{date(h.admittedAt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(h.admittedAt)}</dd></div>
-                <div><dt>Cuarto</dt><dd>{bedLabel(b)}</dd></div>
-                <div><dt>Ingresado por</dt><dd>{staffById(h.admittedBy)?.name}</dd></div>
+                {!obs && <div><dt>Cuarto</dt><dd>{bedLabel(b)}</dd></div>}
+                {h.observationAt && <div><dt>En observación desde</dt><dd>{dateTime(h.observationAt)}</dd></div>}
+                <div><dt>{obs ? 'Médico' : 'Ingresado por'}</dt><dd>{staffById(h.admittedBy)?.name}</dd></div>
                 <div><dt>Procedencia</dt><dd>{h.consultationId ? <Link to={`/app/nota/${h.consultationId}`}>Consulta externa</Link> : 'Emergencia o ingreso directo'}</dd></div>
-                <div><dt>Quién lo acompaña</dt><dd>{h.companionName ? `${h.companionName}${h.companionRelation ? ` (${h.companionRelation})` : ''}` : <span className="muted">Sin dato</span>}</dd></div>
-                <div><dt>Teléfono del acompañante</dt><dd>{h.companionPhone || <span className="muted">Sin dato</span>}</dd></div>
+                {!obs && <div><dt>Quién lo acompaña</dt><dd>{h.companionName ? `${h.companionName}${h.companionRelation ? ` (${h.companionRelation})` : ''}` : <span className="muted">Sin dato</span>}</dd></div>}
+                {!obs && <div><dt>Teléfono del acompañante</dt><dd>{h.companionPhone || <span className="muted">Sin dato</span>}</dd></div>}
                 <div><dt>Teléfono del paciente</dt><dd>{h.patientPhone || p.phone}</dd></div>
                 <div><dt>Motivo del ingreso</dt><dd>{h.reason}</dd></div>
               </dl>
               <h4 style={{ marginTop: 16 }}>Diagnósticos de ingreso</h4>
               <ol className="note__list">{h.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({d.code})</span></li>)}</ol>
+              {obs && h.consultationId && <ConsultVitals consultationId={h.consultationId} />}
             </div>
           </section>
           <section className="panel hc__sec">
-            <div className="panel__head"><h2>Datos generales</h2></div>
+            <div className="panel__head"><h2>Datos del paciente</h2></div>
             <div className="panel__body"><Identification p={p} /></div>
           </section>
         </div>
@@ -96,9 +110,38 @@ export default function InpatientFile() {
 
       {tab === 'meds' && <MedSheet file={file} p={p} reload={load} onWriteNote={() => setTab('notes')} />}
       {tab === 'notes' && <MedicalNotes file={file} p={p} reload={load} />}
-      {tab === 'nursing' && <NursingNotes file={file} reload={load} />}
+      {tab === 'nursing' && !obs && <NursingNotes file={file} reload={load} />}
       {tab === 'labs' && <Labs file={file} reload={load} />}
     </div>
+  )
+}
+
+/** Signos de la preclínica de la consulta que ingresó a observación: no se vuelven a escribir. */
+function ConsultVitals({ consultationId }: { consultationId: string }) {
+  const { fetchConsultation } = useStore()
+  const [data, setData] = useState<Awaited<ReturnType<typeof fetchConsultation>> | null>(null)
+  useEffect(() => { fetchConsultation(consultationId).then(setData).catch(() => null) }, [consultationId, fetchConsultation])
+  if (!data?.vitals) return null
+  return <><h4 style={{ marginTop: 16 }}>Signos de la preclínica ({time(data.vitals.takenAt)})</h4><VitalsGrid v={data.vitals} birthDate={data.patient.birthDate} /></>
+}
+
+/** La nota de consulta externa que originó la estancia es la primera nota de evolución. */
+function ConsultEntry({ consultationId }: { consultationId: string }) {
+  const { fetchConsultation, staffById } = useStore()
+  const [data, setData] = useState<Awaited<ReturnType<typeof fetchConsultation>> | null>(null)
+  useEffect(() => { fetchConsultation(consultationId).then(setData).catch(() => null) }, [consultationId, fetchConsultation])
+  if (!data) return <section className="panel"><div className="empty">Cargando la nota de consulta…</div></section>
+  const c = data.consultation
+  const author = staffById(c.doctorId)
+  return (
+    <article className="panel consult-entry">
+      <div className="panel__head">
+        <div><h2>Nota de consulta externa <span className="badge badge--ink">Ingreso</span></h2>
+          <p>{author?.name}{author ? `, ${ROLE_LABEL[author.role].toLowerCase()}` : ''} · {date(c.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(c.date)}</p></div>
+        <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}>Ver nota completa</Link>
+      </div>
+      <div className="panel__body"><ConsultationBody c={c} vitals={data.vitals} /></div>
+    </article>
   )
 }
 
@@ -246,7 +289,11 @@ type TimelineItem = { at: string; key: string; note?: InpatientNote; legacy?: Ho
 function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () => void }) {
   const { staffById, can } = useStore()
   const notes = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'discharge' || n.kind === 'procedure')
-  const hasAdmission = notes.some((n) => n.kind === 'admission')
+  const h = file.hospitalization
+  const obs = h.kind === 'observation'
+  // En observación (o si vino de ella) la nota de consulta hace de primera nota: no se pide nota de ingreso
+  const hasAdmission = notes.some((n) => n.kind === 'admission') || obs || !!h.observationAt
+  const [converting, setConverting] = useState(false)
   const discharged = notes.some((n) => n.kind === 'discharge')
   const [writing, setWriting] = useState<null | 'note' | 'procedure' | 'discharge' | 'authorization'>(null)
   const [authFor, setAuthFor] = useState<string | undefined>()
@@ -269,6 +316,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
               {hasAdmission && <button className="btn btn--primary" onClick={() => setWriting('procedure')}>Procedimiento</button>}
               <button className="btn btn--primary" onClick={() => { setAuthFor(undefined); setWriting('authorization') }}><FileSignature size={16} />Autorización</button>
               {hasAdmission && !discharged && <button className="btn btn--primary" onClick={() => setWriting('discharge')}><LogOut size={16} />Egreso</button>}
+              {obs && <button className="btn btn--soft" onClick={() => setConverting(true)}><BedDouble size={16} />Pasar a hospitalización</button>}
             </div>
           </div>
         </section>
@@ -279,6 +327,8 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
       {writing === 'authorization' && <AuthorizationForm file={file} p={p} initialProcedure={authFor} onClose={() => setWriting(null)}
         onCreated={(a) => { setWriting(null); nav(`/app/autorizaciones/${a.id}`) }} />}
       {writing === 'discharge' && <Discharge file={file} p={p} reload={() => { setWriting(null); reload() }} />}
+      {converting && <ConvertModal file={file} p={p} onClose={() => setConverting(false)} onDone={() => nav(`/app/hospitalizados/${h.id}?tab=notas`)} />}
+      {h.consultationId && <ConsultEntry consultationId={h.consultationId} />}
       {timeline.length ? timeline.map((item) => {
         if (item.auth) return <AuthorizationEntry key={item.key} a={item.auth} file={file} reload={reload} />
         if (item.legacy) {
@@ -301,9 +351,44 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         if (n.kind === 'discharge') return <Discharge key={n.id} file={file} p={p} reload={reload} />
         if (n.kind === 'procedure') return <ProcedureNote key={n.id} n={n} file={file} />
         return <SoapNote key={n.id} n={n} file={file} reload={reload} />
-      }) : <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
+      }) : !h.consultationId && <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
       {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }} />}
     </div>
+  )
+}
+
+/** Observación → hospitalización: se elige la cama y se completan los datos del acompañante. Todo lo demás se conserva. */
+function ConvertModal({ file, p, onClose, onDone }: { file: File; p: Patient; onClose: () => void; onDone: () => void }) {
+  const { beds, inpatients, convertToHospital } = useStore()
+  const free = beds.filter((b) => b.active && !inpatients.some((x) => x.bedId === b.id))
+    .sort((a, b) => a.room.localeCompare(b.room, 'es', { numeric: true }) || a.label.localeCompare(b.label))
+  const [f, setF] = useState({ bedId: '', companionName: p.emergencyName ?? '', companionRelation: p.emergencyRelation ?? '', companionPhone: p.emergencyPhone ?? '', patientPhone: file.hospitalization.patientPhone ?? p.phone })
+  const [busy, setBusy] = useState(false)
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
+  return (
+    <Modal title="Pasar a hospitalización" onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={!f.bedId || busy} onClick={async () => {
+        setBusy(true)
+        const r = await convertToHospital(file.hospitalization.id, { bedId: f.bedId, companionName: f.companionName.trim() || undefined, companionRelation: f.companionRelation.trim() || undefined,
+          companionPhone: f.companionPhone.trim() || undefined, patientPhone: f.patientPhone.trim() || undefined })
+        setBusy(false)
+        if (r) onDone()
+      }}><BedDouble size={16} />Hospitalizar</button>
+    </>}>
+      <p className="muted" style={{ fontSize: 14 }}>Las notas, los medicamentos, los laboratorios y las autorizaciones de la observación pasan al expediente de hospitalización, en orden y con su autoría.</p>
+      <label className="field"><span>Cama</span>
+        <select className="select" value={f.bedId} onChange={set('bedId')}>
+          <option value="">Elige un cuarto libre</option>
+          {free.map((b) => <option key={b.id} value={b.id}>{bedLabel(b)} · {b.specialty}</option>)}
+        </select></label>
+      <div className="form-grid">
+        <label className="field"><span>Quién lo acompaña</span><input className="input" value={f.companionName} onChange={set('companionName')} /></label>
+        <label className="field"><span>Parentesco</span><input className="input" value={f.companionRelation} onChange={set('companionRelation')} /></label>
+        <label className="field"><span>Teléfono del acompañante</span><input className="input" inputMode="tel" value={f.companionPhone} onChange={set('companionPhone')} /></label>
+        <label className="field"><span>Teléfono del paciente</span><input className="input" inputMode="tel" value={f.patientPhone} onChange={set('patientPhone')} /></label>
+      </div>
+    </Modal>
   )
 }
 
@@ -780,7 +865,7 @@ function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => 
         <div className="panel__head">
           <div><h2>Nota de egreso</h2><p>{dateTime(note.at)}, {staffById(note.authorId)?.name}</p></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Link className="btn btn--primary btn--sm" to={`/app/hospitalizados/${h.id}/expediente`}><FileText size={15} />Expediente completo</Link>
+            <Link className="btn btn--primary btn--sm" to={`${stayPath(h)}/expediente`}><FileText size={15} />Expediente completo</Link>
             {h.prescriptionId && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${h.prescriptionId}`}>Receta de egreso</Link>}
           </div>
         </div>
@@ -799,7 +884,7 @@ function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => 
   const ready = dx.length > 0 && f.summary.trim().length >= 10 && f.condition
   return (
     <section className="panel">
-      <div className="panel__head"><div><h2>Nota de egreso</h2><p>Al guardarla se cierra el expediente de hospitalización, se libera la cama y, si agregas medicamentos, se emite la receta.</p></div></div>
+      <div className="panel__head"><div><h2>Nota de egreso</h2><p>{h.kind === 'observation' ? 'Al guardarla se cierra la observación y el paciente sale de la lista' : 'Al guardarla se cierra el expediente de hospitalización, se libera la cama'} y, si agregas medicamentos, se emite la receta de salida.</p></div></div>
       <div className="panel__body" style={{ display: 'grid', gap: 14 }}>
         <label className="field"><span>Resumen: por qué ingresó, qué se le hizo y cómo evolucionó</span>
           <textarea className="textarea" rows={4} value={f.summary} onChange={(e) => setF({ ...f, summary: e.target.value })}

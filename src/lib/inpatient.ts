@@ -67,6 +67,18 @@ export function slotState(at: Date, omitted: boolean, dose: Dose | undefined, no
   return 'upcoming'
 }
 
+/** Ruta del expediente de una estancia: observación u hospitalización. */
+export const stayPath = (h: { id: string; kind?: string }) => `/app/${h.kind === 'observation' ? 'observacion' : 'hospitalizados'}/${h.id}`
+
+/** Tiempo transcurrido legible: "4 h 20 min", "35 min", "1 d 3 h". */
+export function elapsed(minutes: number) {
+  const m = Math.max(0, minutes)
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} h${m % 60 ? ` ${m % 60} min` : ''}`
+  return `${Math.floor(h / 24)} d${h % 24 ? ` ${h % 24} h` : ''}`
+}
+
 /** Día de estancia: el día del ingreso es el día 1. */
 export function stayDay(admittedAt: string, now = new Date()) {
   const a = new Date(admittedAt); a.setHours(0, 0, 0, 0)

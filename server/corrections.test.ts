@@ -386,3 +386,45 @@ describe('H3 autorizaciones', () => {
     if (minor) assert.equal((await doc.post(`/api/inpatient/${minor.id}/authorizations`, { template: 'general' })).status, 400, 'menor sin representante')
   })
 })
+
+describe('M6 observación', () => {
+  test('la consulta ingresa a observación; sin enfermería; pasa a hospitalización con todo su expediente', async () => {
+    const admin = await as('admin@demo.clinara')
+    const all = Object.fromEntries(['0', '1', '2', '3', '4', '5', '6'].map((d) => [d, [{ start: '00:00', end: '23:45' }]]))
+    await admin.patch('/api/staff/s-herrera/schedule', { slot: 15, week: all })
+    const nurse = await as('crios@demo.clinara')
+    const doc = await as('lherrera@demo.clinara')
+    const w = await nurse.post('/api/appointments/walk-in', { patientId: 'p18', doctorId: 's-herrera', reason: 'Mareo' })
+    await doc.post(`/api/appointments/${w.body.id}/status`, { status: 'in_consult' })
+    const c = await doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Mareo', diagnoses: [{ code: 'I16.9', label: 'Crisis hipertensiva' }], orders: ['Reposo.'], observe: true })
+    assert.equal(c.status, 201)
+    assert.ok(c.body.observationId)
+    const obs = (await doc.get(`/api/inpatient/${c.body.observationId}`)).body
+    assert.equal(obs.hospitalization.kind, 'observation')
+    assert.equal(obs.hospitalization.consultationId, c.body.consultationId)
+    assert.equal(obs.hospitalization.bedId, undefined)
+    // Primera nota: la de consulta; se evoluciona sin nota de ingreso y sin checklist
+    const note = await doc.post(`/api/inpatient/${c.body.observationId}/notes`, { kind: 'evolution', subjective: 'S', objective: 'O', assessment: 'A', plan: 'P', orders: ['Signos vitales cada hora.'],
+      meds: [{ drug: 'Captopril', dose: '25 mg', route: 'Sublingual', prn: false }] })
+    assert.equal(note.status, 201)
+    assert.equal(note.body.checklist, undefined)
+    assert.equal((await nurse.post(`/api/inpatient/${c.body.observationId}/nursing`, { text: 'Paciente tranquilo.' })).status, 409)
+    const med = (await nurse.get(`/api/inpatient/${c.body.observationId}`)).body.meds[0]
+    assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: med.firstAt })).status, 201, 'enfermería aplica en observación')
+    const rec = await as('smejia@demo.clinara')
+    assert.equal((await rec.get(`/api/inpatient/${c.body.observationId}`)).status, 403)
+    assert.ok((await rec.get('/api/bootstrap')).body.stays.some((x: any) => x.patientId === 'p18' && x.kind === 'observation'))
+    // Pasar a hospitalización
+    const boot = (await doc.get('/api/bootstrap')).body
+    const used = new Set(boot.inpatients.map((h: any) => h.bedId))
+    const bed = boot.beds.find((b: any) => b.active && !used.has(b.id))
+    const conv = await doc.post(`/api/inpatient/${c.body.observationId}/convert`, { bedId: bed.id })
+    assert.equal(conv.status, 200)
+    assert.equal(conv.body.kind, 'hospital')
+    assert.ok(conv.body.observationAt)
+    const hosp = (await doc.get(`/api/inpatient/${c.body.observationId}`)).body
+    assert.equal(hosp.notes.length, 1)
+    assert.equal(hosp.doses.length, 1)
+    assert.equal((await doc.post(`/api/inpatient/${c.body.observationId}/convert`, { bedId: bed.id })).status, 409)
+  })
+})

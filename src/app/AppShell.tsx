@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, BedDouble, BellRing, Building2, CalendarDays, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, Stethoscope, UserCog,
+  BarChart3, BedDouble, BellRing, Building2, CalendarDays, Eye, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, Stethoscope, UserCog,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
@@ -16,6 +16,7 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
   { to: '/app/caja', label: 'Caja', icon: Receipt, perm: 'billing.manage' },
   // Pacientes se divide en las tres áreas que pidió el médico, más los crónicos
   { to: '/app/consulta-externa', label: 'Consulta externa', icon: Stethoscope, perm: 'agenda.view', group: 'Pacientes' },
+  { to: '/app/observacion', label: 'Observación', icon: Eye, perm: 'inpatient.view', group: 'Pacientes' },
   { to: '/app/hospitalizados', label: 'Hospitalizados', icon: BedDouble, perm: 'inpatient.view', group: 'Pacientes' },
   { to: '/app/pacientes', label: 'Biblioteca de pacientes', icon: LibraryBig, perm: 'patients.view', group: 'Pacientes' },
   { to: '/app/seguimientos', label: 'Crónicos y seguimientos', icon: BellRing, perm: 'followups.view', group: 'Pacientes' },
@@ -27,7 +28,7 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
 ]
 
 export default function AppShell() {
-  const { user, can, signOut, appointments, followups, refresh, settings, pendingOrders = [] } = useStore()
+  const { user, can, signOut, appointments, followups, refresh, settings, pendingOrders = [], inpatients } = useStore()
   const nav = useNavigate()
   const loc = useLocation()
   const [open, setOpen] = useState(false)
@@ -47,6 +48,7 @@ export default function AppShell() {
   const due = followups.filter((f) => f.dueDate <= localISODate(today) && !f.notifiedAt).length
   // Enfermería: órdenes médicas nuevas sin revisar
   const newOrders = pendingOrders.reduce((s, x) => s + x.pending, 0)
+  const inObservation = inpatients.filter((h) => h.kind === 'observation').length
   const platform = user.role === 'superadmin'
   const items = platform
     ? [{ to: '/app', label: 'Clínicas', icon: Building2, end: true }]
@@ -77,6 +79,7 @@ export default function AppShell() {
                 {n.to === '/app/consulta-externa' && waiting > 0 && <span className="count" aria-label={`${waiting} en sala`}>{waiting}</span>}
                 {n.to === '/app/seguimientos' && due > 0 && <span className="count" aria-label={`${due} seguimientos vencidos o de hoy`}>{due}</span>}
                 {n.to === '/app/caja' && toCharge > 0 && <span className="count" aria-label={`${toCharge} por cobrar hoy`}>{toCharge}</span>}
+                {n.to === '/app/observacion' && inObservation > 0 && <span className="count" aria-label={`${inObservation} en observación`}>{inObservation}</span>}
                 {n.to === '/app/hospitalizados' && newOrders > 0 && <span className="count count--alert" aria-label={`${newOrders} órdenes nuevas sin revisar`}>{newOrders}</span>}
               </NavLink>
             </div>

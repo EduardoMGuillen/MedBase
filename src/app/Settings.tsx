@@ -154,6 +154,11 @@ function ClinicForm() {
           <label className="field span-2" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <input type="checkbox" checked={f.recordUsesDni} onChange={(e) => set('recordUsesDni', e.target.checked)} />
             <span style={{ margin: 0 }}>Usar el número de identidad como número de expediente en recetas y constancias</span></label>
+          <label className="field"><span>Observación: resaltar después de (horas)</span>
+            <input className="input num" type="number" min={1} max={240} value={f.obsAlertHours ?? 24} onChange={(e) => set('obsAlertHours', Math.max(1, Number(e.target.value) || 24))} /></label>
+          <label className="field" style={{ alignContent: 'end' }}><span>Órdenes en observación</span>
+            <span style={{ display: 'flex', gap: 8, alignItems: 'center', minHeight: 42 }}><input type="checkbox" checked={!!f.obsOrderChecklist} onChange={(e) => set('obsOrderChecklist', e.target.checked)} />
+              Enfermería las revisa como checklist</span></label>
           <div className="field span-2"><span>Logo (aparece en recetas y constancias)</span>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               {f.logo ? <img src={f.logo} alt="Logo de la clínica" style={{ height: 48, maxWidth: 160, objectFit: 'contain', border: '1px solid var(--line)', borderRadius: 8, padding: 4 }} />

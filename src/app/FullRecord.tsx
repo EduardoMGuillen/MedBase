@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
 import { LogoMark } from '../components/Logo'
 import { date, dateTime, fullName, time } from '../lib/format'
-import { medLabel, noteOrders } from '../lib/inpatient'
+import { medLabel, noteOrders, stayPath } from '../lib/inpatient'
 import type { InpatientFile } from '../lib/types'
 import { BackgroundView, ConsultationBody, Identification, useChart } from './PatientChart'
 import { bedLabel } from './Inpatients'
@@ -37,7 +37,7 @@ export default function FullRecord() {
   return (
     <div className="page">
       <div className="page-head no-print">
-        <Link className="btn btn--ghost" to={`/app/hospitalizados/${h.id}`}><ChevronLeft size={16} />Volver a la hospitalización</Link>
+        <Link className="btn btn--ghost" to={stayPath(h)}><ChevronLeft size={16} />Volver al expediente</Link>
         <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir expediente</button>
       </div>
       <article className="rx-sheet clinical-note">

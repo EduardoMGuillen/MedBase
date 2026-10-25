@@ -22,6 +22,7 @@ interface Data {
   discharges: { patientId: string; at: string }[] // último egreso de cada paciente
   clinicDrugs?: ClinicDrug[] // vademécum propio de la clínica
   pendingOrders?: PendingOrders[] // órdenes médicas sin revisar (enfermería)
+  stays?: { patientId: string; kind: Hospitalization['kind'] }[] // quién está hospitalizado o en observación (todos los roles)
 }
 
 interface Session { user: Staff; permissions: Permission[]; demo: boolean }
@@ -162,9 +163,11 @@ function useStoreValue() {
     staffById: (id: string) => data.staff.find((s) => s.id === id),
     fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
     fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient,
-    bed: (id: string) => data.beds.find((b) => b.id === id),
+    bed: (id?: string) => (id ? data.beds.find((b) => b.id === id) : undefined),
     /** Hospitalización abierta del paciente, si la tiene. */
     inpatientOf: (patientId: string) => data.inpatients.find((h) => h.patientId === patientId),
+    /** Hospitalizado o en observación ahora mismo; lo ven también recepción y caja. */
+    stayOf: (patientId: string) => data.stays?.find((x) => x.patientId === patientId)?.kind,
 
     walkIn: (b: { patientId: string; doctorId: string; reason: string }) =>
       run(() => api<Appointment>('/appointments/walk-in', { body: b }), 'Paciente agregado a la consulta externa de hoy'),
@@ -196,6 +199,9 @@ function useStoreValue() {
       run(() => api<ClinicDrug>('/drugs', { body: b }), 'Medicamento agregado al vademécum de la clínica'),
     updateClinicDrug: (id: string, b: Partial<Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route' | 'active'>>) =>
       run(() => api<ClinicDrug>(`/drugs/${id}`, { method: 'PATCH', body: b }), 'Vademécum actualizado'),
+    /** Observación → hospitalización: la misma estancia recibe cama y conserva su expediente. */
+    convertToHospital: (id: string, b: { bedId: string; companionName?: string; companionRelation?: string; companionPhone?: string; patientPhone?: string }) =>
+      run(() => api<Hospitalization>(`/inpatient/${id}/convert`, { body: b }), 'Paciente pasado a hospitalización'),
     createBed: (b: Omit<Bed, 'id'>) => run(() => api<Bed>('/beds', { body: b }), 'Cama agregada'),
     updateBed: (id: string, b: Partial<Omit<Bed, 'id'>>) => run(() => api<Bed>(`/beds/${id}`, { method: 'PATCH', body: b }), 'Cama actualizada'),
 
@@ -224,8 +230,8 @@ function useStoreValue() {
       run(() => api<Patient>(`/patients/${id}`, { method: 'PATCH', body: p }), 'Ficha actualizada'),
     addVitals: (v: Omit<Vitals, 'id' | 'takenAt' | 'takenBy'>) =>
       run(() => api<Vitals>('/vitals', { body: v }), 'Preclínica guardada'),
-    finishConsult: (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[] }, items: PrescriptionItem[]) =>
-      run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null }>('/consultations', { body: { ...c, items } }),
+    finishConsult: (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[]; observe?: boolean }, items: PrescriptionItem[]) =>
+      run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null; observationId: string | null }>('/consultations', { body: { ...c, items } }),
         items.length ? 'Consulta y receta firmadas' : 'Consulta firmada'),
 
     issuePrescription: (b: { patientId: string; items: PrescriptionItem[]; indications: string[] }) =>

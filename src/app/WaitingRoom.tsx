@@ -6,7 +6,7 @@ import { Modal, PageHead, StatusBadge } from '../components/ui'
 import { age, fullName, sameDay, time } from '../lib/format'
 import type { Appointment, Patient } from '../lib/types'
 import { parseDecimal, VITALS, vitalLevel, type VitalKey } from '../lib/vitals'
-import { yearsOld } from '../lib/inpatient'
+import { stayPath, yearsOld } from '../lib/inpatient'
 import { PatientPicker } from './Inpatients'
 import { IdentificationForm } from './PatientForms'
 import { CompleteRegistration } from './NewPatient'
@@ -18,7 +18,7 @@ const minutesSince = (iso?: string) => (iso ? Math.max(0, Math.round((Date.now()
  * la preclínica y el médico los atiende. No se muestra "por llegar": esa lista no aporta aquí.
  */
 export default function WaitingRoom() {
-  const { appointments, patient, staffById, can, setStatus, user, inpatientOf, takeAppointment } = useStore()
+  const { appointments, patient, staffById, can, setStatus, user, stayOf, inpatientOf, takeAppointment } = useStore()
   const nav = useNavigate()
   const [taking, setTaking] = useState<Appointment | null>(null)
   const [busy, setBusy] = useState(false)
@@ -64,6 +64,7 @@ export default function WaitingRoom() {
               const wait = a.status === 'arrived' ? minutesSince(a.arrivedAt) : null
               const own = a.doctorId === user?.id
               const hosp = inpatientOf(p.id)
+              const stay = stayOf(p.id)
               const takenFromMe = a.reassignedFrom === user?.id && !own
               return (
                 <div key={a.id} className="queue-card" style={{ gridTemplateColumns: '1fr auto' }}>
@@ -74,7 +75,8 @@ export default function WaitingRoom() {
                       <StatusBadge status={a.status} />
                       {a.source === 'walkin' && <span className="badge badge--neutral">Sin cita</span>}
                       {a.type === 'urgent' && <span className="badge badge--red">Urgente</span>}
-                      {hosp && <Link to={`/app/hospitalizados/${hosp.id}`} className="badge badge--ink"><BedDouble size={12} />Ingresado</Link>}
+                      {hosp ? <Link to={stayPath(hosp)} className="badge badge--ink"><BedDouble size={12} />{hosp.kind === 'observation' ? 'En observación' : 'Hospitalizado'}</Link>
+                        : stay && <span className="badge badge--ink"><BedDouble size={12} />{stay === 'observation' ? 'En observación' : 'Hospitalizado'}</span>}
                       {a.reassignedFrom && <span className="badge badge--amber">{takenFromMe ? `Lo atiende ${staffById(a.doctorId)?.name}` : `Atendido por ${staffById(a.doctorId)?.name}, estaba con ${staffById(a.reassignedFrom)?.name}`}</span>}
                       {wait !== null && <span className="wait">{wait} min esperando</span>}
                     </div>

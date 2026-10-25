@@ -63,8 +63,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
 
   /** Las órdenes de las notas de hospitalización se revisan una por una (en observación, sólo si la clínica lo activa). */
   async function checklistFor(h: Row) {
-    void h
-    return true
+    if (h.kind !== 'observation') return true
+    return Boolean((await sql.one('SELECT obs_order_checklist FROM clinics WHERE id = ?', [String(h.clinic_id)]))?.obs_order_checklist)
   }
 
   /** Inserta los medicamentos que indica una nota y omite los que la nota suspende. */
@@ -155,6 +155,39 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     res.status(201).json(toHospitalization((await hospRow(cid, id))!))
   })
 
+  /**
+   * Pasar de observación a hospitalización: la misma estancia recibe cama. Notas, medicamentos, laboratorios
+   * y autorizaciones se quedan donde están, en orden y con su autoría; se guarda cuándo estuvo en observación.
+   */
+  app.post('/api/inpatient/:id/convert', auth, need('inpatient.orders'), async (req, res) => {
+    const b = parse(z.object({
+      bedId: z.string().min(1, 'Elige la cama.'),
+      reason: z.string().trim().max(1000).optional(),
+      companionName: z.string().trim().max(100).optional(),
+      companionRelation: z.string().trim().max(40).optional(),
+      companionPhone: z.string().trim().max(30).optional(),
+      patientPhone: z.string().trim().max(30).optional(),
+    }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const h = await activeHosp(cid, String(req.params.id))
+    if (h.kind !== 'observation') fail(409, 'Este paciente ya está hospitalizado.')
+    const bed = await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ? AND active', [b.bedId, cid])
+    if (!bed) fail(400, 'La cama elegida no existe o está desactivada.')
+    const name = await patientName(String(h.patient_id))
+    const now = new Date().toISOString()
+    await sql.tx(async (q) => {
+      await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`beds:${cid}`])
+      if (await q.one(`SELECT 1 FROM hospitalizations WHERE bed_id = ? AND status = 'active'`, [b.bedId])) fail(409, 'Esa cama ya está ocupada. Elige otra.')
+      await q.run(`UPDATE hospitalizations SET kind = 'hospital', bed_id = ?, observation_at = admitted_at, admitted_at = ?, converted_at = ?, converted_by = ?,
+          reason = COALESCE(?, reason), companion_name = COALESCE(?, companion_name), companion_relation = COALESCE(?, companion_relation),
+          companion_phone = COALESCE(?, companion_phone), patient_phone = COALESCE(?, patient_phone) WHERE id = ?`,
+        [b.bedId, now, now, user.id, b.reason || null, b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null, String(h.id)])
+      await audit(user, `Pasó a ${name} de observación a hospitalización en la ${bedName(bed!)}`, q)
+    })
+    res.json(toHospitalization((await hospRow(cid, String(h.id)))!))
+  })
+
   // ---------- Expediente de hospitalización ----------
   app.get('/api/inpatient/:id', auth, need('inpatient.view'), async (req, res) => {
     const cid = clinicOf(req)
@@ -192,14 +225,18 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const h = await activeHosp(cid, String(req.params.id))
     const id = String(h.id)
     const hasAdmission = await sql.one(`SELECT 1 FROM hosp_notes WHERE hospitalization_id = ? AND kind = 'admission'`, [id])
-    if (b.kind === 'admission' && hasAdmission) fail(409, 'Este paciente ya tiene nota de ingreso. Escribe una nota de evolución.')
-    if (b.kind === 'evolution' && !hasAdmission) fail(409, 'Primero va la nota de ingreso.')
+    // En observación (y si vino de ella) la primera nota es la de la consulta externa que lo ingresó
+    const fromConsult = h.kind === 'observation' || !!h.observation_at
+    if (b.kind === 'admission' && (hasAdmission || h.kind === 'observation')) fail(409, h.kind === 'observation' ? 'En observación se escriben notas de evolución.' : 'Este paciente ya tiene nota de ingreso. Escribe una nota de evolución.')
+    if (b.kind === 'evolution' && !hasAdmission && !fromConsult) fail(409, 'Primero va la nota de ingreso.')
     const noteId = randomUUID()
     const at = new Date().toISOString()
     const name = await patientName(String(h.patient_id))
+    // Fuera de la transacción: con una sola conexión, consultar por fuera de ella la bloquearía
+    const checklist = await checklistFor(h)
     await sql.tx(async (q) => {
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan, data) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        [noteId, cid, id, b.kind, user.id, at, b.subjective, b.objective, b.assessment, b.plan, JSON.stringify({ orders: b.orders, checklist: await checklistFor(h) })])
+        [noteId, cid, id, b.kind, user.id, at, b.subjective, b.objective, b.assessment, b.plan, JSON.stringify({ orders: b.orders, checklist })])
       await applyMeds(q, cid, id, noteId, user.id, at, b.meds, b.stopMedIds)
       const what = b.kind === 'admission' ? 'nota de ingreso' : 'nota de evolución'
       const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`].filter(Boolean).join(', ')
@@ -213,6 +250,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const user = userOf(req)
     const cid = clinicOf(req)
     const h = await activeHosp(cid, String(req.params.id))
+    if (h.kind === 'observation') fail(409, 'En observación no se escriben notas de enfermería.')
     const noteId = randomUUID()
     await sql.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, text) VALUES (?,?,?,'nursing',?,?,?)`,
       [noteId, cid, String(h.id), user.id, new Date().toISOString(), text])

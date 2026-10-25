@@ -91,10 +91,11 @@ export const toAttachment = (r: Row): Attachment => ({
 export const toBed = (r: Row): Bed => ({ id: String(r.id), room: String(r.room), label: String(r.label ?? ''), specialty: String(r.specialty), active: Boolean(r.active) })
 
 export const toHospitalization = (r: Row): Hospitalization => ({
-  id: String(r.id), patientId: String(r.patient_id), bedId: String(r.bed_id), consultationId: s(r.consultation_id), admittedAt: String(r.admitted_at),
+  id: String(r.id), kind: (r.kind as Hospitalization['kind']) ?? 'hospital', patientId: String(r.patient_id), bedId: s(r.bed_id), consultationId: s(r.consultation_id), admittedAt: String(r.admitted_at),
   admittedBy: String(r.admitted_by), reason: String(r.reason), diagnoses: j(r.diagnoses, []), companionName: s(r.companion_name),
   companionRelation: s(r.companion_relation), companionPhone: s(r.companion_phone), patientPhone: s(r.patient_phone),
   status: r.status as Hospitalization['status'], dischargedAt: s(r.discharged_at), dischargedBy: s(r.discharged_by), prescriptionId: s(r.prescription_id),
+  observationAt: s(r.observation_at), convertedAt: s(r.converted_at), convertedBy: s(r.converted_by),
 })
 
 export const toInpatientNote = (r: Row): InpatientNote => ({
@@ -146,6 +147,7 @@ export const clinicSettings = (r: Row): ClinicSettings => ({
   currency: String(r.currency ?? DEFAULT_SETTINGS.currency), rxValidityDays: Number(r.rx_validity_days ?? DEFAULT_SETTINGS.rxValidityDays),
   reminderTemplate: String(r.reminder_template || DEFAULT_SETTINGS.reminderTemplate),
   recordUsesDni: Boolean(r.record_uses_dni), logo: s(r.logo),
+  obsAlertHours: r.obs_alert_hours == null ? 24 : Number(r.obs_alert_hours), obsOrderChecklist: Boolean(r.obs_order_checklist),
 })
 
 export const toClinic = (r: Row): Clinic => ({

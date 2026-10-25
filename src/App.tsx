@@ -27,6 +27,7 @@ import Inpatients from './app/Inpatients'
 import InpatientFile from './app/InpatientFile'
 import FullRecord from './app/FullRecord'
 import AuthorizationPage from './app/Authorization'
+import Observation from './app/Observation'
 import Followups from './app/Followups'
 
 function Guard({ perm, children }: { perm?: Permission; children: ReactNode }) {
@@ -51,9 +52,12 @@ export default function App() {
             <Route path="agenda" element={<Guard perm="agenda.view"><Agenda /></Guard>} />
             <Route path="consulta-externa" element={<Guard perm="agenda.view"><WaitingRoom /></Guard>} />
             <Route path="sala" element={<Navigate to="/app/consulta-externa" replace />} />
+            <Route path="observacion" element={<Guard perm="inpatient.view"><Observation /></Guard>} />
+            <Route path="observacion/:id" element={<Guard perm="inpatient.view"><InpatientFile key="observacion" /></Guard>} />
+            <Route path="observacion/:id/expediente" element={<Guard perm="inpatient.view"><FullRecord /></Guard>} />
             <Route path="hospitalizados" element={<Guard perm="inpatient.view"><Inpatients /></Guard>} />
             <Route path="hospitalizados/:id/expediente" element={<Guard perm="inpatient.view"><FullRecord /></Guard>} />
-            <Route path="hospitalizados/:id" element={<Guard perm="inpatient.view"><InpatientFile /></Guard>} />
+            <Route path="hospitalizados/:id" element={<Guard perm="inpatient.view"><InpatientFile key="hospitalizacion" /></Guard>} />
             <Route path="autorizaciones/:id" element={<Guard perm="inpatient.view"><AuthorizationPage /></Guard>} />
             <Route path="seguimientos" element={<Guard perm="followups.view"><Followups /></Guard>} />
             <Route path="pacientes" element={<Guard perm="patients.view"><Patients /></Guard>} />
