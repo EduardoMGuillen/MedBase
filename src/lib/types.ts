@@ -138,6 +138,8 @@ export interface Patient {
   conditions: string[] // enfermedades crónicas
   background?: Background
   createdAt: string
+  /** Agendado por teléfono con nombre y teléfono; completa su registro al llegar. No aparece en la biblioteca. */
+  pending?: boolean
 }
 
 /** Flujo de la cita dentro de la clínica (de la reserva al alta). */

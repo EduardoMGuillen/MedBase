@@ -297,3 +297,22 @@ button.slot2:not(:disabled):hover { border-color: var(--ink); }
 .field__msg--warn { color: var(--amber-ink); }
 .alert-strip--amber { background: var(--amber); color: var(--amber-ink); }
 .form-grid--top { align-items: start; }
+
+/* ---------- Por llegar ---------- */
+button.stat--btn { border: 0; background: transparent; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+button.stat--btn:hover b { color: var(--ink); }
+.arrival { display: grid; grid-template-columns: 64px 1fr auto; gap: 14px; align-items: center; padding: 12px 22px; border-bottom: 1px solid var(--line-soft); border-left: 3px solid var(--c, transparent); }
+.arrival:last-child { border-bottom: 0; }
+.arrival--late { background: linear-gradient(90deg, var(--red), transparent 60%); }
+.arrival__time { font-family: var(--display); font-weight: 700; font-size: 17px; }
+.arrival__who { display: grid; gap: 2px; min-width: 0; }
+.arrival__who strong { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 14.5px; }
+.arrival__who strong a { color: inherit; }
+.arrival__who > span { font-size: 13px; color: var(--muted); }
+.arrival__phone { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.arrival__phone a { display: inline-flex; gap: 5px; align-items: center; color: var(--ink-deep); font-weight: 600; text-decoration: none; min-height: 28px; }
+.arrival__phone a:hover { text-decoration: underline; }
+@media (max-width: 720px) {
+  .arrival { grid-template-columns: 52px 1fr; padding: 12px 16px; }
+  .arrival > .btn { grid-column: 1 / -1; }
+}

@@ -9,6 +9,8 @@ import { date, fullName, localISODate, money, sameDay, time } from '../lib/forma
 import type { Appointment } from '../lib/types'
 import Platform from './Platform'
 import { VitalsModal } from './WaitingRoom'
+import { ArrivalsPanel } from './Arrivals'
+import { pendingArrivals } from '../lib/arrivals'
 
 /** Recepción llama el día del control. Los avisos de la semana y de la víspera ya salieron solos. */
 function FollowupCalls() {
@@ -78,7 +80,7 @@ export function ApptRows({ list, showDoctor = false, action, empty = 'No hay cit
 }
 
 export default function Dashboard() {
-  const { user, appointments, patients, staff, audit, staffById, settings, can, fetchPayments } = useStore()
+  const { user, appointments, patients, staff, audit, staffById, settings, can, fetchPayments, setStatus } = useStore()
   const [todayRevenue, setTodayRevenue] = useState<number | null>(null)
   const [triage, setTriage] = useState<Appointment | null>(null)
   useEffect(() => {
@@ -123,6 +125,7 @@ export default function Dashboard() {
             <div className="panel__body"><strong>{fullName(nextPatient)}</strong><p className="muted" style={{ marginTop: 4 }}>{nextPatient.record}</p></div>
           </section>
         )}
+        <ArrivalsPanel doctorId={user.id} />
       </div>
     )
   }
@@ -155,13 +158,18 @@ export default function Dashboard() {
             )
           }) : <div className="empty">Cuando un paciente llegue a sala, aparecerá aquí.</div>}
         </section>
+        <ArrivalsPanel />
         {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}
       </div>
     )
   }
 
+  // Recepción y administración marcan la llegada desde la lista "Por llegar"
+  const arrive = (a: Appointment) => setStatus(a.id, 'arrived', `Llegada de ${patients.find((x) => x.id === a.patientId)?.firstName ?? 'paciente'} registrada`)
+  const toArrivals = () => document.getElementById('por-llegar')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
   if (user.role === 'reception') {
-    const pending = today.filter((a) => ['scheduled', 'confirmed'].includes(a.status))
+    const pending = pendingArrivals(appointments, now)
     const toCharge = appointments.filter((a) => a.status === 'done' && a.paid === false)
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
     const reminders = appointments.filter((a) => sameDay(a.start, tomorrow) && ['scheduled', 'confirmed'].includes(a.status)).sort((a, b) => a.start.localeCompare(b.start))
@@ -172,10 +180,11 @@ export default function Dashboard() {
           actions={<Link className="btn btn--primary" to="/app/sala">Abrir sala de espera</Link>} />
         <div className="stats">
           <div className="stat"><b>{today.filter((a) => a.status !== 'cancelled').length}</b><span>Citas hoy</span></div>
-          <div className="stat"><b>{pending.length}</b><span>Por llegar</span></div>
+          <button className="stat stat--btn" onClick={toArrivals}><b>{pending.length}</b><span>Por llegar</span>{pending.length > 0 && <small>Ver quiénes son</small>}</button>
           <div className="stat"><b>{toCharge.length}</b><span>Por cobrar</span>{toCharge.length > 0 && <small><Link to="/app/caja">Ir a caja</Link></small>}</div>
           <div className="stat"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></div>
         </div>
+        <ArrivalsPanel id="por-llegar" onArrive={arrive} />
         <FollowupCalls />
         <div className="grid-2">
           <section className="panel">
@@ -229,8 +238,9 @@ export default function Dashboard() {
         <div className="stat"><b>{today.filter((a) => a.status !== 'cancelled').length}</b><span>Citas hoy</span></div>
         <div className="stat"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></div>
         <div className="stat"><b className="num">{attendance == null ? '—' : `${attendance}%`}</b><span>Asistencia, últimos 30 días</span></div>
-        <div className="stat"><b>{patients.length}</b><span>Pacientes registrados</span></div>
+        <div className="stat"><b>{patients.filter((p) => !p.pending).length}</b><span>Pacientes registrados</span></div>
       </div>
+      <ArrivalsPanel id="por-llegar" onArrive={arrive} />
       <div className="grid-2">
         <section className="panel">
           <div className="panel__head"><h2>Citas por médico hoy</h2></div>
