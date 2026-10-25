@@ -145,6 +145,26 @@ export function medicationOrder(i: PrescriptionItem) {
   return `${i.drug}${i.presentation ? ` (${i.presentation.toLowerCase()})` : ''}: ${i.dose}${route} ${i.frequency.toLowerCase()} por ${i.duration}.${i.instructions ? ` ${i.instructions}` : ''}`
 }
 
+/** "Tableta 500 mg" → "500 mg tableta", como se escribe en la receta. */
+export function presentationShort(presentation = '') {
+  const m = presentation.match(/^([A-Za-zÁÉÍÓÚáéíóúñÑ]+)\s+(.+)$/)
+  return m ? `${m[2]} ${m[1].toLowerCase()}` : presentation
+}
+
+const ROUTE_SHORT: Record<string, string> = {
+  Oral: 'VO', Intravenosa: 'IV', Intramuscular: 'IM', Subcutánea: 'SC', Sublingual: 'SL', Inhalada: 'inhalada', Tópica: 'tópica', Oftálmica: 'oftálmica',
+  Ótica: 'ótica', Nasal: 'nasal', Rectal: 'rectal', Vaginal: 'vaginal',
+}
+
+/** Forma legible de un medicamento: "Acetaminofén 500 mg tableta — 1 g VO cada 8 h por 3 días". */
+export function medicationLine(i: PrescriptionItem) {
+  const freq = i.frequency.replace(/^Cada (\d+) horas?$/i, 'cada $1 h').replace(/^Dosis única$/i, 'dosis única').replace(/^Según necesidad$/i, 'según necesidad')
+  const once = /dosis única/i.test(i.frequency)
+  const route = i.route ? ROUTE_SHORT[i.route] ?? i.route.toLowerCase() : ''
+  const how = [i.dose, route, freq, !once && i.duration ? `por ${i.duration}` : ''].filter(Boolean).join(' ')
+  return `${i.drug}${i.presentation ? ` ${presentationShort(i.presentation)}` : ''} — ${how}`
+}
+
 /** Número que identifica el expediente en documentos: la identidad si la clínica así lo configuró. */
 export const recordNumber = (p: Pick<Patient, 'record' | 'dni'>, s: { recordUsesDni: boolean }) => (s.recordUsesDni && p.dni ? p.dni : p.record)
 

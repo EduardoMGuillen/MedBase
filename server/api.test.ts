@@ -114,7 +114,7 @@ describe('flujo de la cita', () => {
     assert.equal(noDx.status, 400)
     const noOrders = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor lumbar', diagnoses: [{ code: 'M54.5', label: 'Lumbago' }], orders: [] })
     assert.equal(noOrders.status, 400)
-    assert.match(noOrders.body.error, /orden médica/)
+    assert.match(noOrders.body.error, /al menos una indicación o un medicamento/)
     const signed = await doc.post('/api/consultations', {
       appointmentId: id, reason: 'Dolor lumbar', symptoms: ['Lumbalgia'], diagnoses: [{ code: 'M54.5', label: 'Lumbago no especificado' }],
       orders: ['Reposo relativo.', 'Naproxeno 550 mg cada 12 horas por 5 días.'], vitalsId: v.body.id,

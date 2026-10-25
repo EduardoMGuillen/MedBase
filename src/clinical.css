@@ -362,3 +362,18 @@ button.stat--btn:hover b { color: var(--ink); }
 .similar__row .muted { font-size: 12.5px; }
 /* Enlaces con forma de botón dentro de formularios */
 button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; font-size: 14px; text-decoration: underline; text-underline-offset: 2px; }
+
+/* ---------- Plan y manejo: indicaciones y medicamentos ---------- */
+.plan-block { display: grid; gap: 10px; }
+.plan-block + .plan-block { padding-top: 16px; border-top: 1px dashed var(--line); }
+.plan-block__title { font-size: 15px; color: var(--ink-deep); }
+.meds-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.meds-list li { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: start; padding: 8px 6px 8px 10px; border: 1px solid var(--line-soft); border-radius: 10px; background: #fcfdff; }
+.meds-list li.is-warn { border-color: var(--red-ink); background: var(--red); }
+.meds-list li.is-editing { border-color: var(--ink); box-shadow: 0 0 0 2px var(--ink-soft); }
+.meds-list__line { font-size: 14.5px; line-height: 1.45; font-weight: 600; }
+.meds-list small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.suggest-med { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; border-radius: var(--r-md); background: var(--ink-soft); color: var(--ink-deep); font-size: 13.5px; font-weight: 600; }
+@media (max-width: 720px) {
+  .meds-list li { grid-template-columns: 22px 1fr; }
+}

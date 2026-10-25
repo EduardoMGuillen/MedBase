@@ -1,3 +1,5 @@
+import type { PrescriptionItem } from './types'
+
 export const SYMPTOMS = [
   'Fiebre', 'Tos seca', 'Tos productiva', 'Dolor de garganta', 'Congestión nasal', 'Cefalea',
   'Mareo', 'Náuseas', 'Vómito', 'Diarrea', 'Dolor abdominal', 'Dolor torácico', 'Disnea',
@@ -40,32 +42,48 @@ export const ICD10 = [
   { code: 'R10.4', label: 'Otros dolores abdominales y los no especificados' },
 ]
 
+/** Valores habituales que precarga el formulario de medicamento (siempre editables). */
+export interface UsualDose { dose: string; route: string; frequency: string; duration: string }
+
+export interface Drug {
+  name: string
+  presentation: string
+  group: string
+  usual?: UsualDose
+  brand?: string
+  /** Agregado por la clínica (vademécum propio), no del catálogo base. */
+  clinicId?: string
+}
+
+const oral = (dose: string, frequency: string, duration: string): UsualDose => ({ dose, route: 'Oral', frequency, duration })
+
 /** Vademécum reducido. `group` permite cruzar contra alergias del paciente. */
-export const DRUGS = [
-  { name: 'Paracetamol', presentation: 'Tableta 500 mg', group: 'analgésico' },
-  { name: 'Ibuprofeno', presentation: 'Tableta 400 mg', group: 'aine' },
-  { name: 'Naproxeno', presentation: 'Tableta 550 mg', group: 'aine' },
-  { name: 'Diclofenaco', presentation: 'Tableta 50 mg', group: 'aine' },
-  { name: 'Amoxicilina', presentation: 'Cápsula 500 mg', group: 'penicilina' },
-  { name: 'Amoxicilina / Ácido clavulánico', presentation: 'Tableta 875/125 mg', group: 'penicilina' },
-  { name: 'Azitromicina', presentation: 'Tableta 500 mg', group: 'macrólido' },
-  { name: 'Ciprofloxacino', presentation: 'Tableta 500 mg', group: 'quinolona' },
-  { name: 'Nitrofurantoína', presentation: 'Cápsula 100 mg', group: 'antibiótico' },
-  { name: 'Cefalexina', presentation: 'Cápsula 500 mg', group: 'cefalosporina' },
-  { name: 'Loratadina', presentation: 'Tableta 10 mg', group: 'antihistamínico' },
-  { name: 'Cetirizina', presentation: 'Tableta 10 mg', group: 'antihistamínico' },
-  { name: 'Omeprazol', presentation: 'Cápsula 20 mg', group: 'ibp' },
-  { name: 'Metformina', presentation: 'Tableta 850 mg', group: 'antidiabético' },
-  { name: 'Losartán', presentation: 'Tableta 50 mg', group: 'antihipertensivo' },
-  { name: 'Amlodipino', presentation: 'Tableta 5 mg', group: 'antihipertensivo' },
-  { name: 'Atorvastatina', presentation: 'Tableta 20 mg', group: 'estatina' },
-  { name: 'Salbutamol', presentation: 'Inhalador 100 mcg/dosis', group: 'broncodilatador' },
-  { name: 'Ácido fólico', presentation: 'Tableta 5 mg', group: 'vitamina' },
-  { name: 'Sulfato ferroso', presentation: 'Tableta 200 mg', group: 'hierro' },
-  { name: 'Ambroxol', presentation: 'Jarabe 30 mg/5 ml', group: 'mucolítico' },
-  { name: 'Metamizol', presentation: 'Tableta 500 mg', group: 'pirazolona' },
+export const DRUGS: Drug[] = [
+  { name: 'Acetaminofén', presentation: 'Tableta 500 mg', group: 'analgésico', usual: oral('1 g', 'Cada 8 horas', '3 días') },
+  { name: 'Paracetamol', presentation: 'Tableta 500 mg', group: 'analgésico', usual: oral('1 tableta', 'Cada 8 horas', '3 días') },
+  { name: 'Ibuprofeno', presentation: 'Tableta 400 mg', group: 'aine', usual: oral('1 tableta', 'Cada 8 horas', '3 días') },
+  { name: 'Naproxeno', presentation: 'Tableta 550 mg', group: 'aine', usual: oral('1 tableta', 'Cada 12 horas', '5 días') },
+  { name: 'Diclofenaco', presentation: 'Tableta 50 mg', group: 'aine', usual: oral('1 tableta', 'Cada 8 horas', '5 días') },
+  { name: 'Amoxicilina', presentation: 'Cápsula 500 mg', group: 'penicilina', usual: oral('1 cápsula', 'Cada 8 horas', '7 días') },
+  { name: 'Amoxicilina / Ácido clavulánico', presentation: 'Tableta 875/125 mg', group: 'penicilina', usual: oral('1 tableta', 'Cada 12 horas', '7 días') },
+  { name: 'Azitromicina', presentation: 'Tableta 500 mg', group: 'macrólido', usual: oral('1 tableta', 'Cada 24 horas', '3 días') },
+  { name: 'Ciprofloxacino', presentation: 'Tableta 500 mg', group: 'quinolona', usual: oral('1 tableta', 'Cada 12 horas', '7 días') },
+  { name: 'Nitrofurantoína', presentation: 'Cápsula 100 mg', group: 'antibiótico', usual: oral('1 cápsula', 'Cada 12 horas', '5 días') },
+  { name: 'Cefalexina', presentation: 'Cápsula 500 mg', group: 'cefalosporina', usual: oral('1 cápsula', 'Cada 6 horas', '7 días') },
+  { name: 'Loratadina', presentation: 'Tableta 10 mg', group: 'antihistamínico', usual: oral('1 tableta', 'Cada 24 horas', '5 días') },
+  { name: 'Cetirizina', presentation: 'Tableta 10 mg', group: 'antihistamínico', usual: oral('1 tableta', 'Cada 24 horas', '5 días') },
+  { name: 'Omeprazol', presentation: 'Cápsula 20 mg', group: 'ibp', usual: oral('1 cápsula', 'Cada 24 horas', '30 días') },
+  { name: 'Metformina', presentation: 'Tableta 850 mg', group: 'antidiabético', usual: oral('1 tableta', 'Cada 12 horas', '30 días') },
+  { name: 'Losartán', presentation: 'Tableta 50 mg', group: 'antihipertensivo', usual: oral('1 tableta', 'Cada 24 horas', '30 días') },
+  { name: 'Amlodipino', presentation: 'Tableta 5 mg', group: 'antihipertensivo', usual: oral('1 tableta', 'Cada 24 horas', '30 días') },
+  { name: 'Atorvastatina', presentation: 'Tableta 20 mg', group: 'estatina', usual: oral('1 tableta', 'Cada 24 horas', '30 días') },
+  { name: 'Salbutamol', presentation: 'Inhalador 100 mcg/dosis', group: 'broncodilatador', usual: { dose: '2 inhalaciones', route: 'Inhalada', frequency: 'Cada 6 horas', duration: '5 días' } },
+  { name: 'Ácido fólico', presentation: 'Tableta 5 mg', group: 'vitamina', usual: oral('1 tableta', 'Cada 24 horas', '30 días') },
+  { name: 'Sulfato ferroso', presentation: 'Tableta 200 mg', group: 'hierro', usual: oral('1 tableta', 'Cada 24 horas', '30 días') },
+  { name: 'Ambroxol', presentation: 'Jarabe 30 mg/5 ml', group: 'mucolítico', usual: oral('5 ml', 'Cada 8 horas', '5 días') },
+  { name: 'Metamizol', presentation: 'Tableta 500 mg', group: 'pirazolona', usual: oral('1 tableta', 'Cada 8 horas', '3 días') },
   // Uso hospitalario
-  { name: 'Acetaminofén', presentation: 'Frasco 1 g/100 ml', group: 'analgésico' },
+  { name: 'Acetaminofén', presentation: 'Frasco 1 g/100 ml', group: 'analgésico', usual: { dose: '1 g', route: 'Intravenosa', frequency: 'Cada 8 horas', duration: '3 días' } },
   { name: 'Ondansetrón', presentation: 'Ampolla 8 mg/4 ml', group: 'antiemético' },
   { name: 'Metoclopramida', presentation: 'Ampolla 10 mg/2 ml', group: 'antiemético' },
   { name: 'Tramadol', presentation: 'Ampolla 50 mg/ml', group: 'opioide' },
@@ -90,14 +108,20 @@ export const ALLERGY_GROUPS: Record<string, string[]> = {
   cefalosporinas: ['cefalosporina'],
 }
 
+/** Alergia del paciente que choca con el medicamento: por grupo farmacológico o por nombre. */
 export function allergyConflict(allergies: string[], drugName: string): string | null {
-  const drug = DRUGS.find((d) => d.name === drugName)
-  if (!drug) return null
+  const plain = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+  const drug = DRUGS.find((d) => plain(d.name) === plain(drugName))
   for (const a of allergies) {
     const groups = ALLERGY_GROUPS[a.toLowerCase()] ?? [a.toLowerCase()]
-    if (groups.includes(drug.group) || drug.name.toLowerCase().includes(a.toLowerCase())) return a
+    if (drug && groups.includes(drug.group)) return a
+    // Medicamentos que no están en el catálogo base (o agregados por la clínica): por nombre
+    if (plain(a).length >= 4 && plain(drugName).length >= 4 && (plain(drugName).includes(plain(a)) || plain(a).includes(plain(drugName)))) return a
   }
   return null
 }
+
+/** Medicamento en blanco para el formulario. */
+export const EMPTY_MED: PrescriptionItem = { drug: '', presentation: '', dose: '', route: 'Oral', frequency: 'Cada 8 horas', duration: '', instructions: '', quantity: '' }
 
 export const FREQUENCIES = ['Cada 4 horas', 'Cada 6 horas', 'Cada 8 horas', 'Cada 12 horas', 'Cada 24 horas', 'Dosis única', 'Según necesidad']

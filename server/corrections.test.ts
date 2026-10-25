@@ -211,3 +211,30 @@ describe('M1 atender al paciente de otro médico', () => {
     assert.equal(signed.status, 201)
   })
 })
+
+describe('M2 plan y manejo', () => {
+  test('se firma con sólo un medicamento o sólo una indicación; las indicaciones quedan aparte', async () => {
+    const admin = await as('admin@demo.clinara')
+    const all = Object.fromEntries(['0', '1', '2', '3', '4', '5', '6'].map((d) => [d, [{ start: '00:00', end: '23:45' }]]))
+    await admin.patch('/api/staff/s-herrera/schedule', { slot: 15, week: all })
+    const rec = await as('smejia@demo.clinara')
+    const d = new Date(); const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const doc = await as('lherrera@demo.clinara')
+    const sign = async (time: string, body: object) => {
+      const a = await rec.post('/api/appointments', { patientId: 'p2', doctorId: 's-herrera', start: `${day}T${time}` })
+      await doc.post(`/api/appointments/${a.body.id}/status`, { status: 'in_consult' })
+      return doc.post('/api/consultations', { appointmentId: a.body.id, reason: 'Control', diagnoses: [{ code: 'I10', label: 'HTA' }], ...body })
+    }
+    const onlyMed = await sign('23:00', { items: [{ drug: 'Losartán', presentation: 'Tableta 50 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 24 horas', duration: '30 días', quantity: '30 tabletas' }],
+      orders: ['Losartán (tableta 50 mg): 1 tableta vía oral cada 24 horas por 30 días.'], indications: [] })
+    assert.equal(onlyMed.status, 201)
+    const rx = await doc.get(`/api/prescriptions/${onlyMed.body.prescriptionId}`)
+    assert.equal(rx.body.prescription.items[0].quantity, '30 tabletas')
+    const onlyIndication = await sign('23:15', { orders: ['Disminuir ingesta de sal.'], indications: ['Disminuir ingesta de sal.'] })
+    assert.equal(onlyIndication.status, 201)
+    const c = await doc.get(`/api/consultations/${onlyIndication.body.consultationId}`)
+    assert.deepEqual(c.body.consultation.indications, ['Disminuir ingesta de sal.'])
+    const none = await sign('23:30', { orders: [], indications: [] })
+    assert.equal(none.status, 400)
+  })
+})

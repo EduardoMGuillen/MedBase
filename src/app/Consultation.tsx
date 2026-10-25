@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ClipboardList, Pencil, Pill, Plus, TriangleAlert, X } from 'lucide-react'
+import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ClipboardList, Pencil, Pill, Plus, X } from 'lucide-react'
 import { useStore, type FollowupInput } from '../lib/store'
 import { PatientHeader } from '../components/PatientHeader'
-import { date, defaultRoute, formatDni, medicationOrder, ROUTES, time } from '../lib/format'
-import { DRUGS, FREQUENCIES, ICD10, allergyConflict } from '../lib/catalogs'
+import { date, formatDni, medicationOrder, time } from '../lib/format'
+import { ICD10 } from '../lib/catalogs'
+import { normalize } from '../lib/patients'
+import { useVademecum } from '../lib/vademecum'
+import { MedicationForm, MedicationList } from '../components/Medications'
 import { FOLLOWUP_KIND } from '../lib/followups'
 import { yearsOld } from '../lib/inpatient'
 import { BackgroundView, useChart, VitalsGrid } from './PatientChart'
@@ -13,19 +16,29 @@ import { VitalsModal } from './WaitingRoom'
 import { emptyFollowup, FollowupFields } from './Followups'
 import type { PrescriptionItem } from '../lib/types'
 
-/** Una orden del manejo. Si trae `rx`, además va a la receta. */
-interface Order { text: string; rx?: PrescriptionItem }
-
+/**
+ * Plan y manejo en dos bloques: indicaciones (dieta, cuidados, estudios, control) y medicamentos, que
+ * van a la receta. Los borradores anteriores guardaban todo junto en `orders` y se convierten al abrir.
+ */
 interface Draft {
-  reason: string; history: string; exam: string; observations: string; dx: { code: string; label: string }[]; orders: Order[]
+  reason: string; history: string; exam: string; observations: string; dx: { code: string; label: string }[]
+  indications: string[]; meds: PrescriptionItem[]
   followups: FollowupInput[]; admit: boolean
+  orders?: { text: string; rx?: PrescriptionItem }[]
 }
 
 const PATHOLOGICAL = ['Personales patológicos', 'Heredofamiliares', 'Gineco-obstétricos']
 const NON_PATHOLOGICAL = ['Personales no patológicos']
 const draftKey = (id?: string) => `clinara.nota.${id}`
 function loadDraft(id?: string): Partial<Draft> {
-  try { return JSON.parse(localStorage.getItem(draftKey(id)) ?? '{}') } catch { return {} }
+  try {
+    const d = JSON.parse(localStorage.getItem(draftKey(id)) ?? '{}') as Partial<Draft>
+    if (d.orders && !d.indications) {
+      d.indications = d.orders.filter((o) => !o.rx).map((o) => o.text)
+      d.meds = d.orders.flatMap((o) => (o.rx ? [o.rx] : []))
+    }
+    return d
+  } catch { return {} }
 }
 
 const EXAM_GUIDE = ['Aspecto general', 'Piel y mucosas', 'Cabeza y cuello', 'Tórax y pulmones', 'Corazón', 'Abdomen', 'Genitourinario', 'Extremidades', 'Neurológico']
@@ -41,7 +54,6 @@ const FREQUENT_ORDERS = [
 /** 13 dígitos de la identidad hondureña o un pasaporte (letras y números). */
 const validDni = (v: string) => v.replace(/\D/g, '').length === 13 || (/[A-Z]/.test(v) && v.trim().length >= 6)
 
-const EMPTY_RX: PrescriptionItem = { drug: '', presentation: '', dose: '1 tableta', route: 'Oral', frequency: 'Cada 8 horas', duration: '5 días', instructions: '' }
 
 export default function Consultation() {
   const { apptId } = useParams()
@@ -64,13 +76,13 @@ export default function Consultation() {
   const [dni, setDni] = useState('')
   const [dx, setDx] = useState<{ code: string; label: string }[]>(saved.dx ?? [])
   const [dxQuery, setDxQuery] = useState('')
-  const [orders, setOrders] = useState<Order[]>(saved.orders ?? [])
+  const [indications, setIndications] = useState<string[]>(saved.indications ?? [])
+  const [meds, setMeds] = useState<PrescriptionItem[]>(saved.meds ?? [])
   const [orderText, setOrderText] = useState('')
   const [editingOrder, setEditingOrder] = useState<number | null>(null)
-  const [rxOpen, setRxOpen] = useState(false)
-  const [draft, setDraft] = useState<PrescriptionItem>(EMPTY_RX)
-  const [drugOpen, setDrugOpen] = useState(false)
-  const [override, setOverride] = useState(false)
+  // null: formulario cerrado; -1: medicamento nuevo; n: editando el medicamento n
+  const [medForm, setMedForm] = useState<{ index: number; initial?: PrescriptionItem } | null>(null)
+  const vademecum = useVademecum()
   const [triage, setTriage] = useState(false)
   const [editBg, setEditBg] = useState(false)
   const [signing, setSigning] = useState(false)
@@ -93,8 +105,8 @@ export default function Consultation() {
   }, [todayVitals?.id])
 
   useEffect(() => {
-    const d: Draft = { reason, history, exam, observations, dx, orders, followups, admit }
-    const blank = !history && !exam && !observations && !dx.length && !orders.length && !followups.length
+    const d: Draft = { reason, history, exam, observations, dx, indications, meds, followups, admit }
+    const blank = !history && !exam && !observations && !dx.length && !indications.length && !meds.length && !followups.length
     const t = setTimeout(() => {
       try {
         if (blank) localStorage.removeItem(draftKey(apptId))
@@ -102,7 +114,7 @@ export default function Consultation() {
       } catch { /* sin almacenamiento local */ }
     }, 600)
     return () => clearTimeout(t)
-  }, [apptId, reason, history, exam, observations, dx, orders, followups, admit])
+  }, [apptId, reason, history, exam, observations, dx, indications, meds, followups, admit])
 
   if (!appt || !p || !user) return <div className="page"><div className="empty">No se encontró la cita. Vuelve a la <Link to="/app/agenda">agenda</Link>.</div></div>
   if (appt.status === 'done') return <div className="page"><div className="empty">Esta consulta ya fue firmada. Puedes verla en el <Link to={`/app/pacientes/${p.id}`}>expediente</Link>.</div></div>
@@ -112,40 +124,35 @@ export default function Consultation() {
   const dxMatches = dxQuery.trim()
     ? ICD10.filter((d) => !dx.some((x) => x.code === d.code) && (d.code.toLowerCase().includes(dxQuery.toLowerCase()) || d.label.toLowerCase().includes(dxQuery.toLowerCase()))).slice(0, 6)
     : []
-  const drugMatches = draft.drug ? DRUGS.filter((d) => d.name.toLowerCase().includes(draft.drug.toLowerCase())).slice(0, 6) : DRUGS.slice(0, 6)
-  const conflict = draft.drug ? allergyConflict(p.allergies, draft.drug) : null
-  const rxCount = orders.filter((o) => o.rx).length
+  const rxCount = meds.length
   // La receta lleva la identidad del paciente; en adultos es obligatoria
   const needsDni = rxCount > 0 && !p.dni && yearsOld(p.birthDate) >= 18
-  const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !orders.length && 'al menos una orden en el manejo',
+  const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !indications.length && !meds.length && 'al menos una indicación o un medicamento',
     needsDni && 'el número de identidad para la receta'].filter(Boolean)
   const hospitalized = store.inpatientOf(p.id)
 
   const addOrder = (text: string) => {
     const t = text.trim()
     if (!t) return
-    setOrders([...orders, { text: /[.!?]$/.test(t) ? t : `${t}.` }])
+    setIndications([...indications, /[.!?]$/.test(t) ? t : `${t}.`])
     setOrderText('')
   }
   const move = (i: number, d: -1 | 1) => {
     const j = i + d
-    if (j < 0 || j >= orders.length) return
-    const next = [...orders]; [next[i], next[j]] = [next[j], next[i]]; setOrders(next)
+    if (j < 0 || j >= indications.length) return
+    const next = [...indications]; [next[i], next[j]] = [next[j], next[i]]; setIndications(next)
   }
-  const addMedication = (e?: FormEvent) => {
-    e?.preventDefault()
-    if (!draft.drug.trim() || (conflict && !override)) return
-    const rx = { ...draft, drug: draft.drug.trim() }
-    setOrders([...orders, { text: medicationOrder(rx), rx }])
-    setDraft(EMPTY_RX); setOverride(false); setRxOpen(false)
-  }
+  // Si lo que se escribe en indicaciones empieza con un medicamento del vademécum, se sugiere pasarlo a Medicamentos
+  const typedDrug = orderText.trim().length >= 4 ? vademecum.find((d) => normalize(orderText).startsWith(normalize(d.name))) : undefined
 
   const sign = async () => {
     setSigning(true)
     const r = await store.finishConsult({
-      appointmentId: appt.id, reason: reason.trim(), symptoms: [], history, exam, observations: observations.trim(), diagnoses: dx, orders: orders.map((o) => o.text),
+      appointmentId: appt.id, reason: reason.trim(), symptoms: [], history, exam, observations: observations.trim(), diagnoses: dx,
+      // En el expediente el manejo se lee completo: primero las indicaciones y luego los medicamentos
+      orders: [...indications, ...meds.map(medicationOrder)], indications,
       plan: '', vitalsId: todayVitals?.id, followups,
-    }, orders.flatMap((o) => (o.rx ? [o.rx] : [])))
+    }, meds)
     setSigning(false)
     if (r) {
       try { localStorage.removeItem(draftKey(apptId)) } catch { /* noop */ }
@@ -243,75 +250,61 @@ export default function Consultation() {
 
         <aside className="consult2__right">
           <section className="panel orders-panel">
-            <div className="panel__head"><div><h2>Plan y manejo</h2><p>Órdenes médicas en el orden en que se indican</p></div></div>
+            <div className="panel__head"><div><h2>Plan y manejo</h2><p>Arriba las indicaciones; abajo los medicamentos, que van a la receta.</p></div></div>
             <div className="panel__body csec__body">
-              {orders.length ? (
-                <ol className="orders">
-                  {orders.map((o, i) => (
-                    <li key={i} className={o.rx && allergyConflict(p.allergies, o.rx.drug) ? 'is-warn' : ''}>
-                      <span className="orders__n">{i + 1}.</span>
-                      {editingOrder === i ? (
-                        <input className="input" autoFocus defaultValue={o.text} aria-label={`Editar orden ${i + 1}`}
-                          onBlur={(e) => { const t = e.target.value.trim(); setOrders(t ? orders.map((x, j) => (j === i ? { ...x, text: t } : x)) : orders.filter((_, j) => j !== i)); setEditingOrder(null) }}
-                          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingOrder(null) }} />
-                      ) : (
-                        <button className="orders__text" onClick={() => setEditingOrder(i)} title="Toca para editar">
-                          {o.rx && <Pill size={13} className="orders__pill" aria-label="Va a la receta" />}{o.text}
-                        </button>
-                      )}
-                      <span className="orders__tools">
-                        <button className="icon-btn" aria-label="Subir" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp size={14} /></button>
-                        <button className="icon-btn" aria-label="Bajar" disabled={i === orders.length - 1} onClick={() => move(i, 1)}><ArrowDown size={14} /></button>
-                        <button className="icon-btn" aria-label={`Quitar orden ${i + 1}`} onClick={() => setOrders(orders.filter((_, j) => j !== i))}><X size={14} /></button>
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              ) : <p className="muted" style={{ fontSize: 14 }}>Agrega las órdenes una por una: dieta, medicamentos, estudios, cuidados y la cita de control.</p>}
-
-              <form className="order-add" onSubmit={(e) => { e.preventDefault(); addOrder(orderText) }}>
-                <input ref={orderInput} className="input" value={orderText} onChange={(e) => setOrderText(e.target.value)} placeholder={`${orders.length + 1}. Escribe una orden y presiona Enter`} aria-label="Nueva orden médica" enterKeyHint="done" />
-                <button className="btn btn--soft" disabled={!orderText.trim()} aria-label="Agregar orden"><Plus size={16} /></button>
-              </form>
-              <div className="order-quick">
+              <div className="plan-block">
+                <h3 className="plan-block__title">Indicaciones y plan</h3>
+                {indications.length ? (
+                  <ol className="orders">
+                    {indications.map((o, i) => (
+                      <li key={i}>
+                        <span className="orders__n">{i + 1}.</span>
+                        {editingOrder === i ? (
+                          <input className="input" autoFocus defaultValue={o} aria-label={`Editar indicación ${i + 1}`}
+                            onBlur={(e) => { const t = e.target.value.trim(); setIndications(t ? indications.map((x, j) => (j === i ? t : x)) : indications.filter((_, j) => j !== i)); setEditingOrder(null) }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingOrder(null) }} />
+                        ) : (
+                          <button className="orders__text" onClick={() => setEditingOrder(i)} title="Toca para editar">{o}</button>
+                        )}
+                        <span className="orders__tools">
+                          <button className="icon-btn" aria-label="Subir" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp size={14} /></button>
+                          <button className="icon-btn" aria-label="Bajar" disabled={i === indications.length - 1} onClick={() => move(i, 1)}><ArrowDown size={14} /></button>
+                          <button className="icon-btn" aria-label={`Quitar indicación ${i + 1}`} onClick={() => setIndications(indications.filter((_, j) => j !== i))}><X size={14} /></button>
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : <p className="muted" style={{ fontSize: 14 }}>Dieta, cuidados, estudios a realizar, cita de control, lo que necesite. Una por línea.</p>}
+                <form className="order-add" onSubmit={(e) => { e.preventDefault(); addOrder(orderText) }}>
+                  <input ref={orderInput} className="input" value={orderText} onChange={(e) => setOrderText(e.target.value)} placeholder={`${indications.length + 1}. Escribe una indicación y presiona Enter`} aria-label="Nueva indicación" enterKeyHint="done" />
+                  <button className="btn btn--soft" disabled={!orderText.trim()} aria-label="Agregar indicación"><Plus size={16} /></button>
+                </form>
+                {typedDrug && (
+                  <div className="suggest-med" role="status">
+                    <Pill size={15} />«{typedDrug.name}» es un medicamento. ¿Agregarlo como medicamento para que vaya a la receta?
+                    <button className="btn btn--soft btn--sm" onClick={() => { setMedForm({ index: -1, initial: { drug: typedDrug.name, presentation: typedDrug.presentation, route: typedDrug.usual?.route ?? 'Oral', dose: typedDrug.usual?.dose ?? '', frequency: typedDrug.usual?.frequency ?? 'Cada 8 horas', duration: typedDrug.usual?.duration ?? '' } }); setOrderText('') }}>Sí, agregarlo</button>
+                  </div>
+                )}
                 <select className="select" value="" aria-label="Órdenes frecuentes" onChange={(e) => { addOrder(e.target.value); orderInput.current?.blur() }}>
                   <option value="">Órdenes frecuentes…</option>
-                  {FREQUENT_ORDERS.filter((f) => !orders.some((o) => o.text === f)).map((f) => <option key={f}>{f}</option>)}
+                  {FREQUENT_ORDERS.filter((f) => !indications.includes(f)).map((f) => <option key={f}>{f}</option>)}
                 </select>
-                <button className={`btn ${rxOpen ? 'btn--ghost' : 'btn--primary'}`} onClick={() => setRxOpen((x) => !x)}><Pill size={15} />{rxOpen ? 'Cerrar' : 'Medicamento'}</button>
               </div>
 
-              {rxOpen && (
-                <form className="rx-form" onSubmit={addMedication}>
-                  <div className="field suggest">
-                    <span>Medicamento</span>
-                    <input className="input" autoFocus value={draft.drug} onFocus={() => setDrugOpen(true)} onBlur={() => setTimeout(() => setDrugOpen(false), 150)}
-                      onChange={(e) => { setDraft({ ...draft, drug: e.target.value, presentation: '' }); setOverride(false); setDrugOpen(true) }} placeholder="Busca en el vademécum" />
-                    {drugOpen && drugMatches.length > 0 && (
-                      <div className="suggest__list">
-                        {drugMatches.map((d) => <button type="button" key={d.name} onMouseDown={(e) => e.preventDefault()} onClick={() => { setDraft({ ...draft, drug: d.name, presentation: d.presentation, route: defaultRoute(d.presentation) }); setDrugOpen(false) }}>
-                          <span>{d.name}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{d.presentation}</span>
-                        </button>)}
-                      </div>
-                    )}
-                  </div>
-                  <div className="form-grid">
-                    <label className="field"><span>Presentación</span><input className="input" value={draft.presentation} onChange={(e) => setDraft({ ...draft, presentation: e.target.value })} /></label>
-                    <label className="field"><span>Dosis</span><input className="input" value={draft.dose} onChange={(e) => setDraft({ ...draft, dose: e.target.value })} /></label>
-                    <label className="field"><span>Vía</span><select className="select" value={draft.route} onChange={(e) => setDraft({ ...draft, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
-                    <label className="field"><span>Frecuencia</span><select className="select" value={draft.frequency} onChange={(e) => setDraft({ ...draft, frequency: e.target.value })}>{FREQUENCIES.map((f) => <option key={f}>{f}</option>)}</select></label>
-                    <label className="field"><span>Duración</span><input className="input" value={draft.duration} onChange={(e) => setDraft({ ...draft, duration: e.target.value })} /></label>
-                    <label className="field"><span>Indicaciones</span><input className="input" value={draft.instructions} onChange={(e) => setDraft({ ...draft, instructions: e.target.value })} placeholder="Ej. Con los alimentos" /></label>
-                  </div>
-                  {conflict && (
-                    <div className="alert-strip" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
-                      <span style={{ display: 'flex', gap: 8 }}><TriangleAlert size={18} style={{ flex: 'none' }} />{p.firstName} es alérgica/o a {conflict}. {draft.drug} puede provocar una reacción.</span>
-                      {!override && <button type="button" className="btn btn--danger btn--sm" style={{ background: '#fff' }} onClick={() => setOverride(true)}>Prescribir de todos modos</button>}
-                    </div>
-                  )}
-                  <button className="btn btn--primary" disabled={!draft.drug.trim() || (!!conflict && !override)}><Plus size={16} />Agregar al manejo</button>
-                </form>
-              )}
+              <div className="plan-block">
+                <h3 className="plan-block__title">Medicamentos <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· van a la receta</span></h3>
+                <MedicationList items={meds} patient={p} editing={medForm?.index ?? null}
+                  onEdit={(i) => setMedForm({ index: i, initial: meds[i] })} onRemove={(i) => { setMeds(meds.filter((_, j) => j !== i)); setMedForm(null) }} />
+                {!meds.length && !medForm && <p className="muted" style={{ fontSize: 14 }}>Sin medicamentos indicados.</p>}
+                {medForm ? (
+                  <MedicationForm key={medForm.index} patient={p} current={meds} initial={medForm.initial}
+                    submitLabel={medForm.index >= 0 ? 'Guardar cambios' : 'Agregar medicamento'}
+                    onSave={(item) => { setMeds(medForm.index >= 0 ? meds.map((x, j) => (j === medForm.index ? item : x)) : [...meds, item]); setMedForm(null) }}
+                    onCancel={() => setMedForm(null)} />
+                ) : (
+                  <button className="btn btn--primary" style={{ justifySelf: 'start' }} onClick={() => setMedForm({ index: -1 })}><Plus size={16} />Agregar medicamento</button>
+                )}
+              </div>
             </div>
           </section>
 

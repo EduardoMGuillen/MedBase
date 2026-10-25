@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
-  Appointment, ApptStatus, Attachment, AuditEntry, Bed, Clinic, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, HospProcedure, Hospitalization,
+  Appointment, ApptStatus, Attachment, AuditEntry, Bed, Clinic, ClinicDrug, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, Patient, PatientIndex, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
@@ -20,6 +20,7 @@ interface Data {
   inpatients: Hospitalization[] // hospitalizaciones abiertas
   followups: Followup[] // seguimientos activos
   discharges: { patientId: string; at: string }[] // último egreso de cada paciente
+  clinicDrugs?: ClinicDrug[] // vademécum propio de la clínica
 }
 
 interface Session { user: Staff; permissions: Permission[]; demo: boolean }

@@ -205,6 +205,7 @@ export interface PrescriptionItem {
   duration: string
   route?: string // vía de administración
   instructions?: string
+  quantity?: string // cantidad total a dispensar (opcional), p. ej. "20 tabletas"
 }
 
 export interface Prescription {
@@ -231,7 +232,9 @@ export interface Consultation {
   exam: string // examen físico
   observations?: string
   diagnoses: { code: string; label: string }[] // impresión diagnóstica
-  orders: string[] // manejo: órdenes médicas numeradas
+  orders: string[] // manejo: órdenes médicas numeradas (indicaciones y luego medicamentos)
+  /** Indicaciones no farmacológicas (desde las correcciones de Emil); los medicamentos van en la receta. */
+  indications?: string[]
   plan: string // manejo en texto (consultas anteriores a la v0.5)
   vitalsId?: string
   prescriptionId?: string
@@ -246,6 +249,21 @@ export interface PatientIndex {
   nextDoctorId?: string
   followups: { kind: Followup['kind']; title: string }[]
   status: 'active' | 'hospital' | 'observation'
+}
+
+/** Medicamento agregado al vademécum por la clínica (no está en el catálogo base). */
+export interface ClinicDrug {
+  id: string
+  name: string // nombre genérico
+  brand?: string // nombre comercial
+  presentation?: string
+  concentration?: string
+  route?: string
+  active: boolean
+  createdBy: string
+  createdAt: string
+  updatedBy?: string
+  updatedAt?: string
 }
 
 export interface AuditEntry {

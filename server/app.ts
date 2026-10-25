@@ -639,15 +639,15 @@ export function createApp(opts: AppOptions) {
       history: z.string().default(''),
       exam: z.string().default(''),
       diagnoses: z.array(z.object({ code: z.string(), label: z.string() })).min(1, 'Agrega al menos un diagnóstico.'),
-      orders: z.array(z.string().trim().min(1)).min(1, 'Agrega al menos una orden médica en el manejo.'),
+      orders: z.array(z.string().trim().min(1)).default([]),
+      indications: z.array(z.string().trim().min(1).max(500)).max(40).optional(),
       observations: z.string().max(4000).default(''),
       followups: z.array(followupInput).max(5).default([]),
       vitalsId: z.string().optional(),
-      items: z.array(z.object({
-        drug: z.string().trim().min(1), presentation: z.string().default(''), dose: z.string().trim().min(1, 'Escribe la dosis.'),
-        frequency: z.string().min(1), duration: z.string().trim().min(1, 'Escribe la duración.'), instructions: z.string().optional(),
-      })).default([]),
+      items: z.array(rxItem).default([]),
     }), req.body)
+    // Basta una indicación o un medicamento; no se exigen ambos
+    if (!c.orders.length && !c.items.length) fail(400, 'Agrega al menos una indicación o un medicamento en el plan y manejo.')
     const cid = clinicOf(req)
     const appt = (await apptRow(cid, c.appointmentId)) ?? fail(404, 'La cita no existe.')
     if (appt!.doctor_id !== user.id) fail(403, 'Sólo el médico asignado puede firmar esta consulta.')
@@ -669,10 +669,11 @@ export function createApp(opts: AppOptions) {
         await q.run(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items,clinic_id) VALUES (?,?,?,?,?,?,?,?)`,
           [rxId, folio, patientId, user.id, consultId, now.toISOString(), JSON.stringify(c.items), cid])
       }
-      await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id,orders,observations,clinic_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id,orders,observations,clinic_id,indications)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [consultId, patientId, user.id, c.appointmentId, now.toISOString(), c.reason, JSON.stringify(c.symptoms), c.symptomOnset ?? null,
-          c.history, c.exam, JSON.stringify(c.diagnoses), c.orders.map((o, i) => `${i + 1}. ${o}`).join('\n'), c.vitalsId ?? null, rxId, JSON.stringify(c.orders), c.observations, cid])
+          c.history, c.exam, JSON.stringify(c.diagnoses), c.orders.map((o, i) => `${i + 1}. ${o}`).join('\n'), c.vitalsId ?? null, rxId, JSON.stringify(c.orders), c.observations, cid,
+          c.indications ? JSON.stringify(c.indications) : null])
       await q.run(`UPDATE appointments SET status = 'done' WHERE id = ?`, [c.appointmentId])
       for (const f of c.followups) await insertFollowup(q, cid, user.id, { ...f, patientId })
       await audit(user, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
@@ -803,6 +804,13 @@ export function createApp(opts: AppOptions) {
 }
 
 export const tempPassword = () => randomBytes(6).toString('base64url')
+
+/** Un medicamento de la receta. */
+const rxItem = z.object({
+  drug: z.string().trim().min(1, 'Escribe el medicamento.').max(160), presentation: z.string().max(160).default(''), dose: z.string().trim().min(1, 'Escribe la dosis.').max(80),
+  route: z.string().max(40).optional(), frequency: z.string().min(1).max(80), duration: z.string().trim().max(80).default(''),
+  instructions: z.string().max(300).optional(), quantity: z.string().trim().max(80).optional(),
+})
 
 const hhmm = z.string().regex(/^\d{2}:\d{2}$/, 'Escribe la hora como 08:00.')
 /** Horario de un médico: el formato anterior (una franja para todos los días) o franjas por día. */

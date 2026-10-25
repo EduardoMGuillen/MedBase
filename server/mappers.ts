@@ -51,7 +51,7 @@ export const toConsultation = (r: Row): Consultation => ({
   id: String(r.id), patientId: String(r.patient_id), doctorId: String(r.doctor_id), appointmentId: s(r.appointment_id),
   date: String(r.date), reason: String(r.reason), symptoms: j(r.symptoms, []), symptomOnset: s(r.symptom_onset),
   history: String(r.history ?? ''), exam: String(r.exam ?? ''), observations: s(r.observations) || undefined,
-  diagnoses: j(r.diagnoses, []), plan: String(r.plan ?? ''), orders: j(r.orders, []),
+  diagnoses: j(r.diagnoses, []), plan: String(r.plan ?? ''), orders: j(r.orders, []), indications: r.indications == null ? undefined : j<string[]>(r.indications, []),
   vitalsId: s(r.vitals_id), prescriptionId: s(r.prescription_id),
 })
 

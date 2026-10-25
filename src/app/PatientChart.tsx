@@ -126,11 +126,22 @@ export function ConsultationBody({ c, vitals }: { c: Consultation; vitals?: Vita
       <div className="note__sec"><h4>Impresión diagnóstica</h4>
         <ol className="note__list">{c.diagnoses.map((d) => <li key={d.code}>{d.label} <span className="muted">({d.code})</span></li>)}</ol>
       </div>
-      <div className="note__sec"><h4>Plan y manejo</h4>
-        {c.orders.length
-          ? <ol className="note__list">{c.orders.map((o, i) => <li key={i}>{o}</li>)}</ol>
-          : <p>{c.plan || <span className="muted">Sin registro.</span>}</p>}
-      </div>
+      {c.indications ? (<>
+        <div className="note__sec"><h4>Indicaciones y plan</h4>
+          {c.indications.length ? <ol className="note__list">{c.indications.map((o, i) => <li key={i}>{o}</li>)}</ol> : <p className="muted">Sin indicaciones.</p>}
+        </div>
+        <div className="note__sec"><h4>Medicamentos</h4>
+          {c.orders.length > c.indications.length
+            ? <ol className="note__list">{c.orders.slice(c.indications.length).map((o, i) => <li key={i}>{o}</li>)}</ol>
+            : <p className="muted">Sin medicamentos.</p>}
+        </div>
+      </>) : (
+        <div className="note__sec"><h4>Plan y manejo</h4>
+          {c.orders.length
+            ? <ol className="note__list">{c.orders.map((o, i) => <li key={i}>{o}</li>)}</ol>
+            : <p>{c.plan || <span className="muted">Sin registro.</span>}</p>}
+        </div>
+      )}
     </div>
   )
 }

@@ -13,7 +13,7 @@ export const INPATIENT_FREQUENCIES: { label: string; hours: number | null }[] = 
   { label: 'Cada 12 horas', hours: 12 }, { label: 'Cada 24 horas', hours: 24 }, { label: 'Dosis única', hours: null },
 ]
 
-const ROUTE_ABBR: Record<string, string> = {
+export const ROUTE_ABBR: Record<string, string> = {
   Intravenosa: 'IV', Intramuscular: 'IM', Subcutánea: 'SC', Oral: 'VO', Sublingual: 'SL', Inhalada: 'inhalada', Tópica: 'tópica', Rectal: 'rectal',
 }
 

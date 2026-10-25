@@ -87,13 +87,13 @@ export function PrescriptionSheet() {
           {rx.items.map((it, i) => (
             <li key={i}>
               <strong>{it.drug}</strong> <span style={{ color: 'var(--muted)' }}>{it.presentation}</span>
-              <p>{it.dose}{it.route ? ` vía ${it.route.toLowerCase()}` : ''}, {it.frequency.toLowerCase()}, durante {it.duration}.{it.instructions ? ` ${it.instructions}` : ''}</p>
+              <p>{it.dose}{it.route ? ` vía ${it.route.toLowerCase()}` : ''}, {it.frequency.toLowerCase()}{it.duration ? `, durante ${it.duration}` : ''}.{it.instructions ? ` ${it.instructions}` : ''}{it.quantity ? ` Cantidad: ${it.quantity}.` : ''}</p>
             </li>
           ))}
         </ol>
         {(() => {
-          // Indicaciones: las órdenes del manejo que no son medicamentos de esta receta
-          const notes = c?.orders.length ? c.orders.filter((o) => !rx.items.some((it) => o.startsWith(it.drug))) : c?.plan ? [c.plan] : []
+          // Indicaciones: las que el médico escribió aparte o, en consultas anteriores, las órdenes que no son medicamentos
+          const notes = c?.indications ?? (c?.orders.length ? c.orders.filter((o) => !rx.items.some((it) => o.startsWith(it.drug))) : c?.plan ? [c.plan] : [])
           return notes.length > 0 && (
             <div style={{ marginTop: 24, fontSize: 14 }}><b>Indicaciones generales</b>
               <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{notes.map((n, i) => <li key={i}>{n}</li>)}</ul></div>
