@@ -15,7 +15,7 @@ import Patients from './app/Patients'
 import PatientChart from './app/PatientChart'
 import Consultation from './app/Consultation'
 import Prescriptions, { PrescriptionSheet } from './app/Prescriptions'
-import Certificate from './app/Certificate'
+import Certificate, { CertificateView } from './app/Certificate'
 import ConsultNote from './app/ConsultNote'
 import Billing, { ReceiptSheet } from './app/Billing'
 import Reports from './app/Reports'
@@ -58,6 +58,7 @@ export default function App() {
             <Route path="pacientes/:id" element={<Guard perm="patients.view"><PatientChart /></Guard>} />
             <Route path="consulta/:apptId" element={<Guard perm="consult.write"><Consultation /></Guard>} />
             <Route path="constancia/:id" element={<Guard perm="consult.write"><Certificate /></Guard>} />
+            <Route path="constancias/:id" element={<Guard perm="chart.view"><CertificateView /></Guard>} />
             <Route path="nota/:id" element={<Guard perm="chart.view"><ConsultNote /></Guard>} />
             <Route path="recetas" element={<Guard perm="rx.view"><Prescriptions /></Guard>} />
             <Route path="recetas/:id" element={<Guard perm="rx.view"><PrescriptionSheet /></Guard>} />

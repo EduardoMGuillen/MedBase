@@ -22,6 +22,7 @@ import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
 import { registerInpatient } from './routes/inpatient.js'
 import { registerDrugs } from './routes/drugs.js'
+import { registerCertificates } from './routes/certificates.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { can, ROLE_PERMISSIONS, type Permission } from '../src/lib/permissions.js'
 import { yearsOld } from '../src/lib/inpatient.js'
@@ -808,6 +809,7 @@ export function createApp(opts: AppOptions) {
   registerPlatform(app, ctx)
   registerInpatient(app, ctx)
   registerDrugs(app, ctx)
+  registerCertificates(app, ctx)
   registerFollowups(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))

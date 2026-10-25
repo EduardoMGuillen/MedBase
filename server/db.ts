@@ -10,7 +10,7 @@ import type { Row, Sql } from './sql.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '16'
+const SCHEMA_VERSION = '17'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -356,6 +356,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS clinic_drugs_key ON clinic_drugs (clinic_id, n
 ALTER TABLE prescriptions
   ADD COLUMN IF NOT EXISTS standalone BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS indications TEXT;
+
+-- v17: constancias emitidas. No se editan: se anulan (con motivo) y se emite otra.
+CREATE TABLE IF NOT EXISTS certificates (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  number TEXT NOT NULL,
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  consultation_id TEXT,
+  doctor_id TEXT NOT NULL REFERENCES staff(id),
+  kind TEXT NOT NULL CHECK (kind IN ('attention','rest','free','companion')),
+  data TEXT NOT NULL,
+  issued_at TEXT NOT NULL,
+  voided_at TEXT, voided_by TEXT, void_reason TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS certificates_number ON certificates (clinic_id, number);
+CREATE INDEX IF NOT EXISTS certificates_patient ON certificates (patient_id);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -634,7 +650,7 @@ export async function nextFolio(q: Sql, clinicId: string, now: Date) {
 /** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
 export async function resetDemo(sql: Sql) {
   await sql.tx(async (q) => {
-    await q.exec(`TRUNCATE clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
+    await q.exec(`TRUNCATE certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
       attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
     await seed(q)

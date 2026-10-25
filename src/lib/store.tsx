@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
-  Appointment, ApptStatus, Attachment, AuditEntry, Bed, Clinic, ClinicDrug, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, HospProcedure, Hospitalization,
+  Appointment, ApptStatus, Attachment, AuditEntry, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, Patient, PatientIndex, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
@@ -143,6 +143,8 @@ function useStoreValue() {
   const fetchPayments = useCallback((from: string, to: string) => api<Payment[]>(`/payments?from=${from}&to=${to}`), [])
   const fetchPayment = useCallback((id: string) => api<{ payment: Payment; patient: Patient }>(`/payments/${id}`), [])
   const fetchReport = useCallback((from: string, to: string) => api<Report>(`/reports?from=${from}&to=${to}`), [])
+  const fetchCertificate = useCallback((id: string) => api<Certificate>(`/certificates/${id}`), [])
+  const fetchCertificates = useCallback((patientId: string) => api<Certificate[]>(`/patients/${patientId}/certificates`), [])
   const fetchPatientIndex = useCallback(() => api<PatientIndex[]>('/patients/index'), [])
   const fetchAttachments = useCallback((patientId: string) => api<Attachment[]>(`/patients/${patientId}/attachments`), [])
   // Administración de la plataforma
@@ -156,7 +158,7 @@ function useStoreValue() {
     signIn, signOut,
     patient: (id: string) => data.patients.find((p) => p.id === id),
     staffById: (id: string) => data.staff.find((s) => s.id === id),
-    fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
+    fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
     fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient,
     bed: (id: string) => data.beds.find((b) => b.id === id),
     /** Hospitalización abierta del paciente, si la tiene. */
@@ -218,6 +220,14 @@ function useStoreValue() {
 
     issuePrescription: (b: { patientId: string; items: PrescriptionItem[]; indications: string[] }) =>
       run(() => api<{ prescriptionId: string; folio: string }>('/prescriptions', { body: b }), 'Receta emitida'),
+    // Constancias: se emiten, se reimprimen y, si hay un error, se anulan
+    createCertificate: (b: Omit<CertificateData, 'patient' | 'doctor' | 'clinic' | 'restTo' | 'diagnoses'> & { patientId: string; consultationId?: string; kind: Certificate['kind'] }) =>
+      run(() => api<Certificate>('/certificates', { body: b }), 'Constancia emitida'),
+    voidCertificate: (id: string, reason: string) => run(() => api<Certificate>(`/certificates/${id}/void`, { body: { reason } }), 'Constancia anulada'),
+    saveMyLicense: (license: string) => run(async () => {
+      await api('/me', { method: 'PATCH', body: { license } })
+      setSession(await api<Session>('/auth/me'))
+    }, 'Número de colegiación guardado'),
     pay: (p: NewPayment) => run(() => api<Payment>('/payments', { body: p }), 'Cobro registrado'),
     voidPayment: (id: string, reason: string) => run(() => api<Payment>(`/payments/${id}/void`, { body: { reason } }), 'Recibo anulado'),
 

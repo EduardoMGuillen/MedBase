@@ -1,5 +1,5 @@
 import type {
-  Appointment, Attachment, AuditEntry, Background, Bed, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
+  Appointment, Attachment, AuditEntry, Background, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
   Patient, Payment, Prescription, Service, Staff, Vitals,
 } from '../src/lib/types.js'
 import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
@@ -59,6 +59,12 @@ export const toPrescription = (r: Row): Prescription => ({
   id: String(r.id), folio: String(r.folio), patientId: String(r.patient_id), doctorId: String(r.doctor_id),
   consultationId: String(r.consultation_id), hospitalizationId: s(r.hospitalization_id), issuedAt: String(r.issued_at), items: j(r.items, []),
   standalone: Boolean(r.standalone) || undefined, indications: r.indications == null ? undefined : j<string[]>(r.indications, []),
+})
+
+export const toCertificate = (r: Row): Certificate => ({
+  id: String(r.id), number: String(r.number), patientId: String(r.patient_id), consultationId: s(r.consultation_id) || undefined, doctorId: String(r.doctor_id),
+  kind: r.kind as Certificate['kind'], data: j<CertificateData>(r.data, {} as CertificateData), issuedAt: String(r.issued_at),
+  voidedAt: s(r.voided_at), voidedBy: s(r.voided_by), voidReason: s(r.void_reason),
 })
 
 export const toClinicDrug = (r: Row): ClinicDrug => ({

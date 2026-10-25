@@ -387,3 +387,11 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
   .rx-filters > :first-child { grid-column: 1 / -1; }
   .rx-row { grid-template-columns: 1fr; gap: 6px; }
 }
+
+/* ---------- Constancias ---------- */
+.cert__sign { display: flex; justify-content: flex-end; align-items: flex-end; gap: 32px; margin-top: 56px; }
+.cert__stamp { width: 120px; height: 120px; border: 1.5px dashed var(--line); border-radius: 50%; display: grid; place-items: center; color: var(--faint); font-size: 12px; }
+@media print {
+  .cert { page-break-inside: avoid; }
+  .cert .void-stamp { display: block; }
+}

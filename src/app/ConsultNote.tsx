@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ChevronLeft, Printer } from 'lucide-react'
+import { ChevronLeft, FileBadge, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
 import { LogoMark } from '../components/Logo'
@@ -10,7 +10,7 @@ import { BackgroundView, ConsultationBody, Identification } from './PatientChart
 /** Nota de consulta imprimible con el orden de la historia clínica. */
 export default function ConsultNote() {
   const { id } = useParams()
-  const { fetchConsultation, staffById, settings, notify } = useStore()
+  const { fetchConsultation, staffById, settings, notify, can } = useStore()
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchConsultation>> | null>(null)
   useEffect(() => { if (id) fetchConsultation(id).then(setData).catch((e: Error) => notify(e.message, 'error')) }, [id, fetchConsultation, notify])
   if (!data) return <Loading label="Preparando la nota" />
@@ -21,7 +21,10 @@ export default function ConsultNote() {
     <div className="page">
       <div className="page-head no-print">
         <Link className="btn btn--ghost" to={`/app/pacientes/${p.id}`}><ChevronLeft size={16} />Expediente de {p.firstName}</Link>
-        <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir nota</button>
+        <div className="page-head__actions">
+          {can('consult.write') && <Link className="btn btn--ghost" to={`/app/constancia/${c.id}`}><FileBadge size={16} />Generar constancia</Link>}
+          <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir nota</button>
+        </div>
       </div>
       <article className="rx-sheet clinical-note">
         <header className="rx-sheet__head">

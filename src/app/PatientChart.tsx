@@ -11,7 +11,8 @@ import { PatientHeader } from '../components/PatientHeader'
 import { age, BACKGROUND_GROUPS, bmi, date, time } from '../lib/format'
 import { Attachments } from './Attachments'
 import { AllergiesForm, BackgroundForm, IdentificationForm } from './PatientForms'
-import type { Consultation, Patient, Vitals } from '../lib/types'
+import type { Certificate, Consultation, Patient, Vitals } from '../lib/types'
+import { CERT_KIND } from '../lib/certificates'
 import { vitalLevel, type VitalKey } from '../lib/vitals'
 import { yearsOld } from '../lib/inpatient'
 
@@ -146,17 +147,22 @@ export function ConsultationBody({ c, vitals }: { c: Consultation; vitals?: Vita
   )
 }
 
-type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'rx' | 'files'
+type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'rx' | 'certs' | 'files'
 
 export default function PatientChart() {
   const { id } = useParams()
-  const { patient, appointments, staffById, can, updatePatient, followups, bed, inpatientOf } = useStore()
+  const { patient, appointments, staffById, can, updatePatient, followups, bed, inpatientOf, fetchCertificates } = useStore()
+  const [certs, setCerts] = useState<Certificate[] | null>(null)
   const [tab, setTab] = useState<Tab>('history')
   const [editing, setEditing] = useState<null | 'id' | 'allergies' | 'background'>(null)
   const clinical = can('chart.view')
   const p = patient(id!)
   // Sólo se pide el expediente de pacientes de la propia clínica
   const { chart, reload } = useChart(id, clinical && !!p)
+  useEffect(() => {
+    if (!id || !clinical) return
+    fetchCertificates(id).then(setCerts).catch(() => setCerts([]))
+  }, [id, clinical, fetchCertificates])
   if (!p) return <div className="page"><div className="empty">Este expediente no existe. Vuelve a <Link to="/app/pacientes">Pacientes</Link>.</div></div>
 
   const cs = chart?.consultations ?? []
@@ -170,7 +176,7 @@ export default function PatientChart() {
   const n = (k: unknown[]) => (chart ? ` (${k.length})` : '')
   const tabs: [Tab, string, boolean][] = [
     ['history', 'Historia clínica', true], ['consults', `Consultas${n(cs)}`, clinical], ['hosp', `Hospitalizaciones${n(hs)}`, clinical && (!chart || hs.length > 0)],
-    ['vitals', 'Signos vitales', clinical], ['rx', `Recetas${n(rxs)}`, clinical && can('rx.view')], ['files', 'Archivos', clinical],
+    ['vitals', 'Signos vitales', clinical], ['rx', `Recetas${n(rxs)}`, clinical && can('rx.view')], ['certs', `Constancias${certs ? ` (${certs.length})` : ''}`, clinical], ['files', 'Archivos', clinical],
   ]
   const save = async (data: Partial<Patient>) => { if (await updatePatient(p.id, data)) { setEditing(null); reload() } }
 
@@ -259,7 +265,7 @@ export default function PatientChart() {
                 <div className="page-head__actions">
                   <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}><NotebookPen size={15} />Nota</Link>
                   {c.prescriptionId && can('rx.view') && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${c.prescriptionId}`}><FileText size={15} />Receta</Link>}
-                  {can('consult.write') && <Link className="btn btn--ghost btn--sm" to={`/app/constancia/${c.id}`}><FileBadge size={15} />Constancia médica</Link>}
+                  {can('consult.write') && <Link className="btn btn--ghost btn--sm" to={`/app/constancia/${c.id}`}><FileBadge size={15} />Generar constancia</Link>}
                 </div>
               </div>
               <div className="panel__body"><ConsultationBody c={c} vitals={vs.find((v) => v.id === c.vitalsId)} /></div>
@@ -310,6 +316,18 @@ export default function PatientChart() {
               <FileText size={18} color="var(--faint)" />
             </Link>
           ))}</div> : <div className="empty">Sin recetas emitidas.</div>}
+        </section>
+      )}
+
+      {tab === 'certs' && clinical && (
+        <section className="panel">
+          {certs?.length ? <div className="rows">{certs.map((x) => (
+            <Link key={x.id} to={`/app/constancias/${x.id}`} className="row" style={{ gridTemplateColumns: '120px 1fr auto' }}>
+              <span className="num" style={{ fontSize: 13.5 }}>{date(x.issuedAt)}<br /><span style={{ color: 'var(--muted)' }}>{x.number}</span></span>
+              <div className="row__who"><strong>{CERT_KIND[x.kind].title}</strong><span>{staffById(x.doctorId)?.name}{x.kind === 'rest' && x.data.restDays ? `, ${x.data.restDays} días de reposo` : ''}</span></div>
+              {x.voidedAt ? <span className="badge badge--red">Anulada</span> : <span className="badge badge--mint">Vigente</span>}
+            </Link>
+          ))}</div> : <div className="empty">{certs ? 'Sin constancias emitidas. Se generan desde la nota de cada consulta.' : 'Cargando…'}</div>}
         </section>
       )}
 

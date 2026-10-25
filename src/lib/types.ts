@@ -254,6 +254,44 @@ export interface PatientIndex {
   status: 'active' | 'hospital' | 'observation'
 }
 
+/**
+ * Constancia médica emitida. `data` guarda lo que se imprimió (paciente, médico, clínica, fechas, texto)
+ * tal como estaba al emitirla: así la reimpresión es idéntica aunque después cambien los datos.
+ */
+export interface Certificate {
+  id: string
+  number: string // CM-2026-0001, correlativo por clínica
+  patientId: string
+  consultationId?: string
+  doctorId: string
+  kind: 'attention' | 'rest' | 'free' | 'companion'
+  data: CertificateData
+  issuedAt: string
+  voidedAt?: string
+  voidedBy?: string
+  voidReason?: string
+}
+
+export interface CertificateData {
+  to: string // dirigida a
+  visitDate: string // YYYY-MM-DD de la atención
+  fromTime?: string // HH:MM
+  toTime?: string // HH:MM
+  restDays?: number
+  restType?: 'relativo' | 'absoluto'
+  restFrom?: string // YYYY-MM-DD
+  restTo?: string // YYYY-MM-DD
+  includeDx?: boolean
+  diagnoses?: string[]
+  companion?: { name: string; dni?: string; relation?: string }
+  text?: string // constancia libre
+  notes?: string
+  // Lo que se imprime, congelado al emitir
+  patient: { name: string; dni?: string; age: string; sex: 'F' | 'M'; record: string; guardian?: string }
+  doctor: { name: string; specialty?: string; license?: string }
+  clinic: { name: string; address: string; phone: string; logo?: string }
+}
+
 /** Medicamento agregado al vademécum por la clínica (no está en el catálogo base). */
 export interface ClinicDrug {
   id: string
