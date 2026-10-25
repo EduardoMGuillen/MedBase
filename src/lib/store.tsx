@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
   Appointment, ApptStatus, Attachment, AuditEntry, Bed, Clinic, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, HospProcedure, Hospitalization,
-  InpatientFile, InpatientMed, InpatientNote, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Service, Staff, Vitals,
+  InpatientFile, InpatientMed, InpatientNote, Patient, PatientIndex, Payment, PaymentMethod, Prescription, PrescriptionItem, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
 import { api, ApiError } from './api'
@@ -132,6 +132,7 @@ function useStoreValue() {
   const fetchPayments = useCallback((from: string, to: string) => api<Payment[]>(`/payments?from=${from}&to=${to}`), [])
   const fetchPayment = useCallback((id: string) => api<{ payment: Payment; patient: Patient }>(`/payments/${id}`), [])
   const fetchReport = useCallback((from: string, to: string) => api<Report>(`/reports?from=${from}&to=${to}`), [])
+  const fetchPatientIndex = useCallback(() => api<PatientIndex[]>('/patients/index'), [])
   const fetchAttachments = useCallback((patientId: string) => api<Attachment[]>(`/patients/${patientId}/attachments`), [])
   // Administración de la plataforma
   const fetchClinics = useCallback(() => api<Clinic[]>('/platform/clinics'), [])
@@ -144,7 +145,7 @@ function useStoreValue() {
     signIn, signOut,
     patient: (id: string) => data.patients.find((p) => p.id === id),
     staffById: (id: string) => data.staff.find((s) => s.id === id),
-    fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
+    fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
     fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient,
     bed: (id: string) => data.beds.find((b) => b.id === id),
     /** Hospitalización abierta del paciente, si la tiene. */

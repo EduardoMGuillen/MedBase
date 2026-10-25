@@ -316,3 +316,19 @@ button.stat--btn:hover b { color: var(--ink); }
   .arrival { grid-template-columns: 52px 1fr; padding: 12px 16px; }
   .arrival > .btn { grid-column: 1 / -1; }
 }
+
+/* ---------- Biblioteca de pacientes: filtros ---------- */
+.lib-bar { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: center; }
+.lib-bar__search { flex: 1 1 320px; max-width: 460px; }
+.lib-bar__count { margin-left: auto; color: var(--muted); font-size: 14px; font-weight: 600; }
+.range-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.filters { align-items: start; }
+.filter-chips { align-items: center; }
+.chip--filter { display: inline-flex; align-items: center; gap: 2px; padding-right: 2px; background: var(--ink-soft); color: var(--ink-deep); font-weight: 600; }
+.chip--filter .icon-btn { width: 24px; height: 24px; }
+@media (max-width: 720px) {
+  .lib-bar__search { max-width: none; flex-basis: 100%; }
+  .lib-bar > .btn { flex: 1; }
+  .lib-bar__count { margin-left: 0; }
+  .filters .range-pair { grid-template-columns: 1fr 1fr; }
+}

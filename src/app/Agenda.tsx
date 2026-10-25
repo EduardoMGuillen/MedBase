@@ -5,6 +5,7 @@ import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead, StatusBadge } from '../components/ui'
 import { ReminderButton } from '../components/Reminder'
 import { cap, fullName, localISODate, time } from '../lib/format'
+import { useIsPhone } from '../lib/hooks'
 import type { Appointment, Patient, Staff } from '../lib/types'
 
 const START_H = 7
@@ -25,18 +26,6 @@ function range(view: View, cursor: Date): [Date, Date] {
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1)
   const s = startOfWeek(first)
   return [s, addDays(s, 41)] // 6 semanas completas
-}
-
-function useIsPhone() {
-  const q = '(max-width: 720px)'
-  const [m, setM] = useState(() => window.matchMedia(q).matches)
-  useEffect(() => {
-    const mq = window.matchMedia(q)
-    const on = () => setM(mq.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
-  return m
 }
 
 export default function Agenda() {

@@ -111,3 +111,18 @@ describe('H5 el médico aplica medicamentos', () => {
     assert.equal((await rec.post(`/api/inpatient/meds/${prn.id}/doses`, { status: 'given' })).status, 403)
   })
 })
+
+describe('R3 filtros de la biblioteca', () => {
+  test('el índice trae última consulta, próxima cita, seguimientos y estado para todos los roles', async () => {
+    const rec = await as('smejia@demo.clinara')
+    const r = await rec.get('/api/patients/index')
+    assert.equal(r.status, 200)
+    const maria = r.body.find((x: any) => x.patientId === 'p1')
+    assert.ok(maria.lastConsultAt, 'María José tiene consultas')
+    assert.equal(maria.lastDoctorId, 's-herrera')
+    assert.ok(r.body.some((x: any) => x.status === 'hospital'), 'hay hospitalizados en la demo')
+    assert.ok(r.body.some((x: any) => x.followups.some((f: any) => f.kind === 'chronic')))
+    const admin = await as('admin@demo.clinara')
+    assert.equal((await admin.get('/api/patients/index')).status, 200)
+  })
+})

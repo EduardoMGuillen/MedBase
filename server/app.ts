@@ -39,6 +39,9 @@ const SESSION_HOURS = 10
 
 interface AuthedRequest extends Request { user: Staff }
 
+/** Tipo de estancia; la columna `kind` llega con el módulo de observación (antes de él, todo es hospitalización). */
+const STAY_KIND = `'hospital'`
+
 const COLORS = ['#2335C9', '#0F8A6E', '#B4407A', '#C27A12', '#6A4BC4', '#2C7DA0', '#5B6472']
 const ROLES = ['admin', 'doctor', 'nurse', 'reception'] as const
 
@@ -348,6 +351,34 @@ export function createApp(opts: AppOptions) {
     if (sets.length) await sql.run(`UPDATE patients SET ${sets.join(', ')} WHERE id = ? AND clinic_id = ?`, [...vals, String(row!.id), cid])
     await audit(user, `Actualizó la ficha de ${row!.first_name} ${row!.last_name}`)
     res.json(toPatient((await patientRow(cid, String(row!.id)))!, can(user.role, 'chart.view')))
+  })
+
+  /**
+   * Índice de la biblioteca de pacientes para los filtros: última consulta y su médico, próxima cita,
+   * seguimientos activos y estado. Se calcula sobre todo el historial, no sólo los 90 días que carga la app.
+   */
+  app.get('/api/patients/index', auth, need('patients.view'), async (req, res) => {
+    const cid = clinicOf(req)
+    const now = new Date()
+    const nowLocal = `${localDate(now)}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const [last, next, follow, stays] = await Promise.all([
+      sql.query(`SELECT DISTINCT ON (patient_id) patient_id, date, doctor_id FROM consultations WHERE clinic_id = ? ORDER BY patient_id, date DESC`, [cid]),
+      sql.query(`SELECT DISTINCT ON (patient_id) patient_id, start, doctor_id FROM appointments
+        WHERE clinic_id = ? AND status IN ('scheduled','confirmed') AND start >= ? ORDER BY patient_id, start`, [cid, nowLocal]),
+      sql.query(`SELECT patient_id, kind, title FROM followups WHERE clinic_id = ? AND active`, [cid]),
+      sql.query(`SELECT patient_id, ${STAY_KIND} AS kind FROM hospitalizations WHERE clinic_id = ? AND status = 'active'`, [cid]),
+    ])
+    const by = <T,>(rows: Row[], f: (r: Row) => T) => new Map(rows.map((r) => [String(r.patient_id), f(r)]))
+    const lastBy = by(last, (r) => ({ at: String(r.date), doctorId: String(r.doctor_id) }))
+    const nextBy = by(next, (r) => ({ at: String(r.start), doctorId: String(r.doctor_id) }))
+    const stayBy = by(stays, (r) => (r.kind === 'observation' ? 'observation' : 'hospital'))
+    const followBy = new Map<string, { kind: string; title: string }[]>()
+    for (const f of follow) followBy.set(String(f.patient_id), [...(followBy.get(String(f.patient_id)) ?? []), { kind: String(f.kind), title: String(f.title) }])
+    const ids = new Set([...lastBy.keys(), ...nextBy.keys(), ...stayBy.keys(), ...followBy.keys()])
+    res.json([...ids].map((id) => ({
+      patientId: id, lastConsultAt: lastBy.get(id)?.at, lastDoctorId: lastBy.get(id)?.doctorId, nextApptAt: nextBy.get(id)?.at, nextDoctorId: nextBy.get(id)?.doctorId,
+      followups: followBy.get(id) ?? [], status: stayBy.get(id) ?? 'active',
+    })))
   })
 
   app.get('/api/patients/:id/chart', auth, need('chart.view'), async (req, res) => {

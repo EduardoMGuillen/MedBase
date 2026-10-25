@@ -228,6 +228,17 @@ export interface Consultation {
   prescriptionId?: string
 }
 
+/** Datos de la biblioteca de pacientes que se calculan en el servidor (filtros). */
+export interface PatientIndex {
+  patientId: string
+  lastConsultAt?: string
+  lastDoctorId?: string
+  nextApptAt?: string
+  nextDoctorId?: string
+  followups: { kind: Followup['kind']; title: string }[]
+  status: 'active' | 'hospital' | 'observation'
+}
+
 export interface AuditEntry {
   id: string
   at: string
