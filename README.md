@@ -6,7 +6,7 @@ El plan completo (referentes del mercado, roles, flujo, modelo de datos, arquite
 
 ## Requisitos
 
-- **Node.js 20.11 o superior** (recomendado: la versión LTS más reciente desde https://nodejs.org). Comprueba tu versión con `node -v`.
+- **Node.js 20.19 o superior** (Vite 8 y oxlint lo necesitan; con 20.15 npm no instala sus binarios nativos) (recomendado: la versión LTS más reciente desde https://nodejs.org). Comprueba tu versión con `node -v`.
 - Git, para clonar el repositorio.
 
 ## Probarlo en tu computadora
@@ -73,9 +73,10 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
 | Agenda | Vistas de día, semana y mes; salto a cualquier fecha y filtro por médico; detección de choques, reprogramación, reservas en línea y recordatorio por WhatsApp |
 | Consulta externa | Pacientes del día con cita y los que llegan sin cita. Enfermería abre el perfil de consulta externa: motivo y signos vitales (PA, FC, FR, T, SpO₂, peso, talla, glucometría) con alertas de rango |
 | Nota de consulta externa | Datos generales siempre visibles. A la izquierda: antecedentes patológicos y no patológicos, signos vitales, motivo de consulta, HEA, examen físico, observaciones e impresión diagnóstica (CIE-10). A la derecha: plan y manejo como órdenes médicas numeradas (los medicamentos van a la receta, con cruce de alergias), seguimiento y la casilla de ingreso a hospitalización. Borrador automático |
-| Hospitalización | Tablero de camas por cuarto y especialidad. Expediente del hospitalizado: hoja de hospitalización, hoja de medicamentos con horario automático (enfermería marca cada dosis; los PRN se registran cuando se aplican; lo omitido por el médico aparece omitido), notas de ingreso y evolución SOAP, notas de enfermería, laboratorios subidos con foto y fecha, procedimientos y autorizaciones, y nota de egreso con receta. Cualquier médico o enfermera de la clínica puede abrirlo |
+| Observación | Estancia corta sin cama, desde la nota de consulta ("Ingreso a observación"). Lista con tiempo transcurrido, notas de evolución (la primera es la de consulta), hoja de medicamentos y laboratorio. Egreso o "Pasar a hospitalización" conservando todo el expediente |
+| Hospitalización | Tablero de camas por cuarto y especialidad. Expediente del hospitalizado: hoja de hospitalización, hoja de medicamentos con horario automático (enfermería o el médico registran cada dosis), notas de evolución en dos columnas (SOAP y órdenes) con checklist de enfermería y alertas de órdenes nuevas, notas de procedimiento con fecha y hora, autorizaciones (consentimiento informado) para imprimir, firmar y subir, notas de enfermería, laboratorios y nota de egreso con receta. Expediente completo paginado para imprimir |
 | Crónicos y seguimientos | Pacientes crónicos con control periódico, recordatorios y procedimientos programados. El mensaje de WhatsApp se ve como le llegaría al paciente; el envío es una simulación hasta conectar WhatsApp Business |
-| Recetas y constancias | Receta en media carta con logo, nombre, identidad, edad, expediente, medicamentos y firma. Constancia de atención o de incapacidad (reposo relativo o absoluto) sin diagnóstico, salvo que se pida |
+| Recetas y constancias | Receta en media carta con logo, nombre, identidad (o responsable del menor), edad, expediente, medicamentos e indicaciones aparte. "Recetas" en el menú del médico: receta sin consulta, historial y "Repetir receta". Vademécum de la clínica para medicamentos que no están en el catálogo. Constancias de atención, incapacidad, acompañante o libres, con número correlativo, guardadas en el expediente; el diagnóstico sólo si se marca |
 | Expediente | Formato de historia clínica: ficha de identificación, alergias, antecedentes (patológicos, quirúrgicos, traumáticos, hospitalarios, transfusionales, medicamentos, no patológicos, heredofamiliares, gineco-obstétricos) y consultas en orden legal con el manejo al final. Nota de consulta imprimible, recetas, archivos y constancias |
 | Caja | Por cobrar, cobro con varios servicios, descuento, efectivo con cambio, tarjeta, transferencia o aseguradora, recibos imprimibles, cierre del día y anulación (sólo administración) |
 | Reportes | Ingresos, asistencia, reservas en línea, carga por médico, formas de pago y diagnósticos frecuentes, con exportación CSV |
@@ -111,7 +112,7 @@ Clinara funciona como plataforma: una sola instalación atiende a varias clínic
 | Comando | Qué hace |
 |---|---|
 | `npm run dev` | Levanta la API (puerto 3001) y la app (puerto 5173) con recarga automática |
-| `npm test` | Corre las 20 pruebas de la API sobre Postgres: permisos, flujo de la cita, reserva en línea, caja, reportes, dos pasos, archivos y bitácora |
+| `npm test` | Corre las pruebas de la API sobre Postgres: permisos, flujo de la cita, reserva en línea, caja, reportes, dos pasos, archivos, bitácora, hospitalización y las correcciones (`server/corrections.test.ts`) |
 | `npm run build` | Compila la app para producción |
 | `npm start` | Sirve la app compilada y la API en http://localhost:3001 (ejecuta antes `npm run build`) |
 | `npm run db:reset` | Borra la base local y vuelve a cargar la demo con la agenda de hoy (detén antes el servidor) |
