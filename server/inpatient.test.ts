@@ -106,8 +106,7 @@ describe('hospitalización', () => {
     const ond = file.meds.find((m: any) => m.drug === 'Ondansetrón')
     const ace = file.meds.find((m: any) => m.drug === 'Acetaminofén')
 
-    // Enfermería marca la dosis de la hora indicada; el médico no puede marcarla
-    assert.equal((await doc.post(`/api/inpatient/meds/${ond.id}/doses`, { scheduledAt: ond.firstAt })).status, 403)
+    // Enfermería marca la dosis de la hora indicada (el médico también puede, ver corrections.test.ts)
     const wrong = await nurse.post(`/api/inpatient/meds/${ond.id}/doses`, { scheduledAt: new Date(first.getTime() + HOUR).toISOString() })
     assert.equal(wrong.status, 400)
     assert.equal((await nurse.post(`/api/inpatient/meds/${ond.id}/doses`, { scheduledAt: ond.firstAt })).status, 201)

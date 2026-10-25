@@ -4,7 +4,8 @@ import { Camera, ChevronLeft, ChevronRight, FileText, LogOut, NotebookPen, Pill,
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
-import { date, dateTime, defaultRoute, fullName, inputDateTime, ROUTES, time } from '../lib/format'
+import { date, dateTime, defaultRoute, fullName, inputDateTime, ROUTES, shortStaff, time } from '../lib/format'
+import { ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
 import { doseTimes, INPATIENT_FREQUENCIES, medLabel, noteOrders, slotState, stayDay, type SlotState } from '../lib/inpatient'
 import { MedAlertBanner } from './MedAlerts'
@@ -116,12 +117,14 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
   const dosesOf = (m: InpatientMed) => file.doses.filter((d) => d.medId === m.id)
   const meds = [...file.meds].sort((a, b) => Number(!!a.stoppedAt) - Number(!!b.stoppedAt) || a.orderedAt.localeCompare(b.orderedAt))
     .filter((m) => new Date(m.firstAt) < end && (!m.stoppedAt || new Date(m.stoppedAt) >= day || dosesOf(m).some((d) => new Date(d.givenAt) >= day)))
-  const care = can('inpatient.care') && open
+  // Enfermería registra las dosis; el médico también puede hacerlo cuando él la aplica
+  const care = (can('inpatient.care') || can('inpatient.orders')) && open
+  const by = (id: string) => { const s = staffById(id); return s ? `${shortStaff(s.name)}, ${ROLE_LABEL[s.role].toLowerCase()}` : '' }
 
   return (
     <section className="panel">
       <div className="panel__head">
-        <div><h2>Hoja de medicamentos</h2><p>Se llena sola con lo que el médico indica en sus notas. {care ? 'Toca una hora para registrar la dosis.' : 'Enfermería registra cada dosis.'}</p></div>
+        <div><h2>Hoja de medicamentos</h2><p>Se llena sola con lo que el médico indica en sus notas. {care ? 'Toca una hora para registrar la dosis aplicada; queda con tu nombre y tu rol.' : 'Enfermería registra cada dosis.'}</p></div>
         <div className="day-nav">
           <button className="icon-btn" aria-label="Día anterior" disabled={day <= admitted} onClick={() => shift(-1)}><ChevronLeft size={18} /></button>
           <b>{day.getTime() === today.getTime() ? 'Hoy' : date(day.toISOString(), { weekday: 'short', day: 'numeric', month: 'short' })}</b>
@@ -157,15 +160,15 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
                     const clickable = care && !dose && !s.omitted
                     return (
                       <button key={s.at.toISOString()} className={`slot2 slot2--${st}`} disabled={!clickable} onClick={() => setMarking({ med: m, at: s.at })}
-                        title={dose ? `${STATE_LABEL[st]} a las ${time(dose.givenAt)} por ${staffById(dose.givenBy)?.name}${dose.note ? `: ${dose.note}` : ''}` : STATE_LABEL[st]}>
+                        title={dose ? `${dose.status === 'given' ? 'Aplicado' : 'No administrado'} por ${by(dose.givenBy)}, ${time(dose.givenAt)}${dose.note ? `: ${dose.note}` : ''}` : STATE_LABEL[st]}>
                         <b>{time(s.at.toISOString())}</b>
-                        <small>{dose ? `${dose.status === 'given' ? '✓' : '✗'} ${time(dose.givenAt)} ${staffById(dose.givenBy)?.name.replace(/^Lic\.\s*/, '').split(' ')[0] ?? ''}` : STATE_LABEL[st]}</small>
+                        <small>{dose ? `${dose.status === 'given' ? '✓' : '✗'} ${time(dose.givenAt)} ${by(dose.givenBy)}` : STATE_LABEL[st]}</small>
                       </button>
                     )
                   })}
                   {m.prn && (<>
                     {prnToday.map((d) => (
-                      <span key={d.id} className="slot2 slot2--given" title={d.note}><b>{time(d.givenAt)}</b><small>✓ {staffById(d.givenBy)?.name.replace(/^Lic\.\s*/, '').split(' ')[0]}</small></span>
+                      <span key={d.id} className="slot2 slot2--given" title={`Aplicado por ${by(d.givenBy)}, ${time(d.givenAt)}${d.note ? `: ${d.note}` : ''}`}><b>{time(d.givenAt)}</b><small>✓ {by(d.givenBy)}</small></span>
                     ))}
                     {care && !m.stoppedAt && day.getTime() === today.getTime() && (
                       <button className="slot2 slot2--prn" onClick={() => setMarking({ med: m })}><b><Plus size={13} /> PRN</b><small>Registrar dosis</small></button>

@@ -6,6 +6,7 @@ import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { parseDecimal, vitalLevel } from '../src/lib/vitals.js'
+import { age } from '../src/lib/format.js'
 
 let server: Server
 let sql: Sql
@@ -78,5 +79,35 @@ describe('M5 identidad', () => {
     assert.equal(r.status, 201)
     const boot = await rec.get('/api/bootstrap')
     assert.equal(boot.body.patients.find((p: any) => p.id === r.body.id)?.guardianDni, '0801-1980-55555')
+  })
+})
+
+describe('M1 tarjeta de consulta externa', () => {
+  test('la edad se escribe en singular o plural y en días antes del mes', () => {
+    const now = new Date('2026-10-25T10:00:00')
+    assert.equal(age('2026-09-20', now), '1 mes')
+    assert.equal(age('2026-07-01', now), '3 meses')
+    assert.equal(age('2026-10-13', now), '12 días')
+    assert.equal(age('2026-10-24', now), '1 día')
+    assert.equal(age('2024-10-01', now), '2 años')
+    assert.equal(age('', now), '')
+  })
+})
+
+describe('H5 el médico aplica medicamentos', () => {
+  test('el médico registra una dosis y queda a su nombre', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const boot = await doc.get('/api/bootstrap')
+    let prn: any
+    for (const h of boot.body.inpatients) {
+      prn ??= (await doc.get(`/api/inpatient/${h.id}`)).body.meds.find((m: any) => m.prn && !m.stoppedAt)
+    }
+    assert.ok(prn, 'la demo tiene un PRN activo')
+    const r = await doc.post(`/api/inpatient/meds/${prn.id}/doses`, { status: 'given' })
+    assert.equal(r.status, 201)
+    assert.equal(r.body.givenBy, 's-herrera')
+    // Recepción sigue sin poder
+    const rec = await as('smejia@demo.clinara')
+    assert.equal((await rec.post(`/api/inpatient/meds/${prn.id}/doses`, { status: 'given' })).status, 403)
   })
 })

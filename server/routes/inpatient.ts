@@ -190,8 +190,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     res.status(201).json(toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [noteId]))!))
   })
 
-  // Enfermería marca la dosis de una hora indicada (o una dosis PRN cuando hace falta)
-  app.post('/api/inpatient/meds/:medId/doses', auth, need('inpatient.care'), async (req, res) => {
+  // Enfermería (o el médico, en guardia u observación) marca la dosis de una hora indicada o una dosis PRN
+  app.post('/api/inpatient/meds/:medId/doses', auth, need('inpatient.care', 'inpatient.orders'), async (req, res) => {
     const b = parse(z.object({
       scheduledAt: when.optional(),
       givenAt: when.optional(),
@@ -226,7 +226,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       if ((e as { code?: string }).code === '23505') fail(409, 'Esa dosis ya fue registrada. Actualiza la página.')
       throw e
     }
-    await audit(user, `${b.status === 'given' ? 'Administró' : 'Registró como no administrado'} ${medLabel(med)} a ${await patientName(String(h.patient_id))}`)
+    await audit(user, `${b.status === 'given' ? 'Administró' : 'Registró como no administrado'} ${medLabel(med)} a ${await patientName(String(h.patient_id))} (${user.role === 'doctor' ? 'médico' : 'enfermería'})`)
     res.status(201).json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [id]))!))
   })
 
