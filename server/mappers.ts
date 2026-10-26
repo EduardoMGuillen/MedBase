@@ -1,6 +1,6 @@
 import type {
   Appointment, Attachment, AuditEntry, Authorization, AuthorizationData, Background, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
-  Patient, Payment, Prescription, Service, Staff, Vitals,
+  GuestPatient, Patient, Payment, Prescription, Service, Staff, Vitals,
 } from '../src/lib/types.js'
 import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
 import { DNI_MASK } from '../src/lib/format.js'
@@ -57,9 +57,11 @@ export const toConsultation = (r: Row): Consultation => ({
 })
 
 export const toPrescription = (r: Row): Prescription => ({
-  id: String(r.id), folio: String(r.folio), patientId: String(r.patient_id), doctorId: String(r.doctor_id),
+  // Receta para un paciente no registrado: sin expediente (patientId vacío) y con los datos escritos a mano
+  id: String(r.id), folio: String(r.folio), patientId: String(r.patient_id ?? ''), doctorId: String(r.doctor_id),
   consultationId: String(r.consultation_id), hospitalizationId: s(r.hospitalization_id), issuedAt: String(r.issued_at), items: j(r.items, []),
   standalone: Boolean(r.standalone) || undefined, indications: r.indications == null ? undefined : j<string[]>(r.indications, []),
+  guest: r.guest == null ? undefined : j<GuestPatient>(r.guest, { name: '' }), linkedAt: s(r.linked_at),
 })
 
 export const toCertificate = (r: Row): Certificate => ({

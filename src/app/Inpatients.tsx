@@ -88,8 +88,11 @@ export default function Inpatients() {
   )
 }
 
-/** Buscador de pacientes de la clínica por nombre, expediente o identidad. */
-export function PatientPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+/**
+ * Buscador de pacientes de la clínica por nombre, expediente o identidad. Con `onNotFound`, si la búsqueda no
+ * encuentra a nadie ofrece seguir sin expediente (receta para un paciente no registrado).
+ */
+export function PatientPicker({ value, onChange, onNotFound, notFoundLabel }: { value: string; onChange: (id: string) => void; onNotFound?: (query: string) => void; notFoundLabel?: string }) {
   const { patients, patient } = useStore()
   const [q, setQ] = useState('')
   const chosen = value ? patient(value) : undefined
@@ -110,9 +113,12 @@ export function PatientPicker({ value, onChange }: { value: string; onChange: (i
     <div className="field suggest"><span>Paciente</span>
       <Search size={16} style={{ position: 'absolute', left: 12, top: 37, color: 'var(--faint)' }} />
       <input className="input" style={{ paddingLeft: 36 }} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre, expediente o identidad" aria-label="Buscar paciente" />
-      {matches.length > 0 && (
+      {(matches.length > 0 || (onNotFound && q.trim().length >= 3)) && (
         <div className="suggest__list">
           {matches.map((p) => <button type="button" key={p.id} onClick={() => { onChange(p.id); setQ('') }}><span>{fullName(p)}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{p.record}</span></button>)}
+          {onNotFound && q.trim().length >= 3 && (
+            <button type="button" className="suggest__new" onClick={() => onNotFound(q.trim())}><Plus size={15} />{matches.length ? 'No es ninguno: ' : 'No está registrado: '}{notFoundLabel ?? 'continuar sin expediente'}</button>
+          )}
         </div>
       )}
     </div>

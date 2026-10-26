@@ -732,28 +732,58 @@ export function createApp(opts: AppOptions) {
     res.json({ consultation: c, patient: toPatient((await patientRow(cid, c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null })
   })
 
-  /** Receta sin consulta: el médico renueva un tratamiento sin abrir una consulta completa. */
+  /**
+   * Receta sin consulta: el médico renueva un tratamiento sin abrir una consulta completa. También para una
+   * persona que no está en la biblioteca: se escriben sus datos y no se le crea expediente.
+   */
   app.post('/api/prescriptions', auth, need('rx.write'), async (req, res) => {
     const user = userOf(req)
     const b = parse(z.object({
-      patientId: z.string().min(1, 'Elige al paciente.'),
+      patientId: z.string().optional(),
+      guest: z.object({
+        name: z.string().trim().min(3, 'Escribe el nombre completo.').max(120),
+        birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha de nacimiento no es válida.').optional().or(z.literal('').transform(() => undefined)),
+        age: z.string().trim().max(30).optional(),
+        sex: z.enum(['F', 'M']).optional(),
+        dni: z.string().trim().max(30).optional().transform(normalizeDni),
+        phone: z.string().trim().max(30).optional(),
+      }).optional(),
       items: z.array(rxItem).min(1, 'Agrega al menos un medicamento.').max(20),
       indications: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
     }), req.body)
+    if (!b.patientId === !b.guest) fail(400, 'Elige al paciente o escribe sus datos.')
+    const noDays = b.items.find((it) => !it.duration && !/única/i.test(it.frequency))
+    if (noDays) fail(400, `Escribe el total de días de ${noDays.drug}.`)
     const cid = clinicOf(req)
-    const p = (await patientRow(cid, b.patientId)) ?? fail(404, 'El paciente no existe.')
-    if (p!.pending) fail(409, 'Completa el registro del paciente antes de emitirle una receta.')
-    await assertRxIdentity(cid, b.patientId)
+    const p = b.patientId ? (await patientRow(cid, b.patientId)) ?? fail(404, 'El paciente no existe.') : undefined
+    if (p?.pending) fail(409, 'Completa el registro del paciente antes de emitirle una receta.')
+    if (b.patientId) await assertRxIdentity(cid, b.patientId)
+    const guest = b.guest ? Object.fromEntries(Object.entries(b.guest).filter(([, v]) => v)) : null
+    const who = p ? `${p.first_name} ${p.last_name}` : `${b.guest!.name} (paciente no registrado)`
     const id = randomUUID()
     const now = new Date()
     let folio = ''
     await sql.tx(async (q) => {
       folio = await nextFolio(q, cid, now)
-      await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, issued_at, items, clinic_id, standalone, indications) VALUES (?,?,?,?,?,?,?,?,TRUE,?)`,
-        [id, folio, b.patientId, user.id, '', now.toISOString(), JSON.stringify(b.items), cid, JSON.stringify(b.indications)])
-      await audit(user, `Emitió la receta sin consulta ${folio} de ${p!.first_name} ${p!.last_name}`, q)
+      await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, issued_at, items, clinic_id, standalone, indications, guest) VALUES (?,?,?,?,?,?,?,?,TRUE,?,?)`,
+        [id, folio, b.patientId ?? null, user.id, '', now.toISOString(), JSON.stringify(b.items), cid, JSON.stringify(b.indications), guest ? JSON.stringify(guest) : null])
+      await audit(user, `Emitió la receta sin consulta ${folio} de ${who}`, q)
     })
     res.status(201).json({ prescriptionId: id, folio })
+  })
+
+  /** La persona de una receta sin expediente se registró (o ya tenía expediente): la receta pasa a su expediente. */
+  app.post('/api/prescriptions/:id/link', auth, need('rx.write'), async (req, res) => {
+    const { patientId } = parse(z.object({ patientId: z.string().min(1, 'Elige al paciente.') }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const row = (await sql.one('SELECT * FROM prescriptions WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La receta no existe.')
+    if (row!.patient_id) fail(409, 'Esta receta ya está en el expediente de un paciente.')
+    const p = (await patientRow(cid, patientId)) ?? fail(404, 'El paciente no existe.')
+    if (p!.pending) fail(409, 'Completa el registro del paciente antes de vincularle la receta.')
+    await sql.run('UPDATE prescriptions SET patient_id = ?, linked_at = ?, linked_by = ? WHERE id = ?', [patientId, new Date().toISOString(), user.id, String(row!.id)])
+    await audit(user, `Vinculó la receta ${row!.folio} (paciente no registrado) al expediente ${p!.record} de ${p!.first_name} ${p!.last_name}`)
+    res.json(toPrescription((await sql.one('SELECT * FROM prescriptions WHERE id = ?', [String(row!.id)]))!))
   })
 
   app.get('/api/prescriptions/:id', auth, need('rx.view'), async (req, res) => {
@@ -762,7 +792,7 @@ export function createApp(opts: AppOptions) {
     const rx = toPrescription(row!)
     const cons = await sql.one('SELECT * FROM consultations WHERE id = ? AND clinic_id = ?', [rx.consultationId, cid])
     const hosp = rx.hospitalizationId ? await sql.one('SELECT * FROM hospitalizations WHERE id = ? AND clinic_id = ?', [rx.hospitalizationId, cid]) : undefined
-    const patient = toPatient((await patientRow(cid, rx.patientId))!, true)
+    const patient = rx.patientId ? toPatient((await patientRow(cid, rx.patientId))!, true) : null
     await audit(userOf(req), `Abrió la receta ${rx.folio}`)
     res.json({ prescription: rx, consultation: cons ? toConsultation(cons) : null, hospitalization: hosp ? toHospitalization(hosp) : null, patient })
   })

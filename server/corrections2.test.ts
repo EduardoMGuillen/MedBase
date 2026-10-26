@@ -261,3 +261,31 @@ describe('M2 nota de observación en dos columnas', () => {
     assert.deepEqual(splitOrders(legacy, file).indications.map((o) => o.text), ['Reposo.'])
   })
 })
+
+describe('M7 receta para paciente no registrado', () => {
+  test('se emite sin expediente, queda en el historial y se vincula al registrarlo', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const item = { drug: 'Amoxicilina', presentation: 'Cápsula 500 mg', dose: '1 cápsula', route: 'Oral', frequency: 'Cada 8 horas', duration: '7 días' }
+    const before = Number((await sql.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM patients'))!.n)
+    const r = await doc.post('/api/prescriptions', { guest: { name: 'Marvin Osorto', age: '34 años', sex: 'M', dni: '0801199012345', phone: '9555-0000' }, items: [item] })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(Number((await sql.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM patients'))!.n), before, 'no crea expediente')
+    const rx = (await doc.get(`/api/prescriptions/${r.body.prescriptionId}`)).body
+    assert.equal(rx.patient, null)
+    assert.equal(rx.prescription.guest.name, 'Marvin Osorto')
+    assert.equal(rx.prescription.guest.dni, '0801-1990-12345')
+    assert.match(rx.prescription.folio, /^RX-/)
+    assert.ok((await doc.get('/api/bootstrap')).body.prescriptions.some((x: any) => x.id === r.body.prescriptionId && x.patientId === '' && x.guest.name === 'Marvin Osorto'))
+    // Sin nombre o sin días no se emite; enfermería no emite recetas
+    assert.equal((await doc.post('/api/prescriptions', { guest: { name: 'M' }, items: [item] })).status, 400)
+    assert.equal((await doc.post('/api/prescriptions', { guest: { name: 'Marvin Osorto' }, items: [{ ...item, duration: '' }] })).status, 400)
+    assert.equal((await (await as('crios@demo.clinara')).post('/api/prescriptions', { guest: { name: 'Marvin Osorto' }, items: [item] })).status, 403)
+    // Se registra después y la receta pasa a su expediente
+    const p = await doc.post('/api/patients', { firstName: 'Marvin', lastName: 'Osorto', birthDate: '1991-04-04', sex: 'M', phone: '9555-0000', dni: '0801199012345' })
+    const link = await doc.post(`/api/prescriptions/${r.body.prescriptionId}/link`, { patientId: p.body.id })
+    assert.equal(link.status, 200)
+    assert.equal(link.body.patientId, p.body.id)
+    assert.equal((await doc.post(`/api/prescriptions/${r.body.prescriptionId}/link`, { patientId: p.body.id })).status, 409)
+    assert.ok((await doc.get(`/api/patients/${p.body.id}/chart`)).body.prescriptions.some((x: any) => x.id === r.body.prescriptionId))
+  })
+})

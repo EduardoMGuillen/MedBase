@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
-  Appointment, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, HospProcedure, Hospitalization,
+  Appointment, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
@@ -137,7 +137,7 @@ function useStoreValue() {
   // Estables entre renders para poder usarlos como dependencias de efectos
   const fetchChart = useCallback((patientId: string) => api<Chart>(`/patients/${patientId}/chart`), [])
   const fetchPrescription = useCallback((id: string) =>
-    api<{ prescription: Prescription; consultation: Consultation | null; hospitalization: Hospitalization | null; patient: Patient }>(`/prescriptions/${id}`), [])
+    api<{ prescription: Prescription; consultation: Consultation | null; hospitalization: Hospitalization | null; patient: Patient | null }>(`/prescriptions/${id}`), [])
   const fetchInpatient = useCallback((id: string) => api<InpatientFile>(`/inpatient/${id}`), [])
   const fetchConsultation = useCallback((id: string, purpose: 'note' | 'certificate' = 'note') =>
     api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null }>(`/consultations/${id}?purpose=${purpose}`), [])
@@ -247,8 +247,11 @@ function useStoreValue() {
       return r
     },
 
-    issuePrescription: (b: { patientId: string; items: PrescriptionItem[]; indications: string[] }) =>
+    issuePrescription: (b: { patientId?: string; guest?: GuestPatient; items: PrescriptionItem[]; indications: string[] }) =>
       run(() => api<{ prescriptionId: string; folio: string }>('/prescriptions', { body: b }), 'Receta emitida'),
+    /** Pasa la receta de una persona no registrada al expediente que se le creó (o que ya tenía). */
+    linkPrescription: (id: string, patientId: string, success = 'Receta vinculada al expediente') =>
+      run(() => api<Prescription>(`/prescriptions/${id}/link`, { body: { patientId } }), success),
     // Constancias: se emiten, se reimprimen y, si hay un error, se anulan
     createCertificate: (b: Omit<CertificateData, 'patient' | 'doctor' | 'clinic' | 'restTo' | 'diagnoses'> & { patientId: string; consultationId?: string; kind: Certificate['kind'] }) =>
       run(() => api<Certificate>('/certificates', { body: b }), 'Constancia emitida'),

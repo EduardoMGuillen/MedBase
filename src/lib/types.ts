@@ -228,6 +228,19 @@ export interface Prescription {
   /** Receta emitida desde "Recetas", sin consulta. */
   standalone?: boolean
   indications?: string[]
+  /** Persona que no está en la biblioteca: sus datos escritos a mano (patientId vacío hasta que se vincule). */
+  guest?: GuestPatient
+  linkedAt?: string
+}
+
+/** Datos de una persona no registrada, tal como se escribieron en su receta. */
+export interface GuestPatient {
+  name: string
+  birthDate?: string
+  age?: string // si no se sabe la fecha de nacimiento, p. ej. "34 años"
+  sex?: 'F' | 'M'
+  dni?: string
+  phone?: string
 }
 
 export interface Consultation {
