@@ -22,6 +22,7 @@ import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
 import { pendingOrders, registerInpatient } from './routes/inpatient.js'
 import { pullConsultationOrders } from './medOrders.js'
+import { ensureHospitalAuthorization } from './authorizations.js'
 import { registerDrugs } from './routes/drugs.js'
 import { registerCertificates } from './routes/certificates.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
@@ -275,7 +276,9 @@ export function createApp(opts: AppOptions) {
       sql.query('SELECT * FROM services WHERE clinic_id = ? ORDER BY name', [cid]),
       settings(cid),
       can(user.role, 'inpatient.view') || can(user.role, 'settings.manage') ? sql.query('SELECT * FROM beds WHERE clinic_id = ? ORDER BY specialty, room, label', [cid]) : none,
-      can(user.role, 'inpatient.view') ? sql.query(`SELECT * FROM hospitalizations WHERE clinic_id = ? AND status = 'active' ORDER BY admitted_at`, [cid]) : none,
+      // Con aviso de la autorización de hospitalización pendiente de firma, para enfermería y el médico
+      can(user.role, 'inpatient.view') ? sql.query(`SELECT h.*, EXISTS(SELECT 1 FROM authorizations a WHERE a.hospitalization_id = h.id AND a.template = 'hospital' AND a.status = 'pending') AS auth_pending
+        FROM hospitalizations h WHERE h.clinic_id = ? AND h.status = 'active' ORDER BY h.admitted_at`, [cid]) : none,
       can(user.role, 'followups.view') ? sql.query('SELECT * FROM followups WHERE clinic_id = ? AND active ORDER BY due_date', [cid]) : none,
       sql.query(`SELECT DISTINCT ON (patient_id) patient_id, discharged_at FROM hospitalizations
         WHERE clinic_id = ? AND status = 'discharged' AND discharged_at IS NOT NULL ORDER BY patient_id, discharged_at DESC`, [cid]),
@@ -715,6 +718,8 @@ export function createApp(opts: AppOptions) {
           VALUES (?,?,?,NULL,?,?,?,?,?,?,'active',?)`,
           [stayId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null, stayKind])
         medOrders = await pullConsultationOrders(q, { clinicId: cid, hospitalizationId: stayId, consultationId: consultId })
+        // La autorización de hospitalización queda generada, pendiente de firma, desde el ingreso
+        await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [stayId]))!, user)
         await audit(user, `Ingresó a ${name} a ${stayKind === 'hospital' ? 'hospitalización' : 'observación'} desde la consulta externa${medOrders ? ` (${medOrders} medicamento(s) a la hoja)` : ''}`, q)
       }
     })

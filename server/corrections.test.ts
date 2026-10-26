@@ -370,13 +370,14 @@ describe('H1 órdenes médicas como checklist', () => {
 })
 
 describe('H3 autorizaciones', () => {
-  test('el médico la crea; enfermería sube la hoja firmada; el procedimiento la reconoce', async () => {
+  // Segunda ronda (M5): enfermería también la genera; la autorización para un procedimiento es la quirúrgica
+  test('médico o enfermería la crean; enfermería sube la hoja firmada; el procedimiento la reconoce', async () => {
     const doc = await as('lherrera@demo.clinara')
     const nurse = await as('crios@demo.clinara')
     const h = (await doc.get('/api/bootstrap')).body.inpatients[1]
-    assert.equal((await nurse.post(`/api/inpatient/${h.id}/authorizations`, { template: 'general' })).status, 403, 'enfermería no la crea')
-    assert.equal((await doc.post(`/api/inpatient/${h.id}/authorizations`, { template: 'procedure', procedure: 'Paracentesis' })).status, 400, 'falta explicar riesgos')
-    const a = await doc.post(`/api/inpatient/${h.id}/authorizations`, { template: 'procedure', procedure: 'Paracentesis', description: 'Sacar líquido del abdomen.', risks: 'Dolor, sangrado.' })
+    assert.equal((await (await as('smejia@demo.clinara')).post(`/api/inpatient/${h.id}/authorizations`, { template: 'hospital' })).status, 403, 'recepción no la crea')
+    assert.equal((await doc.post(`/api/inpatient/${h.id}/authorizations`, { template: 'surgical', procedure: 'Paracentesis' })).status, 400, 'falta el diagnóstico')
+    const a = await nurse.post(`/api/inpatient/${h.id}/authorizations`, { template: 'surgical', procedure: 'Paracentesis', diagnosis: 'Ascitis', description: 'Sacar líquido del abdomen.', risks: 'Dolor, sangrado.' })
     assert.equal(a.status, 201)
     assert.equal(a.body.status, 'pending')
     assert.ok(a.body.data.doctor.license)
@@ -391,7 +392,7 @@ describe('H3 autorizaciones', () => {
     const rev = await doc.post(`/api/authorizations/${a.body.id}/status`, { status: 'revoked', note: 'El paciente la revoca' })
     assert.equal(rev.body.status, 'revoked')
     const minor = (await doc.get('/api/bootstrap')).body.inpatients.find((x: any) => x.patientId === 'p19')
-    if (minor) assert.equal((await doc.post(`/api/inpatient/${minor.id}/authorizations`, { template: 'general' })).status, 400, 'menor sin representante')
+    if (minor) assert.equal((await doc.post(`/api/inpatient/${minor.id}/authorizations`, { template: 'surgical', procedure: 'Sutura de herida', diagnosis: 'Herida' })).status, 400, 'menor sin representante')
   })
 })
 

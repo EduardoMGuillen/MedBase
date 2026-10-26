@@ -480,6 +480,10 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .consent__line { display: block; border-top: 1px solid var(--petrol); margin: 34px 0 4px; }
 .consent__print { grid-row: span 2; border: 1px solid var(--petrol); height: 120px; display: grid; place-items: center; text-align: center; color: var(--muted); }
 .consent__box { margin-top: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; }
+.consent__blank { display: block; border-bottom: 1px solid var(--line); height: 1.6em; }
+.consent__wide { flex-basis: 100%; }
+.consent--short { font-size: 14px; }
+.consent--short .consent__list { gap: 8px; margin: 6px 0 10px; }
 @media (max-width: 720px) {
   .consent__info div { grid-template-columns: 1fr; gap: 0; }
   .consent__signs { grid-template-columns: 1fr; }

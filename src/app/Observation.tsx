@@ -30,7 +30,7 @@ export default function Observation() {
                 <div className="row__who">
                   <strong>{fullName(p)} <span className="muted" style={{ fontWeight: 500 }}>· {age(p.birthDate)}</span></strong>
                   <span>{h.diagnoses.map((d) => d.label).join('; ') || h.reason}</span>
-                  <span>{staffById(h.admittedBy)?.name} · ingresó a las {time(h.admittedAt)}</span>
+                  <span>{staffById(h.admittedBy)?.name} · ingresó a las {time(h.admittedAt)}{h.authPending ? ' · autorización pendiente de firma' : ''}</span>
                 </div>
                 <span className={`badge ${over ? 'badge--red' : 'badge--ink'}`}><Clock size={12} />{elapsed(minutes)}</span>
               </Link>

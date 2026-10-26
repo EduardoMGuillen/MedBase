@@ -76,7 +76,7 @@ export default function FullRecord() {
     ...(!obs ? [['fr-enfermeria', `Notas de enfermería (${nursing.length})`] as [string, string]] : []),
     ['fr-medicamentos', 'Hoja de medicamentos'],
     ['fr-laboratorios', `Laboratorios (${file.labs.length})`],
-    ['fr-autorizaciones', `Autorizaciones (${auths.length + legacyAuths.length})`],
+    ['fr-autorizaciones', `Anexos: autorizaciones (${auths.length + legacyAuths.length})`],
   ]
   const page = (sid: string, section: string, children: ReactNode, continuous = false) => (
     <PrintPage key={sid} id={sid} section={section} p={p} record={record} clinic={settings.name} continuous={continuous}>{children}</PrintPage>

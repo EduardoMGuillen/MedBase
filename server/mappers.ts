@@ -99,6 +99,7 @@ export const toHospitalization = (r: Row): Hospitalization => ({
   companionRelation: s(r.companion_relation), companionPhone: s(r.companion_phone), patientPhone: s(r.patient_phone),
   status: r.status as Hospitalization['status'], dischargedAt: s(r.discharged_at), dischargedBy: s(r.discharged_by), prescriptionId: s(r.prescription_id),
   observationAt: s(r.observation_at), convertedAt: s(r.converted_at), convertedBy: s(r.converted_by),
+  authPending: r.auth_pending == null ? undefined : Boolean(r.auth_pending),
 })
 
 export const toInpatientNote = (r: Row): InpatientNote => ({

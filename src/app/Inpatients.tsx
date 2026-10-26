@@ -72,6 +72,7 @@ export default function Inpatients() {
                 <span className="bed__meta">{age(p.birthDate)}, {p.sex === 'F' ? 'femenino' : 'masculino'} · Día {stayDay(h.admittedAt)} de estancia</span>
                 <span className="bed__dx">{h.diagnoses.map((d) => d.label).join('; ')}</span>
                 {p.allergies.length > 0 && <span className="chip chip--red">Alergias: {p.allergies.join(', ')}</span>}
+                {h.authPending && <span className="chip chip--amber">Autorización pendiente de firma</span>}
                 <span className="bed__meta">Ingresó {dateTime(h.admittedAt)}</span>
               </Link>
             )

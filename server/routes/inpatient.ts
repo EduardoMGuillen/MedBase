@@ -4,10 +4,11 @@ import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
 import { toAttachment, toAuthorization, toBed, toDose, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure } from '../mappers.js'
-import { age as ageText, normalizeDni } from '../../src/lib/format.js'
+import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
-import { isScheduled, medLabel, yearsOld } from '../../src/lib/inpatient.js'
+import { isScheduled, medLabel } from '../../src/lib/inpatient.js'
 import { createMedOrders, findAdmissionConsult, pullConsultationOrders } from '../medOrders.js'
+import { authorizationBase, ensureHospitalAuthorization, refreshPendingHospitalAuthorization } from '../authorizations.js'
 
 const dx = z.array(z.object({ code: z.string().trim().min(1), label: z.string().trim().min(1) }))
 const when = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'La fecha u hora no es válida.')
@@ -165,6 +166,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
         [id, cid, b.patientId, b.bedId, consultationId ?? null, admittedAt.toISOString(), user.id, b.reason, JSON.stringify(b.diagnoses),
           b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null])
       if (consultationId) medOrders = await pullConsultationOrders(q, { clinicId: cid, hospitalizationId: id, consultationId })
+      await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [id]))!, user)
       await audit(user, `Ingresó a ${name} en la ${bedName(bed!)} (${bed!.specialty})${consultationId && !b.consultationId ? ', vinculado a su consulta externa' : ''}${medOrders ? ` con ${medOrders} medicamento(s) de la consulta` : ''}`, q)
     })
     res.status(201).json({ ...toHospitalization((await hospRow(cid, id))!), medOrders })
@@ -242,6 +244,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
         [b.bedId ?? null, b.admittedAt ? new Date(b.admittedAt).toISOString() : null, b.reason ?? null, b.diagnoses ? JSON.stringify(b.diagnoses) : null,
           b.companionName ?? null, b.companionRelation ?? null, b.companionPhone ?? null, b.patientPhone ?? null, consultationId ?? null, String(h.id)])
       const pulled = consultationId ? await pullConsultationOrders(q, { clinicId: cid, hospitalizationId: String(h.id), consultationId }) : 0
+      await refreshPendingHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [String(h.id)]))!)
       const what = [h.bed_id || !b.bedId ? '' : `asignó la ${bedName(bed!)}`, ...changed.filter((k) => k !== 'bedId' || h.bed_id).map((k) => labels[k])].filter(Boolean)
       await audit(user, `Corrigió el ingreso de ${name}: ${what.join(', ') || 'sin cambios'}${consultationId ? `; lo vinculó a su consulta externa${pulled ? ` y pasó ${pulled} medicamento(s) a la hoja` : ''}` : ''}`, q)
     })
@@ -482,36 +485,49 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   })
 
   // ---------- Autorizaciones (consentimiento informado) ----------
+  /**
+   * Dos documentos, ambos los generan enfermería o el médico. De hospitalización: uno por estancia (se genera al
+   * ingresar; si ya hay uno vigente se reabre en vez de duplicarlo). Quirúrgica: uno por cirugía, con el botón
+   * de las notas de evolución. Se imprimen, se firman en papel y se sube la foto o el PDF.
+   */
   const text = (max: number) => z.string().trim().max(max).optional()
-  app.post('/api/inpatient/:id/authorizations', auth, need('inpatient.orders'), async (req, res) => {
+  const person = z.object({ name: z.string().trim().min(3, 'Escribe el nombre completo.').max(120), dni: text(30).transform(normalizeDni), relation: text(40) })
+  app.post('/api/inpatient/:id/authorizations', auth, need('inpatient.orders', 'inpatient.care'), async (req, res) => {
     const b = parse(z.object({
-      template: z.enum(['general', 'procedure']),
-      procedure: text(200), diagnosis: text(300), description: text(2000), benefits: text(1500), risks: text(2500), alternatives: text(1500),
+      template: z.enum(['hospital', 'surgical']),
+      procedure: text(300), diagnosis: text(300), description: text(2000), benefits: text(1500), risks: text(2500), alternatives: text(1500),
       notDoing: text(1500), anesthesia: text(120),
-      representative: z.object({ name: z.string().trim().min(3, 'Escribe el nombre del representante.').max(120), dni: text(30).transform(normalizeDni), relation: text(40) }).optional(),
+      representative: person.optional(),
+      witness: person.optional(),
+      companion: z.object({ name: z.string().trim().min(3, 'Escribe el nombre del acompañante.').max(120), phone: z.string().trim().min(7, 'Escribe el teléfono del acompañante.').max(30), relation: text(40) }).optional(),
     }), req.body)
-    if (b.template === 'procedure' && (!b.procedure || b.procedure.length < 3)) fail(400, 'Escribe el procedimiento a realizar.')
-    if (b.template === 'procedure' && (!b.description || !b.risks)) fail(400, 'Explica en qué consiste el procedimiento y sus riesgos.')
+    if (b.template === 'surgical' && (!b.procedure || b.procedure.length < 3)) fail(400, 'Escribe el procedimiento quirúrgico (uno o varios: "X o Y").')
+    if (b.template === 'surgical' && (!b.diagnosis || b.diagnosis.length < 3)) fail(400, 'Escribe el diagnóstico o motivo de la cirugía.')
     const user = userOf(req)
     const cid = clinicOf(req)
     const h = await activeHosp(cid, String(req.params.id))
-    const p = (await patientRow(cid, String(h.patient_id)))!
-    const doc = (await ctx.staffRow(user.id))!
-    const cfg = await ctx.settings(cid)
-    const birth = String(p.birth_date ?? '')
-    const minor = birth ? yearsOld(birth) < 18 : false
-    if (minor && !b.representative) fail(400, 'El paciente es menor de edad: escribe los datos de su representante.')
-    const data = {
-      ...b, template: undefined,
-      patient: { name: `${p.first_name} ${p.last_name}`, dni: p.dni ? String(p.dni) : undefined, age: ageText(birth), sex: (p.sex ?? 'F') as 'F' | 'M',
-        record: cfg.recordUsesDni && p.dni ? String(p.dni) : String(p.record), minor },
-      doctor: { name: String(doc.name), license: doc.license ? String(doc.license) : undefined },
-      clinic: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo },
+    const name = await patientName(String(h.patient_id))
+    if (b.template === 'hospital') {
+      // El acompañante también queda en la hoja de hospitalización
+      let result: Awaited<ReturnType<typeof ensureHospitalAuthorization>> | undefined
+      await sql.tx(async (q) => {
+        if (b.companion) {
+          await q.run('UPDATE hospitalizations SET companion_name = ?, companion_phone = ?, companion_relation = COALESCE(?, companion_relation) WHERE id = ?',
+            [b.companion.name, b.companion.phone, b.companion.relation ?? null, String(h.id)])
+          await refreshPendingHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [String(h.id)]))!)
+        }
+        result = await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [String(h.id)]))!, user, { companion: b.companion, representative: b.representative })
+        if (result.created) await audit(user, `Generó la autorización de hospitalización de ${name}`, q)
+      })
+      return res.status(result!.created ? 201 : 200).json(result!.authorization)
     }
+    const base = await authorizationBase(sql, h, user)
+    if (base.patient.minor && !b.representative) fail(400, 'El paciente es menor de edad: escribe los datos de su representante legal.')
+    const data = { ...b, template: undefined, companion: undefined, ...base, admission: undefined }
     const id = randomUUID()
-    await sql.run(`INSERT INTO authorizations (id, clinic_id, hospitalization_id, patient_id, template, data, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)`,
-      [id, cid, String(h.id), String(h.patient_id), b.template, JSON.stringify(data), user.id, new Date().toISOString()])
-    await audit(user, `Generó la autorización ${b.template === 'general' ? 'general de ingreso y atención' : `para "${b.procedure}"`} de ${data.patient.name}`)
+    await sql.run(`INSERT INTO authorizations (id, clinic_id, hospitalization_id, patient_id, template, data, created_by, created_at) VALUES (?,?,?,?,'surgical',?,?,?)`,
+      [id, cid, String(h.id), String(h.patient_id), JSON.stringify(data), user.id, new Date().toISOString()])
+    await audit(user, `Generó la autorización quirúrgica para "${b.procedure}" de ${name}`)
     res.status(201).json(toAuthorization((await sql.one('SELECT * FROM authorizations WHERE id = ?', [id]))!))
   })
 
@@ -539,7 +555,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     await sql.run('UPDATE authorizations SET status = ?, file_id = COALESCE(?, file_id), status_at = ?, status_by = ?, status_note = ? WHERE id = ?',
       [b.status, b.fileId ?? null, new Date().toISOString(), user.id, b.note || null, a.id])
     const label = { signed: 'firmada', refused: 'rechazada (no autorizo)', revoked: 'revocada' }[b.status]
-    await audit(user, `Registró como ${label} la autorización ${a.data.procedure ? `"${a.data.procedure}"` : 'general'} de ${a.data.patient.name}`)
+    await audit(user, `Registró como ${label} la autorización ${a.template === 'hospital' ? 'de hospitalización' : a.data.procedure ? `quirúrgica "${a.data.procedure}"` : 'general'} de ${a.data.patient.name}`)
     res.json(toAuthorization((await sql.one('SELECT * FROM authorizations WHERE id = ?', [a.id]))!))
   })
 

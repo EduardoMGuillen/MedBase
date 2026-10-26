@@ -13,7 +13,7 @@ import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { authTitle, FREQUENT_PROCEDURES, isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
 import { useNow } from '../lib/hooks'
-import type { Authorization, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
+import type { Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
 import { AdmitModal, bedLabel, DxPicker } from './Inpatients'
 import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
 import { toBase64 } from './Attachments'
@@ -47,17 +47,21 @@ export default function InpatientFile() {
   const obs = h.kind === 'observation'
   const medical = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'procedure')
   const nursing = file.notes.filter((n) => n.kind === 'nursing')
+  const annexes = file.authorizations.length + file.procedures.filter((x) => x.kind === 'authorization').length
+  const pendingAuth = open && file.authorizations.find((a) => a.template === 'hospital' && a.status === 'pending')
   const tabs: [Tab, string][] = obs ? [
     ['sheet', 'Datos generales'],
     ['notes', `Notas de evolución (${medical.length + (h.consultationId ? 1 : 0)})`],
     ['meds', 'Hoja de medicamentos'],
     ['labs', `Laboratorio (${file.labs.length})`],
+    ['annexes', `Anexos (${annexes})`],
   ] : [
     ['sheet', 'Hoja de hospitalización'],
     ['notes', `Notas de evolución (${medical.length + (h.consultationId ? 1 : 0)})`],
     ['meds', 'Medicamentos'],
     ['nursing', `Notas de enfermería (${nursing.length})`],
     ['labs', `Laboratorios (${file.labs.length})`],
+    ['annexes', `Anexos (${annexes})`],
   ]
   const base = `/app/${obs ? 'observacion' : 'hospitalizados'}/${h.id}`
   const noBed = open && !obs && !h.bedId
@@ -83,6 +87,10 @@ export default function InpatientFile() {
         </div>
       </div>
       <MedAlertBanner file={file} />
+      {pendingAuth && tab !== 'annexes' && (
+        <div className="alert-strip alert-strip--amber" style={{ flexWrap: 'wrap' }}><FileSignature size={16} />La autorización de hospitalización está pendiente de firma.
+          <button className="btn btn--soft btn--sm" onClick={() => setTab('annexes')}>Ir a Anexos</button></div>
+      )}
       {noBed && (
         <div className="alert-strip alert-strip--amber" style={{ flexWrap: 'wrap' }}><BedDouble size={16} />Falta asignar la cama{h.companionName ? '' : ' y anotar al acompañante'}.
           {can('inpatient.orders') && <button className="btn btn--soft btn--sm" onClick={() => setEditing(true)}>Completar ingreso</button>}</div>
@@ -122,6 +130,7 @@ export default function InpatientFile() {
       {tab === 'notes' && <MedicalNotes file={file} p={p} reload={load} />}
       {tab === 'nursing' && !obs && <NursingNotes file={file} reload={load} />}
       {tab === 'labs' && <Labs file={file} reload={load} />}
+      {tab === 'annexes' && <Annexes file={file} p={p} reload={load} />}
     </div>
   )
 }
@@ -465,7 +474,7 @@ const SOAP: { key: 'subjective' | 'objective' | 'assessment' | 'plan'; letter: s
 const dm = (iso: string) => `${date(iso, { day: '2-digit', month: '2-digit' })} ${time(iso)}`
 
 /** Una entrada de la línea de tiempo: nota médica (SOAP, procedimiento o egreso) o registro anterior de procedimiento. */
-type TimelineItem = { at: string; key: string; note?: InpatientNote; legacy?: HospProcedure; auth?: Authorization }
+type TimelineItem = { at: string; key: string; note?: InpatientNote; legacy?: HospProcedure }
 
 function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () => void }) {
   const { staffById, can } = useStore()
@@ -480,25 +489,26 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
   const [authFor, setAuthFor] = useState<string | undefined>()
   const nav = useNavigate()
   const open = file.hospitalization.status === 'active'
-  // Los procedimientos y autorizaciones registrados antes de las notas de procedimiento se conservan, sin estado
+  // Los procedimientos registrados antes de las notas de procedimiento se conservan, sin estado. Las
+  // autorizaciones (y las anteriores) están en Anexos.
   const timeline: TimelineItem[] = [
     // El procedimiento va en el orden de la hora en que se hizo, no de cuando se escribió la nota
     ...notes.map((n) => ({ at: n.procedure?.performedAt ?? n.at, key: n.id, note: n })),
-    ...file.procedures.map((x) => ({ at: x.createdAt, key: x.id, legacy: x })),
-    ...file.authorizations.map((a) => ({ at: a.createdAt, key: a.id, auth: a })),
+    ...file.procedures.filter((x) => x.kind === 'procedure').map((x) => ({ at: x.createdAt, key: x.id, legacy: x })),
   ].sort((a, b) => a.at.localeCompare(b.at) || a.key.localeCompare(b.key))
+  const doctor = can('inpatient.orders')
   return (
     <div className="hc">
-      {open && can('inpatient.orders') && (
+      {open && (doctor || can('inpatient.care')) && (
         <section className="panel">
           <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <p className="muted">{hasAdmission ? 'Las notas quedan en orden, de la más antigua a la más reciente. Procedimientos y egreso también son notas de evolución.' : 'Lo primero es la nota de ingreso, con las indicaciones de medicamentos.'}</p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn btn--primary" onClick={() => setWriting('note')}><NotebookPen size={16} />{hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso'}</button>
-              <button className="btn btn--primary" onClick={() => setWriting('procedure')}><Syringe size={16} />Procedimiento</button>
-              <button className="btn btn--primary" onClick={() => { setAuthFor(undefined); setWriting('authorization') }}><FileSignature size={16} />Autorización</button>
-              {hasAdmission && !discharged && <button className="btn btn--primary" onClick={() => setWriting('discharge')}><LogOut size={16} />Egreso</button>}
-              {obs && <button className="btn btn--soft" onClick={() => setConverting(true)}><BedDouble size={16} />Pasar a hospitalización</button>}
+              {doctor && <button className="btn btn--primary" onClick={() => setWriting('note')}><NotebookPen size={16} />{hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso'}</button>}
+              {doctor && <button className="btn btn--primary" onClick={() => setWriting('procedure')}><Syringe size={16} />Procedimiento</button>}
+              <button className={`btn ${doctor ? 'btn--primary' : 'btn--soft'}`} onClick={() => { setAuthFor(undefined); setWriting('authorization') }}><FileSignature size={16} />Autorización quirúrgica</button>
+              {doctor && hasAdmission && !discharged && <button className="btn btn--primary" onClick={() => setWriting('discharge')}><LogOut size={16} />Egreso</button>}
+              {doctor && obs && <button className="btn btn--soft" onClick={() => setConverting(true)}><BedDouble size={16} />Pasar a hospitalización</button>}
             </div>
           </div>
         </section>
@@ -506,19 +516,18 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
       {can('orders.review') && <PendingOrdersPanel file={file} reload={reload} />}
       {writing === 'procedure' && <ProcedureNoteForm file={file} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }}
         onAuthorize={(name) => { setAuthFor(name); setWriting('authorization') }} />}
-      {writing === 'authorization' && <AuthorizationForm file={file} p={p} initialProcedure={authFor} onClose={() => setWriting(null)}
+      {writing === 'authorization' && <AuthorizationForm file={file} p={p} template="surgical" initialProcedure={authFor} onClose={() => setWriting(null)}
         onCreated={(a) => { setWriting(null); nav(`/app/autorizaciones/${a.id}`) }} />}
       {writing === 'discharge' && <Discharge file={file} p={p} reload={() => { setWriting(null); reload() }} />}
       {converting && <ConvertModal file={file} p={p} onClose={() => setConverting(false)} onDone={() => nav(`/app/hospitalizados/${h.id}?tab=notas`)} />}
       {h.consultationId && <ConsultEntry consultationId={h.consultationId} />}
       {timeline.length ? timeline.map((item) => {
-        if (item.auth) return <AuthorizationEntry key={item.key} a={item.auth} file={file} reload={reload} />
         if (item.legacy) {
           const x = item.legacy
           return (
             <article key={x.id} className="panel consult-entry">
               <div className="panel__head">
-                <div><h2>{x.kind === 'procedure' ? 'Procedimiento' : 'Autorización'} <span className="badge">Registro anterior</span></h2>
+                <div><h2>Procedimiento <span className="badge">Registro anterior</span></h2>
                   <p>{date(x.createdAt, { weekday: 'long', day: 'numeric', month: 'long' })}, {time(x.createdAt)}, {staffById(x.createdBy)?.name}</p></div>
               </div>
               <div className="panel__body">
@@ -982,6 +991,49 @@ function NursingRow({ n, who }: { n: InpatientNote; who?: string }) {
     <div className="nnote">
       <div className="nnote__when"><b>{date(n.at, { day: 'numeric', month: 'short' })}</b><span>{time(n.at)}</span></div>
       <div><p>{n.text}</p><small className="muted">{who}</small></div>
+    </div>
+  )
+}
+
+// ---------- Anexos ----------
+
+/**
+ * Anexos del expediente: la autorización de hospitalización de la estancia y las quirúrgicas, con su estado
+ * (pendiente de firma, firmada, rechazada o revocada) y la hoja firmada. Las generan enfermería o el médico.
+ */
+function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => void }) {
+  const { can, staffById } = useStore()
+  const nav = useNavigate()
+  const [making, setMaking] = useState<null | 'hospital' | 'surgical'>(null)
+  const open = file.hospitalization.status === 'active'
+  const write = open && (can('inpatient.orders') || can('inpatient.care'))
+  const hospital = file.authorizations.find((a) => a.template === 'hospital' && (a.status === 'pending' || a.status === 'signed'))
+  const legacy = file.procedures.filter((x) => x.kind === 'authorization')
+  const list = [...file.authorizations].sort((a, b) => Number(b.template === 'hospital') - Number(a.template === 'hospital') || a.createdAt.localeCompare(b.createdAt))
+  return (
+    <div className="hc">
+      {write && (
+        <section className="panel">
+          <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+            <p className="muted">Se imprimen, se firman en papel y se sube la foto o el PDF de la hoja firmada.</p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {hospital ? <Link className="btn btn--soft" to={`/app/autorizaciones/${hospital.id}`}><FileSignature size={16} />Autorización de hospitalización</Link>
+                : <button className="btn btn--soft" onClick={() => setMaking('hospital')}><FileSignature size={16} />Autorización de hospitalización</button>}
+              <button className="btn btn--primary" onClick={() => setMaking('surgical')}><FileSignature size={16} />Autorización quirúrgica</button>
+            </div>
+          </div>
+        </section>
+      )}
+      {making && <AuthorizationForm file={file} p={p} template={making} onClose={() => setMaking(null)} onCreated={(a) => { setMaking(null); nav(`/app/autorizaciones/${a.id}`) }} />}
+      {list.map((a) => <AuthorizationEntry key={a.id} a={a} file={file} reload={reload} />)}
+      {legacy.map((x) => (
+        <article key={x.id} className="panel consult-entry">
+          <div className="panel__head"><div><h2>Autorización <span className="badge">Registro anterior</span></h2>
+            <p>{dateTime(x.createdAt)}, {staffById(x.createdBy)?.name}</p></div></div>
+          <div className="panel__body"><p><b>{x.name}</b></p>{x.notes && <p>{x.notes}</p>}</div>
+        </article>
+      ))}
+      {!list.length && !legacy.length && <section className="panel"><div className="empty">Sin autorizaciones todavía.</div></section>}
     </div>
   )
 }

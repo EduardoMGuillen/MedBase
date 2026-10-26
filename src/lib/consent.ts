@@ -1,7 +1,11 @@
 import type { Authorization } from './types'
 
 /**
- * Plantillas de autorización (consentimiento informado).
+ * Plantillas de autorización (consentimiento informado). Son dos documentos:
+ * - Autorización de hospitalización: una por estancia, igual para todos los pacientes que se ingresan
+ *   (hospitalización u observación). Autoriza el ingreso y la atención, los medicamentos y los procedimientos menores.
+ * - Autorización quirúrgica: una por cirugía, con el procedimiento, el diagnóstico y la información del
+ *   consentimiento informado quirúrgico, rechazo informado ("No autorizo"), representante, testigo y médico.
  *
  * VALIDACIÓN PENDIENTE: este texto es una propuesta. Emil (responsable clínico) y el asesor legal de la
  * clínica deben revisarlo y aprobarlo antes de usarlo con pacientes reales; la clínica puede reemplazarlo
@@ -125,15 +129,32 @@ export const FREQUENT_PROCEDURES = [...new Set([
   ...CONSENT_LIBRARY.map((x) => x.name),
 ])].sort((a, b) => a.localeCompare(b, 'es'))
 
-export function consentStatements(general: boolean): string[] {
-  return [
-    general
-      ? 'Autorizo a los médicos y al personal de esta clínica a atenderme durante mi estancia: examinarme, tomarme muestras y hacerme los exámenes y tratamientos habituales del servicio.'
-      : 'Autorizo a que se me realice el procedimiento descrito en esta hoja.',
+/** Lo que el paciente (o su representante) autoriza en la hoja de hospitalización. */
+export const HOSPITAL_CONSENT = [
+  'Mi ingreso y la atención médica y de enfermería que necesite durante la estancia: examinarme, vigilarme y hacerme los exámenes que indique el médico.',
+  'La aplicación de los medicamentos que indique el médico, por la vía que corresponda (oral, en la vena, en el músculo u otra).',
+  'Los procedimientos menores que requiera mi atención, como canalizar una vena, tomar muestras de sangre, orina u otras, hacer curaciones y colocar sondas.',
+]
+
+/** Declaración de la hoja de hospitalización, después de lo que se autoriza. */
+export const HOSPITAL_DECLARATION = 'Me explicaron con palabras que entiendo por qué debo quedar ingresado y en qué consiste la atención; pude preguntar y me respondieron. ' +
+  'Sé que para una cirugía u otro procedimiento mayor se me pedirá una autorización aparte, y que puedo retirar esta autorización en cualquier momento.'
+
+/** Declaración del consentimiento informado quirúrgico (lo que el paciente afirma al firmar). */
+export function consentStatements(kind: 'surgical' | 'general' = 'surgical'): string[] {
+  if (kind === 'general') return [
+    'Autorizo a los médicos y al personal de esta clínica a atenderme durante mi estancia: examinarme, tomarme muestras y hacerme los exámenes y tratamientos habituales del servicio.',
     'El médico me explicó con palabras que entiendo en qué consiste, para qué sirve, sus riesgos frecuentes y graves, las alternativas y lo que puede pasar si no se hace.',
     'Pude hacer todas las preguntas que quise y me las respondieron. Entendí la información.',
     'Tomo esta decisión libre y voluntariamente. Sé que puedo revocar esta autorización en cualquier momento antes del procedimiento, sin que eso afecte el resto de mi atención.',
     'Autorizo los cambios necesarios si durante la atención surge una situación imprevista de urgencia que ponga en riesgo mi vida o mi salud.',
+  ]
+  return [
+    'Acepto ser sometido al procedimiento quirúrgico indicado en esta hoja, que realizará el médico tratante con su equipo.',
+    'El médico me explicó con palabras que entiendo en qué consiste, para qué sirve y qué beneficios se esperan; sus riesgos frecuentes y sus riesgos graves; las alternativas que existen; lo que puede pasar si no me opero, y el tipo de anestesia que se usará y sus riesgos.',
+    'Pude hacer todas las preguntas que quise, me las respondieron y entendí la información. Sé que ningún procedimiento tiene resultados garantizados.',
+    'Autorizo la anestesia indicada y, si durante el procedimiento surge una situación imprevista que ponga en riesgo mi vida o mi salud, los cambios o procedimientos adicionales necesarios para atenderla.',
+    'Tomo esta decisión de forma libre y voluntaria, sin presiones. Sé que puedo revocar esta autorización en cualquier momento antes del procedimiento, sin que eso afecte el resto de mi atención.',
   ]
 }
 
@@ -148,5 +169,10 @@ export const AUTH_STATUS: Record<Authorization['status'], { label: string; tone:
 export const isSurgical = (a: Pick<Authorization, 'template'>) => a.template === 'surgical' || a.template === 'procedure'
 
 export const authTitle = (a: Pick<Authorization, 'template' | 'data'>) =>
-  a.template === 'general' ? 'Autorización general de ingreso y atención' : `Consentimiento informado: ${a.data.procedure}`
+  a.template === 'hospital' ? 'Autorización de hospitalización'
+    : a.template === 'general' ? 'Autorización general de ingreso y atención (formato anterior)'
+    : `Autorización quirúrgica: ${a.data.procedure}`
+
+/** Tipos de anestesia para elegir o escribir. */
+export const ANESTHESIA = ['Local', 'Local con sedación', 'Regional (raquídea o epidural)', 'General', 'No requiere']
 

@@ -334,3 +334,50 @@ describe('M6 nota de procedimiento', () => {
     assert.ok(r.body.at > performedAt, 'la hora de la nota se guarda aparte')
   })
 })
+
+describe('M5 autorizaciones: de hospitalización y quirúrgica', () => {
+  test('la de hospitalización se genera al ingresar, una por estancia, y se reutiliza al hospitalizar', async () => {
+    const { doc, nurse, apptId } = await openConsult('p2')
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Dolor', diagnoses: DX, orders: ['Reposo.'], observe: true })
+    const id = c.body.hospitalizationId
+    let file = (await nurse.get(`/api/inpatient/${id}`)).body
+    assert.equal(file.authorizations.length, 1)
+    const a = file.authorizations[0]
+    assert.equal(a.template, 'hospital')
+    assert.equal(a.status, 'pending')
+    assert.deepEqual(a.data.admission.diagnosis, 'Gastroenteritis aguda')
+    assert.ok((await nurse.get('/api/bootstrap')).body.inpatients.find((h: any) => h.id === id).authPending)
+    // Enfermería anota al acompañante: se reabre la misma hoja, actualizada, sin duplicar
+    const again = await nurse.post(`/api/inpatient/${id}/authorizations`, { template: 'hospital', companion: { name: 'Rosa Pérez', phone: '9888-1234', relation: 'Hija' } })
+    assert.equal(again.status, 200)
+    assert.equal(again.body.id, a.id)
+    assert.equal(again.body.data.companion.phone, '9888-1234')
+    assert.equal((await (await as('smejia@demo.clinara')).post(`/api/inpatient/${id}/authorizations`, { template: 'hospital' })).status, 403)
+    // Firmada con la foto: queda en Anexos; al pasar a hospitalización no se crea otra
+    const up = await nurse.post(`/api/patients/p2/attachments`, { name: 'firmada.png', mime: 'image/png', category: 'document', data: 'iVBORw0KGgo=', hospitalizationId: id, title: 'Autorización firmada', takenAt: new Date().toISOString() })
+    assert.equal(up.status, 201, JSON.stringify(up.body))
+    assert.equal((await nurse.post(`/api/authorizations/${a.id}/status`, { status: 'signed', fileId: up.body.id })).status, 200)
+    assert.equal((await doc.post(`/api/inpatient/${id}/convert`, { bedId: await freeBed(doc) })).status, 200)
+    file = (await doc.get(`/api/inpatient/${id}`)).body
+    assert.equal(file.authorizations.filter((x: any) => x.template === 'hospital').length, 1)
+    assert.equal(file.authorizations[0].status, 'signed')
+  })
+  test('la quirúrgica la generan enfermería o el médico y la nota de procedimiento la reconoce', async () => {
+    const { doc, nurse, apptId } = await openConsult('p1')
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Dolor en fosa ilíaca derecha', diagnoses: [{ code: 'K35.8', label: 'Apendicitis aguda' }], orders: ['Nada por boca.'], admit: true })
+    assert.equal(c.status, 201, JSON.stringify(c.body))
+    const id = c.body.hospitalizationId
+    assert.equal((await nurse.post(`/api/inpatient/${id}/authorizations`, { template: 'surgical', diagnosis: 'Apendicitis aguda' })).status, 400, 'pide el procedimiento')
+    const s = await nurse.post(`/api/inpatient/${id}/authorizations`, { template: 'surgical', procedure: 'Apendicectomía o laparotomía exploradora', diagnosis: 'Apendicitis aguda', anesthesia: 'General',
+      witness: { name: 'Carlos Mejía', dni: '0801198011111' } })
+    assert.equal(s.status, 201, JSON.stringify(s.body))
+    assert.equal(s.body.template, 'surgical')
+    assert.equal(s.body.data.doctor.name, 'Dra. Lucía Herrera', 'la firma el médico que ingresó al paciente')
+    assert.equal(s.body.data.witness.dni, '0801-1980-11111')
+    const up = await doc.post(`/api/patients/p1/attachments`, { name: 'firmada.pdf', mime: 'application/pdf', category: 'document', data: 'JVBERi0=', hospitalizationId: id, title: 'Autorización firmada', takenAt: new Date().toISOString() })
+    await doc.post(`/api/authorizations/${s.body.id}/status`, { status: 'signed', fileId: up.body.id })
+    const note = await doc.post(`/api/inpatient/${id}/procedure-notes`, { name: 'Apendicectomía', performedAt: new Date().toISOString(), text: 'Apendicectomía abierta sin complicaciones.', authorizationId: s.body.id })
+    assert.equal(note.status, 201)
+    assert.equal(note.body.procedure.authorizationId, s.body.id)
+  })
+})

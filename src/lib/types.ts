@@ -367,6 +367,8 @@ export interface Hospitalization {
   observationAt?: string // si vino de observación: cuándo entró a observación
   convertedAt?: string // cuándo pasó de observación a hospitalización
   convertedBy?: string
+  /** En la lista de hospitalizados: la autorización de hospitalización sigue pendiente de firma. */
+  authPending?: boolean
 }
 
 export interface DischargeData {
@@ -436,6 +438,12 @@ export interface AuthorizationData {
   notDoing?: string
   anesthesia?: string
   representative?: { name: string; dni?: string; relation?: string }
+  /** Hospitalización: quien acompaña al paciente. */
+  companion?: { name: string; phone?: string; relation?: string }
+  /** Quirúrgica: testigo (si se conoce al generarla; si no, se escribe a mano). */
+  witness?: { name: string; dni?: string }
+  /** Hospitalización: fecha y hora del ingreso y diagnóstico de ingreso. */
+  admission?: { at: string; diagnosis?: string }
   // Lo que se imprime, congelado al crearla
   patient: { name: string; dni?: string; age: string; sex: 'F' | 'M'; record: string; minor: boolean }
   doctor: { name: string; license?: string }

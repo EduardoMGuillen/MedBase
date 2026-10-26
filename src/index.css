@@ -330,6 +330,7 @@ a.row:hover { background: var(--ward); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { font-size: 12.5px; padding: 3px 10px; border-radius: 99px; background: var(--ward); border: 1px solid var(--line-soft); }
 .chip--red { background: var(--red); color: var(--red-ink); border-color: transparent; font-weight: 600; }
+.chip--amber { background: var(--amber); color: var(--amber-ink); border-color: transparent; font-weight: 600; }
 button.chip { cursor: pointer; }
 button.chip[aria-pressed='true'] { background: var(--ink); color: #fff; border-color: var(--ink); }
 
