@@ -4,7 +4,7 @@ import { Search, SlidersHorizontal, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead } from '../components/ui'
 import { IdentificationForm } from './PatientForms'
-import { age, date, fullName, localISODate } from '../lib/format'
+import { age, date, dniDigits, fullName, localISODate } from '../lib/format'
 import { useIsPhone } from '../lib/hooks'
 import { yearsOld } from '../lib/inpatient'
 import type { Patient, PatientIndex } from '../lib/types'
@@ -63,9 +63,11 @@ export default function Patients() {
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase()
+    // La identidad se encuentra con o sin guiones
+    const sd = dniDigits(s)
     const dateField = f.fecha || (f.desde || f.hasta ? 'ultima' : '')
     const filtered = registered.filter((p) => {
-      if (s && !(fullName(p).toLowerCase().includes(s) || p.record.toLowerCase().includes(s) || p.phone.includes(s))) return false
+      if (s && !(fullName(p).toLowerCase().includes(s) || p.record.toLowerCase().includes(s) || p.phone.includes(s) || (sd.length >= 3 && dniDigits(p.dni).includes(sd)))) return false
       const ix = index?.get(p.id)
       if (f.sexo && p.sex !== f.sexo) return false
       if (f.edadMin || f.edadMax) {

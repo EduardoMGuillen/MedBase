@@ -69,11 +69,40 @@ export function fillTemplate(tpl: string, v: Record<string, string>) {
   return tpl.replace(/\{(\w+)\}/g, (m, k: string) => v[k] ?? m)
 }
 
-/** Identidad hondureña mientras se escribe: 0801199012345 → 0801-1990-12345. Un pasaporte (con letras) se deja como viene. */
-export function formatDni(raw: string) {
-  if (/[a-z]/i.test(raw)) return raw.toUpperCase().slice(0, 30)
-  const d = raw.replace(/\D/g, '').slice(0, 13)
-  return [d.slice(0, 4), d.slice(4, 8), d.slice(8)].filter(Boolean).join('-')
+/** Formato de la identidad hondureña. Cada 0 es un dígito; lo demás se escribe solo. La clínica puede cambiarlo. */
+export const DNI_MASK = '0000-0000-00000'
+
+/** Sólo los dígitos de una identidad, para buscar con o sin guiones. */
+export const dniDigits = (s = '') => s.replace(/\D/g, '')
+
+/**
+ * Identidad mientras se escribe: sólo cuentan los dígitos y los guiones se ponen solos al escribir el
+ * dígito que sigue (0801199012345 → 0801-1990-12345). Una máscara vacía deja el texto como viene.
+ */
+export function formatDni(raw: string, mask = DNI_MASK) {
+  if (!mask) return raw.slice(0, 30)
+  const d = dniDigits(raw).slice(0, mask.split('0').length - 1)
+  let out = ''
+  let i = 0
+  for (const ch of mask) {
+    if (i >= d.length) break
+    out += ch === '0' ? d[i++] : ch
+  }
+  return out
+}
+
+/** Cuántos dígitos lleva una identidad completa con esa máscara. */
+export const dniLength = (mask = DNI_MASK) => mask.split('0').length - 1
+
+/**
+ * Cómo se guarda una identidad: la de 13 dígitos siempre como 0000-0000-00000, venga como venga. Lo que
+ * tiene letras (un pasaporte registrado antes) o use otra máscara se deja como está.
+ */
+export function normalizeDni(raw?: string | null) {
+  const v = (raw ?? '').trim()
+  if (!v) return undefined
+  if (/[a-z]/i.test(v)) return v.toUpperCase()
+  return dniDigits(v).length === 13 ? formatDni(v) : v
 }
 
 /** Teléfono de 8 dígitos mientras se escribe: 98761123 → 9876-1123. Con código de país se deja como viene. */

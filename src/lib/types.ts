@@ -51,6 +51,8 @@ export interface ClinicSettings {
   reminderTemplate: string
   /** Si es verdadero, el número de identidad hace de número de expediente en recetas y documentos. */
   recordUsesDni: boolean
+  /** Formato del documento de identidad: cada 0 es un dígito. Vacío: texto libre. */
+  dniMask?: string
   logo?: string // imagen en data URL, para recetas y constancias
   /** Horas en observación tras las que el paciente se resalta en la lista. */
   obsAlertHours?: number

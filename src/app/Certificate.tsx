@@ -8,6 +8,7 @@ import { yearsOld } from '../lib/inpatient'
 import { CERT_KIND, certificateText, plainText } from '../lib/certificates'
 import type { Certificate as Cert, CertificateData } from '../lib/types'
 import { ClinicLogo } from './Prescriptions'
+import { DniInput } from '../components/DniInput'
 
 type Kind = Cert['kind']
 
@@ -130,7 +131,7 @@ export default function Certificate() {
           </>)}
           {kind === 'companion' && (<>
             <label className="field span-2"><span>Nombre del acompañante</span><input className="input" value={f.companionName} onChange={(e) => set('companionName', e.target.value)} /></label>
-            <label className="field"><span>Identidad del acompañante</span><input className="input" value={f.companionDni} onChange={(e) => set('companionDni', e.target.value)} placeholder="0000-0000-00000" /></label>
+            <label className="field"><span>Identidad del acompañante</span><DniInput value={f.companionDni} onChange={(v) => setF((x) => ({ ...x, companionDni: v }))} /></label>
             <label className="field"><span>Parentesco</span><input className="input" value={f.companionRelation} onChange={(e) => set('companionRelation', e.target.value)} placeholder="Ej. Madre" /></label>
           </>)}
           {kind === 'free' && <label className="field span-all"><span>Texto de la constancia</span>

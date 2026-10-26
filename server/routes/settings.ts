@@ -18,14 +18,16 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
       recordUsesDni: z.boolean().default(false),
       obsAlertHours: z.number().int().min(1, 'Las horas de alerta deben ser al menos 1.').max(240).default(24),
       obsOrderChecklist: z.boolean().default(false),
+      // Cada 0 es un dígito; lo demás (guiones, espacios) se escribe solo. Vacío: el documento se escribe libre.
+      dniMask: z.string().trim().max(30).regex(/^[0\- /.]*$/, 'El formato de identidad sólo lleva ceros (dígitos) y guiones, espacios, puntos o barras.').default('0000-0000-00000'),
       // El logo viaja con la configuración en cada carga: se limita a una imagen pequeña
       logo: z.string().max(140_000, 'El logo es muy pesado; usa una imagen más pequeña.').regex(/^data:image\/(png|jpeg|webp);base64,/, 'El logo debe ser una imagen PNG, JPG o WEBP.')
         .optional().or(z.literal('').transform(() => undefined)),
     }), req.body)
     const cid = clinicOf(req)
     await sql.run(`UPDATE clinics SET name = ?, address = ?, phone = ?, email = ?, currency = ?, rx_validity_days = ?, reminder_template = ?, record_uses_dni = ?, logo = ?,
-      obs_alert_hours = ?, obs_order_checklist = ? WHERE id = ?`,
-      [s.name, s.address, s.phone, s.email, s.currency, s.rxValidityDays, s.reminderTemplate, s.recordUsesDni, s.logo ?? null, s.obsAlertHours, s.obsOrderChecklist, cid])
+      obs_alert_hours = ?, obs_order_checklist = ?, dni_mask = ? WHERE id = ?`,
+      [s.name, s.address, s.phone, s.email, s.currency, s.rxValidityDays, s.reminderTemplate, s.recordUsesDni, s.logo ?? null, s.obsAlertHours, s.obsOrderChecklist, s.dniMask, cid])
     await audit(userOf(req), 'Actualizó la configuración de la clínica')
     res.json(await settings(cid))
   })

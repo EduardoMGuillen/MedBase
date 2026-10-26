@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
 import { toAttachment, toAuthorization, toBed, toDose, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure } from '../mappers.js'
-import { age as ageText } from '../../src/lib/format.js'
+import { age as ageText, normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
 import { isScheduled, medLabel, yearsOld } from '../../src/lib/inpatient.js'
 
@@ -381,7 +381,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       template: z.enum(['general', 'procedure']),
       procedure: text(200), diagnosis: text(300), description: text(2000), benefits: text(1500), risks: text(2500), alternatives: text(1500),
       notDoing: text(1500), anesthesia: text(120),
-      representative: z.object({ name: z.string().trim().min(3, 'Escribe el nombre del representante.').max(120), dni: text(30), relation: text(40) }).optional(),
+      representative: z.object({ name: z.string().trim().min(3, 'Escribe el nombre del representante.').max(120), dni: text(30).transform(normalizeDni), relation: text(40) }).optional(),
     }), req.body)
     if (b.template === 'procedure' && (!b.procedure || b.procedure.length < 3)) fail(400, 'Escribe el procedimiento a realizar.')
     if (b.template === 'procedure' && (!b.description || !b.risks)) fail(400, 'Explica en qué consiste el procedimiento y sus riesgos.')

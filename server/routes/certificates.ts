@@ -5,7 +5,7 @@ import { type Ctx, fail, parse } from '../http.js'
 import { toCertificate } from '../mappers.js'
 import type { Sql } from '../sql.js'
 import { yearsOld } from '../../src/lib/inpatient.js'
-import { age } from '../../src/lib/format.js'
+import { age, normalizeDni } from '../../src/lib/format.js'
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha no es válida.')
 const hhmm = z.string().regex(/^\d{2}:\d{2}$/, 'La hora no es válida.')
@@ -22,7 +22,7 @@ const input = z.object({
   restType: z.enum(['relativo', 'absoluto']).optional(),
   restFrom: ymd.optional(),
   includeDx: z.boolean().default(false),
-  companion: z.object({ name: z.string().trim().min(3, 'Escribe el nombre del acompañante.').max(120), dni: z.string().trim().max(30).optional(), relation: z.string().trim().max(40).optional() }).optional(),
+  companion: z.object({ name: z.string().trim().min(3, 'Escribe el nombre del acompañante.').max(120), dni: z.string().trim().max(30).optional().transform(normalizeDni), relation: z.string().trim().max(40).optional() }).optional(),
   text: z.string().trim().max(3000).optional(),
   notes: z.string().trim().max(500).optional(),
 }).superRefine((b, ctx) => {

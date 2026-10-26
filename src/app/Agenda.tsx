@@ -4,7 +4,8 @@ import { ChevronLeft, ChevronRight, Globe, Plus, Receipt, Search, UserPlus, X } 
 import { useStore, type NewAppointment } from '../lib/store'
 import { Avatar, Modal, PageHead, StatusBadge } from '../components/ui'
 import { ReminderButton } from '../components/Reminder'
-import { cap, formatDni, formatPhone, fullName, localISODate, time } from '../lib/format'
+import { cap, dniDigits, formatPhone, fullName, localISODate, time } from '../lib/format'
+import { DniInput } from '../components/DniInput'
 import { DAY_NAMES_PLURAL, describeSchedule, slotsOn, weekday } from '../lib/schedule'
 import { normalize, similarPatients } from '../lib/patients'
 import { CompleteRegistration, SimilarPatients } from './NewPatient'
@@ -434,7 +435,7 @@ function AppointmentForm({ title, submitLabel, doctors, patients, initial, lockP
             <label className="field"><span>Nombres</span><input className="input" autoFocus value={np.firstName} onChange={(e) => set('newPatient', { ...np, firstName: e.target.value })} /></label>
             <label className="field"><span>Apellidos</span><input className="input" value={np.lastName} onChange={(e) => set('newPatient', { ...np, lastName: e.target.value })} /></label>
             <label className="field"><span>Teléfono</span><input className="input" inputMode="tel" placeholder="0000-0000" value={np.phone} onChange={(e) => set('newPatient', { ...np, phone: formatPhone(e.target.value) })} /></label>
-            <label className="field"><span>Identidad (opcional)</span><input className="input" inputMode="numeric" placeholder="0000-0000-00000" value={np.dni} onChange={(e) => set('newPatient', { ...np, dni: formatDni(e.target.value) })} /></label>
+            <label className="field"><span>Identidad (opcional)</span><DniInput value={np.dni} onChange={(dni) => set('newPatient', { ...np, dni })} /></label>
           </div>
           <SimilarPatients list={similar} onPick={(p) => setF((x) => ({ ...x, patientId: p.id, newPatient: null }))} />
           <button type="button" className="linklike" style={{ justifySelf: 'start' }} onClick={() => set('newPatient', null)}>Buscar entre los pacientes registrados</button>
@@ -492,7 +493,7 @@ function ApptPatientPicker({ patients, value, onChange, onNew }: { patients: Pat
   const [q, setQ] = useState('')
   const chosen = value ? patients.find((p) => p.id === value) : undefined
   const s = normalize(q)
-  const matches = s.length >= 2 ? patients.filter((p) => normalize(`${fullName(p)} ${p.record} ${p.phone} ${p.dni ?? ''}`).includes(s)
+  const matches = s.length >= 2 ? patients.filter((p) => normalize(`${fullName(p)} ${p.record} ${p.phone} ${p.dni ?? ''} ${dniDigits(p.dni)}`).includes(s)
     || (s.replace(/\D/g, '').length >= 4 && p.phone.replace(/\D/g, '').includes(s.replace(/\D/g, '')))).slice(0, 7) : []
   if (chosen) {
     return (

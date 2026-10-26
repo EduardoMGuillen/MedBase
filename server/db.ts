@@ -10,9 +10,9 @@ import type { Row, Sql } from './sql.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '21'
+const SCHEMA_VERSION = '22'
 
-const SCHEMA = `
+export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS staff (
@@ -422,6 +422,46 @@ ALTER TABLE hospitalizations ALTER COLUMN bed_id DROP NOT NULL;
 ALTER TABLE clinics
   ADD COLUMN IF NOT EXISTS obs_alert_hours INTEGER NOT NULL DEFAULT 24,
   ADD COLUMN IF NOT EXISTS obs_order_checklist BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- v22: segunda ronda de correcciones.
+-- Identidad: formato configurable por clínica; las de 13 dígitos guardadas sin guiones pasan a 0000-0000-00000.
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS dni_mask TEXT NOT NULL DEFAULT '0000-0000-00000';
+UPDATE patients SET dni = substr(regexp_replace(dni, '[^0-9]', '', 'g'), 1, 4) || '-' || substr(regexp_replace(dni, '[^0-9]', '', 'g'), 5, 4) || '-' || substr(regexp_replace(dni, '[^0-9]', '', 'g'), 9, 5)
+  WHERE dni !~ '[A-Za-z]' AND length(regexp_replace(dni, '[^0-9]', '', 'g')) = 13 AND dni !~ '^[0-9]{4}-[0-9]{4}-[0-9]{5}$';
+UPDATE patients SET guardian_dni = substr(regexp_replace(guardian_dni, '[^0-9]', '', 'g'), 1, 4) || '-' || substr(regexp_replace(guardian_dni, '[^0-9]', '', 'g'), 5, 4) || '-' || substr(regexp_replace(guardian_dni, '[^0-9]', '', 'g'), 9, 5)
+  WHERE guardian_dni !~ '[A-Za-z]' AND length(regexp_replace(guardian_dni, '[^0-9]', '', 'g')) = 13 AND guardian_dni !~ '^[0-9]{4}-[0-9]{4}-[0-9]{5}$';
+-- Órdenes de medicamento: hosp_meds es la única fuente de verdad de la hoja. Cada orden sabe de qué nota viene
+-- (source, source_id, source_index); el índice único hace que crearla dos veces desde la misma nota no la duplique.
+ALTER TABLE hosp_meds
+  ADD COLUMN IF NOT EXISTS patient_id TEXT,
+  ADD COLUMN IF NOT EXISTS source TEXT,
+  ADD COLUMN IF NOT EXISTS source_id TEXT,
+  ADD COLUMN IF NOT EXISTS source_index INTEGER,
+  ADD COLUMN IF NOT EXISTS days INTEGER,
+  ADD COLUMN IF NOT EXISTS stop_reason TEXT,
+  ADD COLUMN IF NOT EXISTS replaces_id TEXT;
+UPDATE hosp_meds m SET patient_id = h.patient_id FROM hospitalizations h WHERE h.id = m.hospitalization_id AND m.patient_id IS NULL;
+UPDATE hosp_meds SET source = 'note', source_id = note_id WHERE source IS NULL AND note_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS hosp_meds_source ON hosp_meds (hospitalization_id, source_id, source_index) WHERE source_id IS NOT NULL AND source_index IS NOT NULL;
+-- La consulta guarda si ingresó al paciente y sus medicamentos (con "aplicar en la clínica"), para crear las órdenes
+ALTER TABLE consultations
+  ADD COLUMN IF NOT EXISTS admit_kind TEXT,
+  ADD COLUMN IF NOT EXISTS meds TEXT;
+-- Corregir una dosis ya registrada: se guarda el registro anterior, quién lo corrigió y por qué
+ALTER TABLE hosp_doses
+  ADD COLUMN IF NOT EXISTS corrected_at TEXT,
+  ADD COLUMN IF NOT EXISTS corrected_by TEXT,
+  ADD COLUMN IF NOT EXISTS correction_reason TEXT,
+  ADD COLUMN IF NOT EXISTS previous TEXT;
+-- Autorizaciones: de hospitalización (una por estancia) y quirúrgica. Las anteriores ('general', 'procedure') se conservan.
+ALTER TABLE authorizations DROP CONSTRAINT IF EXISTS authorizations_template_check;
+ALTER TABLE authorizations ADD CONSTRAINT authorizations_template_check CHECK (template IN ('general','procedure','hospital','surgical'));
+-- Receta para una persona que no está registrada: sus datos escritos a mano; se vincula si luego se registra
+ALTER TABLE prescriptions ALTER COLUMN patient_id DROP NOT NULL;
+ALTER TABLE prescriptions
+  ADD COLUMN IF NOT EXISTS guest TEXT,
+  ADD COLUMN IF NOT EXISTS linked_at TEXT,
+  ADD COLUMN IF NOT EXISTS linked_by TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

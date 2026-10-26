@@ -8,6 +8,7 @@ import { yearsOld } from '../lib/inpatient'
 import { AUTH_STATUS, authTitle, CONSENT_LIBRARY, consentStatements } from '../lib/consent'
 import type { Authorization, AuthorizationData, InpatientFile, Patient } from '../lib/types'
 import { toBase64 } from './Attachments'
+import { DniInput } from '../components/DniInput'
 import { ClinicLogo } from './Prescriptions'
 
 /**
@@ -78,7 +79,7 @@ export function AuthorizationForm({ file, p, initialProcedure, onClose, onCreate
         <div className="form-grid">
           <label className="field"><span>Nombre del representante</span><input className="input" value={rep.name} onChange={(e) => setRep({ ...rep, name: e.target.value })} /></label>
           <label className="field"><span>Parentesco</span><input className="input" value={rep.relation} onChange={(e) => setRep({ ...rep, relation: e.target.value })} /></label>
-          <label className="field"><span>Identidad del representante</span><input className="input" value={rep.dni} onChange={(e) => setRep({ ...rep, dni: e.target.value })} placeholder="0000-0000-00000" /></label>
+          <label className="field"><span>Identidad del representante</span><DniInput value={rep.dni} onChange={(dni) => setRep({ ...rep, dni })} /></label>
         </div>
       )}
     </Modal>

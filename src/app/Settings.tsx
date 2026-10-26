@@ -154,6 +154,9 @@ function ClinicForm() {
           <label className="field span-2" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <input type="checkbox" checked={f.recordUsesDni} onChange={(e) => set('recordUsesDni', e.target.checked)} />
             <span style={{ margin: 0 }}>Usar el número de identidad como número de expediente en recetas y constancias</span></label>
+          <label className="field span-2"><span>Formato del documento de identidad</span>
+            <input className="input num" value={f.dniMask ?? '0000-0000-00000'} maxLength={30} onChange={(e) => set('dniMask', e.target.value.replace(/[^0\- /.]/g, ''))} />
+            <small className="muted">Cada 0 es un dígito; los guiones se ponen solos. El de Honduras es 0000-0000-00000. Déjalo vacío si la clínica registra otro tipo de documento con letras.</small></label>
           <label className="field"><span>Observación: resaltar después de (horas)</span>
             <input className="input num" type="number" min={1} max={240} value={f.obsAlertHours ?? 24} onChange={(e) => set('obsAlertHours', Math.max(1, Number(e.target.value) || 24))} /></label>
           <label className="field" style={{ alignContent: 'end' }}><span>Órdenes en observación</span>

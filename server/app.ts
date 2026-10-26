@@ -26,6 +26,7 @@ import { registerCertificates } from './routes/certificates.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { can, ROLE_PERMISSIONS, type Permission } from '../src/lib/permissions.js'
 import { yearsOld } from '../src/lib/inpatient.js'
+import { normalizeDni } from '../src/lib/format.js'
 import { DAY_NAMES_PLURAL, rangesOn, scheduleFromWeek, scheduleProblems, SLOT_OPTIONS, weekday, weekOf, withinSchedule } from '../src/lib/schedule.js'
 import type { ApptStatus, Staff } from '../src/lib/types.js'
 
@@ -313,7 +314,7 @@ export function createApp(opts: AppOptions) {
     insurance: z.string().trim().optional(),
     allergies: z.array(z.string().trim().min(1)).default([]),
     conditions: z.array(z.string().trim().min(1)).default([]),
-    dni: z.string().trim().max(30).optional(),
+    dni: z.string().trim().max(30).optional().transform(normalizeDni),
     civilStatus: z.string().trim().max(40).optional(),
     occupation: z.string().trim().max(80).optional(),
     education: z.string().trim().max(80).optional(),
@@ -323,7 +324,7 @@ export function createApp(opts: AppOptions) {
     emergencyPhone: z.string().trim().max(30).optional(),
     emergencyRelation: z.string().trim().max(40).optional(),
     guardianName: z.string().trim().max(100).optional(),
-    guardianDni: z.string().trim().max(30).optional(),
+    guardianDni: z.string().trim().max(30).optional().transform(normalizeDni),
     guardianRelation: z.string().trim().max(40).optional(),
     background: z.record(z.string(), z.string().max(2000)).optional(),
   })
@@ -453,7 +454,7 @@ export function createApp(opts: AppOptions) {
       firstName: z.string().trim().min(2, 'Escribe el nombre del paciente nuevo.').max(60),
       lastName: z.string().trim().max(60).default(''),
       phone: z.string().trim().regex(/^[\d\s+()-]{7,20}$/, 'Escribe el teléfono del paciente nuevo.'),
-      dni: z.string().trim().max(30).optional(),
+      dni: z.string().trim().max(30).optional().transform(normalizeDni),
     }).optional(),
     doctorId: z.string().min(1, 'Elige un médico.'),
     start: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/, 'La fecha u hora no es válida.'),

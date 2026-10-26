@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Modal } from '../components/ui'
 import { useStore } from '../lib/store'
-import { BACKGROUND_GROUPS, CIVIL_STATUS, EDUCATION, formatDni, formatPhone } from '../lib/format'
+import { BACKGROUND_GROUPS, CIVIL_STATUS, dniDigits, dniLength, EDUCATION, formatPhone } from '../lib/format'
+import { DniInput } from '../components/DniInput'
 import { yearsOld } from '../lib/inpatient'
 import type { Background, Patient } from '../lib/types'
 
@@ -22,13 +23,16 @@ export function IdentificationForm({ title, submitLabel, initial, withAllergies 
   })
   const [allergies, setAllergies] = useState('')
   const [busy, setBusy] = useState(false)
-  // La identidad y los teléfonos se formatean mientras se escriben: 0000-0000-00000 y 0000-0000
-  const MASK: Partial<Record<keyof Identification, (v: string) => string>> = { dni: formatDni, guardianDni: formatDni, phone: formatPhone, emergencyPhone: formatPhone }
+  // Los teléfonos se formatean mientras se escriben (0000-0000); la identidad usa su propio campo
+  const MASK: Partial<Record<keyof Identification, (v: string) => string>> = { phone: formatPhone, emergencyPhone: formatPhone }
   const set = (k: keyof Identification) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: MASK[k] ? MASK[k](e.target.value) : e.target.value })
   const minor = !!f.birthDate && yearsOld(f.birthDate) < 18
   const valid = f.firstName.trim() && f.lastName.trim() && f.birthDate && f.phone.trim().length >= 7
   const field = (k: keyof Identification, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}, cls = '') => (
     <label className={`field ${cls}`}><span>{label}</span><input className="input" value={f[k]} onChange={set(k)} {...props} /></label>
+  )
+  const dniField = (k: 'dni' | 'guardianDni', label: string) => (
+    <label className="field"><span>{label}</span><DniInput value={f[k]} onChange={(v) => setF((x) => ({ ...x, [k]: v }))} /></label>
   )
   return (
     <Modal title={title} onClose={onClose} wide footer={<>
@@ -45,7 +49,7 @@ export function IdentificationForm({ title, submitLabel, initial, withAllergies 
         <div className="form-grid">
           {field('firstName', 'Nombres', { autoComplete: 'given-name' })}
           {field('lastName', 'Apellidos', { autoComplete: 'family-name' })}
-          {field('dni', minor ? 'Número de identidad (si ya tiene)' : 'Número de identidad', { placeholder: '0000-0000-00000', inputMode: 'numeric' })}
+          {dniField('dni', minor ? 'Número de identidad (si ya tiene)' : 'Número de identidad')}
           {field('birthDate', 'Fecha de nacimiento', { type: 'date' })}
           <label className="field"><span>Sexo</span><select className="select" value={f.sex} onChange={set('sex')}><option value="F">Femenino</option><option value="M">Masculino</option></select></label>
           <label className="field"><span>Estado civil</span><select className="select" value={f.civilStatus} onChange={set('civilStatus')}>
@@ -73,7 +77,7 @@ export function IdentificationForm({ title, submitLabel, initial, withAllergies 
           <div className="form-grid">
             {field('guardianName', 'Nombre del responsable')}
             {field('guardianRelation', 'Parentesco', { placeholder: 'Ej. Madre' })}
-            {field('guardianDni', 'Identidad del responsable', { placeholder: '0000-0000-00000', inputMode: 'numeric' })}
+            {dniField('guardianDni', 'Identidad del responsable')}
           </div>
         </fieldset>
       )}
@@ -85,21 +89,21 @@ export function IdentificationForm({ title, submitLabel, initial, withAllergies 
   )
 }
 
-/** 13 dígitos de la identidad hondureña o un pasaporte (letras y números). */
-const validDni = (v: string) => v.replace(/\D/g, '').length === 13 || (/[A-Z]/.test(v) && v.trim().length >= 6)
 
 /**
  * La receta lleva la identidad del paciente. Sólo se pide si el expediente realmente no la tiene y el
  * paciente es adulto; al guardarla queda en el expediente y no se vuelve a pedir.
  */
 export function IdentityPrompt({ p }: { p: Patient }) {
-  const { updatePatient } = useStore()
+  const { updatePatient, settings } = useStore()
   const [dni, setDni] = useState('')
   if (p.dni || !p.birthDate || yearsOld(p.birthDate) < 18) return null
+  // Completa con la máscara de la clínica; sin máscara basta con algo escrito
+  const validDni = (v: string) => (settings.dniMask === '' ? v.trim().length >= 6 : dniDigits(v).length === dniLength(settings.dniMask))
   return (
     <form className="dni-ask" onSubmit={async (e) => { e.preventDefault(); if (validDni(dni)) await updatePatient(p.id, { dni }) }}>
       <label className="field"><span>{p.firstName} no tiene número de identidad en su expediente y la receta lo lleva. Se guarda en el expediente y no se vuelve a pedir.</span>
-        <input className="input" value={dni} onChange={(e) => setDni(formatDni(e.target.value))} placeholder="0000-0000-00000" inputMode="numeric" /></label>
+        <DniInput value={dni} onChange={setDni} optional={false} /></label>
       <button className="btn btn--soft" disabled={!validDni(dni)}>Guardar identidad</button>
     </form>
   )

@@ -3,6 +3,7 @@ import type {
   Patient, Payment, Prescription, Service, Staff, Vitals,
 } from '../src/lib/types.js'
 import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
+import { DNI_MASK } from '../src/lib/format.js'
 
 type Row = Record<string, unknown>
 const s = (v: unknown) => (v == null ? undefined : String(v))
@@ -146,7 +147,7 @@ export const clinicSettings = (r: Row): ClinicSettings => ({
   name: String(r.name ?? DEFAULT_SETTINGS.name), address: String(r.address ?? ''), phone: String(r.phone ?? ''), email: String(r.email ?? ''),
   currency: String(r.currency ?? DEFAULT_SETTINGS.currency), rxValidityDays: Number(r.rx_validity_days ?? DEFAULT_SETTINGS.rxValidityDays),
   reminderTemplate: String(r.reminder_template || DEFAULT_SETTINGS.reminderTemplate),
-  recordUsesDni: Boolean(r.record_uses_dni), logo: s(r.logo),
+  recordUsesDni: Boolean(r.record_uses_dni), logo: s(r.logo), dniMask: r.dni_mask == null ? DNI_MASK : String(r.dni_mask),
   obsAlertHours: r.obs_alert_hours == null ? 24 : Number(r.obs_alert_hours), obsOrderChecklist: Boolean(r.obs_order_checklist),
 })
 

@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { BedDouble, Plus, Search, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Modal, PageHead } from '../components/ui'
-import { age, dateTime, fullName, inputDateTime } from '../lib/format'
+import { age, dateTime, dniDigits, fullName, inputDateTime } from '../lib/format'
 import { ICD10 } from '../lib/catalogs'
 import { stayDay, stayPath } from '../lib/inpatient'
 import type { Bed, Hospitalization } from '../lib/types'
@@ -80,7 +80,7 @@ export function PatientPicker({ value, onChange }: { value: string; onChange: (i
   const matches = useMemo(() => {
     const s = q.trim().toLowerCase()
     if (s.length < 2) return []
-    return patients.filter((p) => !p.pending).filter((p) => fullName(p).toLowerCase().includes(s) || p.record.toLowerCase().includes(s) || (p.dni ?? '').includes(s)).slice(0, 8)
+    return patients.filter((p) => !p.pending).filter((p) => fullName(p).toLowerCase().includes(s) || p.record.toLowerCase().includes(s) || (dniDigits(s).length >= 3 && dniDigits(p.dni).includes(dniDigits(s)))).slice(0, 8)
   }, [patients, q])
   if (chosen) {
     return (

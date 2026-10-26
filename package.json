@@ -9,7 +9,7 @@
     "dev:web": "vite",
     "build": "tsc -b && vite build",
     "start": "tsx server/index.ts --production",
-    "test": "tsx --test server/api.test.ts server/inpatient.test.ts server/corrections.test.ts",
+    "test": "tsx --test server/api.test.ts server/inpatient.test.ts server/corrections.test.ts server/corrections2.test.ts",
     "db:reset": "tsx server/reset-db.ts",
     "lint": "oxlint",
     "preview": "vite preview",
