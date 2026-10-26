@@ -413,7 +413,8 @@ export interface Authorization {
   id: string
   hospitalizationId: string
   patientId: string
-  template: 'general' | 'procedure'
+  /** 'hospital' (una por estancia) y 'surgical'. 'general' y 'procedure' son de antes de la v22 y se conservan. */
+  template: 'hospital' | 'surgical' | 'general' | 'procedure'
   data: AuthorizationData
   status: 'pending' | 'signed' | 'refused' | 'revoked'
   createdBy: string

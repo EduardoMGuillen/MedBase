@@ -115,6 +115,16 @@ export const CONSENT_LIBRARY: ConsentProcedure[] = [
 ]
 
 /** Lo que el paciente declara, en primera persona y lenguaje sencillo. */
+/**
+ * Procedimientos frecuentes para la nota de procedimiento: los de la biblioteca de autorizaciones y los
+ * menores del día a día. El médico elige uno o escribe otro.
+ */
+export const FREQUENT_PROCEDURES = [...new Set([
+  'Canalización venosa periférica', 'Toma de muestras de laboratorio', 'Curación de herida', 'Retiro de puntos', 'Nebulización',
+  'Lavado gástrico', 'Inmovilización con férula', 'Extracción de cuerpo extraño', 'Lavado de oídos', 'Reducción de luxación',
+  ...CONSENT_LIBRARY.map((x) => x.name),
+])].sort((a, b) => a.localeCompare(b, 'es'))
+
 export function consentStatements(general: boolean): string[] {
   return [
     general
@@ -133,6 +143,9 @@ export const AUTH_STATUS: Record<Authorization['status'], { label: string; tone:
   refused: { label: 'Rechazada (no autoriza)', tone: 'red' },
   revoked: { label: 'Revocada', tone: 'red' },
 }
+
+/** La quirúrgica (y la de procedimiento de antes de la v22, que es la misma). */
+export const isSurgical = (a: Pick<Authorization, 'template'>) => a.template === 'surgical' || a.template === 'procedure'
 
 export const authTitle = (a: Pick<Authorization, 'template' | 'data'>) =>
   a.template === 'general' ? 'Autorización general de ingreso y atención' : `Consentimiento informado: ${a.data.procedure}`

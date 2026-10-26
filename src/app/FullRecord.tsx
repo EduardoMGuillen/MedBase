@@ -62,7 +62,7 @@ export default function FullRecord() {
   const entries: Entry[] = [
     ...(consult ? [{ at: consult.consultation.date, kind: 'consult' as const, title: 'Nota de ingreso (consulta externa)' }] : []),
     ...file.notes.filter((n) => n.kind !== 'nursing').map((n) => ({
-      at: n.at, kind: 'note' as const, note: n,
+      at: n.procedure?.performedAt ?? n.at, kind: 'note' as const, note: n,
       title: n.kind === 'admission' ? 'Nota de ingreso' : n.kind === 'evolution' ? 'Nota de evolución' : n.kind === 'procedure' ? 'Nota de procedimiento' : 'Nota de egreso',
     })),
     ...file.procedures.filter((x) => x.kind === 'procedure').map((x) => ({ at: x.createdAt, kind: 'legacy' as const, legacy: x, title: 'Procedimiento (registro anterior)' })),

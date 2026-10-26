@@ -317,3 +317,20 @@ describe('E1 hoja de medicamentos: días pasados', () => {
     assert.equal((await (await as('smejia@demo.clinara')).patch(`/api/inpatient/doses/${late.body.id}`, { reason: 'Intento de recepción' })).status, 403)
   })
 })
+
+describe('M6 nota de procedimiento', () => {
+  test('el médico la registra en observación con dos horas; enfermería no puede', async () => {
+    const { doc, nurse, apptId } = await openConsult('p3')
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Herida', diagnoses: DX, orders: ['Curación diaria.'], observe: true })
+    const id = c.body.hospitalizationId
+    const performedAt = new Date(Date.now() - 40 * 60_000).toISOString()
+    const body = { name: 'Sutura de herida', performedAt, text: 'Sutura con nylon 3-0, cinco puntos simples, sin complicaciones.', urgent: true, justification: 'Herida sangrante, no se pudo esperar la firma.' }
+    assert.equal((await nurse.post(`/api/inpatient/${id}/procedure-notes`, body)).status, 403)
+    assert.equal((await doc.post(`/api/inpatient/${id}/procedure-notes`, { ...body, performedAt: new Date(Date.now() + 3_600_000).toISOString() })).status, 400, 'no puede ser futura')
+    const r = await doc.post(`/api/inpatient/${id}/procedure-notes`, body)
+    assert.equal(r.status, 201)
+    assert.equal(r.body.kind, 'procedure')
+    assert.equal(r.body.procedure.performedAt, performedAt)
+    assert.ok(r.body.at > performedAt, 'la hora de la nota se guarda aparte')
+  })
+})
