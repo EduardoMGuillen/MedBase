@@ -173,8 +173,14 @@ function useStoreValue() {
       run(() => api<Appointment>('/appointments/walk-in', { body: b }), 'Paciente agregado a la consulta externa de hoy'),
 
     // Hospitalización
-    admit: (b: Pick<Hospitalization, 'patientId' | 'bedId' | 'reason' | 'diagnoses' | 'consultationId' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'> & { admittedAt?: string }) =>
-      run(() => api<Hospitalization>('/inpatient', { body: b }), 'Paciente ingresado'),
+    admit: async (b: Pick<Hospitalization, 'patientId' | 'bedId' | 'reason' | 'diagnoses' | 'consultationId' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'> & { admittedAt?: string }) => {
+      const h = await run(() => api<Hospitalization & { medOrders: number }>('/inpatient', { body: b }))
+      if (h) notify(`Paciente ingresado${h.consultationId ? ', vinculado a su consulta externa' : ''}${h.medOrders ? `; ${h.medOrders} medicamento${h.medOrders > 1 ? 's' : ''} pasaron a la hoja` : ''}.`)
+      return h
+    },
+    /** Corregir el ingreso (o asignarle la cama al que entró desde la consulta) sin rehacerlo. */
+    updateAdmission: (id: string, b: Partial<Pick<Hospitalization, 'bedId' | 'admittedAt' | 'reason' | 'diagnoses' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'>>) =>
+      run(() => api<Hospitalization>(`/inpatient/${id}`, { method: 'PATCH', body: b }), 'Ingreso actualizado'),
     addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[] }) =>
       run(() => api<InpatientNote>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
     stopMed: (medId: string, reason: string) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/stop`, { body: { reason } }), 'Orden suspendida'),

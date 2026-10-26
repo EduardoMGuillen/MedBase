@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb, SCHEMA } from './db.js'
+import { DEMO_PASSWORD, ensureDb, linkPendingAdmissions, SCHEMA } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { autoQuantity, formatDni, normalizeDni } from '../src/lib/format.js'
 import { durationDays, frequencyHours, treatmentDay } from '../src/lib/inpatient.js'
@@ -223,5 +223,21 @@ describe('M3 días según el tipo de atención (regresión)', () => {
     assert.equal(autoQuantity({ dose: '1 g', frequency: 'Cada 8 horas', duration: '3 días' }), undefined)
     assert.equal(treatmentDay({ firstAt: new Date().toISOString() }), 'Día 1 · Hasta nueva orden')
     assert.equal(treatmentDay({ firstAt: new Date(Date.now() - 86_400_000).toISOString(), days: 5 }), 'Día 2 de 5')
+  })
+})
+
+describe('M4 ingresos que quedaron pendientes de nota de ingreso', () => {
+  test('la actualización los vincula a su consulta y jala sus medicamentos sin duplicar', async () => {
+    const { doc, apptId } = await openConsult('p5')
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Neumonía', diagnoses: DX, orders: [], observe: true, items: [ONDANSETRON] })
+    // Así quedaba antes: la consulta sin marca de ingreso y una hospitalización hecha a mano, sin su consulta
+    await sql.run('UPDATE hospitalizations SET consultation_id = NULL, kind = ? WHERE id = ?', ['hospital', c.body.hospitalizationId])
+    await sql.run('UPDATE hosp_meds SET source_id = NULL, source_index = NULL WHERE hospitalization_id = ?', [c.body.hospitalizationId])
+    await linkPendingAdmissions(sql)
+    const file = (await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body
+    assert.equal(file.hospitalization.consultationId, c.body.consultationId)
+    assert.equal(file.meds.length, 1, 'el ondansetrón ya estaba activo: no se duplica')
+    await linkPendingAdmissions(sql)
+    assert.equal((await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds.length, 1)
   })
 })

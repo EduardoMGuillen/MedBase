@@ -60,7 +60,7 @@ export default function FullRecord() {
   const who = (sid?: string) => { const s = staffById(sid ?? ''); return s ? `${s.name}, ${ROLE_LABEL[s.role].toLowerCase()}` : '' }
 
   const entries: Entry[] = [
-    ...(consult ? [{ at: consult.consultation.date, kind: 'consult' as const, title: 'Nota de consulta externa (ingreso)' }] : []),
+    ...(consult ? [{ at: consult.consultation.date, kind: 'consult' as const, title: 'Nota de ingreso (consulta externa)' }] : []),
     ...file.notes.filter((n) => n.kind !== 'nursing').map((n) => ({
       at: n.at, kind: 'note' as const, note: n,
       title: n.kind === 'admission' ? 'Nota de ingreso' : n.kind === 'evolution' ? 'Nota de evolución' : n.kind === 'procedure' ? 'Nota de procedimiento' : 'Nota de egreso',

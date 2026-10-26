@@ -12,7 +12,7 @@ import { MedAlertBanner } from './MedAlerts'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { useNow } from '../lib/hooks'
 import type { Authorization, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
-import { bedLabel, DxPicker } from './Inpatients'
+import { AdmitModal, bedLabel, DxPicker } from './Inpatients'
 import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
 import { toBase64 } from './Attachments'
 
@@ -20,10 +20,11 @@ type Tab = 'sheet' | 'notes' | 'meds' | 'nursing' | 'labs'
 
 export default function InpatientFile() {
   const { id } = useParams()
-  const { fetchInpatient, notify, patient, bed, staffById } = useStore()
+  const { fetchInpatient, notify, patient, bed, staffById, can } = useStore()
   const [file, setFile] = useState<File | null>(null)
-  // Desde la alerta de órdenes nuevas se entra directo a las notas
-  const [params] = useSearchParams()
+  // Desde la alerta de órdenes nuevas se entra directo a las notas; al firmar una consulta con ingreso, a completar la cama
+  const [params, setParams] = useSearchParams()
+  const [editing, setEditing] = useState(params.get('completar') === '1')
   const [tab, setTab] = useState<Tab>(params.get('tab') === 'notas' ? 'notes' : 'sheet')
   const [missing, setMissing] = useState(false)
   const now = useNow()
@@ -57,6 +58,7 @@ export default function InpatientFile() {
     ['labs', `Laboratorios (${file.labs.length})`],
   ]
   const base = `/app/${obs ? 'observacion' : 'hospitalizados'}/${h.id}`
+  const noBed = open && !obs && !h.bedId
 
   return (
     <div className="page page--chart">
@@ -79,11 +81,17 @@ export default function InpatientFile() {
         </div>
       </div>
       <MedAlertBanner file={file} />
+      {noBed && (
+        <div className="alert-strip alert-strip--amber" style={{ flexWrap: 'wrap' }}><BedDouble size={16} />Falta asignar la cama{h.companionName ? '' : ' y anotar al acompañante'}.
+          {can('inpatient.orders') && <button className="btn btn--soft btn--sm" onClick={() => setEditing(true)}>Completar ingreso</button>}</div>
+      )}
+      {editing && <AdmitModal edit={h} onClose={() => { setEditing(false); if (params.get('completar')) setParams({}) }} onDone={() => { setEditing(false); if (params.get('completar')) setParams({}); load() }} />}
 
       {tab === 'sheet' && (
         <div className="hc">
           <section className="panel hc__sec">
-            <div className="panel__head"><h2>{obs ? 'Ingreso a observación' : 'Hoja de hospitalización'}</h2></div>
+            <div className="panel__head"><h2>{obs ? 'Ingreso a observación' : 'Hoja de hospitalización'}</h2>
+              {open && can('inpatient.orders') && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(true)}>Corregir ingreso</button>}</div>
             <div className="panel__body">
               <dl className="facts">
                 <div><dt>Fecha y hora del ingreso</dt><dd>{date(h.admittedAt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(h.admittedAt)}</dd></div>
@@ -136,7 +144,7 @@ function ConsultEntry({ consultationId }: { consultationId: string }) {
   return (
     <article className="panel consult-entry">
       <div className="panel__head">
-        <div><h2>Nota de consulta externa <span className="badge badge--ink">Ingreso</span></h2>
+        <div><h2>Nota de ingreso <span className="badge badge--ink">Consulta externa</span></h2>
           <p>{author?.name}{author ? `, ${ROLE_LABEL[author.role].toLowerCase()}` : ''} · {date(c.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(c.date)}</p></div>
         <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}>Ver nota completa</Link>
       </div>
@@ -328,8 +336,8 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
   const notes = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'discharge' || n.kind === 'procedure')
   const h = file.hospitalization
   const obs = h.kind === 'observation'
-  // En observación (o si vino de ella) la nota de consulta hace de primera nota: no se pide nota de ingreso
-  const hasAdmission = notes.some((n) => n.kind === 'admission') || obs || !!h.observationAt
+  // La nota de consulta externa que dio el ingreso es la nota de ingreso (también en observación): no se pide otra
+  const hasAdmission = notes.some((n) => n.kind === 'admission') || obs || !!h.observationAt || !!h.consultationId
   const [converting, setConverting] = useState(false)
   const discharged = notes.some((n) => n.kind === 'discharge')
   const [writing, setWriting] = useState<null | 'note' | 'procedure' | 'discharge' | 'authorization'>(null)

@@ -6,6 +6,7 @@ import {
 } from '../src/lib/seed.js'
 import type { Appointment, Patient, Payment, Schedule } from '../src/lib/types.js'
 import type { Row, Sql } from './sql.js'
+import { pullConsultationOrders } from './medOrders.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
@@ -494,6 +495,7 @@ export function ensureDb(sql: Sql) {
         await adoptSingleClinic(q)
         await addDemoInpatients(q)
         await addDemoCases(q)
+        await linkPendingAdmissions(q)
       }
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
@@ -707,6 +709,28 @@ async function addDemoCases(q: Sql) {
   if (!(await q.one(`SELECT 1 FROM beds WHERE id = ? AND clinic_id = ?`, [CASE_BED, MAIN_CLINIC]))) return
   if (await q.one(`SELECT 1 FROM patients WHERE id IN (${list(CASE_PATIENT_IDS)}) LIMIT 1`, CASE_PATIENT_IDS)) return
   await insertCases(q)
+}
+
+/**
+ * v22: antes, un ingreso a hospitalización hecho desde la consulta externa pedía otra nota de ingreso y, si se
+ * hacía a mano, quedaba sin su consulta. Esos ingresos se vinculan a la consulta externa del mismo paciente
+ * en las 24 horas anteriores (que no haya originado ya otra estancia) y, si siguen abiertos, se jalan sus
+ * medicamentos a la hoja sin duplicar los que ya estén activos. No se borra nada; queda en la bitácora.
+ */
+export async function linkPendingAdmissions(q: Sql) {
+  const pending = await q.query(`SELECT * FROM hospitalizations h WHERE h.consultation_id IS NULL AND h.kind = 'hospital' AND h.observation_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM hosp_notes n WHERE n.hospitalization_id = h.id AND n.kind = 'admission')`)
+  for (const h of pending) {
+    const at = new Date(String(h.admitted_at))
+    const c = await q.one(`SELECT id FROM consultations WHERE clinic_id = ? AND patient_id = ? AND date >= ? AND date <= ?
+      AND id NOT IN (SELECT consultation_id FROM hospitalizations WHERE consultation_id IS NOT NULL) ORDER BY date DESC LIMIT 1`,
+      [String(h.clinic_id), String(h.patient_id), new Date(at.getTime() - 24 * 3_600_000).toISOString(), new Date(at.getTime() + 5 * 60_000).toISOString()])
+    if (!c) continue
+    await q.run('UPDATE hospitalizations SET consultation_id = ? WHERE id = ?', [String(c.id), String(h.id)])
+    const pulled = h.status === 'active' ? await pullConsultationOrders(q, { clinicId: String(h.clinic_id), hospitalizationId: String(h.id), consultationId: String(c.id) }) : 0
+    await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?,?,?,?)', [new Date().toISOString(), 'sistema',
+      `Actualización: vinculó el ingreso del ${at.toISOString().slice(0, 10)} a su consulta externa, que hace de nota de ingreso${pulled ? `; ${pulled} medicamento(s) a la hoja` : ''}`, String(h.clinic_id)])
+  }
 }
 
 /** PDF de una página con texto plano, para los laboratorios de demostración. */
