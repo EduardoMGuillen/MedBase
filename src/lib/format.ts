@@ -171,7 +171,33 @@ export const defaultRoute = (presentation = '') =>
 /** Texto de una orden médica de medicamento, p. ej. "Azitromicina 500 mg tableta: 1 tableta vía oral cada 24 horas por 3 días." */
 export function medicationOrder(i: PrescriptionItem) {
   const route = i.route ? ` vía ${i.route.toLowerCase()}` : ''
-  return `${i.drug}${i.presentation ? ` (${i.presentation.toLowerCase()})` : ''}: ${i.dose}${route} ${i.frequency.toLowerCase()} por ${i.duration}.${i.instructions ? ` ${i.instructions}` : ''}`
+  const how = /única/i.test(i.frequency) ? '' : i.duration ? ` por ${i.duration}` : ', hasta nueva orden'
+  return `${i.drug}${i.presentation ? ` (${i.presentation.toLowerCase()})` : ''}: ${i.dose}${route} ${i.frequency.toLowerCase()}${how}.${i.instructions ? ` ${i.instructions}` : ''}`
+}
+
+/** Medicamento de la receta (se va a casa) sin el total de días. */
+export const missingDays = (it: PrescriptionItem) => !it.applyInClinic && !it.duration.trim() && !/única/i.test(it.frequency)
+
+const COUNTABLE: [RegExp, string, string][] = [
+  [/^tab/i, 'tableta', 'tabletas'], [/^c[aá]ps/i, 'cápsula', 'cápsulas'], [/^sobre/i, 'sobre', 'sobres'], [/^ampoll/i, 'ampolla', 'ampollas'],
+  [/^vial/i, 'vial', 'viales'], [/^supositorio/i, 'supositorio', 'supositorios'], [/^[oó]vulo/i, 'óvulo', 'óvulos'], [/^parche/i, 'parche', 'parches'],
+  [/^gragea/i, 'gragea', 'grageas'],
+]
+
+/**
+ * Cantidad total para la receta a partir de la dosis, la frecuencia y los días: "1 tableta cada 8 horas por
+ * 3 días" → "9 tabletas". Sólo con dosis en unidades que se cuentan; si no se puede calcular, undefined.
+ */
+export function autoQuantity(i: Pick<PrescriptionItem, 'dose' | 'frequency' | 'duration'>) {
+  const m = i.dose.trim().match(/^(\d+(?:[.,]\d+)?|1\/2|½)\s+(\S+)/)
+  const hours = i.frequency.match(/cada\s+(\d+)\s*h/i)
+  const days = i.duration.trim().match(/^(\d+)\s*(d[ií]as?|semanas?)?$/i)
+  if (!m || !hours || !days) return undefined
+  const unit = COUNTABLE.find(([re]) => re.test(m[2]))
+  if (!unit) return undefined
+  const per = m[1] === '1/2' || m[1] === '½' ? 0.5 : Number(m[1].replace(',', '.'))
+  const n = Math.ceil(per * (24 / Number(hours[1])) * Number(days[1]) * (/semana/i.test(days[2] ?? '') ? 7 : 1))
+  return n > 0 ? `${n} ${n === 1 ? unit[1] : unit[2]}` : undefined
 }
 
 /** "Tableta 500 mg" → "500 mg tableta", como se escribe en la receta. */
@@ -190,7 +216,7 @@ export function medicationLine(i: PrescriptionItem) {
   const freq = i.frequency.replace(/^Cada (\d+) horas?$/i, 'cada $1 h').replace(/^Dosis única$/i, 'dosis única').replace(/^Según necesidad$/i, 'según necesidad')
   const once = /dosis única/i.test(i.frequency)
   const route = i.route ? ROUTE_SHORT[i.route] ?? i.route.toLowerCase() : ''
-  const how = [i.dose, route, freq, !once && i.duration ? `por ${i.duration}` : ''].filter(Boolean).join(' ')
+  const how = [i.dose, route, freq, !once ? (i.duration ? `por ${i.duration}` : 'hasta nueva orden') : ''].filter(Boolean).join(' ')
   return `${i.drug}${i.presentation ? ` ${presentationShort(i.presentation)}` : ''} — ${how}`
 }
 

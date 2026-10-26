@@ -3,27 +3,31 @@ import { useStore } from '../lib/store'
 import { Modal } from './ui'
 import { Pencil, Pill, Plus, TriangleAlert, X } from 'lucide-react'
 import { allergyConflict, EMPTY_MED, FREQUENCIES, type Drug } from '../lib/catalogs'
-import { defaultRoute, medicationLine, ROUTES } from '../lib/format'
+import { autoQuantity, defaultRoute, medicationLine, missingDays, ROUTES } from '../lib/format'
 import { normalize } from '../lib/patients'
 import { useVademecum } from '../lib/vademecum'
 import type { Patient, PrescriptionItem } from '../lib/types'
 
 /** Medicamentos indicados: cada uno como fila legible, editable y eliminable antes de firmar. */
-export function MedicationList({ items, patient, onEdit, onRemove, editing }: {
+export function MedicationList({ items, patient, onEdit, onRemove, editing, requireDuration = false }: {
   items: PrescriptionItem[]; patient: Pick<Patient, 'allergies'>; onEdit?: (i: number) => void; onRemove?: (i: number) => void; editing?: number | null
+  /** Ambulatorio: marca los que no tienen días (la receta los necesita). */
+  requireDuration?: boolean
 }) {
   if (!items.length) return null
   return (
     <ol className="meds-list">
       {items.map((it, i) => {
         const allergy = allergyConflict(patient.allergies, it.drug)
+        const noDays = requireDuration && missingDays(it)
         return (
-          <li key={i} className={`${allergy ? 'is-warn' : ''} ${editing === i ? 'is-editing' : ''}`}>
+          <li key={i} className={`${allergy || noDays ? 'is-warn' : ''} ${editing === i ? 'is-editing' : ''}`}>
             <span className="orders__n">{i + 1}.</span>
             <div>
               <span className="meds-list__line"><Pill size={13} className="orders__pill" aria-hidden="true" />{medicationLine(it)}</span>
-              {(it.instructions || it.quantity || allergy) && (
-                <small>{[it.instructions, it.quantity && `Cantidad: ${it.quantity}`, allergy && `Alergia a ${allergy}`].filter(Boolean).join(' · ')}</small>
+              {(it.instructions || it.quantity || allergy || it.applyInClinic || noDays) && (
+                <small>{[it.applyInClinic && 'Se aplica en la clínica', it.instructions, it.quantity && `Cantidad: ${it.quantity}`, allergy && `Alergia a ${allergy}`,
+                  noDays && 'Falta el total de días para la receta'].filter(Boolean).join(' · ')}</small>
               )}
             </div>
             <span className="orders__tools">
@@ -42,10 +46,14 @@ export function MedicationList({ items, patient, onEdit, onRemove, editing }: {
  * clínica), presentación, dosis, vía, frecuencia, duración, cantidad e indicaciones. Al elegir del
  * vademécum se precargan los valores habituales. Avisa si el paciente es alérgico o si ya está en la lista.
  * Si un medicamento no aparece, el médico lo registra y queda en el vademécum de la clínica.
+ *
+ * Los días sólo son obligatorios cuando el paciente se va a su casa (la receta los necesita). Si se ingresa a
+ * hospitalización u observación (`requireDuration` falso), sin días el medicamento queda "hasta nueva orden".
+ * `clinicOption` muestra "Aplicar en la clínica" para la consulta ambulatoria.
  */
-export function MedicationForm({ patient, current, initial, onSave, onCancel, submitLabel }: {
+export function MedicationForm({ patient, current, initial, onSave, onCancel, submitLabel, requireDuration = true, clinicOption = false }: {
   patient: Pick<Patient, 'firstName' | 'allergies'>; current: PrescriptionItem[]; initial?: PrescriptionItem
-  onSave: (item: PrescriptionItem) => void; onCancel: () => void; submitLabel?: string
+  onSave: (item: PrescriptionItem) => void; onCancel: () => void; submitLabel?: string; requireDuration?: boolean; clinicOption?: boolean
 }) {
   const drugs = useVademecum()
   const { can } = useStore()
@@ -68,12 +76,16 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
     }))
     setOpen(false); setOverrideAllergy(false); setOverrideDup(false)
   }
-  const ready = m.drug.trim() && m.dose.trim() && m.frequency && (m.duration.trim() || /única/i.test(m.frequency)) && (!conflict || overrideAllergy) && (!duplicate || overrideDup)
+  // Ambulatorio: la receta necesita los días (salvo dosis única o si se aplica aquí en la clínica)
+  const needsDays = requireDuration && !m.applyInClinic && !/única/i.test(m.frequency)
+  const ready = m.drug.trim() && m.dose.trim() && m.frequency && (m.duration.trim() || !needsDays) && (!conflict || overrideAllergy) && (!duplicate || overrideDup)
+  const computed = needsDays ? autoQuantity(m) : undefined
   const submit = (e?: FormEvent) => {
     e?.preventDefault()
     if (!ready) return
     onSave({ ...m, drug: m.drug.trim(), presentation: m.presentation.trim(), dose: m.dose.trim(), duration: m.duration.trim(),
-      instructions: m.instructions?.trim() || undefined, quantity: m.quantity?.trim() || undefined })
+      instructions: m.instructions?.trim() || undefined, quantity: m.quantity?.trim() || computed || undefined,
+      applyInClinic: clinicOption && m.applyInClinic ? true : undefined })
   }
   const freqs = FREQUENCIES.includes(m.frequency) ? FREQUENCIES : [m.frequency, ...FREQUENCIES]
   return (<>
@@ -102,10 +114,17 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
         <label className="field"><span>Dosis</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g, 1 tableta, 5 ml" /></label>
         <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => setM({ ...m, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
         <label className="field"><span>Frecuencia</span><select className="select" value={m.frequency} onChange={(e) => setM({ ...m, frequency: e.target.value })}>{freqs.map((f) => <option key={f}>{f}</option>)}</select></label>
-        <label className="field"><span>Duración</span><input className="input" value={m.duration} onChange={(e) => setM({ ...m, duration: e.target.value })} placeholder={/única/i.test(m.frequency) ? 'No aplica' : 'Ej. 3 días'} /></label>
-        <label className="field"><span>Cantidad total (opcional)</span><input className="input" value={m.quantity ?? ''} onChange={(e) => setM({ ...m, quantity: e.target.value })} placeholder="Ej. 20 tabletas" /></label>
+        <label className="field"><span>{needsDays ? 'Total de días' : 'Total de días (opcional)'}</span>
+          <input className={`input ${needsDays && !m.duration.trim() && m.drug.trim() && m.dose.trim() ? 'input--warn' : ''}`} value={m.duration} onChange={(e) => setM({ ...m, duration: e.target.value })}
+            placeholder={/única/i.test(m.frequency) ? 'No aplica' : needsDays ? 'Ej. 3 días' : 'Hasta nueva orden'} />
+          {needsDays && !m.duration.trim() && m.drug.trim() && m.dose.trim() && <small className="field__msg field__msg--warn">La receta lleva los días: el paciente se va a su casa.</small>}</label>
+        <label className="field"><span>Cantidad total (opcional)</span><input className="input" value={m.quantity ?? ''} onChange={(e) => setM({ ...m, quantity: e.target.value })} placeholder={computed ? `Se calcula: ${computed}` : 'Ej. 20 tabletas'} /></label>
         <label className="field span-2"><span>Indicaciones especiales (opcional)</span><input className="input" value={m.instructions ?? ''} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder="Ej. Con los alimentos" /></label>
       </div>
+      {clinicOption && (
+        <label className="check-line"><input type="checkbox" checked={!!m.applyInClinic} onChange={(e) => setM({ ...m, applyInClinic: e.target.checked })} />
+          <span><b>Aplicar en la clínica</b><small>No va a la receta: pasa a la hoja de medicamentos para que enfermería o el médico lo apliquen. El paciente queda en observación mientras se aplica.</small></span></label>
+      )}
       {m.drug.trim() && m.dose.trim() && <p className="muted" style={{ fontSize: 13.5 }}>Se verá así: <b>{medicationLine(m)}</b></p>}
       {conflict && (
         <div className="alert-strip" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>

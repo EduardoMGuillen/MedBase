@@ -30,7 +30,7 @@ interface Session { user: Staff; permissions: Permission[]; demo: boolean }
 export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescriptions: Prescription[]; hospitalizations: Hospitalization[] }
 
 /** Medicamento que el médico indica en una nota de hospitalización. */
-export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'instructions'> & { firstAt?: string }
+export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'instructions' | 'days' | 'replacesId'> & { firstAt?: string }
 export type FollowupInput = Pick<Followup, 'kind' | 'title' | 'dueDate' | 'everyDays' | 'notes'>
 
 export interface Report {
@@ -177,6 +177,7 @@ function useStoreValue() {
       run(() => api<Hospitalization>('/inpatient', { body: b }), 'Paciente ingresado'),
     addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[] }) =>
       run(() => api<InpatientNote>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
+    stopMed: (medId: string, reason: string) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/stop`, { body: { reason } }), 'Orden suspendida'),
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),
     recordDose: (medId: string, b: { scheduledAt?: string; givenAt?: string; status: Dose['status']; note?: string }) =>
       run(() => api<Dose>(`/inpatient/meds/${medId}/doses`, { body: b }), b.status === 'given' ? 'Dosis registrada' : 'Dosis marcada como no administrada'),
@@ -230,9 +231,15 @@ function useStoreValue() {
       run(() => api<Patient>(`/patients/${id}`, { method: 'PATCH', body: p }), 'Ficha actualizada'),
     addVitals: (v: Omit<Vitals, 'id' | 'takenAt' | 'takenBy'>) =>
       run(() => api<Vitals>('/vitals', { body: v }), 'Preclínica guardada'),
-    finishConsult: (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[]; observe?: boolean }, items: PrescriptionItem[]) =>
-      run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null; observationId: string | null }>('/consultations', { body: { ...c, items } }),
-        items.length ? 'Consulta y receta firmadas' : 'Consulta firmada'),
+    finishConsult: async (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[]; observe?: boolean; admit?: boolean }, items: PrescriptionItem[]) => {
+      const r = await run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null; observationId: string | null
+        hospitalizationId: string | null; stayKind: Hospitalization['kind'] | null; medOrders: number }>('/consultations', { body: { ...c, items } }))
+      // Se dice en voz alta qué pasó con los medicamentos: a la receta, a la hoja de medicamentos o a las dos
+      if (r) notify([r.folio ? `Consulta y receta ${r.folio} firmadas` : 'Consulta firmada',
+        r.hospitalizationId && (r.stayKind === 'hospital' ? 'ingresado a hospitalización con esta nota como nota de ingreso' : 'ingresado a observación'),
+        r.medOrders ? `${r.medOrders} medicamento${r.medOrders > 1 ? 's' : ''} en la hoja de medicamentos` : ''].filter(Boolean).join('; ') + '.')
+      return r
+    },
 
     issuePrescription: (b: { patientId: string; items: PrescriptionItem[]; indications: string[] }) =>
       run(() => api<{ prescriptionId: string; folio: string }>('/prescriptions', { body: b }), 'Receta emitida'),

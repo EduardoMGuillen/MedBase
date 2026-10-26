@@ -212,6 +212,8 @@ export interface PrescriptionItem {
   route?: string // vía de administración
   instructions?: string
   quantity?: string // cantidad total a dispensar (opcional), p. ej. "20 tabletas"
+  /** Ambulatorio: se aplica en la clínica (va a la hoja de medicamentos, no a la receta). */
+  applyInClinic?: boolean
 }
 
 export interface Prescription {
@@ -463,6 +465,14 @@ export interface InpatientMed {
   orderedAt: string
   stoppedAt?: string // a partir de aquí las dosis quedan omitidas
   stoppedBy?: string
+  stopReason?: string
+  /** Días indicados; vacío: hasta nueva orden. */
+  days?: number
+  /** De dónde viene la orden: la nota de consulta externa que ingresó al paciente o una nota de la estancia. */
+  source?: 'consultation' | 'note'
+  sourceId?: string
+  /** La orden que esta reemplaza ("Cambiar" en la nota). */
+  replacesId?: string
 }
 
 export interface Dose {

@@ -79,6 +79,28 @@ export function elapsed(minutes: number) {
   return `${Math.floor(h / 24)} d${h % 24 ? ` ${h % 24} h` : ''}`
 }
 
+/** Horas entre dosis de una frecuencia de la receta ("Cada 8 horas" → 8). Dosis única y PRN sin intervalo: undefined. */
+export function frequencyHours(frequency: string) {
+  const m = frequency.match(/cada\s+(\d+)\s*h/i)
+  return m ? Number(m[1]) : undefined
+}
+
+/** Días de un tratamiento escrito como "5 días", "1 semana" o "10". Sin número (o "hasta nueva orden"): undefined. */
+export function durationDays(duration?: string) {
+  const t = (duration ?? '').trim().toLowerCase()
+  const m = t.match(/(\d+)\s*(d[ií]as?|semanas?|meses?|mes)?/)
+  if (!m) return undefined
+  const n = Number(m[1])
+  if (!n) return undefined
+  return /semana/.test(m[2] ?? '') ? n * 7 : /mes/.test(m[2] ?? '') ? n * 30 : n
+}
+
+/** Un medicamento sin días queda "hasta nueva orden"; con días, se cuenta "Día N de M". */
+export function treatmentDay(m: Pick<InpatientMed, 'firstAt' | 'days'>, now = new Date()) {
+  const n = Math.max(1, stayDay(m.firstAt, now))
+  return m.days ? `Día ${n} de ${m.days}` : `Día ${n} · Hasta nueva orden`
+}
+
 /** Día de estancia: el día del ingreso es el día 1. */
 export function stayDay(admittedAt: string, now = new Date()) {
   const a = new Date(admittedAt); a.setHours(0, 0, 0, 0)

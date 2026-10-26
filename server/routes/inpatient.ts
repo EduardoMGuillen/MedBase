@@ -7,6 +7,7 @@ import { toAttachment, toAuthorization, toBed, toDose, toHospitalization, toInpa
 import { age as ageText, normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
 import { isScheduled, medLabel, yearsOld } from '../../src/lib/inpatient.js'
+import { createMedOrders, findAdmissionConsult, pullConsultationOrders } from '../medOrders.js'
 
 const dx = z.array(z.object({ code: z.string().trim().min(1), label: z.string().trim().min(1) }))
 const when = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'La fecha u hora no es válida.')
@@ -21,6 +22,10 @@ const medInput = z.object({
   prn: z.boolean().default(false),
   firstAt: when.optional(),
   instructions: z.string().trim().max(300).optional(),
+  // Sin días: hasta nueva orden
+  days: z.number().int().min(1).max(365).optional(),
+  // "Cambiar" en la nota: la orden nueva reemplaza a esta, que queda suspendida
+  replacesId: z.string().optional(),
 })
 
 /**
@@ -67,20 +72,25 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     return Boolean((await sql.one('SELECT obs_order_checklist FROM clinics WHERE id = ?', [String(h.clinic_id)]))?.obs_order_checklist)
   }
 
-  /** Inserta los medicamentos que indica una nota y omite los que la nota suspende. */
-  async function applyMeds(q: Sql, cid: string, hospId: string, noteId: string, userId: string, at: string, meds: z.infer<typeof medInput>[], stop: string[]) {
-    for (const m of meds) {
-      await q.run(`INSERT INTO hosp_meds (id, clinic_id, hospitalization_id, note_id, drug, presentation, dose, route, every_hours, prn, first_at, instructions, ordered_by, ordered_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [randomUUID(), cid, hospId, noteId, m.drug, m.presentation || null, m.dose, m.route, m.everyHours ?? null, m.prn,
-          new Date(m.firstAt ?? at).toISOString(), m.instructions || null, userId, at])
-    }
-    for (const id of stop) {
+  /**
+   * Los medicamentos que indica una nota pasan a la hoja por el mismo camino que los de la consulta externa
+   * (`createMedOrders`); los que la nota omite o cambia quedan suspendidos con su motivo, sin borrarse.
+   */
+  async function applyMeds(q: Sql, h: Row, noteId: string, userId: string, at: string, meds: z.infer<typeof medInput>[], stop: string[]) {
+    const cid = String(h.clinic_id)
+    const hospId = String(h.id)
+    for (const id of [...meds.flatMap((m) => (m.replacesId ? [m.replacesId] : [])), ...stop]) {
       const m = await q.one('SELECT * FROM hosp_meds WHERE id = ? AND hospitalization_id = ? AND clinic_id = ?', [id, hospId, cid])
       if (!m) fail(400, 'El medicamento que quieres omitir no pertenece a este paciente.')
       if (m!.stopped_at) continue
-      await q.run('UPDATE hosp_meds SET stopped_at = ?, stopped_by = ? WHERE id = ?', [at, userId, id])
+      const replaced = meds.find((x) => x.replacesId === id)
+      await q.run('UPDATE hosp_meds SET stopped_at = ?, stopped_by = ?, stop_reason = ? WHERE id = ?',
+        [at, userId, replaced ? `Cambiado en nota médica por ${medLabel({ ...replaced, everyHours: replaced.everyHours, prn: replaced.prn })}` : 'Omitido en nota médica', id])
     }
+    return createMedOrders(q, {
+      clinicId: cid, hospitalizationId: hospId, patientId: String(h.patient_id), source: 'note', sourceId: noteId, orderedBy: userId, orderedAt: at,
+      items: meds.map((m) => ({ ...m, firstAt: m.firstAt ?? at })),
+    })
   }
 
   // ---------- Camas (las configura administración) ----------
@@ -141,6 +151,10 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const id = randomUUID()
     // Fuera de la transacción: con una sola conexión, consultar por fuera de ella la bloquearía
     const name = await patientName(b.patientId)
+    // Un ingreso hecho a mano (o rehecho porque el primero estaba mal) se vincula a la consulta externa que lo
+    // indicó y jala sus órdenes y medicamentos
+    const consultationId = b.consultationId ?? await findAdmissionConsult(sql, cid, b.patientId)
+    let medOrders = 0
     await sql.tx(async (q) => {
       // El candado evita que dos médicos ocupen la misma cama al mismo tiempo
       await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`beds:${cid}`])
@@ -148,11 +162,12 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       if (await q.one(`SELECT 1 FROM hospitalizations WHERE patient_id = ? AND status = 'active'`, [b.patientId])) fail(409, 'Este paciente ya está hospitalizado.')
       await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, companion_name, companion_relation,
           companion_phone, patient_phone, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active')`,
-        [id, cid, b.patientId, b.bedId, b.consultationId ?? null, admittedAt.toISOString(), user.id, b.reason, JSON.stringify(b.diagnoses),
+        [id, cid, b.patientId, b.bedId, consultationId ?? null, admittedAt.toISOString(), user.id, b.reason, JSON.stringify(b.diagnoses),
           b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null])
-      await audit(user, `Ingresó a ${name} en la ${bedName(bed!)} (${bed!.specialty})`, q)
+      if (consultationId) medOrders = await pullConsultationOrders(q, { clinicId: cid, hospitalizationId: id, consultationId })
+      await audit(user, `Ingresó a ${name} en la ${bedName(bed!)} (${bed!.specialty})${consultationId && !b.consultationId ? ', vinculado a su consulta externa' : ''}${medOrders ? ` con ${medOrders} medicamento(s) de la consulta` : ''}`, q)
     })
-    res.status(201).json(toHospitalization((await hospRow(cid, id))!))
+    res.status(201).json({ ...toHospitalization((await hospRow(cid, id))!), medOrders })
   })
 
   /**
@@ -184,6 +199,51 @@ export function registerInpatient(app: Express, ctx: Ctx) {
           companion_phone = COALESCE(?, companion_phone), patient_phone = COALESCE(?, patient_phone) WHERE id = ?`,
         [b.bedId, now, now, user.id, b.reason || null, b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null, String(h.id)])
       await audit(user, `Pasó a ${name} de observación a hospitalización en la ${bedName(bed!)}`, q)
+    })
+    res.json(toHospitalization((await hospRow(cid, String(h.id)))!))
+  })
+
+  /**
+   * Corregir el ingreso sin rehacerlo: cama (o asignarla al ingresar desde la consulta), hora, motivo,
+   * diagnósticos y acompañante. Queda en la bitácora qué cambió. Si la estancia no tenía su consulta de
+   * origen, se vincula y se jalan sus órdenes sin duplicar.
+   */
+  app.patch('/api/inpatient/:id', auth, need('inpatient.orders'), async (req, res) => {
+    const b = parse(z.object({
+      bedId: z.string().min(1).optional(),
+      admittedAt: when.optional(),
+      reason: z.string().trim().min(3, 'Escribe el motivo del ingreso.').max(1000).optional(),
+      diagnoses: dx.min(1, 'Agrega al menos un diagnóstico de ingreso.').optional(),
+      companionName: z.string().trim().max(100).optional(),
+      companionRelation: z.string().trim().max(40).optional(),
+      companionPhone: z.string().trim().max(30).optional(),
+      patientPhone: z.string().trim().max(30).optional(),
+    }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const h = await activeHosp(cid, String(req.params.id))
+    if (b.bedId && h.kind === 'observation') fail(409, 'En observación no se asigna cama. Usa «Pasar a hospitalización».')
+    if (b.admittedAt && new Date(b.admittedAt).getTime() > Date.now() + 5 * 60_000) fail(400, 'La hora de ingreso no puede ser en el futuro.')
+    const bed = b.bedId ? await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ? AND active', [b.bedId, cid]) : undefined
+    if (b.bedId && !bed) fail(400, 'La cama elegida no existe o está desactivada.')
+    const name = await patientName(String(h.patient_id))
+    const consultationId = h.consultation_id ? undefined : await findAdmissionConsult(sql, cid, String(h.patient_id))
+    const labels: Record<string, string> = { bedId: 'cama', admittedAt: 'hora de ingreso', reason: 'motivo', diagnoses: 'diagnósticos', companionName: 'acompañante',
+      companionRelation: 'parentesco del acompañante', companionPhone: 'teléfono del acompañante', patientPhone: 'teléfono del paciente' }
+    const changed = Object.keys(b).filter((k) => b[k as keyof typeof b] !== undefined)
+    await sql.tx(async (q) => {
+      if (b.bedId && b.bedId !== h.bed_id) {
+        await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`beds:${cid}`])
+        if (await q.one(`SELECT 1 FROM hospitalizations WHERE bed_id = ? AND status = 'active' AND id <> ?`, [b.bedId, String(h.id)])) fail(409, 'Esa cama ya está ocupada. Elige otra.')
+      }
+      await q.run(`UPDATE hospitalizations SET bed_id = COALESCE(?, bed_id), admitted_at = COALESCE(?, admitted_at), reason = COALESCE(?, reason), diagnoses = COALESCE(?, diagnoses),
+          companion_name = COALESCE(?, companion_name), companion_relation = COALESCE(?, companion_relation), companion_phone = COALESCE(?, companion_phone),
+          patient_phone = COALESCE(?, patient_phone), consultation_id = COALESCE(consultation_id, ?) WHERE id = ?`,
+        [b.bedId ?? null, b.admittedAt ? new Date(b.admittedAt).toISOString() : null, b.reason ?? null, b.diagnoses ? JSON.stringify(b.diagnoses) : null,
+          b.companionName ?? null, b.companionRelation ?? null, b.companionPhone ?? null, b.patientPhone ?? null, consultationId ?? null, String(h.id)])
+      const pulled = consultationId ? await pullConsultationOrders(q, { clinicId: cid, hospitalizationId: String(h.id), consultationId }) : 0
+      const what = [h.bed_id || !b.bedId ? '' : `asignó la ${bedName(bed!)}`, ...changed.filter((k) => k !== 'bedId' || h.bed_id).map((k) => labels[k])].filter(Boolean)
+      await audit(user, `Corrigió el ingreso de ${name}: ${what.join(', ') || 'sin cambios'}${consultationId ? `; lo vinculó a su consulta externa${pulled ? ` y pasó ${pulled} medicamento(s) a la hoja` : ''}` : ''}`, q)
     })
     res.json(toHospitalization((await hospRow(cid, String(h.id)))!))
   })
@@ -225,9 +285,10 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const h = await activeHosp(cid, String(req.params.id))
     const id = String(h.id)
     const hasAdmission = await sql.one(`SELECT 1 FROM hosp_notes WHERE hospitalization_id = ? AND kind = 'admission'`, [id])
-    // En observación (y si vino de ella) la primera nota es la de la consulta externa que lo ingresó
-    const fromConsult = h.kind === 'observation' || !!h.observation_at
-    if (b.kind === 'admission' && (hasAdmission || h.kind === 'observation')) fail(409, h.kind === 'observation' ? 'En observación se escriben notas de evolución.' : 'Este paciente ya tiene nota de ingreso. Escribe una nota de evolución.')
+    // La nota de consulta externa que dio el ingreso ES la nota de ingreso: no se pide otra. En observación
+    // (y si vino de ella) tampoco.
+    const fromConsult = h.kind === 'observation' || !!h.observation_at || !!h.consultation_id
+    if (b.kind === 'admission' && (hasAdmission || fromConsult)) fail(409, h.kind === 'observation' ? 'En observación se escriben notas de evolución.' : fromConsult ? 'La nota de consulta externa ya es la nota de ingreso. Escribe una nota de evolución.' : 'Este paciente ya tiene nota de ingreso. Escribe una nota de evolución.')
     if (b.kind === 'evolution' && !hasAdmission && !fromConsult) fail(409, 'Primero va la nota de ingreso.')
     const noteId = randomUUID()
     const at = new Date().toISOString()
@@ -237,7 +298,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     await sql.tx(async (q) => {
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan, data) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [noteId, cid, id, b.kind, user.id, at, b.subjective, b.objective, b.assessment, b.plan, JSON.stringify({ orders: b.orders, checklist })])
-      await applyMeds(q, cid, id, noteId, user.id, at, b.meds, b.stopMedIds)
+      await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
       const what = b.kind === 'admission' ? 'nota de ingreso' : 'nota de evolución'
       const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`].filter(Boolean).join(', ')
       await audit(user, `Escribió ${what} de ${name}${changes ? `: ${changes}` : ''}`, q)
@@ -323,6 +384,19 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     }
     await audit(user, `${b.status === 'given' ? 'Administró' : 'Registró como no administrado'} ${medLabel(med)} a ${await patientName(String(h.patient_id))} (${user.role === 'doctor' ? 'médico' : 'enfermería'})`)
     res.status(201).json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [id]))!))
+  })
+
+  /** El médico suspende una orden desde la hoja: queda con motivo, autor y hora; no se borra. */
+  app.post('/api/inpatient/meds/:medId/stop', auth, need('inpatient.orders'), async (req, res) => {
+    const { reason } = parse(z.object({ reason: z.string().trim().min(3, 'Escribe por qué se suspende.').max(300) }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const m = (await sql.one('SELECT * FROM hosp_meds WHERE id = ? AND clinic_id = ?', [String(req.params.medId), cid])) ?? fail(404, 'El medicamento no existe.')
+    const h = await activeHosp(cid, String(m!.hospitalization_id))
+    if (m!.stopped_at) fail(409, 'Esa orden ya estaba suspendida.')
+    await sql.run('UPDATE hosp_meds SET stopped_at = ?, stopped_by = ?, stop_reason = ? WHERE id = ?', [new Date().toISOString(), user.id, reason, String(m!.id)])
+    await audit(user, `Suspendió ${medLabel(toInpatientMed(m!))} de ${await patientName(String(h.patient_id))}: ${reason}`)
+    res.json(toInpatientMed((await sql.one('SELECT * FROM hosp_meds WHERE id = ?', [String(m!.id)]))!))
   })
 
   /**
@@ -500,7 +574,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, plan, data) VALUES (?,?,?,'discharge',?,?,?,?)`,
         [noteId, cid, id, user.id, now.toISOString(), b.instructions, JSON.stringify(data)])
       // Al cerrar el expediente, las indicaciones que seguían activas dejan de generar dosis
-      await q.run('UPDATE hosp_meds SET stopped_at = ?, stopped_by = ? WHERE hospitalization_id = ? AND stopped_at IS NULL', [now.toISOString(), user.id, id])
+      await q.run(`UPDATE hosp_meds SET stopped_at = ?, stopped_by = ?, stop_reason = 'Egreso' WHERE hospitalization_id = ? AND stopped_at IS NULL`, [now.toISOString(), user.id, id])
       await q.run(`UPDATE hospitalizations SET status = 'discharged', discharged_at = ?, discharged_by = ?, prescription_id = ? WHERE id = ?`,
         [now.toISOString(), user.id, rxId, id])
       await audit(user, `Dio de alta a ${name}${folio ? ` con receta ${folio}` : ''}`, q)

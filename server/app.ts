@@ -21,6 +21,7 @@ import { registerReports } from './routes/reports.js'
 import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
 import { pendingOrders, registerInpatient } from './routes/inpatient.js'
+import { pullConsultationOrders } from './medOrders.js'
 import { registerDrugs } from './routes/drugs.js'
 import { registerCertificates } from './routes/certificates.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
@@ -653,13 +654,25 @@ export function createApp(opts: AppOptions) {
       indications: z.array(z.string().trim().min(1).max(500)).max(40).optional(),
       observations: z.string().max(4000).default(''),
       followups: z.array(followupInput).max(5).default([]),
-      // Ingreso a observación: se crea en la misma transacción (excluyente con el ingreso a hospitalización)
+      // Ingreso a observación o a hospitalización: la estancia se crea en la misma transacción y esta nota es su
+      // nota de ingreso. Son excluyentes.
       observe: z.boolean().default(false),
+      admit: z.boolean().default(false),
       vitalsId: z.string().optional(),
       items: z.array(rxItem).default([]),
     }), req.body)
     // Basta una indicación o un medicamento; no se exigen ambos
     if (!c.orders.length && !c.items.length) fail(400, 'Agrega al menos una indicación o un medicamento en el plan y manejo.')
+    if (c.admit && c.observe) fail(400, 'Elige ingreso a hospitalización o a observación, no los dos.')
+    // Con ingreso, todos los medicamentos se aplican en la clínica (van a la hoja, sin receta). Ambulatorio: van a la
+    // receta, salvo los marcados "Aplicar en la clínica", que dejan al paciente en observación mientras se aplican.
+    const admitted = c.admit || c.observe
+    const items = admitted ? c.items.map((it) => ({ ...it, applyInClinic: true })) : c.items
+    const rxItems = items.filter((it) => !it.applyInClinic)
+    const stayKind = c.admit ? 'hospital' : c.observe || items.some((it) => it.applyInClinic) ? 'observation' : null
+    // La receta necesita el total de días; con ingreso el medicamento queda "hasta nueva orden"
+    const noDays = rxItems.find((it) => !it.duration && !/única/i.test(it.frequency))
+    if (noDays) fail(400, `Escribe el total de días de ${noDays.drug}: va a la receta.`)
     const cid = clinicOf(req)
     const appt = (await apptRow(cid, c.appointmentId)) ?? fail(404, 'La cita no existe.')
     if (appt!.doctor_id !== user.id) fail(403, 'Sólo el médico asignado puede firmar esta consulta.')
@@ -667,12 +680,13 @@ export function createApp(opts: AppOptions) {
     const patientId = String(appt!.patient_id)
     const name = await patientName(patientId)
     const consultId = randomUUID()
-    const observationId = c.observe ? randomUUID() : null
-    const patientPhone = c.observe ? String((await patientRow(cid, patientId))?.phone ?? '') : ''
-    if (c.observe && await sql.one(`SELECT 1 FROM hospitalizations WHERE patient_id = ? AND clinic_id = ? AND status = 'active'`, [patientId, cid])) {
+    const stayId = stayKind ? randomUUID() : null
+    const patientPhone = stayKind ? String((await patientRow(cid, patientId))?.phone ?? '') : ''
+    if (stayKind && await sql.one(`SELECT 1 FROM hospitalizations WHERE patient_id = ? AND clinic_id = ? AND status = 'active'`, [patientId, cid])) {
       fail(409, `${name} ya está en observación u hospitalizado.`)
     }
-    const rxId = c.items.length ? randomUUID() : null
+    const rxId = rxItems.length ? randomUUID() : null
+    let medOrders = 0
     const now = new Date()
     let folio: string | null = null
     if (rxId) await assertRxIdentity(cid, patientId)
@@ -684,24 +698,28 @@ export function createApp(opts: AppOptions) {
       if (closed) fail(409, 'Esta cita ya está cerrada.')
       if (rxId) {
         await q.run(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items,clinic_id) VALUES (?,?,?,?,?,?,?,?)`,
-          [rxId, folio, patientId, user.id, consultId, now.toISOString(), JSON.stringify(c.items), cid])
+          [rxId, folio, patientId, user.id, consultId, now.toISOString(), JSON.stringify(rxItems), cid])
       }
-      await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id,orders,observations,clinic_id,indications)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id,orders,observations,clinic_id,indications,
+          admit_kind, meds)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [consultId, patientId, user.id, c.appointmentId, now.toISOString(), c.reason, JSON.stringify(c.symptoms), c.symptomOnset ?? null,
           c.history, c.exam, JSON.stringify(c.diagnoses), c.orders.map((o, i) => `${i + 1}. ${o}`).join('\n'), c.vitalsId ?? null, rxId, JSON.stringify(c.orders), c.observations, cid,
-          c.indications ? JSON.stringify(c.indications) : null])
+          c.indications ? JSON.stringify(c.indications) : null, stayKind, items.length ? JSON.stringify(items) : null])
       await q.run(`UPDATE appointments SET status = 'done' WHERE id = ?`, [c.appointmentId])
       for (const f of c.followups) await insertFollowup(q, cid, user.id, { ...f, patientId })
       await audit(user, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
-      if (observationId) {
+      if (stayId) {
+        // La hospitalización se crea sin cama: el médico la elige al terminar de firmar (o la corrige después)
         await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, patient_phone, status, kind)
-          VALUES (?,?,?,NULL,?,?,?,?,?,?,'active','observation')`,
-          [observationId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null])
-        await audit(user, `Ingresó a ${name} a observación desde la consulta externa`, q)
+          VALUES (?,?,?,NULL,?,?,?,?,?,?,'active',?)`,
+          [stayId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null, stayKind])
+        medOrders = await pullConsultationOrders(q, { clinicId: cid, hospitalizationId: stayId, consultationId: consultId })
+        await audit(user, `Ingresó a ${name} a ${stayKind === 'hospital' ? 'hospitalización' : 'observación'} desde la consulta externa${medOrders ? ` (${medOrders} medicamento(s) a la hoja)` : ''}`, q)
       }
     })
-    res.status(201).json({ consultationId: consultId, prescriptionId: rxId, folio, observationId })
+    res.status(201).json({ consultationId: consultId, prescriptionId: rxId, folio, hospitalizationId: stayId, stayKind, medOrders,
+      observationId: stayKind === 'observation' ? stayId : null })
   })
 
   app.get('/api/consultations/:id', auth, need('chart.view'), async (req, res) => {
@@ -859,6 +877,7 @@ const rxItem = z.object({
   drug: z.string().trim().min(1, 'Escribe el medicamento.').max(160), presentation: z.string().max(160).default(''), dose: z.string().trim().min(1, 'Escribe la dosis.').max(80),
   route: z.string().max(40).optional(), frequency: z.string().min(1).max(80), duration: z.string().trim().max(80).default(''),
   instructions: z.string().max(300).optional(), quantity: z.string().trim().max(80).optional(),
+  applyInClinic: z.boolean().optional(),
 })
 
 const hhmm = z.string().regex(/^\d{2}:\d{2}$/, 'Escribe la hora como 08:00.')

@@ -7,7 +7,7 @@ import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, fullName, inputDateTime, ROUTES, shortStaff, time } from '../lib/format'
 import { ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
-import { doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, noteOrders, orderMark, pendingOrdersOf, slotState, stayDay, type SlotState } from '../lib/inpatient'
+import { doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, noteOrders, orderMark, pendingOrdersOf, slotState, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { MedAlertBanner } from './MedAlerts'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { useNow } from '../lib/hooks'
@@ -156,6 +156,7 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
   const { can, staffById } = useStore()
   const [day, setDay] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d })
   const [marking, setMarking] = useState<{ med: InpatientMed; at?: Date } | null>(null)
+  const [stopping, setStopping] = useState<InpatientMed | null>(null)
   const end = new Date(day); end.setDate(end.getDate() + 1)
   const open = file.hospitalization.status === 'active'
   const admitted = new Date(file.hospitalization.admittedAt); admitted.setHours(0, 0, 0, 0)
@@ -195,10 +196,16 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
                 <div className="med__head">
                   <div>
                     <strong>{medLabel(m)}</strong>
-                    <span className="muted">{m.presentation ? `${m.presentation}. ` : ''}{m.instructions ? `${m.instructions} ` : ''}Indicó {staffById(m.orderedBy)?.name}, {dateTime(m.orderedAt)}</span>
+                    <span className="muted">{m.presentation ? `${m.presentation}. ` : ''}{m.instructions ? `${m.instructions} ` : ''}{medOrigin(m, file, staffById(m.orderedBy)?.name)}</span>
+                    {m.stoppedAt
+                      ? <span className="muted">{m.stopReason === 'Egreso' ? 'Terminó con el egreso' : `Suspendido por ${shortStaff(staffById(m.stoppedBy ?? '')?.name)} ${dm(m.stoppedAt)}${m.stopReason ? `: ${m.stopReason}` : ''}`}</span>
+                      : <span className="muted"><b>{treatmentDay(m, day)}</b></span>}
                     {conflict && <span className="chip chip--red"><TriangleAlert size={12} />Alergia a {conflict}</span>}
                   </div>
-                  {m.stoppedAt ? <span className="badge badge--red">Omitido {dateTime(m.stoppedAt)}</span> : <span className="badge badge--mint">Activo</span>}
+                  <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {m.stoppedAt ? <span className="badge badge--red">{m.stopReason?.startsWith('Cambiado') ? 'Modificado' : 'Suspendido'} {dateTime(m.stoppedAt)}</span> : <span className="badge badge--mint">Activo</span>}
+                    {!m.stoppedAt && open && can('inpatient.orders') && <button className="btn btn--ghost btn--sm" onClick={() => setStopping(m)}>Suspender</button>}
+                  </span>
                 </div>
                 <div className="slots">
                   {slots.map((s) => {
@@ -233,7 +240,37 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
         {(['given', 'due', 'late', 'upcoming', 'skipped', 'omitted'] as SlotState[]).map((s) => <span key={s}><i className={`slot2--${s}`} />{STATE_LABEL[s]}</span>)}
       </div>
       {marking && <DoseModal med={marking.med} at={marking.at} doses={dosesOf(marking.med)} onClose={() => setMarking(null)} onSaved={() => { setMarking(null); reload() }} />}
+      {stopping && <StopModal med={stopping} onClose={() => setStopping(null)} onSaved={() => { setStopping(null); reload() }} />}
     </section>
+  )
+}
+
+/** "Indicado en nota de consulta externa, Dra. Herrera, 22/10 17:40". */
+function medOrigin(m: InpatientMed, file: File, who?: string) {
+  const note = m.noteId ? file.notes.find((n) => n.id === m.noteId) : undefined
+  const where = m.source === 'consultation' ? 'nota de consulta externa'
+    : note ? (note.kind === 'admission' ? 'nota de ingreso' : file.hospitalization.kind === 'observation' ? 'nota de observación' : 'nota de evolución') : 'indicación médica'
+  return `Indicado en ${where}, ${who ?? 'médico'}, ${dm(m.orderedAt)}.`
+}
+
+/** El médico suspende una orden desde la hoja: pide el motivo; la orden queda en la hoja como suspendida. */
+function StopModal({ med, onClose, onSaved }: { med: InpatientMed; onClose: () => void; onSaved: () => void }) {
+  const { stopMed } = useStore()
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  return (
+    <Modal title={`Suspender ${med.drug}`} onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--danger" disabled={reason.trim().length < 3 || busy} onClick={async () => {
+        setBusy(true)
+        const ok = await stopMed(med.id, reason.trim())
+        setBusy(false)
+        if (ok) onSaved()
+      }}>Suspender</button>
+    </>}>
+      <p>{medLabel(med)}. Desde ahora las dosis que siguen salen como suspendidas; lo ya aplicado se conserva.</p>
+      <label className="field"><span>Motivo (queda con tu nombre y la hora)</span><input className="input" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Ya no presenta vómitos" /></label>
+    </Modal>
   )
 }
 
@@ -609,9 +646,10 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
-        const kept = active.filter((m) => !stop.includes(m.id)).map((m) => medLabel(m))
+        const ended = (id: string) => stop.includes(id) || meds.some((x) => x.replacesId === id)
+        const kept = active.filter((m) => !ended(m.id)).map((m) => medLabel(m))
         const added = meds.map((m) => medLabel(m))
-        const omitted = active.filter((m) => stop.includes(m.id)).map((m) => `OMITIR ${m.drug}`)
+        const omitted = active.filter((m) => ended(m.id)).map((m) => `OMITIR ${m.drug}`)
         const ok = await addInpatientNote(file.hospitalization.id, { kind, ...n, meds, stopMedIds: stop, orders: [...extra, ...kept, ...added, ...omitted] })
         setBusy(false)
         if (ok) onSaved()
@@ -669,7 +707,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
             <span className="orders__tools"><button className="icon-btn" aria-label="Quitar" onClick={() => setMeds(meds.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
         ))}</ol>}
         {replacing && <p className="muted" style={{ fontSize: 13.5 }}>La indicación nueva reemplaza a {active.find((m) => m.id === replacing)?.drug}. La nota conservará el resto de órdenes.</p>}
-        {replacing ? <MedForm p={p} initial={medToNew(active.find((m) => m.id === replacing)!)} onAdd={(m) => { setStop(stop.includes(replacing) ? stop : [...stop, replacing]); setMeds([...meds, m]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
+        {replacing ? <MedForm p={p} initial={medToNew(active.find((m) => m.id === replacing)!)} onAdd={(m) => { setMeds([...meds, { ...m, replacesId: replacing }]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
           : adding ? <MedForm p={p} onAdd={(m) => { setMeds([...meds, m]); setAdding(false) }} onCancel={() => setAdding(false)} />
           : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
       </fieldset>
@@ -687,7 +725,7 @@ function carriedOrders(file: File) {
 }
 
 function medToNew(m: InpatientMed): NewMed {
-  return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, instructions: m.instructions ?? '', firstAt: inputDateTime(new Date()) }
+  return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, instructions: m.instructions ?? '', firstAt: inputDateTime(new Date()), days: m.days }
 }
 
 function MedForm({ p, initial, onAdd, onCancel }: { p: Patient; initial?: NewMed; onAdd: (m: NewMed) => void; onCancel: () => void }) {
@@ -728,6 +766,9 @@ function MedForm({ p, initial, onAdd, onCancel }: { p: Patient; initial?: NewMed
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', height: 42 }}>
             <input type="checkbox" checked={m.prn} onChange={(e) => { setM({ ...m, prn: e.target.checked }); if (e.target.checked && freq === 'once') setFreq('8') }} />PRN, sin horario fijo</label></label>
         {!m.prn && <label className="field"><span>{freq === 'once' ? 'Hora de la dosis' : 'Primera dosis'}</span><input className="input" type="datetime-local" value={m.firstAt} onChange={(e) => setM({ ...m, firstAt: e.target.value })} /></label>}
+        <label className="field"><span>Total de días (opcional)</span>
+          <input className="input num" type="number" min={1} max={365} inputMode="numeric" value={m.days ?? ''} placeholder="Hasta nueva orden"
+            onChange={(e) => setM({ ...m, days: e.target.value ? Math.max(1, Math.min(365, Math.round(Number(e.target.value)))) : undefined })} /></label>
         <label className="field"><span>Indicaciones</span><input className="input" value={m.instructions} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder={m.prn ? 'Ej. Si hay dolor intenso' : 'Ej. Diluir en 100 ml'} /></label>
       </div>
       {conflict && (
@@ -888,6 +929,12 @@ function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => 
   if (!can('inpatient.orders')) return <section className="panel"><div className="empty">El médico escribe la nota de egreso cuando da de alta al paciente.</div></section>
 
   const ready = dx.length > 0 && f.summary.trim().length >= 10 && f.condition
+  // Órdenes abiertas ("hasta nueva orden" o con días): si continúan en casa, la receta necesita los días
+  const open = file.meds.filter((m) => !m.stoppedAt && !items.some((it) => it.drug === m.drug))
+  const toRx = (m: InpatientMed): PrescriptionItem => ({
+    drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route,
+    frequency: m.prn ? 'Según necesidad' : m.everyHours ? `Cada ${m.everyHours} horas` : 'Dosis única', duration: '', instructions: m.instructions ?? '',
+  })
   return (
     <section className="panel">
       <div className="panel__head"><div><h2>Nota de egreso</h2><p>{h.kind === 'observation' ? 'Al guardarla se cierra la observación y el paciente sale de la lista' : 'Al guardarla se cierra el expediente de hospitalización, se libera la cama'} y, si agregas medicamentos, se emite la receta de salida.</p></div></div>
@@ -902,19 +949,27 @@ function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => 
           <label className="field span-2"><span>Indicaciones al alta</span><textarea className="textarea textarea--sm" rows={2} value={f.instructions} onChange={(e) => setF({ ...f, instructions: e.target.value })} placeholder="Dieta, cuidados de la herida, signos de alarma." /></label>
         </div>
         <fieldset className="fs"><legend>Medicamentos para la casa (receta de egreso)</legend>
+          {open.length > 0 && <>
+            <p className="muted" style={{ fontSize: 13.5 }}>Órdenes que siguen abiertas. Si alguna continúa en casa, pásala a la receta y escribe cuántos días.</p>
+            <div className="rows">{open.map((m) => (
+              <div key={m.id} className="omit-row"><span>{medLabel(m)}{m.days ? '' : ' · hasta nueva orden'}</span>
+                <button type="button" className="btn btn--soft btn--sm" onClick={() => setRx(toRx(m))}><Plus size={14} />Continúa en casa</button></div>
+            ))}</div>
+          </>}
           {items.length > 0 && <ol className="orders">{items.map((it, i) => (
             <li key={i}><span className="orders__n">{i + 1}.</span><span className="orders__text"><Pill size={13} className="orders__pill" />{it.drug} {it.presentation}: {it.dose} {it.frequency.toLowerCase()} por {it.duration}</span>
               <span className="orders__tools"><button className="icon-btn" aria-label="Quitar" onClick={() => setItems(items.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
           ))}</ol>}
-          <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (rx.drug.trim()) { setItems([...items, { ...rx, drug: rx.drug.trim() }]); setRx(EMPTY_RX) } }}>
+          <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (rx.drug.trim() && rx.duration.trim()) { setItems([...items, { ...rx, drug: rx.drug.trim() }]); setRx(EMPTY_RX) } }}>
             <label className="field"><span>Medicamento</span><input className="input" list="dc-drugs" value={rx.drug}
               onChange={(e) => { const d = DRUGS.find((x) => x.name === e.target.value); setRx({ ...rx, drug: e.target.value, presentation: d?.presentation ?? rx.presentation }) }} />
               <datalist id="dc-drugs">{DRUGS.map((d) => <option key={d.name} value={d.name} />)}</datalist></label>
             <label className="field"><span>Presentación</span><input className="input" value={rx.presentation} onChange={(e) => setRx({ ...rx, presentation: e.target.value })} /></label>
             <label className="field"><span>Dosis</span><input className="input" value={rx.dose} onChange={(e) => setRx({ ...rx, dose: e.target.value })} /></label>
             <label className="field"><span>Frecuencia</span><select className="select" value={rx.frequency} onChange={(e) => setRx({ ...rx, frequency: e.target.value })}>{FREQUENCIES.map((x) => <option key={x}>{x}</option>)}</select></label>
-            <label className="field"><span>Duración</span><input className="input" value={rx.duration} onChange={(e) => setRx({ ...rx, duration: e.target.value })} /></label>
-            <button className="btn btn--soft" style={{ alignSelf: 'end' }} disabled={!rx.drug.trim()}><Plus size={15} />Agregar</button>
+            <label className="field"><span>Total de días</span><input className={`input ${rx.drug.trim() && !rx.duration.trim() ? 'input--warn' : ''}`} value={rx.duration} onChange={(e) => setRx({ ...rx, duration: e.target.value })} placeholder="Ej. 5 días" />
+              {rx.drug.trim() && !rx.duration.trim() && <small className="field__msg field__msg--warn">La receta de egreso lleva los días.</small>}</label>
+            <button className="btn btn--soft" style={{ alignSelf: 'end' }} disabled={!rx.drug.trim() || !rx.duration.trim()}><Plus size={15} />Agregar</button>
           </form>
           {allergyConflict(p.allergies, rx.drug) && <div className="alert-strip"><TriangleAlert size={16} />{p.firstName} es alérgica/o a {allergyConflict(p.allergies, rx.drug)}.</div>}
         </fieldset>
