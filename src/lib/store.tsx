@@ -185,7 +185,9 @@ function useStoreValue() {
       run(() => api<InpatientNote>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
     stopMed: (medId: string, reason: string) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/stop`, { body: { reason } }), 'Orden suspendida'),
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),
-    recordDose: (medId: string, b: { scheduledAt?: string; givenAt?: string; status: Dose['status']; note?: string }) =>
+    correctDose: (doseId: string, b: { status?: Dose['status']; givenAt?: string; note?: string; reason: string }) =>
+      run(() => api<Dose>(`/inpatient/doses/${doseId}`, { method: 'PATCH', body: b }), 'Dosis corregida'),
+    recordDose: (medId: string, b: { scheduledAt?: string; givenAt?: string; status: Dose['status']; note?: string; reason?: string }) =>
       run(() => api<Dose>(`/inpatient/meds/${medId}/doses`, { body: b }), b.status === 'given' ? 'Dosis registrada' : 'Dosis marcada como no administrada'),
     reviewOrder: (noteId: string, index: number, checked: boolean, reason?: string) =>
       run(() => api<OrderMark>(`/inpatient/notes/${noteId}/orders/${index}/review`, { body: { checked, reason } }), checked ? 'Orden marcada como revisada' : 'Orden desmarcada'),

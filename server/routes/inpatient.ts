@@ -355,6 +355,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       givenAt: when.optional(),
       status: z.enum(['given', 'skipped']).default('given'),
       note: z.string().trim().max(300).optional(),
+      // Registrar una dosis de un día que ya pasó pide motivo
+      reason: z.string().trim().max(300).optional(),
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
@@ -376,16 +378,45 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       if (b.status === 'skipped' && !b.note) fail(400, 'Escribe por qué no se administró la dosis.')
       scheduledAt = slot.toISOString()
     }
+    // Una dosis de hace más de 24 horas es un registro de un día pasado: necesita motivo y queda en la bitácora
+    const late = new Date(scheduledAt ?? givenAt).getTime() < Date.now() - 24 * 3_600_000
+    if (late && (b.reason ?? '').length < 5) fail(400, 'Es una dosis de un día que ya pasó: escribe el motivo del registro tardío.')
     const id = randomUUID()
     try {
-      await sql.run('INSERT INTO hosp_doses (id, clinic_id, med_id, scheduled_at, given_at, given_by, status, note) VALUES (?,?,?,?,?,?,?,?)',
-        [id, cid, med.id, scheduledAt, givenAt.toISOString(), user.id, b.status, b.note || null])
+      await sql.run('INSERT INTO hosp_doses (id, clinic_id, med_id, scheduled_at, given_at, given_by, status, note, corrected_at, corrected_by, correction_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        [id, cid, med.id, scheduledAt, givenAt.toISOString(), user.id, b.status, b.note || null, late ? new Date().toISOString() : null, late ? user.id : null, late ? `Registro tardío: ${b.reason}` : null])
     } catch (e) {
       if ((e as { code?: string }).code === '23505') fail(409, 'Esa dosis ya fue registrada. Actualiza la página.')
       throw e
     }
-    await audit(user, `${b.status === 'given' ? 'Administró' : 'Registró como no administrado'} ${medLabel(med)} a ${await patientName(String(h.patient_id))} (${user.role === 'doctor' ? 'médico' : 'enfermería'})`)
+    await audit(user, `${b.status === 'given' ? 'Administró' : 'Registró como no administrado'} ${medLabel(med)} a ${await patientName(String(h.patient_id))} (${user.role === 'doctor' ? 'médico' : 'enfermería'})${late ? `, registro tardío: ${b.reason}` : ''}`)
     res.status(201).json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [id]))!))
+  })
+
+  /**
+   * Corregir una dosis ya registrada (hora real, aplicada o no, observación). Pide motivo; se guarda el
+   * registro anterior y quién lo corrigió, y queda en la bitácora.
+   */
+  app.patch('/api/inpatient/doses/:doseId', auth, need('inpatient.care', 'inpatient.orders'), async (req, res) => {
+    const b = parse(z.object({
+      status: z.enum(['given', 'skipped']).optional(),
+      givenAt: when.optional(),
+      note: z.string().trim().max(300).optional(),
+      reason: z.string().trim().min(5, 'Escribe el motivo de la corrección.').max(300),
+    }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const d = (await sql.one('SELECT * FROM hosp_doses WHERE id = ? AND clinic_id = ?', [String(req.params.doseId), cid])) ?? fail(404, 'La dosis no existe.')
+    const m = (await sql.one('SELECT * FROM hosp_meds WHERE id = ?', [String(d!.med_id)]))!
+    const h = await activeHosp(cid, String(m.hospitalization_id))
+    if (b.givenAt && new Date(b.givenAt).getTime() > Date.now() + 60_000) fail(400, 'La hora de administración no puede ser en el futuro.')
+    if (b.status === 'skipped' && !(b.note ?? d!.note)) fail(400, 'Escribe por qué no se administró la dosis.')
+    if (b.status === 'skipped' && !d!.scheduled_at) fail(400, 'Una dosis PRN sólo se registra cuando se aplica.')
+    const previous = { status: d!.status, givenAt: d!.given_at, givenBy: d!.given_by, note: d!.note ?? undefined, correctedAt: d!.corrected_at ?? undefined, reason: d!.correction_reason ?? undefined }
+    await sql.run('UPDATE hosp_doses SET status = ?, given_at = ?, note = ?, corrected_at = ?, corrected_by = ?, correction_reason = ?, previous = ? WHERE id = ?',
+      [b.status ?? d!.status, b.givenAt ? new Date(b.givenAt).toISOString() : d!.given_at, b.note ?? d!.note ?? null, new Date().toISOString(), user.id, b.reason, JSON.stringify(previous), String(d!.id)])
+    await audit(user, `Corrigió la dosis de ${medLabel(toInpatientMed(m))} de ${await patientName(String(h.patient_id))} (antes: ${previous.status === 'given' ? 'administrada' : 'no administrada'} ${previous.givenAt}): ${b.reason}`)
+    res.json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [String(d!.id)]))!))
   })
 
   /** El médico suspende una orden desde la hoja: queda con motivo, autor y hora; no se borra. */

@@ -498,6 +498,10 @@ export interface Dose {
   givenBy: string
   status: 'given' | 'skipped'
   note?: string
+  /** Registro tardío o corrección: quién, cuándo y por qué (el registro anterior queda guardado). */
+  correctedAt?: string
+  correctedBy?: string
+  correctionReason?: string
 }
 
 export interface HospProcedure {

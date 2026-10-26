@@ -132,6 +132,7 @@ export const toAuthorization = (r: Row): Authorization => ({
 export const toDose = (r: Row): Dose => ({
   id: String(r.id), medId: String(r.med_id), scheduledAt: s(r.scheduled_at), givenAt: String(r.given_at), givenBy: String(r.given_by),
   status: r.status as Dose['status'], note: s(r.note),
+  correctedAt: s(r.corrected_at), correctedBy: s(r.corrected_by), correctionReason: s(r.correction_reason),
 })
 
 export const toProcedure = (r: Row): HospProcedure => ({

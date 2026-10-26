@@ -289,3 +289,31 @@ describe('M7 receta para paciente no registrado', () => {
     assert.ok((await doc.get(`/api/patients/${p.body.id}/chart`)).body.prescriptions.some((x: any) => x.id === r.body.prescriptionId))
   })
 })
+
+describe('E1 hoja de medicamentos: días pasados', () => {
+  test('registrar tarde o corregir una dosis de un día pasado pide motivo y guarda el registro anterior', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const boot = (await doc.get('/api/bootstrap')).body
+    // Un hospitalizado de la demo con una orden diaria que empezó hace dos días
+    const h = boot.inpatients.find((x: any) => x.kind === 'hospital' && x.bedId)
+    const first = new Date(Date.now() - 2 * 86_400_000); first.setMinutes(0, 0, 0)
+    const note = await doc.post(`/api/inpatient/${h.id}/notes`, { kind: 'evolution', subjective: 'S', objective: 'O', assessment: 'A', plan: 'P',
+      meds: [{ drug: 'Ceftriaxona', dose: '1 g', route: 'Intravenosa', everyHours: 24, prn: false, firstAt: first.toISOString() }] })
+    assert.equal(note.status, 201)
+    const med = (await nurse.get(`/api/inpatient/${h.id}`)).body.meds.find((m: any) => m.drug === 'Ceftriaxona')
+    assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: med.firstAt, givenAt: med.firstAt })).status, 400, 'sin motivo no')
+    const late = await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: med.firstAt, givenAt: med.firstAt, reason: 'No se registró en el turno de noche' })
+    assert.equal(late.status, 201)
+    assert.match(late.body.correctionReason, /Registro tardío/)
+    // Corregir: sin motivo no; con motivo cambia y deja rastro
+    assert.equal((await nurse.patch(`/api/inpatient/doses/${late.body.id}`, { givenAt: first.toISOString() })).status, 400)
+    const fixed = await nurse.patch(`/api/inpatient/doses/${late.body.id}`, { status: 'skipped', note: 'Paciente en ayuno', reason: 'Se registró como aplicada por error' })
+    assert.equal(fixed.status, 200)
+    assert.equal(fixed.body.status, 'skipped')
+    assert.equal(fixed.body.correctedBy, 's-rios')
+    const row = await sql.one('SELECT previous FROM hosp_doses WHERE id = ?', [late.body.id])
+    assert.equal(JSON.parse(String(row!.previous)).status, 'given')
+    assert.equal((await (await as('smejia@demo.clinara')).patch(`/api/inpatient/doses/${late.body.id}`, { reason: 'Intento de recepción' })).status, 403)
+  })
+})

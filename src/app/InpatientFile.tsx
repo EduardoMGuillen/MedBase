@@ -4,7 +4,7 @@ import { BedDouble, Camera, ChevronLeft, ChevronRight, FileSignature, FileText, 
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
-import { date, dateTime, defaultRoute, fullName, inputDateTime, ROUTES, shortStaff, time } from '../lib/format'
+import { date, dateTime, defaultRoute, fullName, inputDateTime, localISODate, ROUTES, shortStaff, time } from '../lib/format'
 import { ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
 import { doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
@@ -16,7 +16,7 @@ import { AdmitModal, bedLabel, DxPicker } from './Inpatients'
 import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
 import { toBase64 } from './Attachments'
 
-type Tab = 'sheet' | 'notes' | 'meds' | 'nursing' | 'labs'
+type Tab = 'sheet' | 'notes' | 'meds' | 'nursing' | 'labs' | 'annexes'
 
 export default function InpatientFile() {
   const { id } = useParams()
@@ -25,7 +25,7 @@ export default function InpatientFile() {
   // Desde la alerta de órdenes nuevas se entra directo a las notas; al firmar una consulta con ingreso, a completar la cama
   const [params, setParams] = useSearchParams()
   const [editing, setEditing] = useState(params.get('completar') === '1')
-  const [tab, setTab] = useState<Tab>(params.get('tab') === 'notas' ? 'notes' : 'sheet')
+  const [tab, setTab] = useState<Tab>(({ notas: 'notes', medicamentos: 'meds', anexos: 'annexes' } as Record<string, Tab>)[params.get('tab') ?? ''] ?? 'sheet')
   const [missing, setMissing] = useState(false)
   const now = useNow()
   const load = useCallback(() => {
@@ -159,45 +159,96 @@ const STATE_LABEL: Record<SlotState, string> = {
   given: 'Administrado', skipped: 'No administrado', omitted: 'Omitido', late: 'Atrasado', due: 'Toca ahora', upcoming: 'Programado',
 }
 
-/** Horario del día: cada indicación con sus horas; enfermería toca una hora para marcarla. */
+/** Inicio del día (00:00) de una fecha. */
+const dayStart = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
+const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
+/** La semana va de lunes a domingo. */
+const weekStart = (d: Date) => addDays(dayStart(d), -((d.getDay() + 6) % 7))
+/** Hasta cuántos días adelante se puede ver lo programado. */
+const AHEAD_DAYS = 7
+
+/**
+ * Hoja de medicamentos: vista Día (cada indicación con sus horas; se toca una hora para registrarla) y vista
+ * Semana (los 7 días con lo programado y lo aplicado, quién y a qué hora). "Hoy" vuelve al día actual desde
+ * cualquier fecha y las flechas recorren los días; no se va antes del ingreso. Un día que ya pasó se ve en
+ * modo lectura: registrar o corregir algo ahí pide motivo y queda en la bitácora. Es la misma para
+ * hospitalización y observación.
+ */
 function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; reload: () => void; onWriteNote: () => void }) {
   const { can, staffById } = useStore()
-  const [day, setDay] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d })
-  const [marking, setMarking] = useState<{ med: InpatientMed; at?: Date } | null>(null)
+  const [params, setParams] = useSearchParams()
+  const today = dayStart(useNow())
+  // Vista y fecha de referencia en la URL: cambiar de Día a Semana conserva la fecha y sobrevive a recargar
+  const view: 'day' | 'week' = params.get('vista') === 'semana' ? 'week' : 'day'
+  const fromUrl = params.get('fecha')
+  const ref = fromUrl && !Number.isNaN(Date.parse(`${fromUrl}T00:00:00`)) ? dayStart(new Date(`${fromUrl}T00:00:00`)) : today
+  const go = (next: { view?: 'day' | 'week'; ref?: Date }) => {
+    const q = new URLSearchParams(params)
+    q.set('tab', 'medicamentos')
+    const v = next.view ?? view
+    if (v === 'week') q.set('vista', 'semana'); else q.delete('vista')
+    const r = next.ref ?? ref
+    if (r.getTime() === today.getTime()) q.delete('fecha'); else q.set('fecha', localISODate(r))
+    setParams(q, { replace: true })
+  }
+  const [marking, setMarking] = useState<{ med: InpatientMed; at?: Date; late?: boolean } | null>(null)
+  const [correcting, setCorrecting] = useState<{ med: InpatientMed; dose: Dose } | null>(null)
   const [stopping, setStopping] = useState<InpatientMed | null>(null)
-  const end = new Date(day); end.setDate(end.getDate() + 1)
+  const [fixing, setFixing] = useState(false)
   const open = file.hospitalization.status === 'active'
-  const admitted = new Date(file.hospitalization.admittedAt); admitted.setHours(0, 0, 0, 0)
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const shift = (n: number) => { const d = new Date(day); d.setDate(d.getDate() + n); setDay(d) }
+  const admitted = dayStart(new Date(file.hospitalization.admittedAt))
+  const last = addDays(today, AHEAD_DAYS)
+  const start = view === 'week' ? weekStart(ref) : ref
+  const end = addDays(start, view === 'week' ? 7 : 1)
+  const shift = (n: number) => go({ ref: addDays(ref, n * (view === 'week' ? 7 : 1)) })
+  const past = view === 'day' && ref < today
   const dosesOf = (m: InpatientMed) => file.doses.filter((d) => d.medId === m.id)
   const meds = [...file.meds].sort((a, b) => Number(!!a.stoppedAt) - Number(!!b.stoppedAt) || a.orderedAt.localeCompare(b.orderedAt))
-    .filter((m) => new Date(m.firstAt) < end && (!m.stoppedAt || new Date(m.stoppedAt) >= day || dosesOf(m).some((d) => new Date(d.givenAt) >= day)))
+    .filter((m) => new Date(m.firstAt) < end && (!m.stoppedAt || new Date(m.stoppedAt) >= start || dosesOf(m).some((d) => new Date(d.givenAt) >= start && new Date(d.givenAt) < end)))
   // Enfermería registra las dosis; el médico también puede hacerlo cuando él la aplica
   const care = (can('inpatient.care') || can('inpatient.orders')) && open
   const by = (id: string) => { const s = staffById(id); return s ? `${shortStaff(s.name)}, ${ROLE_LABEL[s.role].toLowerCase()}` : '' }
+  const doseTitle = (dose: Dose) => `${dose.status === 'given' ? 'Aplicado' : 'No administrado'} por ${by(dose.givenBy)}, ${dm(dose.givenAt)}${dose.note ? `: ${dose.note}` : ''}${dose.correctionReason ? `. ${dose.correctionReason.startsWith('Registro tardío') ? '' : 'Corregido: '}${dose.correctionReason} (${shortStaff(staffById(dose.correctedBy ?? '')?.name)})` : ''}`
+  const label = view === 'week'
+    ? `${date(start.toISOString(), { day: 'numeric', month: 'short' })} – ${date(addDays(end, -1).toISOString(), { day: 'numeric', month: 'short' })}`
+    : ref.getTime() === today.getTime() ? `Hoy, ${date(ref.toISOString(), { weekday: 'short', day: 'numeric', month: 'short' })}` : date(ref.toISOString(), { weekday: 'long', day: 'numeric', month: 'short' })
 
   return (
     <section className="panel">
-      <div className="panel__head">
-        <div><h2>Hoja de medicamentos</h2><p>Se llena sola con lo que el médico indica en sus notas. {care ? 'Toca una hora para registrar la dosis aplicada; queda con tu nombre y tu rol.' : 'Enfermería registra cada dosis.'}</p></div>
-        <div className="day-nav">
-          <button className="icon-btn" aria-label="Día anterior" disabled={day <= admitted} onClick={() => shift(-1)}><ChevronLeft size={18} /></button>
-          <b>{day.getTime() === today.getTime() ? 'Hoy' : date(day.toISOString(), { weekday: 'short', day: 'numeric', month: 'short' })}</b>
-          <button className="icon-btn" aria-label="Día siguiente" disabled={day >= today} onClick={() => shift(1)}><ChevronRight size={18} /></button>
+      <div className="panel__head medsheet__head">
+        <div><h2>Hoja de medicamentos</h2><p>Se llena sola con lo que el médico indica en sus notas. {care ? 'Toca una hora para registrar la dosis; queda con tu nombre y tu rol.' : 'Enfermería registra cada dosis.'}</p></div>
+        <div className="medsheet__nav">
+          <div className="segmented" role="radiogroup" aria-label="Vista">
+            <button role="radio" aria-checked={view === 'day'} onClick={() => go({ view: 'day' })}>Día</button>
+            <button role="radio" aria-checked={view === 'week'} onClick={() => go({ view: 'week' })}>Semana</button>
+          </div>
+          <div className="day-nav">
+            <button className="icon-btn" aria-label={view === 'week' ? 'Semana anterior' : 'Día anterior'} disabled={start <= admitted} onClick={() => shift(-1)}><ChevronLeft size={18} /></button>
+            <b className={ref.getTime() === today.getTime() || (view === 'week' && today >= start && today < end) ? 'is-today' : ''}>{label}</b>
+            <button className="icon-btn" aria-label={view === 'week' ? 'Semana siguiente' : 'Día siguiente'} disabled={addDays(start, view === 'week' ? 7 : 1) > last} onClick={() => shift(1)}><ChevronRight size={18} /></button>
+          </div>
+          <button className="btn btn--soft btn--sm" disabled={ref.getTime() === today.getTime()} onClick={() => go({ ref: today })}>Hoy</button>
         </div>
       </div>
+      {past && (
+        <div className="alert-strip alert-strip--calm medsheet__past" style={{ flexWrap: 'wrap' }}>
+          <span>Día pasado: se muestra lo que se registró, en modo lectura.{fixing ? ' Toca una hora para registrarla tarde o una dosis para corregirla; pide motivo y queda en la bitácora.' : ''}</span>
+          {care && <button className="btn btn--ghost btn--sm" onClick={() => setFixing(!fixing)}>{fixing ? 'Terminar' : 'Corregir registros'}</button>}
+        </div>
+      )}
       {!meds.length ? (
         <div className="empty">
-          No hay medicamentos indicados para este día.
+          No hay medicamentos indicados para {view === 'week' ? 'esta semana' : 'este día'}.
           {can('inpatient.orders') && open && <> <button className="linklike" onClick={onWriteNote}>Escribe una nota con indicaciones</button>.</>}
         </div>
+      ) : view === 'week' ? (
+        <WeekGrid meds={meds} start={start} today={today} admitted={admitted} dosesOf={dosesOf} by={by} doseTitle={doseTitle} onDay={(d) => go({ view: 'day', ref: d })} />
       ) : (
         <div className="medsheet">
           {meds.map((m) => {
-            const slots = doseTimes(m, day, end)
+            const slots = doseTimes(m, start, end)
             const doses = dosesOf(m)
-            const prnToday = doses.filter((d) => !d.scheduledAt && new Date(d.givenAt) >= day && new Date(d.givenAt) < end)
+            const prnToday = doses.filter((d) => !d.scheduledAt && new Date(d.givenAt) >= start && new Date(d.givenAt) < end)
             const conflict = allergyConflict(p.allergies, m.drug)
             return (
               <div key={m.id} className={`med ${m.stoppedAt ? 'med--stopped' : ''}`}>
@@ -207,7 +258,7 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
                     <span className="muted">{m.presentation ? `${m.presentation}. ` : ''}{m.instructions ? `${m.instructions} ` : ''}{medOrigin(m, file, staffById(m.orderedBy)?.name)}</span>
                     {m.stoppedAt
                       ? <span className="muted">{m.stopReason === 'Egreso' ? 'Terminó con el egreso' : `Suspendido por ${shortStaff(staffById(m.stoppedBy ?? '')?.name)} ${dm(m.stoppedAt)}${m.stopReason ? `: ${m.stopReason}` : ''}`}</span>
-                      : <span className="muted"><b>{treatmentDay(m, day)}</b></span>}
+                      : <span className="muted"><b>{treatmentDay(m, start)}</b></span>}
                     {conflict && <span className="chip chip--red"><TriangleAlert size={12} />Alergia a {conflict}</span>}
                   </div>
                   <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -219,10 +270,12 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
                   {slots.map((s) => {
                     const dose = doses.find((d) => d.scheduledAt && new Date(d.scheduledAt).getTime() === s.at.getTime())
                     const st = slotState(s.at, s.omitted, dose)
-                    const clickable = care && !dose && !s.omitted
+                    // Hoy se registra directo; en un día pasado sólo en "Corregir registros"; lo futuro no se toca
+                    const clickable = care && !s.omitted && s.at.getTime() <= Date.now() + 30 * 60_000 && (dose ? fixing : !past || fixing)
                     return (
-                      <button key={s.at.toISOString()} className={`slot2 slot2--${st}`} disabled={!clickable} onClick={() => setMarking({ med: m, at: s.at })}
-                        title={dose ? `${dose.status === 'given' ? 'Aplicado' : 'No administrado'} por ${by(dose.givenBy)}, ${time(dose.givenAt)}${dose.note ? `: ${dose.note}` : ''}` : STATE_LABEL[st]}>
+                      <button key={s.at.toISOString()} className={`slot2 slot2--${st}${dose?.correctionReason ? ' slot2--fixed' : ''}`} disabled={!clickable}
+                        onClick={() => (dose ? setCorrecting({ med: m, dose }) : setMarking({ med: m, at: s.at, late: past }))}
+                        title={dose ? doseTitle(dose) : STATE_LABEL[st]}>
                         <b>{time(s.at.toISOString())}</b>
                         <small>{dose ? `${dose.status === 'given' ? '✓' : '✗'} ${time(dose.givenAt)} ${by(dose.givenBy)}` : STATE_LABEL[st]}</small>
                       </button>
@@ -230,12 +283,13 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
                   })}
                   {m.prn && (<>
                     {prnToday.map((d) => (
-                      <span key={d.id} className="slot2 slot2--given" title={`Aplicado por ${by(d.givenBy)}, ${time(d.givenAt)}${d.note ? `: ${d.note}` : ''}`}><b>{time(d.givenAt)}</b><small>✓ {by(d.givenBy)}</small></span>
+                      <button key={d.id} className={`slot2 slot2--given${d.correctionReason ? ' slot2--fixed' : ''}`} disabled={!(care && fixing)} onClick={() => setCorrecting({ med: m, dose: d })}
+                        title={doseTitle(d)}><b>{time(d.givenAt)}</b><small>✓ {by(d.givenBy)}</small></button>
                     ))}
-                    {care && !m.stoppedAt && day.getTime() === today.getTime() && (
-                      <button className="slot2 slot2--prn" onClick={() => setMarking({ med: m })}><b><Plus size={13} /> PRN</b><small>Registrar dosis</small></button>
+                    {care && !m.stoppedAt && (ref.getTime() === today.getTime() || fixing) && (
+                      <button className="slot2 slot2--prn" onClick={() => setMarking({ med: m, late: past })}><b><Plus size={13} /> PRN</b><small>Registrar dosis</small></button>
                     )}
-                    {!prnToday.length && !(care && !m.stoppedAt) && <span className="muted" style={{ fontSize: 13 }}>Según necesidad. Sin dosis este día.</span>}
+                    {!prnToday.length && !(care && !m.stoppedAt && ref.getTime() === today.getTime()) && <span className="muted" style={{ fontSize: 13 }}>Según necesidad. Sin dosis este día.</span>}
                   </>)}
                   {!m.prn && !slots.length && <span className="muted" style={{ fontSize: 13 }}>Sin dosis este día.</span>}
                 </div>
@@ -247,9 +301,53 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
       <div className="legend">
         {(['given', 'due', 'late', 'upcoming', 'skipped', 'omitted'] as SlotState[]).map((s) => <span key={s}><i className={`slot2--${s}`} />{STATE_LABEL[s]}</span>)}
       </div>
-      {marking && <DoseModal med={marking.med} at={marking.at} doses={dosesOf(marking.med)} onClose={() => setMarking(null)} onSaved={() => { setMarking(null); reload() }} />}
+      {marking && <DoseModal med={marking.med} at={marking.at} late={marking.late} doses={dosesOf(marking.med)} onClose={() => setMarking(null)} onSaved={() => { setMarking(null); reload() }} />}
+      {correcting && <CorrectDoseModal med={correcting.med} dose={correcting.dose} onClose={() => setCorrecting(null)} onSaved={() => { setCorrecting(null); reload() }} />}
       {stopping && <StopModal med={stopping} onClose={() => setStopping(null)} onSaved={() => { setStopping(null); reload() }} />}
     </section>
+  )
+}
+
+/**
+ * Semana: una fila por medicamento y una columna por día con lo programado y lo aplicado (quién y a qué
+ * hora). En el celular se desliza de lado sin romper la página. Tocar un día abre su vista Día.
+ */
+function WeekGrid({ meds, start, today, admitted, dosesOf, by, doseTitle, onDay }: {
+  meds: InpatientMed[]; start: Date; today: Date; admitted: Date; dosesOf: (m: InpatientMed) => Dose[]; by: (id: string) => string; doseTitle: (d: Dose) => string; onDay: (d: Date) => void
+}) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(start, i))
+  return (
+    <div className="medweek" role="region" aria-label="Hoja de la semana" tabIndex={0}>
+      <table>
+        <thead><tr><th scope="col">Medicamento</th>{days.map((d) => (
+          <th key={d.toISOString()} scope="col" className={`${d.getTime() === today.getTime() ? 'is-today' : ''} ${d < admitted ? 'is-before' : ''}`}>
+            <button className="linklike" disabled={d < admitted} onClick={() => onDay(d)}>{date(d.toISOString(), { weekday: 'short', day: 'numeric' })}</button></th>
+        ))}</tr></thead>
+        <tbody>{meds.map((m) => (
+          <tr key={m.id} className={m.stoppedAt ? 'is-stopped' : ''}>
+            <th scope="row">{medLabel(m)}{m.stoppedAt && <small>Suspendido {dm(m.stoppedAt)}</small>}</th>
+            {days.map((d) => {
+              const next = addDays(d, 1)
+              const doses = dosesOf(m)
+              const slots = doseTimes(m, d, next)
+              const prn = doses.filter((x) => !x.scheduledAt && new Date(x.givenAt) >= d && new Date(x.givenAt) < next)
+              return (
+                <td key={d.toISOString()} className={d.getTime() === today.getTime() ? 'is-today' : ''}>
+                  {slots.map((s) => {
+                    const dose = doses.find((x) => x.scheduledAt && new Date(x.scheduledAt).getTime() === s.at.getTime())
+                    const st = slotState(s.at, s.omitted, dose)
+                    return <span key={s.at.toISOString()} className={`wk wk--${st}`} title={dose ? doseTitle(dose) : STATE_LABEL[st]}>
+                      <b>{time(s.at.toISOString())}</b>{dose ? ` ${dose.status === 'given' ? '✓' : '✗'} ${time(dose.givenAt)} ${by(dose.givenBy)}` : ''}</span>
+                  })}
+                  {prn.map((x) => <span key={x.id} className="wk wk--given" title={doseTitle(x)}><b>PRN</b> ✓ {time(x.givenAt)} {by(x.givenBy)}</span>)}
+                  {!slots.length && !prn.length && <span className="muted">—</span>}
+                </td>
+              )
+            })}
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
   )
 }
 
@@ -282,11 +380,13 @@ function StopModal({ med, onClose, onSaved }: { med: InpatientMed; onClose: () =
   )
 }
 
-function DoseModal({ med, at, doses, onClose, onSaved }: { med: InpatientMed; at?: Date; doses: Dose[]; onClose: () => void; onSaved: () => void }) {
+function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: InpatientMed; at?: Date; late?: boolean; doses: Dose[]; onClose: () => void; onSaved: () => void }) {
   const { recordDose } = useStore()
   const [given, setGiven] = useState(true)
-  const [when, setWhen] = useState(inputDateTime(new Date()))
+  // En un día pasado la hora real empieza en la hora indicada
+  const [when, setWhen] = useState(() => inputDateTime(late && at ? at : new Date()))
   const [note, setNote] = useState('')
+  const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   // Un PRN con intervalo mínimo avisa si la última dosis fue hace muy poco
   const last = med.prn ? doses.filter((d) => d.status === 'given').sort((a, b) => b.givenAt.localeCompare(a.givenAt))[0] : undefined
@@ -294,9 +394,9 @@ function DoseModal({ med, at, doses, onClose, onSaved }: { med: InpatientMed; at
   return (
     <Modal title={medLabel(med)} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className={`btn ${given ? 'btn--primary' : 'btn--danger'}`} disabled={busy || (!given && !note.trim())} onClick={async () => {
+      <button className={`btn ${given ? 'btn--primary' : 'btn--danger'}`} disabled={busy || (!given && !note.trim()) || (late && reason.trim().length < 5)} onClick={async () => {
         setBusy(true)
-        const ok = await recordDose(med.id, { scheduledAt: at?.toISOString(), givenAt: new Date(when).toISOString(), status: given ? 'given' : 'skipped', note: note.trim() || undefined })
+        const ok = await recordDose(med.id, { scheduledAt: at?.toISOString(), givenAt: new Date(when).toISOString(), status: given ? 'given' : 'skipped', note: note.trim() || undefined, reason: late ? reason.trim() : undefined })
         setBusy(false)
         if (ok) onSaved()
       }}>{given ? 'Registrar administración' : 'Registrar como no administrado'}</button>
@@ -312,6 +412,40 @@ function DoseModal({ med, at, doses, onClose, onSaved }: { med: InpatientMed; at
       <label className="field"><span>Hora real</span><input className="input" type="datetime-local" value={when} max={inputDateTime(new Date())} onChange={(e) => setWhen(e.target.value)} /></label>
       <label className="field"><span>{given ? 'Observación (opcional)' : 'Motivo por el que no se administró'}</span>
         <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={given ? 'Ej. Dolor 7/10' : 'Ej. Paciente en ayuno para cirugía'} /></label>
+      {late && <label className="field"><span>Motivo del registro tardío (queda en la bitácora)</span>
+        <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Se aplicó en el turno de noche y no se registró" /></label>}
+    </Modal>
+  )
+}
+
+/** Corregir una dosis ya registrada: pide motivo; el registro anterior se guarda y queda en la bitácora. */
+function CorrectDoseModal({ med, dose, onClose, onSaved }: { med: InpatientMed; dose: Dose; onClose: () => void; onSaved: () => void }) {
+  const { correctDose } = useStore()
+  const [given, setGiven] = useState(dose.status === 'given')
+  const [when, setWhen] = useState(inputDateTime(new Date(dose.givenAt)))
+  const [note, setNote] = useState(dose.note ?? '')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  return (
+    <Modal title={`Corregir: ${medLabel(med)}`} onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={busy || reason.trim().length < 5 || (!given && !note.trim())} onClick={async () => {
+        setBusy(true)
+        const ok = await correctDose(dose.id, { status: given ? 'given' : 'skipped', givenAt: new Date(when).toISOString(), note: note.trim() || undefined, reason: reason.trim() })
+        setBusy(false)
+        if (ok) onSaved()
+      }}>Guardar corrección</button>
+    </>}>
+      <p className="muted" style={{ fontSize: 14 }}>Registrada como {dose.status === 'given' ? 'administrada' : 'no administrada'} a las {time(dose.givenAt)} del {date(dose.givenAt)}. El registro anterior se conserva.</p>
+      {dose.scheduledAt && (
+        <div className="segmented" role="radiogroup" aria-label="Resultado">
+          <button role="radio" aria-checked={given} onClick={() => setGiven(true)}>Administrado</button>
+          <button role="radio" aria-checked={!given} onClick={() => setGiven(false)}>No administrado</button>
+        </div>
+      )}
+      <label className="field"><span>Hora real</span><input className="input" type="datetime-local" value={when} max={inputDateTime(new Date())} onChange={(e) => setWhen(e.target.value)} /></label>
+      <label className="field"><span>{given ? 'Observación (opcional)' : 'Motivo por el que no se administró'}</span><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+      <label className="field"><span>Motivo de la corrección (queda en la bitácora)</span><input className="input" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Se anotó una hora equivocada" /></label>
     </Modal>
   )
 }
