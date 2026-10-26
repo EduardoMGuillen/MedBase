@@ -105,6 +105,7 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
   discharge: r.kind === 'discharge' ? j(r.data, undefined) : undefined,
   orders: r.kind === 'admission' || r.kind === 'evolution' ? j<{ orders?: string[] }>(r.data, {}).orders ?? [] : undefined,
   checklist: r.kind === 'admission' || r.kind === 'evolution' ? j<{ checklist?: boolean }>(r.data, {}).checklist || undefined : undefined,
+  indicationCount: r.kind === 'admission' || r.kind === 'evolution' ? j<{ indications?: number }>(r.data, {}).indications : undefined,
   procedure: r.kind === 'procedure' ? j(r.data, undefined) : undefined,
 })
 

@@ -7,7 +7,7 @@ import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, fullName, inputDateTime, ROUTES, shortStaff, time } from '../lib/format'
 import { ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
-import { doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, noteOrders, orderMark, pendingOrdersOf, slotState, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
+import { doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { MedAlertBanner } from './MedAlerts'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { useNow } from '../lib/hooks'
@@ -322,7 +322,7 @@ const SOAP: { key: 'subjective' | 'objective' | 'assessment' | 'plan'; letter: s
   { key: 'subjective', letter: 'S', label: 'Subjetivo', hint: 'Lo que refiere el paciente.' },
   { key: 'objective', letter: 'O', label: 'Objetivo', hint: 'Signos vitales, examen físico y resultados.' },
   { key: 'assessment', letter: 'A', label: 'Análisis', hint: 'Impresión diagnóstica y evolución.' },
-  { key: 'plan', letter: 'P', label: 'Plan', hint: 'Dieta, cuidados, estudios. Los medicamentos van abajo.' },
+  { key: 'plan', letter: 'P', label: 'Plan', hint: 'Los medicamentos se agregan aquí abajo; las indicaciones, a la derecha.' },
 ]
 
 /** "22/10 18:10": la fecha corta con la hora, como se escribe en la nota en papel. */
@@ -438,13 +438,13 @@ function ConvertModal({ file, p, onClose, onDone }: { file: File; p: Patient; on
 }
 
 /**
- * Nota de ingreso o de evolución como en papel: arriba quién escribe, con su rol, la fecha y la hora;
- * a la izquierda el SOAP y a la derecha las órdenes médicas numeradas. En las notas con checklist,
- * enfermería marca cada orden y queda su nombre y la hora junto a la orden.
+ * Nota de ingreso o de evolución como en papel: arriba quién escribe, con su rol, la fecha y la hora; a la
+ * izquierda el SOAP con los medicamentos que indica y a la derecha las indicaciones numeradas. En las notas
+ * con checklist, enfermería marca cada orden y queda su nombre y la hora junto a ella. En celular se apilan.
  */
 function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: () => void }) {
   const { staffById } = useStore()
-  const orders = noteOrders(n, file)
+  const { meds, indications } = splitOrders(n, file)
   const author = staffById(n.authorId)
   return (
     <article className="panel consult-entry">
@@ -455,18 +455,23 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
       <div className="panel__body note-2col">
         <div className="note">
           {SOAP.map((s) => <div key={s.key} className="note__sec"><h4>{s.letter}. {s.label}</h4><p>{n[s.key]}</p></div>)}
+          <div className="note__sec note__meds"><h4>Medicamentos</h4>
+            {meds.length ? <OrderChecklist n={n} orders={meds} file={file} reload={reload} pill /> : <p className="muted">Sin medicamentos indicados.</p>}</div>
         </div>
-        <aside className="note-orders" aria-label="Órdenes médicas">
-          <h4>Órdenes médicas</h4>
-          {orders.length ? <OrderChecklist n={n} orders={orders} file={file} reload={reload} /> : <p className="muted">Sin órdenes.</p>}
+        <aside className="note-orders" aria-label="Indicaciones">
+          <h4>Indicaciones</h4>
+          {indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : <p className="muted">Sin indicaciones.</p>}
         </aside>
       </div>
     </article>
   )
 }
 
-/** Órdenes numeradas; en las notas con checklist, cada una con su casilla y la marca de enfermería. */
-function OrderChecklist({ n, orders, file, reload }: { n: InpatientNote; orders: string[]; file: File; reload: () => void }) {
+/**
+ * Órdenes numeradas; en las notas con checklist, cada una con su casilla y la marca de enfermería. `index` es
+ * la posición de la orden en la nota (la que guarda la marca); el número que se ve es el de su columna.
+ */
+function OrderChecklist({ n, orders, file, reload, pill = false }: { n: InpatientNote; orders: { text: string; index: number }[]; file: File; reload: () => void; pill?: boolean }) {
   const { can, staffById, reviewOrder } = useStore()
   const [undo, setUndo] = useState<number | null>(null)
   const [reason, setReason] = useState('')
@@ -476,19 +481,19 @@ function OrderChecklist({ n, orders, file, reload }: { n: InpatientNote; orders:
   return (
     <>
       <ol className="order-check">
-        {orders.map((o, i) => {
+        {orders.map(({ text: o, index: i }, pos) => {
           const mark = n.checklist ? orderMark(file.marks, n.id, i) : undefined
           const checked = mark?.action === 'check'
           const who = mark && staffById(mark.by)
           return (
             <li key={i} className={checked ? 'is-checked' : n.checklist ? 'is-pending' : ''}>
-              <span className="orders__n">{i + 1}.</span>
-              <span className="order-check__text"><span className="order-check__order">{o}</span>
+              <span className="orders__n">{pos + 1}.</span>
+              <span className="order-check__text"><span className="order-check__order">{pill && <Pill size={13} className="orders__pill" aria-hidden="true" />}{o}</span>
                 {checked && <small className="order-check__mark">✓ {shortStaff(who?.name)} {time(mark.at)}</small>}
                 {mark?.action === 'uncheck' && <small className="order-check__mark order-check__mark--undo">Desmarcada por {shortStaff(who?.name)} {time(mark.at)}: {mark.reason}</small>}
               </span>
               {canMark && (
-                <input type="checkbox" className="order-check__box" checked={checked || saving === i} disabled={saving !== null} aria-label={`Orden ${i + 1} revisada`}
+                <input type="checkbox" className="order-check__box" checked={checked || saving === i} disabled={saving !== null} aria-label={`${pill ? 'Medicamento' : 'Indicación'} ${pos + 1} revisada`}
                   onChange={async (e) => {
                     if (!e.target.checked) { setUndo(i); setReason(''); return }
                     setSaving(i)
@@ -501,11 +506,11 @@ function OrderChecklist({ n, orders, file, reload }: { n: InpatientNote; orders:
         })}
       </ol>
       {undo !== null && (
-        <Modal title={`Desmarcar la orden ${undo + 1}`} onClose={() => setUndo(null)} footer={<>
+        <Modal title="Desmarcar la orden" onClose={() => setUndo(null)} footer={<>
           <button className="btn btn--ghost" onClick={() => setUndo(null)}>Cancelar</button>
           <button className="btn btn--danger" disabled={reason.trim().length < 5} onClick={async () => { if (await reviewOrder(n.id, undo, false, reason.trim())) { setUndo(null); reload() } }}>Desmarcar</button>
         </>}>
-          <p>«{orders[undo]}»</p>
+          <p>«{orders.find((o) => o.index === undo)?.text}»</p>
           <label className="field"><span>¿Por qué la desmarcas? Queda en la bitácora.</span><input className="input" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. La marqué por error" /></label>
         </Modal>
       )}
@@ -658,7 +663,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
         const kept = active.filter((m) => !ended(m.id)).map((m) => medLabel(m))
         const added = meds.map((m) => medLabel(m))
         const omitted = active.filter((m) => ended(m.id)).map((m) => `OMITIR ${m.drug}`)
-        const ok = await addInpatientNote(file.hospitalization.id, { kind, ...n, meds, stopMedIds: stop, orders: [...extra, ...kept, ...added, ...omitted] })
+        const ok = await addInpatientNote(file.hospitalization.id, { kind, ...n, meds, stopMedIds: stop, orders: [...extra, ...kept, ...added, ...omitted], indicationCount: extra.length })
         setBusy(false)
         if (ok) onSaved()
       }}>Guardar nota</button>
@@ -670,38 +675,15 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
           <label key={s.key} className="field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
             <textarea className="textarea" rows={4} value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} /></label>
         ))}
-      </div>
-      <div className="note-editor__orders">
-      <fieldset className="fs"><legend>Órdenes médicas</legend>
-        <p className="muted" style={{ fontSize: 13.5 }}>Una por línea: dieta, cuidados, estudios. Puedes pegar una lista completa. En la nota salen también los medicamentos vigentes.</p>
-        {extra.length > 0 && <ol className="orders">{extra.map((o, i) => (
-          <li key={i}><span className="orders__n">{i + 1}.</span>
-            <input className="input" value={o} aria-label={`Orden ${i + 1}`} onChange={(e) => setExtra(extra.map((x, j) => j === i ? e.target.value : x))} />
-            <span className="orders__tools"><button type="button" className="icon-btn" aria-label="Quitar orden" onClick={() => setExtra(extra.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
-        ))}</ol>}
-        <div className="order-add">
-          <textarea className="textarea textarea--sm" rows={2} value={extraText} aria-label="Nueva orden"
-            placeholder={`${extra.length + 1}. Escribe una orden y presiona Enter, o pega varias líneas`}
-            onChange={(e) => setExtraText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addExtra() } }}
-            onPaste={(e) => {
-              const text = e.clipboardData.getData('text')
-              if (!text.includes('\n')) return
-              e.preventDefault()
-              addLines(text)
-            }} />
-          <button className="btn btn--soft" disabled={!extraText.trim()} type="button" onClick={addExtra} aria-label="Agregar orden"><Plus size={16} /></button>
-        </div>
-      </fieldset>
       {active.length > 0 && (
         <fieldset className="fs"><legend>Medicamentos activos</legend>
           <p className="muted" style={{ fontSize: 13.5 }}>Marca OMITIR para suspender un medicamento; desde ahora la hoja de enfermería lo mostrará omitido.</p>
           <div className="rows">
             {active.map((m) => (
               <div key={m.id} className="omit-row">
-                <span className={stop.includes(m.id) ? 'struck' : ''}>{medLabel(m)}</span>
+                <span className={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id) ? 'struck' : ''}>{medLabel(m)}</span>
                 <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <button type="button" className="btn btn--ghost btn--sm" disabled={stop.includes(m.id)} onClick={() => { setReplacing(m.id); setAdding(false) }}>Cambiar</button>
+                  <button type="button" className="btn btn--ghost btn--sm" disabled={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id)} onClick={() => { setReplacing(m.id); setAdding(false) }}>Cambiar</button>
                   <label><input type="checkbox" checked={stop.includes(m.id)} onChange={(e) => { setStop(e.target.checked ? [...stop, m.id] : stop.filter((x) => x !== m.id)); if (e.target.checked) setReplacing(null) }} /> OMITIR</label>
                 </span>
               </div>
@@ -709,7 +691,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
           </div>
         </fieldset>
       )}
-      <fieldset className="fs"><legend>Indicar medicamentos</legend>
+      <fieldset className="fs note-editor__meds"><legend>Medicamentos de esta nota</legend>
+        <p className="muted" style={{ fontSize: 13.5 }}>Van en la nota y pasan solos a la hoja de medicamentos.</p>
         {meds.length > 0 && <ol className="orders">{meds.map((m, i) => (
           <li key={i}><span className="orders__n">{i + 1}.</span><span className="orders__text"><Pill size={13} className="orders__pill" />{medLabel(m)}{m.instructions ? `. ${m.instructions}` : ''}</span>
             <span className="orders__tools"><button className="icon-btn" aria-label="Quitar" onClick={() => setMeds(meds.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
@@ -718,6 +701,29 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
         {replacing ? <MedForm p={p} initial={medToNew(active.find((m) => m.id === replacing)!)} onAdd={(m) => { setMeds([...meds, { ...m, replacesId: replacing }]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
           : adding ? <MedForm p={p} onAdd={(m) => { setMeds([...meds, m]); setAdding(false) }} onCancel={() => setAdding(false)} />
           : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
+      </fieldset>
+      </div>
+      <div className="note-editor__orders">
+      <fieldset className="fs"><legend>Indicaciones</legend>
+        <p className="muted" style={{ fontSize: 13.5 }}>Lo que no es medicamento, una por línea: dieta, cuidados, signos vitales, estudios. Puedes pegar una lista completa.</p>
+        {extra.length > 0 && <ol className="orders">{extra.map((o, i) => (
+          <li key={i}><span className="orders__n">{i + 1}.</span>
+            <input className="input" value={o} aria-label={`Indicación ${i + 1}`} onChange={(e) => setExtra(extra.map((x, j) => j === i ? e.target.value : x))} />
+            <span className="orders__tools"><button type="button" className="icon-btn" aria-label="Quitar indicación" onClick={() => setExtra(extra.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
+        ))}</ol>}
+        <div className="order-add">
+          <textarea className="textarea textarea--sm" rows={2} value={extraText} aria-label="Nueva indicación"
+            placeholder={`${extra.length + 1}. Escribe una indicación y presiona Enter, o pega varias líneas`}
+            onChange={(e) => setExtraText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addExtra() } }}
+            onPaste={(e) => {
+              const text = e.clipboardData.getData('text')
+              if (!text.includes('\n')) return
+              e.preventDefault()
+              addLines(text)
+            }} />
+          <button className="btn btn--soft" disabled={!extraText.trim()} type="button" onClick={addExtra} aria-label="Agregar indicación"><Plus size={16} /></button>
+        </div>
       </fieldset>
       </div>
       </div>

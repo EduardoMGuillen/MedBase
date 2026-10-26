@@ -390,6 +390,8 @@ export interface InpatientNote {
   orders?: string[]
   /** Las órdenes de esta nota se revisan una por una (enfermería las marca). */
   checklist?: boolean
+  /** Cuántas de las órdenes son indicaciones (van primero); el resto son medicamentos. Notas anteriores: sin dato. */
+  indicationCount?: number
   procedure?: ProcedureData
 }
 

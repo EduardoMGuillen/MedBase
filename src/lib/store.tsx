@@ -181,7 +181,7 @@ function useStoreValue() {
     /** Corregir el ingreso (o asignarle la cama al que entró desde la consulta) sin rehacerlo. */
     updateAdmission: (id: string, b: Partial<Pick<Hospitalization, 'bedId' | 'admittedAt' | 'reason' | 'diagnoses' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'>>) =>
       run(() => api<Hospitalization>(`/inpatient/${id}`, { method: 'PATCH', body: b }), 'Ingreso actualizado'),
-    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[] }) =>
+    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number }) =>
       run(() => api<InpatientNote>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
     stopMed: (medId: string, reason: string) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/stop`, { body: { reason } }), 'Orden suspendida'),
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),

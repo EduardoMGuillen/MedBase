@@ -6,7 +6,7 @@ import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb, linkPendingAdmissions, SCHEMA } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { autoQuantity, formatDni, normalizeDni } from '../src/lib/format.js'
-import { durationDays, frequencyHours, treatmentDay } from '../src/lib/inpatient.js'
+import { durationDays, frequencyHours, splitOrders, treatmentDay } from '../src/lib/inpatient.js'
 
 let server: Server
 let sql: Sql
@@ -239,5 +239,25 @@ describe('M4 ingresos que quedaron pendientes de nota de ingreso', () => {
     assert.equal(file.meds.length, 1, 'el ondansetrón ya estaba activo: no se duplica')
     await linkPendingAdmissions(sql)
     assert.equal((await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds.length, 1)
+  })
+})
+
+describe('M2 nota de observación en dos columnas', () => {
+  test('el medicamento va con la nota y las indicaciones a la derecha; el checklist conserva su índice', async () => {
+    const { doc, apptId } = await openConsult('p4')
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Deshidratación', diagnoses: DX, orders: [], observe: true, items: [SALINA] })
+    const id = c.body.hospitalizationId
+    const r = await doc.post(`/api/inpatient/${id}/notes`, { kind: 'evolution', subjective: 'S', objective: 'O', assessment: 'A', plan: 'P', indicationCount: 2,
+      orders: ['Signos vitales cada hora.', 'Dieta líquida.', 'Solución salina 0.9 % 1000 ml IV dosis única'] })
+    assert.equal(r.status, 201)
+    assert.equal(r.body.indicationCount, 2)
+    const file = (await doc.get(`/api/inpatient/${id}`)).body
+    const split = splitOrders(file.notes.at(-1), file)
+    assert.deepEqual(split.indications.map((o) => o.index), [0, 1])
+    assert.deepEqual(split.meds.map((o) => o.text), ['Solución salina 0.9 % 1000 ml IV dosis única'])
+    assert.equal(split.meds[0].index, 2)
+    // Una nota anterior, sin el dato, se reparte reconociendo el medicamento por su nombre
+    const legacy = { ...file.notes.at(-1), indicationCount: undefined, orders: ['Solución salina 0.9 % 1000 ml IV', 'Reposo.', 'OMITIR Ondansetrón'] }
+    assert.deepEqual(splitOrders(legacy, file).indications.map((o) => o.text), ['Reposo.'])
   })
 })

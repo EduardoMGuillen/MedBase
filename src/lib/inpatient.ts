@@ -1,4 +1,5 @@
 import type { Dose, InpatientFile, InpatientMed, InpatientNote, OrderMark } from './types.js'
+import { normalize } from './patients.js'
 
 /**
  * Horario de medicamentos en hospitalización. Lo usan el servidor (para validar que la dosis que
@@ -172,4 +173,18 @@ export function noteOrders(n: InpatientNote, file: Pick<InpatientFile, 'meds'>):
     else lines.push(medLabel(m))
   }
   return lines
+}
+
+/**
+ * Órdenes de una nota como en papel: los medicamentos van con la nota (columna izquierda) y las indicaciones
+ * que no son medicamento, numeradas, a la derecha. Cada orden conserva su posición en la nota, que es la que
+ * usa el checklist de enfermería. Las notas nuevas guardan cuántas indicaciones van primero; en las
+ * anteriores se reconoce el medicamento por su nombre.
+ */
+export function splitOrders(n: InpatientNote, file: Pick<InpatientFile, 'meds'>) {
+  const all = noteOrders(n, file).map((text, index) => ({ text, index }))
+  if (n.indicationCount != null) return { meds: all.slice(n.indicationCount), indications: all.slice(0, n.indicationCount) }
+  const drugs = file.meds.map((m) => normalize(m.drug))
+  const isMed = (t: string) => t.startsWith('OMITIR ') || drugs.some((d) => normalize(t).startsWith(d))
+  return { meds: all.filter((o) => isMed(o.text)), indications: all.filter((o) => !isMed(o.text)) }
 }

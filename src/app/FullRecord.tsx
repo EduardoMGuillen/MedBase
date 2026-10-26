@@ -4,7 +4,7 @@ import { ChevronLeft, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
 import { date, fullName, recordNumber, shortStaff, time } from '../lib/format'
-import { medLabel, noteOrders, orderMark, stayPath } from '../lib/inpatient'
+import { medLabel, orderMark, splitOrders, stayPath } from '../lib/inpatient'
 import { AUTH_STATUS, authTitle } from '../lib/consent'
 import { ROLE_LABEL } from '../lib/permissions'
 import type { Consultation, InpatientFile, InpatientNote, Patient, Vitals } from '../lib/types'
@@ -200,18 +200,19 @@ function NoteBody({ n, file }: { n: InpatientNote; file: InpatientFile }) {
       {d.followUp && <div className="note__sec"><h4>Seguimiento</h4><p>{d.followUp}</p></div>}
     </div>
   }
-  const orders = noteOrders(n, file)
+  // Como en pantalla: los medicamentos con la nota y las indicaciones a la derecha
+  const { meds, indications } = splitOrders(n, file)
+  const list = (orders: { text: string; index: number }[], empty: string) => orders.length ? <ol className="order-check">{orders.map(({ text, index }, pos) => {
+    const mark = n.checklist ? orderMark(file.marks, n.id, index) : undefined
+    return <li key={index} className={mark?.action === 'check' ? 'is-checked' : ''}><span className="orders__n">{pos + 1}.</span>
+      <span className="order-check__text"><span className="order-check__order">{text}</span>
+        {mark?.action === 'check' && <small className="order-check__mark">✓ {shortStaff(staffById(mark.by)?.name)} {dm(mark.at)}</small>}</span></li>
+  })}</ol> : <p className="muted">{empty}</p>
   return (
     <div className="note-2col">
-      <div className="note">{SOAP.map(([k, label]) => <div key={k} className="note__sec"><h4>{label}</h4><p>{n[k]}</p></div>)}</div>
-      <aside className="note-orders"><h4>Órdenes médicas</h4>
-        {orders.length ? <ol className="order-check">{orders.map((o, i) => {
-          const mark = n.checklist ? orderMark(file.marks, n.id, i) : undefined
-          return <li key={i} className={mark?.action === 'check' ? 'is-checked' : ''}><span className="orders__n">{i + 1}.</span>
-            <span className="order-check__text"><span className="order-check__order">{o}</span>
-              {mark?.action === 'check' && <small className="order-check__mark">✓ {shortStaff(staffById(mark.by)?.name)} {dm(mark.at)}</small>}</span></li>
-        })}</ol> : <p className="muted">Sin órdenes.</p>}
-      </aside>
+      <div className="note">{SOAP.map(([k, label]) => <div key={k} className="note__sec"><h4>{label}</h4><p>{n[k]}</p></div>)}
+        <div className="note__sec"><h4>Medicamentos</h4>{list(meds, 'Sin medicamentos indicados.')}</div></div>
+      <aside className="note-orders"><h4>Indicaciones</h4>{list(indications, 'Sin indicaciones.')}</aside>
     </div>
   )
 }
