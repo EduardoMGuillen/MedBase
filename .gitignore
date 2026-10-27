@@ -24,7 +24,7 @@ dist-ssr
 *.sw?
 
 # Base de datos local
-data/
+/data/
 .env
 
 # Simulación local del runtime de Vercel

@@ -1,11 +1,8 @@
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { IcdHit } from './icd.js'
 
 /**
  * Búsqueda en el archivo oficial de la CIE-11 en español (OMS, MMS), sin internet ni credenciales. El archivo
- * (server/data/icd11-mms-es.json) se genera con scripts/build-icd11.ts y trae los códigos y títulos tal cual
+ * (server/data/icd11-mms-es.js) se genera con scripts/build-icd11.ts y trae los códigos y títulos tal cual
  * los publica la OMS (licencia CC BY-ND 3.0 IGO).
  */
 
@@ -15,16 +12,10 @@ const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCa
 
 let index: { release: string; entries: Entry[] } | null = null
 
-function load() {
+async function load() {
   if (index) return index
-  // En Vercel el archivo va con la función (vercel.json, includeFiles) bajo el directorio de trabajo; en local,
-  // también está junto a este módulo. Empaquetado, import.meta.url puede no servir: se intenta sin fallar.
-  const paths = [resolve(process.cwd(), 'server/data/icd11-mms-es.json')]
-  try { paths.push(resolve(dirname(fileURLToPath(import.meta.url)), 'data/icd11-mms-es.json')) } catch { /* empaquetado */ }
-  let raw = ''
-  for (const p of paths) { try { raw = readFileSync(p, 'utf8'); break } catch { /* siguiente */ } }
-  if (!raw) throw new Error(`No se encontró el archivo de la CIE-11 (${paths.join(', ')}).`)
-  const data = JSON.parse(raw) as { release: string; rows: [string, string, string, string, number][] }
+  // Se importa como módulo (y sólo la primera vez que se busca): así Vercel lo incluye con la función
+  const data = (await import('./data/icd11-mms-es.js')).default
   index = {
     release: data.release,
     entries: data.rows.map(([code, title, uri, chapter, leaf]) => {
@@ -35,14 +26,14 @@ function load() {
   return index
 }
 
-export const localRelease = () => load().release
+export const localRelease = async () => (await load()).release
 
 /**
  * Busca por código ("CA02", "ca02.z") o por palabras ("faringitis aguda", "hiperten"). Cada palabra escrita tiene
  * que estar al inicio de alguna palabra del título. Primero lo que empieza igual, después los títulos más cortos.
  */
-export function searchLocal(q: string, limit = 15): IcdHit[] {
-  const { entries } = load()
+export async function searchLocal(q: string, limit = 15): Promise<IcdHit[]> {
+  const { entries } = await load()
   const s = fold(q.trim())
   if (s.length < 2) return []
   const codeLike = /^[0-9a-z]{2}[0-9a-z]{0,2}(\.[0-9a-z]{0,2})?$/.test(s) && /\d/.test(s)

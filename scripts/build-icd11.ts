@@ -1,5 +1,5 @@
 /**
- * Genera server/data/icd11-mms-es.json a partir del archivo oficial de la OMS "SimpleTabulation-ICD-11-MMS-es"
+ * Genera server/data/icd11-mms-es.js a partir del archivo oficial de la OMS "SimpleTabulation-ICD-11-MMS-es"
  * (https://icdcdn.who.int/static/releasefiles/<edición>/SimpleTabulation-ICD-11-MMS-es.zip).
  *
  * Sólo se toman las categorías (las que tienen código) con su código, su título en español, su URI (de la Fundación o, en
@@ -25,8 +25,9 @@ for (const line of lines.slice(1)) {
   if (f[cKind] !== 'category' || !f[cCode]) continue
   rows.push([f[cCode], unquote(f[cTitle]).replace(/^(-\s*)+/, '').trim(), (f[cUri] || f[cLin]).replace('http://id.who.int/icd/', ''), f[cChapter], f[cLeaf] === 'True' ? 1 : 0])
 }
-writeFileSync('server/data/icd11-mms-es.json', JSON.stringify({
+// Se guarda como módulo JavaScript para que el servidor lo cargue con import(): así Vercel lo empaqueta con la función
+writeFileSync('server/data/icd11-mms-es.js', `// Generado por scripts/build-icd11.ts a partir del archivo oficial de la OMS. No editar a mano.\nexport default ${JSON.stringify({
   source: `OMS, CIE-11 para estadísticas de mortalidad y morbilidad (MMS), edición ${release}, en español. Licencia CC BY-ND 3.0 IGO. https://icd.who.int`,
   release, fields: ['code', 'title', 'uri (sin http://id.who.int/icd/)', 'chapter', 'isLeaf'], rows,
-}))
+})}\n`)
 console.log(`${rows.length} categorías de la edición ${release}`)

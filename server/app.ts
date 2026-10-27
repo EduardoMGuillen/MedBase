@@ -661,7 +661,7 @@ export function createApp(opts: AppOptions) {
       try { return res.json({ source: 'api', release: icd.release, results: await icd.search(q) }) } catch { /* se busca en el archivo */ }
     }
     try {
-      res.json({ source: 'file', release: localRelease(), results: searchLocal(q) })
+      res.json({ source: 'file', release: await localRelease(), results: await searchLocal(q) })
     } catch (e) {
       // Sin el archivo no se rompe la consulta: se avisa y se puede escribir el diagnóstico sin código
       console.error(e)

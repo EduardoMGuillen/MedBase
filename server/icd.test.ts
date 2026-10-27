@@ -69,14 +69,14 @@ describe('K1 CIE-11 de la OMS', () => {
 })
 
 describe('CIE-11 sin conexión: archivo oficial de la OMS', () => {
-  test('encuentra por palabras sin tildes y por código, con los títulos oficiales en español', () => {
-    assert.equal(searchLocal('diabetes tipo 2')[0].code, '5A11')
-    assert.equal(searchLocal('hipertension esencial')[0].label, 'Hipertensión esencial')
-    assert.deepEqual(searchLocal('ca02', 3).map((h) => h.code), ['CA02', 'CA02.0', 'CA02.1'])
-    const z = searchLocal('1A40.Z')[0]
+  test('encuentra por palabras sin tildes y por código, con los títulos oficiales en español', async () => {
+    assert.equal((await searchLocal('diabetes tipo 2'))[0].code, '5A11')
+    assert.equal((await searchLocal('hipertension esencial'))[0].label, 'Hipertensión esencial')
+    assert.deepEqual((await searchLocal('ca02', 3)).map((h) => h.code), ['CA02', 'CA02.0', 'CA02.1'])
+    const z = (await searchLocal('1A40.Z'))[0]
     assert.equal(z.label, 'Gastroenteritis o colitis infecciosa sin especificación del agente infeccioso')
     assert.match(z.uri!, /^http:\/\/id\.who\.int\/icd\//)
-    assert.deepEqual(searchLocal('zzzzqx'), [])
+    assert.deepEqual(await searchLocal('zzzzqx'), [])
   })
 })
 

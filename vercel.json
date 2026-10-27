@@ -5,7 +5,7 @@
   "outputDirectory": "dist",
   "regions": ["cle1"],
   "functions": {
-    "api/index.ts": { "maxDuration": 60, "includeFiles": "server/data/**" }
+    "api/index.ts": { "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" },
