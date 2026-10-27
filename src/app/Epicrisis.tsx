@@ -6,6 +6,7 @@ import { api } from '../lib/api'
 import { Loading, Modal } from '../components/ui'
 import { date, dxCode, time, whatsappUrl } from '../lib/format'
 import { shortDate } from '../lib/consent'
+import { currentEpicrisis } from '../lib/inpatient'
 import type { Epicrisis, EpicrisisData, Hospitalization, InpatientFile } from '../lib/types'
 import { ClinicLogo } from './Prescriptions'
 
@@ -15,8 +16,6 @@ const STATUS: Record<Epicrisis['status'], { label: string; tone: string }> = {
 const dm = (iso: string) => `${shortDate(iso)} ${time(iso)}`
 type Hideable = EpicrisisData['hidden'][number]
 
-/** La epicrisis vigente de la estancia (borrador o emitida), si hay. */
-export const currentEpicrisis = (file: Pick<InpatientFile, 'epicrises'>) => [...(file.epicrises ?? [])].reverse().find((e) => e.status !== 'voided')
 
 /**
  * Acceso a la epicrisis desde la nota de egreso y desde Anexos: abre la vigente o, si la estancia ya egresó y no

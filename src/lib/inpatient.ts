@@ -197,3 +197,6 @@ export function splitOrders(n: InpatientNote, file: Pick<InpatientFile, 'meds'>)
   const isMed = (t: string) => t.startsWith('OMITIR ') || drugs.some((d) => normalize(t).startsWith(d))
   return { meds: all.filter((o) => isMed(o.text)), indications: all.filter((o) => !isMed(o.text)) }
 }
+
+/** La epicrisis vigente de la estancia (borrador o emitida), si hay. */
+export const currentEpicrisis = (file: Pick<InpatientFile, 'epicrises'>) => [...(file.epicrises ?? [])].reverse().find((e) => e.status !== 'voided')
