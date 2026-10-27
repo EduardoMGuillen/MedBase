@@ -24,6 +24,7 @@ import { pendingOrders, registerInpatient } from './routes/inpatient.js'
 import { pullConsultationOrders } from './medOrders.js'
 import { ensureHospitalAuthorization } from './authorizations.js'
 import { createIcdClient, icdConfigFromEnv, type IcdClient } from './icd.js'
+import { localRelease, searchLocal } from './icdLocal.js'
 import { diagnosisInput } from './http.js'
 import { registerDrugs } from './routes/drugs.js'
 import { registerCertificates } from './routes/certificates.js'
@@ -650,18 +651,16 @@ export function createApp(opts: AppOptions) {
   // ---------- Diagnósticos CIE-11 ----------
   const icd = opts.icd ?? createIcdClient(icdConfigFromEnv())
   /**
-   * Busca en la CIE-11 de la OMS. Si la búsqueda no está configurada o la OMS no responde, no falla: devuelve
-   * el aviso y el buscador ofrece los diagnósticos que la clínica ya usó o escribirlo sin código.
+   * Busca en la CIE-11. Con la API de la OMS configurada se consulta en línea; si no lo está, o si la OMS no
+   * responde, se busca en el archivo oficial en español que trae Clinara, así que la búsqueda siempre funciona.
    */
   app.get('/api/icd/search', auth, need('chart.view', 'consult.write'), async (req, res) => {
     const q = String(req.query.q ?? '').trim()
-    if (q.length < 3) return res.json({ configured: icd.configured(), release: icd.release, results: [] })
-    if (!icd.configured()) return res.json({ configured: false, release: icd.release, results: [], error: 'La búsqueda en la CIE-11 de la OMS no está configurada.' })
-    try {
-      res.json({ configured: true, release: icd.release, results: await icd.search(q) })
-    } catch (e) {
-      res.json({ configured: true, release: icd.release, results: [], error: (e as Error).message })
+    if (q.length < 2) return res.json({ source: 'file', release: localRelease(), results: [] })
+    if (icd.configured()) {
+      try { return res.json({ source: 'api', release: icd.release, results: await icd.search(q) }) } catch { /* se busca en el archivo */ }
     }
+    res.json({ source: 'file', release: localRelease(), results: searchLocal(q) })
   })
 
   /** Diagnósticos CIE-11 que la clínica ya usó, los más frecuentes primero: sirven aun sin conexión con la OMS. */

@@ -15,24 +15,31 @@ Rama `perfil-consultorio`. El plan está en `PLAN_CIE11.md`. Al cerrar:
 | **K3** Diagnósticos de antes y reportes | Hecho | `src/lib/format.ts` (`dxCode`), `PatientChart.tsx`, `InpatientFile.tsx`, `FullRecord.tsx`, `server/routes/reports.ts`, `Reports.tsx` | Abre una consulta vieja de la demo: dice «(E11.9, CIE-10)». En Reportes, cada clasificación se cuenta por separado. |
 | **K4** Pruebas | Hecho | `server/icd.test.ts` | `npm test`. |
 
-## Lo que falta para que busque en la OMS
+## La búsqueda funciona sin credenciales
 
-**Las credenciales:** hoy no hay ninguna configurada.
-- Con la API en la nube de la OMS, el buscador ya muestra sus resultados.
-- Sin conexión, el buscador avisa «La búsqueda en la CIE-11 de la OMS no está configurada». Ofrece los diagnósticos CIE-11 que la clínica ya usó y deja escribir el diagnóstico sin código.
+Clinara trae el archivo oficial de la OMS en español, `SimpleTabulation-ICD-11-MMS-es.zip` de la edición 2026-01. Está enlazado desde el buscador de la OMS y tiene 35 664 categorías con código.
+- Se convierte con `scripts/build-icd11.ts` en `server/data/icd11-mms-es.json`: 2,4 MB, unos 630 kB comprimido.
+- Los códigos y los títulos no se modifican (licencia CC BY-ND 3.0 IGO); sólo se quitan los guiones que marcan el nivel de la jerarquía.
+- La búsqueda se hace en el servidor:
+  - por palabras, sin importar las tildes, o por código;
+  - tarda unos 5 a 15 ms, y unos 140 ms la primera vez que carga el archivo.
 
-Hay dos formas de activarla:
-1. **API en la nube de la OMS:** crear la cuenta gratuita en https://icd.who.int/icdapi. Después, poner el client ID y el secreto en `ICD_CLIENT_ID` e `ICD_CLIENT_SECRET` en Vercel y volver a desplegar.
-2. **Copia local de la API:** instalar la que distribuye la OMS (contenedor Docker o servicio de Linux) y poner su dirección en `ICD_API_URL`. No pide credenciales ni internet.
+**La API de la OMS es opcional.** Con `ICD_CLIENT_ID` e `ICD_CLIENT_SECRET` (o `ICD_API_URL`), la búsqueda se hace en línea y, si falla, se vuelve al archivo.
+
+**Códigos verificados contra el archivo oficial:**
+- BA00 Hipertensión esencial
+- 5A11 Diabetes mellitus tipo 2
+- CA00 Nasofaringitis aguda
+- CA02 Faringitis aguda
+- 1A40.Z Gastroenteritis o colitis infecciosa sin especificación del agente infeccioso. El título de la demo estaba un poco distinto y lo corregí.
 
 ## Decisiones (para confirmar)
 
 1. **Diagnósticos guardados con CIE-10:** no se convierten ni se borran; se muestran marcados «CIE-10». Convertirlos exige una tabla de equivalencias validada, y además una consulta firmada no se modifica.
 2. **Datos históricos de la demo de Santa Brígida:** siguen en CIE-10 por la misma razón. El consultorio demo usa CIE-11.
-3. **Sin lista CIE-11 propia:** Clinara no trae una lista de códigos sin conexión, para no escribir códigos de memoria. Sin la OMS, se usan los que la clínica ya registró.
+3. **Sin conexión, el archivo oficial:** Clinara no trae ninguna lista escrita a mano. Sin la API, usa el archivo de la OMS sin modificar.
 4. **Edición por defecto:** 2026-01, la más reciente con español según la OMS. Se cambia con `ICD_RELEASE`.
 
 ## Lo que hay que validar
 
-- **Códigos del consultorio demo:** BA00, 5A11 y 1A40.Z se verificaron sólo en sitios de terceros. Hay que comprobarlos, con su texto en español, en el buscador oficial (icd.who.int).
-- **Licencia:** los términos de uso de la API y la licencia de la CIE-11 se aceptan al registrarse; no los revisé.
+- **Licencia:** la CIE-11 tiene licencia CC BY-ND 3.0 IGO: se puede usar, también comercialmente, citando a la OMS y sin adaptar los códigos. Los términos de uso de la API (si se usa) se aceptan al registrarse. Conviene que el asesor legal lo confirme; las dudas se consultan a licensing@who.int.

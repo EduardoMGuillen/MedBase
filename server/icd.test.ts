@@ -6,6 +6,7 @@ import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { createIcdClient, icdConfigFromEnv, icdConfigured, plainTitle, toHits, type IcdConfig } from './icd.js'
+import { searchLocal } from './icdLocal.js'
 
 /** Respuesta de búsqueda como la de la OMS (sólo los campos que usamos). */
 const WHO_SEARCH = {
@@ -67,6 +68,18 @@ describe('K1 CIE-11 de la OMS', () => {
   })
 })
 
+describe('CIE-11 sin conexión: archivo oficial de la OMS', () => {
+  test('encuentra por palabras sin tildes y por código, con los títulos oficiales en español', () => {
+    assert.equal(searchLocal('diabetes tipo 2')[0].code, '5A11')
+    assert.equal(searchLocal('hipertension esencial')[0].label, 'Hipertensión esencial')
+    assert.deepEqual(searchLocal('ca02', 3).map((h) => h.code), ['CA02', 'CA02.0', 'CA02.1'])
+    const z = searchLocal('1A40.Z')[0]
+    assert.equal(z.label, 'Gastroenteritis o colitis infecciosa sin especificación del agente infeccioso')
+    assert.match(z.uri!, /^http:\/\/id\.who\.int\/icd\//)
+    assert.deepEqual(searchLocal('zzzzqx'), [])
+  })
+})
+
 describe('K1 rutas de la CIE-11', () => {
   let server: Server
   let sql: Sql
@@ -90,17 +103,21 @@ describe('K1 rutas de la CIE-11', () => {
     }
   }
 
-  test('busca para el médico; recepción no; sin conexión avisa sin fallar', async () => {
+  test('busca en la API de la OMS si está configurada; si no, o si falla, en el archivo oficial', async () => {
     const doc = await as('lherrera@demo.clinara')
     const r = await doc('GET', '/api/icd/search?q=faringitis')
     assert.equal(r.status, 200)
+    assert.equal(r.body.source, 'api')
     assert.deepEqual(r.body.results.map((x: any) => x.code), ['CA02'])
-    assert.equal((await doc('GET', '/api/icd/search?q=error')).body.error, 'La OMS no respondió.')
+    const failed = await doc('GET', '/api/icd/search?q=error faringitis')
+    assert.equal(failed.body.source, 'file')
     assert.equal((await (await as('smejia@demo.clinara'))('GET', '/api/icd/search?q=faringitis')).status, 403)
     online = false
-    const off = await doc('GET', '/api/icd/search?q=faringitis')
-    assert.equal(off.body.configured, false)
-    assert.match(off.body.error, /no está configurada/)
+    const off = await doc('GET', '/api/icd/search?q=faringitis aguda')
+    assert.equal(off.body.source, 'file')
+    assert.equal(off.body.release, '2026-01')
+    assert.equal(off.body.results[0].code, 'CA02')
+    assert.equal(off.body.results[0].label, 'Faringitis aguda')
     online = true
   })
   test('el diagnóstico CIE-11 se guarda con su clasificación y queda en los frecuentes de la clínica', async () => {

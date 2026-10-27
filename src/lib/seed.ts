@@ -384,7 +384,7 @@ export function seedOffice() {
       exam: 'PA 128/82. Sin edemas.', orders: ['Continuar con la dieta baja en sal.', 'Cita de control en 1 mes.'],
       items: [{ drug: 'Losartán', presentation: 'Tableta 50 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 24 horas', duration: '30 días', quantity: '30 tabletas' }] },
     // Ambulatoria con un medicamento que se aplica en el consultorio: queda en observación
-    { id: 'k-r5-1', patientId: 'r5', appt: gea, reason: 'Vómitos y diarrea desde anoche', dx: [{ code: '1A40.Z', label: 'Gastroenteritis o colitis infecciosa, sin especificar', system: 'icd11' as const }],
+    { id: 'k-r5-1', patientId: 'r5', appt: gea, reason: 'Vómitos y diarrea desde anoche', dx: [{ code: '1A40.Z', label: 'Gastroenteritis o colitis infecciosa sin especificación del agente infeccioso', system: 'icd11' as const }],
       exam: 'Mucosas semihúmedas. Abdomen blando, ruidos aumentados.', orders: ['Suero oral a libre demanda.', 'Dieta blanda.'], observe: true,
       items: [{ drug: 'Dimenhidrinato', presentation: 'Ampolla 50 mg/ml', dose: '50 mg', route: 'Intramuscular', frequency: 'Dosis única', duration: '', applyInClinic: true }] },
   ]

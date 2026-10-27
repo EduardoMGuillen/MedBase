@@ -81,12 +81,13 @@ Recorrido: entra como `alopez@demo.clinara`, atiende a Daniela Ordóñez (ya tie
 
 ## Diagnósticos CIE-11
 
-Los diagnósticos se buscan en la **CIE-11 de la OMS**, en español (edición 2026-01 por defecto). La conexión la hace el servidor:
+Los diagnósticos se buscan en la **CIE-11 de la OMS en español** (MMS, edición 2026-01) mientras se escribe, por palabras (sin importar las tildes) o por código.
 
-1. Crea una cuenta gratuita en https://icd.who.int/icdapi y copia el *client ID* y el *client secret*.
-2. Ponlos en `ICD_CLIENT_ID` e `ICD_CLIENT_SECRET` (en `.env` o en las variables de Vercel) y vuelve a desplegar.
+- **Sin configurar nada:** Clinara trae el archivo oficial de la OMS (`server/data/icd11-mms-es.json`, 35 664 categorías), generado con `scripts/build-icd11.ts` a partir de `SimpleTabulation-ICD-11-MMS-es.zip`. Los códigos y los títulos están tal cual los publica la OMS. Licencia CC BY-ND 3.0 IGO; fuente: https://icd.who.int.
+- **Con la API de la OMS (opcional):** crea la cuenta gratuita en https://icd.who.int/icdapi y pon `ICD_CLIENT_ID` e `ICD_CLIENT_SECRET` en `.env` o en Vercel. La búsqueda se hace entonces en línea y, si la OMS no responde, vuelve al archivo. También se puede usar la copia local de la API con `ICD_API_URL`.
+- **Para actualizar la edición:** descarga el archivo nuevo de la OMS y ejecuta `npx tsx scripts/build-icd11.ts <archivo .txt> <edición>`.
 
-También se puede instalar la copia local de la API que distribuye la OMS y poner su dirección en `ICD_API_URL`; así no hacen falta credenciales ni internet. Sin conexión, el buscador ofrece los diagnósticos CIE-11 que la clínica ya usó y permite escribir uno sin código. Los diagnósticos registrados antes con CIE-10 se conservan y se muestran marcados «CIE-10».
+Los diagnósticos registrados antes con CIE-10 se conservan y se muestran marcados «CIE-10».
 
 ## Módulos
 

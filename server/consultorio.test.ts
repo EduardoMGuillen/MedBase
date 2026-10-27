@@ -186,7 +186,7 @@ describe('C7 observación opcional en el consultorio', () => {
       await o.doc.post(`/api/appointments/${w.body.id}/status`, { status: 'in_consult' })
       return String(w.body.id)
     }
-    const dx = [{ code: '1A40.Z', label: 'Gastroenteritis o colitis infecciosa, sin especificar', system: 'icd11' }]
+    const dx = [{ code: '1A40.Z', label: 'Gastroenteritis o colitis infecciosa sin especificación del agente infeccioso', system: 'icd11' }]
     const shot = { drug: 'Dimenhidrinato', presentation: 'Ampolla 50 mg', dose: '50 mg', route: 'Intramuscular', frequency: 'Dosis única', duration: '', applyInClinic: true }
     const c = await o.doc.post('/api/consultations', { appointmentId: await visit(), reason: 'Vómitos', diagnoses: dx, orders: [], items: [shot] })
     assert.equal(c.status, 201, JSON.stringify(c.body))

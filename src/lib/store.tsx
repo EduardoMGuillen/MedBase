@@ -146,7 +146,7 @@ function useStoreValue() {
   const fetchPayment = useCallback((id: string) => api<{ payment: Payment; patient: Patient }>(`/payments/${id}`), [])
   const fetchReport = useCallback((from: string, to: string) => api<Report>(`/reports?from=${from}&to=${to}`), [])
   const searchIcd = useCallback((q: string) =>
-    api<{ configured: boolean; release: string; results: Diagnosis[]; error?: string }>(`/icd/search?q=${encodeURIComponent(q)}`), [])
+    api<{ source: 'api' | 'file'; release: string; results: Diagnosis[] }>(`/icd/search?q=${encodeURIComponent(q)}`), [])
   const fetchIcdFrequent = useCallback(() => api<(Diagnosis & { code: string; label: string })[]>('/icd/frequent'), [])
   const fetchAuthorization = useCallback((id: string) => api<Authorization>(`/authorizations/${id}`), [])
   const fetchCertificate = useCallback((id: string) => api<Certificate>(`/certificates/${id}`), [])
