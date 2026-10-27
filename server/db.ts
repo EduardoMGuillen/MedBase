@@ -8,11 +8,12 @@ import type { Appointment, Patient, Payment, Schedule } from '../src/lib/types.j
 import type { Row, Sql } from './sql.js'
 import { backfillMissingOrders, syncStayOrders } from './medOrders.js'
 import { SCENARIO_PATIENT_IDS, insertClinicScenarios, insertOfficeScenarios } from './demoScenarios.js'
+import { ensureHospitalAuthorization } from './authorizations.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '25'
+const SCHEMA_VERSION = '26'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -507,6 +508,12 @@ ALTER TABLE clinics DROP CONSTRAINT IF EXISTS clinics_kind_check;
 ALTER TABLE clinics ADD CONSTRAINT clinics_kind_check CHECK (kind IN ('clinic','office'));
 ALTER TABLE staff DROP CONSTRAINT IF EXISTS staff_role_check;
 ALTER TABLE staff ADD CONSTRAINT staff_role_check CHECK (role IN ('superadmin','admin','doctor','nurse','reception','assistant'));
+
+-- v26: ronda 2 de Emil (A3). La autorización de hospitalización no existe en observación: las que quedaron como
+-- "No aplica" se archivan. No se borran; dejan de mostrarse y de contarse en Anexos.
+ALTER TABLE authorizations
+  ADD COLUMN IF NOT EXISTS archived_at TEXT,
+  ADD COLUMN IF NOT EXISTS archived_reason TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -544,6 +551,7 @@ export function ensureDb(sql: Sql) {
         await fixOfficeDemoTimes(q)
         await backfillOrders(q)
         await addDemoScenarios(q)
+        await migrateObservationAuthorizations(q)
       }
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
@@ -852,6 +860,23 @@ async function addDemoOffice(q: Sql) {
   if (await q.one(`SELECT 1 FROM clinics WHERE id = ?`, [OFFICE_CLINIC])) return
   if (await q.one(`SELECT 1 FROM staff WHERE lower(email) IN ('alopez@demo.clinara', 'asistente@demo.clinara')`)) return
   await insertOffice(q)
+}
+
+/**
+ * v26 (A3): las autorizaciones "No aplica (observación)" se archivan (no se borran). Una estancia que pasó de
+ * observación a hospitalización sin autorización de hospitalización recibe una pendiente de firma, como un ingreso
+ * directo. Sólo las estancias abiertas: en una ya egresada no se puede firmar.
+ */
+export async function migrateObservationAuthorizations(q: Sql) {
+  await q.run(`UPDATE authorizations SET archived_at = ?, archived_reason = 'La observación no lleva autorización de hospitalización (archivada en la v26).'
+    WHERE status = 'not_applicable' AND archived_at IS NULL`, [new Date().toISOString()])
+  const stays = await q.query(`SELECT h.* FROM hospitalizations h WHERE h.status = 'active' AND h.kind = 'hospital' AND h.observation_at IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM authorizations a WHERE a.hospitalization_id = h.id AND a.template = 'hospital' AND a.archived_at IS NULL)`)
+  for (const h of stays) {
+    await ensureHospitalAuthorization(q, h, { id: String(h.converted_by ?? h.admitted_by), role: 'doctor' })
+    await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?, ?, ?, ?)',
+      [new Date().toISOString(), 'sistema', 'v26: se generó la autorización de hospitalización pendiente de una estancia que vino de observación', String(h.clinic_id)])
+  }
 }
 
 /**
