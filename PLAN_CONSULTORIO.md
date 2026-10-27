@@ -150,9 +150,9 @@ Cada punto trae lo que se hace, en qué archivos y cómo se acepta.
 | Convertir en clínica | Sí | No | No aplica |
 | Crear consultorios | Administración de Clinara | — | Igual que hoy |
 
-## 6. Ambigüedades y valor por defecto propuesto
+## 6. Ambigüedades y valor por defecto
 
-Hay que confirmarlas antes de empezar. Las cuatro primeras cambian el alcance.
+Emil confirmó el 26/10/2026 las tres que cambian el alcance: 1 (lo crea Clinara), 2 (dos cuentas) y 6 (observación activada). Las demás usan el valor por defecto y se anotan en el reporte.
 
 1. **Alta de nuevos médicos.**
    - Por defecto, el consultorio lo crea Administración de Clinara (como hoy las clínicas).
