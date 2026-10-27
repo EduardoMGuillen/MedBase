@@ -17,12 +17,13 @@ let index: { release: string; entries: Entry[] } | null = null
 
 function load() {
   if (index) return index
-  // En Vercel el archivo va junto a la función (vercel.json, includeFiles); en local, junto a este módulo
-  const here = dirname(fileURLToPath(import.meta.url))
-  const paths = [resolve(here, 'data/icd11-mms-es.json'), resolve(process.cwd(), 'server/data/icd11-mms-es.json')]
+  // En Vercel el archivo va con la función (vercel.json, includeFiles) bajo el directorio de trabajo; en local,
+  // también está junto a este módulo. Empaquetado, import.meta.url puede no servir: se intenta sin fallar.
+  const paths = [resolve(process.cwd(), 'server/data/icd11-mms-es.json')]
+  try { paths.push(resolve(dirname(fileURLToPath(import.meta.url)), 'data/icd11-mms-es.json')) } catch { /* empaquetado */ }
   let raw = ''
   for (const p of paths) { try { raw = readFileSync(p, 'utf8'); break } catch { /* siguiente */ } }
-  if (!raw) throw new Error('No se encontró el archivo de la CIE-11.')
+  if (!raw) throw new Error(`No se encontró el archivo de la CIE-11 (${paths.join(', ')}).`)
   const data = JSON.parse(raw) as { release: string; rows: [string, string, string, string, number][] }
   index = {
     release: data.release,

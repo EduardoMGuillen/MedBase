@@ -25,7 +25,7 @@ export function DiagnosisPicker({ value, onChange, label, placeholder }: { value
     let alive = true
     const t = setTimeout(() => {
       setLoading(true)
-      searchIcd(s).then((r) => { if (alive) setResults({ q: s, hits: r.results.map((x) => ({ ...x, system: 'icd11' as const })), release: r.release }) })
+      searchIcd(s).then((r) => { if (alive) setResults({ q: s, hits: r.results.map((x) => ({ ...x, system: 'icd11' as const })), release: r.release, error: r.error }) })
         .catch((e: Error) => { if (alive) setResults({ q: s, hits: [], error: e.message }) })
         .finally(() => { if (alive) setLoading(false) })
     }, 350)

@@ -656,11 +656,17 @@ export function createApp(opts: AppOptions) {
    */
   app.get('/api/icd/search', auth, need('chart.view', 'consult.write'), async (req, res) => {
     const q = String(req.query.q ?? '').trim()
-    if (q.length < 2) return res.json({ source: 'file', release: localRelease(), results: [] })
+    if (q.length < 2) return res.json({ source: 'file', release: '', results: [] })
     if (icd.configured()) {
       try { return res.json({ source: 'api', release: icd.release, results: await icd.search(q) }) } catch { /* se busca en el archivo */ }
     }
-    res.json({ source: 'file', release: localRelease(), results: searchLocal(q) })
+    try {
+      res.json({ source: 'file', release: localRelease(), results: searchLocal(q) })
+    } catch (e) {
+      // Sin el archivo no se rompe la consulta: se avisa y se puede escribir el diagnóstico sin código
+      console.error(e)
+      res.json({ source: 'file', release: '', results: [], error: 'No se pudo buscar en la CIE-11 en este momento. Escribe el diagnóstico sin código.' })
+    }
   })
 
   /** Diagnósticos CIE-11 que la clínica ya usó, los más frecuentes primero: sirven aun sin conexión con la OMS. */
