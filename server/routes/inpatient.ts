@@ -540,10 +540,12 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       companion: z.object({ name: z.string().trim().min(3, 'Escribe el nombre del acompañante.').max(120), phone: z.string().trim().min(7, 'Escribe el teléfono del acompañante.').max(30), relation: text(40) }).optional(),
     }), req.body)
     if (b.template === 'surgical' && (!b.procedure || b.procedure.length < 3)) fail(400, 'Escribe el procedimiento quirúrgico (uno o varios: "X o Y").')
-    if (b.template === 'surgical' && (!b.diagnosis || b.diagnosis.length < 3)) fail(400, 'Escribe el diagnóstico o motivo de la cirugía.')
     const user = userOf(req)
     const cid = clinicOf(req)
     const h = await activeHosp(cid, String(req.params.id))
+    // El diagnóstico lo pone el sistema (los diagnósticos de la estancia); sólo se escribe si no tiene ninguno
+    const known = (JSON.parse(String(h.diagnoses ?? '[]')) as { label: string }[]).map((d) => d.label).join('; ')
+    if (b.template === 'surgical' && !b.diagnosis && !known) fail(400, 'Escribe el diagnóstico: el expediente no tiene ninguno.')
     const name = await patientName(String(h.patient_id))
     if (b.template === 'hospital') {
       // El acompañante también queda en la hoja de hospitalización
@@ -559,9 +561,11 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       })
       return res.status(result!.created ? 201 : 200).json(result!.authorization)
     }
+    // Ronda 3 (P5): sólo procedimiento y diagnóstico; el resto del documento es un texto genérico fijo y lo que se
+    // firma a mano (representante, testigo) son líneas en el papel. Las emitidas antes conservan su contenido.
     const base = await authorizationBase(sql, h, user)
-    if (base.patient.minor && !b.representative) fail(400, 'El paciente es menor de edad: escribe los datos de su representante legal.')
-    const data = { ...b, template: undefined, companion: undefined, ...base, admission: undefined }
+    const companion = h.companion_name ? { name: String(h.companion_name), phone: h.companion_phone ? String(h.companion_phone) : undefined, relation: h.companion_relation ? String(h.companion_relation) : undefined } : undefined
+    const data = { procedure: b.procedure, diagnosis: b.diagnosis || known, generic: true, companion, ...base, admission: undefined }
     const id = randomUUID()
     await sql.run(`INSERT INTO authorizations (id, clinic_id, hospitalization_id, patient_id, template, data, created_by, created_at) VALUES (?,?,?,?,'surgical',?,?,?)`,
       [id, cid, String(h.id), String(h.patient_id), JSON.stringify(data), user.id, new Date().toISOString()])

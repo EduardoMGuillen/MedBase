@@ -373,7 +373,8 @@ describe('M5 autorizaciones: de hospitalización y quirúrgica', () => {
     assert.equal(s.status, 201, JSON.stringify(s.body))
     assert.equal(s.body.template, 'surgical')
     assert.equal(s.body.data.doctor.name, 'Dra. Lucía Herrera', 'la firma el médico que ingresó al paciente')
-    assert.equal(s.body.data.witness.dni, '0801-1980-11111')
+    // Ronda 3 (P5): el testigo se escribe a mano en la hoja; el formulario ya no lo pide
+    assert.equal(s.body.data.witness, undefined)
     const up = await doc.post(`/api/patients/p1/attachments`, { name: 'firmada.pdf', mime: 'application/pdf', category: 'document', data: 'JVBERi0=', hospitalizationId: id, title: 'Autorización firmada', takenAt: new Date().toISOString() })
     await doc.post(`/api/authorizations/${s.body.id}/status`, { status: 'signed', fileId: up.body.id })
     const note = await doc.post(`/api/inpatient/${id}/procedure-notes`, { name: 'Apendicectomía', performedAt: new Date().toISOString(), text: 'Apendicectomía abierta sin complicaciones.', authorizationId: s.body.id })

@@ -475,6 +475,8 @@ export interface AuthorizationData {
   witness?: { name: string; dni?: string }
   /** Hospitalización: fecha y hora del ingreso y diagnóstico de ingreso. */
   admission?: { at: string; diagnosis?: string }
+  /** Quirúrgica con el texto genérico (ronda 3): sólo procedimiento y diagnóstico. Las anteriores no lo tienen. */
+  generic?: boolean
   // Lo que se imprime, congelado al crearla
   patient: { name: string; dni?: string; age: string; sex: 'F' | 'M'; record: string; minor: boolean }
   doctor: { name: string; license?: string }

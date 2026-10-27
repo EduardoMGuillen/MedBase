@@ -5,101 +5,76 @@ import { useStore } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { date, dateTime, formatPhone, shortStaff, time } from '../lib/format'
 import { yearsOld } from '../lib/inpatient'
-import { ANESTHESIA, AUTH_STATUS, authTitle, CONSENT_LIBRARY, consentStatements, HOSPITAL_CONSENT, HOSPITAL_DECLARATION } from '../lib/consent'
+import { AUTH_STATUS, authTitle, consentStatements, FREQUENT_SURGERIES, HOSPITAL_CONSENT, HOSPITAL_DECLARATION, SURGICAL_GENERIC } from '../lib/consent'
 import type { Authorization, AuthorizationData, InpatientFile, Patient } from '../lib/types'
 import { toBase64 } from './Attachments'
 import { DniInput } from '../components/DniInput'
 import { ClinicLogo } from './Prescriptions'
 
 /**
- * Nueva autorización. De hospitalización: una por estancia, con el acompañante; si ya hay una vigente se
- * reabre en vez de crear otra. Quirúrgica: el procedimiento (uno o varios, "X o Y"), el diagnóstico y, si se
- * elige de la biblioteca, la explicación precargada para revisarla. El sistema pone los datos de la clínica,
- * del paciente y del médico. La generan enfermería o el médico.
+ * Nueva autorización, sin pestañas: cada botón abre la suya.
+ * - Quirúrgica: sólo el procedimiento (uno o varios, "X o Y") y, si el expediente no tiene diagnóstico, el
+ *   diagnóstico. Todo lo demás lo pone el sistema y el texto es genérico. Botón → procedimiento → Generar.
+ * - De hospitalización: una por estancia, con el acompañante; si ya hay una vigente se reabre (no se duplica).
+ * La generan enfermería o el médico.
  */
-export function AuthorizationForm({ file, p, template: initialTemplate, initialProcedure, onClose, onCreated }: {
+export function AuthorizationForm({ file, p, template = 'surgical', initialProcedure, onClose, onCreated }: {
   file: InpatientFile; p: Patient; template?: 'hospital' | 'surgical'; initialProcedure?: string; onClose: () => void; onCreated: (a: Authorization) => void
 }) {
   const { createAuthorization } = useStore()
   const h = file.hospitalization
   const minor = p.birthDate ? yearsOld(p.birthDate) < 18 : false
   const current = file.authorizations.find((a) => a.template === 'hospital' && (a.status === 'pending' || a.status === 'signed'))
-  const fromLibrary = (name?: string) => CONSENT_LIBRARY.find((x) => x.name.toLowerCase() === (name ?? '').toLowerCase())
-  const lib = fromLibrary(initialProcedure)
-  const [template, setTemplate] = useState<'hospital' | 'surgical'>(initialTemplate ?? (initialProcedure || current ? 'surgical' : 'hospital'))
-  const [f, setF] = useState({
-    procedure: lib?.name ?? initialProcedure ?? '', diagnosis: h.diagnoses.map((d) => d.label).join('; '), description: lib?.description ?? '', benefits: lib?.benefits ?? '',
-    risks: lib?.risks ?? '', alternatives: lib?.alternatives ?? '', notDoing: lib?.notDoing ?? '', anesthesia: lib?.anesthesia ?? '',
-  })
+  const knownDx = h.diagnoses.map((d) => d.label).join('; ')
+  const [procedure, setProcedure] = useState(initialProcedure ?? '')
+  const [diagnosis, setDiagnosis] = useState('')
   const [companion, setCompanion] = useState({ name: h.companionName ?? p.emergencyName ?? '', phone: h.companionPhone ?? p.emergencyPhone ?? '', relation: h.companionRelation ?? p.emergencyRelation ?? '' })
   const [rep, setRep] = useState({ on: minor, name: minor ? p.guardianName ?? p.emergencyName ?? '' : '', dni: minor ? p.guardianDni ?? '' : '', relation: minor ? p.guardianRelation ?? p.emergencyRelation ?? '' : '' })
-  const [witness, setWitness] = useState({ name: '', dni: '' })
   const [busy, setBusy] = useState(false)
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value })
-  const pick = (name: string) => {
-    const x = fromLibrary(name)
-    setF(x ? { ...f, procedure: x.name, description: x.description, benefits: x.benefits, risks: x.risks, alternatives: x.alternatives, notDoing: x.notDoing, anesthesia: x.anesthesia } : { ...f, procedure: name })
-  }
-  const repOk = !rep.on || rep.name.trim().length >= 3
+  const surgical = template === 'surgical'
   // Firmada: sólo se abre. Pendiente: se puede completar el acompañante y se reabre la misma hoja (no se duplica)
   const signed = current?.status === 'signed'
-  const ready = template === 'hospital'
-    ? signed || (companion.name.trim().length >= 3 && companion.phone.replace(/\D/g, '').length >= 7 && repOk)
-    : f.procedure.trim().length >= 3 && f.diagnosis.trim().length >= 3 && repOk
-  const area = (k: keyof typeof f, label: string, rows = 2) => (
-    <label className="field span-2"><span>{label}</span><textarea className="textarea textarea--sm" rows={rows} value={f[k]} onChange={set(k)} placeholder="Si lo dejas vacío, la hoja lleva líneas para escribirlo a mano." /></label>
-  )
-  const clean = <T extends Record<string, string>>(o: T) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.trim() || undefined])) as { [K in keyof T]?: string }
+  const ready = surgical
+    ? procedure.trim().length >= 3 && (!!knownDx || diagnosis.trim().length >= 3)
+    : signed || (companion.name.trim().length >= 3 && companion.phone.replace(/\D/g, '').length >= 7 && (!rep.on || rep.name.trim().length >= 3))
+  const generate = async () => {
+    if (!ready || busy) return
+    setBusy(true)
+    const a = surgical
+      ? await createAuthorization(h.id, { template, procedure: procedure.trim(), diagnosis: knownDx ? undefined : diagnosis.trim() })
+      : await createAuthorization(h.id, { template, companion: { name: companion.name.trim(), phone: companion.phone.trim(), relation: companion.relation.trim() || undefined },
+        representative: rep.on ? { name: rep.name.trim(), dni: rep.dni.trim() || undefined, relation: rep.relation.trim() || undefined } : undefined })
+    setBusy(false)
+    if (a) onCreated(a)
+  }
   return (
-    <Modal title={template === 'hospital' ? 'Autorización de hospitalización' : 'Autorización quirúrgica'} wide onClose={onClose} footer={<>
+    <Modal title={surgical ? 'Autorización quirúrgica' : 'Autorización de hospitalización'} wide={!surgical} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      {template === 'hospital' && signed
+      {!surgical && signed
         ? <button className="btn btn--primary" onClick={() => onCreated(current!)}><FileSignature size={16} />Abrir la autorización de esta estancia</button>
-        : <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
-          setBusy(true)
-          const representative = rep.on ? { name: rep.name.trim(), dni: rep.dni.trim() || undefined, relation: rep.relation.trim() || undefined } : undefined
-          const a = await createAuthorization(h.id, template === 'hospital'
-            ? { template, companion: { name: companion.name.trim(), phone: companion.phone.trim(), relation: companion.relation.trim() || undefined }, representative }
-            : { template, ...clean(f), procedure: f.procedure.trim(), representative, witness: witness.name.trim().length >= 3 ? { name: witness.name.trim(), dni: witness.dni.trim() || undefined } : undefined })
-          setBusy(false)
-          if (a) onCreated(a)
-        }}><FileSignature size={16} />{template === 'hospital' && current ? 'Guardar y abrir la hoja' : 'Generar hoja para firmar'}</button>}
+        : <button className="btn btn--primary" disabled={!ready || busy} onClick={generate}><FileSignature size={16} />{surgical ? 'Generar' : current ? 'Guardar y abrir la hoja' : 'Generar hoja para firmar'}</button>}
     </>}>
-      <div className="segmented" role="radiogroup" aria-label="Tipo de autorización">
-        <button role="radio" aria-checked={template === 'hospital'} onClick={() => setTemplate('hospital')}>De hospitalización</button>
-        <button role="radio" aria-checked={template === 'surgical'} onClick={() => setTemplate('surgical')}>Quirúrgica</button>
-      </div>
-      {template === 'hospital' ? (signed ? (
+      {surgical ? (
+        <form style={{ display: 'grid', gap: 12 }} onSubmit={(e) => { e.preventDefault(); generate() }}>
+          <label className="field"><span>Procedimiento quirúrgico</span>
+            <input className="input" autoFocus list="frequent-surgeries" value={procedure} onChange={(e) => setProcedure(e.target.value)} placeholder="Ej. Apendicectomía o laparotomía exploradora" />
+            <datalist id="frequent-surgeries">{FREQUENT_SURGERIES.map((x) => <option key={x} value={x} />)}</datalist></label>
+          {knownDx
+            ? <p className="muted" style={{ fontSize: 13.5 }}>Diagnóstico: <b>{knownDx}</b>. Paciente, médico, fecha y acompañante los pone el sistema; firmas, testigo y representante se llenan a mano en la hoja.</p>
+            : <label className="field"><span>Diagnóstico</span><input className="input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} /></label>}
+        </form>
+      ) : signed ? (
         <p>Esta estancia ya tiene su autorización de hospitalización firmada ({dateTime(current!.statusAt ?? current!.createdAt)}). No se crea otra.</p>
       ) : (<>
         <p className="muted" style={{ fontSize: 14 }}>{current ? `Ya se generó al ingresar (${dateTime(current.createdAt)}) y está pendiente de firma: no se crea otra. Revisa el acompañante y ábrela para imprimirla.`
-          : 'Una sola hoja para todos los pacientes que se ingresan: autoriza el ingreso y la atención, los medicamentos y los procedimientos menores. Lleva los datos del paciente y del ingreso; aquí sólo falta el acompañante.'}</p>
+          : 'Una sola hoja para todos los pacientes que se hospitalizan: autoriza el ingreso y la atención, los medicamentos y los procedimientos menores. Aquí sólo falta el acompañante.'}</p>
         <div className="form-grid">
           <label className="field"><span>Acompañante: nombre completo</span><input className="input" value={companion.name} onChange={(e) => setCompanion({ ...companion, name: e.target.value })} /></label>
           <label className="field"><span>Teléfono del acompañante</span><input className="input" inputMode="tel" value={companion.phone} onChange={(e) => setCompanion({ ...companion, phone: formatPhone(e.target.value) })} placeholder="0000-0000" /></label>
           <label className="field"><span>Parentesco (opcional)</span><input className="input" value={companion.relation} onChange={(e) => setCompanion({ ...companion, relation: e.target.value })} placeholder="Ej. Esposa" /></label>
         </div>
-      </>)) : (
-        <div className="form-grid">
-          <label className="field span-2"><span>Procedimiento quirúrgico (uno o varios: «X o Y»)</span>
-            <input className="input" list="consent-library" value={f.procedure} onChange={(e) => pick(e.target.value)} placeholder="Ej. Apendicectomía o laparotomía exploradora" />
-            <datalist id="consent-library">{CONSENT_LIBRARY.map((x) => <option key={x.name} value={x.name} />)}</datalist>
-            <small className="muted">Si eliges uno de la lista se precarga la explicación; revísala y ajústala a este paciente.</small></label>
-          <label className="field span-2"><span>Diagnóstico o motivo</span><input className="input" value={f.diagnosis} onChange={set('diagnosis')} /></label>
-          <label className="field"><span>Tipo de anestesia</span><input className="input" list="anesthesia" value={f.anesthesia} onChange={set('anesthesia')} placeholder="Elige o escribe" />
-            <datalist id="anesthesia">{ANESTHESIA.map((x) => <option key={x} value={x} />)}</datalist></label>
-          {area('description', 'En qué consiste (palabras sencillas)')}
-          {area('benefits', 'Beneficios esperados')}
-          {area('risks', 'Riesgos frecuentes y graves', 3)}
-          {area('alternatives', 'Alternativas')}
-          {area('notDoing', 'Riesgo de no operarse')}
-          <label className="field"><span>Testigo (opcional)</span><input className="input" value={witness.name} onChange={(e) => setWitness({ ...witness, name: e.target.value })} placeholder="Si no, se escribe a mano" /></label>
-          <label className="field"><span>Identidad del testigo</span><DniInput value={witness.dni} onChange={(dni) => setWitness({ ...witness, dni })} /></label>
-        </div>
-      )}
-      {!(template === 'hospital' && signed) && <>
         <label className="check-line"><input type="checkbox" checked={rep.on} disabled={minor} onChange={(e) => setRep({ ...rep, on: e.target.checked })} />
-          <span><b>Firma un representante legal</b><small>{minor ? 'El paciente es menor de edad: firma su padre, madre o representante legal; si tiene edad para entender, también da su asentimiento.' : 'Si el paciente no puede decidir por sí mismo.'}</small></span></label>
+          <span><b>Firma un representante legal</b><small>{minor ? 'El paciente es menor de edad: firma su padre, madre o representante legal.' : 'Si el paciente no puede decidir por sí mismo.'}</small></span></label>
         {rep.on && (
           <div className="form-grid">
             <label className="field"><span>Nombre del representante</span><input className="input" value={rep.name} onChange={(e) => setRep({ ...rep, name: e.target.value })} /></label>
@@ -107,7 +82,7 @@ export function AuthorizationForm({ file, p, template: initialTemplate, initialP
             <label className="field"><span>Identidad del representante</span><DniInput value={rep.dni} onChange={(dni) => setRep({ ...rep, dni })} /></label>
           </div>
         )}
-      </>}
+      </>)}
     </Modal>
   )
 }
@@ -201,6 +176,7 @@ function PatientBlock({ d, extra }: { d: AuthorizationData; extra?: ReactNode })
  */
 export function AuthorizationSheet({ a }: { a: Authorization }) {
   if (a.template === 'hospital') return <HospitalSheet a={a} />
+  if (a.data.generic) return <SurgicalSheet a={a} />
   const d: AuthorizationData = a.data
   const general = a.template === 'general'
   const rows: [string, string | undefined][] = general ? [['Diagnóstico o motivo del ingreso', d.diagnosis]] : [
@@ -229,6 +205,39 @@ export function AuthorizationSheet({ a }: { a: Authorization }) {
       <div className="consent__box"><b>☐ No autorizo.</b> Recibí la misma información y decido no autorizar{general ? ' la atención' : ' el procedimiento'}. Entiendo los riesgos de no hacerlo. Firma: {LINE} Fecha y hora: ______________</div>
       <div className="consent__box"><b>Revocación.</b> Revoco la autorización que di en esta hoja. Fecha: ____________ Hora: ________ Firma: {LINE}</div>
       <footer className="rx-sheet__foot"><span>Texto a validar por la clínica y su asesor legal (Código de Ética del Colegio Médico de Honduras, cap. VIII).</span><span>Emitido con Clinara</span></footer>
+    </article>
+  )
+}
+
+/**
+ * Autorización quirúrgica genérica (ronda 3): datos que pone el sistema, procedimiento, diagnóstico y el texto fijo.
+ * Lo que se completa a mano (representante, asentimiento, testigo, firmas, rechazo y revocación) son líneas. Una página.
+ */
+function SurgicalSheet({ a }: { a: Authorization }) {
+  const d = a.data
+  return (
+    <article className="rx-sheet consent consent--short">
+      <SheetHead a={a} />
+      <h1 className="cert__title">Autorización quirúrgica (consentimiento informado)</h1>
+      <PatientBlock d={d} extra={<span>Médico: <b>{d.doctor.name}</b>{d.doctor.license ? `, colegiación ${d.doctor.license}` : ''}</span>} />
+      {d.companion && <div className="consent__pt"><span>Acompañante: <b>{d.companion.name}</b></span>{d.companion.phone && <span>Teléfono: <b>{d.companion.phone}</b></span>}</div>}
+      <dl className="consent__info">
+        <div><dt>Procedimiento</dt><dd>{d.procedure}</dd></div>
+        <div><dt>Diagnóstico</dt><dd>{d.diagnosis || <span className="consent__blank" />}</dd></div>
+      </dl>
+      <p className="consent__intro">Yo, {LINE}{LINE}, {d.patient.minor ? 'representante legal de' : 'paciente o representante legal de'} {d.patient.name}, declaro:</p>
+      <ol className="consent__list">{SURGICAL_GENERIC.map((x) => <li key={x}>{x}</li>)}</ol>
+      <p className="consent__intro">Representante legal (si el paciente es menor o no puede decidir): nombre {LINE} identidad {LINE} parentesco __________</p>
+      {d.patient.minor && <p className="consent__intro">Asentimiento del menor (si tiene edad para entender): me explicaron y estoy de acuerdo. Firma: {LINE}</p>}
+      <div className="consent__signs">
+        <div><span className="consent__line" />Firma del paciente o representante</div>
+        <div className="consent__print">Huella digital<br /><small>si no sabe firmar</small></div>
+        <div><span className="consent__line" />Testigo<br /><small>Nombre: {LINE} Identidad: {LINE}</small></div>
+        <div><span className="consent__line" />Firma y sello del médico<br /><small>{d.doctor.name}{d.doctor.license ? `, colegiación ${d.doctor.license}` : ', colegiación ______'}</small></div>
+      </div>
+      <div className="consent__box"><b>☐ No autorizo.</b> Recibí la misma información y decido no autorizar el procedimiento. Entiendo los riesgos de no hacerlo. Firma: {LINE} Fecha y hora: ______________</div>
+      <div className="consent__box"><b>Revocación.</b> Revoco la autorización que di en esta hoja. Fecha: ____________ Hora: ________ Firma: {LINE}</div>
+      <footer className="rx-sheet__foot"><span>Texto genérico a validar por la clínica y su asesor legal (Código de Ética del Colegio Médico de Honduras, cap. VIII).</span><span>Emitido con Clinara</span></footer>
     </article>
   )
 }

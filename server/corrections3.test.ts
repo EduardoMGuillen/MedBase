@@ -228,3 +228,18 @@ describe('P1 editar datos generales', () => {
     assert.ok(log.some((e) => e.action.includes('ocupación:') && e.action.includes('"Maestra"')))
   })
 })
+
+describe('P5 autorización quirúrgica mínima', () => {
+  test('sólo el procedimiento: el diagnóstico y lo demás lo pone el sistema, con el texto genérico', async () => {
+    const nurse = await as('crios@demo.clinara')
+    const doc = await as('lherrera@demo.clinara')
+    const h = (await doc.get('/api/bootstrap')).body.inpatients.find((x: any) => x.patientId === 'p6')
+    const r = await nurse.post(`/api/inpatient/${h.id}/authorizations`, { template: 'surgical', procedure: 'Apendicectomía o laparotomía exploradora' })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(r.body.data.generic, true)
+    assert.equal(r.body.data.diagnosis, 'Faringitis aguda', 'el diagnóstico sale del expediente')
+    assert.equal(r.body.data.companion.name, 'Rosa Pérez')
+    assert.equal(r.body.data.risks, undefined)
+    assert.equal((await nurse.post(`/api/inpatient/${h.id}/authorizations`, { template: 'surgical' })).status, 400, 'el procedimiento es obligatorio')
+  })
+})

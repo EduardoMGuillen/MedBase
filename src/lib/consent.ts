@@ -140,7 +140,28 @@ export const HOSPITAL_CONSENT = [
 export const HOSPITAL_DECLARATION = 'Me explicaron con palabras que entiendo por qué debo quedar ingresado y en qué consiste la atención; pude preguntar y me respondieron. ' +
   'Sé que para una cirugía u otro procedimiento mayor se me pedirá una autorización aparte, y que puedo retirar esta autorización en cualquier momento.'
 
-/** Declaración del consentimiento informado quirúrgico (lo que el paciente afirma al firmar). */
+/**
+ * Texto genérico de la autorización quirúrgica (ronda 3): el mismo para toda cirugía, sin riesgos ni alternativas
+ * por procedimiento. VALIDACIÓN PENDIENTE: un consentimiento genérico tiene límites legales; Emil y el asesor
+ * legal de la clínica deben aprobarlo antes de usarlo con pacientes reales, y la clínica puede reemplazarlo por su
+ * propio formato. No se citan artículos que no se hayan verificado.
+ */
+export const SURGICAL_GENERIC = [
+  'Autorizo al equipo médico de este establecimiento a realizarme el procedimiento indicado en esta hoja, como tratamiento del diagnóstico indicado.',
+  'Recibí información, con palabras que entiendo, sobre el procedimiento, sus beneficios, sus riesgos y las alternativas. Pude hacer preguntas y me las respondieron.',
+  'Tomo esta decisión de forma libre y voluntaria.',
+  'Autorizo la anestesia y las medidas médicas necesarias, así como los cambios que hagan falta si durante el procedimiento hay hallazgos o urgencias que no se esperaban.',
+  'Sé que puedo revocar esta autorización antes del procedimiento sin que eso afecte el resto de mi atención.',
+]
+
+/** Cirugías frecuentes: sólo sugieren el nombre; siempre se puede escribir cualquier otro. */
+export const FREQUENT_SURGERIES = [
+  'Apendicectomía', 'Colecistectomía laparoscópica', 'Colecistectomía abierta', 'Laparotomía exploradora', 'Hernioplastia inguinal', 'Hernioplastia umbilical',
+  'Cesárea', 'Legrado uterino', 'Salpingectomía bilateral (esterilización)', 'Histerectomía abdominal', 'Circuncisión', 'Drenaje de absceso', 'Desbridamiento de herida',
+  'Exéresis de lipoma', 'Amigdalectomía', 'Reducción abierta y fijación de fractura',
+]
+
+/** Declaración del consentimiento quirúrgico emitido antes de la ronda 3 (se sigue imprimiendo igual). */
 export function consentStatements(kind: 'surgical' | 'general' = 'surgical'): string[] {
   if (kind === 'general') return [
     'Autorizo a los médicos y al personal de esta clínica a atenderme durante mi estancia: examinarme, tomarme muestras y hacerme los exámenes y tratamientos habituales del servicio.',
