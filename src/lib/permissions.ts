@@ -1,4 +1,4 @@
-import type { Role } from './types.js'
+import type { ClinicKind, Role } from './types.js'
 
 /**
  * Matriz de permisos por rol (principio de mínimo privilegio).
@@ -47,6 +47,30 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ],
   nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage', 'inpatient.view', 'inpatient.care', 'orders.review', 'followups.view'],
   reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view'],
+  // Asistente de consultorio (secretaria o enfermera): recepción, preclínica, caja y aplicar dosis en observación
+  assistant: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage',
+    'inpatient.view', 'inpatient.care', 'followups.view'],
+}
+
+/**
+ * En un consultorio el médico es también el dueño de la cuenta: además de lo del médico, configura, cobra,
+ * registra llegadas, ve reportes y bitácora y agrega a su asistente. Los demás roles no existen en un consultorio.
+ */
+const OFFICE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
+  doctor: [...new Set<Permission>([...ROLE_PERMISSIONS.doctor, 'checkin.manage', 'inpatient.care', 'staff.manage', 'settings.manage', 'schedule.manage',
+    'drugs.manage', 'reports.view', 'audit.view'])],
+  assistant: ROLE_PERMISSIONS.assistant,
+}
+
+/** Permisos de un rol según el tipo de cuenta. En una clínica son exactamente los de siempre. */
+export function permissionsFor(role: Role, kind: ClinicKind = 'clinic'): Permission[] {
+  return kind === 'office' ? OFFICE_PERMISSIONS[role] ?? [] : ROLE_PERMISSIONS[role]
+}
+
+/** Roles que se pueden dar a alguien en cada tipo de cuenta. */
+export const ROLES_BY_KIND: Record<ClinicKind, Exclude<Role, 'superadmin'>[]> = {
+  clinic: ['admin', 'doctor', 'nurse', 'reception'],
+  office: ['doctor', 'assistant'],
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -55,6 +79,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   doctor: 'Médico',
   nurse: 'Enfermería',
   reception: 'Recepción',
+  assistant: 'Asistente',
 }
 
 export const ROLE_SUMMARY: Record<Role, string> = {
@@ -63,9 +88,29 @@ export const ROLE_SUMMARY: Record<Role, string> = {
   doctor: 'Atiende su agenda, registra pacientes nuevos, escribe consultas, diagnostica, emite recetas, cobra cuando hace falta e ingresa y evoluciona a pacientes hospitalizados.',
   nurse: 'Recibe al paciente, lo registra si llega sin expediente, toma la preclínica y, en hospitalización, administra medicamentos y escribe notas de enfermería. También puede cobrar.',
   reception: 'Agenda citas, registra pacientes, controla la sala de espera y cobra.',
+  assistant: 'En el consultorio: agenda citas, recibe y registra al paciente, toma la preclínica, cobra y aplica los medicamentos que el médico indica en observación.',
 }
 
-export const can = (role: Role, p: Permission) => ROLE_PERMISSIONS[role].includes(p)
+/** ¿Puede este usuario (rol y tipo de cuenta) hacer esto? Con sólo el rol, se asume una clínica. */
+export const can = (who: Role | { role: Role; clinicKind?: ClinicKind }, p: Permission) =>
+  (typeof who === 'string' ? ROLE_PERMISSIONS[who] : permissionsFor(who.role, who.clinicKind)).includes(p)
 
 /** Permisos que se muestran en la matriz de una clínica (sin los de plataforma). */
 export const CLINIC_PERMISSIONS = (Object.keys(PERMISSIONS) as Permission[]).filter((p) => p !== 'platform.manage')
+
+/** Qué módulos tiene la cuenta. Las pantallas preguntan por esto, no por el tipo de cuenta. */
+export function features(s: { kind?: ClinicKind; observationEnabled?: boolean }) {
+  const office = s.kind === 'office'
+  return {
+    office,
+    /** Hospitalización con camas: sólo en clínicas. */
+    hospital: !office,
+    /** Observación corta: en clínicas siempre; en consultorios si está activada. */
+    observation: !office || s.observationEnabled !== false,
+    /** Varios médicos: filtros por médico, "Toda la clínica", atender al paciente de otro médico. */
+    multiDoctor: !office,
+  }
+}
+
+/** "la clínica" o "el consultorio", para los textos. */
+export const placeWord = (s: { kind?: ClinicKind }) => (s.kind === 'office' ? 'consultorio' : 'clínica')

@@ -11,7 +11,7 @@ import { pullConsultationOrders } from './medOrders.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '22'
+const SCHEMA_VERSION = '23'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -463,6 +463,19 @@ ALTER TABLE prescriptions
   ADD COLUMN IF NOT EXISTS guest TEXT,
   ADD COLUMN IF NOT EXISTS linked_at TEXT,
   ADD COLUMN IF NOT EXISTS linked_by TEXT;
+
+-- v23: consultorio de un médico independiente. Las cuentas existentes son clínicas y no cambian.
+ALTER TABLE clinics
+  ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'clinic',
+  ADD COLUMN IF NOT EXISTS observation_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS owner_id TEXT,
+  ADD COLUMN IF NOT EXISTS specialty TEXT,
+  ADD COLUMN IF NOT EXISTS license TEXT,
+  ADD COLUMN IF NOT EXISTS max_assistants INTEGER NOT NULL DEFAULT 2;
+ALTER TABLE clinics DROP CONSTRAINT IF EXISTS clinics_kind_check;
+ALTER TABLE clinics ADD CONSTRAINT clinics_kind_check CHECK (kind IN ('clinic','office'));
+ALTER TABLE staff DROP CONSTRAINT IF EXISTS staff_role_check;
+ALTER TABLE staff ADD CONSTRAINT staff_role_check CHECK (role IN ('superadmin','admin','doctor','nurse','reception','assistant'));
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

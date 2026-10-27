@@ -14,6 +14,7 @@ export const toStaff = (r: Row): Staff => ({
   id: String(r.id), clinicId: s(r.clinic_id), name: String(r.name), role: r.role as Staff['role'], specialty: s(r.specialty), email: String(r.email),
   license: s(r.license), color: String(r.color), active: Boolean(r.active),
   schedule: r.schedule ? j(r.schedule, undefined) : undefined, serviceId: s(r.service_id), twoFactor: Boolean(r.totp_enabled),
+  clinicKind: r.clinic_kind == null ? undefined : (String(r.clinic_kind) as Staff['clinicKind']),
 })
 
 export const toPatient = (r: Row, clinical: boolean): Patient => ({
@@ -156,6 +157,8 @@ export const clinicSettings = (r: Row): ClinicSettings => ({
   reminderTemplate: String(r.reminder_template || DEFAULT_SETTINGS.reminderTemplate),
   recordUsesDni: Boolean(r.record_uses_dni), logo: s(r.logo), dniMask: r.dni_mask == null ? DNI_MASK : String(r.dni_mask),
   obsAlertHours: r.obs_alert_hours == null ? 24 : Number(r.obs_alert_hours), obsOrderChecklist: Boolean(r.obs_order_checklist),
+  kind: (r.kind as ClinicSettings['kind']) ?? 'clinic', observationEnabled: r.observation_enabled == null ? true : Boolean(r.observation_enabled),
+  ownerId: s(r.owner_id), specialty: s(r.specialty), license: s(r.license), maxAssistants: r.max_assistants == null ? 2 : Number(r.max_assistants),
 })
 
 export const toClinic = (r: Row): Clinic => ({

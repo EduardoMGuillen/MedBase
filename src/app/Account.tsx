@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, PageHead } from '../components/ui'
-import { ROLE_LABEL, ROLE_PERMISSIONS, PERMISSIONS } from '../lib/permissions'
+import { ROLE_LABEL, permissionsFor, PERMISSIONS } from '../lib/permissions'
 import { ScheduleEditor } from './ScheduleEditor'
 
 export default function Account() {
@@ -32,7 +32,7 @@ export default function Account() {
       )}
       <section className="panel">
         <div className="panel__head"><h2>Lo que tu rol permite</h2></div>
-        <div className="panel__body"><div className="chips">{ROLE_PERMISSIONS[user.role].map((p) => <span key={p} className="chip">{PERMISSIONS[p]}</span>)}</div></div>
+        <div className="panel__body"><div className="chips">{permissionsFor(user.role, user.clinicKind).map((p) => <span key={p} className="chip">{PERMISSIONS[p]}</span>)}</div></div>
       </section>
     </div>
   )

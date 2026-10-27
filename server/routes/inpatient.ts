@@ -66,6 +66,10 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     return h
   }
   const bedName = (b: Row) => `cama ${b.room}${b.label ? `-${b.label}` : ''}`
+  /** Un consultorio no tiene camas ni hospitalización (sí observación, si la usa). */
+  const assertHospital = async (cid: string) => {
+    if ((await sql.one('SELECT kind FROM clinics WHERE id = ?', [cid]))?.kind === 'office') fail(409, 'Un consultorio no tiene hospitalización ni camas.')
+  }
 
   /** Las órdenes de las notas de hospitalización se revisan una por una (en observación, sólo si la clínica lo activa). */
   async function checklistFor(h: Row) {
@@ -105,6 +109,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   app.post('/api/beds', auth, need('settings.manage'), async (req, res) => {
     const b = parse(bedBody, req.body)
     const cid = clinicOf(req)
+    await assertHospital(cid)
     if (await sql.one('SELECT 1 FROM beds WHERE clinic_id = ? AND room = ? AND label = ?', [cid, b.room, b.label])) fail(409, 'Ya existe esa cama en ese cuarto.')
     const id = randomUUID()
     await sql.run('INSERT INTO beds (id, clinic_id, room, label, specialty, active) VALUES (?,?,?,?,?,?)', [id, cid, b.room, b.label, b.specialty, b.active])
@@ -114,6 +119,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
 
   app.patch('/api/beds/:id', auth, need('settings.manage'), async (req, res) => {
     const cid = clinicOf(req)
+    await assertHospital(cid)
     const row = (await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La cama no existe.')
     const b = parse(bedBody.partial(), req.body)
     if (b.active === false && await sql.one(`SELECT 1 FROM hospitalizations WHERE bed_id = ? AND status = 'active'`, [String(row!.id)])) {
@@ -141,6 +147,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
+    await assertHospital(cid)
     ;(await patientRow(cid, b.patientId)) ?? fail(404, 'El paciente no existe.')
     const bed = await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ? AND active', [b.bedId, cid])
     if (!bed) fail(400, 'La cama elegida no existe o está desactivada.')
@@ -187,6 +194,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
+    await assertHospital(cid)
     const h = await activeHosp(cid, String(req.params.id))
     if (h.kind !== 'observation') fail(409, 'Este paciente ya está hospitalizado.')
     const bed = await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ? AND active', [b.bedId, cid])

@@ -1,4 +1,7 @@
-export type Role = 'superadmin' | 'admin' | 'doctor' | 'nurse' | 'reception'
+export type Role = 'superadmin' | 'admin' | 'doctor' | 'nurse' | 'reception' | 'assistant'
+
+/** Tipo de cuenta: clínica (varios médicos, hospitalización) o consultorio de un médico independiente. */
+export type ClinicKind = 'clinic' | 'office'
 
 /** Roles que pertenecen a una clínica (el superadministrador no tiene clínica). */
 export type ClinicRole = Exclude<Role, 'superadmin'>
@@ -30,6 +33,8 @@ export interface Staff {
   schedule?: Schedule
   serviceId?: string // servicio que se cobra por defecto en sus consultas
   twoFactor?: boolean
+  /** Tipo de cuenta de su clínica: decide sus permisos y qué módulos ve. */
+  clinicKind?: ClinicKind
 }
 
 /** Una clínica dentro de la plataforma. */
@@ -58,6 +63,15 @@ export interface ClinicSettings {
   obsAlertHours?: number
   /** Si es verdadero, las órdenes de las notas de observación también se revisan como checklist. */
   obsOrderChecklist?: boolean
+  /** Clínica o consultorio de un médico independiente. */
+  kind?: ClinicKind
+  /** Consultorio: usa observación (aplicar medicamentos, hidratar). */
+  observationEnabled?: boolean
+  /** Consultorio: el médico titular y lo que va en el encabezado de sus documentos. */
+  ownerId?: string
+  specialty?: string
+  license?: string
+  maxAssistants?: number
 }
 
 export interface Service {

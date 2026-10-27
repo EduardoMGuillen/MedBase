@@ -26,7 +26,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 import { registerDrugs } from './routes/drugs.js'
 import { registerCertificates } from './routes/certificates.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
-import { can, ROLE_PERMISSIONS, type Permission } from '../src/lib/permissions.js'
+import { can, permissionsFor, ROLES_BY_KIND, type Permission } from '../src/lib/permissions.js'
 import { yearsOld } from '../src/lib/inpatient.js'
 import { normalizeDni } from '../src/lib/format.js'
 import { DAY_NAMES_PLURAL, rangesOn, scheduleFromWeek, scheduleProblems, SLOT_OPTIONS, weekday, weekOf, withinSchedule } from '../src/lib/schedule.js'
@@ -49,7 +49,7 @@ interface AuthedRequest extends Request { user: Staff }
 const STAY_KIND = 'kind'
 
 const COLORS = ['#2335C9', '#0F8A6E', '#B4407A', '#C27A12', '#6A4BC4', '#2C7DA0', '#5B6472']
-const ROLES = ['admin', 'doctor', 'nurse', 'reception'] as const
+const ROLES = ['admin', 'doctor', 'nurse', 'reception', 'assistant'] as const
 
 export function createApp(opts: AppOptions) {
   const { sql } = opts
@@ -119,7 +119,7 @@ export function createApp(opts: AppOptions) {
     if (!token) return null
     let payload: { sub: string; v: number }
     try { payload = jwt.verify(token, secret!) as { sub: string; v: number } } catch { return null }
-    const row = await sql.one(`SELECT s.*, c.active AS clinic_active FROM staff s LEFT JOIN clinics c ON c.id = s.clinic_id WHERE s.id = ?`, [payload.sub])
+    const row = await sql.one(`SELECT s.*, c.active AS clinic_active, c.kind AS clinic_kind FROM staff s LEFT JOIN clinics c ON c.id = s.clinic_id WHERE s.id = ?`, [payload.sub])
     if (!row || !row.active || Number(row.token_version) !== payload.v) return null
     if (row.clinic_id && !row.clinic_active) return null
     return toStaff(row)
@@ -134,7 +134,7 @@ export function createApp(opts: AppOptions) {
   }
   const need = (...perms: Permission[]) => (req: Request, _res: Response, next: NextFunction) => {
     const { user } = req as AuthedRequest
-    if (!perms.some((p) => can(user.role, p))) return next(new HttpError(403, 'Tu rol no tiene permiso para esta acción.'))
+    if (!perms.some((p) => can(user, p))) return next(new HttpError(403, 'Tu rol no tiene permiso para esta acción.'))
     next()
   }
   const userOf = (req: Request) => (req as AuthedRequest).user
@@ -161,7 +161,7 @@ export function createApp(opts: AppOptions) {
 
   const session = (row: Row) => {
     const user = toStaff(row)
-    return { user, permissions: ROLE_PERMISSIONS[user.role], demo: demoMode }
+    return { user, permissions: permissionsFor(user.role, user.clinicKind), demo: demoMode }
   }
 
   app.post('/api/auth/login', async (req, res) => {
@@ -169,7 +169,7 @@ export function createApp(opts: AppOptions) {
       'Escribe tu correo y tu contraseña.')
     const key = `login:${body.email.toLowerCase()}`
     if (await attempts(sql, key) >= 5) fail(429, 'Demasiados intentos. Espera 5 minutos e inténtalo de nuevo.')
-    const row = await sql.one('SELECT * FROM staff WHERE lower(email) = lower(?)', [body.email])
+    const row = await sql.one('SELECT s.*, c.kind AS clinic_kind FROM staff s LEFT JOIN clinics c ON c.id = s.clinic_id WHERE lower(s.email) = lower(?)', [body.email])
     if (!row || !bcrypt.compareSync(body.password, String(row.password_hash))) {
       await hit(sql, key, 5 * 60_000)
       fail(401, 'El correo o la contraseña no coinciden.')
@@ -258,11 +258,11 @@ export function createApp(opts: AppOptions) {
         settings: { ...clinicSettings({ name: 'Clinara' }) } })
     }
     const cid = user.clinicId
-    const clinical = can(user.role, 'chart.view')
-    const billing = can(user.role, 'billing.manage')
+    const clinical = can(user, 'chart.view')
+    const billing = can(user, 'billing.manage')
     const since = new Date(); since.setDate(since.getDate() - 90)
     const none = Promise.resolve([] as Row[])
-    if (can(user.role, 'followups.view')) await sweepFollowupReminders(sql, cid)
+    if (can(user, 'followups.view')) await sweepFollowupReminders(sql, cid)
     const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges, clinicDrugs, pending, stays] = await Promise.all([
       sql.query('SELECT * FROM staff WHERE clinic_id = ? ORDER BY name', [cid]),
       // Los pendientes de registro sí viajan (agenda y 'Por llegar'); los que se unieron a otro expediente no
@@ -270,20 +270,20 @@ export function createApp(opts: AppOptions) {
       // Ventana de agenda: 90 días atrás y todo lo futuro
       sql.query(`SELECT a.*, EXISTS(SELECT 1 FROM payments p WHERE p.appointment_id = a.id AND NOT p.voided) AS paid
         FROM appointments a WHERE a.clinic_id = ? AND a.start >= ? ORDER BY a.start`, [cid, localDate(since)]),
-      can(user.role, 'rx.view') ? sql.query('SELECT * FROM prescriptions WHERE clinic_id = ? ORDER BY issued_at DESC LIMIT 500', [cid]) : Promise.resolve([]),
-      can(user.role, 'audit.view') ? sql.query('SELECT * FROM audit WHERE clinic_id = ? ORDER BY id DESC LIMIT 500', [cid]) : Promise.resolve([]),
+      can(user, 'rx.view') ? sql.query('SELECT * FROM prescriptions WHERE clinic_id = ? ORDER BY issued_at DESC LIMIT 500', [cid]) : Promise.resolve([]),
+      can(user, 'audit.view') ? sql.query('SELECT * FROM audit WHERE clinic_id = ? ORDER BY id DESC LIMIT 500', [cid]) : Promise.resolve([]),
       clinical ? sql.query(`SELECT v.* FROM vitals v JOIN appointments a ON a.id = v.appointment_id WHERE v.clinic_id = ? AND a.start LIKE ?`, [cid, `${localDate(new Date())}%`]) : Promise.resolve([]),
       sql.query('SELECT * FROM services WHERE clinic_id = ? ORDER BY name', [cid]),
       settings(cid),
-      can(user.role, 'inpatient.view') || can(user.role, 'settings.manage') ? sql.query('SELECT * FROM beds WHERE clinic_id = ? ORDER BY specialty, room, label', [cid]) : none,
+      can(user, 'inpatient.view') || can(user, 'settings.manage') ? sql.query('SELECT * FROM beds WHERE clinic_id = ? ORDER BY specialty, room, label', [cid]) : none,
       // Con aviso de la autorización de hospitalización pendiente de firma, para enfermería y el médico
-      can(user.role, 'inpatient.view') ? sql.query(`SELECT h.*, EXISTS(SELECT 1 FROM authorizations a WHERE a.hospitalization_id = h.id AND a.template = 'hospital' AND a.status = 'pending') AS auth_pending
+      can(user, 'inpatient.view') ? sql.query(`SELECT h.*, EXISTS(SELECT 1 FROM authorizations a WHERE a.hospitalization_id = h.id AND a.template = 'hospital' AND a.status = 'pending') AS auth_pending
         FROM hospitalizations h WHERE h.clinic_id = ? AND h.status = 'active' ORDER BY h.admitted_at`, [cid]) : none,
-      can(user.role, 'followups.view') ? sql.query('SELECT * FROM followups WHERE clinic_id = ? AND active ORDER BY due_date', [cid]) : none,
+      can(user, 'followups.view') ? sql.query('SELECT * FROM followups WHERE clinic_id = ? AND active ORDER BY due_date', [cid]) : none,
       sql.query(`SELECT DISTINCT ON (patient_id) patient_id, discharged_at FROM hospitalizations
         WHERE clinic_id = ? AND status = 'discharged' AND discharged_at IS NOT NULL ORDER BY patient_id, discharged_at DESC`, [cid]),
-      can(user.role, 'rx.write') || can(user.role, 'drugs.manage') ? sql.query('SELECT * FROM clinic_drugs WHERE clinic_id = ? ORDER BY name', [cid]) : none,
-      can(user.role, 'orders.review') ? pendingOrders(sql, cid) : Promise.resolve([]),
+      can(user, 'rx.write') || can(user, 'drugs.manage') ? sql.query('SELECT * FROM clinic_drugs WHERE clinic_id = ? ORDER BY name', [cid]) : none,
+      can(user, 'orders.review') ? pendingOrders(sql, cid) : Promise.resolve([]),
       // Estado del paciente (hospitalizado o en observación) para todos los roles, sin datos clínicos
       sql.query(`SELECT patient_id, kind FROM hospitalizations WHERE clinic_id = ? AND status = 'active'`, [cid]),
     ])
@@ -386,8 +386,8 @@ export function createApp(opts: AppOptions) {
     const demographic = ['firstName', 'lastName', 'birthDate', 'sex', 'phone', 'email', 'insurance', 'dni', 'civilStatus', 'occupation', 'education',
       'religion', 'address', 'emergencyName', 'emergencyPhone', 'emergencyRelation', 'guardianName', 'guardianDni', 'guardianRelation'] as const
     const clinicalKeys = ['allergies', 'conditions', 'bloodType', 'background'] as const
-    if (demographic.some((k) => k in req.body) && !can(user.role, 'patients.manage')) fail(403, 'Tu rol no puede editar los datos generales del paciente.')
-    if (clinicalKeys.some((k) => k in req.body) && !can(user.role, 'chart.view')) fail(403, 'Tu rol no puede editar datos clínicos.')
+    if (demographic.some((k) => k in req.body) && !can(user, 'patients.manage')) fail(403, 'Tu rol no puede editar los datos generales del paciente.')
+    if (clinicalKeys.some((k) => k in req.body) && !can(user, 'chart.view')) fail(403, 'Tu rol no puede editar datos clínicos.')
     const cols: Record<string, string> = { firstName: 'first_name', lastName: 'last_name', birthDate: 'birth_date', sex: 'sex', phone: 'phone', email: 'email', insurance: 'insurance',
       bloodType: 'blood_type', allergies: 'allergies', conditions: 'conditions', background: 'background', dni: 'dni', civilStatus: 'civil_status', occupation: 'occupation',
       education: 'education', religion: 'religion', address: 'address', emergencyName: 'emergency_name', emergencyPhone: 'emergency_phone', emergencyRelation: 'emergency_relation',
@@ -402,7 +402,7 @@ export function createApp(opts: AppOptions) {
     }
     if (sets.length) await sql.run(`UPDATE patients SET ${sets.join(', ')} WHERE id = ? AND clinic_id = ?`, [...vals, String(row!.id), cid])
     await audit(user, `Actualizó la ficha de ${row!.first_name} ${row!.last_name}`)
-    res.json(toPatient((await patientRow(cid, String(row!.id)))!, can(user.role, 'chart.view')))
+    res.json(toPatient((await patientRow(cid, String(row!.id)))!, can(user, 'chart.view')))
   })
 
   /**
@@ -480,7 +480,7 @@ export function createApp(opts: AppOptions) {
     const user = userOf(req)
     const rows = await sql.query(`SELECT a.*, EXISTS(SELECT 1 FROM payments p WHERE p.appointment_id = a.id AND NOT p.voided) AS paid
       FROM appointments a WHERE a.clinic_id = ? AND a.start >= ? AND a.start < ? ORDER BY a.start`, [clinicOf(req), q.from, `${q.to}T99`])
-    const billing = can(user.role, 'billing.manage')
+    const billing = can(user, 'billing.manage')
     res.json(rows.map((r) => ({ ...toAppointment(r), paid: billing ? Boolean(r.paid) : undefined })))
   })
 
@@ -543,7 +543,7 @@ export function createApp(opts: AppOptions) {
     const cid = clinicOf(req)
     const row = (await apptRow(cid, String(req.params.id))) ?? fail(404, 'La cita no existe.')
     const t = TRANSITIONS[status]!
-    if (!can(user.role, t.perm)) fail(403, 'Tu rol no tiene permiso para esta acción.')
+    if (!can(user, t.perm)) fail(403, 'Tu rol no tiene permiso para esta acción.')
     if (row!.status === status) return res.json(toAppointment(row!))
     if (!t.from.includes(row!.status as ApptStatus)) fail(409, 'La cita ya avanzó a otra etapa. Actualiza la página.')
     if (status === 'in_consult' && row!.doctor_id !== user.id) fail(403, 'Sólo el médico asignado puede atender esta cita.')
@@ -677,6 +677,12 @@ export function createApp(opts: AppOptions) {
     const noDays = rxItems.find((it) => !it.duration && !/única/i.test(it.frequency))
     if (noDays) fail(400, `Escribe el total de días de ${noDays.drug}: va a la receta.`)
     const cid = clinicOf(req)
+    // Un consultorio no hospitaliza; la observación la puede tener apagada
+    const place = (await sql.one('SELECT kind, observation_enabled FROM clinics WHERE id = ?', [cid]))!
+    if (place.kind === 'office' && c.admit) fail(400, 'Un consultorio no tiene hospitalización. Usa observación o refiere al paciente.')
+    if (place.kind === 'office' && stayKind === 'observation' && !place.observation_enabled) {
+      fail(400, 'Este consultorio no usa observación. Actívala en Configuración o quita «Aplicar en la clínica».')
+    }
     const appt = (await apptRow(cid, c.appointmentId)) ?? fail(404, 'La cita no existe.')
     if (appt!.doctor_id !== user.id) fail(403, 'Sólo el médico asignado puede firmar esta consulta.')
     if (['done', 'cancelled', 'no_show'].includes(String(appt!.status))) fail(409, 'Esta cita ya está cerrada.')
@@ -831,6 +837,8 @@ export function createApp(opts: AppOptions) {
     }), req.body)
     const id = String(row!.id)
     if (id === me.id && (b.active === false || (b.role && b.role !== me.role))) fail(400, 'No puedes desactivar ni cambiar el rol de tu propia cuenta.')
+    // El rol nuevo (o reactivar a alguien) tiene que caber en el tipo de cuenta
+    if ((b.role && b.role !== row!.role) || (b.active === true && !row!.active)) await assertRoleFits(sql, clinicOf(req), b.role ?? String(row!.role), id)
     const changes: string[] = []
     await sql.tx(async (q) => {
       if (b.active !== undefined) { await q.run('UPDATE staff SET active = ?, token_version = token_version + 1 WHERE id = ?', [b.active, id]); changes.push(b.active ? 'Reactivó a' : 'Desactivó a') }
@@ -932,6 +940,7 @@ const cleanSchedule = (s: z.infer<typeof scheduleInput>) => scheduleFromWeek(wee
 /** Crea un usuario dentro de una clínica y devuelve su contraseña temporal. */
 export async function createStaffMember(sql: Sql, clinicId: string, s: { name: string; role: (typeof ROLES)[number]; email: string; specialty?: string; license?: string }) {
   if (s.role === 'doctor' && !s.license) fail(400, 'Para un médico escribe su número de colegiación.')
+  await assertRoleFits(sql, clinicId, s.role)
   if (await sql.one('SELECT 1 FROM staff WHERE lower(email) = lower(?)', [s.email])) fail(409, 'Ya existe un usuario con ese correo.')
   const id = randomUUID()
   const password = tempPassword()
@@ -945,6 +954,22 @@ export async function createStaffMember(sql: Sql, clinicId: string, s: { name: s
 }
 
 export const CLINIC_ROLES = ROLES
+
+/**
+ * Cada tipo de cuenta tiene sus roles. Un consultorio tiene un solo médico (el titular) y hasta
+ * `max_assistants` asistentes activos; para sumar otro médico se convierte en clínica.
+ */
+export async function assertRoleFits(sql: Sql, clinicId: string, role: string, ignoreStaffId = '') {
+  const c = (await sql.one('SELECT kind, max_assistants FROM clinics WHERE id = ?', [clinicId])) ?? fail(404, 'La clínica no existe.')
+  const kind = String(c!.kind ?? 'clinic') as 'clinic' | 'office'
+  if (!(ROLES_BY_KIND[kind] as string[]).includes(role)) {
+    fail(400, kind === 'office' ? 'En un consultorio sólo se agregan asistentes. Para sumar otro médico, convierte el consultorio en clínica.' : 'El rol de asistente es para consultorios; en una clínica usa recepción o enfermería.')
+  }
+  if (kind !== 'office') return
+  const count = async (r: string) => Number((await sql.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM staff WHERE clinic_id = ? AND role = ? AND active AND id <> ?`, [clinicId, r, ignoreStaffId]))!.n)
+  if (role === 'doctor' && await count('doctor') >= 1) fail(400, 'El consultorio ya tiene su médico titular. Para sumar otro médico, convierte el consultorio en clínica.')
+  if (role === 'assistant' && await count('assistant') >= Number(c!.max_assistants ?? 2)) fail(400, `El consultorio ya tiene ${Number(c!.max_assistants ?? 2)} asistentes activos, el máximo de su cuenta.`)
+}
 
 /** Traduce los errores de conexión más comunes a un mensaje que indica qué revisar. */
 export function describeDbError(e: unknown) {
