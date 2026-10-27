@@ -8,6 +8,9 @@ import { api } from '../lib/api'
 import { ROLE_LABEL } from '../lib/permissions'
 import type { Staff } from '../lib/types'
 
+/** Cuentas de demo con botón de acceso rápido: un rol de cada tipo, la segunda clínica y el consultorio. */
+const DEMO_SHORTCUTS = ['s-super', 's-herrera', 's-rios', 's-mejia', 's-admin', 's2-rosales', 's3-lopez', 's3-asistente']
+
 export default function Login() {
   const { user, signIn } = useStore()
   const nav = useNavigate()
@@ -89,7 +92,7 @@ export default function Login() {
           {!needCode && demo.accounts.length > 0 && demo.password && (
             <div className="auth__demo">
               <span>Cuentas de demo (contraseña {demo.password})</span>
-              {demo.accounts.filter((s) => ['s-super', 's-herrera', 's-rios', 's-mejia', 's-admin', 's2-rosales'].includes(s.id) || !s.email.endsWith('@demo.clinara')).map((s) => (
+              {demo.accounts.filter((s) => DEMO_SHORTCUTS.includes(s.id) || !s.email.endsWith('@demo.clinara')).map((s) => (
                 <button key={s.id} className="demo-role" disabled={busy} onClick={() => enter(s.email, demo.password!)}>
                   <Avatar name={s.name} color={s.color} />
                   <span>
