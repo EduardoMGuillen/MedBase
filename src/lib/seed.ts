@@ -326,6 +326,82 @@ export function seedSecondClinic() {
   return { patients, appointments, services, setup }
 }
 
+// ---------- Consultorio de demostración (médico independiente) ----------
+export const OFFICE_CLINIC = 'c-al'
+
+/**
+ * Consultorio de la Dra. Ana López: un médico con su asistente. Pacientes con historial, la agenda de hoy en
+ * distintos estados, recetas y una paciente en observación con un medicamento por aplicar. Los diagnósticos
+ * usan CIE-11.
+ */
+export function seedOffice() {
+  const C = OFFICE_CLINIC
+  const doc = 's3-lopez'
+  const clinic = {
+    id: C, slug: 'ana-lopez', name: 'Consultorio Dra. Ana López', address: 'Tegucigalpa, Col. Lomas del Guijarro, Edificio Plaza Médica, local 4',
+    phone: '+504 2239-4410', email: 'consultorio@analopez.hn', currency: 'L', rxValidityDays: 30, specialty: 'Medicina general', license: 'CMH-14550',
+    reminderTemplate: 'Hola {paciente}, le recordamos su cita con {medico} el {fecha} a las {hora}. Responda SÍ para confirmar o llame al {telefono} si necesita cambiarla.',
+  }
+  const staff: Staff[] = [
+    { id: doc, clinicId: C, name: 'Dra. Ana López', role: 'doctor', specialty: 'Medicina general', email: 'alopez@demo.clinara', license: 'CMH-14550', color: '#2335C9', active: true },
+    { id: 's3-asistente', clinicId: C, name: 'Karla Mendoza', role: 'assistant', email: 'asistente@demo.clinara', color: '#0F8A6E', active: true },
+  ]
+  const patients: Patient[] = [
+    p('r1', 'EXP-00501', 'Daniela María', 'Ordóñez Pineda', '1990-04-12', 'F', '9876-1010', { dni: '0801-1990-04512', civilStatus: 'Casada', occupation: 'Contadora', address: 'Tegucigalpa, Col. Palmira', allergies: ['Penicilina'] }),
+    p('r2', 'EXP-00502', 'Jorge Alberto', 'Cáceres Lagos', '1968-09-30', 'M', '9455-2020', { dni: '0801-1968-03321', civilStatus: 'Casado', occupation: 'Abogado', address: 'Tegucigalpa, Col. Tepeyac', conditions: ['Hipertensión arterial'] }),
+    p('r3', 'EXP-00503', 'Sofía Alejandra', 'Banegas Rivera', '2017-06-02', 'F', '3311-3030', { guardianName: 'Lourdes Rivera', guardianDni: '0801-1988-07766', guardianRelation: 'Madre', address: 'Tegucigalpa, Res. El Trapiche' }),
+    p('r4', 'EXP-00504', 'Héctor Manuel', 'Zelaya Fúnez', '1955-01-21', 'M', '9988-4040', { dni: '0801-1955-00987', civilStatus: 'Viudo', occupation: 'Jubilado', address: 'Tegucigalpa, Barrio Abajo', conditions: ['Diabetes tipo 2', 'Hipertensión arterial'] }),
+    p('r5', 'EXP-00505', 'Gabriela', 'Matamoros Euceda', '1999-11-18', 'F', '3256-5050', { dni: '0801-1999-21456', civilStatus: 'Soltera', occupation: 'Estudiante', address: 'Tegucigalpa, Col. Kennedy' }),
+    p('r6', 'EXP-00506', 'Luis Fernando', 'Aguilar Coello', '1983-03-07', 'M', '9701-6060', { dni: '0801-1983-11002', civilStatus: 'Unión libre', occupation: 'Técnico electricista', address: 'Comayagüela, Col. San Miguel' }),
+    p('r7', 'EXP-00507', 'Rosa Amelia', 'Discua de Flores', '1949-07-25', 'F', '2232-7070', { dni: '0801-1949-00321', civilStatus: 'Casada', occupation: 'Ama de casa', address: 'Tegucigalpa, Col. Florencia Norte', conditions: ['Osteoartrosis'] }),
+    p('r8', 'EXP-00508', 'Kevin Josué', 'Turcios Maradiaga', '2004-12-01', 'M', '3190-8080', { dni: '0801-2004-30211', civilStatus: 'Soltero', occupation: 'Estudiante', address: 'Tegucigalpa, Col. Miraflores' }),
+  ]
+  n = 200
+  const appointments: Appointment[] = [
+    a('r2', doc, 0, 8, 0, 30, 'Control de presión arterial', 'done'),
+    a('r5', doc, 0, 8, 30, 30, 'Vómitos y diarrea desde anoche', 'done', 'first'),
+    a('r1', doc, 0, 9, 30, 30, 'Dolor de garganta y fiebre', 'triaged'),
+    a('r6', doc, 0, 10, 0, 30, 'Dolor lumbar', 'arrived', 'first'),
+    a('r4', doc, 0, 10, 30, 30, 'Control de diabetes', 'confirmed'),
+    a('r3', doc, 0, 11, 0, 30, 'Tos y mocos', 'scheduled'),
+    a('r7', doc, 0, 14, 30, 30, 'Dolor de rodillas', 'scheduled'),
+    a('r8', doc, 1, 9, 0, 30, 'Chequeo para el trabajo', 'scheduled', 'first'),
+    a('r2', doc, -30, 9, 0, 30, 'Control de presión arterial', 'done'),
+    a('r4', doc, -45, 10, 0, 30, 'Control de diabetes', 'done'),
+  ].map((x) => ({ ...x, id: x.id.replace('a', 'c') }))
+  const iso = (d: string) => new Date(d).toISOString()
+  const past = (x: Appointment) => iso(x.start)
+  const htaOld = appointments[8], dmOld = appointments[9], htaToday = appointments[0], gea = appointments[1]
+  const consultations = [
+    { id: 'k-r2-1', patientId: 'r2', appt: htaOld, reason: 'Control de presión arterial', dx: [{ code: 'BA00', label: 'Hipertensión esencial' }],
+      exam: 'PA 138/86. Ruidos cardíacos rítmicos, sin soplos.', orders: ['Dieta baja en sal.', 'Caminar 30 minutos al día.'],
+      items: [{ drug: 'Losartán', presentation: 'Tableta 50 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 24 horas', duration: '30 días', quantity: '30 tabletas' }] },
+    { id: 'k-r4-1', patientId: 'r4', appt: dmOld, reason: 'Control de diabetes', dx: [{ code: '5A11', label: 'Diabetes mellitus tipo 2' }],
+      exam: 'Glucometría 168 mg/dl. Pies sin lesiones.', orders: ['Dieta para diabético.', 'Hemoglobina glicosilada en 3 meses.'],
+      items: [{ drug: 'Metformina', presentation: 'Tableta 850 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 12 horas', duration: '30 días', quantity: '60 tabletas' }] },
+    { id: 'k-r2-2', patientId: 'r2', appt: htaToday, reason: 'Control de presión arterial', dx: [{ code: 'BA00', label: 'Hipertensión esencial' }],
+      exam: 'PA 128/82. Sin edemas.', orders: ['Continuar con la dieta baja en sal.', 'Cita de control en 1 mes.'],
+      items: [{ drug: 'Losartán', presentation: 'Tableta 50 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 24 horas', duration: '30 días', quantity: '30 tabletas' }] },
+    // Ambulatoria con un medicamento que se aplica en el consultorio: queda en observación
+    { id: 'k-r5-1', patientId: 'r5', appt: gea, reason: 'Vómitos y diarrea desde anoche', dx: [{ code: '1A40.Z', label: 'Gastroenteritis o colitis infecciosa, sin especificar' }],
+      exam: 'Mucosas semihúmedas. Abdomen blando, ruidos aumentados.', orders: ['Suero oral a libre demanda.', 'Dieta blanda.'], observe: true,
+      items: [{ drug: 'Dimenhidrinato', presentation: 'Ampolla 50 mg/ml', dose: '50 mg', route: 'Intramuscular', frequency: 'Dosis única', duration: '', applyInClinic: true }] },
+  ]
+  let folio = 3001
+  const prescriptions = consultations.filter((c) => c.items.some((i) => !('applyInClinic' in i))).map((c) => ({
+    id: `rx-${c.id}`, folio: `RX-${new Date().getFullYear()}-${folio++}`, patientId: c.patientId, doctorId: doc, consultationId: c.id, issuedAt: past(c.appt), items: c.items,
+  }))
+  const services: Service[] = [
+    { id: 'al-consulta', name: 'Consulta', price: 600, active: true }, { id: 'al-control', name: 'Control o reconsulta', price: 350, active: true },
+    { id: 'al-inyeccion', name: 'Aplicación de inyección', price: 150, active: true }, { id: 'al-curacion', name: 'Curación', price: 300, active: true },
+  ]
+  const schedule: Schedule = { days: [1, 2, 3, 4, 5, 6], start: '08:00', end: '17:00', slot: 30,
+    week: { 1: [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '17:00' }], 2: [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '17:00' }],
+      3: [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '17:00' }], 4: [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '17:00' }],
+      5: [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '17:00' }], 6: [{ start: '08:00', end: '12:00' }] } }
+  return { clinic, staff, patients, appointments, consultations, prescriptions, services, schedule, serviceId: 'al-consulta', doctorId: doc }
+}
+
 // ---------- Hospitalización y seguimientos de demostración ----------
 
 /** Pacientes que están hospitalizados en la demo; no tienen citas en la agenda de hoy. */

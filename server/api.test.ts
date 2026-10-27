@@ -457,7 +457,9 @@ describe('varias clínicas', () => {
     assert.equal(boot.body.patients.length, 0)
     assert.equal((await sa.get('/api/patients/p1/chart')).status, 403)
     const list = await sa.get('/api/platform/clinics')
-    assert.equal(list.body.length, 2)
+    // Dos clínicas y el consultorio de demostración
+    assert.equal(list.body.length, 3)
+    assert.equal(list.body.filter((c: any) => c.kind === 'office').length, 1)
     assert.ok(list.body[0].stats.patients > 0)
 
     const created = await sa.post('/api/platform/clinics', { name: 'Clínica Nueva Esperanza', address: 'La Ceiba', phone: '2440-0000', admin: { name: 'Ana Admin', email: 'ana@esperanza.test' } })

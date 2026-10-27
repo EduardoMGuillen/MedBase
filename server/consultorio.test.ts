@@ -200,3 +200,24 @@ describe('C7 observación opcional en el consultorio', () => {
     assert.equal((await o.doc.post('/api/consultations', { appointmentId: appt, reason: 'Vómitos', diagnoses: dx, orders: ['Reposo.'] })).status, 201)
   })
 })
+
+describe('C8 consultorio de demostración', () => {
+  test('la demo trae el consultorio con su médico, su asistente, agenda, recetas y una paciente en observación', async () => {
+    const accounts = (await (await fetch(`${base}/api/demo-accounts`)).json() as any).accounts
+    assert.ok(accounts.some((a: any) => a.email === 'alopez@demo.clinara' && a.clinicName === 'Consultorio Dra. Ana López'))
+    assert.ok(accounts.some((a: any) => a.email === 'asistente@demo.clinara' && a.role === 'assistant'))
+    const doc = await as('alopez@demo.clinara')
+    assert.equal(doc.login.user.clinicKind, 'office')
+    const boot = (await doc.get('/api/bootstrap')).body
+    assert.ok(boot.settings.setupDoneAt, 'sin asistente de primer ingreso en la demo')
+    assert.equal(boot.patients.length, 8)
+    assert.ok(boot.appointments.some((a: any) => a.status === 'triaged'))
+    const obs = boot.inpatients.find((h: any) => h.kind === 'observation')
+    assert.ok(obs)
+    const file = (await doc.get(`/api/inpatient/${obs.id}`)).body
+    assert.deepEqual(file.meds.map((m: any) => m.drug), ['Dimenhidrinato'])
+    assert.equal(file.authorizations[0].template, 'hospital')
+    // No ve nada de la clínica Santa Brígida
+    assert.equal((await doc.get('/api/patients/p1/chart')).status, 404)
+  })
+})

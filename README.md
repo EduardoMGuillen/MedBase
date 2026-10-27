@@ -38,6 +38,8 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
 | Administración | admin@demo.clinara | Reportes, personal, configuración, bitácora |
 | Administración de Clinara | superadmin@demo.clinara | Clínicas y sus usuarios (sin expedientes) |
 | Médico de otra clínica (San Lucas) | erosales@demo.clinara | Sólo los pacientes de su clínica |
+| Consultorio: médico titular | alopez@demo.clinara | La Dra. Ana López en su propio consultorio: atiende, cobra, configura y ve sus reportes |
+| Consultorio: asistente | asistente@demo.clinara | Agenda, llegadas, preclínica, caja y aplicar medicamentos en observación |
 
 ## Recorrido sugerido (15 minutos)
 
@@ -64,6 +66,18 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
    - Revisa *Reportes* (ingresos, asistencia, diagnósticos frecuentes) y exporta a CSV.
    - En *Configuración*, cambia el nombre de la clínica, los precios y los horarios de cada médico. El horario define qué horas se ofrecen en la reserva en línea.
    - En *Personal y roles*, crea usuarios y revisa la *Bitácora*.
+
+## Consultorio (médico independiente)
+
+Además de clínicas, Clinara tiene cuentas de **consultorio** para un médico que atiende en su propio consultorio, solo o con hasta 2 asistentes. La crea la Administración de Clinara en *Nueva cuenta, Consultorio*; el médico titular entra con su contraseña temporal y un asistente de tres pasos le pide los datos del consultorio, su horario y el precio de la consulta.
+
+- El médico titular atiende y además administra: configuración, precios, horario, vademécum, caja, reportes, bitácora y asistentes.
+- No hay hospitalización ni camas. La observación (aplicar un medicamento, hidratar) viene activada y se apaga en Configuración.
+- Sin controles de varios médicos: la agenda, la consulta externa, las recetas, los reportes y la reserva en línea no preguntan por médico.
+- Recetas y constancias salen con el médico como encabezado.
+- Si contrata a otro médico, *Configuración, Convertir en clínica* lo vuelve clínica sin mover datos.
+
+Recorrido: entra como `alopez@demo.clinara`, atiende a Daniela Ordóñez (ya tiene preclínica), emite la receta y revisa a Gabriela Matamoros en Observación. Como `asistente@demo.clinara`, marca la llegada de Héctor Zelaya, toma su preclínica y cobra.
 
 ## Módulos
 

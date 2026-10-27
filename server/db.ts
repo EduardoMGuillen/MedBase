@@ -2,11 +2,12 @@ import bcrypt from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
 import {
   BEDS, CASE_BED, CASE_PATIENT_IDS, CASE_STAFF, DEFAULT_SETTINGS, DEMO_CLINICS, DOCTOR_SETUP, INPATIENT_PATIENTS, MAIN_CLINIC, PATIENTS, SECOND_CLINIC, SERVICES, STAFF,
-  seedAppointments, seedCases, seedClinical, seedHistory, seedInpatient, seedSecondClinic, seedUpcoming,
+  OFFICE_CLINIC, seedAppointments, seedCases, seedClinical, seedHistory, seedInpatient, seedOffice, seedSecondClinic, seedUpcoming,
 } from '../src/lib/seed.js'
 import type { Appointment, Patient, Payment, Schedule } from '../src/lib/types.js'
 import type { Row, Sql } from './sql.js'
 import { pullConsultationOrders } from './medOrders.js'
+import { ensureHospitalAuthorization } from './authorizations.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
@@ -190,7 +191,7 @@ ALTER TABLE attachments ADD COLUMN IF NOT EXISTS clinic_id TEXT REFERENCES clini
 ALTER TABLE services ADD COLUMN IF NOT EXISTS clinic_id TEXT REFERENCES clinics(id);
 ALTER TABLE audit ADD COLUMN IF NOT EXISTS clinic_id TEXT;
 ALTER TABLE staff DROP CONSTRAINT IF EXISTS staff_role_check;
-ALTER TABLE staff ADD CONSTRAINT staff_role_check CHECK (role IN ('superadmin','admin','doctor','nurse','reception'));
+ALTER TABLE staff ADD CONSTRAINT staff_role_check CHECK (role IN ('superadmin','admin','doctor','nurse','reception','assistant'));
 -- Expedientes, folios y recibos se numeran por clínica
 ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_record_key;
 ALTER TABLE prescriptions DROP CONSTRAINT IF EXISTS prescriptions_folio_key;
@@ -510,6 +511,7 @@ export function ensureDb(sql: Sql) {
         await addDemoInpatients(q)
         await addDemoCases(q)
         await linkPendingAdmissions(q)
+        await addDemoOffice(q)
       }
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
@@ -607,6 +609,7 @@ export async function seed(q: Sql) {
 
   await insertInpatients(q)
   await insertCases(q)
+  await insertOffice(q)
   await q.run(`INSERT INTO meta (key, value) VALUES ('seeded', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [now])
 }
 
@@ -723,6 +726,55 @@ async function addDemoCases(q: Sql) {
   if (!(await q.one(`SELECT 1 FROM beds WHERE id = ? AND clinic_id = ?`, [CASE_BED, MAIN_CLINIC]))) return
   if (await q.one(`SELECT 1 FROM patients WHERE id IN (${list(CASE_PATIENT_IDS)}) LIMIT 1`, CASE_PATIENT_IDS)) return
   await insertCases(q)
+}
+
+/** Consultorio de demostración: la Dra. Ana López con su asistente, agenda de hoy, recetas y una paciente en observación. */
+async function insertOffice(q: Sql) {
+  const d = seedOffice()
+  const c = d.clinic
+  const now = new Date().toISOString()
+  await q.run(`INSERT INTO clinics (id, slug, name, address, phone, email, currency, rx_validity_days, reminder_template, active, created_at, kind, owner_id, specialty, license, setup_done_at)
+    VALUES (?,?,?,?,?,?,?,?,?,TRUE,?,'office',?,?,?,?)`,
+    [c.id, c.slug, c.name, c.address, c.phone, c.email, c.currency, c.rxValidityDays, c.reminderTemplate, now, d.doctorId, c.specialty, c.license, now])
+  await insertMany(q, 'services', ['id', 'name', 'price', 'active', 'clinic_id'], d.services.map((x) => [x.id, x.name, x.price, x.active, c.id]))
+  const hash = bcrypt.hashSync(DEMO_PASSWORD, 10)
+  await insertMany(q, 'staff', ['id', 'name', 'role', 'specialty', 'email', 'license', 'color', 'active', 'password_hash', 'schedule', 'service_id', 'clinic_id'],
+    d.staff.map((x) => [x.id, x.name, x.role, x.specialty ?? null, x.email, x.license ?? null, x.color, true, hash, x.role === 'doctor' ? JSON.stringify(d.schedule) : null,
+      x.role === 'doctor' ? d.serviceId : null, c.id]))
+  await insertMany(q, 'patients', PATIENT_COLUMNS, d.patients.map((p) => patientRow(p, c.id)))
+  await q.run(`UPDATE patients SET guardian_name = 'Lourdes Rivera', guardian_dni = '0801-1988-07766', guardian_relation = 'Madre' WHERE id = 'r3'`)
+  await insertMany(q, 'appointments', ['id', 'patient_id', 'doctor_id', 'start', 'minutes', 'reason', 'type', 'status', 'arrived_at', 'source', 'clinic_id'],
+    d.appointments.map((a) => [a.id, a.patientId, a.doctorId, a.start, a.minutes, a.reason, a.type, a.status,
+      ['arrived', 'triaged'].includes(a.status) ? new Date(Date.now() - 10 * 60_000).toISOString() : null, 'staff', c.id]))
+  // Signos de la paciente que ya pasó por preclínica
+  const triaged = d.appointments.find((a) => a.status === 'triaged')!
+  await q.run(`INSERT INTO vitals (id, patient_id, appointment_id, taken_by, taken_at, systolic, diastolic, heart_rate, temperature, spo2, weight_kg, height_cm, resp_rate, chief_complaint, clinic_id)
+    VALUES ('v-al-1', ?, ?, 's3-asistente', ?, 112, 72, 96, 38.4, 98, 61, 160, 18, 'Dolor de garganta y fiebre desde ayer', ?)`, [triaged.patientId, triaged.id, new Date(Date.now() - 5 * 60_000).toISOString(), c.id])
+  for (const k of d.consultations) {
+    const date = new Date(k.appt.start).toISOString()
+    const rx = d.prescriptions.find((r) => r.consultationId === k.id)
+    if (rx) await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, issued_at, items, clinic_id) VALUES (?,?,?,?,?,?,?,?)`,
+      [rx.id, rx.folio, rx.patientId, rx.doctorId, rx.consultationId, rx.issuedAt, JSON.stringify(rx.items), c.id])
+    await q.run(`INSERT INTO consultations (id, patient_id, doctor_id, appointment_id, date, reason, symptoms, history, exam, diagnoses, plan, prescription_id, orders, clinic_id, indications, admit_kind, meds)
+      VALUES (?,?,?,?,?,?,'[]','',?,?,?,?,?,?,?,?,?)`,
+      [k.id, k.patientId, d.doctorId, k.appt.id, date, k.reason, k.exam, JSON.stringify(k.dx), k.orders.map((o, i) => `${i + 1}. ${o}`).join('\n'), rx?.id ?? null,
+        JSON.stringify(k.orders), c.id, JSON.stringify(k.orders), k.observe ? 'observation' : null, JSON.stringify(k.items)])
+    if (!k.observe) continue
+    const stay = `h-${k.id}`
+    await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, patient_phone, status, kind)
+      VALUES (?,?,?,NULL,?,?,?,?,?,?,'active','observation')`, [stay, c.id, k.patientId, k.id, date, d.doctorId, k.reason, JSON.stringify(k.dx), '3256-5050'])
+    await pullConsultationOrders(q, { clinicId: c.id, hospitalizationId: stay, consultationId: k.id })
+    await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [stay]))!, { id: d.doctorId, role: 'doctor' })
+  }
+}
+
+/** Una base de demostración que ya existía recibe el consultorio de demostración sin reiniciar sus datos. */
+async function addDemoOffice(q: Sql) {
+  if (!(await q.one(`SELECT 1 FROM clinics WHERE id = ?`, [MAIN_CLINIC]))) return
+  if (!(await q.one(`SELECT 1 FROM staff WHERE id = 's-herrera' AND email LIKE '%@demo.clinara'`))) return
+  if (await q.one(`SELECT 1 FROM clinics WHERE id = ?`, [OFFICE_CLINIC])) return
+  if (await q.one(`SELECT 1 FROM staff WHERE lower(email) IN ('alopez@demo.clinara', 'asistente@demo.clinara')`)) return
+  await insertOffice(q)
 }
 
 /**
