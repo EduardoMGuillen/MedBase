@@ -4,10 +4,9 @@ import { Building2, ChevronLeft, ExternalLink, Plus, UserPlus } from 'lucide-rea
 import { useStore } from '../lib/store'
 import { Avatar, Loading, Modal, PageHead } from '../components/ui'
 import { date, time } from '../lib/format'
-import { ROLE_LABEL, ROLE_SUMMARY } from '../lib/permissions'
-import type { Clinic, ClinicRole, Staff } from '../lib/types'
+import { ROLE_LABEL, ROLE_SUMMARY, ROLES_BY_KIND } from '../lib/permissions'
+import type { Clinic, ClinicKind, ClinicRole, Staff } from '../lib/types'
 
-const CLINIC_ROLES: ClinicRole[] = ['admin', 'doctor', 'nurse', 'reception']
 const slugify = (name: string) => name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
 const bookingUrl = (slug: string) => `${window.location.origin}/reservar/${slug}`
 
@@ -42,15 +41,15 @@ export default function Platform() {
 
   return (
     <div className="page">
-      <PageHead title="Clínicas" sub="Administración de la plataforma Clinara. Desde aquí no se ven expedientes de pacientes."
+      <PageHead title="Clínicas y consultorios" sub="Administración de la plataforma Clinara. Desde aquí no se ven expedientes de pacientes."
         actions={<>
           {demo && <button className="btn btn--ghost" onClick={async () => { if (confirm('Esto borra todos los cambios de todas las clínicas y vuelve a cargar la demostración.') && await resetDemo()) load() }}>Restablecer demo</button>}
-          <button className="btn btn--primary" onClick={() => setCreating(true)}><Plus size={17} />Nueva clínica</button>
+          <button className="btn btn--primary" onClick={() => setCreating(true)}><Plus size={17} />Nueva cuenta</button>
         </>} />
 
       {!clinics ? <Loading /> : (<>
         <div className="stats">
-          <div className="stat"><b className="num">{active.length}</b><span>Clínicas activas</span>{clinics.length > active.length && <small style={{ color: 'var(--muted)' }}>{clinics.length - active.length} desactivadas</small>}</div>
+          <div className="stat"><b className="num">{active.length}</b><span>Cuentas activas ({active.filter((c) => c.kind === 'office').length} consultorios)</span>{clinics.length > active.length && <small style={{ color: 'var(--muted)' }}>{clinics.length - active.length} desactivadas</small>}</div>
           <div className="stat"><b className="num">{sum('staff')}</b><span>Usuarios</span></div>
           <div className="stat"><b className="num">{sum('patients')}</b><span>Pacientes registrados</span></div>
           <div className="stat"><b className="num">{sum('consultations30')}</b><span>Consultas, últimos 30 días</span></div>
@@ -58,11 +57,12 @@ export default function Platform() {
 
         <section className="panel table-wrap">
           <table className="table">
-            <thead><tr><th>Clínica</th><th>Estado</th><th style={{ textAlign: 'right' }}>Usuarios</th><th style={{ textAlign: 'right' }}>Pacientes</th><th style={{ textAlign: 'right' }}>Citas 30 días</th><th>Última actividad</th></tr></thead>
+            <thead><tr><th>Cuenta</th><th>Tipo</th><th>Estado</th><th style={{ textAlign: 'right' }}>Usuarios</th><th style={{ textAlign: 'right' }}>Pacientes</th><th style={{ textAlign: 'right' }}>Citas 30 días</th><th>Última actividad</th></tr></thead>
             <tbody>{clinics.map((c) => (
               <tr key={c.id} style={c.active ? undefined : { opacity: 0.6 }}>
                 <td><div className="cell-person"><span className="clinic-ico"><Building2 size={18} /></span>
                   <Link to={`/app/clinicas/${c.id}`}>{c.name}<small>/reservar/{c.slug}</small></Link></div></td>
+                <td>{c.kind === 'office' ? <span className="badge badge--ink">Consultorio</span> : <span className="badge">Clínica</span>}</td>
                 <td>{c.active ? <span className="badge badge--mint">Activa</span> : <span className="badge">Desactivada</span>}</td>
                 <td className="num" style={{ textAlign: 'right' }}>{c.stats?.staff ?? 0}</td>
                 <td className="num" style={{ textAlign: 'right' }}>{c.stats?.patients ?? 0}</td>
@@ -71,7 +71,7 @@ export default function Platform() {
               </tr>
             ))}</tbody>
           </table>
-          {!clinics.length && <div className="empty">Aún no hay clínicas. Crea la primera con <b>Nueva clínica</b>.</div>}
+          {!clinics.length && <div className="empty">Aún no hay cuentas. Crea la primera con <b>Nueva cuenta</b>.</div>}
         </section>
 
         <section className="panel">
@@ -87,8 +87,8 @@ export default function Platform() {
 
       {creating && <NewClinic onClose={() => setCreating(false)} onCreated={(r) => {
         setCreating(false); load()
-        setSecret({ title: 'Clínica creada', name: r.admin.name, email: r.admin.email, password: r.password, extra: (
-          <div className="field"><span>Reserva en línea de la clínica</span><div className="secret" style={{ fontSize: 14 }}>{bookingUrl(r.clinic.slug)}</div></div>
+        setSecret({ title: r.clinic.kind === 'office' ? 'Consultorio creado' : 'Clínica creada', name: r.admin.name, email: r.admin.email, password: r.password, extra: (
+          <div className="field"><span>Reserva en línea {r.clinic.kind === 'office' ? 'del consultorio' : 'de la clínica'}</span><div className="secret" style={{ fontSize: 14 }}>{bookingUrl(r.clinic.slug)}</div></div>
         ) })
       }} create={createClinic} />}
       {secret && <SecretModal s={secret} onClose={() => setSecret(null)} />}
@@ -96,42 +96,81 @@ export default function Platform() {
   )
 }
 
+/**
+ * Nueva cuenta: una clínica (con su usuario de administración) o el consultorio de un médico independiente
+ * (con el médico titular, que también lo administra).
+ */
 function NewClinic({ onClose, onCreated, create }: {
   onClose: () => void; onCreated: (r: { clinic: Clinic; admin: Staff; password: string }) => void
   create: ReturnType<typeof useStore>['createClinic']
 }) {
-  const [f, setF] = useState({ name: '', slug: '', address: '', phone: '', email: '', adminName: '', adminEmail: '' })
-  const [slugTouched, setSlugTouched] = useState(false)
+  const [kind, setKind] = useState<ClinicKind>('clinic')
+  const [f, setF] = useState({ name: '', slug: '', address: '', phone: '', email: '', adminName: '', adminEmail: '', license: '', specialty: 'Medicina general' })
+  const [touched, setTouched] = useState({ slug: false, name: false })
   const [busy, setBusy] = useState(false)
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value, ...(k === 'name' && !slugTouched ? { slug: slugify(e.target.value) } : {}) })
-  const valid = f.name.trim().length >= 3 && /^[a-z0-9-]{3,40}$/.test(f.slug) && f.adminName.trim().length >= 3 && /\S+@\S+\.\S+/.test(f.adminEmail)
+  const office = kind === 'office'
+  // En un consultorio el nombre y la dirección de reserva salen del médico mientras no se cambien a mano
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value
+    const next = { ...f, [k]: v }
+    if (k === 'name' && !office && !touched.slug) next.slug = slugify(v)
+    if (k === 'adminName' && office) {
+      if (!touched.name) next.name = v.trim() ? `Consultorio ${v.trim()}` : ''
+      if (!touched.slug) next.slug = slugify(v.replace(/^dra?\.?\s+/i, ''))
+    }
+    if (k === 'name') setTouched({ ...touched, name: true })
+    setF(next)
+  }
+  const valid = f.name.trim().length >= 3 && /^[a-z0-9-]{3,40}$/.test(f.slug) && f.adminName.trim().length >= 3 && /\S+@\S+\.\S+/.test(f.adminEmail) && (!office || f.license.trim().length >= 2)
+  const person = { name: f.adminName.trim(), email: f.adminEmail.trim() }
   return (
-    <Modal title="Nueva clínica" wide onClose={onClose} footer={<>
+    <Modal title={office ? 'Nuevo consultorio' : 'Nueva clínica'} wide onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!valid || busy} onClick={async () => {
         setBusy(true)
-        const r = await create({ name: f.name.trim(), slug: f.slug, address: f.address.trim(), phone: f.phone.trim(), email: f.email.trim(), admin: { name: f.adminName.trim(), email: f.adminEmail.trim() } })
+        const r = await create({ kind, name: f.name.trim(), slug: f.slug, address: f.address.trim(), phone: f.phone.trim(), email: f.email.trim(),
+          ...(office ? { owner: { ...person, license: f.license.trim(), specialty: f.specialty.trim() || undefined } } : { admin: person }) })
         setBusy(false)
         if (r) onCreated(r)
-      }}>Crear clínica</button>
+      }}>{office ? 'Crear consultorio' : 'Crear clínica'}</button>
     </>}>
-      <fieldset className="fs"><legend>Clínica</legend>
+      <div className="segmented" role="radiogroup" aria-label="Tipo de cuenta">
+        <button role="radio" aria-checked={!office} onClick={() => setKind('clinic')}>Clínica</button>
+        <button role="radio" aria-checked={office} onClick={() => setKind('office')}>Consultorio (médico independiente)</button>
+      </div>
+      <p className="muted" style={{ fontSize: 13.5 }}>{office
+        ? 'Un médico que atiende en su propio consultorio, solo o con una asistente. Él mismo lo administra: horario, precios, caja y reportes. No tiene hospitalización; sí observación, que puede apagar.'
+        : 'Varios médicos, recepción, enfermería y hospitalización. La administra un usuario de administración.'}</p>
+      {office && (
+        <fieldset className="fs"><legend>Médico titular</legend>
+          <p style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: -4 }}>Entra con este correo y una contraseña temporal que verás al crear el consultorio. Si también trabaja en una clínica, usa otro correo.</p>
+          <div className="form-grid">
+            <label className="field"><span>Nombre como sale en la receta</span><input className="input" value={f.adminName} onChange={set('adminName')} placeholder="Ej. Dra. Ana López" autoFocus /></label>
+            <label className="field"><span>Correo de acceso</span><input className="input" type="email" value={f.adminEmail} onChange={set('adminEmail')} /></label>
+            <label className="field"><span>Número de colegiación</span><input className="input" value={f.license} onChange={set('license')} placeholder="Ej. CMH-12345" /></label>
+            <label className="field"><span>Especialidad</span><input className="input" value={f.specialty} onChange={set('specialty')} /></label>
+          </div>
+        </fieldset>
+      )}
+      <fieldset className="fs"><legend>{office ? 'Consultorio' : 'Clínica'}</legend>
         <div className="form-grid">
-          <label className="field span-2"><span>Nombre</span><input className="input" value={f.name} onChange={set('name')} placeholder="Ej. Clínica Médica La Esperanza" autoFocus /></label>
+          <label className="field span-2"><span>Nombre</span><input className="input" value={f.name} onChange={set('name')} placeholder={office ? 'Ej. Consultorio Dra. Ana López' : 'Ej. Clínica Médica La Esperanza'} autoFocus={!office} /></label>
           <label className="field span-2"><span>Dirección de reserva en línea</span>
-            <div className="slug-input"><span>/reservar/</span><input className="input" value={f.slug} onChange={(e) => { setSlugTouched(true); setF({ ...f, slug: slugify(e.target.value) || e.target.value.toLowerCase() }) }} /></div></label>
+            <div className="slug-input"><span>/reservar/</span><input className="input" value={f.slug} onChange={(e) => { setTouched({ ...touched, slug: true }); setF({ ...f, slug: slugify(e.target.value) || e.target.value.toLowerCase() }) }} /></div></label>
           <label className="field span-2"><span>Dirección</span><input className="input" value={f.address} onChange={set('address')} /></label>
           <label className="field"><span>Teléfono</span><input className="input" inputMode="tel" value={f.phone} onChange={set('phone')} /></label>
           <label className="field"><span>Correo (opcional)</span><input className="input" type="email" value={f.email} onChange={set('email')} /></label>
         </div>
       </fieldset>
-      <fieldset className="fs"><legend>Quién la administrará</legend>
-        <p style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: -4 }}>Esta persona podrá crear médicos, enfermería y recepción de su clínica. Recibirás una contraseña temporal para entregársela.</p>
-        <div className="form-grid">
-          <label className="field"><span>Nombre completo</span><input className="input" value={f.adminName} onChange={set('adminName')} /></label>
-          <label className="field"><span>Correo de acceso</span><input className="input" type="email" value={f.adminEmail} onChange={set('adminEmail')} /></label>
-        </div>
-      </fieldset>
+      {!office && (
+        <fieldset className="fs"><legend>Quién la administrará</legend>
+          <p style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: -4 }}>Esta persona podrá crear médicos, enfermería y recepción de su clínica. Recibirás una contraseña temporal para entregársela.</p>
+          <div className="form-grid">
+            <label className="field"><span>Nombre completo</span><input className="input" value={f.adminName} onChange={set('adminName')} /></label>
+            <label className="field"><span>Correo de acceso</span><input className="input" type="email" value={f.adminEmail} onChange={set('adminEmail')} /></label>
+          </div>
+        </fieldset>
+      )}
     </Modal>
   )
 }
@@ -159,7 +198,7 @@ export function ClinicDetail() {
         <div>
           <Link to="/app" className="back-link"><ChevronLeft size={15} />Clínicas</Link>
           <h1>{clinic.name}</h1>
-          <p>{clinic.active ? <span className="badge badge--mint">Activa</span> : <span className="badge">Desactivada</span>} Creada el {date(clinic.createdAt)}</p>
+          <p>{clinic.kind === 'office' && <span className="badge badge--ink">Consultorio</span>} {clinic.active ? <span className="badge badge--mint">Activa</span> : <span className="badge">Desactivada</span>} Creada el {date(clinic.createdAt)}</p>
         </div>
         <div className="page-head__actions">
           <a className="btn btn--ghost" href={`/reservar/${clinic.slug}`} target="_blank" rel="noreferrer"><ExternalLink size={16} />Reserva en línea</a>
@@ -190,7 +229,7 @@ export function ClinicDetail() {
                   <td>
                     <select className="select" style={{ height: 34, width: 'auto' }} value={s.role} aria-label={`Rol de ${s.name}`}
                       onChange={async (e) => { if (await updatePlatformStaff(s.id, { role: e.target.value as ClinicRole })) load() }}>
-                      {CLINIC_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                      {ROLES_BY_KIND[clinic.kind ?? 'clinic'].map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                     </select>
                   </td>
                   <td><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Desactivado</span>}
@@ -234,7 +273,7 @@ export function ClinicDetail() {
         </section>
       </div>
 
-      {adding && <NewMember clinicName={clinic.name} onClose={() => setAdding(false)} onCreate={async (m) => {
+      {adding && <NewMember clinicName={clinic.name} roles={ROLES_BY_KIND[clinic.kind ?? 'clinic']} onClose={() => setAdding(false)} onCreate={async (m) => {
         const r = await createClinicStaff(clinic.id, m)
         if (r) { setAdding(false); load(); setSecret({ title: 'Usuario creado', name: r.user.name, email: r.user.email, password: r.password }) }
       }} />}
@@ -243,8 +282,8 @@ export function ClinicDetail() {
   )
 }
 
-function NewMember({ clinicName, onClose, onCreate }: { clinicName: string; onClose: () => void; onCreate: (m: { name: string; role: ClinicRole; email: string; specialty?: string; license?: string }) => Promise<void> }) {
-  const [f, setF] = useState({ name: '', role: 'doctor' as ClinicRole, email: '', specialty: '', license: '' })
+function NewMember({ clinicName, roles, onClose, onCreate }: { clinicName: string; roles: ClinicRole[]; onClose: () => void; onCreate: (m: { name: string; role: ClinicRole; email: string; specialty?: string; license?: string }) => Promise<void> }) {
+  const [f, setF] = useState({ name: '', role: roles.includes('doctor') && roles.length > 2 ? 'doctor' as ClinicRole : roles.at(-1)!, email: '', specialty: '', license: '' })
   const [busy, setBusy] = useState(false)
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
   const valid = f.name.trim().length >= 3 && /\S+@\S+\.\S+/.test(f.email) && (f.role !== 'doctor' || f.license.trim())
@@ -258,7 +297,7 @@ function NewMember({ clinicName, onClose, onCreate }: { clinicName: string; onCl
       }}>Crear usuario</button>
     </>}>
       <label className="field"><span>Nombre completo, con título si aplica</span><input className="input" value={f.name} onChange={set('name')} placeholder="Ej. Dra. Ana López" autoFocus /></label>
-      <label className="field"><span>Rol</span><select className="select" value={f.role} onChange={set('role')}>{CLINIC_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></label>
+      <label className="field"><span>Rol</span><select className="select" value={f.role} onChange={set('role')}>{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></label>
       <p style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: -6 }}>{ROLE_SUMMARY[f.role]}</p>
       <label className="field"><span>Correo de acceso</span><input className="input" type="email" value={f.email} onChange={set('email')} /></label>
       {f.role === 'doctor' && (

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
-  Appointment, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
+  Appointment, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
@@ -292,8 +292,9 @@ function useStoreValue() {
       setSession(me)
     }, 'Verificación en dos pasos desactivada'),
     resetDemo: () => run(() => api('/admin/reset-demo', { method: 'POST' }), 'Datos de demo restablecidos'),
-    createClinic: (c: Pick<Clinic, 'name' | 'address' | 'phone' | 'email'> & { slug?: string; admin: { name: string; email: string } }) =>
-      run(() => api<{ clinic: Clinic; admin: Staff; password: string }>('/platform/clinics', { body: c }), 'Clínica creada'),
+    createClinic: (c: Pick<Clinic, 'name' | 'address' | 'phone' | 'email'> & { slug?: string; kind?: ClinicKind; admin?: { name: string; email: string }
+      owner?: { name: string; email: string; license: string; specialty?: string } }) =>
+      run(() => api<{ clinic: Clinic; admin: Staff; password: string }>('/platform/clinics', { body: c }), c.kind === 'office' ? 'Consultorio creado' : 'Clínica creada'),
     updateClinic: (id: string, c: Partial<Pick<Clinic, 'name' | 'slug' | 'address' | 'phone' | 'email' | 'currency' | 'active'>>, success = 'Clínica actualizada') =>
       run(() => api<Clinic>(`/platform/clinics/${id}`, { method: 'PATCH', body: c }), success),
     createClinicStaff: (clinicId: string, s: { name: string; role: ClinicRole; email: string; specialty?: string; license?: string }) =>

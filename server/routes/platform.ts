@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { type Ctx, fail, parse } from '../http.js'
 import { slugify } from '../db.js'
 import { toAudit, toClinic, toStaff } from '../mappers.js'
-import { CLINIC_ROLES, createStaffMember, tempPassword } from '../app.js'
+import { assertRoleFits, CLINIC_ROLES, createStaffMember, tempPassword } from '../app.js'
 import { DEFAULT_SETTINGS } from '../../src/lib/seed.js'
 
 const CLINIC_STATS = `
@@ -15,8 +15,9 @@ const CLINIC_STATS = `
   (SELECT COUNT(*)::int FROM consultations k WHERE k.clinic_id = c.id AND k.date >= ?) AS cons30,
   (SELECT MAX(at) FROM audit l WHERE l.clinic_id = c.id) AS last_activity`
 
-/** Servicios con los que arranca una clínica nueva; cada clínica los ajusta después. */
+/** Servicios con los que arranca una cuenta nueva; cada una los ajusta después. */
 const STARTER_SERVICES = [['Consulta general', 500], ['Consulta de especialidad', 800], ['Curación', 300], ['Aplicación de inyección', 150]] as const
+const OFFICE_SERVICES = [['Consulta', 500], ['Control o reconsulta', 300], ['Aplicación de inyección', 150], ['Curación', 300]] as const
 
 /**
  * Administración de la plataforma: clínicas y sus usuarios.
@@ -41,24 +42,42 @@ export function registerPlatform(app: Express, { sql, auth, need, userOf, audit 
     res.json(rows.map(toClinic))
   })
 
+  /**
+   * Nueva cuenta. Una clínica nace con su usuario de administración. Un consultorio nace con su médico
+   * titular, que es a la vez quien lo administra; su dirección de reserva sale del nombre del médico.
+   */
   app.post('/api/platform/clinics', ...guard, async (req, res) => {
     const b = parse(clinicBody.extend({
+      kind: z.enum(['clinic', 'office']).default('clinic'),
       admin: z.object({
         name: z.string().trim().min(3, 'Escribe el nombre de quien administrará la clínica.'),
         email: z.string().trim().email('El correo de administración no es válido.'),
-      }),
+      }).optional(),
+      owner: z.object({
+        name: z.string().trim().min(3, 'Escribe el nombre del médico.'),
+        email: z.string().trim().email('El correo del médico no es válido.'),
+        license: z.string().trim().min(2, 'Escribe el número de colegiación del médico.').max(30),
+        specialty: z.string().trim().max(60).optional(),
+      }).optional(),
     }), req.body)
-    const slug = b.slug ?? slugify(b.name)
-    if (await sql.one('SELECT 1 FROM clinics WHERE slug = ?', [slug])) fail(409, `Ya existe una clínica con la dirección de reserva "${slug}". Elige otra.`)
-    if (await sql.one('SELECT 1 FROM staff WHERE lower(email) = lower(?)', [b.admin.email])) fail(409, 'Ya existe un usuario con el correo de administración.')
+    const office = b.kind === 'office'
+    const person = office ? b.owner : b.admin
+    if (!person) fail(400, office ? 'Escribe los datos del médico titular.' : 'Escribe los datos de quien administrará la clínica.')
+    const slug = b.slug ?? slugify(office ? person!.name.replace(/^dra?\.?\s+/i, '') : b.name)
+    if (await sql.one('SELECT 1 FROM clinics WHERE slug = ?', [slug])) fail(409, `Ya existe una cuenta con la dirección de reserva "${slug}". Elige otra.`)
+    if (await sql.one('SELECT 1 FROM staff WHERE lower(email) = lower(?)', [person!.email])) fail(409, office ? 'Ya existe un usuario con el correo del médico. Si también trabaja en una clínica, usa otro correo para su consultorio.' : 'Ya existe un usuario con el correo de administración.')
     const id = randomUUID()
     await sql.tx(async (q) => {
-      await q.run(`INSERT INTO clinics (id, slug, name, address, phone, email, currency, rx_validity_days, reminder_template, active, created_at) VALUES (?,?,?,?,?,?,?,?,?,TRUE,?)`,
-        [id, slug, b.name, b.address, b.phone, b.email, b.currency, DEFAULT_SETTINGS.rxValidityDays, DEFAULT_SETTINGS.reminderTemplate, new Date().toISOString()])
-      for (const [name, price] of STARTER_SERVICES) await q.run('INSERT INTO services (id, name, price, active, clinic_id) VALUES (?,?,?,TRUE,?)', [randomUUID(), name, price, id])
+      await q.run(`INSERT INTO clinics (id, slug, name, address, phone, email, currency, rx_validity_days, reminder_template, active, created_at, kind, specialty, license) VALUES (?,?,?,?,?,?,?,?,?,TRUE,?,?,?,?)`,
+        [id, slug, b.name, b.address, b.phone, b.email, b.currency, DEFAULT_SETTINGS.rxValidityDays, DEFAULT_SETTINGS.reminderTemplate.replace('{clinica}', office ? 'el consultorio de {medico}' : '{clinica}'),
+          new Date().toISOString(), b.kind, b.owner?.specialty || null, b.owner?.license ?? null])
+      for (const [name, price] of office ? OFFICE_SERVICES : STARTER_SERVICES) await q.run('INSERT INTO services (id, name, price, active, clinic_id) VALUES (?,?,?,TRUE,?)', [randomUUID(), name, price, id])
     })
-    const { user, password } = await createStaffMember(sql, id, { name: b.admin.name, role: 'admin', email: b.admin.email })
-    await audit({ id: userOf(req).id, clinicId: id }, `Creó la clínica ${b.name} y su usuario de administración ${b.admin.name}`)
+    const { user, password } = office
+      ? await createStaffMember(sql, id, { name: b.owner!.name, role: 'doctor', email: b.owner!.email, license: b.owner!.license, specialty: b.owner!.specialty })
+      : await createStaffMember(sql, id, { name: b.admin!.name, role: 'admin', email: b.admin!.email })
+    if (office) await sql.run('UPDATE clinics SET owner_id = ? WHERE id = ?', [user.id, id])
+    await audit({ id: userOf(req).id, clinicId: id }, office ? `Creó el consultorio ${b.name} de ${b.owner!.name}` : `Creó la clínica ${b.name} y su usuario de administración ${b.admin!.name}`)
     const d = since()
     res.status(201).json({ clinic: toClinic((await sql.one(`SELECT c.*, ${CLINIC_STATS} FROM clinics c WHERE c.id = ?`, [d, d, id]))!), admin: user, password })
   })
@@ -106,6 +125,7 @@ export function registerPlatform(app: Express, { sql, auth, need, userOf, audit 
   app.patch('/api/platform/staff/:id', ...guard, async (req, res) => {
     const row = await platformStaff(String(req.params.id))
     const b = parse(z.object({ active: z.boolean().optional(), role: z.enum(CLINIC_ROLES).optional(), twoFactor: z.literal(false).optional() }), req.body)
+    if ((b.role && b.role !== row.role) || (b.active === true && !row.active)) await assertRoleFits(sql, String(row.clinic_id), b.role ?? String(row.role), String(row.id))
     if (b.active !== undefined) await sql.run('UPDATE staff SET active = ?, token_version = token_version + 1 WHERE id = ?', [b.active, row.id])
     if (b.role) await sql.run('UPDATE staff SET role = ?, token_version = token_version + 1 WHERE id = ?', [b.role, row.id])
     if (b.twoFactor === false) await sql.run('UPDATE staff SET totp_enabled = FALSE, totp_secret = NULL WHERE id = ?', [row.id])

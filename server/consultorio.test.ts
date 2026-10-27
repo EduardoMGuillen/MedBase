@@ -75,3 +75,27 @@ describe('C1 permisos por tipo de cuenta', () => {
     assert.equal((await (await as('admin@demo.clinara')).post('/api/staff', { name: 'Asistente X', role: 'assistant', email: 'ax@test.hn' })).status, 400)
   })
 })
+
+describe('C2 crear un consultorio', () => {
+  test('Administración de Clinara lo crea con su médico titular, que entra y lo administra', async () => {
+    const sa = await as('superadmin@demo.clinara')
+    const r = await sa.post('/api/platform/clinics', { kind: 'office', name: 'Consultorio Dra. Ana Rivera', address: 'Col. Palmira', phone: '2232-0000',
+      owner: { name: 'Dra. Ana Rivera', email: 'arivera@test.hn', license: 'CMH-777', specialty: 'Medicina general' } })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(r.body.clinic.kind, 'office')
+    assert.equal(r.body.clinic.slug, 'ana-rivera')
+    assert.equal(r.body.admin.role, 'doctor')
+    assert.equal(r.body.clinic.ownerId, r.body.admin.id)
+    const doc = await as('arivera@test.hn', r.body.password)
+    assert.equal(doc.login.user.clinicKind, 'office')
+    assert.ok(doc.login.permissions.includes('settings.manage'))
+    const boot = (await doc.get('/api/bootstrap')).body
+    assert.deepEqual(boot.services.map((s: any) => s.name).sort(), ['Aplicación de inyección', 'Consulta', 'Control o reconsulta', 'Curación'])
+    // Sin datos del médico no se crea; el correo de alguien de una clínica no se repite
+    assert.equal((await sa.post('/api/platform/clinics', { kind: 'office', name: 'Consultorio X' })).status, 400)
+    assert.equal((await sa.post('/api/platform/clinics', { kind: 'office', name: 'Consultorio Y', owner: { name: 'Dra. Lucía Herrera', email: 'lherrera@demo.clinara', license: 'CMH-1' } })).status, 409)
+    // Desde la plataforma tampoco se le agrega un segundo médico
+    assert.equal((await sa.post(`/api/platform/clinics/${r.body.clinic.id}/staff`, { name: 'Otro Médico', role: 'doctor', email: 'om@test.hn', license: 'CMH-9' })).status, 400)
+    assert.equal((await sa.post(`/api/platform/clinics/${r.body.clinic.id}/staff`, { name: 'Asistente Rivera', role: 'assistant', email: 'asr@test.hn' })).status, 201)
+  })
+})
