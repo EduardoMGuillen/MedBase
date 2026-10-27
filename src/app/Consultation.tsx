@@ -4,7 +4,7 @@ import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ClipboardList, 
 import { useStore, type FollowupInput } from '../lib/store'
 import { PatientHeader } from '../components/PatientHeader'
 import { date, medicationOrder, missingDays, time } from '../lib/format'
-import { ICD10 } from '../lib/catalogs'
+import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { normalize } from '../lib/patients'
 import { useVademecum } from '../lib/vademecum'
 import { MedicationForm, MedicationList } from '../components/Medications'
@@ -15,14 +15,14 @@ import { BackgroundView, useChart, VitalsGrid } from './PatientChart'
 import { BackgroundForm, IdentityPrompt } from './PatientForms'
 import { VitalsModal } from './WaitingRoom'
 import { emptyFollowup, FollowupFields } from './Followups'
-import type { PrescriptionItem } from '../lib/types'
+import type { Diagnosis, PrescriptionItem } from '../lib/types'
 
 /**
  * Plan y manejo en dos bloques: indicaciones (dieta, cuidados, estudios, control) y medicamentos, que
  * van a la receta. Los borradores anteriores guardaban todo junto en `orders` y se convierten al abrir.
  */
 interface Draft {
-  reason: string; history: string; exam: string; observations: string; dx: { code: string; label: string }[]
+  reason: string; history: string; exam: string; observations: string; dx: Diagnosis[]
   indications: string[]; meds: PrescriptionItem[]
   followups: FollowupInput[]; admit: boolean; observe?: boolean
   orders?: { text: string; rx?: PrescriptionItem }[]
@@ -72,8 +72,7 @@ export default function Consultation() {
   const [newFollowup, setNewFollowup] = useState<FollowupInput | null>(null)
   const [admit, setAdmit] = useState(saved.admit ?? false)
   const [observe, setObserve] = useState(saved.observe ?? false)
-  const [dx, setDx] = useState<{ code: string; label: string }[]>(saved.dx ?? [])
-  const [dxQuery, setDxQuery] = useState('')
+  const [dx, setDx] = useState<Diagnosis[]>(saved.dx ?? [])
   const [indications, setIndications] = useState<string[]>(saved.indications ?? [])
   const [meds, setMeds] = useState<PrescriptionItem[]>(saved.meds ?? [])
   const [orderText, setOrderText] = useState('')
@@ -119,9 +118,6 @@ export default function Consultation() {
   if (!mine) return <div className="page"><div className="empty">Esta cita pertenece a otro médico. Sólo el médico asignado puede firmar la consulta.</div></div>
 
   const last = chart?.consultations[0]
-  const dxMatches = dxQuery.trim()
-    ? ICD10.filter((d) => !dx.some((x) => x.code === d.code) && (d.code.toLowerCase().includes(dxQuery.toLowerCase()) || d.label.toLowerCase().includes(dxQuery.toLowerCase()))).slice(0, 6)
-    : []
   const hospitalized = store.inpatientOf(p.id)
   const place = features(store.settings)
   // Con ingreso los medicamentos van a la hoja de medicamentos ("hasta nueva orden" si no tienen días);
@@ -238,20 +234,9 @@ export default function Consultation() {
           </section>
 
           <section className="panel csec">
-            <div className="panel__head"><h2>Impresión diagnóstica</h2></div>
+            <div className="panel__head"><h2>Impresión diagnóstica <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· CIE-11</span></h2></div>
             <div className="panel__body csec__body">
-              {dx.length > 0 && <ol className="dx-list">{dx.map((d) => (
-                <li key={d.code}><span><b>{d.label}</b> <span className="muted">{d.code}</span></span>
-                  <button className="icon-btn" aria-label={`Quitar ${d.label}`} onClick={() => setDx(dx.filter((x) => x.code !== d.code))}><X size={15} /></button></li>
-              ))}</ol>}
-              <div className="suggest">
-                <input className="input" value={dxQuery} onChange={(e) => setDxQuery(e.target.value)} placeholder="Busca por nombre o código CIE-10, por ejemplo faringitis o J02" aria-label="Buscar diagnóstico" />
-                {dxMatches.length > 0 && (
-                  <div className="suggest__list">
-                    {dxMatches.map((d) => <button key={d.code} onClick={() => { setDx([...dx, d]); setDxQuery('') }}><code>{d.code}</code>{d.label}</button>)}
-                  </div>
-                )}
-              </div>
+              <DiagnosisPicker value={dx} onChange={setDx} label="" />
             </div>
           </section>
         </div>

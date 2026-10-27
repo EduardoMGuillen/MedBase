@@ -1,4 +1,4 @@
-import type { ApptStatus, Background, Patient, PrescriptionItem } from './types'
+import type { ApptStatus, Background, Diagnosis, Patient, PrescriptionItem } from './types'
 
 export const fullName = (p: Patient) => `${p.firstName} ${p.lastName}`
 
@@ -227,3 +227,9 @@ export const recordNumber = (p: Pick<Patient, 'record' | 'dni'>, s: { recordUses
 export const inputDateTime = (d: Date) => `${localISODate(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 
 export const dateTime = (iso: string) => `${date(iso, { day: 'numeric', month: 'short' })}, ${time(iso)}`
+
+/** "CIE-10" en los diagnósticos registrados antes de la CIE-11; nada en los nuevos ni en los sin código. */
+export const legacyTag = (d: Diagnosis) => (!d.system && d.code !== 'S/C' ? 'CIE-10' : '')
+
+/** Código como se imprime: "CA02", "sin código" o "J02 (CIE-10)". */
+export const dxCode = (d: Diagnosis) => (d.code === 'S/C' ? 'sin código' : legacyTag(d) ? `${d.code}, CIE-10` : d.code)

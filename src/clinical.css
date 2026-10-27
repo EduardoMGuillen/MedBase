@@ -574,3 +574,8 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .onboard__steps li.is-done span { background: var(--mint); border-color: var(--mint-strong); color: var(--mint-ink); }
 .doc-head--office h2 { margin: 0; }
 .doc-head--office > p { margin-top: 8px; }
+
+/* ---------- Buscador CIE-11 ---------- */
+.dx-picker__list { max-height: 340px; overflow-y: auto; }
+.dx-picker__group { display: block; padding: 6px 12px 2px; font-size: 11.5px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.dx-picker__warn { color: var(--amber-ink); text-transform: none; letter-spacing: 0; font-weight: 600; }

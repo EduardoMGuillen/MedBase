@@ -4,9 +4,9 @@ import { BedDouble, Plus, Search, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Modal, PageHead } from '../components/ui'
 import { age, dateTime, dniDigits, fullName, inputDateTime } from '../lib/format'
-import { ICD10 } from '../lib/catalogs'
+import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { stayDay, stayPath } from '../lib/inpatient'
-import type { Bed, Hospitalization } from '../lib/types'
+import type { Bed, Diagnosis, Hospitalization } from '../lib/types'
 
 export const bedLabel = (b?: Pick<Bed, 'room' | 'label'>) => (b ? `Cuarto ${b.room}${b.label ? `-${b.label}` : ''}` : 'Sin cama')
 
@@ -126,29 +126,9 @@ export function PatientPicker({ value, onChange, onNotFound, notFoundLabel }: { 
   )
 }
 
-/** Diagnósticos CIE-10: se buscan en el catálogo o se escriben libres. */
-export function DxPicker({ value, onChange, label = 'Diagnósticos' }: { value: { code: string; label: string }[]; onChange: (v: { code: string; label: string }[]) => void; label?: string }) {
-  const [q, setQ] = useState('')
-  const s = q.trim().toLowerCase()
-  const matches = s ? ICD10.filter((d) => !value.some((x) => x.code === d.code) && (d.code.toLowerCase().includes(s) || d.label.toLowerCase().includes(s))).slice(0, 6) : []
-  return (
-    <div className="field"><span>{label}</span>
-      {value.length > 0 && <ol className="dx-list">{value.map((d) => (
-        <li key={d.code + d.label}><span><b>{d.label}</b> <span className="muted">{d.code}</span></span>
-          <button type="button" className="icon-btn" aria-label={`Quitar ${d.label}`} onClick={() => onChange(value.filter((x) => x !== d))}><X size={15} /></button></li>
-      ))}</ol>}
-      <div className="suggest">
-        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Busca por nombre o código CIE-10" aria-label="Buscar diagnóstico"
-          onKeyDown={(e) => { if (e.key === 'Enter' && s && !matches.length) { e.preventDefault(); onChange([...value, { code: 'S/C', label: q.trim() }]); setQ('') } }} />
-        {(matches.length > 0 || s) && (
-          <div className="suggest__list">
-            {matches.map((d) => <button type="button" key={d.code} onClick={() => { onChange([...value, d]); setQ('') }}><code>{d.code}</code>{d.label}</button>)}
-            {!matches.length && <button type="button" onClick={() => { onChange([...value, { code: 'S/C', label: q.trim() }]); setQ('') }}>Agregar “{q.trim()}” sin código</button>}
-          </div>
-        )}
-      </div>
-    </div>
-  )
+/** Diagnósticos del ingreso y del egreso: el mismo buscador CIE-11 de la consulta. */
+export function DxPicker({ value, onChange, label = 'Diagnósticos' }: { value: Diagnosis[]; onChange: (v: Diagnosis[]) => void; label?: string }) {
+  return <DiagnosisPicker value={value} onChange={onChange} label={`${label} (CIE-11)`} />
 }
 
 /**
@@ -167,7 +147,7 @@ export function AdmitModal({ initialPatientId, consultationId, bedId, edit, onCl
     bedId: edit?.bedId ?? bedId ?? '', admittedAt: inputDateTime(edit ? new Date(edit.admittedAt) : new Date()), reason: edit?.reason ?? '', companionName: edit?.companionName ?? '',
     companionRelation: edit?.companionRelation ?? '', companionPhone: edit?.companionPhone ?? '', patientPhone: edit?.patientPhone ?? '',
   })
-  const [dx, setDx] = useState<{ code: string; label: string }[]>(edit?.diagnoses ?? [])
+  const [dx, setDx] = useState<Diagnosis[]>(edit?.diagnoses ?? [])
   const [busy, setBusy] = useState(false)
   const obs = edit?.kind === 'observation'
 

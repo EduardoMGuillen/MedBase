@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
-  Appointment, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, DischargeData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
+  Appointment, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
@@ -145,6 +145,9 @@ function useStoreValue() {
   const fetchPayments = useCallback((from: string, to: string) => api<Payment[]>(`/payments?from=${from}&to=${to}`), [])
   const fetchPayment = useCallback((id: string) => api<{ payment: Payment; patient: Patient }>(`/payments/${id}`), [])
   const fetchReport = useCallback((from: string, to: string) => api<Report>(`/reports?from=${from}&to=${to}`), [])
+  const searchIcd = useCallback((q: string) =>
+    api<{ configured: boolean; release: string; results: Diagnosis[]; error?: string }>(`/icd/search?q=${encodeURIComponent(q)}`), [])
+  const fetchIcdFrequent = useCallback(() => api<(Diagnosis & { code: string; label: string })[]>('/icd/frequent'), [])
   const fetchAuthorization = useCallback((id: string) => api<Authorization>(`/authorizations/${id}`), [])
   const fetchCertificate = useCallback((id: string) => api<Certificate>(`/certificates/${id}`), [])
   const fetchCertificates = useCallback((patientId: string) => api<Certificate[]>(`/patients/${patientId}/certificates`), [])
@@ -162,7 +165,7 @@ function useStoreValue() {
     patient: (id: string) => data.patients.find((p) => p.id === id),
     staffById: (id: string) => data.staff.find((s) => s.id === id),
     fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
-    fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient,
+    fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient, searchIcd, fetchIcdFrequent,
     bed: (id?: string) => (id ? data.beds.find((b) => b.id === id) : undefined),
     /** Hospitalización abierta del paciente, si la tiene. */
     inpatientOf: (patientId: string) => data.inpatients.find((h) => h.patientId === patientId),

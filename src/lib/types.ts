@@ -219,6 +219,14 @@ export interface Vitals {
   notes?: string
 }
 
+/** Diagnóstico: CIE-11 de la OMS (system 'icd11', con su URI) o escrito sin código ("S/C"). Sin system: CIE-10, de antes. */
+export interface Diagnosis {
+  code: string
+  label: string
+  system?: 'icd11'
+  uri?: string
+}
+
 export interface PrescriptionItem {
   drug: string
   presentation: string
