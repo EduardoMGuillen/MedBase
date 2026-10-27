@@ -7,7 +7,7 @@ import { toAttachment, toAuthorization, toBed, toDose, toHospitalization, toInpa
 import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
 import { isScheduled, medLabel } from '../../src/lib/inpatient.js'
-import { createMedOrders, findAdmissionConsult, pullConsultationOrders } from '../medOrders.js'
+import { createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrders.js'
 import { authorizationBase, ensureHospitalAuthorization, refreshPendingHospitalAuthorization } from '../authorizations.js'
 
 const dx = z.array(diagnosisInput)
@@ -172,7 +172,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
           companion_phone, patient_phone, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active')`,
         [id, cid, b.patientId, b.bedId, consultationId ?? null, admittedAt.toISOString(), user.id, b.reason, JSON.stringify(b.diagnoses),
           b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null])
-      if (consultationId) medOrders = await pullConsultationOrders(q, { clinicId: cid, hospitalizationId: id, consultationId })
+      medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: id })
       await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [id]))!, user)
       await audit(user, `Ingresó a ${name} en la ${bedName(bed!)} (${bed!.specialty})${consultationId && !b.consultationId ? ', vinculado a su consulta externa' : ''}${medOrders ? ` con ${medOrders} medicamento(s) de la consulta` : ''}`, q)
     })
@@ -201,6 +201,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     if (!bed) fail(400, 'La cama elegida no existe o está desactivada.')
     const name = await patientName(String(h.patient_id))
     const now = new Date().toISOString()
+    let medOrders = 0
     await sql.tx(async (q) => {
       await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`beds:${cid}`])
       if (await q.one(`SELECT 1 FROM hospitalizations WHERE bed_id = ? AND status = 'active'`, [b.bedId])) fail(409, 'Esa cama ya está ocupada. Elige otra.')
@@ -208,9 +209,12 @@ export function registerInpatient(app: Express, ctx: Ctx) {
           reason = COALESCE(?, reason), companion_name = COALESCE(?, companion_name), companion_relation = COALESCE(?, companion_relation),
           companion_phone = COALESCE(?, companion_phone), patient_phone = COALESCE(?, patient_phone) WHERE id = ?`,
         [b.bedId, now, now, user.id, b.reason || null, b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null, String(h.id)])
-      await audit(user, `Pasó a ${name} de observación a hospitalización en la ${bedName(bed!)}`, q)
+      // Las órdenes de la observación siguen (misma estancia, mismas dosis). Se completan las que falten de la
+      // consulta de origen: ya es una hospitalización, así que pasan todos sus medicamentos.
+      medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: String(h.id), firstNotBefore: now })
+      await audit(user, `Pasó a ${name} de observación a hospitalización en la ${bedName(bed!)}${medOrders ? `; ${medOrders} medicamento(s) de la consulta a la hoja` : ''}`, q)
     })
-    res.json(toHospitalization((await hospRow(cid, String(h.id)))!))
+    res.json({ ...toHospitalization((await hospRow(cid, String(h.id)))!), medOrders })
   })
 
   /**
@@ -251,7 +255,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
           patient_phone = COALESCE(?, patient_phone), consultation_id = COALESCE(consultation_id, ?) WHERE id = ?`,
         [b.bedId ?? null, b.admittedAt ? new Date(b.admittedAt).toISOString() : null, b.reason ?? null, b.diagnoses ? JSON.stringify(b.diagnoses) : null,
           b.companionName ?? null, b.companionRelation ?? null, b.companionPhone ?? null, b.patientPhone ?? null, consultationId ?? null, String(h.id)])
-      const pulled = consultationId ? await pullConsultationOrders(q, { clinicId: cid, hospitalizationId: String(h.id), consultationId }) : 0
+      const pulled = consultationId ? await syncStayOrders(q, { clinicId: cid, hospitalizationId: String(h.id) }) : 0
       await refreshPendingHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [String(h.id)]))!)
       const what = [h.bed_id || !b.bedId ? '' : `asignó la ${bedName(bed!)}`, ...changed.filter((k) => k !== 'bedId' || h.bed_id).map((k) => labels[k])].filter(Boolean)
       await audit(user, `Corrigió el ingreso de ${name}: ${what.join(', ') || 'sin cambios'}${consultationId ? `; lo vinculó a su consulta externa${pulled ? ` y pasó ${pulled} medicamento(s) a la hoja` : ''}` : ''}`, q)
@@ -292,18 +296,25 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       orders: z.array(z.string().trim().min(1).max(500)).max(40).default([]),
       // Las primeras `indicationCount` órdenes son indicaciones (columna derecha); el resto, medicamentos
       indicationCount: z.number().int().min(0).max(40).optional(),
+      // Identificador que genera el formulario al abrirse: si la misma nota llega dos veces (doble clic, reintento),
+      // se devuelve la que ya se guardó y no se duplican ni la nota ni sus órdenes de medicamento
+      clientId: z.string().uuid().optional(),
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
     const h = await activeHosp(cid, String(req.params.id))
     const id = String(h.id)
+    if (b.clientId) {
+      const same = await sql.one('SELECT * FROM hosp_notes WHERE id = ? AND hospitalization_id = ? AND author_id = ?', [b.clientId, id, user.id])
+      if (same) return res.status(200).json(toInpatientNote(same))
+    }
     const hasAdmission = await sql.one(`SELECT 1 FROM hosp_notes WHERE hospitalization_id = ? AND kind = 'admission'`, [id])
     // La nota de consulta externa que dio el ingreso ES la nota de ingreso: no se pide otra. En observación
     // (y si vino de ella) tampoco.
     const fromConsult = h.kind === 'observation' || !!h.observation_at || !!h.consultation_id
     if (b.kind === 'admission' && (hasAdmission || fromConsult)) fail(409, h.kind === 'observation' ? 'En observación se escriben notas de evolución.' : fromConsult ? 'La nota de consulta externa ya es la nota de ingreso. Escribe una nota de evolución.' : 'Este paciente ya tiene nota de ingreso. Escribe una nota de evolución.')
     if (b.kind === 'evolution' && !hasAdmission && !fromConsult) fail(409, 'Primero va la nota de ingreso.')
-    const noteId = randomUUID()
+    const noteId = b.clientId ?? randomUUID()
     const at = new Date().toISOString()
     const name = await patientName(String(h.patient_id))
     // Fuera de la transacción: con una sola conexión, consultar por fuera de ella la bloquearía

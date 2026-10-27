@@ -21,7 +21,7 @@ import { registerReports } from './routes/reports.js'
 import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
 import { pendingOrders, registerInpatient } from './routes/inpatient.js'
-import { pullConsultationOrders } from './medOrders.js'
+import { syncStayOrders } from './medOrders.js'
 import { ensureHospitalAuthorization } from './authorizations.js'
 import { createIcdClient, icdConfigFromEnv, type IcdClient } from './icd.js'
 import { localRelease, searchLocal } from './icdLocal.js'
@@ -762,7 +762,7 @@ export function createApp(opts: AppOptions) {
         await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, patient_phone, status, kind)
           VALUES (?,?,?,NULL,?,?,?,?,?,?,'active',?)`,
           [stayId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null, stayKind])
-        medOrders = await pullConsultationOrders(q, { clinicId: cid, hospitalizationId: stayId, consultationId: consultId })
+        medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: stayId })
         // La autorización de hospitalización queda generada, pendiente de firma, desde el ingreso
         await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [stayId]))!, user)
         await audit(user, `Ingresó a ${name} a ${stayKind === 'hospital' ? 'hospitalización' : 'observación'} desde la consulta externa${medOrders ? ` (${medOrders} medicamento(s) a la hoja)` : ''}`, q)

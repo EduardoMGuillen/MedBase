@@ -184,7 +184,7 @@ function useStoreValue() {
     /** Corregir el ingreso (o asignarle la cama al que entró desde la consulta) sin rehacerlo. */
     updateAdmission: (id: string, b: Partial<Pick<Hospitalization, 'bedId' | 'admittedAt' | 'reason' | 'diagnoses' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'>>) =>
       run(() => api<Hospitalization>(`/inpatient/${id}`, { method: 'PATCH', body: b }), 'Ingreso actualizado'),
-    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number }) =>
+    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string }) =>
       run(() => api<InpatientNote>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
     stopMed: (medId: string, reason: string) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/stop`, { body: { reason } }), 'Orden suspendida'),
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),
@@ -212,8 +212,11 @@ function useStoreValue() {
     updateClinicDrug: (id: string, b: Partial<Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route' | 'active'>>) =>
       run(() => api<ClinicDrug>(`/drugs/${id}`, { method: 'PATCH', body: b }), 'Vademécum actualizado'),
     /** Observación → hospitalización: la misma estancia recibe cama y conserva su expediente. */
-    convertToHospital: (id: string, b: { bedId: string; companionName?: string; companionRelation?: string; companionPhone?: string; patientPhone?: string }) =>
-      run(() => api<Hospitalization>(`/inpatient/${id}/convert`, { body: b }), 'Paciente pasado a hospitalización'),
+    convertToHospital: async (id: string, b: { bedId: string; companionName?: string; companionRelation?: string; companionPhone?: string; patientPhone?: string }) => {
+      const h = await run(() => api<Hospitalization & { medOrders: number }>(`/inpatient/${id}/convert`, { body: b }))
+      if (h) notify(`Paciente pasado a hospitalización${h.medOrders ? `; ${h.medOrders} medicamento${h.medOrders > 1 ? 's' : ''} de la consulta pasaron a la hoja` : ''}.`)
+      return h
+    },
     createBed: (b: Omit<Bed, 'id'>) => run(() => api<Bed>('/beds', { body: b }), 'Cama agregada'),
     updateBed: (id: string, b: Partial<Omit<Bed, 'id'>>) => run(() => api<Bed>(`/beds/${id}`, { method: 'PATCH', body: b }), 'Cama actualizada'),
 

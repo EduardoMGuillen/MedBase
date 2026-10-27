@@ -18,7 +18,13 @@ export const ROUTE_ABBR: Record<string, string> = {
   Intravenosa: 'IV', Intramuscular: 'IM', Subcutánea: 'SC', Oral: 'VO', Sublingual: 'SL', Inhalada: 'inhalada', Tópica: 'tópica', Rectal: 'rectal',
 }
 
-type Schedulable = Pick<InpatientMed, 'firstAt' | 'everyHours' | 'prn' | 'stoppedAt'>
+type Schedulable = Pick<InpatientMed, 'firstAt' | 'everyHours' | 'prn' | 'stoppedAt'> & { days?: number }
+
+/** Cuándo termina una orden con días ("por 3 días"): vence sola. Sin días, hasta nueva orden (Infinity). */
+export const courseEnd = (m: Pick<Schedulable, 'firstAt' | 'days'>) => (m.days ? new Date(m.firstAt).getTime() + m.days * 24 * HOUR : Infinity)
+
+/** ¿Ya terminó sus días? */
+export const courseDone = (m: Pick<Schedulable, 'firstAt' | 'days'>, now = new Date()) => courseEnd(m) <= now.getTime()
 
 /** Cómo se escribe en la nota: "Ondansetrón 8 mg IV c/8h", "Tramadol 50 mg SC c/12h PRN". */
 export function medLabel(m: Pick<InpatientMed, 'drug' | 'dose' | 'route' | 'everyHours' | 'prn'>) {
@@ -34,14 +40,16 @@ export function doseTimes(m: Schedulable, from: Date, to: Date): { at: Date; omi
   if (m.prn) return []
   const first = new Date(m.firstAt).getTime()
   const stop = m.stoppedAt ? new Date(m.stoppedAt).getTime() : Infinity
+  // Con días, después del último día ya no hay dosis (la orden venció, no se omitió)
+  const until = Math.min(to.getTime(), courseEnd(m))
   const out: { at: Date; omitted: boolean }[] = []
   if (!m.everyHours) {
-    if (first >= from.getTime() && first < to.getTime()) out.push({ at: new Date(first), omitted: first >= stop })
+    if (first >= from.getTime() && first < until) out.push({ at: new Date(first), omitted: first >= stop })
     return out
   }
   const step = m.everyHours * HOUR
   let t = first < from.getTime() ? first + Math.ceil((from.getTime() - first) / step) * step : first
-  for (; t < to.getTime(); t += step) out.push({ at: new Date(t), omitted: t >= stop })
+  for (; t < until; t += step) out.push({ at: new Date(t), omitted: t >= stop })
   return out
 }
 
@@ -50,7 +58,7 @@ export function isScheduled(m: Schedulable, at: Date) {
   if (m.prn) return false
   const t = at.getTime()
   const first = new Date(m.firstAt).getTime()
-  if (t < first || (m.stoppedAt && t >= new Date(m.stoppedAt).getTime())) return false
+  if (t < first || t >= courseEnd(m) || (m.stoppedAt && t >= new Date(m.stoppedAt).getTime())) return false
   return m.everyHours ? (t - first) % (m.everyHours * HOUR) === 0 : t === first
 }
 
@@ -98,6 +106,7 @@ export function durationDays(duration?: string) {
 
 /** Un medicamento sin días queda "hasta nueva orden"; con días, se cuenta "Día N de M". */
 export function treatmentDay(m: Pick<InpatientMed, 'firstAt' | 'days'>, now = new Date()) {
+  if (courseDone(m, now)) return `Completó ${m.days} ${m.days === 1 ? 'día' : 'días'}`
   const n = Math.max(1, stayDay(m.firstAt, now))
   return m.days ? `Día ${n} de ${m.days}` : `Día ${n} · Hasta nueva orden`
 }

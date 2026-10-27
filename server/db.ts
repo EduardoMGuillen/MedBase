@@ -6,13 +6,13 @@ import {
 } from '../src/lib/seed.js'
 import type { Appointment, Patient, Payment, Schedule } from '../src/lib/types.js'
 import type { Row, Sql } from './sql.js'
-import { pullConsultationOrders } from './medOrders.js'
+import { backfillMissingOrders, syncStayOrders } from './medOrders.js'
 import { ensureHospitalAuthorization } from './authorizations.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '23'
+const SCHEMA_VERSION = '24'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -512,6 +512,7 @@ export function ensureDb(sql: Sql) {
         await addDemoCases(q)
         await linkPendingAdmissions(q)
         await addDemoOffice(q)
+        await backfillOrders(q)
       }
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
@@ -763,8 +764,21 @@ async function insertOffice(q: Sql) {
     const stay = `h-${k.id}`
     await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, patient_phone, status, kind)
       VALUES (?,?,?,NULL,?,?,?,?,?,?,'active','observation')`, [stay, c.id, k.patientId, k.id, date, d.doctorId, k.reason, JSON.stringify(k.dx), '3256-5050'])
-    await pullConsultationOrders(q, { clinicId: c.id, hospitalizationId: stay, consultationId: k.id })
+    await syncStayOrders(q, { clinicId: c.id, hospitalizationId: stay })
     await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [stay]))!, { id: d.doctorId, role: 'doctor' })
+  }
+}
+
+/**
+ * v24: estancias activas a las que les faltan en la hoja los medicamentos de su consulta de origen (las que se
+ * crearon antes de la función única, como la observación que luego pasó a hospitalización). Se crean las que
+ * faltan, sin tocar las existentes, y cada una queda en la bitácora. Idempotente.
+ */
+async function backfillOrders(q: Sql) {
+  const now = new Date().toISOString()
+  for (const l of await backfillMissingOrders(q, { dryRun: false, now })) {
+    await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?,?,?,?)', [now, 'sistema',
+      `Actualización: pasó a la hoja de medicamentos ${l.drug} de ${l.patient}, indicado en su consulta externa y que faltaba`, l.clinicId])
   }
 }
 
@@ -793,7 +807,7 @@ export async function linkPendingAdmissions(q: Sql) {
       [String(h.clinic_id), String(h.patient_id), new Date(at.getTime() - 24 * 3_600_000).toISOString(), new Date(at.getTime() + 5 * 60_000).toISOString()])
     if (!c) continue
     await q.run('UPDATE hospitalizations SET consultation_id = ? WHERE id = ?', [String(c.id), String(h.id)])
-    const pulled = h.status === 'active' ? await pullConsultationOrders(q, { clinicId: String(h.clinic_id), hospitalizationId: String(h.id), consultationId: String(c.id) }) : 0
+    const pulled = h.status === 'active' ? await syncStayOrders(q, { clinicId: String(h.clinic_id), hospitalizationId: String(h.id) }) : 0
     await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?,?,?,?)', [new Date().toISOString(), 'sistema',
       `Actualización: vinculó el ingreso del ${at.toISOString().slice(0, 10)} a su consulta externa, que hace de nota de ingreso${pulled ? `; ${pulled} medicamento(s) a la hoja` : ''}`, String(h.clinic_id)])
   }

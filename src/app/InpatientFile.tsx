@@ -7,7 +7,7 @@ import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, fullName, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
 import { ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
-import { doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
+import { courseDone, courseEnd, doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { MedAlertBanner } from './MedAlerts'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { authTitle, FREQUENT_PROCEDURES, isSurgical } from '../lib/consent'
@@ -188,7 +188,8 @@ const AHEAD_DAYS = 7
 function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; reload: () => void; onWriteNote: () => void }) {
   const { can, staffById } = useStore()
   const [params, setParams] = useSearchParams()
-  const today = dayStart(useNow())
+  const now = useNow()
+  const today = dayStart(now)
   // Vista y fecha de referencia en la URL: cambiar de Día a Semana conserva la fecha y sobrevive a recargar
   const view: 'day' | 'week' = params.get('vista') === 'semana' ? 'week' : 'day'
   const fromUrl = params.get('fecha')
@@ -215,7 +216,9 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
   const past = view === 'day' && ref < today
   const dosesOf = (m: InpatientMed) => file.doses.filter((d) => d.medId === m.id)
   const meds = [...file.meds].sort((a, b) => Number(!!a.stoppedAt) - Number(!!b.stoppedAt) || a.orderedAt.localeCompare(b.orderedAt))
-    .filter((m) => new Date(m.firstAt) < end && (!m.stoppedAt || new Date(m.stoppedAt) >= start || dosesOf(m).some((d) => new Date(d.givenAt) >= start && new Date(d.givenAt) < end)))
+    // Se ve mientras está vigente en el rango (ni suspendida ni vencida antes) o si tuvo dosis en él
+    .filter((m) => new Date(m.firstAt) < end && ((!m.stoppedAt || new Date(m.stoppedAt) >= start) && courseEnd(m) > start.getTime()
+      || dosesOf(m).some((d) => new Date(d.givenAt) >= start && new Date(d.givenAt) < end)))
   // Enfermería registra las dosis; el médico también puede hacerlo cuando él la aplica
   const care = (can('inpatient.care') || can('inpatient.orders')) && open
   const by = (id: string) => { const s = staffById(id); return s ? `${shortStaff(s.name)}, ${ROLE_LABEL[s.role].toLowerCase()}` : '' }
@@ -273,8 +276,9 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
                     {conflict && <span className="chip chip--red"><TriangleAlert size={12} />Alergia a {conflict}</span>}
                   </div>
                   <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    {m.stoppedAt ? <span className="badge badge--red">{m.stopReason?.startsWith('Cambiado') ? 'Modificado' : 'Suspendido'} {dateTime(m.stoppedAt)}</span> : <span className="badge badge--mint">Activo</span>}
-                    {!m.stoppedAt && open && can('inpatient.orders') && <button className="btn btn--ghost btn--sm" onClick={() => setStopping(m)}>Suspender</button>}
+                    {m.stoppedAt ? <span className="badge badge--red">{m.stopReason?.startsWith('Cambiado') ? 'Modificado' : 'Suspendido'} {dateTime(m.stoppedAt)}</span>
+                      : courseDone(m, now) ? <span className="badge">Completado</span> : <span className="badge badge--mint">Activo</span>}
+                    {!m.stoppedAt && !courseDone(m, now) && open && can('inpatient.orders') && <button className="btn btn--ghost btn--sm" onClick={() => setStopping(m)}>Suspender</button>}
                   </span>
                 </div>
                 <div className="slots">
@@ -790,6 +794,8 @@ const EMPTY_MED: NewMed = { drug: '', presentation: '', dose: '', route: 'Intrav
 
 function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: () => void }) {
   const { addInpatientNote } = useStore()
+  // Una nota, un identificador: si se guarda dos veces no se duplica (ni sus medicamentos en la hoja)
+  const [clientId] = useState(() => crypto.randomUUID())
   const [n, setN] = useState({ subjective: '', objective: '', assessment: kind === 'admission' ? file.hospitalization.diagnoses.map((d) => d.label).join('. ') : '', plan: '' })
   const [meds, setMeds] = useState<NewMed[]>([])
   const [stop, setStop] = useState<string[]>([])
@@ -819,7 +825,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
         const kept = active.filter((m) => !ended(m.id)).map((m) => medLabel(m))
         const added = meds.map((m) => medLabel(m))
         const omitted = active.filter((m) => ended(m.id)).map((m) => `OMITIR ${m.drug}`)
-        const ok = await addInpatientNote(file.hospitalization.id, { kind, ...n, meds, stopMedIds: stop, orders: [...extra, ...kept, ...added, ...omitted], indicationCount: extra.length })
+        const ok = await addInpatientNote(file.hospitalization.id, { kind, ...n, meds, stopMedIds: stop, orders: [...extra, ...kept, ...added, ...omitted], indicationCount: extra.length, clientId })
         setBusy(false)
         if (ok) onSaved()
       }}>Guardar nota</button>
