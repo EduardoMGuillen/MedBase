@@ -23,6 +23,8 @@ import { registerPlatform } from './routes/platform.js'
 import { pendingOrders, registerInpatient } from './routes/inpatient.js'
 import { pullConsultationOrders } from './medOrders.js'
 import { ensureHospitalAuthorization } from './authorizations.js'
+import { createIcdClient, icdConfigFromEnv, type IcdClient } from './icd.js'
+import { diagnosisInput } from './http.js'
 import { registerDrugs } from './routes/drugs.js'
 import { registerCertificates } from './routes/certificates.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
@@ -38,6 +40,8 @@ export interface AppOptions {
   demoMode?: boolean
   secureCookies?: boolean
   staticDir?: string
+  /** Búsqueda CIE-11 de la OMS; en las pruebas se pasa una falsa. */
+  icd?: IcdClient
 }
 
 const COOKIE = 'clinara_session'
@@ -643,6 +647,33 @@ export function createApp(opts: AppOptions) {
     res.status(201).json(toVitals((await sql.one('SELECT * FROM vitals WHERE id = ?', [id]))!))
   })
 
+  // ---------- Diagnósticos CIE-11 ----------
+  const icd = opts.icd ?? createIcdClient(icdConfigFromEnv())
+  /**
+   * Busca en la CIE-11 de la OMS. Si la búsqueda no está configurada o la OMS no responde, no falla: devuelve
+   * el aviso y el buscador ofrece los diagnósticos que la clínica ya usó o escribirlo sin código.
+   */
+  app.get('/api/icd/search', auth, need('chart.view', 'consult.write'), async (req, res) => {
+    const q = String(req.query.q ?? '').trim()
+    if (q.length < 3) return res.json({ configured: icd.configured(), release: icd.release, results: [] })
+    if (!icd.configured()) return res.json({ configured: false, release: icd.release, results: [], error: 'La búsqueda en la CIE-11 de la OMS no está configurada.' })
+    try {
+      res.json({ configured: true, release: icd.release, results: await icd.search(q) })
+    } catch (e) {
+      res.json({ configured: true, release: icd.release, results: [], error: (e as Error).message })
+    }
+  })
+
+  /** Diagnósticos CIE-11 que la clínica ya usó, los más frecuentes primero: sirven aun sin conexión con la OMS. */
+  app.get('/api/icd/frequent', auth, need('chart.view', 'consult.write'), async (req, res) => {
+    const cid = clinicOf(req)
+    const rows = await sql.query(`SELECT d->>'code' AS code, d->>'label' AS label, MAX(d->>'uri') AS uri, COUNT(*)::int AS n FROM (
+        SELECT jsonb_array_elements(diagnoses::jsonb) AS d FROM consultations WHERE clinic_id = ?
+        UNION ALL SELECT jsonb_array_elements(diagnoses::jsonb) AS d FROM hospitalizations WHERE clinic_id = ?) x
+      WHERE d->>'system' = 'icd11' GROUP BY 1, 2 ORDER BY n DESC, label LIMIT 40`, [cid, cid])
+    res.json(rows.map((r) => ({ code: String(r.code), label: String(r.label), uri: r.uri ? String(r.uri) : undefined, system: 'icd11' })))
+  })
+
   // ---------- Consulta y receta ----------
   app.post('/api/consultations', auth, need('consult.write'), async (req, res) => {
     const user = userOf(req)
@@ -653,7 +684,7 @@ export function createApp(opts: AppOptions) {
       symptomOnset: z.string().optional(),
       history: z.string().default(''),
       exam: z.string().default(''),
-      diagnoses: z.array(z.object({ code: z.string(), label: z.string() })).min(1, 'Agrega al menos un diagnóstico.'),
+      diagnoses: z.array(diagnosisInput).min(1, 'Agrega al menos un diagnóstico.'),
       orders: z.array(z.string().trim().min(1)).default([]),
       indications: z.array(z.string().trim().min(1).max(500)).max(40).optional(),
       observations: z.string().max(4000).default(''),

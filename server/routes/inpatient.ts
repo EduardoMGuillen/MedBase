@@ -1,7 +1,7 @@
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { type Ctx, fail, parse, type Row } from '../http.js'
+import { type Ctx, diagnosisInput, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
 import { toAttachment, toAuthorization, toBed, toDose, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure } from '../mappers.js'
 import { normalizeDni } from '../../src/lib/format.js'
@@ -10,7 +10,7 @@ import { isScheduled, medLabel } from '../../src/lib/inpatient.js'
 import { createMedOrders, findAdmissionConsult, pullConsultationOrders } from '../medOrders.js'
 import { authorizationBase, ensureHospitalAuthorization, refreshPendingHospitalAuthorization } from '../authorizations.js'
 
-const dx = z.array(z.object({ code: z.string().trim().min(1), label: z.string().trim().min(1) }))
+const dx = z.array(diagnosisInput)
 const when = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'La fecha u hora no es válida.')
 const ATTACH_META = 'id, patient_id, name, mime, size, category, uploaded_by, uploaded_at, title, taken_at, hospitalization_id'
 

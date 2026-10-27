@@ -47,3 +47,14 @@ export interface Ctx {
   assertRxIdentity: (clinicId: string, patientId: string) => Promise<void>
   settings: (clinicId: string) => Promise<ClinicSettings>
 }
+
+/**
+ * Un diagnóstico: CIE-11 de la OMS (con su código y su URI) o escrito sin código ("S/C"). Los de antes de la
+ * CIE-11 no traen `system` y son CIE-10.
+ */
+export const diagnosisInput = z.object({
+  code: z.string().trim().min(1).max(20),
+  label: z.string().trim().min(1).max(300),
+  system: z.literal('icd11').optional(),
+  uri: z.string().trim().max(200).optional(),
+})

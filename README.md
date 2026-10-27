@@ -79,6 +79,15 @@ Además de clínicas, Clinara tiene cuentas de **consultorio** para un médico q
 
 Recorrido: entra como `alopez@demo.clinara`, atiende a Daniela Ordóñez (ya tiene preclínica), emite la receta y revisa a Gabriela Matamoros en Observación. Como `asistente@demo.clinara`, marca la llegada de Héctor Zelaya, toma su preclínica y cobra.
 
+## Diagnósticos CIE-11
+
+Los diagnósticos se buscan en la **CIE-11 de la OMS**, en español (edición 2026-01 por defecto). La conexión la hace el servidor:
+
+1. Crea una cuenta gratuita en https://icd.who.int/icdapi y copia el *client ID* y el *client secret*.
+2. Ponlos en `ICD_CLIENT_ID` e `ICD_CLIENT_SECRET` (en `.env` o en las variables de Vercel) y vuelve a desplegar.
+
+También se puede instalar la copia local de la API que distribuye la OMS y poner su dirección en `ICD_API_URL`; así no hacen falta credenciales ni internet. Sin conexión, el buscador ofrece los diagnósticos CIE-11 que la clínica ya usó y permite escribir uno sin código. Los diagnósticos registrados antes con CIE-10 se conservan y se muestran marcados «CIE-10».
+
 ## Módulos
 
 | Módulo | Qué hace |
