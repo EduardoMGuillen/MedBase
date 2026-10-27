@@ -287,10 +287,14 @@ export function registerInpatient(app: Express, ctx: Ctx) {
 
   // Nota de ingreso o de evolución (SOAP). Sus indicaciones de medicamentos van a la hoja de enfermería.
   app.post('/api/inpatient/:id/notes', auth, need('inpatient.orders'), async (req, res) => {
-    const soap = (label: string) => z.string().trim().min(1, `Escribe ${label}.`).max(6000)
+    const text = z.string().trim().max(6000).default('')
     const b = parse(z.object({
       kind: z.enum(['admission', 'evolution']),
-      subjective: soap('el subjetivo (S)'), objective: soap('el objetivo (O)'), assessment: soap('el análisis (A)'), plan: soap('el plan (P)'),
+      // Dos formatos: SOAP (como siempre) o Diagnóstico · Examen físico · Observaciones
+      format: z.enum(['soap', 'dx']).default('soap'),
+      subjective: text, objective: text, assessment: text, plan: text,
+      diagnoses: z.array(diagnosisInput).max(20).default([]),
+      exam: text, observations: text,
       meds: z.array(medInput).max(20).default([]),
       stopMedIds: z.array(z.string()).max(30).default([]),
       orders: z.array(z.string().trim().min(1).max(500)).max(40).default([]),
@@ -300,6 +304,15 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       // se devuelve la que ya se guardó y no se duplican ni la nota ni sus órdenes de medicamento
       clientId: z.string().uuid().optional(),
     }), req.body)
+    // SOAP: los cuatro campos, como siempre. Formato 2: al menos un campo, una indicación o un medicamento.
+    if (b.format === 'soap') {
+      const empty = ([['subjective', 'el subjetivo (S)'], ['objective', 'el objetivo (O)'], ['assessment', 'el análisis (A)'], ['plan', 'el plan (P)']] as const).find(([k]) => !b[k])
+      if (empty) fail(400, `Escribe ${empty[1]}.`)
+    } else if (b.kind === 'admission') {
+      fail(400, 'La nota de ingreso se escribe en formato SOAP.')
+    } else if (!b.diagnoses.length && !b.exam && !b.observations && !b.orders.length && !b.meds.length) {
+      fail(400, 'Escribe al menos un diagnóstico, el examen físico, una observación, una indicación o un medicamento.')
+    }
     const user = userOf(req)
     const cid = clinicOf(req)
     const h = await activeHosp(cid, String(req.params.id))
@@ -321,7 +334,11 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const checklist = await checklistFor(h)
     await sql.tx(async (q) => {
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan, data) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        [noteId, cid, id, b.kind, user.id, at, b.subjective, b.objective, b.assessment, b.plan, JSON.stringify({ orders: b.orders, checklist, indications: b.indicationCount === undefined ? undefined : Math.min(b.indicationCount, b.orders.length) })])
+        [noteId, cid, id, b.kind, user.id, at, b.format === 'soap' ? b.subjective : '', b.format === 'soap' ? b.objective : '', b.format === 'soap' ? b.assessment : '', b.format === 'soap' ? b.plan : '',
+          JSON.stringify({ orders: b.orders, checklist, indications: b.indicationCount === undefined ? undefined : Math.min(b.indicationCount, b.orders.length),
+            ...(b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, exam: b.exam, observations: b.observations } : {}) })])
+      // Se recuerda el último formato que usó este médico
+      await q.run(`UPDATE staff SET prefs = jsonb_set(COALESCE(NULLIF(prefs, ''), '{}')::jsonb, '{noteFormat}', to_jsonb(?::text))::text WHERE id = ?`, [b.format, user.id])
       await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
       const what = b.kind === 'admission' ? 'nota de ingreso' : 'nota de evolución'
       const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`].filter(Boolean).join(', ')

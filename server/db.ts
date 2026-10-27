@@ -474,6 +474,9 @@ ALTER TABLE clinics
   ADD COLUMN IF NOT EXISTS license TEXT,
   ADD COLUMN IF NOT EXISTS max_assistants INTEGER NOT NULL DEFAULT 2,
   ADD COLUMN IF NOT EXISTS setup_done_at TEXT;
+
+-- v24: tercera ronda. Preferencias de cada usuario (p. ej. el último formato de nota que usó).
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS prefs TEXT;
 ALTER TABLE clinics DROP CONSTRAINT IF EXISTS clinics_kind_check;
 ALTER TABLE clinics ADD CONSTRAINT clinics_kind_check CHECK (kind IN ('clinic','office'));
 ALTER TABLE staff DROP CONSTRAINT IF EXISTS staff_role_check;

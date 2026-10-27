@@ -167,3 +167,33 @@ describe('P3 cada ruta de la tabla', () => {
     assert.ok(!courseDone({ ...m, days: undefined }, new Date('2027-01-01T00:00:00Z')))
   })
 })
+
+describe('P4 dos formatos de nota', () => {
+  test('formato Diagnóstico · Examen físico · Observaciones: se guarda con su formato, valida lo mínimo y se recuerda', async () => {
+    const { doc, apptId } = await openConsult('p7')
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'ECV', diagnoses: DX, orders: ['Reposo.'], admit: true })
+    const id = c.body.hospitalizationId
+    const empty = await doc.post(`/api/inpatient/${id}/notes`, { kind: 'evolution', format: 'dx' })
+    assert.equal(empty.status, 400)
+    const dx = [{ code: '8B11', label: 'Infarto cerebral', system: 'icd11' }]
+    const r = await doc.post(`/api/inpatient/${id}/notes`, { kind: 'evolution', format: 'dx', diagnoses: dx, exam: 'Hemiparesia derecha.', observations: '', orders: ['Signos vitales cada hora.'], indicationCount: 1,
+      meds: [{ drug: 'Enalapril', dose: '10 mg', route: 'Oral', everyHours: 12, prn: false }] })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(r.body.format, 'dx')
+    assert.deepEqual(r.body.diagnoses, dx)
+    assert.equal(r.body.exam, 'Hemiparesia derecha.')
+    assert.equal(r.body.subjective, '')
+    // Sólo una indicación también basta
+    assert.equal((await doc.post(`/api/inpatient/${id}/notes`, { kind: 'evolution', format: 'dx', orders: ['Dieta blanda.'], indicationCount: 1 })).status, 201)
+    // SOAP sigue pidiendo sus cuatro campos
+    assert.equal((await doc.post(`/api/inpatient/${id}/notes`, { kind: 'evolution', subjective: 'S', objective: 'O', assessment: 'A' })).status, 400)
+    const file = (await doc.get(`/api/inpatient/${id}`)).body
+    assert.ok(file.meds.some((m: any) => m.drug === 'Enalapril'))
+    const me = (await doc.get('/api/bootstrap')).body.staff.find((s: any) => s.id === 's-herrera')
+    assert.equal(me.prefs.noteFormat, 'dx')
+    // Las notas anteriores siguen siendo SOAP
+    const old = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.id !== id && h.kind === 'hospital')
+    const oldFile = (await doc.get(`/api/inpatient/${old.id}`)).body
+    assert.ok(oldFile.notes.filter((n: any) => n.kind === 'evolution').every((n: any) => n.format === undefined))
+  })
+})

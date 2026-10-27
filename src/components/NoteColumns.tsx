@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Pill } from 'lucide-react'
 import type { InpatientNote } from '../lib/types'
+import { dxCode, examText } from '../lib/format'
 
 /**
  * Una nota como en papel: a la izquierda el texto clínico; a la derecha las indicaciones (órdenes que no son
@@ -37,7 +38,19 @@ export function MedLines({ items, empty = 'Sin medicamentos.' }: { items: string
 
 const SOAP_TEXT = [['subjective', 'S. Subjetivo'], ['objective', 'O. Objetivo'], ['assessment', 'A. Análisis'], ['plan', 'P. Plan']] as const
 
-/** Texto clínico de una nota de evolución u observación (columna izquierda): S, O, A y P. */
-export function NoteText({ n }: { n: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan'> }) {
-  return <>{SOAP_TEXT.map(([k, label]) => <div key={k} className="note__sec"><h4>{label}</h4><p>{n[k] || <span className="muted">Sin datos.</span>}</p></div>)}</>
+/**
+ * Texto clínico de una nota de evolución u observación (columna izquierda), según su formato: S, O, A y P, o
+ * Diagnósticos, Examen físico y Observaciones.
+ */
+export function NoteText({ n }: { n: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> }) {
+  const empty = <span className="muted">Sin datos.</span>
+  if (n.format === 'dx') {
+    return <>
+      <div className="note__sec"><h4>Diagnósticos</h4>
+        {n.diagnoses?.length ? <ol className="note__list">{n.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol> : <p>{empty}</p>}</div>
+      <div className="note__sec"><h4>Examen físico</h4><p>{examText(n.exam) || empty}</p></div>
+      <div className="note__sec"><h4>Observaciones</h4><p>{n.observations || empty}</p></div>
+    </>
+  }
+  return <>{SOAP_TEXT.map(([k, label]) => <div key={k} className="note__sec"><h4>{label}</h4><p>{n[k] || empty}</p></div>)}</>
 }

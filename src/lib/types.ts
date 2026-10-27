@@ -35,6 +35,8 @@ export interface Staff {
   twoFactor?: boolean
   /** Tipo de cuenta de su clínica: decide sus permisos y qué módulos ve. */
   clinicKind?: ClinicKind
+  /** Preferencias del usuario: el último formato de nota que usó. */
+  prefs?: { noteFormat?: 'soap' | 'dx' }
 }
 
 /** Una clínica dentro de la plataforma. */
@@ -431,6 +433,11 @@ export interface InpatientNote {
   checklist?: boolean
   /** Cuántas de las órdenes son indicaciones (van primero); el resto son medicamentos. Notas anteriores: sin dato. */
   indicationCount?: number
+  /** 'dx': Diagnóstico · Examen físico · Observaciones. Sin dato: SOAP. */
+  format?: 'soap' | 'dx'
+  diagnoses?: Diagnosis[]
+  exam?: string
+  observations?: string
   procedure?: ProcedureData
 }
 

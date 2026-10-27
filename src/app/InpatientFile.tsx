@@ -10,11 +10,12 @@ import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
 import { courseDone, courseEnd, doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { MedAlertBanner } from './MedAlerts'
 import { NoteColumns, NoteText } from '../components/NoteColumns'
+import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { authTitle, FREQUENT_PROCEDURES, isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
 import { useNow } from '../lib/hooks'
-import type { Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
+import type { Diagnosis, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
 import { AdmitModal, bedLabel, DxPicker } from './Inpatients'
 import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
 import { toBase64 } from './Attachments'
@@ -792,6 +793,16 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   // Una nota, un identificador: si se guarda dos veces no se duplica (ni sus medicamentos en la hoja)
   const [clientId] = useState(() => crypto.randomUUID())
   const [n, setN] = useState({ subjective: '', objective: '', assessment: kind === 'admission' ? file.hospitalization.diagnoses.map((d) => d.label).join('. ') : '', plan: '' })
+  // Segundo formato: cada formato guarda su borrador mientras el modal está abierto; no se traduce de uno a otro
+  const { user, staffById } = useStore()
+  const formatKey = `clinara.formatoNota.${user?.id}`
+  const [format, setFormatState] = useState<'soap' | 'dx'>(() => {
+    if (kind === 'admission') return 'soap'
+    try { const v = localStorage.getItem(formatKey); if (v === 'soap' || v === 'dx') return v } catch { /* sin almacenamiento */ }
+    return staffById(user?.id ?? '')?.prefs?.noteFormat ?? user?.prefs?.noteFormat ?? 'soap'
+  })
+  const setFormat = (f: 'soap' | 'dx') => { setFormatState(f); try { localStorage.setItem(formatKey, f) } catch { /* sin almacenamiento */ } }
+  const [d, setD] = useState<{ diagnoses: Diagnosis[]; exam: string; observations: string }>({ diagnoses: [], exam: '', observations: '' })
   const [meds, setMeds] = useState<NewMed[]>([])
   const [stop, setStop] = useState<string[]>([])
   const [adding, setAdding] = useState(kind === 'admission')
@@ -800,7 +811,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   const [extraText, setExtraText] = useState('')
   const [busy, setBusy] = useState(false)
   const active = file.meds.filter((m) => !m.stoppedAt)
-  const ready = SOAP.every((s) => n[s.key].trim())
+  // SOAP: los cuatro campos, como siempre. Formato 2: algo escrito, una indicación o un medicamento.
+  const ready = format === 'soap' ? SOAP.every((s) => n[s.key].trim())
+    : d.diagnoses.length > 0 || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0
   // Cada línea es una orden; se quita la numeración o viñeta con que venga pegada
   const clean = (line: string) => line.replace(/^\s*(\d+\s*[.)-]|[-•*])\s*/, '').trim()
   const addLines = (text: string) => {
@@ -820,18 +833,30 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
         const kept = active.filter((m) => !ended(m.id)).map((m) => medLabel(m))
         const added = meds.map((m) => medLabel(m))
         const omitted = active.filter((m) => ended(m.id)).map((m) => `OMITIR ${m.drug}`)
-        const ok = await addInpatientNote(file.hospitalization.id, { kind, ...n, meds, stopMedIds: stop, orders: [...extra, ...kept, ...added, ...omitted], indicationCount: extra.length, clientId })
+        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: [...extra, ...kept, ...added, ...omitted], indicationCount: extra.length, clientId })
         setBusy(false)
         if (ok) onSaved()
       }}>Guardar nota</button>
     </>}>
       {p.allergies.length > 0 && <div className="alert-strip"><TriangleAlert size={16} />Alergias: {p.allergies.join(', ')}</div>}
+      {kind === 'evolution' && (
+        <div className="segmented" role="radiogroup" aria-label="Formato de la nota">
+          <button type="button" role="radio" aria-checked={format === 'soap'} onClick={() => setFormat('soap')}>SOAP</button>
+          <button type="button" role="radio" aria-checked={format === 'dx'} onClick={() => setFormat('dx')}>Diagnóstico · Examen físico · Observaciones</button>
+        </div>
+      )}
       <div className="note-editor">
       <div className="soap-stack">
-        {SOAP.map((s) => (
+        {format === 'soap' ? SOAP.map((s) => (
           <label key={s.key} className="field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
             <textarea className="textarea" rows={4} value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} /></label>
-        ))}
+        )) : (<>
+          <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label="Diagnósticos (CIE-11)" />
+          <label className="field"><span>Examen físico</span>
+            <textarea className="textarea" rows={6} value={d.exam} onChange={(e) => setD({ ...d, exam: e.target.value })} /></label>
+          <label className="field"><span>Observaciones</span>
+            <textarea className="textarea" rows={4} value={d.observations} onChange={(e) => setD({ ...d, observations: e.target.value })} /></label>
+        </>)}
       </div>
       <div className="note-editor__orders">
       <fieldset className="fs"><legend>Indicaciones</legend>

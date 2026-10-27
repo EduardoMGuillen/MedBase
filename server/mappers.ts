@@ -14,6 +14,7 @@ export const toStaff = (r: Row): Staff => ({
   id: String(r.id), clinicId: s(r.clinic_id), name: String(r.name), role: r.role as Staff['role'], specialty: s(r.specialty), email: String(r.email),
   license: s(r.license), color: String(r.color), active: Boolean(r.active),
   schedule: r.schedule ? j(r.schedule, undefined) : undefined, serviceId: s(r.service_id), twoFactor: Boolean(r.totp_enabled),
+  prefs: r.prefs ? j<Staff['prefs']>(r.prefs, {}) : undefined,
   clinicKind: r.clinic_kind == null ? undefined : (String(r.clinic_kind) as Staff['clinicKind']),
 })
 
@@ -110,6 +111,11 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
   orders: r.kind === 'admission' || r.kind === 'evolution' ? j<{ orders?: string[] }>(r.data, {}).orders ?? [] : undefined,
   checklist: r.kind === 'admission' || r.kind === 'evolution' ? j<{ checklist?: boolean }>(r.data, {}).checklist || undefined : undefined,
   indicationCount: r.kind === 'admission' || r.kind === 'evolution' ? j<{ indications?: number }>(r.data, {}).indications : undefined,
+  // Formato 2 (Diagnóstico · Examen físico · Observaciones); las notas sin formato son SOAP
+  ...(r.kind === 'evolution' && j<{ format?: string }>(r.data, {}).format === 'dx'
+    ? { format: 'dx' as const, diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses ?? [], exam: j<{ exam?: string }>(r.data, {}).exam ?? '',
+      observations: j<{ observations?: string }>(r.data, {}).observations ?? '' }
+    : {}),
   procedure: r.kind === 'procedure' ? j(r.data, undefined) : undefined,
 })
 
