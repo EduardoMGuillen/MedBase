@@ -572,3 +572,5 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .onboard__steps li.is-current { color: var(--ink-deep); font-weight: 650; }
 .onboard__steps li.is-current span { border-color: var(--ink); color: var(--ink); }
 .onboard__steps li.is-done span { background: var(--mint); border-color: var(--mint-strong); color: var(--mint-ink); }
+.doc-head--office h2 { margin: 0; }
+.doc-head--office > p { margin-top: 8px; }

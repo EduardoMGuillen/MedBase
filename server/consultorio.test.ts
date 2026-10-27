@@ -137,3 +137,15 @@ describe('C4 un solo médico', () => {
     assert.equal((await o.doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Dolor', diagnoses: dx, orders: ['Reposo.'] })).status, 201)
   })
 })
+
+describe('C5 documentos con el nombre del médico', () => {
+  test('la constancia y la autorización de un consultorio quedan marcadas para el encabezado del médico', async () => {
+    const o = await office('c5')
+    const p = await o.doc.post('/api/patients', { firstName: 'Rosa', lastName: 'Paz', birthDate: '1985-01-01', sex: 'F', phone: '9999-2222', dni: '0801198522222' })
+    const c = await o.doc.post('/api/certificates', { patientId: p.body.id, kind: 'attention', to: 'A quien corresponda', visitDate: '2026-10-26', fromTime: '08:00', toTime: '09:00' })
+    assert.equal(c.status, 201, JSON.stringify(c.body))
+    assert.equal(c.body.data.clinic.office, true)
+    const clinic = await (await as('lherrera@demo.clinara')).post('/api/certificates', { patientId: 'p2', kind: 'attention', to: 'A quien corresponda', visitDate: '2026-10-26', fromTime: '08:00', toTime: '09:00' })
+    assert.equal(clinic.body.data.clinic.office, undefined, 'una clínica no cambia')
+  })
+})

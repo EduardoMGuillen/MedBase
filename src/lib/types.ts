@@ -326,7 +326,7 @@ export interface CertificateData {
   // Lo que se imprime, congelado al emitir
   patient: { name: string; dni?: string; age: string; sex: 'F' | 'M'; record: string; guardian?: string }
   doctor: { name: string; specialty?: string; license?: string }
-  clinic: { name: string; address: string; phone: string; logo?: string }
+  clinic: { name: string; address: string; phone: string; logo?: string; office?: boolean }
 }
 
 /** Medicamento agregado al vademécum por la clínica (no está en el catálogo base). */
@@ -463,7 +463,7 @@ export interface AuthorizationData {
   // Lo que se imprime, congelado al crearla
   patient: { name: string; dni?: string; age: string; sex: 'F' | 'M'; record: string; minor: boolean }
   doctor: { name: string; license?: string }
-  clinic: { name: string; address: string; phone: string; logo?: string }
+  clinic: { name: string; address: string; phone: string; logo?: string; office?: boolean }
 }
 
 /** Marca de enfermería sobre una orden médica. El estado de la orden es su última marca. */

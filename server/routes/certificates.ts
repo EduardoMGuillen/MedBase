@@ -76,7 +76,7 @@ export function registerCertificates(app: Express, { sql, auth, need, userOf, cl
         guardian: minor && !p!.dni && p!.guardian_name ? `${p!.guardian_name}${p!.guardian_dni ? `, identidad ${p!.guardian_dni}` : ''}` : undefined,
       },
       doctor: { name: String(doc.name), specialty: doc.specialty ? String(doc.specialty) : undefined, license: String(doc.license) },
-      clinic: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo },
+      clinic: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo, office: cfg.kind === 'office' || undefined },
     }
     const id = randomUUID()
     const now = new Date()

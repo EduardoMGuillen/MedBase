@@ -13,6 +13,7 @@ import { PatientPicker } from './Inpatients'
 import { LogoMark } from '../components/Logo'
 import type { ClinicSettings, GuestPatient, Patient, Prescription, PrescriptionItem } from '../lib/types'
 import { DniInput } from '../components/DniInput'
+import { DocHeader } from '../components/DocHeader'
 import { SimilarPatients } from './NewPatient'
 import { IdentificationForm, IdentityPrompt } from './PatientForms'
 
@@ -215,12 +216,8 @@ export function PrescriptionSheet() {
       </div>
       <article className="rx-sheet rx-sheet--half">
         <header className="rx-sheet__head">
-          <div className="rx-sheet__doc">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}><ClinicLogo settings={settings} /><b>{settings.name}</b></div>
-            <h2>{doc.name}</h2>
-            <p>{doc.specialty}, colegiación {doc.license}</p>
-            <p>{settings.address}, tel. {settings.phone}</p>
-          </div>
+          <DocHeader clinic={{ ...settings, office: settings.kind === 'office' }}
+            doctor={{ name: doc.name, specialty: doc.specialty ?? settings.specialty, license: doc.license ?? settings.license }} />
           <div className="rx-sheet__folio">Folio<b>{rx.folio}</b>{date(rx.issuedAt)}, {time(rx.issuedAt)}{h && <><br />Receta de egreso</>}{rx.standalone && <><br />Receta sin consulta</>}</div>
         </header>
         <div className="rx-sheet__pt">

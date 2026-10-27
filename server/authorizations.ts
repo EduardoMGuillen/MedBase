@@ -22,7 +22,7 @@ export async function authorizationBase(q: Sql, h: Row, generatedBy: { id: strin
       record: cfg.recordUsesDni && p.dni ? String(p.dni) : String(p.record), minor: birth ? yearsOld(birth) < 18 : false,
     },
     doctor: { name: String(doc.name), license: doc.license ? String(doc.license) : undefined },
-    clinic: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo },
+    clinic: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo, office: cfg.kind === 'office' || undefined },
     admission: { at: String(h.admitted_at), diagnosis: (JSON.parse(String(h.diagnoses ?? '[]')) as { label: string }[]).map((d) => d.label).join('; ') || undefined },
   } satisfies Partial<AuthorizationData>
 }

@@ -7,7 +7,7 @@ import { age, date, localISODate, recordNumber, time, whatsappUrl } from '../lib
 import { yearsOld } from '../lib/inpatient'
 import { CERT_KIND, certificateText, plainText } from '../lib/certificates'
 import type { Certificate as Cert, CertificateData } from '../lib/types'
-import { ClinicLogo } from './Prescriptions'
+import { DocHeader } from '../components/DocHeader'
 import { DniInput } from '../components/DniInput'
 
 type Kind = Cert['kind']
@@ -19,12 +19,7 @@ function CertificateSheet({ kind, data, issuedAt, number, voided }: { kind: Kind
     <article className="rx-sheet cert" style={{ position: 'relative' }}>
       {voided && <div className="void-stamp">ANULADA</div>}
       <header className="rx-sheet__head">
-        <div className="rx-sheet__doc">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}><ClinicLogo settings={{ ...data.clinic, email: '', currency: 'L', rxValidityDays: 30, reminderTemplate: '', recordUsesDni: false }} /><b>{data.clinic.name}</b></div>
-          <h2>{data.doctor.name}</h2>
-          <p>{data.doctor.specialty ? `${data.doctor.specialty}, ` : ''}colegiación {data.doctor.license}</p>
-          <p>{data.clinic.address}{data.clinic.phone ? `, tel. ${data.clinic.phone}` : ''}</p>
-        </div>
+        <DocHeader clinic={data.clinic} doctor={data.doctor} />
         <div className="rx-sheet__folio">{number ? <>Constancia<b>{number}</b></> : <>Vista previa<b>Sin emitir</b></>}{date(issuedAt)}</div>
       </header>
       <h1 className="cert__title">{CERT_KIND[kind].title}</h1>
@@ -34,7 +29,7 @@ function CertificateSheet({ kind, data, issuedAt, number, voided }: { kind: Kind
         <div className="cert__stamp">Sello</div>
         <div className="rx-sheet__sign" style={{ marginTop: 0 }}><div><em>&nbsp;</em>{data.doctor.name}<br /><span style={{ color: 'var(--muted)' }}>Colegiación {data.doctor.license}</span></div></div>
       </div>
-      <footer className="rx-sheet__foot"><span>{data.clinic.name}</span><span>Emitida con Clinara</span></footer>
+      <footer className="rx-sheet__foot"><span>{data.clinic.office ? '' : data.clinic.name}</span><span>Emitida con Clinara</span></footer>
     </article>
   )
 }
@@ -100,7 +95,7 @@ export default function Certificate() {
     patient: { name: `${p.firstName} ${p.lastName}`, dni: p.dni, age: age(p.birthDate), sex: p.sex, record: recordNumber(p, settings),
       guardian: minor && !p.dni && p.guardianName ? `${p.guardianName}${p.guardianDni ? `, identidad ${p.guardianDni}` : ''}` : undefined },
     doctor: { name: doc.name, specialty: doc.specialty, license: doc.license ?? '(pendiente)' },
-    clinic: { name: settings.name, address: settings.address, phone: settings.phone, logo: settings.logo },
+    clinic: { name: settings.name, address: settings.address, phone: settings.phone, logo: settings.logo, office: settings.kind === 'office' || undefined },
   }
   const ready = f.to.trim().length >= 2 && (kind !== 'free' || f.text.trim().length >= 10) && (kind !== 'companion' || f.companionName.trim().length >= 3) && (kind !== 'rest' || f.restDays >= 1)
 
