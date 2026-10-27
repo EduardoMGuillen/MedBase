@@ -7,6 +7,10 @@ export const SYMPTOMS = [
   'Palpitaciones', 'Insomnio', 'Pérdida de apetito', 'Visión borrosa', 'Otalgia',
 ]
 
+/**
+ * CIE-10: sólo para los datos históricos de la demo, registrados antes de la CIE-11. Los diagnósticos nuevos se
+ * buscan en la CIE-11 de la OMS (server/icd.ts); esta lista ya no se ofrece en ningún buscador.
+ */
 export const ICD10 = [
   { code: 'J00', label: 'Rinofaringitis aguda (resfriado común)' },
   { code: 'J02.9', label: 'Faringitis aguda, no especificada' },

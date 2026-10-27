@@ -94,7 +94,7 @@ export default function Reports() {
           <div className="panel__head"><div><h2>Diagnósticos más frecuentes</h2><p>Conteo agregado de diagnósticos CIE-10 en consultas firmadas.</p></div></div>
           <div className="panel__body">
             {report.topDiagnoses.length
-              ? <HBars rows={report.topDiagnoses.map((d) => ({ key: d.code, label: `${d.code} ${d.label}`, value: d.count, display: String(d.count) }))} />
+              ? <HBars rows={report.topDiagnoses.map((d) => ({ key: `${d.system ?? 'icd10'}:${d.code}:${d.label}`, label: `${d.code === 'S/C' ? '' : `${d.code} `}${d.label}${d.system ? '' : d.code === 'S/C' ? '' : ' (CIE-10)'}`, value: d.count, display: String(d.count) }))} />
               : <div className="empty">Sin consultas firmadas en este periodo.</div>}
           </div>
         </section>

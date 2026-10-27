@@ -2,6 +2,7 @@ import type {
   Appointment, Bed, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote, Patient, Payment, Prescription,
   PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types.js'
+// Los datos históricos de la demo de Santa Brígida se registraron con CIE-10 (antes de la CIE-11) y así se conservan
 import { ICD10 } from './catalogs.js'
 import { doseTimes, HOUR, LATE_AFTER_MIN, yearsOld } from './inpatient.js'
 import { slotsOn } from './schedule.js'
@@ -373,17 +374,17 @@ export function seedOffice() {
   const past = (x: Appointment) => iso(x.start)
   const htaOld = appointments[8], dmOld = appointments[9], htaToday = appointments[0], gea = appointments[1]
   const consultations = [
-    { id: 'k-r2-1', patientId: 'r2', appt: htaOld, reason: 'Control de presión arterial', dx: [{ code: 'BA00', label: 'Hipertensión esencial' }],
+    { id: 'k-r2-1', patientId: 'r2', appt: htaOld, reason: 'Control de presión arterial', dx: [{ code: 'BA00', label: 'Hipertensión esencial', system: 'icd11' as const }],
       exam: 'PA 138/86. Ruidos cardíacos rítmicos, sin soplos.', orders: ['Dieta baja en sal.', 'Caminar 30 minutos al día.'],
       items: [{ drug: 'Losartán', presentation: 'Tableta 50 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 24 horas', duration: '30 días', quantity: '30 tabletas' }] },
-    { id: 'k-r4-1', patientId: 'r4', appt: dmOld, reason: 'Control de diabetes', dx: [{ code: '5A11', label: 'Diabetes mellitus tipo 2' }],
+    { id: 'k-r4-1', patientId: 'r4', appt: dmOld, reason: 'Control de diabetes', dx: [{ code: '5A11', label: 'Diabetes mellitus tipo 2', system: 'icd11' as const }],
       exam: 'Glucometría 168 mg/dl. Pies sin lesiones.', orders: ['Dieta para diabético.', 'Hemoglobina glicosilada en 3 meses.'],
       items: [{ drug: 'Metformina', presentation: 'Tableta 850 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 12 horas', duration: '30 días', quantity: '60 tabletas' }] },
-    { id: 'k-r2-2', patientId: 'r2', appt: htaToday, reason: 'Control de presión arterial', dx: [{ code: 'BA00', label: 'Hipertensión esencial' }],
+    { id: 'k-r2-2', patientId: 'r2', appt: htaToday, reason: 'Control de presión arterial', dx: [{ code: 'BA00', label: 'Hipertensión esencial', system: 'icd11' as const }],
       exam: 'PA 128/82. Sin edemas.', orders: ['Continuar con la dieta baja en sal.', 'Cita de control en 1 mes.'],
       items: [{ drug: 'Losartán', presentation: 'Tableta 50 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 24 horas', duration: '30 días', quantity: '30 tabletas' }] },
     // Ambulatoria con un medicamento que se aplica en el consultorio: queda en observación
-    { id: 'k-r5-1', patientId: 'r5', appt: gea, reason: 'Vómitos y diarrea desde anoche', dx: [{ code: '1A40.Z', label: 'Gastroenteritis o colitis infecciosa, sin especificar' }],
+    { id: 'k-r5-1', patientId: 'r5', appt: gea, reason: 'Vómitos y diarrea desde anoche', dx: [{ code: '1A40.Z', label: 'Gastroenteritis o colitis infecciosa, sin especificar', system: 'icd11' as const }],
       exam: 'Mucosas semihúmedas. Abdomen blando, ruidos aumentados.', orders: ['Suero oral a libre demanda.', 'Dieta blanda.'], observe: true,
       items: [{ drug: 'Dimenhidrinato', presentation: 'Ampolla 50 mg/ml', dose: '50 mg', route: 'Intramuscular', frequency: 'Dosis única', duration: '', applyInClinic: true }] },
   ]

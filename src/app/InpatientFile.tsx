@@ -4,7 +4,7 @@ import { BedDouble, Camera, ChevronLeft, ChevronRight, FileSignature, FileText, 
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
-import { date, dateTime, defaultRoute, fullName, inputDateTime, localISODate, ROUTES, shortStaff, time } from '../lib/format'
+import { date, dateTime, defaultRoute, fullName, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
 import { ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
 import { doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
@@ -115,7 +115,7 @@ export default function InpatientFile() {
                 <div><dt>Motivo del ingreso</dt><dd>{h.reason}</dd></div>
               </dl>
               <h4 style={{ marginTop: 16 }}>Diagnósticos de ingreso</h4>
-              <ol className="note__list">{h.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({d.code})</span></li>)}</ol>
+              <ol className="note__list">{h.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol>
               {obs && h.consultationId && <ConsultVitals consultationId={h.consultationId} />}
             </div>
           </section>
@@ -1130,7 +1130,7 @@ function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => 
         </div>
         <div className="panel__body"><div className="note">
           <div className="note__sec"><h4>Resumen</h4><p>{d.summary}</p></div>
-          <div className="note__sec"><h4>Diagnóstico de egreso</h4><ol className="note__list">{d.diagnoses.map((x) => <li key={x.code + x.label}>{x.label} <span className="muted">({x.code})</span></li>)}</ol></div>
+          <div className="note__sec"><h4>Diagnóstico de egreso</h4><ol className="note__list">{d.diagnoses.map((x) => <li key={x.code + x.label}>{x.label} <span className="muted">({dxCode(x)})</span></li>)}</ol></div>
           <div className="note__sec"><h4>Condición al egreso</h4><p>{d.condition}</p></div>
           {d.instructions && <div className="note__sec"><h4>Indicaciones</h4><p>{d.instructions}</p></div>}
           {d.followUp && <div className="note__sec"><h4>Seguimiento</h4><p>{d.followUp}</p></div>}

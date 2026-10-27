@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
-import { date, fullName, recordNumber, shortStaff, time } from '../lib/format'
+import { date, fullName, recordNumber, shortStaff, time, dxCode } from '../lib/format'
 import { medLabel, orderMark, splitOrders, stayPath } from '../lib/inpatient'
 import { AUTH_STATUS, authTitle } from '../lib/consent'
 import { ROLE_LABEL } from '../lib/permissions'
@@ -106,7 +106,7 @@ export default function FullRecord() {
             {h.dischargedAt && <div><dt>Egreso</dt><dd>{dm(h.dischargedAt)}{h.dischargedBy ? `, ${staffById(h.dischargedBy)?.name}` : ''}</dd></div>}
             {!obs && <div><dt>Acompañante</dt><dd>{h.companionName ? `${h.companionName}${h.companionRelation ? ` (${h.companionRelation})` : ''}${h.companionPhone ? `, ${h.companionPhone}` : ''}` : 'Sin dato'}</dd></div>}
             <div className="fr-wide"><dt>Motivo del ingreso</dt><dd>{h.reason}</dd></div>
-            <div className="fr-wide"><dt>Diagnósticos de ingreso</dt><dd>{h.diagnoses.map((d) => `${d.label} (${d.code})`).join('; ')}</dd></div>
+            <div className="fr-wide"><dt>Diagnósticos de ingreso</dt><dd>{h.diagnoses.map((d) => `${d.label} (${dxCode(d)})`).join('; ')}</dd></div>
           </dl>
           <h3 className="fr-h3">Ficha de identificación</h3>
           <Identification p={p} />
@@ -194,7 +194,7 @@ function NoteBody({ n, file }: { n: InpatientNote; file: InpatientFile }) {
     const d = n.discharge
     return <div className="note">
       <div className="note__sec"><h4>Resumen</h4><p>{d.summary}</p></div>
-      <div className="note__sec"><h4>Diagnóstico de egreso</h4><p>{d.diagnoses.map((x) => `${x.label} (${x.code})`).join('; ')}</p></div>
+      <div className="note__sec"><h4>Diagnóstico de egreso</h4><p>{d.diagnoses.map((x) => `${x.label} (${dxCode(x)})`).join('; ')}</p></div>
       <div className="note__sec"><h4>Condición al egreso</h4><p>{d.condition}</p></div>
       {d.instructions && <div className="note__sec"><h4>Indicaciones</h4><p>{d.instructions}</p></div>}
       {d.followUp && <div className="note__sec"><h4>Seguimiento</h4><p>{d.followUp}</p></div>}

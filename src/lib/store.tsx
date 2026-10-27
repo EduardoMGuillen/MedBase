@@ -39,7 +39,7 @@ export interface Report {
   days: { date: string; appointments: number; done: number; revenue: number }[]
   byDoctor: { id: string; name: string; appointments: number; done: number; noShow: number; revenue: number }[]
   byMethod: { method: PaymentMethod; count: number; total: number }[]
-  topDiagnoses: { code: string; label: string; count: number }[]
+  topDiagnoses: { code: string; label: string; system?: 'icd11'; count: number }[]
 }
 
 /** Cita nueva: con un paciente registrado o con nombre y teléfono de uno nuevo. Motivo y tipo son opcionales. */

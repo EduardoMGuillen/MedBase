@@ -8,7 +8,7 @@ import { bedLabel } from './Inpatients'
 import { useStore, type Chart } from '../lib/store'
 import { Loading, StatusBadge } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
-import { age, BACKGROUND_GROUPS, bmi, date, time } from '../lib/format'
+import { age, BACKGROUND_GROUPS, bmi, date, time, dxCode } from '../lib/format'
 import { Attachments } from './Attachments'
 import { AllergiesForm, BackgroundForm, IdentificationForm } from './PatientForms'
 import type { Certificate, Consultation, Patient, Vitals } from '../lib/types'
@@ -125,7 +125,7 @@ export function ConsultationBody({ c, vitals }: { c: Consultation; vitals?: Vita
       </div>
       {c.observations && <div className="note__sec"><h4>Observaciones</h4><p>{c.observations}</p></div>}
       <div className="note__sec"><h4>Impresión diagnóstica</h4>
-        <ol className="note__list">{c.diagnoses.map((d) => <li key={d.code}>{d.label} <span className="muted">({d.code})</span></li>)}</ol>
+        <ol className="note__list">{c.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol>
       </div>
       {c.indications ? (<>
         <div className="note__sec"><h4>Indicaciones y plan</h4>

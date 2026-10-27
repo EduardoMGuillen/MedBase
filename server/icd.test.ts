@@ -120,4 +120,11 @@ describe('K1 rutas de la CIE-11', () => {
     // Los de otras clínicas no aparecen
     assert.ok(!(await (await as('erosales@demo.clinara'))('GET', '/api/icd/frequent')).body.some((x: any) => x.code === 'CA02'))
   })
+  test('K3: los reportes cuentan aparte CIE-11, CIE-10 de antes y los escritos sin código', async () => {
+    const d = new Date(); const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const r = await (await as('admin@demo.clinara'))('GET', `/api/reports?from=${day}&to=${day}`)
+    const top = r.body.topDiagnoses as { code: string; system?: string }[]
+    assert.ok(top.some((x) => x.code === 'CA02' && x.system === 'icd11'))
+    assert.ok(top.every((x) => x.system === 'icd11' || x.system === undefined))
+  })
 })

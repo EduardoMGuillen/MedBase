@@ -136,7 +136,7 @@ describe('C4 un solo médico', () => {
     const w = await o.asi.post('/api/appointments/walk-in', { patientId: p.body.id, doctorId: 'of-c4b-doc', reason: 'Dolor' })
     assert.equal(w.status, 201, JSON.stringify(w.body))
     await o.doc.post(`/api/appointments/${w.body.id}/status`, { status: 'in_consult' })
-    const dx = [{ code: 'R10', label: 'Dolor abdominal' }]
+    const dx = [{ code: 'S/C', label: 'Dolor abdominal' }]
     assert.equal((await o.doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Dolor', diagnoses: dx, orders: ['Reposo.'], admit: true })).status, 400)
     assert.equal((await o.doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Dolor', diagnoses: dx, orders: ['Reposo.'] })).status, 201)
   })
@@ -186,7 +186,7 @@ describe('C7 observación opcional en el consultorio', () => {
       await o.doc.post(`/api/appointments/${w.body.id}/status`, { status: 'in_consult' })
       return String(w.body.id)
     }
-    const dx = [{ code: 'DD90.1', label: 'Gastroenteritis' }]
+    const dx = [{ code: '1A40.Z', label: 'Gastroenteritis o colitis infecciosa, sin especificar', system: 'icd11' }]
     const shot = { drug: 'Dimenhidrinato', presentation: 'Ampolla 50 mg', dose: '50 mg', route: 'Intramuscular', frequency: 'Dosis única', duration: '', applyInClinic: true }
     const c = await o.doc.post('/api/consultations', { appointmentId: await visit(), reason: 'Vómitos', diagnoses: dx, orders: [], items: [shot] })
     assert.equal(c.status, 201, JSON.stringify(c.body))

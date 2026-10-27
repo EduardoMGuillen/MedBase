@@ -41,12 +41,15 @@ export function registerReports(app: Express, { sql, auth, need, clinicOf }: Ctx
       })
     }
 
-    const dx = new Map<string, { code: string; label: string; count: number }>()
+    // Se cuenta por clasificación y código: el mismo código puede existir en CIE-10 (registros anteriores) y CIE-11.
+    // Los escritos sin código se agrupan por su texto.
+    const dx = new Map<string, { code: string; label: string; system?: 'icd11'; count: number }>()
     for (const c of consults) {
-      for (const d of JSON.parse(String(c.diagnoses)) as { code: string; label: string }[]) {
-        const e = dx.get(d.code) ?? { ...d, count: 0 }
+      for (const d of JSON.parse(String(c.diagnoses)) as { code: string; label: string; system?: 'icd11' }[]) {
+        const key = d.code === 'S/C' ? `sc:${d.label.toLowerCase()}` : `${d.system ?? 'icd10'}:${d.code}`
+        const e = dx.get(key) ?? { code: d.code, label: d.label, system: d.system, count: 0 }
         e.count++
-        dx.set(d.code, e)
+        dx.set(key, e)
       }
     }
 
