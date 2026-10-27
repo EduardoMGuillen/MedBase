@@ -172,3 +172,31 @@ describe('C6 asistentes y paso a clínica', () => {
     assert.equal((await o.doc.post('/api/settings/convert-to-clinic', { admin: { name: 'X', email: 'x@test.hn' } })).status, 403)
   })
 })
+
+describe('C7 observación opcional en el consultorio', () => {
+  test('con observación, la asistente aplica la dosis; sin ella, la consulta sólo emite receta', async () => {
+    const o = await office('c7')
+    const p = await o.asi.post('/api/patients', { firstName: 'Lía', lastName: 'Soto', birthDate: '1992-02-02', sex: 'F', phone: '9999-4444', dni: '0801199244444' })
+    const visit = async () => {
+      const w = await o.asi.post('/api/appointments/walk-in', { patientId: p.body.id, doctorId: 'of-c7-doc', reason: 'Vómitos' })
+      await o.doc.post(`/api/appointments/${w.body.id}/status`, { status: 'in_consult' })
+      return String(w.body.id)
+    }
+    const dx = [{ code: 'DD90.1', label: 'Gastroenteritis' }]
+    const shot = { drug: 'Dimenhidrinato', presentation: 'Ampolla 50 mg', dose: '50 mg', route: 'Intramuscular', frequency: 'Dosis única', duration: '', applyInClinic: true }
+    const c = await o.doc.post('/api/consultations', { appointmentId: await visit(), reason: 'Vómitos', diagnoses: dx, orders: [], items: [shot] })
+    assert.equal(c.status, 201, JSON.stringify(c.body))
+    assert.equal(c.body.stayKind, 'observation')
+    const med = (await o.asi.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds[0]
+    assert.equal((await o.asi.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: med.firstAt })).status, 201, 'la asistente aplica')
+    assert.equal((await o.asi.post(`/api/inpatient/${c.body.hospitalizationId}/notes`, { kind: 'evolution', subjective: 'S', objective: 'O', assessment: 'A', plan: 'P' })).status, 403, 'la asistente no escribe notas')
+    await o.doc.post(`/api/inpatient/${c.body.hospitalizationId}/discharge`, { diagnoses: dx, summary: 'Mejoró tras la aplicación.', condition: 'Mejorado' })
+    // Sin observación
+    const s = (await o.doc.get('/api/bootstrap')).body.settings
+    assert.equal((await o.doc.put('/api/settings', { ...s, address: 'Col. Kennedy', phone: '2222-0000', observationEnabled: false })).status, 200)
+    const appt = await visit()
+    assert.equal((await o.doc.post('/api/consultations', { appointmentId: appt, reason: 'Vómitos', diagnoses: dx, orders: [], items: [shot] })).status, 400)
+    assert.equal((await o.doc.post('/api/consultations', { appointmentId: appt, reason: 'Vómitos', diagnoses: dx, orders: ['Reposo.'], observe: true })).status, 400)
+    assert.equal((await o.doc.post('/api/consultations', { appointmentId: appt, reason: 'Vómitos', diagnoses: dx, orders: ['Reposo.'] })).status, 201)
+  })
+})
