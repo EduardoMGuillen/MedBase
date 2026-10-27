@@ -233,3 +233,9 @@ export const legacyTag = (d: Diagnosis) => (!d.system && d.code !== 'S/C' ? 'CIE
 
 /** Código como se imprime: "CA02", "sin código" o "J02 (CIE-10)". */
 export const dxCode = (d: Diagnosis) => (d.code === 'S/C' ? 'sin código' : legacyTag(d) ? `${d.code}, CIE-10` : d.code)
+
+/**
+ * Examen físico sin las etiquetas vacías de la guía por sistemas ("Abdomen:" sin nada después). Si no queda
+ * nada escrito, devuelve "".
+ */
+export const examText = (exam = '') => exam.split(/\r?\n/).filter((l) => !/^\s*[^:\n]{2,40}:\s*$/.test(l)).join('\n').trim()

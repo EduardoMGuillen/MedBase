@@ -9,6 +9,7 @@ import { ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
 import { courseDone, courseEnd, doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { MedAlertBanner } from './MedAlerts'
+import { NoteColumns, NoteText } from '../components/NoteColumns'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { authTitle, FREQUENT_PROCEDURES, isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
@@ -471,7 +472,7 @@ const SOAP: { key: 'subjective' | 'objective' | 'assessment' | 'plan'; letter: s
   { key: 'subjective', letter: 'S', label: 'Subjetivo', hint: 'Lo que refiere el paciente.' },
   { key: 'objective', letter: 'O', label: 'Objetivo', hint: 'Signos vitales, examen físico y resultados.' },
   { key: 'assessment', letter: 'A', label: 'Análisis', hint: 'Impresión diagnóstica y evolución.' },
-  { key: 'plan', letter: 'P', label: 'Plan', hint: 'Los medicamentos se agregan aquí abajo; las indicaciones, a la derecha.' },
+  { key: 'plan', letter: 'P', label: 'Plan', hint: 'Lo que piensas hacer, en texto. Las órdenes van a la derecha.' },
 ]
 
 /** "22/10 18:10": la fecha corta con la hora, como se escribe en la nota en papel. */
@@ -589,7 +590,7 @@ function ConvertModal({ file, p, onClose, onDone }: { file: File; p: Patient; on
 
 /**
  * Nota de ingreso o de evolución como en papel: arriba quién escribe, con su rol, la fecha y la hora; a la
- * izquierda el SOAP con los medicamentos que indica y a la derecha las indicaciones numeradas. En las notas
+ * izquierda el texto clínico y a la derecha las indicaciones numeradas y, debajo, los medicamentos. En las notas
  * con checklist, enfermería marca cada orden y queda su nombre y la hora junto a ella. En celular se apilan.
  */
 function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: () => void }) {
@@ -602,16 +603,10 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
         <div><h2>{n.kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'}</h2>
           <p>{author?.name}{author ? `, ${ROLE_LABEL[author.role].toLowerCase()}` : ''} · {date(n.at, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(n.at)}</p></div>
       </div>
-      <div className="panel__body note-2col">
-        <div className="note">
-          {SOAP.map((s) => <div key={s.key} className="note__sec"><h4>{s.letter}. {s.label}</h4><p>{n[s.key]}</p></div>)}
-          <div className="note__sec note__meds"><h4>Medicamentos</h4>
-            {meds.length ? <OrderChecklist n={n} orders={meds} file={file} reload={reload} pill /> : <p className="muted">Sin medicamentos indicados.</p>}</div>
-        </div>
-        <aside className="note-orders" aria-label="Indicaciones">
-          <h4>Indicaciones</h4>
-          {indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : <p className="muted">Sin indicaciones.</p>}
-        </aside>
+      <div className="panel__body">
+        <NoteColumns left={<NoteText n={n} />}
+          indications={indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : <p className="muted">Sin indicaciones.</p>}
+          meds={meds.length ? <OrderChecklist n={n} orders={meds} file={file} reload={reload} pill /> : <p className="muted">Sin medicamentos.</p>} />
       </div>
     </article>
   )
@@ -637,8 +632,8 @@ function OrderChecklist({ n, orders, file, reload, pill = false }: { n: Inpatien
           const who = mark && staffById(mark.by)
           return (
             <li key={i} className={checked ? 'is-checked' : n.checklist ? 'is-pending' : ''}>
-              <span className="orders__n">{pos + 1}.</span>
-              <span className="order-check__text"><span className="order-check__order">{pill && <Pill size={13} className="orders__pill" aria-hidden="true" />}{o}</span>
+              <span className="orders__n">{pill ? '–' : `${pos + 1}.`}</span>
+              <span className="order-check__text"><span className="order-check__order">{pill && <Pill size={12} className="orders__pill" aria-hidden="true" />}{o}</span>
                 {checked && <small className="order-check__mark">✓ {shortStaff(who?.name)} {time(mark.at)}</small>}
                 {mark?.action === 'uncheck' && <small className="order-check__mark order-check__mark--undo">Desmarcada por {shortStaff(who?.name)} {time(mark.at)}: {mark.reason}</small>}
               </span>
@@ -837,33 +832,6 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
           <label key={s.key} className="field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
             <textarea className="textarea" rows={4} value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} /></label>
         ))}
-      {active.length > 0 && (
-        <fieldset className="fs"><legend>Medicamentos activos</legend>
-          <p className="muted" style={{ fontSize: 13.5 }}>Marca OMITIR para suspender un medicamento; desde ahora la hoja de enfermería lo mostrará omitido.</p>
-          <div className="rows">
-            {active.map((m) => (
-              <div key={m.id} className="omit-row">
-                <span className={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id) ? 'struck' : ''}>{medLabel(m)}</span>
-                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <button type="button" className="btn btn--ghost btn--sm" disabled={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id)} onClick={() => { setReplacing(m.id); setAdding(false) }}>Cambiar</button>
-                  <label><input type="checkbox" checked={stop.includes(m.id)} onChange={(e) => { setStop(e.target.checked ? [...stop, m.id] : stop.filter((x) => x !== m.id)); if (e.target.checked) setReplacing(null) }} /> OMITIR</label>
-                </span>
-              </div>
-            ))}
-          </div>
-        </fieldset>
-      )}
-      <fieldset className="fs note-editor__meds"><legend>Medicamentos de esta nota</legend>
-        <p className="muted" style={{ fontSize: 13.5 }}>Van en la nota y pasan solos a la hoja de medicamentos.</p>
-        {meds.length > 0 && <ol className="orders">{meds.map((m, i) => (
-          <li key={i}><span className="orders__n">{i + 1}.</span><span className="orders__text"><Pill size={13} className="orders__pill" />{medLabel(m)}{m.instructions ? `. ${m.instructions}` : ''}</span>
-            <span className="orders__tools"><button className="icon-btn" aria-label="Quitar" onClick={() => setMeds(meds.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
-        ))}</ol>}
-        {replacing && <p className="muted" style={{ fontSize: 13.5 }}>La indicación nueva reemplaza a {active.find((m) => m.id === replacing)?.drug}. La nota conservará el resto de órdenes.</p>}
-        {replacing ? <MedForm p={p} initial={medToNew(active.find((m) => m.id === replacing)!)} onAdd={(m) => { setMeds([...meds, { ...m, replacesId: replacing }]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
-          : adding ? <MedForm p={p} onAdd={(m) => { setMeds([...meds, m]); setAdding(false) }} onCancel={() => setAdding(false)} />
-          : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
-      </fieldset>
       </div>
       <div className="note-editor__orders">
       <fieldset className="fs"><legend>Indicaciones</legend>
@@ -887,6 +855,33 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
           <button className="btn btn--soft" disabled={!extraText.trim()} type="button" onClick={addExtra} aria-label="Agregar indicación"><Plus size={16} /></button>
         </div>
       </fieldset>
+      {active.length > 0 && (
+        <fieldset className="fs"><legend>Medicamentos activos</legend>
+          <p className="muted" style={{ fontSize: 13.5 }}>Marca OMITIR para suspender un medicamento; desde ahora la hoja de enfermería lo mostrará omitido.</p>
+          <div className="rows">
+            {active.map((m) => (
+              <div key={m.id} className="omit-row">
+                <span className={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id) ? 'struck' : ''}>{medLabel(m)}</span>
+                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button type="button" className="btn btn--ghost btn--sm" disabled={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id)} onClick={() => { setReplacing(m.id); setAdding(false) }}>Cambiar</button>
+                  <label><input type="checkbox" checked={stop.includes(m.id)} onChange={(e) => { setStop(e.target.checked ? [...stop, m.id] : stop.filter((x) => x !== m.id)); if (e.target.checked) setReplacing(null) }} /> OMITIR</label>
+                </span>
+              </div>
+            ))}
+          </div>
+        </fieldset>
+      )}
+      <fieldset className="fs note-editor__meds"><legend>Medicamentos</legend>
+        <p className="muted" style={{ fontSize: 13.5 }}>Debajo de las indicaciones; pasan solos a la hoja de medicamentos.</p>
+        {meds.length > 0 && <ol className="orders">{meds.map((m, i) => (
+          <li key={i}><span className="orders__n">–</span><span className="orders__text"><Pill size={13} className="orders__pill" />{medLabel(m)}{m.instructions ? `. ${m.instructions}` : ''}</span>
+            <span className="orders__tools"><button className="icon-btn" aria-label="Quitar" onClick={() => setMeds(meds.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
+        ))}</ol>}
+        {replacing && <p className="muted" style={{ fontSize: 13.5 }}>La indicación nueva reemplaza a {active.find((m) => m.id === replacing)?.drug}. La nota conservará el resto de órdenes.</p>}
+        {replacing ? <MedForm p={p} initial={medToNew(active.find((m) => m.id === replacing)!)} onAdd={(m) => { setMeds([...meds, { ...m, replacesId: replacing }]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
+          : adding ? <MedForm key={meds.length} p={p} onAdd={(m) => { setMeds([...meds, m]); setAdding(false) }} onAddAnother={(m) => setMeds([...meds, m])} onCancel={() => setAdding(false)} />
+          : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
+      </fieldset>
       </div>
       </div>
     </Modal>
@@ -904,19 +899,28 @@ function medToNew(m: InpatientMed): NewMed {
   return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, instructions: m.instructions ?? '', firstAt: inputDateTime(new Date()), days: m.days }
 }
 
-function MedForm({ p, initial, onAdd, onCancel }: { p: Patient; initial?: NewMed; onAdd: (m: NewMed) => void; onCancel: () => void }) {
+/**
+ * Medicamento de una nota. "Guardar y agregar otro" (o Enter en el último campo) lo agrega y deja el formulario
+ * limpio para escribir el siguiente sin volver a abrirlo.
+ */
+function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; initial?: NewMed; onAdd: (m: NewMed) => void; onAddAnother?: (m: NewMed) => void; onCancel: () => void }) {
   const [m, setM] = useState<NewMed>({ ...EMPTY_MED, firstAt: inputDateTime(new Date()), ...initial })
   const [freq, setFreq] = useState(initial?.everyHours ? String(initial.everyHours) : 'once')
   const [open, setOpen] = useState(false)
   const [override, setOverride] = useState(false)
   const conflict = m.drug ? allergyConflict(p.allergies, m.drug) : null
   const matches = DRUGS.filter((d) => d.name.toLowerCase().includes(m.drug.toLowerCase())).slice(0, 6)
+  const built = (): NewMed | null => {
+    if (!m.drug.trim() || !m.dose.trim() || (conflict && !override)) return null
+    const everyHours = freq === 'once' ? undefined : Number(freq)
+    return { ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours, instructions: m.instructions?.trim() || undefined,
+      firstAt: m.prn ? undefined : new Date(m.firstAt!).toISOString() }
+  }
+  const another = () => { const x = built(); if (x && onAddAnother) onAddAnother(x) }
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    if (!m.drug.trim() || !m.dose.trim() || (conflict && !override)) return
-    const everyHours = freq === 'once' ? undefined : Number(freq)
-    onAdd({ ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours, instructions: m.instructions?.trim() || undefined,
-      firstAt: m.prn ? undefined : new Date(m.firstAt!).toISOString() })
+    const x = built()
+    if (x) onAdd(x)
   }
   return (
     <form className="rx-form" onSubmit={submit}>
@@ -945,7 +949,8 @@ function MedForm({ p, initial, onAdd, onCancel }: { p: Patient; initial?: NewMed
         <label className="field"><span>Total de días (opcional)</span>
           <input className="input num" type="number" min={1} max={365} inputMode="numeric" value={m.days ?? ''} placeholder="Hasta nueva orden"
             onChange={(e) => setM({ ...m, days: e.target.value ? Math.max(1, Math.min(365, Math.round(Number(e.target.value)))) : undefined })} /></label>
-        <label className="field"><span>Indicaciones</span><input className="input" value={m.instructions} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder={m.prn ? 'Ej. Si hay dolor intenso' : 'Ej. Diluir en 100 ml'} /></label>
+        <label className="field"><span>Indicaciones</span><input className="input" value={m.instructions} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder={m.prn ? 'Ej. Si hay dolor intenso' : 'Ej. Diluir en 100 ml'}
+          onKeyDown={(e) => { if (e.key === 'Enter' && onAddAnother) { e.preventDefault(); another() } }} /></label>
       </div>
       {conflict && (
         <div className="alert-strip" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
@@ -955,6 +960,7 @@ function MedForm({ p, initial, onAdd, onCancel }: { p: Patient; initial?: NewMed
       )}
       <div style={{ display: 'flex', gap: 8 }}>
         <button className="btn btn--primary" disabled={!m.drug.trim() || !m.dose.trim() || (!!conflict && !override)}><Plus size={16} />Agregar a la nota</button>
+        {onAddAnother && <button type="button" className="btn btn--soft" disabled={!m.drug.trim() || !m.dose.trim() || (!!conflict && !override)} onClick={another}>Guardar y agregar otro</button>}
         <button type="button" className="btn btn--ghost" onClick={onCancel}>Cancelar</button>
       </div>
     </form>

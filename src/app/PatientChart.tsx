@@ -7,8 +7,9 @@ import { FOLLOWUP_KIND } from '../lib/followups'
 import { bedLabel } from './Inpatients'
 import { useStore, type Chart } from '../lib/store'
 import { Loading, StatusBadge } from '../components/ui'
+import { IndicationList, MedLines, NoteColumns } from '../components/NoteColumns'
 import { PatientHeader } from '../components/PatientHeader'
-import { age, BACKGROUND_GROUPS, bmi, date, time, dxCode } from '../lib/format'
+import { age, BACKGROUND_GROUPS, bmi, date, dxCode, examText, time } from '../lib/format'
 import { Attachments } from './Attachments'
 import { AllergiesForm, BackgroundForm, IdentificationForm } from './PatientForms'
 import type { Certificate, Consultation, Patient, Vitals } from '../lib/types'
@@ -106,45 +107,39 @@ export function BackgroundView({ p, compact = false, only }: { p: Patient; compa
 }
 
 /** Una consulta en el orden de la historia clínica: el manejo siempre al final. */
+/**
+ * Nota de consulta externa (también es la nota de ingreso de una estancia) en dos columnas: a la izquierda el
+ * texto clínico; a la derecha las indicaciones y debajo los medicamentos.
+ */
 export function ConsultationBody({ c, vitals }: { c: Consultation; vitals?: Vitals | null }) {
-  return (
-    <div className="note">
-      <div className="note__sec"><h4>Motivo de consulta</h4><p>{c.reason}</p></div>
-      {c.history && <div className="note__sec"><h4>Historia de la enfermedad actual</h4><p>{c.history}</p></div>}
-      <div className="note__sec"><h4>Examen físico</h4>
-        {vitals && <p className="note__vitals">{[
-          vitals.systolic != null && vitals.diastolic != null && `PA ${vitals.systolic}/${vitals.diastolic} mmHg`,
-          vitals.heartRate != null && `FC ${vitals.heartRate} lpm`,
-          vitals.respRate != null && `FR ${vitals.respRate} rpm`,
-          vitals.temperature != null && `T ${vitals.temperature.toFixed(1)} °C`,
-          vitals.spo2 != null && `SpO₂ ${vitals.spo2}%`,
-          vitals.weightKg != null && `Peso ${vitals.weightKg} kg`,
-          vitals.glucose != null && `Glucometría ${vitals.glucose} mg/dL`,
-        ].filter(Boolean).join(', ') || 'Sin signos en la preclínica.'}</p>}
-        {c.exam ? <p>{c.exam}</p> : !vitals && <p className="muted">Sin registro.</p>}
-      </div>
-      {c.observations && <div className="note__sec"><h4>Observaciones</h4><p>{c.observations}</p></div>}
-      <div className="note__sec"><h4>Impresión diagnóstica</h4>
-        <ol className="note__list">{c.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol>
-      </div>
-      {c.indications ? (<>
-        <div className="note__sec"><h4>Indicaciones y plan</h4>
-          {c.indications.length ? <ol className="note__list">{c.indications.map((o, i) => <li key={i}>{o}</li>)}</ol> : <p className="muted">Sin indicaciones.</p>}
-        </div>
-        <div className="note__sec"><h4>Medicamentos</h4>
-          {c.orders.length > c.indications.length
-            ? <ol className="note__list">{c.orders.slice(c.indications.length).map((o, i) => <li key={i}>{o}</li>)}</ol>
-            : <p className="muted">Sin medicamentos.</p>}
-        </div>
-      </>) : (
-        <div className="note__sec"><h4>Plan y manejo</h4>
-          {c.orders.length
-            ? <ol className="note__list">{c.orders.map((o, i) => <li key={i}>{o}</li>)}</ol>
-            : <p>{c.plan || <span className="muted">Sin registro.</span>}</p>}
-        </div>
-      )}
+  const exam = examText(c.exam)
+  const left = (<>
+    <div className="note__sec"><h4>Motivo de consulta</h4><p>{c.reason}</p></div>
+    {c.history && <div className="note__sec"><h4>Historia de la enfermedad actual</h4><p>{c.history}</p></div>}
+    <div className="note__sec"><h4>Examen físico</h4>
+      {vitals && <p className="note__vitals">{[
+        vitals.systolic != null && vitals.diastolic != null && `PA ${vitals.systolic}/${vitals.diastolic} mmHg`,
+        vitals.heartRate != null && `FC ${vitals.heartRate} lpm`,
+        vitals.respRate != null && `FR ${vitals.respRate} rpm`,
+        vitals.temperature != null && `T ${vitals.temperature.toFixed(1)} °C`,
+        vitals.spo2 != null && `SpO₂ ${vitals.spo2}%`,
+        vitals.weightKg != null && `Peso ${vitals.weightKg} kg`,
+        vitals.glucose != null && `Glucometría ${vitals.glucose} mg/dL`,
+      ].filter(Boolean).join(', ') || 'Sin signos en la preclínica.'}</p>}
+      {exam ? <p>{exam}</p> : !vitals && <p className="muted">Sin datos.</p>}
     </div>
-  )
+    {c.observations && <div className="note__sec"><h4>Observaciones</h4><p>{c.observations}</p></div>}
+    <div className="note__sec"><h4>Impresión diagnóstica</h4>
+      <ol className="note__list">{c.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol>
+    </div>
+  </>)
+  // Consultas de antes (sin indicaciones aparte): el plan y manejo completo va a la derecha, sin separar medicamentos
+  if (!c.indications) {
+    return <NoteColumns left={left} indicationsTitle="Plan y manejo"
+      indications={c.orders.length ? <IndicationList items={c.orders} /> : <p>{c.plan || <span className="muted">Sin registro.</span>}</p>} />
+  }
+  return <NoteColumns left={left} indicationsTitle="Indicaciones y plan" indications={<IndicationList items={c.indications} />}
+    meds={<MedLines items={c.orders.slice(c.indications.length)} />} />
 }
 
 type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'rx' | 'certs' | 'files'
