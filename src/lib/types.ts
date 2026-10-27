@@ -67,6 +67,9 @@ export interface ClinicSettings {
   obsAlertHours?: number
   /** Si es verdadero, las órdenes de las notas de observación también se revisan como checklist. */
   obsOrderChecklist?: boolean
+  /** Curva térmica: banda normal. Desde `tempHigh` es fiebre y por debajo de `tempLow`, hipotermia (36.0 y 38.0 por defecto). */
+  tempLow?: number
+  tempHigh?: number
   /** Clínica o consultorio de un médico independiente. */
   kind?: ClinicKind
   /** Consultorio: usa observación (aplicar medicamentos, hidratar). */
@@ -221,6 +224,16 @@ export interface Vitals {
   painScale?: number
   chiefComplaint?: string // motivo de consulta registrado en el triaje
   notes?: string
+  /** Toma de la hoja de signos vitales de una estancia (hospitalización u observación). */
+  hospitalizationId?: string
+  /** Cuándo se anotó (la toma pudo ser antes: `takenAt`). */
+  recordedAt?: string
+  /** Anulada con motivo: se ve tachada, no se borra. */
+  voidedAt?: string
+  voidedBy?: string
+  voidReason?: string
+  /** En la hoja de la estancia: 'preclinic' es la preclínica de la consulta que lo ingresó (primera toma). */
+  source?: 'preclinic' | 'stay'
 }
 
 /** Diagnóstico: CIE-11 de la OMS (system 'icd11', con su URI) o escrito sin código ("S/C"). Sin system: CIE-10, de antes. */
@@ -397,6 +410,8 @@ export interface Hospitalization {
   convertedBy?: string
   /** En la lista de hospitalizados: la autorización de hospitalización sigue pendiente de firma. */
   authPending?: boolean
+  /** Hoja de signos vitales: cada cuántas horas se toman (lo cambia el médico). Vacío: lo que diga la orden, o 8. */
+  vitalsEveryHours?: number
   /** Cómo terminó: 'referred' si se refirió a otro centro (con el destino en outcomeNote). */
   outcome?: 'referred' | 'discharged'
   outcomeNote?: string
@@ -736,6 +751,10 @@ export interface InpatientFile {
   referrals: Referral[]
   /** Epicrisis de la estancia (todas sus versiones). */
   epicrises: Epicrisis[]
+  /** Hoja de signos vitales: la preclínica de la consulta de ingreso y las tomas de la estancia (también las anuladas). */
+  vitals: Vitals[]
+  /** Órdenes de la consulta externa que ingresó al paciente (p. ej. "Signos vitales cada 4 horas"). */
+  consultOrders?: string[]
 }
 
 // ---------- Crónicos y seguimientos ----------

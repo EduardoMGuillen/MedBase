@@ -6,7 +6,9 @@ import { features } from '../lib/permissions'
 import { Modal, PageHead, StatusBadge } from '../components/ui'
 import { age, fullName, sameDay, time } from '../lib/format'
 import type { Appointment, Patient } from '../lib/types'
-import { parseDecimal, VITALS, vitalLevel, type VitalKey } from '../lib/vitals'
+import { parseDecimal, VITALS, type VitalKey } from '../lib/vitals'
+import { EMPTY_VITALS, FIELDS, fieldIssue, vitalNumber, type VitalsForm } from '../lib/vitalsForm'
+import { VitalsFields } from '../components/VitalsFields'
 import { stayPath, yearsOld } from '../lib/inpatient'
 import { PatientPicker } from './Inpatients'
 import { IdentificationForm } from './PatientForms'
@@ -164,29 +166,6 @@ function WalkInModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-const FIELDS: VitalKey[] = ['systolic', 'diastolic', 'heartRate', 'respRate', 'temperature', 'spo2', 'weightKg', 'heightCm', 'glucose', 'painScale']
-/** La presión se revisa en pareja: al escribir una, se vuelve a revisar la otra al salir. */
-const PAIR: VitalKey[] = ['systolic', 'diastolic']
-type VitalsForm = Record<VitalKey, string> & { notes: string }
-const EMPTY_VITALS: VitalsForm = { systolic: '', diastolic: '', heartRate: '', respRate: '', temperature: '', spo2: '', weightKg: '', heightCm: '', glucose: '', painScale: '', notes: '' }
-
-/** Problema de un campo ya revisado: `error` pide confirmar antes de guardar; `warn` sólo avisa al médico. */
-function fieldIssue(k: VitalKey, v: VitalsForm, ageYears?: number): { level: 'error' | 'warn'; text: string } | null {
-  const x = parseDecimal(v[k])
-  if (x === undefined) return null
-  if (Number.isNaN(x)) return { level: 'error', text: 'Revise el valor: no es un número.' }
-  if (k === 'painScale' && !Number.isInteger(x)) return { level: 'error', text: 'Revise el valor: el dolor va de 0 a 10, sin decimales.' }
-  const level = vitalLevel(k, x, ageYears)
-  if (level === 'error') return { level, text: 'Revise el valor.' }
-  // La sistólica menor que la diastólica casi siempre es un error de digitación; se avisa en la sistólica
-  const d = parseDecimal(v.diastolic)
-  if (k === 'systolic' && d != null && !Number.isNaN(d) && vitalLevel('diastolic', d, ageYears) !== 'error' && x <= d) {
-    return { level: 'error', text: 'La sistólica es menor o igual que la diastólica: posible error.' }
-  }
-  if (level === 'warn') return { level, text: 'Fuera de rango, el médico verá la alerta.' }
-  return null
-}
-
 /**
  * Triaje: enfermería registra el motivo de consulta y los signos vitales; el médico recibe ambos.
  * Cada campo se revisa al salir de él (nunca mientras se escribe) y otra vez al guardar.
@@ -210,10 +189,7 @@ export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onC
   const shownWarn = FIELDS.filter((k) => issue(k)?.level === 'warn')
 
   const save = async () => {
-    const num = (k: VitalKey) => {
-      const x = parseDecimal(v[k])
-      return x === undefined || Number.isNaN(x) ? undefined : VITALS[k].decimals ? x : Math.round(x)
-    }
+    const num = (k: VitalKey) => vitalNumber(v, k)
     setBusy(true)
     const ok = await addVitals({
       patientId: p.id, appointmentId: appt.id, chiefComplaint: reason.trim(), systolic: num('systolic'), diastolic: num('diastolic'), heartRate: num('heartRate'),
@@ -231,20 +207,6 @@ export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onC
     void save()
   }
 
-  const F = (k: VitalKey) => {
-    const i = issue(k)
-    return (
-      <label className="field" key={k}>
-        <span>{VITALS[k].label} <small style={{ fontWeight: 400 }}>({VITALS[k].unit})</small></span>
-        <input className={`input num ${i ? `input--${i.level}` : ''}`} inputMode="decimal" type="text" autoComplete="off" value={v[k]}
-          onChange={(e) => { setV({ ...v, [k]: e.target.value }); setConfirming(false); setChecked((c) => { const n = new Set(c); for (const x of PAIR.includes(k) ? PAIR : [k]) n.delete(x); return n }) }}
-          onBlur={() => check(...(PAIR.includes(k) ? PAIR : [k]).filter((x) => v[x] !== ''))}
-          aria-invalid={i?.level === 'error'} aria-describedby={i ? `vital-${k}` : undefined} />
-        {i && <small id={`vital-${k}`} className={`field__msg field__msg--${i.level}`}>{i.text}</small>}
-      </label>
-    )
-  }
-
   return (
     <Modal title={`Preclínica de ${fullName(p)}`} onClose={onClose} footer={confirming ? <>
       <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }}>Revise: {errors.map((k) => `${VITALS[k].label.toLowerCase()} ${v[k]}`).join(', ')}.</span>
@@ -259,7 +221,7 @@ export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onC
       <label className="field"><span>Motivo de consulta, en palabras del paciente</span>
         <textarea className="textarea textarea--sm" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Dolor de garganta y fiebre desde hace 3 días" />
         {!ready && <small className="field__msg field__msg--warn">Escribe el motivo para poder guardar la preclínica.</small>}</label>
-      <div className="form-grid form-grid--top">{FIELDS.map(F)}</div>
+      <VitalsFields v={v} setV={setV} checked={checked} setChecked={setChecked} ageYears={ageYears} onEdit={() => setConfirming(false)} />
       {shownWarn.length > 0 && <div className="alert-strip alert-strip--amber" role="status">Fuera de rango: {shownWarn.map((k) => VITALS[k].label.toLowerCase()).join(', ')}. El médico verá la alerta.</div>}
       <label className="field"><span>Observaciones de enfermería</span><textarea className="textarea textarea--sm" rows={2} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></label>
     </Modal>

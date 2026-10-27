@@ -23,12 +23,13 @@ import { features } from '../lib/permissions'
 import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
 import { toBase64 } from './Attachments'
 import { DischargeDocuments, EpicrisisButton } from './Epicrisis'
+import { VitalsSheet } from './VitalsSheet'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
 import { hasBlank, medHasBlank, orderKey } from '../lib/orderSets'
 import { useVademecum } from '../lib/vademecum'
 import type { OrderSet } from '../lib/types'
 
-type Tab = 'sheet' | 'notes' | 'meds' | 'nursing' | 'labs' | 'annexes'
+type Tab = 'sheet' | 'notes' | 'vitals' | 'meds' | 'nursing' | 'labs' | 'annexes'
 
 export default function InpatientFile() {
   const { id } = useParams()
@@ -37,7 +38,7 @@ export default function InpatientFile() {
   // Desde la alerta de órdenes nuevas se entra directo a las notas; al firmar una consulta con ingreso, a completar la cama
   const [params, setParams] = useSearchParams()
   const [editing, setEditing] = useState(params.get('completar') === '1')
-  const [tab, setTab] = useState<Tab>(({ notas: 'notes', medicamentos: 'meds', anexos: 'annexes' } as Record<string, Tab>)[params.get('tab') ?? ''] ?? 'sheet')
+  const [tab, setTab] = useState<Tab>(({ notas: 'notes', signos: 'vitals', medicamentos: 'meds', anexos: 'annexes' } as Record<string, Tab>)[params.get('tab') ?? ''] ?? 'sheet')
   const [missing, setMissing] = useState(false)
   const now = useNow()
   const load = useCallback(() => {
@@ -63,12 +64,14 @@ export default function InpatientFile() {
   const tabs: [Tab, string][] = obs ? [
     ['sheet', 'Datos generales'],
     ['notes', `Notas de evolución (${medical.length + (h.consultationId ? 1 : 0)})`],
+    ['vitals', 'Signos vitales'],
     ['meds', 'Hoja de medicamentos'],
     ['labs', `Laboratorio (${file.labs.length})`],
     ['annexes', `Anexos (${annexes})`],
   ] : [
     ['sheet', 'Hoja de hospitalización'],
     ['notes', `Notas de evolución (${medical.length + (h.consultationId ? 1 : 0)})`],
+    ['vitals', 'Signos vitales'],
     ['meds', 'Medicamentos'],
     ['nursing', `Notas de enfermería (${nursing.length})`],
     ['labs', `Laboratorios (${file.labs.length})`],
@@ -139,6 +142,7 @@ export default function InpatientFile() {
 
       {tab === 'meds' && <MedSheet file={file} p={p} reload={load} onWriteNote={() => setTab('notes')} />}
       {tab === 'notes' && <MedicalNotes file={file} p={p} reload={load} />}
+      {tab === 'vitals' && <VitalsSheet file={file} p={p} reload={load} />}
       {tab === 'nursing' && !obs && <NursingNotes file={file} reload={load} />}
       {tab === 'labs' && <Labs file={file} reload={load} />}
       {tab === 'annexes' && <Annexes file={file} p={p} reload={load} />}

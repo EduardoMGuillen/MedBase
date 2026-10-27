@@ -469,7 +469,7 @@ export function createApp(opts: AppOptions) {
     const cid = clinicOf(req)
     ;(await patientRow(cid, id)) ?? fail(404, 'El paciente no existe.')
     const [vitals, consultations, prescriptions, hospitalizations] = await Promise.all([
-      sql.query('SELECT * FROM vitals WHERE patient_id = ? AND clinic_id = ? ORDER BY taken_at DESC', [id, cid]),
+      sql.query('SELECT * FROM vitals WHERE patient_id = ? AND clinic_id = ? AND voided_at IS NULL ORDER BY taken_at DESC', [id, cid]),
       sql.query('SELECT * FROM consultations WHERE patient_id = ? AND clinic_id = ? ORDER BY date DESC', [id, cid]),
       sql.query('SELECT * FROM prescriptions WHERE patient_id = ? AND clinic_id = ? ORDER BY issued_at DESC', [id, cid]),
       sql.query('SELECT * FROM hospitalizations WHERE patient_id = ? AND clinic_id = ? ORDER BY admitted_at DESC', [id, cid]),

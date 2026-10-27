@@ -5,8 +5,9 @@ import zlib from 'node:zlib'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb, migrateObservationAuthorizations } from './db.js'
+import { DEMO_PASSWORD, ensureDb, migrateObservationAuthorizations, resetDemo } from './db.js'
 import { createSql, type Sql } from './sql.js'
+import { bandOf, expectedTakes, frequencyFromOrders, missedTakes, tempClass, vitalAlerts } from '../src/lib/vitalsSheet.js'
 
 let server: Server
 let sql: Sql
@@ -362,5 +363,85 @@ describe('P1 epicrisis', () => {
     // Una estancia activa no tiene epicrisis todavía
     const { stayId: active } = await observation('EpiActiva')
     assert.equal((await doc.post(`/api/inpatient/${active}/epicrisis`)).status, 409)
+  })
+})
+
+describe('S1 hoja de signos vitales', () => {
+  test('la preclínica de la consulta es la primera toma; enfermería registra sólo la temperatura; se anula con motivo; el médico cambia la frecuencia', async () => {
+    const nurse = await as('crios@demo.clinara')
+    const doc = await as('lherrera@demo.clinara')
+    const p = await nurse.post('/api/patients', { firstName: 'Signos', lastName: 'Vitales Prueba', birthDate: '1975-03-03', sex: 'F', phone: '9999-2222', dni: '0801-1975-33333' })
+    const w = await nurse.post('/api/appointments/walk-in', { patientId: p.body.id, doctorId: 's-herrera', reason: 'Fiebre' })
+    const pre = await nurse.post('/api/vitals', { patientId: p.body.id, appointmentId: w.body.id, temperature: 38.9, heartRate: 104, systolic: 118, diastolic: 76, chiefComplaint: 'Fiebre' })
+    assert.equal(pre.status, 201)
+    await doc.post(`/api/appointments/${w.body.id}/status`, { status: 'in_consult' })
+    const c = await doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Fiebre', history: 'Fiebre de 2 días.', diagnoses: DX, orders: ['Signos vitales cada 4 horas.'], observe: true, vitalsId: pre.body.id })
+    assert.equal(c.status, 201, JSON.stringify(c.body))
+    const stay = String(c.body.hospitalizationId)
+    let file = (await nurse.get(`/api/inpatient/${stay}`)).body
+    assert.deepEqual(file.vitals.map((v: any) => [v.source, v.temperature]), [['preclinic', 38.9]], 'una sola fuente: la tabla de signos')
+
+    assert.equal((await nurse.post(`/api/inpatient/${stay}/vitals`, {})).status, 400, 'al menos un signo')
+    assert.equal((await nurse.post(`/api/inpatient/${stay}/vitals`, { temperature: 37, takenAt: new Date(Date.now() + 3_600_000).toISOString() })).status, 400, 'no en el futuro')
+    assert.equal((await nurse.post(`/api/inpatient/${stay}/vitals`, { systolic: 120 })).status, 400, 'la PA lleva las dos')
+    assert.equal((await (await as('smejia@demo.clinara')).post(`/api/inpatient/${stay}/vitals`, { temperature: 37 })).status, 403, 'recepción no')
+    const takenAt = new Date(Date.now() - 20 * 60_000).toISOString()
+    const t = await nurse.post(`/api/inpatient/${stay}/vitals`, { temperature: 37.84, takenAt })
+    assert.equal(t.status, 201, JSON.stringify(t.body))
+    assert.equal(t.body.temperature, 37.8, 'un decimal')
+    assert.equal(t.body.takenAt, takenAt)
+    assert.ok(t.body.recordedAt > takenAt, 'se guarda también la hora de registro')
+    assert.equal(t.body.takenBy, 's-rios')
+    assert.equal((await nurse.post(`/api/vitals/${t.body.id}/void`, { reason: 'x' })).status, 400)
+    const voided = await nurse.post(`/api/vitals/${t.body.id}/void`, { reason: 'Se anotó en el paciente equivocado' })
+    assert.equal(voided.status, 200)
+    assert.ok(voided.body.voidedAt)
+    assert.equal((await nurse.post(`/api/vitals/${t.body.id}/void`, { reason: 'Otra vez anulada' })).status, 409)
+    assert.equal((await nurse.post(`/api/vitals/${pre.body.id}/void`, { reason: 'La preclínica no se anula aquí' })).status, 404)
+    file = (await doc.get(`/api/inpatient/${stay}`)).body
+    assert.equal(file.vitals.length, 2, 'la anulada sigue en la hoja (tachada)')
+    // Frecuencia: la detecta de la orden (cada 4 h); el médico la cambia, enfermería no
+    assert.equal(frequencyFromOrders(file), 4)
+    assert.equal((await nurse.patch(`/api/inpatient/${stay}/vitals-frequency`, { everyHours: 6 })).status, 403)
+    assert.equal((await doc.patch(`/api/inpatient/${stay}/vitals-frequency`, { everyHours: 5 })).status, 400)
+    assert.equal((await doc.patch(`/api/inpatient/${stay}/vitals-frequency`, { everyHours: 6 })).body.vitalsEveryHours, 6)
+  })
+
+  test('curva: tomas cada 8 h por 4 días con una fiebre y una hipotermia; la toma que falta da alerta; cada 4 h cambia lo esperado', () => {
+    const start = new Date(); start.setDate(start.getDate() - 3); start.setHours(0, 30, 0, 0)
+    const now = new Date(start.getTime() + 3 * 24 * 3_600_000 + 17 * 3_600_000)
+    const vitals: any[] = []
+    for (let i = 0; i < 12; i++) {
+      const at = new Date(start); at.setHours(8 * (i + 1), 5, 0, 0)
+      if (at > now) break
+      if (i === 10) continue // falta la toma de esa hora
+      vitals.push({ id: `v${i}`, takenAt: at.toISOString(), takenBy: 's-rios', temperature: i === 3 ? 38.6 : i === 6 ? 35.4 : 36.8, patientId: 'x' })
+    }
+    const file: any = { hospitalization: { admittedAt: start.toISOString(), status: 'active' }, notes: [], vitals }
+    const band = bandOf({})
+    assert.deepEqual([tempClass(38.6, band), tempClass(35.4, band), tempClass(38.0, band), tempClass(35.9, band), tempClass(36.0, band)], ['fever', 'hypo', 'fever', 'hypo', 'normal'])
+    const missed = missedTakes(file, now)
+    assert.equal(missed.length, 1, 'una toma esperada sin registrar')
+    assert.equal(missed[0].getHours() % 8, 0)
+    const alerts = vitalAlerts(file, band, now)
+    assert.ok(alerts.some((a) => a.startsWith('Signos vitales pendientes')), alerts.join(' | '))
+    // Con una fiebre en las últimas 24 h, aparece en las alertas
+    vitals.push({ id: 'vf', takenAt: new Date(now.getTime() - 3_600_000).toISOString(), takenBy: 's-rios', temperature: 38.6, patientId: 'x' })
+    assert.ok(vitalAlerts(file, band, now).some((a) => a.startsWith('Fiebre: 38.6 °C')))
+    // Cada 4 h: el doble de horas esperadas, y faltan muchas más
+    file.hospitalization.vitalsEveryHours = 4
+    assert.ok(missedTakes(file, now).length > 5)
+    assert.equal(expectedTakes(new Date(2026, 9, 25, 0, 0), new Date(2026, 9, 25, 23, 59), 8).map((d) => d.getHours()).join(','), '0,8,16')
+  })
+})
+
+describe('Restablecer demo', () => {
+  test('vacía también los sets, las epicrisis y las partes de archivos (va al final: borra la base de las pruebas)', async () => {
+    assert.ok(Number((await sql.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM order_sets'))!.n) > 0)
+    await resetDemo(sql)
+    for (const t of ['order_sets', 'order_set_uses', 'epicrises', 'upload_parts']) {
+      assert.equal(Number((await sql.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM ${t}`))!.n), 0, t)
+    }
+    assert.ok(await sql.one(`SELECT 1 FROM staff WHERE id = 's-herrera'`), 'la demo se vuelve a cargar')
   })
 })

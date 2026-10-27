@@ -1,10 +1,18 @@
 import { TriangleAlert } from 'lucide-react'
 import { collectMedAlerts } from '../lib/inpatient'
+import { bandOf, vitalAlerts } from '../lib/vitalsSheet'
+import { useStore } from '../lib/store'
+import { useNow } from '../lib/hooks'
 import type { InpatientFile } from '../lib/types'
 
-/** Aviso en el expediente cuando una dosis no se cumplió o va atrasada. Lo ven médico y enfermería. */
+/**
+ * Alertas del expediente: dosis que no se cumplieron o van atrasadas, fiebre o hipotermia de las últimas 24 horas y
+ * tomas de signos vitales esperadas sin registrar. Las ven médico y enfermería.
+ */
 export function MedAlertBanner({ file }: { file: InpatientFile }) {
-  const alerts = collectMedAlerts(file)
+  const { settings } = useStore()
+  const now = useNow()
+  const alerts = [...vitalAlerts(file, bandOf(settings), now).map((text) => ({ text })), ...collectMedAlerts(file)]
   if (!alerts.length) return null
   return (
     <div className="alert-strip" role="status" style={{ alignItems: 'flex-start' }}>

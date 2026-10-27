@@ -4,9 +4,12 @@ import { ChevronLeft, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
 import { date, fullName, recordNumber, shortStaff, time, dxCode } from '../lib/format'
-import { currentEpicrisis, medLabel, orderMark, splitOrders, stayPath } from '../lib/inpatient'
+import { currentEpicrisis, medLabel, orderMark, splitOrders, stayPath, yearsOld } from '../lib/inpatient'
 import { authStatus, authTitle } from '../lib/consent'
 import { PdfPages } from '../components/PdfPages'
+import { ThermalCurve, VitalsTable } from './VitalsSheet'
+import { antipyreticDoses, bandOf, missedTakes, vitalsAnchor, vitalsEvery } from '../lib/vitalsSheet'
+import { useNow } from '../lib/hooks'
 import { EpicrisisSheet } from './Epicrisis'
 import { ROLE_LABEL } from '../lib/permissions'
 import type { Consultation, InpatientFile, InpatientNote, Patient, Vitals } from '../lib/types'
@@ -41,11 +44,13 @@ type Entry = { at: string; kind: 'consult' | 'note' | 'legacy'; note?: Inpatient
 /**
  * Expediente completo de la hospitalización u observación, ordenado y dividido para leerlo o imprimirlo:
  * hoja de hospitalización, notas de evolución (una por página, con la de consulta, procedimientos y egreso
- * en su lugar), notas de enfermería de corrido, hoja de medicamentos, laboratorios y autorizaciones.
+ * en su lugar), notas de enfermería de corrido, hoja de signos vitales (7 días por hoja), hoja de medicamentos,
+ * laboratorios, autorizaciones y anexos y, al final, la epicrisis. En observación, sin notas de enfermería.
  */
 export default function FullRecord() {
   const { id } = useParams()
   const { fetchInpatient, fetchConsultation, patient, staffById, settings, bed, notify } = useStore()
+  const now = useNow()
   const [file, setFile] = useState<InpatientFile | null>(null)
   const [consult, setConsult] = useState<{ consultation: Consultation; vitals: Vitals | null } | null>(null)
   useEffect(() => {
@@ -73,12 +78,19 @@ export default function FullRecord() {
   const nursing = file.notes.filter((n) => n.kind === 'nursing').sort((a, b) => a.at.localeCompare(b.at))
   const auths = file.authorizations
   const legacyAuths = file.procedures.filter((x) => x.kind === 'authorization')
+  // Hoja de signos vitales: hasta 7 días por hoja, desde el ingreso (o la observación) hasta el egreso o ahora
+  const band = bandOf(settings)
+  const stayStart = new Date(h.observationAt ?? h.admittedAt).getTime()
+  const stayEnd = h.dischargedAt ? new Date(h.dischargedAt).getTime() : now.getTime()
+  const vitalPages: [number, number][] = []
+  for (let d = new Date(stayStart).setHours(0, 0, 0, 0); d <= stayEnd; d += 7 * 86_400_000) vitalPages.push([d, Math.min(d + 7 * 86_400_000, new Date(stayEnd).setHours(24, 0, 0, 0))])
   // La epicrisis vigente va al final; también es un documento aparte
   const epicrisis = currentEpicrisis(file)
   const sections: [string, string][] = [
     ['fr-hoja', obs ? 'Datos generales' : 'Hoja de hospitalización'],
     ['fr-notas', `Notas de evolución (${entries.length})`],
     ...(!obs ? [['fr-enfermeria', `Notas de enfermería (${nursing.length})`] as [string, string]] : []),
+    ['fr-signos-0', `Hoja de signos vitales (${vitalPages.length} ${vitalPages.length === 1 ? 'hoja' : 'hojas'})`],
     ['fr-medicamentos', 'Hoja de medicamentos'],
     ['fr-laboratorios', `Laboratorios (${file.labs.length})`],
     ['fr-autorizaciones', `Anexos: autorizaciones (${auths.length + legacyAuths.length})`],
@@ -133,6 +145,19 @@ export default function FullRecord() {
             <div key={n.id} className="fr-nursing"><b>{dm(n.at)} · {shortStaff(staffById(n.authorId)?.name)}</b><p>{n.text}</p></div>
           )) : <p className="muted">Sin notas de enfermería.</p>}
         </>, true)}
+
+        {vitalPages.map(([a, b], i) => {
+          const takes = file.vitals.filter((v) => { const t = new Date(v.takenAt).getTime(); return t >= a && t < b }).sort((x, y) => x.takenAt.localeCompare(y.takenAt))
+          // La tabla se parte en bloques de 14 tomas para que quepa en la hoja carta
+          const blocks = Array.from({ length: Math.max(1, Math.ceil(takes.length / 14)) }, (_, k) => takes.slice(k * 14, k * 14 + 14))
+          return page(`fr-signos-${i}`, `Hoja de signos vitales · ${i + 1} de ${vitalPages.length}`, <>
+            <h2 className="fr-h">Hoja de signos vitales <small className="muted" style={{ fontWeight: 400, fontSize: 13 }}>{dm(new Date(a).toISOString()).slice(0, 10)} al {dm(new Date(b - 1).toISOString()).slice(0, 10)} · toma cada {vitalsEvery(file)} h</small></h2>
+            <ThermalCurve print vitals={takes} t0={a} t1={b} every={vitalsEvery(file)} anchor={vitalsAnchor(file)} stayStart={stayStart} band={band}
+              missed={missedTakes(file, now).filter((x) => x.getTime() >= a && x.getTime() < b)} antipyretics={antipyreticDoses(file).filter((x) => { const t = new Date(x.at).getTime(); return t >= a && t < b })} />
+            {takes.length ? blocks.map((list, k) => <VitalsTable key={k} print vitals={list} ageYears={p.birthDate ? yearsOld(p.birthDate) : undefined} band={band} who={(id) => shortStaff(staffById(id)?.name)} />)
+              : <p className="muted">Sin tomas en estos días.</p>}
+          </>, true)
+        })}
 
         {page('fr-medicamentos', 'Hoja de medicamentos', <>
           <h2 className="fr-h">Hoja de medicamentos</h2>

@@ -49,6 +49,7 @@ export const toVitals = (r: Row): Vitals => ({
   painScale: r.pain_scale == null ? undefined : Number(r.pain_scale), notes: s(r.notes),
   respRate: r.resp_rate == null ? undefined : Number(r.resp_rate), glucose: r.glucose == null ? undefined : Number(r.glucose),
   chiefComplaint: s(r.chief_complaint),
+  hospitalizationId: s(r.hospitalization_id), recordedAt: s(r.recorded_at), voidedAt: s(r.voided_at), voidedBy: s(r.voided_by), voidReason: s(r.void_reason),
 })
 
 export const toConsultation = (r: Row): Consultation => ({
@@ -104,6 +105,7 @@ export const toHospitalization = (r: Row): Hospitalization => ({
   observationAt: s(r.observation_at), convertedAt: s(r.converted_at), convertedBy: s(r.converted_by),
   authPending: r.auth_pending == null ? undefined : Boolean(r.auth_pending),
   outcome: (s(r.outcome) as Hospitalization['outcome']) ?? undefined, outcomeNote: s(r.outcome_note),
+  vitalsEveryHours: r.vitals_every_hours == null ? undefined : Number(r.vitals_every_hours),
 })
 
 export const toInpatientNote = (r: Row): InpatientNote => ({
@@ -178,6 +180,7 @@ export const clinicSettings = (r: Row): ClinicSettings => ({
   reminderTemplate: String(r.reminder_template || DEFAULT_SETTINGS.reminderTemplate),
   recordUsesDni: Boolean(r.record_uses_dni), logo: s(r.logo), dniMask: r.dni_mask == null ? DNI_MASK : String(r.dni_mask),
   obsAlertHours: r.obs_alert_hours == null ? 24 : Number(r.obs_alert_hours), obsOrderChecklist: Boolean(r.obs_order_checklist),
+  tempLow: r.temp_low == null ? 36 : Number(r.temp_low), tempHigh: r.temp_high == null ? 38 : Number(r.temp_high),
   kind: (r.kind as ClinicSettings['kind']) ?? 'clinic', observationEnabled: r.observation_enabled == null ? true : Boolean(r.observation_enabled),
   ownerId: s(r.owner_id), specialty: s(r.specialty), license: s(r.license), maxAssistants: r.max_assistants == null ? 2 : Number(r.max_assistants), setupDoneAt: s(r.setup_done_at),
 })

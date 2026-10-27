@@ -719,3 +719,83 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
   .epi__table { font-size: 12px; display: block; overflow-x: auto; }
 }
 @media print { .epi__stamp { border-color: #000; color: #000; } }
+
+/* ---------- Ronda 2 (S1): hoja de signos vitales y curva térmica ---------- */
+:root { --vs-band: #e3f4ec; --vs-hypo: #1d5fd1; }
+.vs__head { align-items: center; }
+.vs__bar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding-top: 0; }
+.vs__every { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.vs__every .select { width: auto; min-width: 84px; }
+.vs__every small { font-weight: 500; }
+.vs__empty { display: grid; justify-items: center; gap: 10px; color: var(--muted); }
+.vs-curve__scroll { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; border-radius: var(--r-md); }
+.vs-curve svg { display: block; font-family: var(--text); }
+.vs-pt { cursor: pointer; outline: none; }
+.vs-pt:focus-visible circle, .vs-pt:focus-visible path, .vs-pt:focus-visible rect { filter: drop-shadow(0 0 3px var(--ink)); }
+.vs-tip { position: absolute; transform: translateX(-50%); background: var(--petrol); color: #fff; border-radius: 10px; padding: 7px 10px; font-size: 12.5px; display: grid; gap: 1px;
+  pointer-events: none; white-space: nowrap; box-shadow: var(--shadow-lift); z-index: 2; }
+.vs-tip b { font-size: 15px; }
+.vs-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+.vs-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.vs-legend i { display: inline-block; width: 14px; height: 10px; font-style: normal; }
+.vs-legend__band { background: var(--vs-band); border: 1px solid var(--line); }
+.vs-legend__fever { width: 0 !important; height: 0 !important; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 10px solid var(--red-ink); }
+.vs-legend__hypo { width: 10px !important; background: var(--vs-hypo); }
+.vs-legend__missed { border-left: 2px dashed var(--amber-ink); width: 2px !important; height: 12px !important; }
+.vs-legend__anti { width: 12px !important; height: 12px !important; border: 1px solid var(--ink); border-radius: 3px; font-size: 9px; font-weight: 700; display: grid !important; place-items: center; color: var(--ink); }
+.vs-legend__pulse { border-top: 2px dashed #0f8a6e; height: 0 !important; }
+
+.vs-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.vs-card { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 12px 14px 8px; display: grid; gap: 2px; color: var(--ink); }
+.vs-card__label { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.vs-card__value { display: flex; align-items: baseline; gap: 5px; color: var(--petrol); }
+.vs-card__value b { font-family: var(--display); font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.vs-card__value small { color: var(--muted); font-size: 12.5px; }
+.vs-card__trend { margin-left: auto; color: var(--faint); align-self: center; }
+.vs-card__when { font-size: 12px; color: var(--faint); }
+.vs-card__none { font-size: 13px; padding: 10px 0 14px; }
+.vs-spark { width: 100%; height: 34px; margin-top: 4px; }
+.vs-card--warn { border-color: #e7b45b; background: #fffaf0; color: var(--amber-ink); }
+.vs-card--warn .vs-card__value b { color: var(--amber-ink); }
+.vs-card--error { border-color: var(--red-ink); background: #fff6f5; color: var(--red-ink); }
+.vs-card--error .vs-card__value b { color: var(--red-ink); }
+
+.vs-table__scroll { overflow-x: auto; border-top: 1px solid var(--line-soft); }
+.vs-table { border-collapse: separate; border-spacing: 0; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 100%; }
+.vs-table th, .vs-table td { padding: 7px 10px; border-bottom: 1px solid var(--line-soft); text-align: center; white-space: nowrap; }
+.vs-table thead th { vertical-align: top; position: relative; font-weight: 500; color: var(--muted); font-size: 11.5px; }
+.vs-table thead th span, .vs-table thead th b, .vs-table thead th small { display: block; }
+.vs-table thead th b { color: var(--petrol); font-size: 13px; }
+.vs-table thead th small { max-width: 92px; overflow: hidden; text-overflow: ellipsis; margin: 0 auto; }
+/* La primera columna queda fija al desplazar */
+.vs-table th[scope='row'], .vs-table thead th:first-child { position: sticky; left: 0; background: var(--paper); text-align: left; z-index: 1; font-weight: 650; color: var(--petrol);
+  box-shadow: 1px 0 0 var(--line-soft); font-size: 12.5px; }
+.vs-table .is-void { text-decoration: line-through; color: var(--faint); background: repeating-linear-gradient(-45deg, transparent 0 6px, var(--line-soft) 6px 7px); }
+.vs-table .is-void .vs-val { color: var(--faint) !important; background: none !important; }
+.vs-voided { color: var(--red-ink) !important; text-decoration: none; font-weight: 650; }
+.vs-void { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; opacity: .55; }
+.vs-void:hover { opacity: 1; }
+.vs-val { padding: 1px 6px; border-radius: 6px; }
+.vs-val--warn { background: var(--amber); color: var(--amber-ink); font-weight: 650; }
+.vs-val--error, .vs-val--fever { background: var(--red); color: var(--red-ink); font-weight: 700; }
+.vs-val--hypo { background: #e2ebfc; color: var(--vs-hypo); font-weight: 700; }
+
+/* Impresión de la hoja en el expediente completo: en blanco y negro, con letras F, H y P además del color */
+.vs-curve--print .vs-legend { color: #000; }
+.vs-table--print { font-size: 10px; }
+.vs-table--print th, .vs-table--print td { padding: 3px 4px; }
+.vs-table--print .vs-val--fever, .vs-table--print .vs-val--hypo, .vs-table--print .vs-val--warn, .vs-table--print .vs-val--error { background: none; color: #000; text-decoration: underline; }
+@media print {
+  .vs-legend__band { background: #e6e6e6; }
+  .vs-legend__fever { border-bottom-color: #000; }
+  .vs-legend__hypo { background: #fff; border: 1.5px solid #000; }
+  .vs-legend__missed { border-left-color: #000; }
+  .vs-legend__anti { border-color: #000; color: #000; }
+  .vs-table__scroll { overflow: visible; }
+}
+@media (max-width: 720px) {
+  .vs-cards { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .vs-card__value b { font-size: 22px; }
+  .vs__bar { gap: 10px; }
+  .vs__bar .segmented { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+}

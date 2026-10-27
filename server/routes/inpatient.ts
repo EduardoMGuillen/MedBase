@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, diagnosisInput, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
-import { toAttachment, toAuthorization, toBed, toDose, toEpicrisis, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral } from '../mappers.js'
+import { toAttachment, toAuthorization, toBed, toDose, toEpicrisis, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral, toVitals } from '../mappers.js'
+import { VITALS_FREQUENCIES } from '../../src/lib/vitalsSheet.js'
 import { createEpicrisisDraft } from '../epicrisis.js'
 import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
@@ -274,7 +275,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const cid = clinicOf(req)
     const h = (await hospRow(cid, String(req.params.id)))!
     const id = String(h.id)
-    const [notes, meds, doses, procedures, labs, marks, auths, referrals, epicrises] = await Promise.all([
+    const [notes, meds, doses, procedures, labs, marks, auths, referrals, epicrises, vitals] = await Promise.all([
       sql.query('SELECT * FROM hosp_notes WHERE hospitalization_id = ? ORDER BY at, id', [id]),
       sql.query('SELECT * FROM hosp_meds WHERE hospitalization_id = ? ORDER BY ordered_at, id', [id]),
       sql.query('SELECT d.* FROM hosp_doses d JOIN hosp_meds m ON m.id = d.med_id WHERE m.hospitalization_id = ? ORDER BY d.given_at', [id]),
@@ -286,12 +287,17 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       sql.query('SELECT a.*, t.mime AS file_mime FROM authorizations a LEFT JOIN attachments t ON t.id = a.file_id WHERE a.hospitalization_id = ? AND a.archived_at IS NULL ORDER BY a.created_at', [id]),
       sql.query('SELECT * FROM referrals WHERE hospitalization_id = ? ORDER BY issued_at', [id]),
       sql.query('SELECT * FROM epicrises WHERE hospitalization_id = ? ORDER BY version', [id]),
+      // Hoja de signos vitales: la preclínica de la consulta que lo ingresó es la primera toma; luego las de la estancia
+      sql.query(`SELECT v.*, CASE WHEN v.hospitalization_id IS NULL THEN 'preclinic' ELSE 'stay' END AS source FROM vitals v
+        WHERE v.hospitalization_id = ? OR v.id = (SELECT c.vitals_id FROM consultations c WHERE c.id = ?) ORDER BY v.taken_at, v.id`, [id, String(h.consultation_id ?? '')]),
     ])
     await audit(userOf(req), `Consultó el expediente de hospitalización de ${await patientName(String(h.patient_id))}`)
     res.json({
       hospitalization: toHospitalization(h), notes: notes.map(toInpatientNote), meds: meds.map(toInpatientMed), doses: doses.map(toDose),
       procedures: procedures.map(toProcedure), labs: labs.map(toAttachment), marks: marks.map(toOrderMark), authorizations: auths.map(toAuthorization),
       referrals: referrals.map(toReferral), epicrises: epicrises.map(toEpicrisis),
+      vitals: vitals.map((v) => ({ ...toVitals(v), source: v.source as 'preclinic' | 'stay' })),
+      consultOrders: h.consultation_id ? JSON.parse(String((await sql.one('SELECT orders FROM consultations WHERE id = ?', [String(h.consultation_id)]))?.orders ?? '[]')) as string[] : [],
     })
   })
 
@@ -648,6 +654,67 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       [b.status, b.notes || null, user.id, new Date().toISOString(), String(p!.id)])
     await audit(user, `Cambió "${p!.name}" de ${await patientName(String(h.patient_id))} a ${b.status}`)
     res.json(toProcedure((await sql.one('SELECT * FROM hosp_procedures WHERE id = ?', [String(p!.id)]))!))
+  })
+
+  // ---------- Hoja de signos vitales (S1) ----------
+  /**
+   * Enfermería o el médico registran una toma: sólo lo que se tomó, con la hora real de la toma (por defecto ahora,
+   * nunca en el futuro) y la hora en que se anota. No se edita: se anula con motivo y se registra otra.
+   */
+  app.post('/api/inpatient/:id/vitals', auth, need('vitals.record'), async (req, res) => {
+    const int = (max: number, label: string) => z.number({ error: `Revisa ${label}.` }).min(0, `Revisa ${label}.`).max(max, `Revisa ${label}.`).transform(Math.round).optional()
+    const dec = (max: number, label: string) => z.number({ error: `Revisa ${label}.` }).min(0, `Revisa ${label}.`).max(max, `Revisa ${label}.`).optional()
+    const v = parse(z.object({
+      takenAt: when.optional(),
+      systolic: int(400, 'la presión sistólica'), diastolic: int(300, 'la presión diastólica'), heartRate: int(400, 'la frecuencia cardíaca'),
+      // La temperatura se guarda con un decimal
+      temperature: dec(50, 'la temperatura').transform((x) => (x == null ? x : Math.round(x * 10) / 10)), spo2: int(100, 'la saturación'),
+      weightKg: dec(500, 'el peso'), heightCm: dec(300, 'la talla'), painScale: z.number().int().min(0).max(10).optional(),
+      respRate: int(150, 'la frecuencia respiratoria'), glucose: dec(3000, 'la glucometría'), notes: z.string().trim().max(1000).optional(),
+    }), req.body)
+    const fields = ['systolic', 'diastolic', 'heartRate', 'temperature', 'spo2', 'weightKg', 'heightCm', 'painScale', 'respRate', 'glucose'] as const
+    if (!fields.some((k) => v[k] != null)) fail(400, 'Anota al menos un signo vital.')
+    if ((v.systolic == null) !== (v.diastolic == null)) fail(400, 'La presión arterial lleva la sistólica y la diastólica.')
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const h = await activeHosp(cid, String(req.params.id))
+    const now = new Date()
+    const takenAt = new Date(v.takenAt ?? now)
+    if (takenAt.getTime() > now.getTime() + 60_000) fail(400, 'La hora de la toma no puede ser en el futuro.')
+    if (takenAt.getTime() < new Date(String(h.observation_at ?? h.admitted_at)).getTime() - 3_600_000) fail(400, 'La hora de la toma es anterior al ingreso. Revísala.')
+    const id = randomUUID()
+    await sql.run(`INSERT INTO vitals (id, patient_id, taken_by, taken_at, systolic, diastolic, heart_rate, temperature, spo2, weight_kg, height_cm, pain_scale, notes, resp_rate, glucose,
+        clinic_id, hospitalization_id, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, String(h.patient_id), user.id, takenAt.toISOString(), v.systolic ?? null, v.diastolic ?? null, v.heartRate ?? null, v.temperature ?? null, v.spo2 ?? null,
+        v.weightKg ?? null, v.heightCm ?? null, v.painScale ?? null, v.notes || null, v.respRate ?? null, v.glucose ?? null, cid, String(h.id), now.toISOString()])
+    const what = [v.temperature != null && `T ${v.temperature.toFixed(1)} °C`, v.systolic != null && `PA ${v.systolic}/${v.diastolic}`, v.heartRate != null && `FC ${v.heartRate}`,
+      v.spo2 != null && `SatO2 ${v.spo2} %`].filter(Boolean).join(', ')
+    await audit(user, `Registró signos vitales de ${await patientName(String(h.patient_id))}${what ? ` (${what})` : ''}, tomados ${takenAt.toISOString()}`)
+    res.status(201).json({ ...toVitals((await sql.one('SELECT * FROM vitals WHERE id = ?', [id]))!), source: 'stay' })
+  })
+
+  /** Anular una toma de la hoja (se ve tachada; no se borra). */
+  app.post('/api/vitals/:vid/void', auth, need('vitals.record'), async (req, res) => {
+    const { reason } = parse(z.object({ reason: z.string().trim().min(5, 'Escribe por qué se anula la toma.').max(300) }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const r = (await sql.one('SELECT * FROM vitals WHERE id = ? AND clinic_id = ? AND hospitalization_id IS NOT NULL', [String(req.params.vid), cid])) ?? fail(404, 'La toma no existe.')
+    if (r!.voided_at) fail(409, 'Esa toma ya estaba anulada.')
+    const h = await activeHosp(cid, String(r!.hospitalization_id))
+    await sql.run('UPDATE vitals SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?', [new Date().toISOString(), user.id, reason, String(r!.id)])
+    await audit(user, `Anuló la toma de signos vitales de las ${String(r!.taken_at)} de ${await patientName(String(h.patient_id))}: ${reason}`)
+    res.json({ ...toVitals((await sql.one('SELECT * FROM vitals WHERE id = ?', [String(r!.id)]))!), source: 'stay' })
+  })
+
+  /** El médico cambia cada cuántas horas se toman los signos: define la cuadrícula y las tomas esperadas. */
+  app.patch('/api/inpatient/:id/vitals-frequency', auth, need('inpatient.orders'), async (req, res) => {
+    const { everyHours } = parse(z.object({ everyHours: z.number().int().refine((x) => VITALS_FREQUENCIES.includes(x), 'Elige 1, 2, 4, 6, 8, 12 o 24 horas.') }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const h = await activeHosp(cid, String(req.params.id))
+    await sql.run('UPDATE hospitalizations SET vitals_every_hours = ? WHERE id = ?', [everyHours, String(h.id)])
+    await audit(user, `Indicó signos vitales cada ${everyHours} h a ${await patientName(String(h.patient_id))}`)
+    res.json(toHospitalization((await hospRow(cid, String(h.id)))!))
   })
 
   // ---------- Egreso ----------

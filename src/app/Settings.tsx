@@ -173,6 +173,14 @@ function ClinicForm() {
           {!office && <label className="field" style={{ alignContent: 'end' }}><span>Órdenes en observación</span>
             <span style={{ display: 'flex', gap: 8, alignItems: 'center', minHeight: 42 }}><input type="checkbox" checked={!!f.obsOrderChecklist} onChange={(e) => set('obsOrderChecklist', e.target.checked)} />
               Enfermería las revisa como checklist</span></label>}
+          {(!office || f.observationEnabled !== false) && <>
+            <label className="field"><span>Curva térmica: temperatura normal desde (°C)</span>
+              <input className="input num" type="number" step={0.1} min={34} max={38} value={f.tempLow ?? 36} onChange={(e) => set('tempLow', Math.round(Number(e.target.value) * 10) / 10)} />
+              <small className="muted">Por debajo es hipotermia (azul en la curva).</small></label>
+            <label className="field"><span>Fiebre desde (°C)</span>
+              <input className="input num" type="number" step={0.1} min={36} max={41} value={f.tempHigh ?? 38} onChange={(e) => set('tempHigh', Math.round(Number(e.target.value) * 10) / 10)} />
+              <small className="muted">Desde este valor es fiebre (rojo en la curva y alerta del expediente).</small></label>
+          </>}
           <div className="field span-2"><span>Logo (aparece en recetas y constancias)</span>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               {f.logo ? <img src={f.logo} alt="Logo de la clínica" style={{ height: 48, maxWidth: 160, objectFit: 'contain', border: '1px solid var(--line)', borderRadius: 8, padding: 4 }} />
