@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Ban, ChevronLeft, Printer, Send } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -23,8 +23,12 @@ export function ReferralModal({ stayId, onClose }: { stayId: string; onClose: ()
   const nav = useNavigate()
   const [f, setF] = useState<Editable | null>(null)
   const [busy, setBusy] = useState(false)
-  useEffect(() => { fetchReferralDraft(stayId).then((d) => setF(d)).catch(() => onClose()) }, [stayId, fetchReferralDraft, onClose])
-  const set = (k: keyof Editable) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setF((x) => x && { ...x, [k]: e.target.value })
+  // Se carga una sola vez: si se volviera a cargar al redibujar el expediente, borraría lo que el médico escribió
+  const close = useRef(onClose)
+  useEffect(() => { close.current = onClose })
+  useEffect(() => { fetchReferralDraft(stayId).then((d) => setF((x) => x ?? d)).catch(() => close.current()) }, [stayId, fetchReferralDraft])
+  // El valor se lee en el momento: dentro de la actualización diferida el campo ya volvió a su valor anterior
+  const set = (k: keyof Editable) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => { const v = e.target.value; setF((x) => x && { ...x, [k]: v }) }
   return (
     <Modal title="Referencia" wide onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
