@@ -30,10 +30,12 @@ import { registerDrugs } from './routes/drugs.js'
 import { registerCertificates } from './routes/certificates.js'
 import { registerReferrals } from './routes/referrals.js'
 import { registerConsent } from './routes/consent.js'
+import { registerOrderSets } from './routes/orderSets.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { can, permissionsFor, ROLES_BY_KIND, type Permission } from '../src/lib/permissions.js'
 import { yearsOld } from '../src/lib/inpatient.js'
 import { normalizeDni } from '../src/lib/format.js'
+import { hasBlank, medHasBlank } from '../src/lib/orderSets.js'
 import { DAY_NAMES_PLURAL, rangesOn, scheduleFromWeek, scheduleProblems, SLOT_OPTIONS, weekday, weekOf, withinSchedule } from '../src/lib/schedule.js'
 import type { ApptStatus, Staff } from '../src/lib/types.js'
 
@@ -727,6 +729,8 @@ export function createApp(opts: AppOptions) {
     }), req.body)
     // Basta una indicación o un medicamento; no se exigen ambos
     if (!c.orders.length && !c.items.length) fail(400, 'Agrega al menos una indicación o un medicamento en el plan y manejo.')
+    // Un set de órdenes puede traer espacios "___": se llenan antes de firmar
+    if (c.orders.some(hasBlank) || c.items.some(medHasBlank)) fail(400, 'Completa los espacios ___ de las órdenes antes de firmar.')
     if (c.admit && c.observe) fail(400, 'Elige ingreso a hospitalización o a observación, no los dos.')
     // Con ingreso, todos los medicamentos se aplican en la clínica (van a la hoja, sin receta). Ambulatorio: van a la
     // receta, salvo los marcados "Aplicar en la clínica", que dejan al paciente en observación mientras se aplican.
@@ -954,6 +958,7 @@ export function createApp(opts: AppOptions) {
   registerCertificates(app, ctx)
   registerReferrals(app, ctx)
   registerConsent(app, ctx)
+  registerOrderSets(app, ctx)
   registerFollowups(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))

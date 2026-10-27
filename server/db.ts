@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '27'
+const SCHEMA_VERSION = '28'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -537,6 +537,31 @@ CREATE TABLE IF NOT EXISTS upload_parts (
   created_at TEXT NOT NULL,
   PRIMARY KEY (upload_id, idx)
 );
+
+-- v28: ronda 2 (O1). Sets de órdenes de cada médico, en lugar de "Órdenes frecuentes" (que era una lista fija en
+-- el código, sin datos en la base). Eliminar un set lo archiva. Cada uso queda registrado para ordenar por los más usados.
+CREATE TABLE IF NOT EXISTS order_sets (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  owner_id TEXT NOT NULL REFERENCES staff(id),
+  name TEXT NOT NULL,
+  items TEXT NOT NULL,
+  shared BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT,
+  archived_at TEXT
+);
+CREATE INDEX IF NOT EXISTS order_sets_clinic ON order_sets (clinic_id, owner_id);
+CREATE TABLE IF NOT EXISTS order_set_uses (
+  id TEXT PRIMARY KEY,
+  set_id TEXT NOT NULL REFERENCES order_sets(id),
+  user_id TEXT NOT NULL REFERENCES staff(id),
+  clinic_id TEXT NOT NULL,
+  at TEXT NOT NULL,
+  place TEXT NOT NULL,
+  patient_id TEXT
+);
+CREATE INDEX IF NOT EXISTS order_set_uses_set ON order_set_uses (set_id, user_id);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ShieldCheck } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ListChecks, ShieldCheck } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, PageHead } from '../components/ui'
 import { ROLE_LABEL, permissionsFor, PERMISSIONS } from '../lib/permissions'
@@ -24,6 +25,12 @@ export default function Account() {
         <PasswordPanel />
         <TwoFactorPanel />
       </div>
+      {user.role === 'doctor' && (
+        <section className="panel">
+          <div className="panel__head"><div><h2>Mis sets de órdenes</h2><p>Órdenes que usas siempre igual, guardadas con un nombre para aplicarlas en un solo paso.</p></div>
+            <Link className="btn btn--soft" to="/app/sets-de-ordenes"><ListChecks size={16} />Abrir mis sets</Link></div>
+        </section>
+      )}
       {user.role === 'doctor' && (
         <section className="panel">
           <div className="panel__head"><div><h2>Mi horario de atención</h2><p>La agenda y la reserva en línea sólo ofrecen horas dentro de tu horario.</p></div></div>

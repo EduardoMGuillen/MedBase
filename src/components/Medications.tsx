@@ -6,6 +6,7 @@ import { allergyConflict, EMPTY_MED, FREQUENCIES, type Drug } from '../lib/catal
 import { autoQuantity, defaultRoute, medicationLine, missingDays, ROUTES } from '../lib/format'
 import { normalize } from '../lib/patients'
 import { useVademecum } from '../lib/vademecum'
+import { medHasBlank } from '../lib/orderSets'
 import type { Patient, PrescriptionItem } from '../lib/types'
 
 /** Medicamentos indicados: cada uno como fila legible, editable y eliminable antes de firmar. */
@@ -14,20 +15,24 @@ export function MedicationList({ items, patient, onEdit, onRemove, editing, requ
   /** Ambulatorio: marca los que no tienen días (la receta los necesita). */
   requireDuration?: boolean
 }) {
+  const vademecum = useVademecum()
   if (!items.length) return null
   return (
     <ol className="meds-list">
       {items.map((it, i) => {
         const allergy = allergyConflict(patient.allergies, it.drug)
         const noDays = requireDuration && missingDays(it)
+        // De un set: huecos "___" por llenar y medicamentos que ya no están en el vademécum de la clínica
+        const blank = medHasBlank(it)
+        const outside = !vademecum.some((d) => normalize(d.name) === normalize(it.drug))
         return (
-          <li key={i} className={`${allergy || noDays ? 'is-warn' : ''} ${editing === i ? 'is-editing' : ''}`}>
+          <li key={i} className={`${allergy || noDays || blank ? 'is-warn' : ''} ${editing === i ? 'is-editing' : ''}`}>
             <span className="orders__n">{i + 1}.</span>
             <div>
               <span className="meds-list__line"><Pill size={13} className="orders__pill" aria-hidden="true" />{medicationLine(it)}</span>
-              {(it.instructions || it.quantity || allergy || it.applyInClinic || noDays) && (
+              {(it.instructions || it.quantity || allergy || it.applyInClinic || noDays || blank || outside) && (
                 <small>{[it.applyInClinic && 'Se aplica en la clínica', it.instructions, it.quantity && `Cantidad: ${it.quantity}`, allergy && `Alergia a ${allergy}`,
-                  noDays && 'Falta el total de días para la receta'].filter(Boolean).join(' · ')}</small>
+                  noDays && 'Falta el total de días para la receta', blank && 'Completa los espacios ___', outside && 'No está en el vademécum de la clínica'].filter(Boolean).join(' · ')}</small>
               )}
             </div>
             <span className="orders__tools">

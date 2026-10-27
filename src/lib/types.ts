@@ -446,6 +446,35 @@ export interface InpatientNote {
   procedure?: ProcedureData
 }
 
+/** Medicamento dentro de un set de órdenes, con la estructura de la nota (sirve para la hoja y para la receta). */
+export interface SetMed {
+  drug: string
+  presentation?: string
+  dose: string
+  route: string
+  everyHours?: number
+  prn: boolean
+  days?: number
+  instructions?: string
+}
+
+/** Una orden de un set: texto (indicación) o medicamento estructurado. */
+export type OrderSetItem = { text: string; med?: undefined } | { med: SetMed; text?: undefined }
+
+/** Set de órdenes de un médico ("Post-op colecistectomía no complicada"). Personal; puede compartirse con la clínica. */
+export interface OrderSet {
+  id: string
+  ownerId: string
+  name: string
+  items: OrderSetItem[]
+  shared: boolean
+  createdAt: string
+  updatedAt?: string
+  /** Cuántas veces lo aplicó quien consulta la lista, y la última vez. */
+  uses: number
+  lastUsedAt?: string
+}
+
 /** Autorización (consentimiento informado) de la estancia. */
 export interface Authorization {
   id: string

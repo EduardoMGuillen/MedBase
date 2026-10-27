@@ -7,6 +7,7 @@ import { toAttachment, toAuthorization, toBed, toDose, toHospitalization, toInpa
 import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
 import { isScheduled, medLabel } from '../../src/lib/inpatient.js'
+import { hasBlank, medHasBlank } from '../../src/lib/orderSets.js'
 import { createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrders.js'
 import { authorizationBase, ensureHospitalAuthorization, refreshPendingHospitalAuthorization } from '../authorizations.js'
 
@@ -320,6 +321,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     } else if (!b.diagnoses.length && !b.exam && !b.observations && !b.orders.length && !b.meds.length) {
       fail(400, 'Escribe al menos un diagnóstico, el examen físico, una observación, una indicación o un medicamento.')
     }
+    // Un set de órdenes puede traer espacios "___": se llenan antes de guardar la nota
+    if (b.orders.some(hasBlank) || b.meds.some(medHasBlank)) fail(400, 'Completa los espacios ___ de las órdenes antes de guardar la nota.')
     const user = userOf(req)
     const cid = clinicOf(req)
     const h = await activeHosp(cid, String(req.params.id))

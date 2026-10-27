@@ -209,3 +209,73 @@ describe('A1 y A2 firma en pantalla y escaneo', () => {
     assert.equal((await nurse.raw(`/api/attachments/${att.body.id}`)).subarray(0, 5).toString(), '%PDF-', 'el anterior no se borró')
   })
 })
+
+describe('O1 sets de órdenes', () => {
+  const SET = {
+    name: 'Neumonía no complicada',
+    items: [
+      { text: 'Dieta blanda.' }, { text: 'Signos vitales cada 8 horas.' }, { text: 'Oxígeno por cánula nasal a ___ L/min si SatO2 < 92 %.' },
+      { text: 'Hemograma y química sanguínea.' }, { text: 'Radiografía de tórax PA.' }, { text: 'Ayuno de ___ a ___.' },
+      { med: { drug: 'Ceftriaxona', presentation: 'Vial 1 g', dose: '1 g', route: 'Intravenosa', everyHours: 12, prn: false } },
+      { med: { drug: 'Acetaminofén', presentation: 'Tableta 500 mg', dose: '1 g', route: 'Oral', everyHours: 8, prn: true, instructions: 'Si hay fiebre' } },
+    ],
+  }
+
+  test('crear un set de 8 órdenes, aplicarlo en otro paciente, editar 2, borrar 1 y firmar: enfermería las ve en su checklist', async () => {
+    const { doc, nurse, stayId } = await observation('Sets')
+    await doc.post(`/api/inpatient/${stayId}/convert`, { bedId: await freeBed() })
+    const created = await doc.post('/api/order-sets', SET)
+    assert.equal(created.status, 201, JSON.stringify(created.body))
+    assert.equal(created.body.items.length, 8)
+    assert.equal((await doc.post('/api/order-sets', SET)).status, 409, 'el mismo nombre no se repite')
+    assert.equal((await nurse.get('/api/order-sets')).status, 403, 'enfermería no tiene sets')
+    // Aplicarlo (el cliente inserta las órdenes) queda en la bitácora y nunca firma
+    assert.equal((await doc.post(`/api/order-sets/${created.body.id}/use`, { where: 'hospital' })).status, 201)
+    const texts = SET.items.flatMap((it) => (it.text ? [it.text] : []))
+    // Con los huecos sin llenar no se guarda
+    const blank = await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', exam: 'Estable.', orders: texts, indicationCount: texts.length })
+    assert.equal(blank.status, 400)
+    // Se llenan los huecos (2 editadas) y se borra una (la radiografía)
+    const edited = texts.map((t) => t.replace('___ L/min', '2 L/min').replace('Ayuno de ___ a ___.', 'Ayuno de 00:00 a 08:00.')).filter((t) => !t.startsWith('Radiografía'))
+    const meds = SET.items.flatMap((it) => (it.med ? [{ ...it.med, firstAt: new Date().toISOString() }] : []))
+    const note = await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', exam: 'Estable.', orders: [...edited, 'Ceftriaxona 1 g IV c/12h', 'Acetaminofén 1 g VO c/8h PRN'], indicationCount: edited.length, meds })
+    assert.equal(note.status, 201, JSON.stringify(note.body))
+    assert.deepEqual(note.body.orders.slice(0, edited.length), edited)
+    const file = (await nurse.get(`/api/inpatient/${stayId}`)).body
+    assert.deepEqual(file.meds.map((m: any) => m.drug).sort(), ['Acetaminofén', 'Ceftriaxona'], 'los medicamentos del set pasan a la hoja')
+    const pending = (await nurse.get('/api/bootstrap')).body.pendingOrders.find((x: any) => x.noteId === note.body.id)
+    assert.equal(pending.pending, edited.length + 2, 'enfermería las ve en su checklist como cualquier otra orden')
+    // Contado como usado
+    assert.equal((await doc.get('/api/order-sets')).body.find((s: any) => s.id === created.body.id).uses, 1)
+  })
+
+  test('personales por defecto; compartido: los demás lo aplican o lo duplican, sólo el autor lo edita; eliminar archiva', async () => {
+    const herrera = await as('lherrera@demo.clinara')
+    const paz = await as('apaz@demo.clinara')
+    const own = (await herrera.post('/api/order-sets', { name: 'Fractura cerrada sin complicaciones', items: [{ text: 'Reposo.' }, { text: 'Elevar el miembro.' }] })).body
+    assert.ok(!(await paz.get('/api/order-sets')).body.some((s: any) => s.id === own.id), 'personal: el otro médico no lo ve')
+    assert.equal((await herrera.patch(`/api/order-sets/${own.id}`, { shared: true })).status, 200)
+    assert.ok((await paz.get('/api/order-sets')).body.some((s: any) => s.id === own.id), 'compartido: lo ve')
+    assert.equal((await paz.patch(`/api/order-sets/${own.id}`, { name: 'Otro nombre' })).status, 403, 'sólo el autor lo edita')
+    assert.equal((await paz.del(`/api/order-sets/${own.id}`)).status, 403)
+    const copy = await paz.post(`/api/order-sets/${own.id}/duplicate`)
+    assert.equal(copy.status, 201)
+    assert.equal(copy.body.ownerId, 's-paz')
+    assert.equal(copy.body.shared, false)
+    assert.equal((await paz.patch(`/api/order-sets/${copy.body.id}`, { items: [{ text: 'Reposo absoluto.' }] })).status, 200, 'la copia es suya')
+    assert.equal((await herrera.del(`/api/order-sets/${own.id}`)).status, 200)
+    assert.ok(!(await herrera.get('/api/order-sets')).body.some((s: any) => s.id === own.id), 'archivado: ya no aparece')
+    assert.ok(await sql.one('SELECT 1 FROM order_sets WHERE id = ? AND archived_at IS NOT NULL', [own.id]), 'pero no se borró')
+  })
+
+  test('en un consultorio no se comparte; los más usados van primero', async () => {
+    const lopez = await as('alopez@demo.clinara')
+    assert.equal((await lopez.post('/api/order-sets', { name: 'Compartido', items: [{ text: 'Reposo.' }], shared: true })).status, 400)
+    const a = (await lopez.post('/api/order-sets', { name: 'A poco usado', items: [{ text: 'Reposo.' }] })).body
+    const b = (await lopez.post('/api/order-sets', { name: 'B muy usado', items: [{ text: 'Líquidos.' }] })).body
+    for (let i = 0; i < 3; i++) await lopez.post(`/api/order-sets/${b.id}/use`, { where: 'consultation' })
+    await lopez.post(`/api/order-sets/${a.id}/use`, { where: 'observation' })
+    const list = (await lopez.get('/api/order-sets')).body.map((s: any) => s.name)
+    assert.ok(list.indexOf('B muy usado') < list.indexOf('A poco usado'))
+  })
+})

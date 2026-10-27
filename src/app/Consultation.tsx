@@ -16,6 +16,9 @@ import { BackgroundForm, IdentityPrompt } from './PatientForms'
 import { VitalsModal } from './WaitingRoom'
 import { emptyFollowup, FollowupFields } from './Followups'
 import type { Diagnosis, PrescriptionItem } from '../lib/types'
+import type { OrderSet } from '../lib/types'
+import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
+import { hasBlank, medHasBlank, orderKey, rxToSetMed, setMedToRx } from '../lib/orderSets'
 
 /**
  * Plan y manejo en dos bloques: indicaciones (dieta, cuidados, estudios, control) y medicamentos, que
@@ -45,12 +48,6 @@ function loadDraft(id?: string): Partial<Draft> {
 const EXAM_GUIDE = ['Aspecto general', 'Piel y mucosas', 'Cabeza y cuello', 'Tórax y pulmones', 'Corazón', 'Abdomen', 'Genitourinario', 'Extremidades', 'Neurológico']
   .map((s) => `${s}: `).join('\n')
 
-const FREQUENT_ORDERS = [
-  'Dieta blanda.', 'Dieta hiposódica.', 'Dieta para diabético.', 'Abundantes líquidos orales.', 'Reposo relativo.',
-  'Hemograma completo.', 'Examen general de orina.', 'Glucosa en ayunas.', 'Perfil lipídico.', 'Creatinina y nitrógeno ureico.', 'Radiografía de tórax PA.',
-  'Control de presión arterial en casa, registro diario.', 'Signos de alarma explicados; acudir a emergencia si empeora.',
-  'Cita de control en 1 semana.', 'Cita de control en 1 mes.', 'Cita de control con resultados de laboratorio.',
-]
 
 
 export default function Consultation() {
@@ -128,12 +125,28 @@ export default function Consultation() {
   const rxCount = ambulatory ? meds.filter((m) => !m.applyInClinic).length : 0
   const inClinic = ambulatory ? meds.filter((m) => m.applyInClinic) : admitting ? meds : []
   const noDays = ambulatory ? meds.filter(missingDays) : []
+  // Huecos "___" que trajo un set: no se firma hasta llenarlos
+  const blanks = [...indications.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : []))]
   // La receta lleva la identidad del paciente; en adultos es obligatoria
   const needsDni = rxCount > 0 && !p.dni && yearsOld(p.birthDate) >= 18
   const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !indications.length && !meds.length && 'al menos una indicación o un medicamento',
     noDays.length > 0 && `el total de días de ${noDays.map((m) => m.drug).join(', ')} (va a la receta)`,
-    needsDni && 'el número de identidad para la receta'].filter(Boolean)
+    needsDni && 'el número de identidad para la receta',
+    blanks.length > 0 && `los espacios ___ de ${blanks.join(', ')}`].filter(Boolean)
 
+  /** Un set agrega sus indicaciones al bloque Indicaciones y sus medicamentos al bloque Medicamentos, al final. */
+  const applySet = (set: OrderSet) => {
+    const texts = set.items.flatMap((it) => (it.text ? [it.text] : []))
+    const added = set.items.flatMap((it) => (it.med ? [setMedToRx(it.med)] : []))
+    const repeated = [
+      ...texts.filter((t) => indications.some((x) => orderKey(x) === orderKey(t))),
+      ...added.filter((m) => meds.some((x) => orderKey(medicationOrder(x)) === orderKey(medicationOrder(m)))).map((m) => m.drug),
+    ]
+    setIndications([...indications, ...texts])
+    setMeds([...meds, ...added])
+    if (repeated.length) store.notify(`Ojo: ya estaba${repeated.length > 1 ? 'n' : ''} en la lista: ${repeated.map((t) => t.replace(/\.$/, '')).join('; ')}. Quita la que sobre.`, 'error')
+    else store.notify(`Se agregaron ${set.items.length} órdenes de "${set.name}". Revísalas antes de firmar.`)
+  }
   const addOrder = (text: string) => {
     const t = text.trim()
     if (!t) return
@@ -245,6 +258,10 @@ export default function Consultation() {
           <section className="panel orders-panel">
             <div className="panel__head"><div><h2>Plan y manejo</h2><p>Arriba las indicaciones; abajo los medicamentos, que van a la receta.</p></div></div>
             <div className="panel__body csec__body">
+              <div className="set-bar">
+                <OrderSetPicker where="consultation" patientId={p.id} onApply={applySet} />
+                <SaveSetButton items={[...indications.map((text) => ({ text })), ...meds.map((m) => ({ med: rxToSetMed(m) }))]} />
+              </div>
               <div className="plan-block">
                 <h3 className="plan-block__title">Indicaciones y plan</h3>
                 {indications.length ? (
@@ -257,7 +274,7 @@ export default function Consultation() {
                             onBlur={(e) => { const t = e.target.value.trim(); setIndications(t ? indications.map((x, j) => (j === i ? t : x)) : indications.filter((_, j) => j !== i)); setEditingOrder(null) }}
                             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingOrder(null) }} />
                         ) : (
-                          <button className="orders__text" onClick={() => setEditingOrder(i)} title="Toca para editar">{o}</button>
+                          <button className={`orders__text${hasBlank(o) ? ' orders__text--blank' : ''}`} onClick={() => setEditingOrder(i)} title={hasBlank(o) ? 'Completa los espacios ___' : 'Toca para editar'}>{o}</button>
                         )}
                         <span className="orders__tools">
                           <button className="icon-btn" aria-label="Subir" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp size={14} /></button>
@@ -278,10 +295,6 @@ export default function Consultation() {
                     <button className="btn btn--soft btn--sm" onClick={() => { setMedForm({ index: -1, initial: { drug: typedDrug.name, presentation: typedDrug.presentation, route: typedDrug.usual?.route ?? 'Oral', dose: typedDrug.usual?.dose ?? '', frequency: typedDrug.usual?.frequency ?? 'Cada 8 horas', duration: typedDrug.usual?.duration ?? '' } }); setOrderText('') }}>Sí, agregarlo</button>
                   </div>
                 )}
-                <select className="select" value="" aria-label="Órdenes frecuentes" onChange={(e) => { addOrder(e.target.value); orderInput.current?.blur() }}>
-                  <option value="">Órdenes frecuentes…</option>
-                  {FREQUENT_ORDERS.filter((f) => !indications.includes(f)).map((f) => <option key={f}>{f}</option>)}
-                </select>
               </div>
 
               <div className="plan-block">

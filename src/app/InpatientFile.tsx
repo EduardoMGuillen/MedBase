@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { BedDouble, Camera, ChevronLeft, ChevronRight, FileSignature, FileText, LogOut, NotebookPen, Pill, Plus, Send, Syringe, TriangleAlert, X } from 'lucide-react'
+import { BedDouble, Camera, ChevronLeft, ChevronRight, FileSignature, FileText, LogOut, NotebookPen, Pencil, Pill, Plus, Send, Syringe, TriangleAlert, X } from 'lucide-react'
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
@@ -22,6 +22,10 @@ import { ReferralModal } from './Referral'
 import { features } from '../lib/permissions'
 import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
 import { toBase64 } from './Attachments'
+import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
+import { hasBlank, medHasBlank, orderKey } from '../lib/orderSets'
+import { useVademecum } from '../lib/vademecum'
+import type { OrderSet } from '../lib/types'
 
 type Tab = 'sheet' | 'notes' | 'meds' | 'nursing' | 'labs' | 'annexes'
 
@@ -822,10 +826,29 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   const [extra, setExtra] = useState<string[]>(() => carriedOrders(file))
   const [extraText, setExtraText] = useState('')
   const [busy, setBusy] = useState(false)
+  const [editingMed, setEditingMed] = useState<number | null>(null)
+  const { notify } = useStore()
+  const vademecum = useVademecum()
   const active = file.meds.filter((m) => !m.stoppedAt)
+  const inVademecum = (drug: string) => vademecum.some((x) => normalize(x.name) === normalize(drug))
+  // Huecos "___" de un set aplicado: la nota no se firma hasta llenarlos
+  const blanks = [...extra.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : []))]
   // SOAP: los cuatro campos, como siempre. Formato 2: algo escrito, una indicación o un medicamento.
-  const ready = format === 'soap' ? SOAP.every((s) => n[s.key].trim())
-    : d.diagnoses.length > 0 || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0
+  const ready = !blanks.length && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
+    : d.diagnoses.length > 0 || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0)
+  /** Un set se agrega al final: indicaciones y medicamentos (que pasan a la hoja al guardar), todo editable. */
+  const applySet = (set: OrderSet) => {
+    const texts = set.items.flatMap((it) => (it.text ? [it.text] : []))
+    const added: NewMed[] = set.items.flatMap((it) => (it.med ? [{ ...it.med, instructions: it.med.instructions ?? '', firstAt: it.med.prn ? undefined : new Date().toISOString() }] : []))
+    const repeated = [
+      ...texts.filter((t) => extra.some((x) => orderKey(x) === orderKey(t))),
+      ...added.filter((m) => [...meds, ...active].some((x) => orderKey(medLabel(x)) === orderKey(medLabel(m)))).map((m) => medLabel(m)),
+    ]
+    setExtra((x) => [...x, ...texts])
+    setMeds((x) => [...x, ...added])
+    if (repeated.length) notify(`Ojo: ya estaba${repeated.length > 1 ? 'n' : ''} en la lista: ${repeated.map((t) => t.replace(/\.$/, '')).join('; ')}. Quita la que sobre.`, 'error')
+    else notify(`Se agregaron ${set.items.length} órdenes de "${set.name}". Revísalas antes de guardar.`)
+  }
   // Cada línea es una orden; se quita la numeración o viñeta con que venga pegada
   const clean = (line: string) => line.replace(/^\s*(\d+\s*[.)-]|[-•*])\s*/, '').trim()
   const addLines = (text: string) => {
@@ -837,7 +860,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   const addExtra = () => addLines(extraText)
   return (
     <Modal title={kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'} wide onClose={onClose} footer={<>
-      <span className="muted" style={{ marginRight: 'auto', fontSize: 13.5 }}>{meds.length ? `${meds.length} medicamento(s) nuevo(s)` : ''}{stop.length ? `${meds.length ? ', ' : ''}${stop.length} omitido(s)` : ''}</span>
+      {blanks.length ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="status">Completa los espacios ___ de {blanks.join(', ')}.</span>
+        : <span className="muted" style={{ marginRight: 'auto', fontSize: 13.5 }}>{meds.length ? `${meds.length} medicamento(s) nuevo(s)` : ''}{stop.length ? `${meds.length ? ', ' : ''}${stop.length} omitido(s)` : ''}</span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
@@ -871,11 +895,15 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
         </>)}
       </div>
       <div className="note-editor__orders">
+      <div className="set-bar">
+        <OrderSetPicker where={file.hospitalization.kind === 'observation' ? 'observation' : 'hospital'} patientId={p.id} onApply={applySet} />
+        <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, days, instructions }) => ({ med: { drug, presentation, dose, route, everyHours, prn, days, instructions: instructions || undefined } }))]} />
+      </div>
       <fieldset className="fs"><legend>Indicaciones</legend>
         <p className="muted" style={{ fontSize: 13.5 }}>Lo que no es medicamento, una por línea: dieta, cuidados, signos vitales, estudios. Puedes pegar una lista completa.</p>
         {extra.length > 0 && <ol className="orders">{extra.map((o, i) => (
           <li key={i}><span className="orders__n">{i + 1}.</span>
-            <input className="input" value={o} aria-label={`Indicación ${i + 1}`} onChange={(e) => setExtra(extra.map((x, j) => j === i ? e.target.value : x))} />
+            <input className={`input${hasBlank(o) ? ' input--blank' : ''}`} value={o} aria-label={`Indicación ${i + 1}`} aria-invalid={hasBlank(o)} onChange={(e) => setExtra(extra.map((x, j) => j === i ? e.target.value : x))} />
             <span className="orders__tools"><button type="button" className="icon-btn" aria-label="Quitar indicación" onClick={() => setExtra(extra.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
         ))}</ol>}
         <div className="order-add">
@@ -911,11 +939,17 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
       <fieldset className="fs note-editor__meds"><legend>Medicamentos</legend>
         <p className="muted" style={{ fontSize: 13.5 }}>Debajo de las indicaciones; pasan solos a la hoja de medicamentos.</p>
         {meds.length > 0 && <ol className="orders">{meds.map((m, i) => (
-          <li key={i}><span className="orders__n">–</span><span className="orders__text"><Pill size={13} className="orders__pill" />{medLabel(m)}{m.instructions ? `. ${m.instructions}` : ''}</span>
-            <span className="orders__tools"><button className="icon-btn" aria-label="Quitar" onClick={() => setMeds(meds.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
+          <li key={i} className={medHasBlank(m) ? 'orders__blank' : undefined}><span className="orders__n">–</span>
+            <span className="orders__text"><Pill size={13} className="orders__pill" />{medLabel(m)}{m.days ? ` por ${m.days} días` : ''}{m.instructions ? `. ${m.instructions}` : ''}
+              {!inVademecum(m.drug) && <span className="chip chip--amber" style={{ marginLeft: 6 }}>No está en el vademécum de la clínica</span>}</span>
+            <span className="orders__tools">
+              <button type="button" className="icon-btn" aria-label={`Editar ${m.drug}`} onClick={() => { setEditingMed(i); setAdding(false); setReplacing(null) }}><Pencil size={14} /></button>
+              <button type="button" className="icon-btn" aria-label={`Quitar ${m.drug}`} onClick={() => { setMeds(meds.filter((_, j) => j !== i)); setEditingMed(null) }}><X size={14} /></button></span></li>
         ))}</ol>}
         {replacing && <p className="muted" style={{ fontSize: 13.5 }}>La indicación nueva reemplaza a {active.find((m) => m.id === replacing)?.drug}. La nota conservará el resto de órdenes.</p>}
-        {replacing ? <MedForm p={p} initial={medToNew(active.find((m) => m.id === replacing)!)} onAdd={(m) => { setMeds([...meds, { ...m, replacesId: replacing }]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
+        {editingMed !== null && meds[editingMed] ? <MedForm key={`edit-${editingMed}`} p={p} initial={editInitial(meds[editingMed])}
+            onAdd={(m) => { setMeds(meds.map((x, j) => (j === editingMed ? { ...m, replacesId: x.replacesId } : x))); setEditingMed(null) }} onCancel={() => setEditingMed(null)} />
+          : replacing ? <MedForm p={p} initial={medToNew(active.find((m) => m.id === replacing)!)} onAdd={(m) => { setMeds([...meds, { ...m, replacesId: replacing }]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
           : adding ? <MedForm key={meds.length} p={p} onAdd={(m) => { setMeds([...meds, m]); setAdding(false) }} onAddAnother={(m) => setMeds([...meds, m])} onCancel={() => setAdding(false)} />
           : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
       </fieldset>
@@ -930,6 +964,12 @@ function carriedOrders(file: File) {
   if (!last?.orders?.length) return []
   const drugs = file.meds.map((m) => m.drug)
   return last.orders.filter((o) => !o.startsWith('OMITIR ') && !drugs.some((d) => o.startsWith(d)))
+}
+
+/** Un medicamento de la nota (p. ej. de un set) para editarlo en el formulario; sin hora, el formulario pone la actual. */
+function editInitial(m: NewMed): NewMed {
+  const { firstAt, ...rest } = m
+  return { ...rest, instructions: m.instructions ?? '', ...(firstAt ? { firstAt: inputDateTime(new Date(firstAt)) } : {}) }
 }
 
 function medToNew(m: InpatientMed): NewMed {
