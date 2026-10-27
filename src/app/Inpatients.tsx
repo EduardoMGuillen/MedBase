@@ -131,25 +131,20 @@ export function DxPicker({ value, onChange, label = 'Diagnósticos' }: { value: 
   return <DiagnosisPicker value={value} onChange={onChange} label={`${label} (CIE-11)`} />
 }
 
-/**
- * Hoja de hospitalización: fecha y hora del ingreso, cama, acompañante, teléfonos y diagnósticos. Con `edit`
- * corrige un ingreso que ya existe (o le asigna la cama al que se ingresó desde la consulta) sin rehacerlo.
- */
-export function AdmitModal({ initialPatientId, consultationId, bedId, edit, onClose, onDone }: {
-  initialPatientId?: string; consultationId?: string; bedId?: string; edit?: Hospitalization; onClose: () => void; onDone: (h: Hospitalization) => void
+/** Hoja de hospitalización: fecha y hora del ingreso, cama, acompañante, teléfonos y diagnósticos. */
+export function AdmitModal({ initialPatientId, consultationId, bedId, onClose, onDone }: {
+  initialPatientId?: string; consultationId?: string; bedId?: string; onClose: () => void; onDone: (h: Hospitalization) => void
 }) {
-  const { beds, inpatients, patient, admit, updateAdmission, fetchConsultation, inpatientOf } = useStore()
-  const [patientId, setPatientId] = useState(edit?.patientId ?? initialPatientId ?? '')
+  const { beds, inpatients, patient, admit, fetchConsultation, inpatientOf } = useStore()
+  const [patientId, setPatientId] = useState(initialPatientId ?? '')
   const p = patientId ? patient(patientId) : undefined
-  const free = beds.filter((b) => b.active && (b.id === edit?.bedId || !inpatients.some((h) => h.bedId === b.id)))
+  const free = beds.filter((b) => b.active && !inpatients.some((h) => h.bedId === b.id))
     .sort((a, b) => a.room.localeCompare(b.room, 'es', { numeric: true }) || a.label.localeCompare(b.label))
   const [f, setF] = useState({
-    bedId: edit?.bedId ?? bedId ?? '', admittedAt: inputDateTime(edit ? new Date(edit.admittedAt) : new Date()), reason: edit?.reason ?? '', companionName: edit?.companionName ?? '',
-    companionRelation: edit?.companionRelation ?? '', companionPhone: edit?.companionPhone ?? '', patientPhone: edit?.patientPhone ?? '',
+    bedId: bedId ?? '', admittedAt: inputDateTime(new Date()), reason: '', companionName: '', companionRelation: '', companionPhone: '', patientPhone: '',
   })
-  const [dx, setDx] = useState<Diagnosis[]>(edit?.diagnoses ?? [])
+  const [dx, setDx] = useState<Diagnosis[]>([])
   const [busy, setBusy] = useState(false)
-  const obs = edit?.kind === 'observation'
 
   // Desde la consulta externa: se toman su motivo y sus diagnósticos
   useEffect(() => {
@@ -167,24 +162,14 @@ export function AdmitModal({ initialPatientId, consultationId, bedId, edit, onCl
   }, [p])
 
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value })
-  const already = !edit && p && inpatientOf(p.id)
-  const ready = p && !already && (f.bedId || obs) && f.reason.trim() && dx.length > 0
+  const already = p && inpatientOf(p.id)
+  const ready = p && !already && f.bedId && f.reason.trim() && dx.length > 0
 
   return (
-    <Modal title={edit ? (edit.bedId || obs ? 'Corregir ingreso' : 'Completar ingreso: cama y acompañante') : 'Ingreso a hospitalización'} wide onClose={onClose} footer={<>
+    <Modal title="Ingreso a hospitalización" wide onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
-        if (edit) {
-          const h = await updateAdmission(edit.id, {
-            bedId: !obs && f.bedId !== edit.bedId ? f.bedId : undefined, admittedAt: new Date(f.admittedAt).toISOString(), reason: f.reason.trim(), diagnoses: dx,
-            companionName: f.companionName.trim() || undefined, companionRelation: f.companionRelation.trim() || undefined,
-            companionPhone: f.companionPhone.trim() || undefined, patientPhone: f.patientPhone.trim() || undefined,
-          })
-          setBusy(false)
-          if (h) onDone(h)
-          return
-        }
         const h = await admit({
           patientId, bedId: f.bedId, admittedAt: new Date(f.admittedAt).toISOString(), reason: f.reason.trim(), diagnoses: dx, consultationId,
           companionName: f.companionName.trim() || undefined, companionRelation: f.companionRelation.trim() || undefined,
@@ -192,19 +177,18 @@ export function AdmitModal({ initialPatientId, consultationId, bedId, edit, onCl
         })
         setBusy(false)
         if (h) onDone(h)
-      }}><BedDouble size={16} />{edit ? 'Guardar' : 'Ingresar'}</button>
+      }}><BedDouble size={16} />Ingresar</button>
     </>}>
-      {(initialPatientId || edit) && p ? <div className="field"><span>Paciente</span><div className="picked"><b>{fullName(p)}</b><span className="muted">{p.record}, {age(p.birthDate)}</span></div></div>
+      {initialPatientId && p ? <div className="field"><span>Paciente</span><div className="picked"><b>{fullName(p)}</b><span className="muted">{p.record}, {age(p.birthDate)}</span></div></div>
         : <PatientPicker value={patientId} onChange={setPatientId} />}
-      {edit && <p className="muted" style={{ fontSize: 13.5 }}>Se corrige el mismo ingreso: las notas, las órdenes y los medicamentos se conservan. Queda en la bitácora qué cambiaste.</p>}
-      {!edit && <p className="muted" style={{ fontSize: 13.5 }}>Si el paciente tuvo una consulta externa con ingreso en las últimas 48 horas, este ingreso se vincula a ella y jala sus órdenes y medicamentos sin duplicarlos.</p>}
+      <p className="muted" style={{ fontSize: 13.5 }}>Si el paciente tuvo una consulta externa con ingreso en las últimas 48 horas, este ingreso se vincula a ella y jala sus órdenes y medicamentos sin duplicarlos.</p>
       {already && <div className="alert-strip">Este paciente ya está {already.kind === 'observation' ? 'en observación: desde su expediente puedes pasarlo a hospitalización' : 'hospitalizado'}. <Link to={stayPath(already)}>Abrir su expediente</Link>.</div>}
       <div className="form-grid">
-        {!obs && <label className="field"><span>Cama</span>
+        <label className="field"><span>Cama</span>
           <select className="select" value={f.bedId} onChange={set('bedId')}>
             <option value="">Elige un cuarto libre</option>
             {free.map((b) => <option key={b.id} value={b.id}>{bedLabel(b)}</option>)}
-          </select></label>}
+          </select></label>
         <label className="field"><span>Fecha y hora del ingreso</span><input className="input" type="datetime-local" value={f.admittedAt} onChange={set('admittedAt')} /></label>
         <label className="field span-2"><span>Motivo del ingreso</span><textarea className="textarea textarea--sm" rows={2} value={f.reason} onChange={set('reason')} /></label>
       </div>

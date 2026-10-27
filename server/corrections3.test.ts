@@ -197,3 +197,34 @@ describe('P4 dos formatos de nota', () => {
     assert.ok(oldFile.notes.filter((n: any) => n.kind === 'evolution').every((n: any) => n.format === undefined))
   })
 })
+
+describe('P1 editar datos generales', () => {
+  test('sólo cama, acompañante y teléfonos; el ingreso no se reescribe; bitácora con antes y después', async () => {
+    const { doc, nurse, apptId } = await openConsult('p6')
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Dolor', diagnoses: DX, orders: ['Reposo.'], admit: true })
+    const id = c.body.hospitalizationId
+    assert.equal((await doc.patch(`/api/inpatient/${id}`, { reason: 'Otro motivo' })).status, 400, 'el motivo del ingreso no se edita')
+    assert.equal((await doc.patch(`/api/inpatient/${id}`, { admittedAt: new Date().toISOString() })).status, 400, 'la hora del ingreso no se edita')
+    assert.equal((await doc.patch(`/api/inpatient/${id}`, { diagnoses: DX })).status, 400)
+    const r = await nurse.patch(`/api/inpatient/${id}`, { companionName: 'Rosa Pérez', companionPhone: '9888-1234' })
+    assert.equal(r.status, 200, 'enfermería también edita')
+    assert.equal(r.body.companionName, 'Rosa Pérez')
+    assert.equal(r.body.reason, 'Dolor')
+    const auth = (await doc.get(`/api/inpatient/${id}`)).body.authorizations.find((a: any) => a.template === 'hospital')
+    assert.equal(auth.data.companion.phone, '9888-1234', 'la autorización pendiente toma los datos nuevos')
+    assert.equal((await (await as('smejia@demo.clinara')).patch(`/api/inpatient/${id}`, { companionName: 'X' })).status, 403, 'recepción no')
+    const log = (await (await as('admin@demo.clinara')).get('/api/bootstrap')).body.audit as { action: string }[]
+    assert.ok(log.some((e) => e.action.includes('acompañante: vacío → "Rosa Pérez"')))
+  })
+  test('los datos del paciente se guardan en su expediente, con bitácora y en las autorizaciones pendientes', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const h = (await doc.get('/api/bootstrap')).body.inpatients.find((x: any) => x.patientId === 'p6')
+    const r = await doc.patch('/api/patients/p6', { occupation: 'Maestra', dni: '0801198099999' })
+    assert.equal(r.status, 200)
+    assert.equal(r.body.dni, '0801-1980-99999')
+    const auth = (await doc.get(`/api/inpatient/${h.id}`)).body.authorizations.find((a: any) => a.template === 'hospital')
+    assert.equal(auth.data.patient.dni, '0801-1980-99999')
+    const log = (await (await as('admin@demo.clinara')).get('/api/bootstrap')).body.audit as { action: string }[]
+    assert.ok(log.some((e) => e.action.includes('ocupación:') && e.action.includes('"Maestra"')))
+  })
+})

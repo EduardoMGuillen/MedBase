@@ -10,9 +10,11 @@ type Identification = Pick<Patient, 'firstName' | 'lastName' | 'birthDate' | 'se
   | 'religion' | 'address' | 'emergencyName' | 'emergencyPhone' | 'emergencyRelation' | 'insurance' | 'guardianName' | 'guardianDni' | 'guardianRelation'>
 
 /** Ficha de identificación: el primer bloque de la historia clínica. */
-export function IdentificationForm({ title, submitLabel, initial, withAllergies = false, onClose, onSave }: {
+export function IdentificationForm({ title, submitLabel, initial, withAllergies = false, onClose, onSave, children }: {
   title: string; submitLabel: string; initial?: Partial<Patient>; withAllergies?: boolean
   onClose: () => void; onSave: (p: Partial<Patient>) => Promise<void>
+  /** Campos que van antes de la ficha (p. ej. los datos de la estancia en "Editar datos generales"). */
+  children?: React.ReactNode
 }) {
   const [f, setF] = useState<Record<keyof Identification, string>>({
     firstName: initial?.firstName ?? '', lastName: initial?.lastName ?? '', birthDate: initial?.birthDate ?? '', sex: initial?.sex ?? 'F',
@@ -45,6 +47,7 @@ export function IdentificationForm({ title, submitLabel, initial, withAllergies 
         setBusy(false)
       }}>{submitLabel}</button>
     </>}>
+      {children}
       <fieldset className="fs"><legend>Identificación</legend>
         <div className="form-grid">
           {field('firstName', 'Nombres', { autoComplete: 'given-name' })}

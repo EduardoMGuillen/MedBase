@@ -218,47 +218,49 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   })
 
   /**
-   * Corregir el ingreso sin rehacerlo: cama (o asignarla al ingresar desde la consulta), hora, motivo,
-   * diagnósticos y acompañante. Queda en la bitácora qué cambió. Si la estancia no tenía su consulta de
-   * origen, se vincula y se jalan sus órdenes sin duplicar.
+   * Editar datos generales de la estancia: cama (en hospitalización), acompañante y teléfonos. El ingreso en sí
+   * (nota de ingreso, diagnósticos, órdenes, medicamentos, fecha y hora) no se corrige: un error clínico se
+   * corrige con una nota u orden nueva, como en papel. Cada cambio queda en la bitácora con el valor anterior y
+   * el nuevo. Si hay una autorización de hospitalización pendiente de firma, se actualiza; la firmada no.
+   * Los datos del paciente (nombre, identidad, etc.) se editan en su expediente (PATCH /api/patients/:id).
    */
-  app.patch('/api/inpatient/:id', auth, need('inpatient.orders'), async (req, res) => {
+  app.patch('/api/inpatient/:id', auth, need('inpatient.orders', 'inpatient.care'), async (req, res) => {
     const b = parse(z.object({
       bedId: z.string().min(1).optional(),
-      admittedAt: when.optional(),
-      reason: z.string().trim().min(3, 'Escribe el motivo del ingreso.').max(1000).optional(),
-      diagnoses: dx.min(1, 'Agrega al menos un diagnóstico de ingreso.').optional(),
       companionName: z.string().trim().max(100).optional(),
       companionRelation: z.string().trim().max(40).optional(),
       companionPhone: z.string().trim().max(30).optional(),
       patientPhone: z.string().trim().max(30).optional(),
-    }), req.body)
+    }).strict(), req.body, 'Sólo se editan los datos generales: cama, acompañante y teléfonos.')
     const user = userOf(req)
     const cid = clinicOf(req)
     const h = await activeHosp(cid, String(req.params.id))
     if (b.bedId && h.kind === 'observation') fail(409, 'En observación no se asigna cama. Usa «Pasar a hospitalización».')
-    if (b.admittedAt && new Date(b.admittedAt).getTime() > Date.now() + 5 * 60_000) fail(400, 'La hora de ingreso no puede ser en el futuro.')
     const bed = b.bedId ? await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ? AND active', [b.bedId, cid]) : undefined
     if (b.bedId && !bed) fail(400, 'La cama elegida no existe o está desactivada.')
     const name = await patientName(String(h.patient_id))
-    const consultationId = h.consultation_id ? undefined : await findAdmissionConsult(sql, cid, String(h.patient_id))
-    const labels: Record<string, string> = { bedId: 'cama', admittedAt: 'hora de ingreso', reason: 'motivo', diagnoses: 'diagnósticos', companionName: 'acompañante',
-      companionRelation: 'parentesco del acompañante', companionPhone: 'teléfono del acompañante', patientPhone: 'teléfono del paciente' }
-    const changed = Object.keys(b).filter((k) => b[k as keyof typeof b] !== undefined)
+    const cols = { bedId: 'bed_id', companionName: 'companion_name', companionRelation: 'companion_relation', companionPhone: 'companion_phone', patientPhone: 'patient_phone' } as const
+    const labels = { bedId: 'cama', companionName: 'acompañante', companionRelation: 'parentesco del acompañante', companionPhone: 'teléfono del acompañante', patientPhone: 'teléfono del paciente' }
+    const bedText = async (id: unknown) => { const x = id ? await sql.one('SELECT room, label FROM beds WHERE id = ?', [String(id)]) : undefined; return x ? bedName(x) : 'sin cama' }
+    const changes: string[] = []
+    for (const k of Object.keys(cols) as (keyof typeof cols)[]) {
+      const next = b[k]
+      if (next === undefined || (next || null) === (h[cols[k]] ?? null)) continue
+      const before = k === 'bedId' ? await bedText(h.bed_id) : h[cols[k]] ? `"${h[cols[k]]}"` : 'vacío'
+      const after = k === 'bedId' ? await bedText(next) : next ? `"${next}"` : 'vacío'
+      changes.push(`${labels[k]}: ${before} → ${after}`)
+    }
     await sql.tx(async (q) => {
       if (b.bedId && b.bedId !== h.bed_id) {
         await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`beds:${cid}`])
         if (await q.one(`SELECT 1 FROM hospitalizations WHERE bed_id = ? AND status = 'active' AND id <> ?`, [b.bedId, String(h.id)])) fail(409, 'Esa cama ya está ocupada. Elige otra.')
       }
-      await q.run(`UPDATE hospitalizations SET bed_id = COALESCE(?, bed_id), admitted_at = COALESCE(?, admitted_at), reason = COALESCE(?, reason), diagnoses = COALESCE(?, diagnoses),
-          companion_name = COALESCE(?, companion_name), companion_relation = COALESCE(?, companion_relation), companion_phone = COALESCE(?, companion_phone),
-          patient_phone = COALESCE(?, patient_phone), consultation_id = COALESCE(consultation_id, ?) WHERE id = ?`,
-        [b.bedId ?? null, b.admittedAt ? new Date(b.admittedAt).toISOString() : null, b.reason ?? null, b.diagnoses ? JSON.stringify(b.diagnoses) : null,
-          b.companionName ?? null, b.companionRelation ?? null, b.companionPhone ?? null, b.patientPhone ?? null, consultationId ?? null, String(h.id)])
-      const pulled = consultationId ? await syncStayOrders(q, { clinicId: cid, hospitalizationId: String(h.id) }) : 0
+      // Lo que llega vacío se borra (p. ej. un teléfono equivocado); lo que no llega no se toca
+      const v = (k: keyof typeof cols) => (b[k] === undefined ? h[cols[k]] ?? null : b[k] || null)
+      await q.run(`UPDATE hospitalizations SET bed_id = ?, companion_name = ?, companion_relation = ?, companion_phone = ?, patient_phone = ? WHERE id = ?`,
+        [v('bedId'), v('companionName'), v('companionRelation'), v('companionPhone'), v('patientPhone'), String(h.id)])
       await refreshPendingHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [String(h.id)]))!)
-      const what = [h.bed_id || !b.bedId ? '' : `asignó la ${bedName(bed!)}`, ...changed.filter((k) => k !== 'bedId' || h.bed_id).map((k) => labels[k])].filter(Boolean)
-      await audit(user, `Corrigió el ingreso de ${name}: ${what.join(', ') || 'sin cambios'}${consultationId ? `; lo vinculó a su consulta externa${pulled ? ` y pasó ${pulled} medicamento(s) a la hoja` : ''}` : ''}`, q)
+      if (changes.length) await audit(user, `Editó los datos generales de la estancia de ${name}: ${changes.join('; ')}`, q)
     })
     res.json(toHospitalization((await hospRow(cid, String(h.id)))!))
   })

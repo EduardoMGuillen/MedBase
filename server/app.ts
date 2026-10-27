@@ -22,7 +22,7 @@ import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
 import { pendingOrders, registerInpatient } from './routes/inpatient.js'
 import { syncStayOrders } from './medOrders.js'
-import { ensureHospitalAuthorization } from './authorizations.js'
+import { ensureHospitalAuthorization, refreshPendingAuthorizationsForPatient } from './authorizations.js'
 import { createIcdClient, icdConfigFromEnv, type IcdClient } from './icd.js'
 import { localRelease, searchLocal } from './icdLocal.js'
 import { diagnosisInput } from './http.js'
@@ -52,6 +52,15 @@ interface AuthedRequest extends Request { user: Staff }
 
 /** Tipo de estancia: hospitalización u observación. */
 const STAY_KIND = 'kind'
+
+/** Nombre de cada dato del paciente en la bitácora. */
+const PATIENT_FIELD: Record<string, string> = {
+  firstName: 'nombres', lastName: 'apellidos', birthDate: 'fecha de nacimiento', sex: 'sexo', phone: 'teléfono', email: 'correo', insurance: 'aseguradora',
+  bloodType: 'tipo de sangre', allergies: 'alergias', conditions: 'enfermedades crónicas', background: 'antecedentes', dni: 'identidad', civilStatus: 'estado civil',
+  occupation: 'ocupación', education: 'escolaridad', religion: 'religión', address: 'procedencia y dirección', emergencyName: 'contacto de emergencia',
+  emergencyPhone: 'teléfono de emergencia', emergencyRelation: 'parentesco de emergencia', guardianName: 'responsable', guardianDni: 'identidad del responsable',
+  guardianRelation: 'parentesco del responsable',
+}
 
 const COLORS = ['#2335C9', '#0F8A6E', '#B4407A', '#C27A12', '#6A4BC4', '#2C7DA0', '#5B6472']
 const ROLES = ['admin', 'doctor', 'nurse', 'reception', 'assistant'] as const
@@ -400,14 +409,24 @@ export function createApp(opts: AppOptions) {
       guardianName: 'guardian_name', guardianDni: 'guardian_dni', guardianRelation: 'guardian_relation' }
     const sets: string[] = []
     const vals: (string | null)[] = []
+    // Bitácora campo por campo: valor anterior y valor nuevo (los datos clínicos en JSON sólo se nombran)
+    const changes: string[] = []
     for (const [k, col] of Object.entries(cols)) {
       if (!(k in req.body)) continue
       const v = body[k as keyof typeof body]
+      const next = typeof v === 'object' && v !== null ? JSON.stringify(v) : v == null || v === '' ? null : String(v)
       sets.push(`${col} = ?`)
-      vals.push(typeof v === 'object' && v !== null ? JSON.stringify(v) : v == null || v === '' ? null : String(v))
+      vals.push(next)
+      const prev = row![col] == null ? null : String(row![col])
+      if (prev !== next) changes.push(['allergies', 'conditions', 'background'].includes(k) ? PATIENT_FIELD[k] : `${PATIENT_FIELD[k] ?? k}: ${prev ? `"${prev}"` : 'vacío'} → ${next ? `"${next}"` : 'vacío'}`)
     }
-    if (sets.length) await sql.run(`UPDATE patients SET ${sets.join(', ')} WHERE id = ? AND clinic_id = ?`, [...vals, String(row!.id), cid])
-    await audit(user, `Actualizó la ficha de ${row!.first_name} ${row!.last_name}`)
+    if (sets.length) {
+      await sql.tx(async (q) => {
+        await q.run(`UPDATE patients SET ${sets.join(', ')} WHERE id = ? AND clinic_id = ?`, [...vals, String(row!.id), cid])
+        await refreshPendingAuthorizationsForPatient(q, String(row!.id))
+      })
+    }
+    await audit(user, changes.length ? `Actualizó la ficha de ${row!.first_name} ${row!.last_name}: ${changes.join('; ')}` : `Revisó la ficha de ${row!.first_name} ${row!.last_name} sin cambios`)
     res.json(toPatient((await patientRow(cid, String(row!.id)))!, can(user, 'chart.view')))
   })
 

@@ -16,7 +16,8 @@ import { authTitle, FREQUENT_PROCEDURES, isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
 import { useNow } from '../lib/hooks'
 import type { Diagnosis, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
-import { AdmitModal, bedLabel, DxPicker } from './Inpatients'
+import { bedLabel, DxPicker } from './Inpatients'
+import { GeneralDataModal } from './GeneralData'
 import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
 import { toBase64 } from './Attachments'
 
@@ -95,15 +96,15 @@ export default function InpatientFile() {
       )}
       {noBed && (
         <div className="alert-strip alert-strip--amber" style={{ flexWrap: 'wrap' }}><BedDouble size={16} />Falta asignar la cama{h.companionName ? '' : ' y anotar al acompañante'}.
-          {can('inpatient.orders') && <button className="btn btn--soft btn--sm" onClick={() => setEditing(true)}>Completar ingreso</button>}</div>
+          {(can('inpatient.orders') || can('inpatient.care')) && <button className="btn btn--soft btn--sm" onClick={() => setEditing(true)}>Asignar cama</button>}</div>
       )}
-      {editing && <AdmitModal edit={h} onClose={() => { setEditing(false); if (params.get('completar')) setParams({}) }} onDone={() => { setEditing(false); if (params.get('completar')) setParams({}); load() }} />}
+      {editing && <GeneralDataModal h={h} p={p} onClose={() => { setEditing(false); if (params.get('completar')) setParams({}) }} onDone={() => { setEditing(false); if (params.get('completar')) setParams({}); load() }} />}
 
       {tab === 'sheet' && (
         <div className="hc">
           <section className="panel hc__sec">
             <div className="panel__head"><h2>{obs ? 'Ingreso a observación' : 'Hoja de hospitalización'}</h2>
-              {open && can('inpatient.orders') && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(true)}>Corregir ingreso</button>}</div>
+              {open && (can('inpatient.orders') || can('inpatient.care')) && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(true)}>Editar datos generales</button>}</div>
             <div className="panel__body">
               <dl className="facts">
                 <div><dt>Fecha y hora del ingreso</dt><dd>{date(h.admittedAt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(h.admittedAt)}</dd></div>

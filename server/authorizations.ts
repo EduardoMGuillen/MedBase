@@ -56,3 +56,18 @@ export async function refreshPendingHospitalAuthorization(q: Sql, h: Row) {
   if (h.companion_name) data.companion = { name: String(h.companion_name), phone: h.companion_phone ? String(h.companion_phone) : undefined, relation: h.companion_relation ? String(h.companion_relation) : undefined }
   await q.run('UPDATE authorizations SET data = ? WHERE id = ?', [JSON.stringify(data), String(a.id)])
 }
+
+/**
+ * Se corrigieron los datos del paciente en su expediente: las autorizaciones que todavía no se firman toman los
+ * datos nuevos (nombre, identidad, edad, sexo, expediente). Las firmadas no se tocan: son el documento firmado.
+ */
+export async function refreshPendingAuthorizationsForPatient(q: Sql, patientId: string) {
+  const pending = await q.query(`SELECT a.id AS auth_id, a.data AS auth_data, h.* FROM authorizations a JOIN hospitalizations h ON h.id = a.hospitalization_id
+    WHERE a.patient_id = ? AND a.status = 'pending'`, [patientId])
+  for (const r of pending) {
+    const data = JSON.parse(String(r.auth_data)) as AuthorizationData
+    const base = await authorizationBase(q, r, { id: String(r.admitted_by), role: 'doctor' })
+    data.patient = base.patient
+    await q.run('UPDATE authorizations SET data = ? WHERE id = ?', [JSON.stringify(data), String(r.auth_id)])
+  }
+}
