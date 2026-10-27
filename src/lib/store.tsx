@@ -271,6 +271,8 @@ function useStoreValue() {
 
     /** El médico titular terminó o saltó el asistente de primer ingreso. */
     finishSetup: () => run(() => api<ClinicSettings>('/settings/setup-done', { method: 'POST' }), 'Listo. Tu consultorio está configurado.'),
+    convertToClinic: (b: { admin: { name: string; email: string }; assistants: Record<string, 'reception' | 'nurse'> }) =>
+      run(() => api<{ settings: ClinicSettings; admin: Staff; password: string }>('/settings/convert-to-clinic', { body: b })),
     saveSettings: (s: ClinicSettings) => run(() => api<ClinicSettings>('/settings', { method: 'PUT', body: s }), 'Configuración guardada'),
     createService: (s: Omit<Service, 'id'>) => run(() => api<Service>('/services', { body: s }), 'Servicio creado'),
     updateService: (id: string, s: Partial<Service>) => run(() => api<Service>(`/services/${id}`, { method: 'PATCH', body: s }), 'Servicio actualizado'),

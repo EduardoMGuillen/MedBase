@@ -138,6 +138,8 @@ function ClinicForm() {
   const { settings, saveSettings } = useStore()
   const [f, setF] = useState<ClinicSettings>(settings)
   const [busy, setBusy] = useState(false)
+  const [converting, setConverting] = useState(false)
+  const office = features(settings).office
   const set = <K extends keyof ClinicSettings>(k: K, v: ClinicSettings[K]) => setF({ ...f, [k]: v })
   const preview = fillTemplate(f.reminderTemplate, {
     paciente: 'María José', clinica: f.name, medico: 'Dra. Lucía Herrera', fecha: 'martes 20 de octubre', hora: '09:30', telefono: f.phone,
@@ -146,7 +148,7 @@ function ClinicForm() {
   return (
     <div className="grid-2">
       <section className="panel">
-        <div className="panel__head"><h2>Datos de la clínica</h2></div>
+        <div className="panel__head"><h2>{office ? 'Datos del consultorio' : 'Datos de la clínica'}</h2></div>
         <div className="panel__body form-grid">
           <label className="field span-2"><span>Nombre</span><input className="input" value={f.name} onChange={(e) => set('name', e.target.value)} /></label>
           <label className="field span-2"><span>Dirección</span><input className="input" value={f.address} onChange={(e) => set('address', e.target.value)} /></label>
@@ -160,11 +162,17 @@ function ClinicForm() {
           <label className="field span-2"><span>Formato del documento de identidad</span>
             <input className="input num" value={f.dniMask ?? '0000-0000-00000'} maxLength={30} onChange={(e) => set('dniMask', e.target.value.replace(/[^0\- /.]/g, ''))} />
             <small className="muted">Cada 0 es un dígito; los guiones se ponen solos. El de Honduras es 0000-0000-00000. Déjalo vacío si la clínica registra otro tipo de documento con letras.</small></label>
-          <label className="field"><span>Observación: resaltar después de (horas)</span>
-            <input className="input num" type="number" min={1} max={240} value={f.obsAlertHours ?? 24} onChange={(e) => set('obsAlertHours', Math.max(1, Number(e.target.value) || 24))} /></label>
-          <label className="field" style={{ alignContent: 'end' }}><span>Órdenes en observación</span>
+          {office && <>
+            <label className="field"><span>Especialidad (encabezado de recetas)</span><input className="input" value={f.specialty ?? ''} onChange={(e) => set('specialty', e.target.value)} /></label>
+            <label className="field"><span>Número de colegiación</span><input className="input" value={f.license ?? ''} onChange={(e) => set('license', e.target.value)} /></label>
+            <label className="check-line span-2"><input type="checkbox" checked={f.observationEnabled !== false} onChange={(e) => set('observationEnabled', e.target.checked)} />
+              <span><b>Uso observación</b><small>Para aplicar medicamentos o hidratar en el consultorio, con su hoja de medicamentos. Si la apagas, la consulta sólo emite receta.</small></span></label>
+          </>}
+          {(!office || f.observationEnabled !== false) && <label className="field"><span>Observación: resaltar después de (horas)</span>
+            <input className="input num" type="number" min={1} max={240} value={f.obsAlertHours ?? 24} onChange={(e) => set('obsAlertHours', Math.max(1, Number(e.target.value) || 24))} /></label>}
+          {!office && <label className="field" style={{ alignContent: 'end' }}><span>Órdenes en observación</span>
             <span style={{ display: 'flex', gap: 8, alignItems: 'center', minHeight: 42 }}><input type="checkbox" checked={!!f.obsOrderChecklist} onChange={(e) => set('obsOrderChecklist', e.target.checked)} />
-              Enfermería las revisa como checklist</span></label>
+              Enfermería las revisa como checklist</span></label>}
           <div className="field span-2"><span>Logo (aparece en recetas y constancias)</span>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               {f.logo ? <img src={f.logo} alt="Logo de la clínica" style={{ height: 48, maxWidth: 160, objectFit: 'contain', border: '1px solid var(--line)', borderRadius: 8, padding: 4 }} />
@@ -190,7 +198,64 @@ function ClinicForm() {
         <button className="btn btn--primary" disabled={!dirty || busy} onClick={async () => { setBusy(true); await saveSettings({ ...f, logo: f.logo ?? '' }); setBusy(false) }}>Guardar cambios</button>
         {dirty && <button className="btn btn--ghost" onClick={() => setF(settings)}>Descartar</button>}
       </div>
+      {office && (
+        <section className="panel span-all">
+          <div className="panel__head"><div><h2>¿El consultorio crece?</h2><p>Si vas a sumar a otro médico, conviértelo en clínica: aparecen enfermería, recepción, administración y hospitalización. No se pierde ni se mueve ningún dato.</p></div>
+            <button className="btn btn--ghost" onClick={() => setConverting(true)}>Convertir en clínica</button></div>
+        </section>
+      )}
+      {converting && <ConvertToClinic onClose={() => setConverting(false)} />}
     </div>
+  )
+}
+
+/**
+ * Consultorio → clínica. Se elige quién administrará la clínica (con otro correo) y a qué pasa cada asistente.
+ * Al terminar se muestra la contraseña temporal de administración y todos vuelven a iniciar sesión.
+ */
+function ConvertToClinic({ onClose }: { onClose: () => void }) {
+  const { staff, convertToClinic, signOut } = useStore()
+  const assistants = staff.filter((s) => s.role === 'assistant')
+  const [admin, setAdmin] = useState({ name: '', email: '' })
+  const [roles, setRoles] = useState<Record<string, 'reception' | 'nurse'>>(() => Object.fromEntries(assistants.map((a) => [a.id, 'reception'])))
+  const [sure, setSure] = useState(false)
+  const [done, setDone] = useState<{ email: string; password: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  if (done) {
+    return (
+      <Modal title="Ya es una clínica" onClose={async () => { await signOut() }} footer={<button className="btn btn--primary" onClick={async () => { await signOut() }}>Volver a iniciar sesión</button>}>
+        <p>Entrega estos datos a quien administrará la clínica. La contraseña sólo se muestra esta vez.</p>
+        <div className="field"><span>Correo</span><div className="secret">{done.email}</div></div>
+        <div className="field"><span>Contraseña temporal</span><div className="secret">{done.password}</div></div>
+        <p className="muted" style={{ fontSize: 13.5 }}>Los permisos cambiaron: todos vuelven a iniciar sesión.</p>
+      </Modal>
+    )
+  }
+  return (
+    <Modal title="Convertir el consultorio en clínica" onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={!sure || admin.name.trim().length < 3 || !/\S+@\S+\.\S+/.test(admin.email) || busy} onClick={async () => {
+        setBusy(true)
+        const r = await convertToClinic({ admin: { name: admin.name.trim(), email: admin.email.trim() }, assistants: roles })
+        setBusy(false)
+        if (r) setDone({ email: r.admin.email, password: r.password })
+      }}>Convertir</button>
+    </>}>
+      <p>Tú sigues como médico. Una clínica la administra un usuario de administración (personal, precios, configuración y reportes); créalo con otro correo, aunque seas tú.</p>
+      <div className="form-grid">
+        <label className="field"><span>Nombre de quien administrará</span><input className="input" value={admin.name} onChange={(e) => setAdmin({ ...admin, name: e.target.value })} /></label>
+        <label className="field"><span>Correo de acceso (distinto al tuyo)</span><input className="input" type="email" value={admin.email} onChange={(e) => setAdmin({ ...admin, email: e.target.value })} /></label>
+      </div>
+      {assistants.length > 0 && <fieldset className="fs"><legend>Tus asistentes pasan a</legend>
+        {assistants.map((a) => (
+          <label key={a.id} className="field"><span>{a.name}</span>
+            <select className="select" value={roles[a.id]} onChange={(e) => setRoles({ ...roles, [a.id]: e.target.value as 'reception' | 'nurse' })}>
+              <option value="reception">Recepción (agenda, llegadas, caja)</option><option value="nurse">Enfermería (preclínica, medicamentos, notas)</option>
+            </select></label>
+        ))}</fieldset>}
+      <label className="check-line"><input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} />
+        <span><b>Entiendo que no se puede volver a consultorio</b><small>Queda en la bitácora. Ningún dato se borra.</small></span></label>
+    </Modal>
   )
 }
 

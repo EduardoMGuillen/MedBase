@@ -2,15 +2,19 @@ import { useState } from 'react'
 import { Check, Minus, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead } from '../components/ui'
-import { CLINIC_PERMISSIONS, PERMISSIONS, ROLE_LABEL, ROLE_PERMISSIONS, ROLE_SUMMARY } from '../lib/permissions'
+import { CLINIC_PERMISSIONS, features, PERMISSIONS, permissionsFor, ROLE_LABEL, ROLE_SUMMARY, ROLES_BY_KIND } from '../lib/permissions'
 import { date, time } from '../lib/format'
 import type { Role, Staff } from '../lib/types'
 
-const ROLES: Role[] = ['admin', 'doctor', 'nurse', 'reception']
 type Tab = 'people' | 'roles' | 'audit'
 
 export default function StaffPage() {
-  const { staff, updateStaff, resetStaffPassword, audit, staffById, user } = useStore()
+  const { staff, updateStaff, resetStaffPassword, audit, staffById, user, settings } = useStore()
+  // Un consultorio sólo tiene a su médico titular y sus asistentes
+  const office = features(settings).office
+  const ROLES = ROLES_BY_KIND[settings.kind ?? 'clinic']
+  const assistants = staff.filter((s) => s.role === 'assistant' && s.active).length
+  const full = office && assistants >= (settings.maxAssistants ?? 2)
   const [tab, setTab] = useState<Tab>('people')
   const [creating, setCreating] = useState(false)
   const [secret, setSecret] = useState<{ name: string; email: string; password: string } | null>(null)
@@ -19,9 +23,10 @@ export default function StaffPage() {
 
   return (
     <div className="page">
-      <PageHead title="Personal y roles" sub="Quién trabaja en la clínica, qué puede hacer cada rol y quién hizo qué."
+      <PageHead title={office ? 'Asistentes' : 'Personal y roles'}
+        sub={office ? `Quién te ayuda en el consultorio (hasta ${settings.maxAssistants ?? 2}), qué puede hacer y quién hizo qué.` : 'Quién trabaja en la clínica, qué puede hacer cada rol y quién hizo qué.'}
         actions={<>
-          <button className="btn btn--primary" onClick={() => setCreating(true)}><UserPlus size={17} />Nuevo usuario</button>
+          <button className="btn btn--primary" disabled={full} title={full ? 'Ya tienes el máximo de asistentes activos' : undefined} onClick={() => setCreating(true)}><UserPlus size={17} />{office ? 'Agregar asistente' : 'Nuevo usuario'}</button>
         </>} />
       <div className="tabs" role="tablist">
         <button className="tab" role="tab" aria-selected={tab === 'people'} onClick={() => setTab('people')}>Personal</button>
@@ -37,7 +42,7 @@ export default function StaffPage() {
               <tr key={s.id}>
                 <td><div className="cell-person"><Avatar name={s.name} color={s.color} /><span style={{ fontWeight: 600 }}>{s.name}<small>{[s.specialty, s.license].filter(Boolean).join(', ')}</small></span></div></td>
                 <td>
-                  {s.id === user?.id ? ROLE_LABEL[s.role] : (
+                  {s.id === user?.id || office ? (s.id === settings.ownerId ? 'Médico titular' : ROLE_LABEL[s.role]) : (
                     <select className="select" style={{ height: 34, width: 'auto' }} value={s.role} aria-label={`Rol de ${s.name}`}
                       onChange={(e) => updateStaff(s.id, { role: e.target.value as Role })}>
                       {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
@@ -73,7 +78,7 @@ export default function StaffPage() {
             <tbody>{CLINIC_PERMISSIONS.map((p) => (
               <tr key={p}>
                 <td>{PERMISSIONS[p]}</td>
-                {ROLES.map((r) => <td key={r}>{ROLE_PERMISSIONS[r].includes(p)
+                {ROLES.map((r) => <td key={r}>{permissionsFor(r, settings.kind).includes(p)
                   ? <Check className="yes" size={18} aria-label="Permitido" />
                   : <Minus className="no" size={18} aria-label="Sin acceso" />}</td>)}
               </tr>
@@ -95,7 +100,7 @@ export default function StaffPage() {
         </section>
       </>)}
 
-      {creating && <NewStaff onClose={() => setCreating(false)} onCreated={(s, password) => { setCreating(false); setSecret({ name: s.name, email: s.email, password }) }} />}
+      {creating && <NewStaff roles={ROLES.filter((r) => !office || r === 'assistant')} onClose={() => setCreating(false)} onCreated={(s, password) => { setCreating(false); setSecret({ name: s.name, email: s.email, password }) }} />}
 
       {secret && (
         <Modal title="Contraseña temporal" onClose={() => setSecret(null)} footer={<button className="btn btn--primary" onClick={() => setSecret(null)}>Listo</button>}>
@@ -108,14 +113,14 @@ export default function StaffPage() {
   )
 }
 
-function NewStaff({ onClose, onCreated }: { onClose: () => void; onCreated: (s: Staff, password: string) => void }) {
+function NewStaff({ roles, onClose, onCreated }: { roles: Role[]; onClose: () => void; onCreated: (s: Staff, password: string) => void }) {
   const { createStaff } = useStore()
-  const [f, setF] = useState({ name: '', role: 'doctor' as Role, email: '', specialty: '', license: '' })
+  const [f, setF] = useState({ name: '', role: (roles.includes('doctor') ? 'doctor' : roles[0]) as Role, email: '', specialty: '', license: '' })
   const [busy, setBusy] = useState(false)
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
   const valid = f.name.trim().length >= 3 && /\S+@\S+\.\S+/.test(f.email) && (f.role !== 'doctor' || f.license.trim())
   return (
-    <Modal title="Nuevo usuario" onClose={onClose} footer={<>
+    <Modal title={roles.length === 1 && roles[0] === 'assistant' ? 'Nueva asistente' : 'Nuevo usuario'} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!valid || busy} onClick={async () => {
         setBusy(true)
@@ -125,9 +130,9 @@ function NewStaff({ onClose, onCreated }: { onClose: () => void; onCreated: (s: 
       }}>Crear usuario</button>
     </>}>
       <label className="field"><span>Nombre completo, con título si aplica</span><input className="input" value={f.name} onChange={set('name')} placeholder="Ej. Dra. Ana López" /></label>
-      <label className="field"><span>Rol</span>
-        <select className="select" value={f.role} onChange={set('role')}>{ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
-      </label>
+      {roles.length > 1 && <label className="field"><span>Rol</span>
+        <select className="select" value={f.role} onChange={set('role')}>{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
+      </label>}
       <p style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: -6 }}>{ROLE_SUMMARY[f.role]}</p>
       <label className="field"><span>Correo de acceso</span><input className="input" type="email" value={f.email} onChange={set('email')} /></label>
       {f.role === 'doctor' && (

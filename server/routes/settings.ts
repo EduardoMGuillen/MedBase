@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse } from '../http.js'
 import { toService } from '../mappers.js'
+import { createStaffMember } from '../app.js'
 
 /** Configuración y servicios de la clínica de quien hace la petición. */
 export function registerSettings(app: Express, { sql, auth, need, userOf, clinicOf, audit, settings }: Ctx) {
@@ -43,6 +44,34 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
     await sql.run('UPDATE clinics SET setup_done_at = COALESCE(setup_done_at, ?) WHERE id = ?', [new Date().toISOString(), cid])
     await audit(userOf(req), 'Terminó la configuración inicial del consultorio')
     res.json(await settings(cid))
+  })
+
+  /**
+   * El consultorio crece: se convierte en clínica. No se mueve ni se borra ningún dato; sólo cambia el tipo de
+   * cuenta. El médico titular sigue como médico y crea, con otro correo, el usuario de administración. Cada
+   * asistente pasa a recepción o a enfermería, como elija el titular.
+   */
+  app.post('/api/settings/convert-to-clinic', auth, need('settings.manage'), async (req, res) => {
+    const b = parse(z.object({
+      admin: z.object({ name: z.string().trim().min(3, 'Escribe el nombre de quien administrará la clínica.'), email: z.string().trim().email('El correo de administración no es válido.') }),
+      assistants: z.record(z.string(), z.enum(['reception', 'nurse'])).default({}),
+    }), req.body)
+    const cid = clinicOf(req)
+    const user = userOf(req)
+    const c = (await sql.one('SELECT kind FROM clinics WHERE id = ?', [cid]))!
+    if (c.kind !== 'office') fail(409, 'Esta cuenta ya es una clínica.')
+    if (await sql.one('SELECT 1 FROM staff WHERE lower(email) = lower(?)', [b.admin.email])) fail(409, 'Ya existe un usuario con ese correo. Usa otro para la administración de la clínica.')
+    const assistants = await sql.query(`SELECT id, name FROM staff WHERE clinic_id = ? AND role = 'assistant'`, [cid])
+    await sql.tx(async (q) => {
+      await q.run(`UPDATE clinics SET kind = 'clinic' WHERE id = ?`, [cid])
+      // Las asistentes cambian de rol y vuelven a entrar. El servidor ya aplica los permisos de clínica a todos desde
+      // ahora (lee el tipo de cuenta en cada petición); quien convierte ve la contraseña y luego vuelve a entrar.
+      for (const a of assistants) await q.run('UPDATE staff SET role = ?, token_version = token_version + 1 WHERE id = ?', [b.assistants[String(a.id)] ?? 'reception', String(a.id)])
+      await audit(user, `Convirtió el consultorio en clínica; ${assistants.map((a) => `${a.name} pasa a ${b.assistants[String(a.id)] === 'nurse' ? 'enfermería' : 'recepción'}`).join(', ') || 'sin asistentes'}`, q)
+    })
+    const { user: admin, password } = await createStaffMember(sql, cid, { name: b.admin.name, role: 'admin', email: b.admin.email })
+    await audit(user, `Creó el usuario de administración ${admin.name}`)
+    res.json({ settings: await settings(cid), admin, password })
   })
 
   const serviceBody = z.object({

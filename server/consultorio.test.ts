@@ -149,3 +149,26 @@ describe('C5 documentos con el nombre del médico', () => {
     assert.equal(clinic.body.data.clinic.office, undefined, 'una clínica no cambia')
   })
 })
+
+describe('C6 asistentes y paso a clínica', () => {
+  test('el consultorio se convierte en clínica sin perder datos y con los permisos de clínica', async () => {
+    const o = await office('c6')
+    const p = await o.asi.post('/api/patients', { firstName: 'Mario', lastName: 'Cruz', birthDate: '1970-05-05', sex: 'M', phone: '9999-3333' })
+    assert.equal(p.status, 201)
+    const count = async () => Number((await sql.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM patients WHERE clinic_id = ?', [o.id]))!.n)
+    const before = await count()
+    assert.equal((await o.asi.post('/api/settings/convert-to-clinic', { admin: { name: 'Admin Uno', email: 'admin-c6@test.hn' } })).status, 403)
+    assert.equal((await o.doc.post('/api/settings/convert-to-clinic', { admin: { name: 'Admin Uno', email: 'c6-doc@test.hn' } })).status, 409, 'otro correo')
+    const r = await o.doc.post('/api/settings/convert-to-clinic', { admin: { name: 'Admin Uno', email: 'admin-c6@test.hn' }, assistants: { 'of-c6-asi': 'nurse' } })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.settings.kind, 'clinic')
+    assert.equal(r.body.admin.role, 'admin')
+    assert.equal(await count(), before)
+    assert.equal((await sql.one(`SELECT role FROM staff WHERE id = 'of-c6-asi'`))!.role, 'nurse')
+    // El médico ya no administra; la administración sí, y ahora la clínica puede sumar médicos
+    assert.equal((await o.doc.get('/api/reports?from=2026-01-01&to=2026-12-31')).status, 403)
+    const admin = await as('admin-c6@test.hn', r.body.password)
+    assert.equal((await admin.post('/api/staff', { name: 'Dr. Nuevo', role: 'doctor', email: 'nuevo-c6@test.hn', license: 'CMH-3' })).status, 201)
+    assert.equal((await o.doc.post('/api/settings/convert-to-clinic', { admin: { name: 'X', email: 'x@test.hn' } })).status, 403)
+  })
+})
