@@ -198,7 +198,8 @@ export function createApp(opts: AppOptions) {
 
   app.get('/api/auth/me', async (req, res) => {
     const user = await authenticate(req)
-    res.json(user ? session((await staffRow(user.id))!) : { user: null, demo: demoMode })
+    // Con el tipo de cuenta: de él dependen los permisos (un consultorio da al médico permisos de administración)
+    res.json(user ? session((await sql.one('SELECT s.*, c.kind AS clinic_kind FROM staff s LEFT JOIN clinics c ON c.id = s.clinic_id WHERE s.id = ?', [user.id]))!) : { user: null, demo: demoMode })
   })
 
   app.post('/api/auth/password', auth, async (req, res) => {

@@ -56,6 +56,10 @@ describe('C1 permisos por tipo de cuenta', () => {
     const o = await office('c1')
     for (const p of ['consult.write', 'rx.write', 'settings.manage', 'reports.view', 'audit.view', 'staff.manage', 'billing.manage', 'checkin.manage']) assert.ok(o.doc.login.permissions.includes(p), p)
     for (const p of ['agenda.manage', 'checkin.manage', 'vitals.record', 'billing.manage', 'inpatient.care']) assert.ok(o.asi.login.permissions.includes(p), p)
+    // Al recargar la página la sesión trae los mismos permisos que al entrar
+    const me = (await o.doc.get('/api/auth/me')).body
+    assert.equal(me.user.clinicKind, 'office')
+    assert.deepEqual(me.permissions, o.doc.login.permissions)
     for (const p of ['consult.write', 'rx.write', 'settings.manage', 'reports.view', 'inpatient.orders']) assert.ok(!o.asi.login.permissions.includes(p), p)
     // El servidor valida, no sólo el menú
     assert.equal((await o.doc.get('/api/reports?from=2026-01-01&to=2026-12-31')).status, 200)
