@@ -41,8 +41,10 @@ export function AuthorizationForm({ file, p, template: initialTemplate, initialP
     setF(x ? { ...f, procedure: x.name, description: x.description, benefits: x.benefits, risks: x.risks, alternatives: x.alternatives, notDoing: x.notDoing, anesthesia: x.anesthesia } : { ...f, procedure: name })
   }
   const repOk = !rep.on || rep.name.trim().length >= 3
+  // Firmada: sólo se abre. Pendiente: se puede completar el acompañante y se reabre la misma hoja (no se duplica)
+  const signed = current?.status === 'signed'
   const ready = template === 'hospital'
-    ? !!current || (companion.name.trim().length >= 3 && companion.phone.replace(/\D/g, '').length >= 7 && repOk)
+    ? signed || (companion.name.trim().length >= 3 && companion.phone.replace(/\D/g, '').length >= 7 && repOk)
     : f.procedure.trim().length >= 3 && f.diagnosis.trim().length >= 3 && repOk
   const area = (k: keyof typeof f, label: string, rows = 2) => (
     <label className="field span-2"><span>{label}</span><textarea className="textarea textarea--sm" rows={rows} value={f[k]} onChange={set(k)} placeholder="Si lo dejas vacío, la hoja lleva líneas para escribirlo a mano." /></label>
@@ -51,8 +53,8 @@ export function AuthorizationForm({ file, p, template: initialTemplate, initialP
   return (
     <Modal title={template === 'hospital' ? 'Autorización de hospitalización' : 'Autorización quirúrgica'} wide onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      {template === 'hospital' && current
-        ? <button className="btn btn--primary" onClick={() => onCreated(current)}><FileSignature size={16} />Abrir la autorización de esta estancia</button>
+      {template === 'hospital' && signed
+        ? <button className="btn btn--primary" onClick={() => onCreated(current!)}><FileSignature size={16} />Abrir la autorización de esta estancia</button>
         : <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
           setBusy(true)
           const representative = rep.on ? { name: rep.name.trim(), dni: rep.dni.trim() || undefined, relation: rep.relation.trim() || undefined } : undefined
@@ -61,16 +63,17 @@ export function AuthorizationForm({ file, p, template: initialTemplate, initialP
             : { template, ...clean(f), procedure: f.procedure.trim(), representative, witness: witness.name.trim().length >= 3 ? { name: witness.name.trim(), dni: witness.dni.trim() || undefined } : undefined })
           setBusy(false)
           if (a) onCreated(a)
-        }}><FileSignature size={16} />Generar hoja para firmar</button>}
+        }}><FileSignature size={16} />{template === 'hospital' && current ? 'Guardar y abrir la hoja' : 'Generar hoja para firmar'}</button>}
     </>}>
       <div className="segmented" role="radiogroup" aria-label="Tipo de autorización">
         <button role="radio" aria-checked={template === 'hospital'} onClick={() => setTemplate('hospital')}>De hospitalización</button>
         <button role="radio" aria-checked={template === 'surgical'} onClick={() => setTemplate('surgical')}>Quirúrgica</button>
       </div>
-      {template === 'hospital' ? (current ? (
-        <p>Esta estancia ya tiene su autorización de hospitalización ({AUTH_STATUS[current.status].label.toLowerCase()}, generada {dateTime(current.createdAt)}). No se crea otra: ábrela para imprimirla o subir la hoja firmada.</p>
+      {template === 'hospital' ? (signed ? (
+        <p>Esta estancia ya tiene su autorización de hospitalización firmada ({dateTime(current!.statusAt ?? current!.createdAt)}). No se crea otra.</p>
       ) : (<>
-        <p className="muted" style={{ fontSize: 14 }}>Una sola hoja para todos los pacientes que se ingresan: autoriza el ingreso y la atención, los medicamentos y los procedimientos menores. Lleva los datos del paciente y del ingreso; aquí sólo falta el acompañante.</p>
+        <p className="muted" style={{ fontSize: 14 }}>{current ? `Ya se generó al ingresar (${dateTime(current.createdAt)}) y está pendiente de firma: no se crea otra. Revisa el acompañante y ábrela para imprimirla.`
+          : 'Una sola hoja para todos los pacientes que se ingresan: autoriza el ingreso y la atención, los medicamentos y los procedimientos menores. Lleva los datos del paciente y del ingreso; aquí sólo falta el acompañante.'}</p>
         <div className="form-grid">
           <label className="field"><span>Acompañante: nombre completo</span><input className="input" value={companion.name} onChange={(e) => setCompanion({ ...companion, name: e.target.value })} /></label>
           <label className="field"><span>Teléfono del acompañante</span><input className="input" inputMode="tel" value={companion.phone} onChange={(e) => setCompanion({ ...companion, phone: formatPhone(e.target.value) })} placeholder="0000-0000" /></label>
@@ -94,7 +97,7 @@ export function AuthorizationForm({ file, p, template: initialTemplate, initialP
           <label className="field"><span>Identidad del testigo</span><DniInput value={witness.dni} onChange={(dni) => setWitness({ ...witness, dni })} /></label>
         </div>
       )}
-      {!(template === 'hospital' && current) && <>
+      {!(template === 'hospital' && signed) && <>
         <label className="check-line"><input type="checkbox" checked={rep.on} disabled={minor} onChange={(e) => setRep({ ...rep, on: e.target.checked })} />
           <span><b>Firma un representante legal</b><small>{minor ? 'El paciente es menor de edad: firma su padre, madre o representante legal; si tiene edad para entender, también da su asentimiento.' : 'Si el paciente no puede decidir por sí mismo.'}</small></span></label>
         {rep.on && (

@@ -1017,8 +1017,7 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
           <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <p className="muted">Se imprimen, se firman en papel y se sube la foto o el PDF de la hoja firmada.</p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {hospital ? <Link className="btn btn--soft" to={`/app/autorizaciones/${hospital.id}`}><FileSignature size={16} />Autorización de hospitalización</Link>
-                : <button className="btn btn--soft" onClick={() => setMaking('hospital')}><FileSignature size={16} />Autorización de hospitalización</button>}
+              <button className="btn btn--soft" onClick={() => setMaking('hospital')}><FileSignature size={16} />Autorización de hospitalización{hospital?.status === 'pending' ? ' (pendiente)' : ''}</button>
               <button className="btn btn--primary" onClick={() => setMaking('surgical')}><FileSignature size={16} />Autorización quirúrgica</button>
             </div>
           </div>
