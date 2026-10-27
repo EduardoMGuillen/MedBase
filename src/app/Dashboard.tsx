@@ -8,6 +8,7 @@ import { HBars } from '../components/Charts'
 import { date, fullName, localISODate, money, sameDay, time } from '../lib/format'
 import type { Appointment } from '../lib/types'
 import Platform from './Platform'
+import { features } from '../lib/permissions'
 import { VitalsModal } from './WaitingRoom'
 import { ArrivalsPanel } from './Arrivals'
 import { CompleteRegistration } from './NewPatient'
@@ -121,6 +122,20 @@ export default function Dashboard() {
   const today = appointments.filter((a) => sameDay(a.start, now)).sort((a, b) => a.start.localeCompare(b.start))
   const first = user.name.split(' ').slice(0, 2).join(' ')
 
+  // Recepción, administración, la asistente y el médico de un consultorio marcan la llegada desde la lista "Por llegar"
+  const arrive = (a: Appointment) => {
+    const p = patients.find((x) => x.id === a.patientId)
+    // El paciente nuevo agendado por teléfono completa su registro antes de pasar a sala
+    if (p?.pending) setCompleting(a)
+    else setStatus(a.id, 'arrived', `Llegada de ${p?.firstName ?? 'paciente'} registrada`)
+  }
+  const completingPatient = completing ? patients.find((x) => x.id === completing.patientId) : undefined
+  const completion = completing && completingPatient && (
+    <CompleteRegistration patient={completingPatient} onClose={() => setCompleting(null)}
+      onDone={async () => { setCompleting(null); await setStatus(completing.id, 'arrived', 'Registro completado y llegada registrada') }} />
+  )
+  const office = features(settings).office
+
   if (user.role === 'doctor') {
     const mine = today.filter((a) => a.doctorId === user.id && a.status !== 'cancelled')
     const waiting = mine.filter((a) => a.status === 'arrived')
@@ -137,6 +152,9 @@ export default function Dashboard() {
           <Link className="stat" to="/app/consulta-externa"><b>{waiting.length}</b><span>En sala de espera</span></Link>
           <Link className="stat" to="/app/consulta-externa"><b>{ready.length}</b><span>Listos para consulta</span>{ready.length > 0 && <small>Con preclínica hecha</small>}</Link>
           <Link className="stat" to="/app/consulta-externa"><b>{done.length}</b><span>Atendidos</span></Link>
+          {/* En su consultorio el médico también cobra */}
+          {office && <Link className="stat" to="/app/caja"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span>
+            {mine.some((a) => a.status === 'done' && a.paid === false) && <small>{mine.filter((a) => a.status === 'done' && a.paid === false).length} por cobrar</small>}</Link>}
         </div>
         {next && nextPatient && (
           <section className="panel">
@@ -149,7 +167,9 @@ export default function Dashboard() {
             <div className="panel__body"><strong>{fullName(nextPatient)}</strong><p className="muted" style={{ marginTop: 4 }}>{nextPatient.record}</p></div>
           </section>
         )}
-        <ArrivalsPanel doctorId={user.id} />
+        <ArrivalsPanel doctorId={user.id} onArrive={office ? arrive : undefined} />
+        {office && completion}
+        {office && <FollowupCalls />}
       </div>
     )
   }
@@ -189,21 +209,11 @@ export default function Dashboard() {
     )
   }
 
-  // Recepción y administración marcan la llegada desde la lista "Por llegar"
-  const arrive = (a: Appointment) => {
-    const p = patients.find((x) => x.id === a.patientId)
-    // El paciente nuevo agendado por teléfono completa su registro antes de pasar a sala
-    if (p?.pending) setCompleting(a)
-    else setStatus(a.id, 'arrived', `Llegada de ${p?.firstName ?? 'paciente'} registrada`)
-  }
-  const completingPatient = completing ? patients.find((x) => x.id === completing.patientId) : undefined
-  const completion = completing && completingPatient && (
-    <CompleteRegistration patient={completingPatient} onClose={() => setCompleting(null)}
-      onDone={async () => { setCompleting(null); await setStatus(completing.id, 'arrived', 'Registro completado y llegada registrada') }} />
-  )
   const toArrivals = () => document.getElementById('por-llegar')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
-  if (user.role === 'reception') {
+  // La asistente del consultorio hace lo de recepción y además la preclínica
+  if (user.role === 'reception' || user.role === 'assistant') {
+    const triageQueue = today.filter((a) => a.status === 'arrived')
     const pending = pendingArrivals(appointments, now)
     const toCharge = appointments.filter((a) => a.status === 'done' && a.paid === false)
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
@@ -219,13 +229,28 @@ export default function Dashboard() {
           <div className="stat"><b>{toCharge.length}</b><span>Por cobrar</span>{toCharge.length > 0 && <small><Link to="/app/caja">Ir a caja</Link></small>}</div>
           <div className="stat"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></div>
         </div>
+        {can('vitals.record') && triageQueue.length > 0 && (
+          <section className="panel">
+            <div className="panel__head"><h2>Espera de preclínica</h2><p>Toma los signos de quien ya llegó.</p></div>
+            {triageQueue.map((a) => {
+              const p = patients.find((x) => x.id === a.patientId)
+              return p && (
+                <div key={a.id} className="queue-card" style={{ gridTemplateColumns: '1fr auto' }}>
+                  <div className="row__who"><strong>{time(a.start)} {fullName(p)}</strong><span>{a.reason}</span></div>
+                  <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Preclínica</button>
+                </div>
+              )
+            })}
+          </section>
+        )}
+        {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}
         <ArrivalsPanel id="por-llegar" onArrive={arrive} />
         {completion}
         <FollowupCalls />
         <div className="grid-2">
           <section className="panel">
-            <div className="panel__head"><h2>Agenda de la clínica hoy</h2></div>
-            <ApptRows list={today.filter((a) => a.status !== 'cancelled')} showDoctor action={(a) => a.status === 'done' && a.paid === false && (
+            <div className="panel__head"><h2>Agenda {office ? 'del consultorio' : 'de la clínica'} hoy</h2></div>
+            <ApptRows list={today.filter((a) => a.status !== 'cancelled')} showDoctor={!office} action={(a) => a.status === 'done' && a.paid === false && (
               <Link className="btn btn--soft btn--sm" to="/app/caja"><Receipt size={14} />Cobrar</Link>
             )} />
           </section>

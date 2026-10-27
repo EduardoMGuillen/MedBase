@@ -9,7 +9,7 @@ import { DniInput } from '../components/DniInput'
 import type { Schedule } from '../lib/types'
 import { describeSchedule, rangesOn } from '../lib/schedule'
 
-interface Clinic { name: string; address: string; phone: string; doctors: { id: string; name: string; specialty?: string; color: string; schedule?: Schedule }[] }
+interface Clinic { name: string; address: string; phone: string; kind?: 'clinic' | 'office'; doctors: { id: string; name: string; specialty?: string; color: string; schedule?: Schedule }[] }
 
 const DAYS_AHEAD = 21
 
@@ -54,7 +54,13 @@ function ClinicBooking({ slug }: { slug: string }) {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ code: string; doctor: string; start: string } | null>(null)
 
-  useEffect(() => { api<Clinic>(`/public/${slug}/clinic`).then(setClinic).catch((e: Error) => setError(e.message)) }, [slug])
+  useEffect(() => {
+    api<Clinic>(`/public/${slug}/clinic`).then((c) => {
+      setClinic(c)
+      // Un consultorio (o una cuenta con un solo médico): no se elige médico
+      if (c.doctors.length === 1) setDoctorId(c.doctors[0].id)
+    }).catch((e: Error) => setError(e.message))
+  }, [slug])
   useEffect(() => {
     if (!doctorId || !day) return
     setSlots(null); setTime('')
@@ -62,6 +68,7 @@ function ClinicBooking({ slug }: { slug: string }) {
   }, [doctorId, day, slug])
 
   const doctor = clinic?.doctors.find((d) => d.id === doctorId)
+  const single = clinic?.doctors.length === 1
   const dates = useMemo(() => Array.from({ length: DAYS_AHEAD }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d }), [])
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setF({ ...f, [k]: k === 'phone' ? formatPhone(e.target.value) : e.target.value })
@@ -106,11 +113,11 @@ function ClinicBooking({ slug }: { slug: string }) {
         ) : (<>
           <div className="booking__intro">
             <h1>Reserva tu cita</h1>
-            <p>{clinic.address}. Elige médico, día y hora; no necesitas crear una cuenta.</p>
+            <p>{clinic.address}. {single ? `Con ${clinic.doctors[0].name}${clinic.doctors[0].specialty ? `, ${clinic.doctors[0].specialty.toLowerCase()}` : ''}. Elige día y hora` : 'Elige médico, día y hora'}; no necesitas crear una cuenta.</p>
           </div>
 
           <ol className="booking__steps">
-            <li className="booking__step">
+            {!single && <li className="booking__step">
               <h2><span className="journey__n">1</span> Elige médico</h2>
               <div className="doc-grid">
                 {clinic.doctors.map((d) => (
@@ -121,11 +128,11 @@ function ClinicBooking({ slug }: { slug: string }) {
                   </button>
                 ))}
               </div>
-            </li>
+            </li>}
 
             {doctor && (
               <li className="booking__step">
-                <h2><span className="journey__n">2</span> Elige día y hora</h2>
+                <h2><span className="journey__n">{single ? 1 : 2}</span> Elige día y hora</h2>
                 <div className="date-strip" role="radiogroup" aria-label="Día">
                   {dates.map((d) => {
                     const key = localISODate(d)
@@ -147,7 +154,7 @@ function ClinicBooking({ slug }: { slug: string }) {
 
             {time && (
               <li className="booking__step">
-                <h2><span className="journey__n">3</span> Datos del paciente</h2>
+                <h2><span className="journey__n">{single ? 2 : 3}</span> Datos del paciente</h2>
                 <form onSubmit={submit} className="form-grid" style={{ maxWidth: 720 }}>
                   <label className="field"><span>Nombres</span><input className="input" required autoComplete="given-name" value={f.firstName} onChange={set('firstName')} /></label>
                   <label className="field"><span>Apellidos</span><input className="input" required autoComplete="family-name" value={f.lastName} onChange={set('lastName')} /></label>

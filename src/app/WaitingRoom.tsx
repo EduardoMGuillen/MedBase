@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Activity, BedDouble, LogIn, NotebookPen, Stethoscope, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
+import { features } from '../lib/permissions'
 import { Modal, PageHead, StatusBadge } from '../components/ui'
 import { age, fullName, sameDay, time } from '../lib/format'
 import type { Appointment, Patient } from '../lib/types'
@@ -18,7 +19,9 @@ const minutesSince = (iso?: string) => (iso ? Math.max(0, Math.round((Date.now()
  * la preclínica y el médico los atiende. No se muestra "por llegar": esa lista no aporta aquí.
  */
 export default function WaitingRoom() {
-  const { appointments, patient, staffById, can, setStatus, user, stayOf, inpatientOf, takeAppointment } = useStore()
+  const { appointments, patient, staffById, can, setStatus, user, stayOf, inpatientOf, takeAppointment, settings } = useStore()
+  // Un consultorio tiene un solo médico: no hay "Mis pacientes / Toda la clínica" ni atender al de otro médico
+  const multiDoctor = features(settings).multiDoctor
   const nav = useNavigate()
   const [taking, setTaking] = useState<Appointment | null>(null)
   const [busy, setBusy] = useState(false)
@@ -28,7 +31,7 @@ export default function WaitingRoom() {
   // El médico ve "Mis pacientes" por defecto y se recuerda su última elección en este navegador
   const viewKey = `clinara.ce.${user?.id}`
   const [mine, setMineState] = useState(() => {
-    if (user?.role !== 'doctor') return false
+    if (user?.role !== 'doctor' || !features(settings).multiDoctor) return false
     try { return localStorage.getItem(viewKey) !== 'clinica' } catch { return true }
   })
   const setMine = (v: boolean) => { setMineState(v); try { localStorage.setItem(viewKey, v ? 'mios' : 'clinica') } catch { /* sin almacenamiento */ } }
@@ -37,7 +40,7 @@ export default function WaitingRoom() {
     .filter((a) => sameDay(a.start, new Date()) && !['cancelled'].includes(a.status) && (!mine || a.doctorId === user?.id || a.reassignedFrom === user?.id))
     .sort((a, b) => a.start.localeCompare(b.start))
   const lanes = [
-    { title: 'En sala', hint: 'Esperan que enfermería les abra la preclínica.', list: today.filter((a) => a.status === 'arrived') },
+    { title: 'En sala', hint: multiDoctor ? 'Esperan que enfermería les abra la preclínica.' : 'Esperan la preclínica (signos vitales).', list: today.filter((a) => a.status === 'arrived') },
     { title: 'Listos para consulta', hint: 'Con preclínica hecha; el médico los llamará.', list: today.filter((a) => ['triaged', 'in_consult'].includes(a.status)) },
     { title: 'Atendidos', hint: 'Consultas firmadas hoy.', list: today.filter((a) => a.status === 'done') },
   ]
@@ -46,7 +49,7 @@ export default function WaitingRoom() {
     <div className="page">
       <PageHead title="Consulta externa" sub="Pacientes de hoy: con cita y los que llegan sin cita. Avanzan de izquierda a derecha."
         actions={<>
-          {user?.role === 'doctor' && (
+          {user?.role === 'doctor' && multiDoctor && (
             <div className="segmented" role="radiogroup" aria-label="Qué pacientes ver">
               <button role="radio" aria-checked={mine} onClick={() => setMine(true)}>Mis pacientes</button>
               <button role="radio" aria-checked={!mine} onClick={() => setMine(false)}>Toda la clínica</button>
@@ -90,7 +93,7 @@ export default function WaitingRoom() {
                       <Link className="btn btn--ghost btn--sm" to="/app/caja">Cobrar</Link>}
                     {['arrived', 'triaged', 'in_consult'].includes(a.status) && own && can('consult.write') &&
                       <button className="btn btn--primary btn--sm" onClick={() => nav(`/app/consulta/${a.id}`)}><Stethoscope size={15} />{a.status === 'in_consult' ? 'Continuar' : 'Atender'}</button>}
-                    {a.status === 'triaged' && !own && user?.role === 'doctor' && can('consult.write') &&
+                    {a.status === 'triaged' && !own && multiDoctor && user?.role === 'doctor' && can('consult.write') &&
                       <button className="btn btn--ghost btn--sm" onClick={() => setTaking(a)}><Stethoscope size={15} />Atender</button>}
                     {a.status === 'done' && can('chart.view') &&
                       <Link className="btn btn--ghost btn--sm" to={`/app/pacientes/${p.id}`}><NotebookPen size={15} />Expediente</Link>}
@@ -151,10 +154,10 @@ function WalkInModal({ onClose }: { onClose: () => void }) {
     </>}>
       <PatientPicker value={patientId} onChange={setPatientId} />
       {can('patients.manage') && <button className="btn btn--primary" style={{ justifySelf: 'start' }} onClick={() => setRegistering(true)}><UserPlus size={16} />Registrar paciente nuevo</button>}
-      <label className="field"><span>Médico</span>
+      {doctors.length > 1 && <label className="field"><span>Médico</span>
         <select className="select" value={doctorId} onChange={(e) => setDoctorId(e.target.value)}>
           {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? `, ${d.specialty.toLowerCase()}` : ''}</option>)}
-        </select></label>
+        </select></label>}
       <label className="field"><span>Motivo de consulta</span>
         <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Fiebre y dolor de garganta" /></label>
     </Modal>

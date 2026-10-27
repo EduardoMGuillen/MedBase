@@ -10,6 +10,7 @@ import { useVademecum } from '../lib/vademecum'
 import { MedicationForm, MedicationList } from '../components/Medications'
 import { FOLLOWUP_KIND } from '../lib/followups'
 import { yearsOld } from '../lib/inpatient'
+import { features } from '../lib/permissions'
 import { BackgroundView, useChart, VitalsGrid } from './PatientChart'
 import { BackgroundForm, IdentityPrompt } from './PatientForms'
 import { VitalsModal } from './WaitingRoom'
@@ -122,9 +123,11 @@ export default function Consultation() {
     ? ICD10.filter((d) => !dx.some((x) => x.code === d.code) && (d.code.toLowerCase().includes(dxQuery.toLowerCase()) || d.label.toLowerCase().includes(dxQuery.toLowerCase()))).slice(0, 6)
     : []
   const hospitalized = store.inpatientOf(p.id)
+  const place = features(store.settings)
   // Con ingreso los medicamentos van a la hoja de medicamentos ("hasta nueva orden" si no tienen días);
   // si se va a su casa van a la receta y necesitan los días, salvo los que se aplican aquí en la clínica
-  const admitting = !hospitalized && (admit || observe)
+  // Un borrador guardado antes puede traer una casilla que esta cuenta no usa
+  const admitting = !hospitalized && ((admit && place.hospital) || (observe && place.observation))
   const ambulatory = !admitting
   const rxCount = ambulatory ? meds.filter((m) => !m.applyInClinic).length : 0
   const inClinic = ambulatory ? meds.filter((m) => m.applyInClinic) : admitting ? meds : []
@@ -155,7 +158,7 @@ export default function Consultation() {
       appointmentId: appt.id, reason: reason.trim(), symptoms: [], history, exam, observations: observations.trim(), diagnoses: dx,
       // En el expediente el manejo se lee completo: primero las indicaciones y luego los medicamentos
       orders: [...indications, ...meds.map(medicationOrder)], indications,
-      plan: '', vitalsId: todayVitals?.id, followups, observe: observe && !hospitalized, admit: admit && !hospitalized,
+      plan: '', vitalsId: todayVitals?.id, followups, observe: observe && !hospitalized && place.observation, admit: admit && !hospitalized && place.hospital,
     }, meds)
     setSigning(false)
     if (r) {
@@ -303,7 +306,7 @@ export default function Consultation() {
                   onEdit={(i) => setMedForm({ index: i, initial: meds[i] })} onRemove={(i) => { setMeds(meds.filter((_, j) => j !== i)); setMedForm(null) }} />
                 {!meds.length && !medForm && <p className="muted" style={{ fontSize: 14 }}>Sin medicamentos indicados.</p>}
                 {medForm ? (
-                  <MedicationForm key={medForm.index} patient={p} current={meds} initial={medForm.initial} requireDuration={ambulatory} clinicOption={ambulatory && store.can('inpatient.orders')}
+                  <MedicationForm key={medForm.index} patient={p} current={meds} initial={medForm.initial} requireDuration={ambulatory} clinicOption={ambulatory && store.can('inpatient.orders') && place.observation}
                     submitLabel={medForm.index >= 0 ? 'Guardar cambios' : 'Agregar medicamento'}
                     onSave={(item) => { setMeds(medForm.index >= 0 ? meds.map((x, j) => (j === medForm.index ? item : x)) : [...meds, item]); setMedForm(null) }}
                     onCancel={() => setMedForm(null)} />
@@ -346,10 +349,11 @@ export default function Consultation() {
                   ? <p style={{ fontSize: 14 }}><BedDouble size={15} style={{ verticalAlign: '-3px' }} /> {p.firstName} ya está {hospitalized.kind === 'observation' ? 'en observación' : 'hospitalizado'}. <Link to={`/app/${hospitalized.kind === 'observation' ? 'observacion' : 'hospitalizados'}/${hospitalized.id}`}>Abrir su expediente</Link>.</p>
                   : <>
                     {/* Son excluyentes: marcar una desmarca la otra */}
-                    <label className="check-line"><input type="checkbox" checked={observe} onChange={(e) => { setObserve(e.target.checked); if (e.target.checked) setAdmit(false) }} />
-                      <span><b>Ingreso a observación</b><small>Observación corta (hidratar, nebulizar, vigilar). Esta nota es la primera nota y sus medicamentos pasan a la hoja.</small></span></label>
-                    <label className="check-line"><input type="checkbox" checked={admit} onChange={(e) => { setAdmit(e.target.checked); if (e.target.checked) setObserve(false) }} />
-                      <span><b>Ingreso a hospitalización</b><small>Esta nota queda como nota de ingreso y sus medicamentos pasan a la hoja. Al firmar eliges la cama.</small></span></label>
+                    {/* Un consultorio no hospitaliza y puede no usar observación */}
+                    {place.observation && <label className="check-line"><input type="checkbox" checked={observe} onChange={(e) => { setObserve(e.target.checked); if (e.target.checked) setAdmit(false) }} />
+                      <span><b>Ingreso a observación</b><small>Observación corta (hidratar, nebulizar, vigilar). Esta nota es la primera nota y sus medicamentos pasan a la hoja.</small></span></label>}
+                    {place.hospital && <label className="check-line"><input type="checkbox" checked={admit} onChange={(e) => { setAdmit(e.target.checked); if (e.target.checked) setObserve(false) }} />
+                      <span><b>Ingreso a hospitalización</b><small>Esta nota queda como nota de ingreso y sus medicamentos pasan a la hoja. Al firmar eliges la cama.</small></span></label>}
                   </>
               )}
               <p style={{ fontSize: 14, color: 'var(--muted)' }}>

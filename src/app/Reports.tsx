@@ -72,7 +72,7 @@ export default function Reports() {
         </div>
 
         <div className="grid-2">
-          <section className="panel table-wrap">
+          {report.byDoctor.length > 1 && <section className="panel table-wrap">
             <div className="panel__head"><h2>Por médico</h2></div>
             <table className="table">
               <thead><tr><th>Médico</th><th style={{ textAlign: 'right' }}>Citas</th><th style={{ textAlign: 'right' }}>Atendidas</th><th style={{ textAlign: 'right' }}>No asistió</th><th style={{ textAlign: 'right' }}>Ingresos</th></tr></thead>
@@ -81,7 +81,7 @@ export default function Reports() {
                   <td className="num" style={{ textAlign: 'right' }}>{d.noShow}</td><td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{money(d.revenue, cur)}</td></tr>
               ))}</tbody>
             </table>
-          </section>
+          </section>}
           <section className="panel">
             <div className="panel__head"><h2>Formas de pago</h2></div>
             <div className="panel__body">

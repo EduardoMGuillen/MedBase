@@ -5,25 +5,28 @@ import { Avatar, Modal, PageHead } from '../components/ui'
 import { date, fillTemplate, money, ROUTES } from '../lib/format'
 import type { ClinicDrug, ClinicSettings, Service, Staff } from '../lib/types'
 import { ScheduleEditor } from './ScheduleEditor'
+import { features } from '../lib/permissions'
 
 type Tab = 'clinic' | 'services' | 'schedules' | 'beds' | 'drugs'
 
 export default function Settings() {
   const [tab, setTab] = useState<Tab>('clinic')
+  const { settings } = useStore()
+  const f = features(settings)
   return (
     <div className="page">
-      <PageHead title="Configuración" sub="Datos que aparecen en recetas y recibos, precios, horarios de atención y camas." />
+      <PageHead title="Configuración" sub={f.office ? 'Datos que aparecen en tus recetas y recibos, precios, tu horario y lo que usa tu consultorio.' : 'Datos que aparecen en recetas y recibos, precios, horarios de atención y camas.'} />
       <div className="tabs" role="tablist">
-        <button className="tab" role="tab" aria-selected={tab === 'clinic'} onClick={() => setTab('clinic')}>Clínica</button>
+        <button className="tab" role="tab" aria-selected={tab === 'clinic'} onClick={() => setTab('clinic')}>{f.office ? 'Consultorio' : 'Clínica'}</button>
         <button className="tab" role="tab" aria-selected={tab === 'services'} onClick={() => setTab('services')}>Servicios y precios</button>
-        <button className="tab" role="tab" aria-selected={tab === 'schedules'} onClick={() => setTab('schedules')}>Horarios de médicos</button>
-        <button className="tab" role="tab" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}>Camas</button>
+        <button className="tab" role="tab" aria-selected={tab === 'schedules'} onClick={() => setTab('schedules')}>{f.office ? 'Mi horario' : 'Horarios de médicos'}</button>
+        {f.hospital && <button className="tab" role="tab" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}>Camas</button>}
         <button className="tab" role="tab" aria-selected={tab === 'drugs'} onClick={() => setTab('drugs')}>Vademécum</button>
       </div>
       {tab === 'clinic' && <ClinicForm />}
       {tab === 'services' && <Services />}
       {tab === 'schedules' && <Schedules />}
-      {tab === 'beds' && <Beds />}
+      {tab === 'beds' && f.hospital && <Beds />}
       {tab === 'drugs' && <ClinicDrugs />}
     </div>
   )

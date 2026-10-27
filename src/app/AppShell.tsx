@@ -7,7 +7,7 @@ import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
 import { SearchPalette } from '../components/Search'
 import { useStore } from '../lib/store'
-import { ROLE_LABEL, type Permission } from '../lib/permissions'
+import { features, ROLE_LABEL, type Permission } from '../lib/permissions'
 import { cap, localISODate, sameDay } from '../lib/format'
 
 const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean; group?: string }[] = [
@@ -50,15 +50,22 @@ export default function AppShell() {
   const newOrders = pendingOrders.reduce((s, x) => s + x.pending, 0)
   const inObservation = inpatients.filter((h) => h.kind === 'observation').length
   const platform = user.role === 'superadmin'
+  const f = features(settings)
+  // En un consultorio el médico titular también cobra y administra: Caja va en el menú y "Administración" es "Mi consultorio"
+  const quietBilling = !f.office && (user.role === 'doctor' || user.role === 'nurse')
   const items = platform
-    ? [{ to: '/app', label: 'Clínicas', icon: Building2, end: true }]
+    ? [{ to: '/app', label: 'Clínicas y consultorios', icon: Building2, end: true }]
     : NAV.filter((n) => {
       if (n.perm && !can(n.perm)) return false
+      if (n.to === '/app/hospitalizados' && !f.hospital) return false
+      if (n.to === '/app/observacion' && !f.observation) return false
       // Enfermería entra al paciente: no usa la agenda. Médico y enfermería cobran, pero desde un acceso más discreto.
       if (user.role === 'nurse' && n.to === '/app/agenda') return false
-      if ((user.role === 'doctor' || user.role === 'nurse') && n.to === '/app/caja') return false
+      if (quietBilling && n.to === '/app/caja') return false
       return true
-    })
+    }).map((n) => (f.office && n.group === 'Administración'
+      ? { ...n, group: 'Mi consultorio', label: n.to === '/app/personal' ? 'Asistentes' : n.label }
+      : n))
   const label = today.toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
@@ -66,7 +73,7 @@ export default function AppShell() {
       <aside className={`side ${open ? 'open' : ''}`} aria-label="Navegación principal">
         <div className="side__clinic">
           <Logo size={28} />
-          <small>{platform ? 'Plataforma' : 'Clínica'}</small>
+          <small>{platform ? 'Plataforma' : f.office ? 'Consultorio' : 'Clínica'}</small>
           <strong>{settings.name}</strong>
         </div>
         <nav>
@@ -84,7 +91,7 @@ export default function AppShell() {
               </NavLink>
             </div>
           ))}
-          {(user.role === 'doctor' || user.role === 'nurse') && can('billing.manage') && (
+          {quietBilling && can('billing.manage') && (
             <NavLink to="/app/caja" className="side__link side__link--quiet"><Receipt size={16} strokeWidth={1.9} />Cobrar</NavLink>
           )}
         </nav>

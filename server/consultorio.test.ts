@@ -117,3 +117,23 @@ describe('C3 primer ingreso', () => {
     assert.equal(s.license, 'CMH-555')
   })
 })
+
+describe('C4 un solo médico', () => {
+  test('la reserva en línea del consultorio trae su único médico y el tipo de cuenta', async () => {
+    await office('c4')
+    const c = await (await fetch(`${base}/api/public/c4/clinic`)).json() as any
+    assert.equal(c.kind, 'office')
+    assert.equal(c.doctors.length, 1)
+    assert.equal(c.doctors[0].name, 'Dra. Prueba')
+  })
+  test('la consulta de un consultorio no hospitaliza', async () => {
+    const o = await office('c4b')
+    const p = await o.asi.post('/api/patients', { firstName: 'Ana', lastName: 'Ruiz', birthDate: '1990-01-01', sex: 'F', phone: '9999-1111', dni: '0801199011111' })
+    const w = await o.asi.post('/api/appointments/walk-in', { patientId: p.body.id, doctorId: 'of-c4b-doc', reason: 'Dolor' })
+    assert.equal(w.status, 201, JSON.stringify(w.body))
+    await o.doc.post(`/api/appointments/${w.body.id}/status`, { status: 'in_consult' })
+    const dx = [{ code: 'R10', label: 'Dolor abdominal' }]
+    assert.equal((await o.doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Dolor', diagnoses: dx, orders: ['Reposo.'], admit: true })).status, 400)
+    assert.equal((await o.doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Dolor', diagnoses: dx, orders: ['Reposo.'] })).status, 201)
+  })
+})

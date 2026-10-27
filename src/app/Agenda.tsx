@@ -92,10 +92,11 @@ export default function Agenda() {
         <div className="cal-bar__tools">
           <input className="input cal-bar__date" type="date" value={localISODate(cursor)} aria-label="Ir a una fecha"
             onChange={(e) => e.target.value && setCursor(new Date(`${e.target.value}T12:00:00`))} />
-          <select className="select cal-bar__doc" value={doctorFilter} onChange={(e) => setDoctorFilter(e.target.value)} aria-label="Médico">
+          {/* Con un solo médico (consultorio) no hay a quién filtrar */}
+          {doctors.length > 1 && <select className="select cal-bar__doc" value={doctorFilter} onChange={(e) => setDoctorFilter(e.target.value)} aria-label="Médico">
             <option value="all">Todos los médicos</option>
             {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          </select>}
           <div className="segmented" role="radiogroup" aria-label="Vista">
             {(['day', 'week', 'month'] as View[]).map((v) => <button key={v} role="radio" aria-checked={view === v} onClick={() => setView(v)}>{{ day: 'Día', week: 'Semana', month: 'Mes' }[v]}</button>)}
           </div>
@@ -444,11 +445,11 @@ function AppointmentForm({ title, submitLabel, doctors, patients, initial, lockP
         <ApptPatientPicker patients={patients} value={f.patientId} onChange={(id) => set('patientId', id)}
           onNew={(q) => { const [first, ...rest] = q.trim().split(/\s+/); setF((x) => ({ ...x, patientId: '', newPatient: { firstName: first ?? '', lastName: rest.join(' '), phone: '', dni: '' } })) }} />
       )}
-      <label className="field"><span>Médico</span>
+      {doctors.length > 1 && <label className="field"><span>Médico</span>
         <select className="select" value={f.doctorId} onChange={(e) => set('doctorId', e.target.value)}>
           {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? `, ${d.specialty}` : ''}</option>)}
         </select>
-      </label>
+      </label>}
       <div className="form-grid">
         <label className="field"><span>Fecha</span><input className="input" type="date" value={f.date} onChange={(e) => e.target.value && set('date', e.target.value)} /></label>
         <label className="field"><span>Hora</span>

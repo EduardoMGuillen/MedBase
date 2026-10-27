@@ -6,6 +6,7 @@ import { Loading, Modal, PageHead } from '../components/ui'
 import { age, date, formatPhone, fullName, identityLine, localISODate, medicationLine, recordNumber, time, whatsappUrl } from '../lib/format'
 import { stayPath, yearsOld } from '../lib/inpatient'
 import { useNow } from '../lib/hooks'
+import { features } from '../lib/permissions'
 import { normalize, similarPatients } from '../lib/patients'
 import { MedicationForm, MedicationList } from '../components/Medications'
 import { PatientPicker } from './Inpatients'
@@ -26,8 +27,8 @@ export function ClinicLogo({ settings, size = 26 }: { settings: ClinicSettings; 
  * que no está en la biblioteca: se escriben sus datos a mano y no se le crea expediente.
  */
 export default function Prescriptions() {
-  const { prescriptions, patient, staffById, user, can } = useStore()
-  const [mine, setMine] = useState(user?.role === 'doctor')
+  const { prescriptions, patient, staffById, user, can, settings } = useStore()
+  const [mine, setMine] = useState(user?.role === 'doctor' && features(settings).multiDoctor)
   const [q, setQ] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -54,7 +55,7 @@ export default function Prescriptions() {
       <section className="panel">
         <div className="panel__head">
           <div><h2>Historial</h2><p>{list.length} {list.length === 1 ? 'receta' : 'recetas'}</p></div>
-          {user?.role === 'doctor' && (
+          {user?.role === 'doctor' && features(settings).multiDoctor && (
             <div className="segmented" role="radiogroup" aria-label="Qué recetas ver">
               <button role="radio" aria-checked={mine} onClick={() => setMine(true)}>Mías</button>
               <button role="radio" aria-checked={!mine} onClick={() => setMine(false)}>Toda la clínica</button>
