@@ -192,7 +192,8 @@ describe('P4 dos formatos de nota', () => {
     const me = (await doc.get('/api/bootstrap')).body.staff.find((s: any) => s.id === 's-herrera')
     assert.equal(me.prefs.noteFormat, 'dx')
     // Las notas anteriores siguen siendo SOAP
-    const old = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.id !== id && h.kind === 'hospital')
+    // Una estancia de la demo original (los casos de la v25 ya traen notas en el formato 2)
+    const old = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.id !== id && h.kind === 'hospital' && /^hz\d/.test(h.id))
     const oldFile = (await doc.get(`/api/inpatient/${old.id}`)).body
     assert.ok(oldFile.notes.filter((n: any) => n.kind === 'evolution').every((n: any) => n.format === undefined))
   })

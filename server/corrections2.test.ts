@@ -301,7 +301,8 @@ describe('E1 hoja de medicamentos: días pasados', () => {
     const note = await doc.post(`/api/inpatient/${h.id}/notes`, { kind: 'evolution', subjective: 'S', objective: 'O', assessment: 'A', plan: 'P',
       meds: [{ drug: 'Ceftriaxona', dose: '1 g', route: 'Intravenosa', everyHours: 24, prn: false, firstAt: first.toISOString() }] })
     assert.equal(note.status, 201)
-    const med = (await nurse.get(`/api/inpatient/${h.id}`)).body.meds.find((m: any) => m.drug === 'Ceftriaxona')
+    // La orden de esta nota (los casos de demo de la v25 ya traen otra Ceftriaxona con su dosis)
+    const med = (await nurse.get(`/api/inpatient/${h.id}`)).body.meds.find((m: any) => m.drug === 'Ceftriaxona' && (m.noteId === note.body.id || m.sourceId === note.body.id))
     assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: med.firstAt, givenAt: med.firstAt })).status, 400, 'sin motivo no')
     const late = await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: med.firstAt, givenAt: med.firstAt, reason: 'No se registró en el turno de noche' })
     assert.equal(late.status, 201)
