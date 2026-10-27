@@ -665,7 +665,9 @@ export function createApp(opts: AppOptions) {
     } catch (e) {
       // Sin el archivo no se rompe la consulta: se avisa y se puede escribir el diagnóstico sin código
       console.error(e)
-      res.json({ source: 'file', release: '', results: [], error: 'No se pudo buscar en la CIE-11 en este momento. Escribe el diagnóstico sin código.' })
+      res.json({ source: 'file', release: '', results: [], error: 'No se pudo buscar en la CIE-11 en este momento. Escribe el diagnóstico sin código.',
+        // En la demo se muestra la causa, para diagnosticar el despliegue
+        ...(demoMode ? { detail: String((e as Error).message).slice(0, 300) } : {}) })
     }
   })
 
