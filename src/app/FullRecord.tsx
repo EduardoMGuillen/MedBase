@@ -10,6 +10,7 @@ import { ROLE_LABEL } from '../lib/permissions'
 import type { Consultation, InpatientFile, InpatientNote, Patient, Vitals } from '../lib/types'
 import { ConsultationBody, Identification } from './PatientChart'
 import { NoteColumns, NoteText } from '../components/NoteColumns'
+import { ReferralSheet } from './Referral'
 import { bedLabel } from './Inpatients'
 import { ClinicLogo } from './Prescriptions'
 
@@ -174,6 +175,8 @@ export default function FullRecord() {
             {legacyAuths.map((x) => <div key={x.id} className="fr-lab"><b>{x.name}</b> · registro anterior, {dm(x.createdAt)}{x.notes ? `. ${x.notes}` : ''}</div>)}
           </> : <p className="muted">Sin autorizaciones registradas.</p>}
         </>, true)}
+
+        {file.referrals.map((r, i) => page(`fr-referencia-${i}`, `Anexos: referencia ${r.number}`, <ReferralSheet r={r} />))}
       </article>
     </div>
   )

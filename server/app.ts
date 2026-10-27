@@ -28,6 +28,7 @@ import { localRelease, searchLocal } from './icdLocal.js'
 import { diagnosisInput } from './http.js'
 import { registerDrugs } from './routes/drugs.js'
 import { registerCertificates } from './routes/certificates.js'
+import { registerReferrals } from './routes/referrals.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { can, permissionsFor, ROLES_BY_KIND, type Permission } from '../src/lib/permissions.js'
 import { yearsOld } from '../src/lib/inpatient.js'
@@ -782,8 +783,9 @@ export function createApp(opts: AppOptions) {
           VALUES (?,?,?,NULL,?,?,?,?,?,?,'active',?)`,
           [stayId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null, stayKind])
         medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: stayId })
-        // La autorización de hospitalización queda generada, pendiente de firma, desde el ingreso
-        await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [stayId]))!, user)
+        // La autorización de hospitalización queda generada, pendiente de firma, desde el ingreso. La observación
+        // no lleva autorización (ronda 3, P6): se genera si después pasa a hospitalización.
+        if (stayKind === 'hospital') await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [stayId]))!, user)
         await audit(user, `Ingresó a ${name} a ${stayKind === 'hospital' ? 'hospitalización' : 'observación'} desde la consulta externa${medOrders ? ` (${medOrders} medicamento(s) a la hoja)` : ''}`, q)
       }
     })
@@ -948,6 +950,7 @@ export function createApp(opts: AppOptions) {
   registerInpatient(app, ctx)
   registerDrugs(app, ctx)
   registerCertificates(app, ctx)
+  registerReferrals(app, ctx)
   registerFollowups(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))

@@ -395,6 +395,9 @@ export interface Hospitalization {
   convertedBy?: string
   /** En la lista de hospitalizados: la autorización de hospitalización sigue pendiente de firma. */
   authPending?: boolean
+  /** Cómo terminó: 'referred' si se refirió a otro centro (con el destino en outcomeNote). */
+  outcome?: 'referred' | 'discharged'
+  outcomeNote?: string
 }
 
 export interface DischargeData {
@@ -449,7 +452,7 @@ export interface Authorization {
   /** 'hospital' (una por estancia) y 'surgical'. 'general' y 'procedure' son de antes de la v22 y se conservan. */
   template: 'hospital' | 'surgical' | 'general' | 'procedure'
   data: AuthorizationData
-  status: 'pending' | 'signed' | 'refused' | 'revoked'
+  status: 'pending' | 'signed' | 'refused' | 'revoked' | 'not_applicable'
   createdBy: string
   createdAt: string
   fileId?: string // foto o PDF de la hoja firmada
@@ -481,6 +484,38 @@ export interface AuthorizationData {
   patient: { name: string; dni?: string; age: string; sex: 'F' | 'M'; record: string; minor: boolean }
   doctor: { name: string; license?: string }
   clinic: { name: string; address: string; phone: string; logo?: string; office?: boolean }
+}
+
+/** Referencia a otro centro (consultorio): lo que se imprime, como se emitió. */
+export interface ReferralData {
+  patient: { name: string; dni?: string; age: string; sex?: 'F' | 'M'; record: string }
+  doctor: { name: string; license?: string; specialty?: string }
+  place: { name: string; address: string; phone: string; logo?: string; office?: boolean }
+  admittedAt: string
+  reason: string
+  history: string
+  exam: string
+  diagnosis: string
+  indications: string
+  medications: string
+  evolution: string
+  labs: string
+  condition: string
+  destination: string
+}
+
+export interface Referral {
+  id: string
+  hospitalizationId: string
+  patientId: string
+  number: string
+  data: ReferralData
+  destination?: string
+  issuedBy: string
+  issuedAt: string
+  voidedAt?: string
+  voidedBy?: string
+  voidReason?: string
 }
 
 /** Marca de enfermería sobre una orden médica. El estado de la orden es su última marca. */
@@ -569,6 +604,7 @@ export interface InpatientFile {
   labs: Attachment[]
   marks: OrderMark[]
   authorizations: Authorization[]
+  referrals: Referral[]
 }
 
 // ---------- Crónicos y seguimientos ----------

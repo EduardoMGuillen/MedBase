@@ -220,7 +220,8 @@ describe('C8 consultorio de demostración', () => {
     assert.ok(obs)
     const file = (await doc.get(`/api/inpatient/${obs.id}`)).body
     assert.deepEqual(file.meds.map((m: any) => m.drug), ['Dimenhidrinato'])
-    assert.equal(file.authorizations[0].template, 'hospital')
+    // Ronda 3 (P6): la observación no lleva autorización de hospitalización
+    assert.equal(file.authorizations.length, 0)
     // No ve nada de la clínica Santa Brígida
     assert.equal((await doc.get('/api/patients/p1/chart')).status, 404)
   })

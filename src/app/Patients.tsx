@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, SlidersHorizontal, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
+import { features } from '../lib/permissions'
 import { Avatar, Modal, PageHead } from '../components/ui'
 import { IdentificationForm } from './PatientForms'
 import { age, date, dniDigits, fullName, localISODate } from '../lib/format'
@@ -22,7 +23,7 @@ const STATE_LABEL = { activo: 'Activos (sin internar)', hospitalizado: 'Hospital
 const dmy = (iso: string) => { const [y, m, d] = iso.slice(0, 10).split('-'); return `${d}/${m}/${y}` }
 
 export default function Patients() {
-  const { patients, appointments, discharges = [], staff, can, addPatient, fetchPatientIndex } = useStore()
+  const { patients, appointments, discharges = [], staff, can, addPatient, fetchPatientIndex, settings } = useStore()
   const nav = useNavigate()
   const phone = useIsPhone()
   const [params, setParams] = useSearchParams()
@@ -146,7 +147,8 @@ export default function Patients() {
           <option value="">Todos</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
       <label className="field"><span>Estado</span>
         <select className="select" value={f.estado} onChange={(e) => setParam({ estado: e.target.value })}>
-          <option value="">Todos</option>{Object.entries(STATE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+          <option value="">Todos</option>{Object.entries(STATE_LABEL).filter(([k]) => k !== 'hospitalizado' || features(settings).hospital)
+            .map(([k, v]) => <option key={k} value={k}>{k === 'activo' && !features(settings).hospital ? 'Activos (sin observación)' : v}</option>)}</select></label>
       <label className="field"><span>Filtrar por fecha de</span>
         <select className="select" value={f.fecha || 'ultima'} onChange={(e) => setParam({ fecha: e.target.value })}>
           {Object.entries(DATE_FIELD).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>

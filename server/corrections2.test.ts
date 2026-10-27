@@ -336,9 +336,10 @@ describe('M6 nota de procedimiento', () => {
 })
 
 describe('M5 autorizaciones: de hospitalización y quirúrgica', () => {
-  test('la de hospitalización se genera al ingresar, una por estancia, y se reutiliza al hospitalizar', async () => {
+  // Ronda 3 (P6): la observación ya no lleva autorización de hospitalización; se prueba con un ingreso a hospitalización
+  test('la de hospitalización se genera al ingresar, una por estancia, y no se duplica', async () => {
     const { doc, nurse, apptId } = await openConsult('p2')
-    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Dolor', diagnoses: DX, orders: ['Reposo.'], observe: true })
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Dolor', diagnoses: DX, orders: ['Reposo.'], admit: true })
     const id = c.body.hospitalizationId
     let file = (await nurse.get(`/api/inpatient/${id}`)).body
     assert.equal(file.authorizations.length, 1)
@@ -353,11 +354,11 @@ describe('M5 autorizaciones: de hospitalización y quirúrgica', () => {
     assert.equal(again.body.id, a.id)
     assert.equal(again.body.data.companion.phone, '9888-1234')
     assert.equal((await (await as('smejia@demo.clinara')).post(`/api/inpatient/${id}/authorizations`, { template: 'hospital' })).status, 403)
-    // Firmada con la foto: queda en Anexos; al pasar a hospitalización no se crea otra
+    // Firmada con la foto: queda en Anexos; pedirla otra vez no crea otra
     const up = await nurse.post(`/api/patients/p2/attachments`, { name: 'firmada.png', mime: 'image/png', category: 'document', data: 'iVBORw0KGgo=', hospitalizationId: id, title: 'Autorización firmada', takenAt: new Date().toISOString() })
     assert.equal(up.status, 201, JSON.stringify(up.body))
     assert.equal((await nurse.post(`/api/authorizations/${a.id}/status`, { status: 'signed', fileId: up.body.id })).status, 200)
-    assert.equal((await doc.post(`/api/inpatient/${id}/convert`, { bedId: await freeBed(doc) })).status, 200)
+    assert.equal((await nurse.post(`/api/inpatient/${id}/authorizations`, { template: 'hospital' })).status, 200)
     file = (await doc.get(`/api/inpatient/${id}`)).body
     assert.equal(file.authorizations.filter((x: any) => x.template === 'hospital').length, 1)
     assert.equal(file.authorizations[0].status, 'signed')

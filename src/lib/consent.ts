@@ -184,6 +184,7 @@ export const AUTH_STATUS: Record<Authorization['status'], { label: string; tone:
   signed: { label: 'Firmada', tone: 'mint' },
   refused: { label: 'Rechazada (no autoriza)', tone: 'red' },
   revoked: { label: 'Revocada', tone: 'red' },
+  not_applicable: { label: 'No aplica (observación)', tone: 'ink' },
 }
 
 /** La quirúrgica (y la de procedimiento de antes de la v22, que es la misma). */

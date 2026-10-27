@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, diagnosisInput, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
-import { toAttachment, toAuthorization, toBed, toDose, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure } from '../mappers.js'
+import { toAttachment, toAuthorization, toBed, toDose, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral } from '../mappers.js'
 import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
 import { isScheduled, medLabel } from '../../src/lib/inpatient.js'
@@ -212,6 +212,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       // Las órdenes de la observación siguen (misma estancia, mismas dosis). Se completan las que falten de la
       // consulta de origen: ya es una hospitalización, así que pasan todos sus medicamentos.
       medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: String(h.id), firstNotBefore: now })
+      // Al hospitalizarlo se genera la autorización de hospitalización (la observación no la lleva)
+      await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [String(h.id)]))!, user)
       await audit(user, `Pasó a ${name} de observación a hospitalización en la ${bedName(bed!)}${medOrders ? `; ${medOrders} medicamento(s) de la consulta a la hoja` : ''}`, q)
     })
     res.json({ ...toHospitalization((await hospRow(cid, String(h.id)))!), medOrders })
@@ -270,7 +272,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const cid = clinicOf(req)
     const h = (await hospRow(cid, String(req.params.id)))!
     const id = String(h.id)
-    const [notes, meds, doses, procedures, labs, marks, auths] = await Promise.all([
+    const [notes, meds, doses, procedures, labs, marks, auths, referrals] = await Promise.all([
       sql.query('SELECT * FROM hosp_notes WHERE hospitalization_id = ? ORDER BY at, id', [id]),
       sql.query('SELECT * FROM hosp_meds WHERE hospitalization_id = ? ORDER BY ordered_at, id', [id]),
       sql.query('SELECT d.* FROM hosp_doses d JOIN hosp_meds m ON m.id = d.med_id WHERE m.hospitalization_id = ? ORDER BY d.given_at', [id]),
@@ -279,11 +281,13 @@ export function registerInpatient(app: Express, ctx: Ctx) {
         ORDER BY COALESCE(taken_at, uploaded_at) DESC`, [cid, String(h.patient_id), id, String(h.admitted_at), String(h.discharged_at ?? '9999')]),
       sql.query('SELECT * FROM order_marks WHERE hospitalization_id = ? ORDER BY at, id', [id]),
       sql.query('SELECT a.*, t.mime AS file_mime FROM authorizations a LEFT JOIN attachments t ON t.id = a.file_id WHERE a.hospitalization_id = ? ORDER BY a.created_at', [id]),
+      sql.query('SELECT * FROM referrals WHERE hospitalization_id = ? ORDER BY issued_at', [id]),
     ])
     await audit(userOf(req), `Consultó el expediente de hospitalización de ${await patientName(String(h.patient_id))}`)
     res.json({
       hospitalization: toHospitalization(h), notes: notes.map(toInpatientNote), meds: meds.map(toInpatientMed), doses: doses.map(toDose),
       procedures: procedures.map(toProcedure), labs: labs.map(toAttachment), marks: marks.map(toOrderMark), authorizations: auths.map(toAuthorization),
+      referrals: referrals.map(toReferral),
     })
   })
 
@@ -548,6 +552,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     if (b.template === 'surgical' && !b.diagnosis && !known) fail(400, 'Escribe el diagnóstico: el expediente no tiene ninguno.')
     const name = await patientName(String(h.patient_id))
     if (b.template === 'hospital') {
+      if (h.kind === 'observation') fail(409, 'La observación no lleva autorización de hospitalización. Se genera si el paciente pasa a hospitalización.')
       // El acompañante también queda en la hoja de hospitalización
       let result: Awaited<ReturnType<typeof ensureHospitalAuthorization>> | undefined
       await sql.tx(async (q) => {

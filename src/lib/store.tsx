@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
-  Appointment, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
+  Appointment, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Referral, ReferralData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
@@ -148,6 +148,8 @@ function useStoreValue() {
   const searchIcd = useCallback((q: string) =>
     api<{ source: 'api' | 'file'; release: string; results: Diagnosis[]; error?: string }>(`/icd/search?q=${encodeURIComponent(q)}`), [])
   const fetchIcdFrequent = useCallback(() => api<(Diagnosis & { code: string; label: string })[]>('/icd/frequent'), [])
+  const fetchReferralDraft = useCallback((stayId: string) => api<ReferralData>(`/inpatient/${stayId}/referral-draft`), [])
+  const fetchReferral = useCallback((id: string) => api<Referral>(`/referrals/${id}`), [])
   const fetchAuthorization = useCallback((id: string) => api<Authorization>(`/authorizations/${id}`), [])
   const fetchCertificate = useCallback((id: string) => api<Certificate>(`/certificates/${id}`), [])
   const fetchCertificates = useCallback((patientId: string) => api<Certificate[]>(`/patients/${patientId}/certificates`), [])
@@ -165,7 +167,9 @@ function useStoreValue() {
     patient: (id: string) => data.patients.find((p) => p.id === id),
     staffById: (id: string) => data.staff.find((s) => s.id === id),
     fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
-    fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient, searchIcd, fetchIcdFrequent,
+    fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient, searchIcd, fetchIcdFrequent, fetchReferralDraft, fetchReferral,
+    emitReferral: (stayId: string, b: Partial<ReferralData>) => run(() => api<Referral>(`/inpatient/${stayId}/referral`, { body: b }), 'Referencia emitida; la observación quedó cerrada como «Referido»'),
+    voidReferral: (id: string, reason: string) => run(() => api<Referral>(`/referrals/${id}/void`, { body: { reason } }), 'Referencia anulada'),
     bed: (id?: string) => (id ? data.beds.find((b) => b.id === id) : undefined),
     /** Hospitalización abierta del paciente, si la tiene. */
     inpatientOf: (patientId: string) => data.inpatients.find((h) => h.patientId === patientId),

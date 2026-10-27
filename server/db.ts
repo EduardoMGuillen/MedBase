@@ -7,7 +7,6 @@ import {
 import type { Appointment, Patient, Payment, Schedule } from '../src/lib/types.js'
 import type { Row, Sql } from './sql.js'
 import { backfillMissingOrders, syncStayOrders } from './medOrders.js'
-import { ensureHospitalAuthorization } from './authorizations.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
@@ -477,6 +476,32 @@ ALTER TABLE clinics
 
 -- v24: tercera ronda. Preferencias de cada usuario (p. ej. el último formato de nota que usó).
 ALTER TABLE staff ADD COLUMN IF NOT EXISTS prefs TEXT;
+-- La observación no lleva autorización de hospitalización: las pendientes que se generaron en observación pasan a
+-- "No aplica" (no se borran; las firmadas no se tocan).
+ALTER TABLE authorizations DROP CONSTRAINT IF EXISTS authorizations_status_check;
+ALTER TABLE authorizations ADD CONSTRAINT authorizations_status_check CHECK (status IN ('pending','signed','refused','revoked','not_applicable'));
+UPDATE authorizations a SET status = 'not_applicable', status_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), status_by = 'sistema',
+  status_note = 'La observación no lleva autorización de hospitalización.'
+  FROM hospitalizations h WHERE h.id = a.hospitalization_id AND a.template = 'hospital' AND a.status = 'pending' AND h.kind = 'observation';
+-- Cómo terminó una estancia: egreso o referencia a otro centro (con el destino, si se indicó)
+ALTER TABLE hospitalizations
+  ADD COLUMN IF NOT EXISTS outcome TEXT,
+  ADD COLUMN IF NOT EXISTS outcome_note TEXT;
+-- Referencias (consultorio): se emiten, se reimprimen y, si hay un error, se anulan y se emite otra
+CREATE TABLE IF NOT EXISTS referrals (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  hospitalization_id TEXT NOT NULL REFERENCES hospitalizations(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  number TEXT NOT NULL,
+  data TEXT NOT NULL,
+  destination TEXT,
+  issued_by TEXT NOT NULL REFERENCES staff(id),
+  issued_at TEXT NOT NULL,
+  voided_at TEXT, voided_by TEXT, void_reason TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS referrals_number ON referrals (clinic_id, number);
+CREATE INDEX IF NOT EXISTS referrals_stay ON referrals (hospitalization_id);
 ALTER TABLE clinics DROP CONSTRAINT IF EXISTS clinics_kind_check;
 ALTER TABLE clinics ADD CONSTRAINT clinics_kind_check CHECK (kind IN ('clinic','office'));
 ALTER TABLE staff DROP CONSTRAINT IF EXISTS staff_role_check;
@@ -768,7 +793,6 @@ async function insertOffice(q: Sql) {
     await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, patient_phone, status, kind)
       VALUES (?,?,?,NULL,?,?,?,?,?,?,'active','observation')`, [stay, c.id, k.patientId, k.id, date, d.doctorId, k.reason, JSON.stringify(k.dx), '3256-5050'])
     await syncStayOrders(q, { clinicId: c.id, hospitalizationId: stay })
-    await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [stay]))!, { id: d.doctorId, role: 'doctor' })
   }
 }
 
@@ -849,7 +873,7 @@ export async function nextFolio(q: Sql, clinicId: string, now: Date) {
 /** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
 export async function resetDemo(sql: Sql) {
   await sql.tx(async (q) => {
-    await q.exec(`TRUNCATE authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
+    await q.exec(`TRUNCATE referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
       attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
     await seed(q)

@@ -30,6 +30,7 @@ import AuthorizationPage from './app/Authorization'
 import Observation from './app/Observation'
 import Followups from './app/Followups'
 import Onboarding from './app/Onboarding'
+import ReferralPage from './app/Referral'
 
 /** Entra sólo con sesión, con el permiso y, si se pide, con el módulo activo en la cuenta (un consultorio no tiene hospitalización). */
 function Guard({ perm, feature, children }: { perm?: Permission; feature?: 'hospital' | 'observation'; children: ReactNode }) {
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="hospitalizados" element={<Guard perm="inpatient.view" feature="hospital"><Inpatients /></Guard>} />
             <Route path="hospitalizados/:id/expediente" element={<Guard perm="inpatient.view"><FullRecord /></Guard>} />
             <Route path="hospitalizados/:id" element={<Guard perm="inpatient.view"><InpatientFile key="hospitalizacion" /></Guard>} />
+            <Route path="referencias/:id" element={<Guard perm="inpatient.view"><ReferralPage /></Guard>} />
             <Route path="autorizaciones/:id" element={<Guard perm="inpatient.view"><AuthorizationPage /></Guard>} />
             <Route path="seguimientos" element={<Guard perm="followups.view"><Followups /></Guard>} />
             <Route path="pacientes" element={<Guard perm="patients.view"><Patients /></Guard>} />

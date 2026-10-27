@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { BedDouble, Camera, ChevronLeft, ChevronRight, FileSignature, FileText, LogOut, NotebookPen, Pill, Plus, Syringe, TriangleAlert, X } from 'lucide-react'
+import { BedDouble, Camera, ChevronLeft, ChevronRight, FileSignature, FileText, LogOut, NotebookPen, Pill, Plus, Send, Syringe, TriangleAlert, X } from 'lucide-react'
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
@@ -18,6 +18,8 @@ import { useNow } from '../lib/hooks'
 import type { Diagnosis, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
 import { bedLabel, DxPicker } from './Inpatients'
 import { GeneralDataModal } from './GeneralData'
+import { ReferralModal } from './Referral'
+import { features } from '../lib/permissions'
 import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
 import { toBase64 } from './Attachments'
 
@@ -50,7 +52,7 @@ export default function InpatientFile() {
   const obs = h.kind === 'observation'
   const medical = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'procedure')
   const nursing = file.notes.filter((n) => n.kind === 'nursing')
-  const annexes = file.authorizations.length + file.procedures.filter((x) => x.kind === 'authorization').length
+  const annexes = file.authorizations.length + file.procedures.filter((x) => x.kind === 'authorization').length + file.referrals.length
   const pendingAuth = open && file.authorizations.find((a) => a.template === 'hospital' && a.status === 'pending')
   const tabs: [Tab, string][] = obs ? [
     ['sheet', 'Datos generales'],
@@ -81,7 +83,7 @@ export default function InpatientFile() {
           {open ? (obs
             ? <span className="badge badge--ink">{elapsed(Math.floor((now.getTime() - new Date(h.admittedAt).getTime()) / 60_000))} en observación</span>
             : <span className="badge badge--mint">Día {stayDay(h.admittedAt)} de estancia</span>)
-            : <span className="badge badge--done">Egresó {h.dischargedAt && dateTime(h.dischargedAt)}</span>}
+            : <span className="badge badge--done">{h.outcome === 'referred' ? `Referido${h.outcomeNote ? ` a ${h.outcomeNote}` : ''}` : 'Egresó'} {h.dischargedAt && dateTime(h.dischargedAt)}</span>}
           {h.observationAt && <span className="badge badge--amber">Vino de observación ({dateTime(h.observationAt)})</span>}
           <span className="muted">{h.diagnoses.map((d) => d.label).join('; ')}</span>
         </div>
@@ -491,6 +493,8 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
   // La nota de consulta externa que dio el ingreso es la nota de ingreso (también en observación): no se pide otra
   const hasAdmission = notes.some((n) => n.kind === 'admission') || obs || !!h.observationAt || !!h.consultationId
   const [converting, setConverting] = useState(false)
+  const [referring, setReferring] = useState(false)
+  const { settings } = useStore()
   const discharged = notes.some((n) => n.kind === 'discharge')
   const [writing, setWriting] = useState<null | 'note' | 'procedure' | 'discharge' | 'authorization'>(null)
   const [authFor, setAuthFor] = useState<string | undefined>()
@@ -515,7 +519,10 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
               {doctor && <button className="btn btn--primary" onClick={() => setWriting('procedure')}><Syringe size={16} />Procedimiento</button>}
               <button className={`btn ${doctor ? 'btn--primary' : 'btn--soft'}`} onClick={() => { setAuthFor(undefined); setWriting('authorization') }}><FileSignature size={16} />Autorización quirúrgica</button>
               {doctor && hasAdmission && !discharged && <button className="btn btn--primary" onClick={() => setWriting('discharge')}><LogOut size={16} />Egreso</button>}
-              {doctor && obs && <button className="btn btn--soft" onClick={() => setConverting(true)}><BedDouble size={16} />Pasar a hospitalización</button>}
+              {/* El consultorio no hospitaliza: refiere al paciente a otro centro */}
+              {doctor && obs && (features(settings).hospital
+                ? <button className="btn btn--soft" onClick={() => setConverting(true)}><BedDouble size={16} />Pasar a hospitalización</button>
+                : <button className="btn btn--soft" onClick={() => setReferring(true)}><Send size={16} />Referencia</button>)}
             </div>
           </div>
         </section>
@@ -526,6 +533,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
       {writing === 'authorization' && <AuthorizationForm file={file} p={p} template="surgical" initialProcedure={authFor} onClose={() => setWriting(null)}
         onCreated={(a) => { setWriting(null); nav(`/app/autorizaciones/${a.id}`) }} />}
       {writing === 'discharge' && <Discharge file={file} p={p} reload={() => { setWriting(null); reload() }} />}
+      {referring && <ReferralModal stayId={h.id} onClose={() => setReferring(false)} />}
       {converting && <ConvertModal file={file} p={p} onClose={() => setConverting(false)} onDone={() => nav(`/app/hospitalizados/${h.id}?tab=notas`)} />}
       {h.consultationId && <ConsultEntry consultationId={h.consultationId} />}
       {timeline.length ? timeline.map((item) => {
@@ -1055,13 +1063,20 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
           <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <p className="muted">Se imprimen, se firman en papel y se sube la foto o el PDF de la hoja firmada.</p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn btn--soft" onClick={() => setMaking('hospital')}><FileSignature size={16} />Autorización de hospitalización{hospital?.status === 'pending' ? ' (pendiente)' : ''}</button>
+              {file.hospitalization.kind === 'hospital' && <button className="btn btn--soft" onClick={() => setMaking('hospital')}><FileSignature size={16} />Autorización de hospitalización{hospital?.status === 'pending' ? ' (pendiente)' : ''}</button>}
               <button className="btn btn--primary" onClick={() => setMaking('surgical')}><FileSignature size={16} />Autorización quirúrgica</button>
             </div>
           </div>
         </section>
       )}
       {making && <AuthorizationForm file={file} p={p} template={making} onClose={() => setMaking(null)} onCreated={(a) => { setMaking(null); nav(`/app/autorizaciones/${a.id}`) }} />}
+      {file.referrals.map((r) => (
+        <article key={r.id} className="panel consult-entry">
+          <div className="panel__head"><div><h2>Referencia {r.number} {r.voidedAt ? <span className="badge badge--red">Anulada</span> : <span className="badge badge--mint">Emitida</span>}</h2>
+            <p>{dateTime(r.issuedAt)}, {staffById(r.issuedBy)?.name}{r.destination ? ` · a ${r.destination}` : ''}</p></div>
+            <Link className="btn btn--ghost btn--sm" to={`/app/referencias/${r.id}`}>Ver e imprimir</Link></div>
+        </article>
+      ))}
       {list.map((a) => <AuthorizationEntry key={a.id} a={a} file={file} reload={reload} />)}
       {legacy.map((x) => (
         <article key={x.id} className="panel consult-entry">
@@ -1070,7 +1085,7 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
           <div className="panel__body"><p><b>{x.name}</b></p>{x.notes && <p>{x.notes}</p>}</div>
         </article>
       ))}
-      {!list.length && !legacy.length && <section className="panel"><div className="empty">Sin autorizaciones todavía.</div></section>}
+      {!list.length && !legacy.length && !file.referrals.length && <section className="panel"><div className="empty">Sin autorizaciones todavía.</div></section>}
     </div>
   )
 }

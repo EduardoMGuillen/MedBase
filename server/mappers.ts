@@ -1,6 +1,6 @@
 import type {
   Appointment, Attachment, AuditEntry, Authorization, AuthorizationData, Background, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
-  GuestPatient, Patient, Payment, Prescription, Service, Staff, Vitals,
+  GuestPatient, Patient, Payment, Prescription, Referral, ReferralData, Service, Staff, Vitals,
 } from '../src/lib/types.js'
 import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
 import { DNI_MASK } from '../src/lib/format.js'
@@ -102,6 +102,7 @@ export const toHospitalization = (r: Row): Hospitalization => ({
   status: r.status as Hospitalization['status'], dischargedAt: s(r.discharged_at), dischargedBy: s(r.discharged_by), prescriptionId: s(r.prescription_id),
   observationAt: s(r.observation_at), convertedAt: s(r.converted_at), convertedBy: s(r.converted_by),
   authPending: r.auth_pending == null ? undefined : Boolean(r.auth_pending),
+  outcome: (s(r.outcome) as Hospitalization['outcome']) ?? undefined, outcomeNote: s(r.outcome_note),
 })
 
 export const toInpatientNote = (r: Row): InpatientNote => ({
@@ -173,4 +174,9 @@ export const toClinic = (r: Row): Clinic => ({
     staff: Number(r.staff_count), patients: Number(r.patient_count), appointments30: Number(r.appt30), consultations30: Number(r.cons30),
     lastActivity: s(r.last_activity),
   },
+})
+
+export const toReferral = (r: Row): Referral => ({
+  id: String(r.id), hospitalizationId: String(r.hospitalization_id), patientId: String(r.patient_id), number: String(r.number), data: j<ReferralData>(r.data, {} as ReferralData),
+  destination: s(r.destination), issuedBy: String(r.issued_by), issuedAt: String(r.issued_at), voidedAt: s(r.voided_at), voidedBy: s(r.voided_by), voidReason: s(r.void_reason),
 })

@@ -243,3 +243,54 @@ describe('P5 autorización quirúrgica mínima', () => {
     assert.equal((await nurse.post(`/api/inpatient/${h.id}/authorizations`, { template: 'surgical' })).status, 400, 'el procedimiento es obligatorio')
   })
 })
+
+describe('P6 referencia en el consultorio y observación sin autorización', () => {
+  test('la observación no genera autorización de hospitalización; al hospitalizar sí; las viejas pendientes pasan a "No aplica"', async () => {
+    const { doc, apptId } = await openConsult('p5')
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Fiebre', diagnoses: DX, orders: ['Reposo.'], observe: true })
+    let file = (await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body
+    assert.equal(file.authorizations.length, 0)
+    assert.equal((await doc.post(`/api/inpatient/${c.body.hospitalizationId}/authorizations`, { template: 'hospital', companion: { name: 'Ana Ruiz', phone: '9999-0000' } })).status, 409)
+    assert.equal((await doc.post(`/api/inpatient/${c.body.hospitalizationId}/authorizations`, { template: 'surgical', procedure: 'Sutura de herida' })).status, 201, 'la quirúrgica sí')
+    await doc.post(`/api/inpatient/${c.body.hospitalizationId}/convert`, { bedId: await freeBed() })
+    file = (await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body
+    assert.equal(file.authorizations.filter((a: any) => a.template === 'hospital' && a.status === 'pending').length, 1)
+    // Una autorización de hospitalización pendiente en una observación (de antes) pasa a "No aplica"; la firmada no se toca
+    const { SCHEMA } = await import('./db.js')
+    const obs = (await (await as('alopez@demo.clinara')).get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'observation')
+    await sql.run(`INSERT INTO authorizations (id, clinic_id, hospitalization_id, patient_id, template, data, status, created_by, created_at) VALUES ('au-old', 'c-al', ?, ?, 'hospital', '{}', 'pending', 's3-lopez', ?)`,
+      [obs.id, obs.patientId, new Date().toISOString()])
+    await sql.run(`INSERT INTO authorizations (id, clinic_id, hospitalization_id, patient_id, template, data, status, created_by, created_at) VALUES ('au-signed', 'c-al', ?, ?, 'hospital', '{}', 'signed', 's3-lopez', ?)`,
+      [obs.id, obs.patientId, new Date().toISOString()])
+    await sql.exec(SCHEMA)
+    assert.equal((await sql.one(`SELECT status FROM authorizations WHERE id = 'au-old'`))!.status, 'not_applicable')
+    assert.equal((await sql.one(`SELECT status FROM authorizations WHERE id = 'au-signed'`))!.status, 'signed')
+    assert.ok(!(await (await as('alopez@demo.clinara')).get('/api/bootstrap')).body.inpatients.find((h: any) => h.id === obs.id).authPending)
+  })
+  test('el consultorio emite la referencia con lo del expediente; la observación se cierra como "Referido"', async () => {
+    const doc = await as('alopez@demo.clinara')
+    const asi = await as('asistente@demo.clinara')
+    const obs = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'observation')
+    const draft = await doc.get(`/api/inpatient/${obs.id}/referral-draft`)
+    assert.equal(draft.status, 200)
+    assert.match(draft.body.diagnosis, /1A40\.Z/)
+    assert.equal(draft.body.history, '', 'sin HEA en el expediente: queda vacía, no se inventa')
+    assert.equal(draft.body.condition, '')
+    assert.equal((await asi.get(`/api/inpatient/${obs.id}/referral-draft`)).status, 403, 'la asistente no emite')
+    const r = await doc.post(`/api/inpatient/${obs.id}/referral`, { ...draft.body, destination: 'Hospital Escuela', condition: 'Estable' })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.match(r.body.number, /^REF-\d{4}-0001$/)
+    assert.equal(r.body.data.destination, 'Hospital Escuela')
+    const file = (await asi.get(`/api/inpatient/${obs.id}`)).body
+    assert.equal(file.hospitalization.status, 'discharged')
+    assert.equal(file.hospitalization.outcome, 'referred')
+    assert.equal(file.referrals.length, 1)
+    assert.ok(!(await doc.get('/api/bootstrap')).body.inpatients.some((h: any) => h.id === obs.id), 'sale de la lista de observación')
+    assert.equal((await asi.get(`/api/referrals/${r.body.id}`)).status, 200, 'la asistente la ve e imprime')
+    assert.equal((await doc.post(`/api/inpatient/${obs.id}/referral`, draft.body)).status, 409, 'no se emite otra mientras siga vigente')
+    assert.equal((await doc.post(`/api/referrals/${r.body.id}/void`, { reason: 'Destino equivocado' })).status, 200)
+    const again = await doc.post(`/api/inpatient/${obs.id}/referral`, { ...draft.body, destination: 'Hospital San Felipe' })
+    assert.equal(again.status, 201)
+    assert.match(again.body.number, /-0002$/)
+  })
+})
