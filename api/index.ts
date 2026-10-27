@@ -1,3 +1,4 @@
+import '../server/tz.js'
 import { createApp } from '../server/app.js'
 import { createSql } from '../server/sql.js'
 

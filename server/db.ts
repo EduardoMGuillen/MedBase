@@ -540,6 +540,7 @@ export function ensureDb(sql: Sql) {
         await addDemoCases(q)
         await linkPendingAdmissions(q)
         await addDemoOffice(q)
+        await fixOfficeDemoTimes(q)
         await backfillOrders(q)
       }
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
@@ -794,6 +795,37 @@ async function insertOffice(q: Sql) {
       VALUES (?,?,?,NULL,?,?,?,?,?,?,'active','observation')`, [stay, c.id, k.patientId, k.id, date, d.doctorId, k.reason, JSON.stringify(k.dx), '3256-5050'])
     await syncStayOrders(q, { clinicId: c.id, hospitalizationId: stay })
   }
+}
+
+/**
+ * v24: el consultorio de demostración se cargó en Vercel, que corre en UTC, a las 18:3x de Honduras (00:3x UTC del
+ * día siguiente). "Hoy" fue el día siguiente y las horas locales ("08:30") se leyeron como UTC: la observación de
+ * Gabriela Matamoros quedó "27 oct, 02:30". Sólo se corrigen las filas que creó la semilla (por su id) y sólo si
+ * siguen desfasadas (la hora guardada es la hora local leída como UTC), así que es idempotente. Las horas reales
+ * (llegada, preclínica, autorización) no se tocan.
+ */
+export async function fixOfficeDemoTimes(q: Sql) {
+  const k = await q.one(`SELECT c.date, a.start FROM consultations c JOIN appointments a ON a.id = c.appointment_id WHERE c.id = 'k-r5-1' AND c.clinic_id = ?`, [OFFICE_CLINIC])
+  if (!k || String(k.date) !== `${String(k.start).slice(0, 19)}.000Z`) return
+  const clinic = (await q.one('SELECT created_at FROM clinics WHERE id = ?', [OFFICE_CLINIC]))!
+  // Día local (Honduras) en que se cargó la demo: las citas "de hoy" deben caer ese día
+  const loadedOn = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Tegucigalpa' }).format(new Date(String(clinic.created_at)))
+  const today = await q.one(`SELECT start FROM appointments WHERE id = 'c201' AND clinic_id = ?`, [OFFICE_CLINIC])
+  const dayShift = today && String(today.start).slice(0, 10) > loadedOn ? -1 : 0
+  const offsetMs = 6 * 3_600_000 + dayShift * 24 * 3_600_000
+  const iso = (v: unknown) => new Date(new Date(String(v)).getTime() + offsetMs).toISOString()
+  const naive = (v: unknown) => { const d = new Date(`${String(v).slice(0, 19)}Z`); d.setUTCDate(d.getUTCDate() + dayShift); return d.toISOString().slice(0, 19) }
+  for (const a of await q.query(`SELECT id, start FROM appointments WHERE clinic_id = ? AND id ~ '^c2[0-9]{2}$'`, [OFFICE_CLINIC])) await q.run('UPDATE appointments SET start = ? WHERE id = ?', [naive(a.start), String(a.id)])
+  for (const c of await q.query(`SELECT id, date FROM consultations WHERE clinic_id = ? AND id LIKE 'k-r%'`, [OFFICE_CLINIC])) await q.run('UPDATE consultations SET date = ? WHERE id = ?', [iso(c.date), String(c.id)])
+  for (const r of await q.query(`SELECT id, issued_at FROM prescriptions WHERE clinic_id = ? AND id LIKE 'rx-k-r%'`, [OFFICE_CLINIC])) await q.run('UPDATE prescriptions SET issued_at = ? WHERE id = ?', [iso(r.issued_at), String(r.id)])
+  for (const h of await q.query(`SELECT id, admitted_at FROM hospitalizations WHERE clinic_id = ? AND id LIKE 'h-k-r%'`, [OFFICE_CLINIC])) {
+    await q.run('UPDATE hospitalizations SET admitted_at = ? WHERE id = ?', [iso(h.admitted_at), String(h.id)])
+    for (const m of await q.query(`SELECT id, ordered_at, first_at FROM hosp_meds WHERE hospitalization_id = ? AND source = 'consultation'`, [String(h.id)])) {
+      await q.run('UPDATE hosp_meds SET ordered_at = ?, first_at = ? WHERE id = ?', [iso(m.ordered_at), iso(m.first_at), String(m.id)])
+    }
+  }
+  await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?,?,?,?)', [new Date().toISOString(), 'sistema',
+    'Actualización: se corrigió la hora de los datos de demostración del consultorio (se habían cargado con la hora UTC)', OFFICE_CLINIC])
 }
 
 /**

@@ -294,3 +294,31 @@ describe('P6 referencia en el consultorio y observación sin autorización', () 
     assert.match(again.body.number, /-0002$/)
   })
 })
+
+describe('P7 zona horaria', () => {
+  test('el servidor usa la hora de Honduras aunque la máquina esté en UTC', async () => {
+    const before = process.env.TZ
+    process.env.TZ = 'UTC'
+    await import(`./tz.js?${Date.now()}`)
+    assert.equal(process.env.TZ, 'America/Tegucigalpa')
+    assert.equal(new Date('2026-10-27T00:30:00Z').getHours(), 18, '00:30 UTC del 27 son las 18:30 del 26 en Honduras')
+    process.env.TZ = before
+  })
+  test('la demo del consultorio cargada en UTC se corrige: la observación queda a las 08:30 del día en que se cargó', async () => {
+    const { fixOfficeDemoTimes } = await import('./db.js')
+    const loaded = new Date('2026-10-27T00:35:00.000Z') // 18:35 del 26 en Honduras
+    // Estado en producción: "hoy" fue el 27 (UTC) y 08:30 se leyó como UTC
+    await sql.run(`UPDATE clinics SET created_at = ? WHERE id = 'c-al'`, [loaded.toISOString()])
+    await sql.run(`UPDATE appointments SET start = '2026-10-27T08:00:00' WHERE id = 'c201'`)
+    await sql.run(`UPDATE appointments SET start = '2026-10-27T08:30:00' WHERE id = 'c202'`)
+    await sql.run(`UPDATE consultations SET date = '2026-10-27T08:30:00.000Z' WHERE id = 'k-r5-1'`)
+    await sql.run(`UPDATE hospitalizations SET admitted_at = '2026-10-27T08:30:00.000Z' WHERE id = 'h-k-r5-1'`)
+    await sql.tx((q) => fixOfficeDemoTimes(q))
+    assert.equal((await sql.one(`SELECT start FROM appointments WHERE id = 'c202'`))!.start, '2026-10-26T08:30:00')
+    assert.equal((await sql.one(`SELECT date FROM consultations WHERE id = 'k-r5-1'`))!.date, '2026-10-26T14:30:00.000Z', '08:30 de Honduras')
+    assert.equal((await sql.one(`SELECT admitted_at FROM hospitalizations WHERE id = 'h-k-r5-1'`))!.admitted_at, '2026-10-26T14:30:00.000Z')
+    // Idempotente
+    await sql.tx((q) => fixOfficeDemoTimes(q))
+    assert.equal((await sql.one(`SELECT date FROM consultations WHERE id = 'k-r5-1'`))!.date, '2026-10-26T14:30:00.000Z')
+  })
+})

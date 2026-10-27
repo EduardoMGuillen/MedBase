@@ -1,3 +1,4 @@
+import './tz.js'
 import { resolve } from 'node:path'
 import { createApp } from './app.js'
 import { createSql } from './sql.js'
