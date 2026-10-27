@@ -130,7 +130,6 @@ describe('M1 orden médica → hoja de medicamentos (regresión)', () => {
     assert.equal(again.body.medOrders, 1)
     const file = (await doc.get(`/api/inpatient/${again.body.id}`)).body
     assert.deepEqual(file.meds.map((m: any) => m.drug), ['Ondansetrón'])
-    // Corregir el ingreso tampoco duplica
     // Ronda 3 (P1): ya no se corrige el ingreso; se editan los datos generales, y eso tampoco duplica
     assert.equal((await doc.patch(`/api/inpatient/${again.body.id}`, { companionName: 'Rosa Pérez' })).status, 200)
     assert.equal((await doc.get(`/api/inpatient/${again.body.id}`)).body.meds.length, 1)
