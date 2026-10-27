@@ -5,7 +5,8 @@ import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
 import { date, fullName, recordNumber, shortStaff, time, dxCode } from '../lib/format'
 import { medLabel, orderMark, splitOrders, stayPath } from '../lib/inpatient'
-import { AUTH_STATUS, authTitle } from '../lib/consent'
+import { authStatus, authTitle } from '../lib/consent'
+import { PdfPages } from '../components/PdfPages'
 import { ROLE_LABEL } from '../lib/permissions'
 import type { Consultation, InpatientFile, InpatientNote, Patient, Vitals } from '../lib/types'
 import { ConsultationBody, Identification } from './PatientChart'
@@ -166,10 +167,14 @@ export default function FullRecord() {
           {auths.length || legacyAuths.length ? <>
             {auths.map((a) => (
               <div key={a.id} className="fr-lab">
-                <b>{authTitle(a)}</b> · {AUTH_STATUS[a.status].label}{a.statusAt ? ` ${dm(a.statusAt)}` : ''} · generada {dm(a.createdAt)} por {staffById(a.createdBy)?.name}
+                <b>{authTitle(a)}</b> · {authStatus(a).label}{a.statusAt ? ` ${dm(a.statusAt)}` : ''} · generada {dm(a.createdAt)} por {staffById(a.createdBy)?.name}
                 {a.statusNote && <p>{a.statusNote}</p>}
-                {a.fileId ? (a.fileMime?.startsWith('image/') ? <img className="fr-annex" src={`/api/attachments/${a.fileId}`} alt="Hoja de autorización firmada" />
-                  : <p className="muted">Hoja firmada en PDF en el expediente electrónico.</p>) : <p className="muted">Sin hoja firmada subida.</p>}
+                {a.pdfSha256 && <p className="muted" style={{ fontSize: 11 }}>Huella SHA-256 del PDF firmado: {a.pdfSha256}</p>}
+                {/* La versión que corresponde: el PDF firmado en pantalla o el escaneo de la hoja de papel */}
+                {a.pdfId || a.fileId ? <PdfPages fileId={(a.pdfId ?? a.fileId)!} label={a.pdfId ? 'La autorización firmada' : 'La hoja firmada escaneada'} />
+                  : <p className="muted">{a.status === 'pending' ? 'Pendiente de firma.' : 'Sin hoja firmada.'}</p>}
+                {a.revocation && <p>Revocada {a.revocation.method === 'virtual' ? 'en pantalla' : 'en papel'} {dm(a.revocation.at)}.</p>}
+                {(a.revocation?.pdfId ?? a.revocation?.fileId) && <PdfPages fileId={(a.revocation!.pdfId ?? a.revocation!.fileId)!} label="La revocación firmada" />}
               </div>
             ))}
             {legacyAuths.map((x) => <div key={x.id} className="fr-lab"><b>{x.name}</b> · registro anterior, {dm(x.createdAt)}{x.notes ? `. ${x.notes}` : ''}</div>)}

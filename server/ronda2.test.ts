@@ -1,5 +1,7 @@
 import { after, before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import zlib from 'node:zlib'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { createApp } from './app.js'
@@ -36,6 +38,9 @@ async function as(email: string) {
   return {
     get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), patch: (p: string, b: unknown) => call('PATCH', p, b),
     put: (p: string, b: unknown) => call('PUT', p, b), del: (p: string) => call('DELETE', p),
+    /** El archivo tal cual (sin JSON). */
+    raw: async (p: string) => Buffer.from(await (await fetch(`${base}${p}`, { headers: { cookie } })).arrayBuffer()),
+    range: (p: string, range: string) => fetch(`${base}${p}`, { headers: { cookie, range } }),
   }
 }
 
@@ -89,5 +94,118 @@ describe('A3 la autorización de hospitalización no va en observación', () => 
     // Correr la migración otra vez no duplica
     await sql.tx((q) => migrateObservationAuthorizations(q))
     assert.equal((await sql.query(`SELECT * FROM authorizations WHERE hospitalization_id = ?`, [stayId])).length, 2)
+  })
+})
+
+/** Un PNG de verdad (una raya diagonal), como el que deja el recuadro de firma. */
+function signaturePng(seed = 1) {
+  const w = 120, h = 40
+  const raw = Buffer.alloc((w * 4 + 1) * h)
+  for (let y = 0; y < h; y++) {
+    raw[y * (w * 4 + 1)] = 0
+    for (let x = 0; x < w; x++) {
+      const on = Math.abs(y - Math.round((x * h) / w)) <= 1 || (seed > 1 && Math.abs(y - h / 2) < 1)
+      const o = y * (w * 4 + 1) + 1 + x * 4
+      raw[o] = raw[o + 1] = raw[o + 2] = on ? 20 : 255
+      raw[o + 3] = 255
+    }
+  }
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length)
+    const td = Buffer.concat([Buffer.from(type), data])
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(td) >>> 0)
+    return Buffer.concat([len, td, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6
+  const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw, { level: 0 })), chunk('IEND', Buffer.alloc(0))])
+  return `data:image/png;base64,${png.toString('base64')}`
+}
+
+describe('A1 y A2 firma en pantalla y escaneo', () => {
+  test('enfermería toma la firma del paciente, el médico firma con su contraseña y se genera el PDF con su huella', async () => {
+    const { doc, nurse, stayId } = await observation('Firma')
+    await doc.post(`/api/inpatient/${stayId}/convert`, { bedId: await freeBed() })
+    const auth = (await doc.get(`/api/inpatient/${stayId}`)).body.authorizations[0]
+    // Sin la casilla de lectura no se acepta
+    assert.equal((await nurse.post(`/api/authorizations/${auth.id}/sign`, { action: 'accept', patient: { signer: 'patient', signature: signaturePng() } })).status, 400)
+    // Representante sin identidad ni parentesco: no
+    assert.equal((await nurse.post(`/api/authorizations/${auth.id}/sign`, { action: 'accept', patient: { signer: 'representative', representative: { name: 'Ana Ruiz' }, signature: signaturePng(), readConfirmed: true } })).status, 400)
+    // Recuadro vacío: no
+    assert.equal((await nurse.post(`/api/authorizations/${auth.id}/sign`, { action: 'accept', patient: { signer: 'patient', readConfirmed: true } })).status, 400)
+    const rep = { name: 'Ana Ruiz de Velásquez', dni: '0801198012345', relation: 'Esposa' }
+    let r = await nurse.post(`/api/authorizations/${auth.id}/sign`, { action: 'accept', patient: { signer: 'representative', representative: rep, signature: signaturePng(), readConfirmed: true,
+      witness: { name: 'Pedro Gómez', dni: '0801-1990-11111', signature: signaturePng(2) } } })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.status, 'pending', 'falta el médico: sigue pendiente')
+    assert.equal(r.body.signing.representative.dni, '0801-1980-12345')
+    assert.equal(r.body.signing.signature, 'guardada', 'la imagen no viaja al cliente')
+    // Enfermería no firma como médico
+    assert.equal((await nurse.post(`/api/authorizations/${auth.id}/sign`, { action: 'accept', doctor: { password: 'demo1234', signature: signaturePng() } })).status, 403)
+    assert.equal((await doc.post(`/api/authorizations/${auth.id}/sign`, { action: 'accept', doctor: { password: 'otra', signature: signaturePng() } })).status, 401)
+    r = await doc.post(`/api/authorizations/${auth.id}/sign`, { action: 'accept', doctor: { password: DEMO_PASSWORD, signature: signaturePng(), save: true } })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.status, 'signed')
+    assert.equal(r.body.method, 'virtual')
+    assert.ok(r.body.pdfId && /^[0-9a-f]{64}$/.test(r.body.pdfSha256))
+    const pdf = await doc.raw(`/api/attachments/${r.body.pdfId}`)
+    assert.equal(pdf.subarray(0, 5).toString(), '%PDF-')
+    assert.equal(createHash('sha256').update(pdf).digest('hex'), r.body.pdfSha256, 'la huella guardada es la del PDF')
+    // La firma del médico quedó guardada en su perfil
+    assert.ok((await doc.get('/api/me/signature')).body.signature?.startsWith('data:image/png'))
+    // Firmada: ya no se firma otra vez
+    assert.equal((await doc.post(`/api/authorizations/${auth.id}/sign`, { action: 'accept', patient: { signer: 'patient', signature: signaturePng(), readConfirmed: true } })).status, 409)
+    // Revocación en pantalla, sin firma del médico
+    r = await nurse.post(`/api/authorizations/${auth.id}/sign`, { action: 'revoke', patient: { signer: 'patient', signature: signaturePng(), readConfirmed: true } })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.status, 'revoked')
+    assert.equal(r.body.revocation.method, 'virtual')
+    assert.ok(r.body.revocation.pdfId && r.body.pdfId, 'se conservan los dos PDF')
+  })
+
+  test('el paciente que no puede firmar: firma un testigo con su identidad; el rechazo no pide al médico', async () => {
+    const { doc, nurse, stayId } = await observation('Testigo')
+    const a = (await doc.post(`/api/inpatient/${stayId}/authorizations`, { template: 'surgical', procedure: 'Drenaje de absceso' })).body
+    assert.equal((await nurse.post(`/api/authorizations/${a.id}/sign`, { action: 'refuse', patient: { signer: 'patient', unableReason: 'No sabe escribir', readConfirmed: true } })).status, 400, 'sin testigo no')
+    const r = await nurse.post(`/api/authorizations/${a.id}/sign`, { action: 'refuse', patient: { signer: 'patient', unableReason: 'No sabe escribir', readConfirmed: true,
+      witness: { name: 'Marta Lagos', dni: '0801-1970-22222', signature: signaturePng(2) } } })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.status, 'refused')
+    assert.equal(r.body.signing.unableReason, 'No sabe escribir')
+    assert.equal(r.body.signing.signature, undefined)
+  })
+
+  test('escaneo de hasta 15 MB por partes, lectura por rangos y reemplazo que conserva el anterior', async () => {
+    const { doc, nurse, stayId, patientId } = await observation('Escaneo')
+    const a = (await doc.post(`/api/inpatient/${stayId}/authorizations`, { template: 'surgical', procedure: 'Apendicectomía' })).body
+    const upload = async (bytes: Buffer, name: string) => {
+      const uploadId = crypto.randomUUID()
+      const parts = Math.ceil(bytes.length / (3 * 1024 * 1024))
+      for (let i = 0; i < parts; i++) {
+        const r = await nurse.post(`/api/uploads/${uploadId}/parts`, { index: i, data: bytes.subarray(i * 3 * 1024 * 1024, (i + 1) * 3 * 1024 * 1024).toString('base64') })
+        assert.equal(r.status, 201, JSON.stringify(r.body))
+      }
+      return nurse.post(`/api/patients/${patientId}/attachments/assemble`, { uploadId, parts, name, mime: 'application/pdf', category: 'document', title: 'Autorización firmada', hospitalizationId: stayId })
+    }
+    const big = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(7 * 1024 * 1024, 7)])
+    const att = await upload(big, 'escaneo.pdf')
+    assert.equal(att.status, 201, JSON.stringify(att.body))
+    assert.equal(att.body.size, big.length)
+    // Se lee en rangos de 3 MB
+    const first = await nurse.range(`/api/attachments/${att.body.id}`, 'bytes=0-')
+    assert.equal(first.status, 206)
+    assert.equal(first.headers.get('content-range'), `bytes 0-${3 * 1024 * 1024 - 1}/${big.length}`)
+    // Más de 15 MB: no
+    assert.equal((await upload(Buffer.alloc(15 * 1024 * 1024 + 10), 'enorme.pdf')).status, 413)
+    let r = await nurse.post(`/api/authorizations/${a.id}/status`, { status: 'signed', fileId: att.body.id })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.method, 'paper')
+    const second = await upload(Buffer.from('%PDF-1.7\nbien'), 'correcto.pdf')
+    assert.equal((await nurse.post(`/api/authorizations/${a.id}/replace-scan`, { fileId: second.body.id })).status, 400, 'pide motivo')
+    r = await nurse.post(`/api/authorizations/${a.id}/replace-scan`, { fileId: second.body.id, reason: 'Se subió la hoja de otro paciente' })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.fileId, second.body.id)
+    assert.deepEqual(r.body.fileHistory.map((x: any) => x.fileId), [att.body.id])
+    assert.equal((await nurse.raw(`/api/attachments/${att.body.id}`)).subarray(0, 5).toString(), '%PDF-', 'el anterior no se borró')
   })
 })

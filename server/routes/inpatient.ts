@@ -585,10 +585,10 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   })
 
   /**
-   * Firmada (con la foto o el PDF de la hoja firmada), rechazada ("No autorizo") o revocada. Lo registran
-   * enfermería o el médico; queda quién y cuándo.
+   * En papel: firmada (con la foto o el PDF de la hoja firmada), rechazada ("No autorizo") o revocada. Lo registran
+   * enfermería o el médico; queda quién y cuándo. La firma en pantalla va por /sign (routes/consent.ts).
    */
-  app.post('/api/authorizations/:aid/status', auth, need('inpatient.view'), async (req, res) => {
+  app.post('/api/authorizations/:aid/status', auth, need('inpatient.orders', 'inpatient.care'), async (req, res) => {
     const b = parse(z.object({ status: z.enum(['signed', 'refused', 'revoked']), fileId: z.string().optional(), note: z.string().trim().max(500).optional() }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
@@ -600,8 +600,16 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     if (b.status === 'signed' && !b.fileId) fail(400, 'Sube la foto o el PDF de la hoja firmada.')
     if (b.status !== 'signed' && !(b.note && b.note.length >= 3) && !b.fileId) fail(400, 'Escribe una nota o sube la hoja firmada.')
     if (b.fileId && !(await sql.one('SELECT 1 FROM attachments WHERE id = ? AND clinic_id = ? AND patient_id = ?', [b.fileId, cid, a.patientId]))) fail(400, 'El archivo no corresponde a este paciente.')
-    await sql.run('UPDATE authorizations SET status = ?, file_id = COALESCE(?, file_id), status_at = ?, status_by = ?, status_note = ? WHERE id = ?',
-      [b.status, b.fileId ?? null, new Date().toISOString(), user.id, b.note || null, a.id])
+    const now = new Date().toISOString()
+    if (b.status === 'revoked') {
+      // La revocación en papel queda aparte: la hoja firmada (o el PDF virtual) de la autorización se conserva
+      const revocation = { method: 'paper', at: now, by: user.id, fileId: b.fileId, note: b.note || undefined }
+      await sql.run(`UPDATE authorizations SET status = 'revoked', revocation = ?, status_at = ?, status_by = ?, status_note = ? WHERE id = ?`,
+        [JSON.stringify(revocation), now, user.id, b.note || null, a.id])
+    } else {
+      await sql.run(`UPDATE authorizations SET status = ?, file_id = COALESCE(?, file_id), method = CASE WHEN ?::text IS NULL THEN method ELSE 'paper' END, status_at = ?, status_by = ?, status_note = ? WHERE id = ?`,
+        [b.status, b.fileId ?? null, b.fileId ?? null, now, user.id, b.note || null, a.id])
+    }
     const label = { signed: 'firmada', refused: 'rechazada (no autorizo)', revoked: 'revocada' }[b.status]
     await audit(user, `Registró como ${label} la autorización ${a.template === 'hospital' ? 'de hospitalización' : a.data.procedure ? `quirúrgica "${a.data.procedure}"` : 'general'} de ${a.data.patient.name}`)
     res.json(toAuthorization((await sql.one('SELECT * FROM authorizations WHERE id = ?', [a.id]))!))

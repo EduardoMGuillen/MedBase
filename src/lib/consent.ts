@@ -1,4 +1,5 @@
-import type { Authorization } from './types'
+import type { Authorization, AuthorizationData, ConsentPerson } from './types.js'
+import { date, time } from './format.js'
 
 /**
  * Plantillas de autorización (consentimiento informado). Son dos documentos:
@@ -182,7 +183,7 @@ export function consentStatements(kind: 'surgical' | 'general' = 'surgical'): st
 export const AUTH_STATUS: Record<Authorization['status'], { label: string; tone: string }> = {
   pending: { label: 'Pendiente de firma', tone: 'amber' },
   signed: { label: 'Firmada', tone: 'mint' },
-  refused: { label: 'Rechazada (no autoriza)', tone: 'red' },
+  refused: { label: 'No autoriza', tone: 'red' },
   revoked: { label: 'Revocada', tone: 'red' },
   not_applicable: { label: 'No aplica (observación)', tone: 'ink' },
 }
@@ -198,3 +199,106 @@ export const authTitle = (a: Pick<Authorization, 'template' | 'data'>) =>
 /** Tipos de anestesia para elegir o escribir. */
 export const ANESTHESIA = ['Local', 'Local con sedación', 'Regional (raquídea o epidural)', 'General', 'No requiere']
 
+
+/**
+ * Estado que se ve: Pendiente de firma (o firmada por el paciente y falta el médico), Firmada (virtual), Firmada
+ * (papel escaneado), No autoriza o Revocada.
+ */
+export function authStatus(a: Pick<Authorization, 'status' | 'method' | 'signing' | 'fileId'>) {
+  if (a.status === 'pending' && a.signing?.action === 'accept' && !a.signing.doctor) return { label: 'Firmó el paciente · falta el médico', tone: 'amber' }
+  if (a.status === 'signed') return { label: a.method === 'virtual' ? 'Firmada (virtual)' : 'Firmada (papel escaneado)', tone: 'mint' }
+  if (a.status === 'refused') return { label: `No autoriza${a.method === 'virtual' ? ' (virtual)' : a.fileId ? ' (papel)' : ''}`, tone: 'red' }
+  return AUTH_STATUS[a.status]
+}
+
+/** "Celular · Chrome en Android": tipo de dispositivo y navegador, para la constancia de la firma. */
+export function deviceLabel(ua: string) {
+  const kind = /iPad|Tablet|(Android(?!.*Mobile))/i.test(ua) ? 'Tableta' : /Mobi|iPhone|Android/i.test(ua) ? 'Celular' : 'Computadora'
+  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Firefox\//.test(ua) ? 'Firefox'
+    : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'navegador desconocido'
+  const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : ''
+  return `${kind} · ${browser}${os ? ` en ${os}` : ''}`
+}
+
+/** dd/mm/aaaa */
+export const shortDate = (iso: string) => date(iso, { day: '2-digit', month: '2-digit', year: 'numeric' })
+
+/** Texto de un documento de autorización, igual en la vista de lectura del paciente y en el PDF firmado. */
+export interface ConsentDocument {
+  title: string
+  facts: [string, string][]
+  intro: string
+  items: string[]
+  closing?: string
+}
+
+const BLANK = '__________'
+
+/** Quién declara: el paciente o su representante, con su identidad y parentesco. */
+export function signerText(d: AuthorizationData, rep?: ConsentPerson) {
+  if (!rep) return d.patient.name
+  return `${rep.name}${rep.dni ? `, identidad ${rep.dni}` : ''}${rep.relation ? `, ${rep.relation.toLowerCase()}` : ''}, en representación de ${d.patient.name}`
+}
+
+/**
+ * Lo que dice el documento según lo que se firma: la autorización, el rechazo informado ("No autorizo") o la
+ * revocación. `rep` es el representante legal, si firma uno.
+ */
+export function consentDocument(a: Pick<Authorization, 'template' | 'data' | 'statusAt'>, action: 'accept' | 'refuse' | 'revoke', rep?: ConsentPerson): ConsentDocument {
+  const d = a.data
+  const hospital = a.template === 'hospital'
+  const facts: [string, string][] = [
+    ['Paciente', d.patient.name], ['Identidad', d.patient.dni ?? (d.patient.minor ? 'Menor de edad' : 'Sin dato')], ['Edad', d.patient.age],
+    ['Sexo', d.patient.sex === 'F' ? 'Femenino' : 'Masculino'], ['Expediente', d.patient.record],
+    ['Médico', `${d.doctor.name}${d.doctor.license ? `, colegiación ${d.doctor.license}` : ''}`],
+  ]
+  if (hospital) {
+    facts.push(['Ingreso', d.admission ? `${shortDate(d.admission.at)}, ${time(d.admission.at)}` : 'Sin dato'],
+      ['Diagnóstico de ingreso', d.admission?.diagnosis ?? d.diagnosis ?? 'Sin dato'])
+    if (d.companion) facts.push(['Acompañante', `${d.companion.name}${d.companion.relation ? ` (${d.companion.relation})` : ''}${d.companion.phone ? `, tel. ${d.companion.phone}` : ''}`])
+  } else {
+    facts.push(['Procedimiento', d.procedure ?? BLANK], ['Diagnóstico', d.diagnosis || BLANK])
+    if (!d.generic) {
+      for (const [k, v] of [['En qué consiste', d.description], ['Beneficios esperados', d.benefits], ['Riesgos frecuentes y graves', d.risks], ['Alternativas', d.alternatives],
+        ['Riesgo de no operarse', d.notDoing], ['Tipo de anestesia', d.anesthesia]] as const) if (v) facts.push([k, v])
+    }
+  }
+  const who = signerText(d, rep)
+  const what = hospital ? 'la hospitalización y la atención descritas en este documento' : `el procedimiento "${d.procedure}"`
+  if (action === 'refuse') {
+    return {
+      title: hospital ? 'Rechazo informado: no autorizo la hospitalización' : 'Rechazo informado: no autorizo el procedimiento',
+      facts, intro: `Yo, ${who}, declaro:`,
+      items: [
+        `Recibí la información sobre ${what}, con palabras que entiendo: para qué sirve, sus beneficios, sus riesgos y las alternativas. Pude hacer preguntas y me las respondieron.`,
+        `Decido no autorizar ${hospital ? 'la hospitalización' : 'el procedimiento'}. Entiendo los riesgos de no hacerlo.`,
+        'Tomo esta decisión de forma libre y voluntaria. Sé que puedo cambiar de opinión y pedir de nuevo la atención.',
+      ],
+    }
+  }
+  if (action === 'revoke') {
+    return {
+      title: `Revocación de la ${hospital ? 'autorización de hospitalización' : 'autorización quirúrgica'}`,
+      facts, intro: `Yo, ${who}, declaro:`,
+      items: [
+        `Revoco la autorización que di${a.statusAt ? ` el ${shortDate(a.statusAt)} a las ${time(a.statusAt)}` : ''} para ${what}.`,
+        'Me explicaron los riesgos de revocarla y tomo esta decisión de forma libre y voluntaria.',
+      ],
+    }
+  }
+  if (hospital) {
+    return { title: 'Autorización de hospitalización', facts, intro: `Yo, ${who}, autorizo a los médicos y al personal de ${d.clinic.name}:`, items: HOSPITAL_CONSENT, closing: HOSPITAL_DECLARATION }
+  }
+  return {
+    title: a.template === 'general' ? 'Autorización general de ingreso y atención' : 'Autorización quirúrgica (consentimiento informado)',
+    facts, intro: `Yo, ${who}, declaro:`,
+    items: d.generic ? SURGICAL_GENERIC : consentStatements(a.template === 'general' ? 'general' : 'surgical'),
+  }
+}
+
+/** Casilla que marca quien firma: la misma en la pantalla y en el PDF. */
+export const READ_CONFIRMATION = 'He leído este documento, me lo explicaron y pude hacer preguntas.'
+
+/** Constancia al pie del PDF firmado en pantalla. No dice que tenga validez legal plena: es una firma electrónica simple. */
+export const SIGNATURE_NOTICE = 'Firma electrónica simple: las firmas se dibujaron en pantalla. No es una firma electrónica avanzada con certificado digital ' +
+  '(Ley sobre Firmas Electrónicas, Decreto 149-2013). La huella SHA-256 de este PDF queda registrada en el expediente para comprobar que no se alteró.'

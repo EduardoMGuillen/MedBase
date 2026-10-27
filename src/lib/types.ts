@@ -37,6 +37,8 @@ export interface Staff {
   clinicKind?: ClinicKind
   /** Preferencias del usuario: el último formato de nota que usó. */
   prefs?: { noteFormat?: 'soap' | 'dx' }
+  /** El médico tiene su firma guardada (la imagen no viaja con la lista del personal). */
+  hasSignature?: boolean
 }
 
 /** Una clínica dentro de la plataforma. */
@@ -460,6 +462,50 @@ export interface Authorization {
   statusAt?: string
   statusBy?: string
   statusNote?: string
+  /** Cómo se firmó: en pantalla ('virtual') o en papel con el escaneo subido ('paper'). */
+  method?: 'virtual' | 'paper'
+  /** Firma en pantalla de la autorización o del rechazo. Mientras falta el médico, la autorización sigue pendiente. */
+  signing?: ConsentSigning
+  /** PDF final generado al firmar en pantalla, con su huella SHA-256. */
+  pdfId?: string
+  pdfSha256?: string
+  /** Revocación (en pantalla o en papel). */
+  revocation?: ConsentRevocation
+  /** Escaneos reemplazados: no se borran. */
+  fileHistory?: { fileId: string; replacedAt: string; replacedBy: string; reason: string }[]
+}
+
+/** Quien firma por el paciente, el testigo o el representante legal. */
+export interface ConsentPerson { name: string; dni?: string; relation?: string }
+
+/**
+ * Lo que queda de una firma en pantalla. Las imágenes de las firmas sólo están en el servidor (y en el PDF);
+ * al cliente llega si cada una existe.
+ */
+export interface ConsentSigning {
+  action: 'accept' | 'refuse' | 'revoke'
+  signer: 'patient' | 'representative'
+  representative?: ConsentPerson
+  /** El paciente no puede firmar (no sabe escribir o está impedido): firma un testigo y queda el motivo. */
+  unableReason?: string
+  witness?: ConsentPerson & { signature?: string }
+  /** Firma del paciente o del representante (PNG en data URL). */
+  signature?: string
+  signedAt: string
+  managedBy: string
+  device: string
+  doctor?: { id: string; name: string; license?: string; signature?: string; at: string }
+}
+
+export interface ConsentRevocation {
+  method: 'virtual' | 'paper'
+  at: string
+  by: string
+  note?: string
+  fileId?: string
+  signing?: ConsentSigning
+  pdfId?: string
+  pdfSha256?: string
 }
 
 export interface AuthorizationData {

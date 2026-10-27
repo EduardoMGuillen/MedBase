@@ -1,6 +1,6 @@
 import type {
   Appointment, Attachment, AuditEntry, Authorization, AuthorizationData, Background, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
-  GuestPatient, Patient, Payment, Prescription, Referral, ReferralData, Service, Staff, Vitals,
+  ConsentRevocation, ConsentSigning, GuestPatient, Patient, Payment, Prescription, Referral, ReferralData, Service, Staff, Vitals,
 } from '../src/lib/types.js'
 import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
 import { DNI_MASK } from '../src/lib/format.js'
@@ -16,6 +16,7 @@ export const toStaff = (r: Row): Staff => ({
   schedule: r.schedule ? j(r.schedule, undefined) : undefined, serviceId: s(r.service_id), twoFactor: Boolean(r.totp_enabled),
   prefs: r.prefs ? j<Staff['prefs']>(r.prefs, {}) : undefined,
   clinicKind: r.clinic_kind == null ? undefined : (String(r.clinic_kind) as Staff['clinicKind']),
+  hasSignature: r.signature ? true : undefined,
 })
 
 export const toPatient = (r: Row, clinical: boolean): Patient => ({
@@ -136,7 +137,20 @@ export const toAuthorization = (r: Row): Authorization => ({
   id: String(r.id), hospitalizationId: String(r.hospitalization_id), patientId: String(r.patient_id), template: r.template as Authorization['template'],
   data: j<AuthorizationData>(r.data, {} as AuthorizationData), status: r.status as Authorization['status'], createdBy: String(r.created_by), createdAt: String(r.created_at),
   fileId: s(r.file_id), fileMime: s(r.file_mime), statusAt: s(r.status_at), statusBy: s(r.status_by), statusNote: s(r.status_note),
+  method: s(r.method) as Authorization['method'], signing: r.signing ? withoutImages(j<ConsentSigning>(r.signing, {} as ConsentSigning)) : undefined,
+  pdfId: s(r.pdf_id), pdfSha256: s(r.pdf_sha256),
+  revocation: r.revocation ? (({ signing, ...x }) => ({ ...x, signing: signing && withoutImages(signing) }))(j<ConsentRevocation>(r.revocation, {} as ConsentRevocation)) : undefined,
+  fileHistory: r.file_history ? j<NonNullable<Authorization['fileHistory']>>(r.file_history, []) : undefined,
 })
+
+/** Las imágenes de las firmas se quedan en el servidor y en el PDF; al cliente sólo llega si existen. */
+function withoutImages(x: ConsentSigning): ConsentSigning {
+  return {
+    ...x, signature: x.signature ? 'guardada' : undefined,
+    witness: x.witness && { ...x.witness, signature: x.witness.signature ? 'guardada' : undefined },
+    doctor: x.doctor && { ...x.doctor, signature: x.doctor.signature ? 'guardada' : undefined },
+  }
+}
 
 export const toDose = (r: Row): Dose => ({
   id: String(r.id), medId: String(r.med_id), scheduledAt: s(r.scheduled_at), givenAt: String(r.given_at), givenBy: String(r.given_by),

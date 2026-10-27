@@ -29,6 +29,7 @@ import { diagnosisInput } from './http.js'
 import { registerDrugs } from './routes/drugs.js'
 import { registerCertificates } from './routes/certificates.js'
 import { registerReferrals } from './routes/referrals.js'
+import { registerConsent } from './routes/consent.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { can, permissionsFor, ROLES_BY_KIND, type Permission } from '../src/lib/permissions.js'
 import { yearsOld } from '../src/lib/inpatient.js'
@@ -76,7 +77,8 @@ export function createApp(opts: AppOptions) {
   app.set('trust proxy', 1)
   // Los adjuntos traen su propio parser con un límite mayor
   const smallJson = express.json({ limit: '200kb' })
-  app.use((req, res, next) => (/\/attachments$/.test(req.path) ? next() : smallJson(req, res, next)))
+  // También la firma en pantalla (imágenes de las firmas) y las partes de un archivo grande
+  app.use((req, res, next) => (/\/(attachments|sign|signature|parts)$/.test(req.path) ? next() : smallJson(req, res, next)))
   app.use(cookieParser())
   app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff')
@@ -951,6 +953,7 @@ export function createApp(opts: AppOptions) {
   registerDrugs(app, ctx)
   registerCertificates(app, ctx)
   registerReferrals(app, ctx)
+  registerConsent(app, ctx)
   registerFollowups(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))

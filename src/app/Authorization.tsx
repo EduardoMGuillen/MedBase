@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Camera, ChevronLeft, FileSignature, Printer } from 'lucide-react'
+import { Camera, ChevronLeft, FileSignature, FileText, PenLine, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { date, dateTime, formatPhone, shortStaff, time } from '../lib/format'
 import { yearsOld } from '../lib/inpatient'
-import { AUTH_STATUS, authTitle, consentStatements, FREQUENT_SURGERIES, HOSPITAL_CONSENT, HOSPITAL_DECLARATION, SURGICAL_GENERIC } from '../lib/consent'
+import { authStatus, authTitle, consentStatements, FREQUENT_SURGERIES, HOSPITAL_CONSENT, HOSPITAL_DECLARATION, SURGICAL_GENERIC } from '../lib/consent'
 import type { Authorization, AuthorizationData, InpatientFile, Patient } from '../lib/types'
-import { toBase64 } from './Attachments'
+import { openFile } from '../lib/files'
+import { ConsentSigning } from './ConsentSigning'
+import { ScanUpload } from './ScanUpload'
+import { PdfPages } from '../components/PdfPages'
 import { DniInput } from '../components/DniInput'
 import { ClinicLogo } from './Prescriptions'
 
@@ -87,58 +90,79 @@ export function AuthorizationForm({ file, p, template = 'surgical', initialProce
   )
 }
 
-/** Autorización en la línea de tiempo: estado y acciones (ver e imprimir, subir la hoja firmada, rechazo, revocación). */
-export function AuthorizationEntry({ a, file, reload }: { a: Authorization; file: InpatientFile; reload: () => void }) {
-  const { staffById, can, uploadAttachment, setAuthorizationStatus, notify } = useStore()
-  const [action, setAction] = useState<null | 'signed' | 'refused' | 'revoked'>(null)
-  const [note, setNote] = useState('')
-  const [picked, setPicked] = useState<File | null>(null)
-  const [busy, setBusy] = useState(false)
-  const input = useRef<HTMLInputElement>(null)
+/**
+ * Autorización en Anexos: estado y acciones. Pendiente: firmar en pantalla, subir la hoja firmada en papel o «No
+ * autoriza» (en pantalla o en papel). Firmada: sólo ver e imprimir, revocar y, si fue en papel, reemplazar el escaneo.
+ * Nada se edita después de firmar.
+ */
+export function AuthorizationEntry({ a, file, p, reload }: { a: Authorization; file: InpatientFile; p: Patient; reload: () => void }) {
+  const { staffById, can, user, notify } = useStore()
+  const [signing, setSigning] = useState<null | { action: 'accept' | 'refuse' | 'revoke'; doctorOnly?: boolean }>(null)
+  const [scan, setScan] = useState<null | 'signed' | 'refused' | 'revoked' | 'replace'>(null)
+  const [choose, setChoose] = useState<null | 'refuse' | 'revoke'>(null)
   const open = file.hospitalization.status === 'active'
-  const st = AUTH_STATUS[a.status]
-  const save = async () => {
-    if (!action) return
-    setBusy(true)
-    let fileId: string | undefined
-    if (picked) {
-      if (picked.size > 3 * 1024 * 1024) { notify('El archivo pesa más de 3 MB. Toma la foto con menor resolución.', 'error'); setBusy(false); return }
-      const att = await uploadAttachment(a.patientId, { name: picked.name, mime: picked.type, category: 'document', data: await toBase64(picked), title: `${authTitle(a)} (${AUTH_STATUS[action].label.toLowerCase()})`, takenAt: new Date().toISOString(), hospitalizationId: a.hospitalizationId })
-      if (!att) { setBusy(false); return }
-      fileId = att.id
-    }
-    const ok = await setAuthorizationStatus(a.id, { status: action, fileId, note: note.trim() || undefined })
-    setBusy(false)
-    if (ok) { setAction(null); setPicked(null); setNote(''); reload() }
-  }
+  const manage = open && (can('inpatient.orders') || can('inpatient.care'))
+  const st = authStatus(a)
+  const waitingDoctor = a.status === 'pending' && a.signing?.action === 'accept' && !a.signing.doctor
+  const s = a.signing
+  const who = (id?: string) => shortStaff(staffById(id ?? '')?.name)
+  const view = (id: string) => openFile(id).catch((e: Error) => notify(e.message, 'error'))
+  const done = () => { setSigning(null); setScan(null); setChoose(null); reload() }
   return (
     <article className="panel consult-entry">
       <div className="panel__head">
         <div><h2>{authTitle(a)} <span className={`badge badge--${st.tone}`}>{st.label}{a.status === 'signed' && a.statusAt ? ` ✓ ${dateTime(a.statusAt)}` : ''}</span></h2>
-          <p>Generada {dateTime(a.createdAt)} por {staffById(a.createdBy)?.name}{a.statusAt && a.statusBy ? ` · ${st.label} registrada por ${shortStaff(staffById(a.statusBy)?.name)} ${dateTime(a.statusAt)}` : ''}</p></div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <p>Generada {dateTime(a.createdAt)} por {staffById(a.createdBy)?.name}{a.statusAt && a.statusBy ? ` · registrada por ${who(a.statusBy)} ${dateTime(a.statusAt)}` : ''}</p></div>
+        <div className="auth-actions">
           <Link className="btn btn--ghost btn--sm" to={`/app/autorizaciones/${a.id}`}><Printer size={14} />Ver e imprimir</Link>
-          {a.fileId && <a className="btn btn--ghost btn--sm" href={`/api/attachments/${a.fileId}`} target="_blank" rel="noreferrer">Hoja firmada</a>}
-          {open && can('inpatient.view') && a.status === 'pending' && <>
-            <button className="btn btn--primary btn--sm" onClick={() => setAction('signed')}><Camera size={14} />Subir hoja firmada</button>
-            <button className="btn btn--ghost btn--sm" onClick={() => setAction('refused')}>No autoriza</button>
+          {a.pdfId && <button className="btn btn--ghost btn--sm" onClick={() => view(a.pdfId!)}><FileText size={14} />PDF firmado</button>}
+          {a.fileId && <button className="btn btn--ghost btn--sm" onClick={() => view(a.fileId!)}><FileText size={14} />Hoja escaneada</button>}
+          {manage && a.status === 'pending' && (waitingDoctor
+            ? (can('inpatient.orders') && user?.role === 'doctor'
+              ? <button className="btn btn--primary btn--sm" onClick={() => setSigning({ action: 'accept', doctorOnly: true })}><FileSignature size={14} />Firmar como médico</button>
+              : null)
+            : <>
+              <button className="btn btn--primary btn--sm" onClick={() => setSigning({ action: 'accept' })}><PenLine size={14} />Firmar en pantalla</button>
+              <button className="btn btn--soft btn--sm" onClick={() => setScan('signed')}><Camera size={14} />Subir hoja firmada</button>
+              <button className="btn btn--ghost btn--sm" onClick={() => setChoose('refuse')}>No autoriza</button>
+            </>)}
+          {manage && a.status === 'signed' && <>
+            <button className="btn btn--ghost btn--sm" onClick={() => setChoose('revoke')}>Revocar</button>
+            {a.method === 'paper' && a.fileId && <button className="btn btn--ghost btn--sm" onClick={() => setScan('replace')}>Reemplazar escaneo</button>}
           </>}
-          {open && can('inpatient.view') && a.status === 'signed' && <button className="btn btn--ghost btn--sm" onClick={() => setAction('revoked')}>Revocada</button>}
         </div>
       </div>
-      {a.statusNote && <div className="panel__body"><p className="muted">{a.statusNote}</p></div>}
-      {action && (
-        <Modal title={action === 'signed' ? 'Hoja firmada' : action === 'refused' ? 'El paciente no autoriza' : 'El paciente revoca la autorización'} onClose={() => setAction(null)} footer={<>
-          <button className="btn btn--ghost" onClick={() => setAction(null)}>Cancelar</button>
-          <button className="btn btn--primary" disabled={busy || (action === 'signed' ? !picked : !picked && note.trim().length < 3)} onClick={save}>Guardar</button>
-        </>}>
-          <p>{action === 'signed' ? 'Toma una foto de la hoja firmada (o elige el PDF). Queda en el expediente.' : 'Registra la hoja con la casilla correspondiente firmada, o escribe una nota de lo ocurrido.'}</p>
-          <button className="btn btn--soft" onClick={() => input.current?.click()}><Camera size={16} />{picked ? 'Cambiar archivo' : 'Tomar foto o elegir archivo'}</button>
-          {picked && <span className="muted">{picked.name}</span>}
-          <input ref={input} type="file" accept="image/*,application/pdf" capture="environment" hidden onChange={(e) => setPicked(e.target.files?.[0] ?? null)} />
-          <label className="field"><span>Nota {action === 'signed' ? '(opcional)' : ''}</span><input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={action === 'refused' ? 'Ej. Paciente decide no realizarse el procedimiento' : ''} /></label>
+      {(s || a.statusNote || a.revocation || a.fileHistory?.length || waitingDoctor) && (
+        <div className="panel__body auth-facts">
+          {waitingDoctor && <p className="alert-strip alert-strip--amber">Firmó {s!.signer === 'representative' ? `el representante ${s!.representative?.name}` : 'el paciente'} el {dateTime(s!.signedAt)}. Falta la firma del médico{user?.role === 'doctor' ? '' : ': la pone un médico desde aquí'}.</p>}
+          {s && !waitingDoctor && (
+            <p>{s.action === 'refuse' ? 'Rechazo firmado en pantalla' : 'Firmada en pantalla'} por {s.signer === 'representative' ? `${s.representative?.name} (representante, ${s.representative?.relation?.toLowerCase()}, identidad ${s.representative?.dni})` : 'el paciente'}
+              {s.unableReason ? `; no pudo firmar (${s.unableReason})` : ''}{s.witness ? `; testigo ${s.witness.name}${s.witness.dni ? `, identidad ${s.witness.dni}` : ''}` : ''}
+              {s.doctor ? `; médico ${s.doctor.name}` : ''}. {s.device}, gestionado por {who(s.managedBy)}.</p>
+          )}
+          {a.pdfSha256 && <p className="muted auth-hash">Huella SHA-256 del PDF: <code>{a.pdfSha256}</code></p>}
+          {a.statusNote && <p className="muted">{a.statusNote}</p>}
+          {a.revocation && <p>Revocada {a.revocation.method === 'virtual' ? 'en pantalla' : 'en papel'} el {dateTime(a.revocation.at)}, registrada por {who(a.revocation.by)}.
+            {a.revocation.pdfId && <> <button className="linklike" onClick={() => view(a.revocation!.pdfId!)}>Ver la revocación firmada</button>.</>}
+            {a.revocation.fileId && <> <button className="linklike" onClick={() => view(a.revocation!.fileId!)}>Ver la hoja de revocación</button>.</>}</p>}
+          {!!a.fileHistory?.length && (
+            <details><summary className="muted">Escaneos anteriores ({a.fileHistory.length})</summary>
+              <ul className="note__list">{a.fileHistory.map((x) => <li key={x.fileId}><button className="linklike" onClick={() => view(x.fileId)}>Escaneo reemplazado el {dateTime(x.replacedAt)}</button> por {who(x.replacedBy)}: {x.reason}</li>)}</ul>
+            </details>
+          )}
+        </div>
+      )}
+      {choose && (
+        <Modal title={choose === 'refuse' ? 'El paciente no autoriza' : 'El paciente revoca la autorización'} onClose={() => setChoose(null)}>
+          <p>¿Cómo se firma?</p>
+          <div className="choice-grid">
+            <button className="choice" onClick={() => { setSigning({ action: choose }); setChoose(null) }}><PenLine size={22} /><b>En pantalla</b><small>En la tablet, el celular o esta computadora.</small></button>
+            <button className="choice" onClick={() => { setScan(choose === 'refuse' ? 'refused' : 'revoked'); setChoose(null) }}><Camera size={22} /><b>En papel</b><small>Se imprime, se firma y se sube la foto o el PDF.</small></button>
+          </div>
         </Modal>
       )}
+      {signing && <ConsentSigning a={a} p={p} action={signing.action} doctorOnly={signing.doctorOnly} onClose={() => setSigning(null)} onDone={done} />}
+      {scan && <ScanUpload a={a} mode={scan} onClose={() => setScan(null)} onDone={done} />}
     </article>
   )
 }
@@ -271,24 +295,32 @@ function HospitalSheet({ a }: { a: Authorization }) {
   )
 }
 
-/** Página para ver e imprimir la autorización. */
+/**
+ * Página para ver e imprimir la autorización. Pendiente: la hoja en blanco para imprimir y firmar en papel. Firmada en
+ * pantalla: las páginas del PDF firmado, que se ven igual que impresas. Firmada en papel: las páginas del escaneo.
+ */
 export default function AuthorizationPage() {
   const { id } = useParams()
   const { fetchAuthorization, notify } = useStore()
   const [a, setA] = useState<Authorization | null>(null)
   useEffect(() => { if (id) fetchAuthorization(id).then(setA).catch((e: Error) => notify(e.message, 'error')) }, [id, fetchAuthorization, notify])
   if (!a) return <Loading label="Abriendo autorización" />
+  const st = authStatus(a)
+  const signed = a.pdfId ?? a.fileId
   return (
     <div className="page">
       <div className="page-head no-print">
         <Link className="btn btn--ghost" to={`/app/hospitalizados/${a.hospitalizationId}?tab=anexos`}><ChevronLeft size={16} />Volver a los anexos</Link>
         <div className="page-head__actions">
-          <span className={`badge badge--${AUTH_STATUS[a.status].tone}`}>{AUTH_STATUS[a.status].label}</span>
-          <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir para firmar</button>
+          <span className={`badge badge--${st.tone}`}>{st.label}</span>
+          {a.pdfId && <button className="btn btn--ghost" onClick={() => openFile(a.pdfId!).catch((e: Error) => notify(e.message, 'error'))}><FileText size={16} />Abrir el PDF</button>}
+          <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />{signed ? 'Imprimir' : 'Imprimir para firmar'}</button>
         </div>
       </div>
-      <AuthorizationSheet a={a} />
+      {a.pdfSha256 && <p className="muted no-print auth-hash" style={{ marginBottom: 12 }}>Huella SHA-256 del PDF firmado: <code>{a.pdfSha256}</code></p>}
+      {signed ? <div className="signed-doc"><PdfPages fileId={signed} label={a.pdfId ? 'La autorización firmada' : 'La hoja escaneada'} /></div> : <AuthorizationSheet a={a} />}
+      {a.revocation?.pdfId && <div className="signed-doc"><PdfPages fileId={a.revocation.pdfId} label="La revocación firmada" /></div>}
+      {a.revocation?.fileId && <div className="signed-doc"><PdfPages fileId={a.revocation.fileId} label="La hoja de revocación" /></div>}
     </div>
   )
 }
-

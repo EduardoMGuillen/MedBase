@@ -93,7 +93,7 @@ export default function InpatientFile() {
       </div>
       <MedAlertBanner file={file} />
       {pendingAuth && tab !== 'annexes' && (
-        <div className="alert-strip alert-strip--amber" style={{ flexWrap: 'wrap' }}><FileSignature size={16} />La autorización de hospitalización está pendiente de firma.
+        <div className="alert-strip alert-strip--amber" style={{ flexWrap: 'wrap' }}><FileSignature size={16} />{pendingAuth.signing?.action === 'accept' ? 'La autorización de hospitalización ya la firmó el paciente; falta la firma del médico.' : 'La autorización de hospitalización está pendiente de firma.'}
           <button className="btn btn--soft btn--sm" onClick={() => setTab('annexes')}>Ir a Anexos</button></div>
       )}
       {noBed && (
@@ -706,7 +706,9 @@ function ProcedureNote({ n, file }: { n: InpatientNote; file: File }) {
   const x = n.procedure!
   const auth = x.authorizationId ? file.authorizations.find((a) => a.id === x.authorizationId) : undefined
   const legacy = x.authorizationId && !auth ? file.procedures.find((a) => a.id === x.authorizationId) : undefined
-  const signedAt = auth?.statusAt ?? legacy?.updatedAt ?? legacy?.createdAt
+  const signedAt = auth?.status === 'signed' || legacy ? auth?.statusAt ?? legacy?.updatedAt ?? legacy?.createdAt : undefined
+  // Cómo se firmó: en pantalla o en papel (las de antes, con hoja subida, son en papel)
+  const how = auth ? (auth.method === 'virtual' ? ' (virtual)' : ' (papel)') : ''
   return (
     <article className="panel consult-entry">
       <div className="panel__head">
@@ -716,7 +718,8 @@ function ProcedureNote({ n, file }: { n: InpatientNote; file: File }) {
       <div className="panel__body note">
         <div className="note__sec"><h4>{x.name}</h4><p>{n.text}</p></div>
         {x.urgent && <p className="badge badge--amber" style={{ whiteSpace: 'normal' }}>Urgencia, sin autorización previa: {x.justification}</p>}
-        {signedAt && <p className="badge badge--mint" style={{ whiteSpace: 'normal' }}>Autorización firmada ✓ ({dm(signedAt)})</p>}
+        {signedAt && <p className="badge badge--mint" style={{ whiteSpace: 'normal' }}>Autorización firmada ✓{how} {dm(signedAt)}</p>}
+        {auth && auth.status !== 'signed' && <p className="badge badge--red" style={{ whiteSpace: 'normal' }}>Autorización {auth.status === 'revoked' ? 'revocada' : auth.status === 'refused' ? 'rechazada' : 'pendiente'}{auth.statusAt ? ` ${dm(auth.statusAt)}` : ''}</p>}
       </div>
     </article>
   )
@@ -1061,7 +1064,7 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
       {write && (
         <section className="panel">
           <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-            <p className="muted">Se imprimen, se firman en papel y se sube la foto o el PDF de la hoja firmada.</p>
+            <p className="muted">Se firman en pantalla (tablet, celular o computadora) o se imprimen, se firman en papel y se sube la foto o el PDF de la hoja firmada.</p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {file.hospitalization.kind === 'hospital' && <button className="btn btn--soft" onClick={() => setMaking('hospital')}><FileSignature size={16} />Autorización de hospitalización{hospital?.status === 'pending' ? ' (pendiente)' : ''}</button>}
               <button className="btn btn--primary" onClick={() => setMaking('surgical')}><FileSignature size={16} />Autorización quirúrgica</button>
@@ -1077,7 +1080,7 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
             <Link className="btn btn--ghost btn--sm" to={`/app/referencias/${r.id}`}>Ver e imprimir</Link></div>
         </article>
       ))}
-      {list.map((a) => <AuthorizationEntry key={a.id} a={a} file={file} reload={reload} />)}
+      {list.map((a) => <AuthorizationEntry key={a.id} a={a} file={file} p={p} reload={reload} />)}
       {legacy.map((x) => (
         <article key={x.id} className="panel consult-entry">
           <div className="panel__head"><div><h2>Autorización <span className="badge">Registro anterior</span></h2>

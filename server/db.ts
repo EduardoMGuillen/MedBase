@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '26'
+const SCHEMA_VERSION = '27'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -514,6 +514,29 @@ ALTER TABLE staff ADD CONSTRAINT staff_role_check CHECK (role IN ('superadmin','
 ALTER TABLE authorizations
   ADD COLUMN IF NOT EXISTS archived_at TEXT,
   ADD COLUMN IF NOT EXISTS archived_reason TEXT;
+
+-- v27: ronda 2 (A1, A2). Firma en pantalla de las autorizaciones, PDF final con su huella SHA-256, revocación
+-- registrada y escaneos reemplazados que se conservan. Las firmadas antes en papel quedan como 'paper'.
+ALTER TABLE authorizations
+  ADD COLUMN IF NOT EXISTS method TEXT,
+  ADD COLUMN IF NOT EXISTS signing TEXT,
+  ADD COLUMN IF NOT EXISTS pdf_id TEXT,
+  ADD COLUMN IF NOT EXISTS pdf_sha256 TEXT,
+  ADD COLUMN IF NOT EXISTS revocation TEXT,
+  ADD COLUMN IF NOT EXISTS file_history TEXT;
+UPDATE authorizations SET method = 'paper' WHERE method IS NULL AND file_id IS NOT NULL;
+-- Firma guardada del médico (imagen PNG), para firmar las autorizaciones en pantalla
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS signature TEXT;
+-- Archivos grandes (escaneos de hasta 15 MB) llegan por partes: Vercel acepta 4,5 MB por petición
+CREATE TABLE IF NOT EXISTS upload_parts (
+  upload_id TEXT NOT NULL,
+  idx INTEGER NOT NULL,
+  clinic_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  data BYTEA NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (upload_id, idx)
+);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
