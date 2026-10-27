@@ -561,3 +561,14 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
   .fr .order-check__mark { color: #000; }
   .fr .page { padding: 0; }
 }
+
+/* ---------- Primer ingreso del consultorio ---------- */
+.onboard { max-width: 880px; }
+.onboard__head { display: grid; gap: 8px; margin-bottom: 16px; }
+.onboard__head h1 { font-family: var(--display); font-size: 26px; margin: 0; color: var(--ink-deep); }
+.onboard__steps { list-style: none; margin: 8px 0 0; padding: 0; display: flex; gap: 10px; flex-wrap: wrap; }
+.onboard__steps li { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.onboard__steps li span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--line); font-weight: 650; font-size: 12.5px; }
+.onboard__steps li.is-current { color: var(--ink-deep); font-weight: 650; }
+.onboard__steps li.is-current span { border-color: var(--ink); color: var(--ink); }
+.onboard__steps li.is-done span { background: var(--mint); border-color: var(--mint-strong); color: var(--mint-ink); }

@@ -99,3 +99,21 @@ describe('C2 crear un consultorio', () => {
     assert.equal((await sa.post(`/api/platform/clinics/${r.body.clinic.id}/staff`, { name: 'Asistente Rivera', role: 'assistant', email: 'asr@test.hn' })).status, 201)
   })
 })
+
+describe('C3 primer ingreso', () => {
+  test('el titular guarda sus datos y marca la configuración como hecha una sola vez', async () => {
+    const o = await office('c3')
+    let s = (await o.doc.get('/api/bootstrap')).body.settings
+    assert.equal(s.kind, 'office')
+    assert.equal(s.setupDoneAt, undefined)
+    const saved = await o.doc.put('/api/settings', { ...s, address: 'Col. Kennedy, bloque 5', phone: '2230-1111', specialty: 'Pediatría', license: 'CMH-555' })
+    assert.equal(saved.status, 200, JSON.stringify(saved.body))
+    assert.equal(saved.body.specialty, 'Pediatría')
+    const done = await o.doc.post('/api/settings/setup-done')
+    assert.ok(done.body.setupDoneAt)
+    assert.equal((await o.doc.post('/api/settings/setup-done')).body.setupDoneAt, done.body.setupDoneAt)
+    assert.equal((await o.asi.post('/api/settings/setup-done')).status, 403)
+    s = (await o.doc.get('/api/bootstrap')).body.settings
+    assert.equal(s.license, 'CMH-555')
+  })
+})

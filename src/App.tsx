@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { StoreProvider, useStore } from './lib/store'
-import type { Permission } from './lib/permissions'
+import { features, type Permission } from './lib/permissions'
 import { Loading, Toaster } from './components/ui'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -29,13 +29,23 @@ import FullRecord from './app/FullRecord'
 import AuthorizationPage from './app/Authorization'
 import Observation from './app/Observation'
 import Followups from './app/Followups'
+import Onboarding from './app/Onboarding'
 
-function Guard({ perm, children }: { perm?: Permission; children: ReactNode }) {
-  const { user, can, checking } = useStore()
+/** Entra sólo con sesión, con el permiso y, si se pide, con el módulo activo en la cuenta (un consultorio no tiene hospitalización). */
+function Guard({ perm, feature, children }: { perm?: Permission; feature?: 'hospital' | 'observation'; children: ReactNode }) {
+  const { user, can, checking, settings } = useStore()
   if (checking) return <Loading label="Abriendo tu sesión" />
   if (!user) return <Navigate to="/login" replace />
   if (perm && !can(perm)) return <Navigate to="/app" replace />
+  if (feature && !features(settings)[feature]) return <Navigate to="/app" replace />
   return children
+}
+
+/** El médico titular de un consultorio nuevo empieza por el asistente de primer ingreso. */
+function Home() {
+  const { settings, can } = useStore()
+  if (settings.kind === 'office' && can('settings.manage') && !settings.setupDoneAt) return <Navigate to="/app/bienvenida" replace />
+  return <Dashboard />
 }
 
 export default function App() {
@@ -48,14 +58,15 @@ export default function App() {
           <Route path="/reservar" element={<Booking />} />
           <Route path="/reservar/:slug" element={<Booking />} />
           <Route path="/app" element={<Guard><AppShell /></Guard>}>
-            <Route index element={<Dashboard />} />
+            <Route index element={<Home />} />
+            <Route path="bienvenida" element={<Guard perm="settings.manage"><Onboarding /></Guard>} />
             <Route path="agenda" element={<Guard perm="agenda.view"><Agenda /></Guard>} />
             <Route path="consulta-externa" element={<Guard perm="agenda.view"><WaitingRoom /></Guard>} />
             <Route path="sala" element={<Navigate to="/app/consulta-externa" replace />} />
-            <Route path="observacion" element={<Guard perm="inpatient.view"><Observation /></Guard>} />
-            <Route path="observacion/:id" element={<Guard perm="inpatient.view"><InpatientFile key="observacion" /></Guard>} />
+            <Route path="observacion" element={<Guard perm="inpatient.view" feature="observation"><Observation /></Guard>} />
+            <Route path="observacion/:id" element={<Guard perm="inpatient.view" feature="observation"><InpatientFile key="observacion" /></Guard>} />
             <Route path="observacion/:id/expediente" element={<Guard perm="inpatient.view"><FullRecord /></Guard>} />
-            <Route path="hospitalizados" element={<Guard perm="inpatient.view"><Inpatients /></Guard>} />
+            <Route path="hospitalizados" element={<Guard perm="inpatient.view" feature="hospital"><Inpatients /></Guard>} />
             <Route path="hospitalizados/:id/expediente" element={<Guard perm="inpatient.view"><FullRecord /></Guard>} />
             <Route path="hospitalizados/:id" element={<Guard perm="inpatient.view"><InpatientFile key="hospitalizacion" /></Guard>} />
             <Route path="autorizaciones/:id" element={<Guard perm="inpatient.view"><AuthorizationPage /></Guard>} />

@@ -72,6 +72,8 @@ export interface ClinicSettings {
   specialty?: string
   license?: string
   maxAssistants?: number
+  /** Consultorio: cuándo terminó (o saltó) el asistente de primer ingreso. */
+  setupDoneAt?: string
 }
 
 export interface Service {

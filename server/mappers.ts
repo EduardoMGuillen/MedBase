@@ -158,7 +158,7 @@ export const clinicSettings = (r: Row): ClinicSettings => ({
   recordUsesDni: Boolean(r.record_uses_dni), logo: s(r.logo), dniMask: r.dni_mask == null ? DNI_MASK : String(r.dni_mask),
   obsAlertHours: r.obs_alert_hours == null ? 24 : Number(r.obs_alert_hours), obsOrderChecklist: Boolean(r.obs_order_checklist),
   kind: (r.kind as ClinicSettings['kind']) ?? 'clinic', observationEnabled: r.observation_enabled == null ? true : Boolean(r.observation_enabled),
-  ownerId: s(r.owner_id), specialty: s(r.specialty), license: s(r.license), maxAssistants: r.max_assistants == null ? 2 : Number(r.max_assistants),
+  ownerId: s(r.owner_id), specialty: s(r.specialty), license: s(r.license), maxAssistants: r.max_assistants == null ? 2 : Number(r.max_assistants), setupDoneAt: s(r.setup_done_at),
 })
 
 export const toClinic = (r: Row): Clinic => ({

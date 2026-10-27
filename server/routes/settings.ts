@@ -19,6 +19,10 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
       obsAlertHours: z.number().int().min(1, 'Las horas de alerta deben ser al menos 1.').max(240).default(24),
       obsOrderChecklist: z.boolean().default(false),
       // Cada 0 es un dígito; lo demás (guiones, espacios) se escribe solo. Vacío: el documento se escribe libre.
+      // Consultorio: si usa observación y lo que va en el encabezado de sus documentos
+      observationEnabled: z.boolean().optional(),
+      specialty: z.string().trim().max(60).optional(),
+      license: z.string().trim().max(30).optional(),
       dniMask: z.string().trim().max(30).regex(/^[0\- /.]*$/, 'El formato de identidad sólo lleva ceros (dígitos) y guiones, espacios, puntos o barras.').default('0000-0000-00000'),
       // El logo viaja con la configuración en cada carga: se limita a una imagen pequeña
       logo: z.string().max(140_000, 'El logo es muy pesado; usa una imagen más pequeña.').regex(/^data:image\/(png|jpeg|webp);base64,/, 'El logo debe ser una imagen PNG, JPG o WEBP.')
@@ -26,9 +30,18 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
     }), req.body)
     const cid = clinicOf(req)
     await sql.run(`UPDATE clinics SET name = ?, address = ?, phone = ?, email = ?, currency = ?, rx_validity_days = ?, reminder_template = ?, record_uses_dni = ?, logo = ?,
-      obs_alert_hours = ?, obs_order_checklist = ?, dni_mask = ? WHERE id = ?`,
-      [s.name, s.address, s.phone, s.email, s.currency, s.rxValidityDays, s.reminderTemplate, s.recordUsesDni, s.logo ?? null, s.obsAlertHours, s.obsOrderChecklist, s.dniMask, cid])
+      obs_alert_hours = ?, obs_order_checklist = ?, dni_mask = ?, observation_enabled = COALESCE(?, observation_enabled), specialty = COALESCE(?, specialty), license = COALESCE(?, license) WHERE id = ?`,
+      [s.name, s.address, s.phone, s.email, s.currency, s.rxValidityDays, s.reminderTemplate, s.recordUsesDni, s.logo ?? null, s.obsAlertHours, s.obsOrderChecklist, s.dniMask,
+        s.observationEnabled ?? null, s.specialty ?? null, s.license ?? null, cid])
     await audit(userOf(req), 'Actualizó la configuración de la clínica')
+    res.json(await settings(cid))
+  })
+
+  /** El médico titular terminó (o saltó) el asistente de primer ingreso: no vuelve a aparecer. */
+  app.post('/api/settings/setup-done', auth, need('settings.manage'), async (req, res) => {
+    const cid = clinicOf(req)
+    await sql.run('UPDATE clinics SET setup_done_at = COALESCE(setup_done_at, ?) WHERE id = ?', [new Date().toISOString(), cid])
+    await audit(userOf(req), 'Terminó la configuración inicial del consultorio')
     res.json(await settings(cid))
   })
 
