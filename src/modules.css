@@ -2,6 +2,19 @@
 
 .side nav { overflow-y: auto; }
 .side__group { display: block; font-size: 12px; color: var(--faint); font-weight: 600; padding: 14px 10px 4px; }
+/* Grupo desplegable: el título es un botón con chevron; el cuerpo se abre y se cierra con una animación corta */
+.side__group--btn { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; font: inherit; font-size: 12px; font-weight: 650; color: var(--muted);
+  text-align: left; cursor: pointer; border-radius: 8px; padding: 12px 10px 6px; margin-top: 2px; }
+.side__group--btn:hover { color: var(--petrol); background: var(--ward); }
+.side__group--btn .count { margin-left: auto; background: var(--amber); color: var(--amber-ink); font-size: 11.5px; font-weight: 700; padding: 0 7px; border-radius: 99px; font-variant-numeric: tabular-nums; }
+.side__group--btn .count--alert { background: var(--red); color: var(--red-ink); }
+.side__chev { margin-left: auto; flex: none; transition: transform .18s ease; transform: rotate(-90deg); }
+.side__group--btn .count + .side__chev { margin-left: 0; }
+.side__grp.is-open .side__chev { transform: none; }
+.side__grp-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .18s ease; }
+.side__grp.is-open .side__grp-body { grid-template-rows: 1fr; }
+.side__grp-body > div { overflow: hidden; display: grid; gap: 2px; min-height: 0; }
+@media (prefers-reduced-motion: reduce) { .side__chev, .side__grp-body { transition: none; } }
 .side__me { display: flex; gap: 10px; align-items: center; min-width: 0; flex: 1; text-decoration: none; border-radius: 10px; padding: 4px; margin: -4px; }
 .side__me:hover { background: var(--ward); }
 .side__me div { min-width: 0; }
