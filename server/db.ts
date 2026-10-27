@@ -757,8 +757,9 @@ function textPdf(title: string, lines: string[]) {
 export async function nextFolio(q: Sql, clinicId: string, now: Date) {
   await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`rx:${clinicId}`])
   const year = now.getFullYear()
-  const last = await q.one(`SELECT folio FROM prescriptions WHERE clinic_id = ? AND folio LIKE ? ORDER BY folio DESC LIMIT 1`, [clinicId, `RX-${year}-%`])
-  const seq = last ? Number(String(last.folio).split('-')[2]) + 1 : 1001
+  // El número se compara como número: como texto, RX-2026-9999 quedaría después de RX-2026-10000
+  const last = await q.one<{ n: number | null }>(`SELECT MAX(CAST(split_part(folio, '-', 3) AS INTEGER))::int AS n FROM prescriptions WHERE clinic_id = ? AND folio ~ ?`, [clinicId, `^RX-${year}-[0-9]+$`])
+  const seq = last?.n ? Number(last.n) + 1 : 1001
   return `RX-${year}-${String(seq).padStart(4, '0')}`
 }
 

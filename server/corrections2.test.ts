@@ -381,3 +381,17 @@ describe('M5 autorizaciones: de hospitalización y quirúrgica', () => {
     assert.equal(note.body.procedure.authorizationId, s.body.id)
   })
 })
+
+describe('folio de recetas', () => {
+  test('después de RX-AAAA-9999 sigue RX-AAAA-10000 y luego 10001', async () => {
+    const year = new Date().getFullYear()
+    const cid = String((await sql.one(`SELECT clinic_id FROM staff WHERE id = 's-herrera'`))!.clinic_id)
+    await sql.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, issued_at, items, clinic_id) VALUES ('rx-9999', ?, 'p1', 's-herrera', '', ?, '[]', ?)`, [`RX-${year}-9999`, new Date().toISOString(), cid])
+    const doc = await as('lherrera@demo.clinara')
+    const item = { drug: 'Loratadina', presentation: 'Tableta 10 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 24 horas', duration: '5 días' }
+    const a = await doc.post('/api/prescriptions', { guest: { name: 'Ana Prueba' }, items: [item] })
+    const b = await doc.post('/api/prescriptions', { guest: { name: 'Ana Prueba' }, items: [item] })
+    assert.equal(a.body.folio, `RX-${year}-10000`)
+    assert.equal(b.body.folio, `RX-${year}-10001`)
+  })
+})
