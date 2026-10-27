@@ -7,10 +7,51 @@ import { age as ageText, dxCode, examText } from '../../src/lib/format.js'
 import { medLabel } from '../../src/lib/inpatient.js'
 import { splitOrders } from '../../src/lib/inpatient.js'
 import type { ReferralData } from '../../src/lib/types.js'
+import type { Sql } from '../sql.js'
 
 /** "26/10 15:11" en la hora de la clínica. */
 const dm = (iso: string) => new Intl.DateTimeFormat('es-HN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: process.env.TZ || 'America/Tegucigalpa' })
   .format(new Date(iso)).replace(',', '')
+
+/** El borrador de la referencia, armado sólo con lo que hay en el expediente (también lo usan los casos de la demo). */
+export async function referralDraft(q: Sql, cid: string, h: Row, doctorId: string): Promise<ReferralData> {
+  const p = (await q.one('SELECT * FROM patients WHERE id = ?', [String(h.patient_id)]))!
+  const c = h.consultation_id ? await q.one('SELECT * FROM consultations WHERE id = ?', [String(h.consultation_id)]) : undefined
+  const consult = c ? toConsultation(c) : undefined
+  const vitals = consult?.vitalsId ? await q.one('SELECT * FROM vitals WHERE id = ?', [consult.vitalsId]) : undefined
+  const v = vitals ? toVitals(vitals) : undefined
+  const notes = (await q.query(`SELECT * FROM hosp_notes WHERE hospitalization_id = ? ORDER BY at`, [String(h.id)])).map(toInpatientNote)
+  const meds = (await q.query('SELECT * FROM hosp_meds WHERE hospitalization_id = ? ORDER BY ordered_at', [String(h.id)])).map(toInpatientMed)
+  const doses = (await q.query(`SELECT d.* FROM hosp_doses d JOIN hosp_meds m ON m.id = d.med_id WHERE m.hospitalization_id = ? AND d.status = 'given' ORDER BY d.given_at`, [String(h.id)])).map(toDose)
+  const labs = (await q.query(`SELECT id, patient_id, name, mime, size, category, uploaded_by, uploaded_at, title, taken_at, hospitalization_id FROM attachments
+    WHERE hospitalization_id = ? AND category = 'lab' ORDER BY COALESCE(taken_at, uploaded_at)`, [String(h.id)])).map(toAttachment)
+  const doc = (await q.one('SELECT name, license, specialty FROM staff WHERE id = ?', [doctorId]))!
+  const cfg = clinicSettings((await q.one('SELECT * FROM clinics WHERE id = ?', [cid]))!)
+  const evolution = notes.filter((n) => n.kind === 'evolution')
+  const last = evolution.at(-1)
+  const vitalsLine = v ? [v.systolic != null && v.diastolic != null && `PA ${v.systolic}/${v.diastolic} mmHg`, v.heartRate != null && `FC ${v.heartRate} lpm`,
+    v.respRate != null && `FR ${v.respRate} rpm`, v.temperature != null && `T ${v.temperature.toFixed(1)} °C`, v.spo2 != null && `SpO₂ ${v.spo2}%`,
+    v.weightKg != null && `Peso ${v.weightKg} kg`, v.glucose != null && `Glucometría ${v.glucose} mg/dL`].filter(Boolean).join(', ') : ''
+  const lastExam = last ? (last.format === 'dx' ? examText(last.exam) : last.objective) : ''
+  const diagnoses = (last?.format === 'dx' && last.diagnoses?.length ? last.diagnoses : consult?.diagnoses ?? JSON.parse(String(h.diagnoses ?? '[]')) as { code: string; label: string }[])
+  const indications = [...(consult?.indications ?? []), ...evolution.flatMap((n) => splitOrders(n, { meds }).indications.map((o) => o.text))]
+  return {
+    patient: { name: `${p.first_name} ${p.last_name}`, dni: p.dni ? String(p.dni) : undefined, age: ageText(String(p.birth_date ?? '')), sex: (p.sex ?? undefined) as 'F' | 'M' | undefined,
+      record: cfg.recordUsesDni && p.dni ? String(p.dni) : String(p.record) },
+    doctor: { name: String(doc.name), license: doc.license ? String(doc.license) : undefined, specialty: doc.specialty ? String(doc.specialty) : undefined },
+    place: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo, office: cfg.kind === 'office' || undefined },
+    admittedAt: String(h.admitted_at),
+    reason: diagnoses.map((d) => d.label).join('; '),
+    history: consult?.history ?? '',
+    exam: [vitalsLine && `Signos de la preclínica: ${vitalsLine}.`, examText(consult?.exam), lastExam && `Última evaluación (${dm(last!.at)}): ${lastExam}`].filter(Boolean).join('\n'),
+    diagnosis: diagnoses.map((d) => `${d.label} (${dxCode(d)})`).join('; '),
+    indications: indications.join('\n'),
+    medications: doses.map((d) => { const m = meds.find((x) => x.id === d.medId); return m ? `${medLabel(m)} — aplicado ${dm(d.givenAt)}` : '' }).filter(Boolean).join('\n'),
+    evolution: evolution.map((n) => `${dm(n.at)}: ${n.format === 'dx' ? [n.observations, examText(n.exam)].filter(Boolean).join(' ') : [n.assessment, n.plan].filter(Boolean).join(' ')}`).join('\n'),
+    labs: labs.map((l) => `${l.title ?? l.name} (${dm(l.takenAt ?? l.uploadedAt)})`).join('\n'),
+    condition: '', destination: '',
+  }
+}
 
 /**
  * Referencia del consultorio de un médico independiente: refiere al paciente en observación a un hospital u otro
@@ -23,50 +64,11 @@ const dm = (iso: string) => new Intl.DateTimeFormat('es-HN', { day: '2-digit', m
 export function registerReferrals(app: Express, { sql, auth, need, userOf, clinicOf, audit, patientName }: Ctx) {
   const stayRow = async (cid: string, id: string) => (await sql.one('SELECT * FROM hospitalizations WHERE id = ? AND clinic_id = ?', [id, cid])) ?? fail(404, 'La observación no existe.')
 
-  async function draft(cid: string, h: Row, doctorId: string): Promise<ReferralData> {
-    const p = (await sql.one('SELECT * FROM patients WHERE id = ?', [String(h.patient_id)]))!
-    const c = h.consultation_id ? await sql.one('SELECT * FROM consultations WHERE id = ?', [String(h.consultation_id)]) : undefined
-    const consult = c ? toConsultation(c) : undefined
-    const vitals = consult?.vitalsId ? await sql.one('SELECT * FROM vitals WHERE id = ?', [consult.vitalsId]) : undefined
-    const v = vitals ? toVitals(vitals) : undefined
-    const notes = (await sql.query(`SELECT * FROM hosp_notes WHERE hospitalization_id = ? ORDER BY at`, [String(h.id)])).map(toInpatientNote)
-    const meds = (await sql.query('SELECT * FROM hosp_meds WHERE hospitalization_id = ? ORDER BY ordered_at', [String(h.id)])).map(toInpatientMed)
-    const doses = (await sql.query(`SELECT d.* FROM hosp_doses d JOIN hosp_meds m ON m.id = d.med_id WHERE m.hospitalization_id = ? AND d.status = 'given' ORDER BY d.given_at`, [String(h.id)])).map(toDose)
-    const labs = (await sql.query(`SELECT id, patient_id, name, mime, size, category, uploaded_by, uploaded_at, title, taken_at, hospitalization_id FROM attachments
-      WHERE hospitalization_id = ? AND category = 'lab' ORDER BY COALESCE(taken_at, uploaded_at)`, [String(h.id)])).map(toAttachment)
-    const doc = (await sql.one('SELECT name, license, specialty FROM staff WHERE id = ?', [doctorId]))!
-    const cfg = clinicSettings((await sql.one('SELECT * FROM clinics WHERE id = ?', [cid]))!)
-    const evolution = notes.filter((n) => n.kind === 'evolution')
-    const last = evolution.at(-1)
-    const vitalsLine = v ? [v.systolic != null && v.diastolic != null && `PA ${v.systolic}/${v.diastolic} mmHg`, v.heartRate != null && `FC ${v.heartRate} lpm`,
-      v.respRate != null && `FR ${v.respRate} rpm`, v.temperature != null && `T ${v.temperature.toFixed(1)} °C`, v.spo2 != null && `SpO₂ ${v.spo2}%`,
-      v.weightKg != null && `Peso ${v.weightKg} kg`, v.glucose != null && `Glucometría ${v.glucose} mg/dL`].filter(Boolean).join(', ') : ''
-    const lastExam = last ? (last.format === 'dx' ? examText(last.exam) : last.objective) : ''
-    const diagnoses = (last?.format === 'dx' && last.diagnoses?.length ? last.diagnoses : consult?.diagnoses ?? JSON.parse(String(h.diagnoses ?? '[]')) as { code: string; label: string }[])
-    const indications = [...(consult?.indications ?? []), ...evolution.flatMap((n) => splitOrders(n, { meds }).indications.map((o) => o.text))]
-    return {
-      patient: { name: `${p.first_name} ${p.last_name}`, dni: p.dni ? String(p.dni) : undefined, age: ageText(String(p.birth_date ?? '')), sex: (p.sex ?? undefined) as 'F' | 'M' | undefined,
-        record: cfg.recordUsesDni && p.dni ? String(p.dni) : String(p.record) },
-      doctor: { name: String(doc.name), license: doc.license ? String(doc.license) : undefined, specialty: doc.specialty ? String(doc.specialty) : undefined },
-      place: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo, office: cfg.kind === 'office' || undefined },
-      admittedAt: String(h.admitted_at),
-      reason: diagnoses.map((d) => d.label).join('; '),
-      history: consult?.history ?? '',
-      exam: [vitalsLine && `Signos de la preclínica: ${vitalsLine}.`, examText(consult?.exam), lastExam && `Última evaluación (${dm(last!.at)}): ${lastExam}`].filter(Boolean).join('\n'),
-      diagnosis: diagnoses.map((d) => `${d.label} (${dxCode(d)})`).join('; '),
-      indications: indications.join('\n'),
-      medications: doses.map((d) => { const m = meds.find((x) => x.id === d.medId); return m ? `${medLabel(m)} — aplicado ${dm(d.givenAt)}` : '' }).filter(Boolean).join('\n'),
-      evolution: evolution.map((n) => `${dm(n.at)}: ${n.format === 'dx' ? [n.observations, examText(n.exam)].filter(Boolean).join(' ') : [n.assessment, n.plan].filter(Boolean).join(' ')}`).join('\n'),
-      labs: labs.map((l) => `${l.title ?? l.name} (${dm(l.takenAt ?? l.uploadedAt)})`).join('\n'),
-      condition: '', destination: '',
-    }
-  }
-
   app.get('/api/inpatient/:id/referral-draft', auth, need('inpatient.orders'), async (req, res) => {
     const cid = clinicOf(req)
     const h = (await stayRow(cid, String(req.params.id)))!
     if (h.kind !== 'observation') fail(409, 'La referencia es para pacientes en observación.')
-    res.json(await draft(cid, h, userOf(req).id))
+    res.json(await referralDraft(sql, cid, h, userOf(req).id))
   })
 
   const text = (max: number) => z.string().trim().max(max).default('')
@@ -83,7 +85,7 @@ export function registerReferrals(app: Express, { sql, auth, need, userOf, clini
     const active = await sql.one('SELECT 1 FROM referrals WHERE hospitalization_id = ? AND voided_at IS NULL', [String(h.id)])
     if (active) fail(409, 'Este paciente ya tiene una referencia emitida. Si hay un error, anúlala y emite otra.')
     if (h.status !== 'active' && h.outcome !== 'referred') fail(409, 'La observación ya se cerró con el egreso.')
-    const base = await draft(cid, h, user.id)
+    const base = await referralDraft(sql, cid, h, user.id)
     const data: ReferralData = { ...base, ...b }
     const id = randomUUID()
     const now = new Date()

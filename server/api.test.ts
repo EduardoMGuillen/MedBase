@@ -244,10 +244,11 @@ describe('pacientes y personal', () => {
           VALUES ('real1', 'EXP-00484', 'Registrado', 'Antes', '1990-01-01', 'F', '99990000', '2026-10-01T09:00:00', 'c-sb');
         UPDATE meta SET value = '8' WHERE key = 'schema';
       `)
+      const last = (await old.one<{ n: number }>(`SELECT MAX(CAST(SUBSTR(record, 5) AS INTEGER))::int AS n FROM patients WHERE clinic_id = 'c-sb' AND record ~ '^EXP-[0-9]+$'`))!.n
       await ensureDb({ ...old })
       const cases = await old.query(`SELECT record FROM patients WHERE id IN ('p15', 'p16', 'p17', 'p18', 'p19', 'p20') ORDER BY record`)
       assert.equal(cases.length, 6)
-      assert.equal(cases[0].record, 'EXP-00485')
+      assert.equal(cases[0].record, `EXP-${String(last + 1).padStart(5, '0')}`)
       assert.ok(await old.one(`SELECT 1 FROM hospitalizations WHERE id = 'chz1' AND status = 'discharged'`))
     } finally {
       await old.close()

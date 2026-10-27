@@ -214,10 +214,11 @@ describe('C8 consultorio de demostración', () => {
     assert.equal(doc.login.user.clinicKind, 'office')
     const boot = (await doc.get('/api/bootstrap')).body
     assert.ok(boot.settings.setupDoneAt, 'sin asistente de primer ingreso en la demo')
-    assert.equal(boot.patients.length, 8)
+    // 8 del consultorio y 2 de los casos para probar observación y referencia
+    assert.equal(boot.patients.length, 10)
     assert.ok(boot.appointments.some((a: any) => a.status === 'triaged'))
-    const obs = boot.inpatients.find((h: any) => h.kind === 'observation')
-    assert.ok(obs)
+    const obs = boot.inpatients.find((h: any) => h.id === 'h-k-r5-1')
+    assert.equal(obs?.kind, 'observation')
     const file = (await doc.get(`/api/inpatient/${obs.id}`)).body
     assert.deepEqual(file.meds.map((m: any) => m.drug), ['Dimenhidrinato'])
     // Ronda 3 (P6): la observación no lleva autorización de hospitalización

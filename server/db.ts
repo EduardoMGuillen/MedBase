@@ -7,11 +7,12 @@ import {
 import type { Appointment, Patient, Payment, Schedule } from '../src/lib/types.js'
 import type { Row, Sql } from './sql.js'
 import { backfillMissingOrders, syncStayOrders } from './medOrders.js'
+import { SCENARIO_PATIENT_IDS, insertClinicScenarios, insertOfficeScenarios } from './demoScenarios.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '24'
+const SCHEMA_VERSION = '25'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -542,6 +543,7 @@ export function ensureDb(sql: Sql) {
         await addDemoOffice(q)
         await fixOfficeDemoTimes(q)
         await backfillOrders(q)
+        await addDemoScenarios(q)
       }
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
@@ -640,6 +642,8 @@ export async function seed(q: Sql) {
   await insertInpatients(q)
   await insertCases(q)
   await insertOffice(q)
+  await insertClinicScenarios(q, MAIN_CLINIC, textPdf)
+  await insertOfficeScenarios(q, OFFICE_CLINIC)
   await q.run(`INSERT INTO meta (key, value) VALUES ('seeded', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [now])
 }
 
@@ -848,6 +852,18 @@ async function addDemoOffice(q: Sql) {
   if (await q.one(`SELECT 1 FROM clinics WHERE id = ?`, [OFFICE_CLINIC])) return
   if (await q.one(`SELECT 1 FROM staff WHERE lower(email) IN ('alopez@demo.clinara', 'asistente@demo.clinara')`)) return
   await insertOffice(q)
+}
+
+/**
+ * v25: una base de demostración que ya existía recibe los casos para probar cada estado de una estancia
+ * (observación, hospitalización, autorizaciones, referencia). Sólo si están el personal de demo y no se cargaron antes.
+ */
+async function addDemoScenarios(q: Sql) {
+  if (await q.one(`SELECT 1 FROM patients WHERE id IN (${SCENARIO_PATIENT_IDS.map(() => '?').join(',')}) LIMIT 1`, SCENARIO_PATIENT_IDS)) return
+  const demo = async (clinicId: string, ids: string[]) =>
+    (await q.query(`SELECT id FROM staff WHERE clinic_id = ? AND id IN (${ids.map(() => '?').join(',')}) AND email LIKE '%@demo.clinara'`, [clinicId, ...ids])).length === ids.length
+  if (await demo(MAIN_CLINIC, ['s-herrera', 's-rios'])) await insertClinicScenarios(q, MAIN_CLINIC, textPdf)
+  if (await demo(OFFICE_CLINIC, ['s3-lopez', 's3-asistente'])) await insertOfficeScenarios(q, OFFICE_CLINIC)
 }
 
 /**
