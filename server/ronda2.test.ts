@@ -279,3 +279,88 @@ describe('O1 sets de órdenes', () => {
     assert.ok(list.indexOf('B muy usado') < list.indexOf('A poco usado'))
   })
 })
+
+describe('P1 epicrisis', () => {
+  const DISCHARGE = {
+    diagnoses: [{ code: 'CA40.0', label: 'Neumonía bacteriana', system: 'icd11' }], summary: 'Evolucionó afebril desde el día 2, tolera la vía oral y satura bien al aire ambiente.',
+    condition: 'Mejorado', instructions: 'Dieta normal. Regresar si hay fiebre o dificultad para respirar.', followUp: 'Control en consulta externa en 1 semana.',
+    items: [{ drug: 'Amoxicilina', presentation: 'Cápsula 500 mg', dose: '1 cápsula', route: 'Oral', frequency: 'Cada 8 horas', duration: '7 días' }],
+  }
+
+  test('al dar el alta en hospitalización se genera sola, con los datos del expediente; se revisa, se emite y queda bloqueada', async () => {
+    const { doc, nurse, stayId } = await observation('Epicrisis')
+    await doc.post(`/api/inpatient/${stayId}/convert`, { bedId: await freeBed() })
+    // Un medicamento con una dosis aplicada y un procedimiento
+    const note = await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', exam: 'Crepitantes en base derecha.', orders: ['Dieta blanda.'], indicationCount: 1,
+      meds: [{ drug: 'Ceftriaxona', dose: '1 g', route: 'Intravenosa', everyHours: 12, prn: false, firstAt: new Date(Date.now() - 60_000).toISOString() }] })
+    assert.equal(note.status, 201, JSON.stringify(note.body))
+    const med = (await nurse.get(`/api/inpatient/${stayId}`)).body.meds.find((m: any) => m.drug === 'Ceftriaxona')
+    assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: med.firstAt })).status, 201)
+    const auth = (await doc.post(`/api/inpatient/${stayId}/authorizations`, { template: 'surgical', procedure: 'Toracocentesis' })).body
+    await nurse.post(`/api/authorizations/${auth.id}/status`, { status: 'signed', note: 'Firmada en papel', fileId: (await nurse.post(`/api/patients/${auth.patientId}/attachments`, { name: 'a.pdf', mime: 'application/pdf', category: 'document', data: Buffer.from('%PDF-1.4').toString('base64') })).body.id })
+    assert.equal((await doc.post(`/api/inpatient/${stayId}/procedure-notes`, { name: 'Toracocentesis', performedAt: new Date().toISOString(), text: 'Se extraen 300 ml de líquido citrino sin complicaciones.', authorizationId: auth.id })).status, 201)
+
+    const out = await doc.post(`/api/inpatient/${stayId}/discharge`, DISCHARGE)
+    assert.equal(out.status, 201, JSON.stringify(out.body))
+    assert.ok(out.body.epicrisisId, 'se generó sola')
+    let e = (await doc.get(`/api/epicrisis/${out.body.epicrisisId}`)).body
+    assert.equal(e.status, 'draft')
+    assert.equal(e.data.hea, 'Tres días con fiebre y tos productiva.', 'la HEA viene de la consulta que lo ingresó')
+    assert.deepEqual(e.data.admissionDx.map((x: any) => x.label), ['Neumonía'])
+    assert.deepEqual(e.data.meds.map((m: any) => [m.drug, m.frequency, !!m.untilDischarge]), [['Ceftriaxona', 'cada 12 h', true]])
+    assert.deepEqual(e.data.procedures.map((x: any) => x.name), ['Toracocentesis'])
+    assert.equal(e.data.evolution, DISCHARGE.summary)
+    assert.equal(e.data.condition, 'Mejorado')
+    assert.equal(e.data.dischargeRx.length, 1)
+    assert.ok(e.data.dischargeRx[0].startsWith('Amoxicilina'))
+    assert.ok(e.data.observationAt, 'vino de observación')
+    assert.ok(e.data.stayDays >= 1)
+    // Lo obligatorio que falta no se inventa: no se emite hasta escribirlo
+    assert.equal((await doc.patch(`/api/epicrisis/${e.id}`, { hea: '' })).status, 200)
+    const blocked = await doc.post(`/api/epicrisis/${e.id}/issue`)
+    assert.equal(blocked.status, 400)
+    assert.match(blocked.body.error, /historia de la enfermedad actual/)
+    assert.equal((await doc.patch(`/api/epicrisis/${e.id}`, { hea: 'Fiebre y tos de 3 días.', hidden: ['procedures'] })).status, 200)
+    assert.equal((await nurse.post(`/api/epicrisis/${e.id}/issue`)).status, 403, 'enfermería no emite')
+    e = (await doc.post(`/api/epicrisis/${e.id}/issue`)).body
+    assert.equal(e.status, 'issued')
+    assert.equal(e.data.doctor.name, 'Dra. Lucía Herrera')
+    assert.equal(e.data.doctor.license, 'CMH-08812')
+    assert.equal((await doc.patch(`/api/epicrisis/${e.id}`, { hea: 'otra' })).status, 409, 'emitida no se edita')
+    // Enfermería la ve y la reimprime; recepción no
+    assert.equal((await nurse.get(`/api/epicrisis/${e.id}`)).status, 200)
+    assert.equal((await (await as('smejia@demo.clinara')).get(`/api/epicrisis/${e.id}`)).status, 403)
+    // Anular con motivo abre la versión 2 como borrador
+    assert.equal((await doc.post(`/api/epicrisis/${e.id}/void`, { reason: 'no' })).status, 400)
+    const v2 = (await doc.post(`/api/epicrisis/${e.id}/void`, { reason: 'Faltaba un medicamento al alta' })).body
+    assert.equal(v2.version, 2)
+    assert.equal(v2.status, 'draft')
+    assert.equal(v2.replacesId, e.id)
+    assert.equal(v2.data.hea, 'Fiebre y tos de 3 días.')
+    const file = (await doc.get(`/api/inpatient/${stayId}`)).body
+    assert.deepEqual(file.epicrises.map((x: any) => [x.version, x.status]), [[1, 'voided'], [2, 'draft']])
+    // Queda en el historial del paciente
+    assert.equal((await doc.get(`/api/patients/${file.hospitalization.patientId}/epicrises`)).body.length, 2)
+  })
+
+  test('observación: no se genera sola, se genera con el botón; altas anteriores también', async () => {
+    const { doc, stayId } = await observation('EpiObs')
+    const out = await doc.post(`/api/inpatient/${stayId}/discharge`, { ...DISCHARGE, items: [] })
+    assert.equal(out.status, 201, JSON.stringify(out.body))
+    assert.equal(out.body.epicrisisId, undefined)
+    const g = await doc.post(`/api/inpatient/${stayId}/epicrisis`)
+    assert.equal(g.status, 201)
+    assert.equal(g.body.data.dischargeRx.length, 0)
+    assert.equal((await doc.post(`/api/inpatient/${stayId}/epicrisis`)).body.id, g.body.id, 'no se duplica')
+    // Un alta de antes del cambio (de la demo), sin epicrisis
+    const old = await sql.one(`SELECT h.id FROM hospitalizations h WHERE h.status = 'discharged' AND h.clinic_id = 'c-sb' AND h.kind = 'hospital'
+      AND NOT EXISTS (SELECT 1 FROM epicrises e WHERE e.hospitalization_id = h.id) LIMIT 1`)
+    assert.ok(old, 'la demo tiene altas anteriores')
+    const prev = await doc.post(`/api/inpatient/${old!.id}/epicrisis`)
+    assert.equal(prev.status, 201, JSON.stringify(prev.body))
+    assert.equal(prev.body.status, 'draft')
+    // Una estancia activa no tiene epicrisis todavía
+    const { stayId: active } = await observation('EpiActiva')
+    assert.equal((await doc.post(`/api/inpatient/${active}/epicrisis`)).status, 409)
+  })
+})

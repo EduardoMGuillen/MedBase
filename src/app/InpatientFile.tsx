@@ -22,6 +22,7 @@ import { ReferralModal } from './Referral'
 import { features } from '../lib/permissions'
 import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
 import { toBase64 } from './Attachments'
+import { DischargeDocuments, EpicrisisButton } from './Epicrisis'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
 import { hasBlank, medHasBlank, orderKey } from '../lib/orderSets'
 import { useVademecum } from '../lib/vademecum'
@@ -57,6 +58,7 @@ export default function InpatientFile() {
   const medical = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'procedure')
   const nursing = file.notes.filter((n) => n.kind === 'nursing')
   const annexes = file.authorizations.length + file.procedures.filter((x) => x.kind === 'authorization').length + file.referrals.length
+    + file.epicrises.filter((e) => e.status !== 'voided').length
   const pendingAuth = open && file.authorizations.find((a) => a.template === 'hospital' && a.status === 'pending')
   const tabs: [Tab, string][] = obs ? [
     ['sheet', 'Datos generales'],
@@ -1006,7 +1008,7 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
           onChange={(e) => { setM({ ...m, drug: e.target.value }); setOverride(false); setOpen(true) }} placeholder="Busca en el vademécum o escríbelo" />
         {open && matches.length > 0 && (
           <div className="suggest__list">
-            {matches.map((d) => <button type="button" key={d.name} onMouseDown={(e) => e.preventDefault()}
+            {matches.map((d) => <button type="button" key={`${d.name}-${d.presentation}`} onMouseDown={(e) => e.preventDefault()}
               onClick={() => { setM({ ...m, drug: d.name, presentation: d.presentation, route: /ampolla|vial|frasco|bolsa/i.test(d.presentation) ? 'Intravenosa' : defaultRoute(d.presentation) }); setOpen(false) }}>
               <span>{d.name}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{d.presentation}</span></button>)}
           </div>
@@ -1113,6 +1115,7 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
         </section>
       )}
       {making && <AuthorizationForm file={file} p={p} template={making} onClose={() => setMaking(null)} onCreated={(a) => { setMaking(null); nav(`/app/autorizaciones/${a.id}`) }} />}
+      <DischargeDocuments file={file} />
       {file.referrals.map((r) => (
         <article key={r.id} className="panel consult-entry">
           <div className="panel__head"><div><h2>Referencia {r.number} {r.voidedAt ? <span className="badge badge--red">Anulada</span> : <span className="badge badge--mint">Emitida</span>}</h2>
@@ -1128,7 +1131,7 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
           <div className="panel__body"><p><b>{x.name}</b></p>{x.notes && <p>{x.notes}</p>}</div>
         </article>
       ))}
-      {!list.length && !legacy.length && !file.referrals.length && <section className="panel"><div className="empty">Sin autorizaciones todavía.</div></section>}
+      {!list.length && !legacy.length && !file.referrals.length && !file.epicrises.length && <section className="panel"><div className="empty">Sin autorizaciones todavía.</div></section>}
     </div>
   )
 }
@@ -1205,6 +1208,7 @@ const EMPTY_RX: PrescriptionItem = { drug: '', presentation: '', dose: '1 tablet
 
 function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => void }) {
   const { can, discharge, staffById } = useStore()
+  const nav = useNavigate()
   const h = file.hospitalization
   const note = file.notes.find((n) => n.kind === 'discharge')
   const [dx, setDx] = useState(h.diagnoses)
@@ -1222,6 +1226,7 @@ function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Link className="btn btn--primary btn--sm" to={`${stayPath(h)}/expediente`}><FileText size={15} />Expediente completo</Link>
             {h.prescriptionId && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${h.prescriptionId}`}>Receta de egreso</Link>}
+            <EpicrisisButton file={file} />
           </div>
         </div>
         <div className="panel__body"><div className="note">
@@ -1271,7 +1276,7 @@ function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => 
           <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (rx.drug.trim() && rx.duration.trim()) { setItems([...items, { ...rx, drug: rx.drug.trim() }]); setRx(EMPTY_RX) } }}>
             <label className="field"><span>Medicamento</span><input className="input" list="dc-drugs" value={rx.drug}
               onChange={(e) => { const d = DRUGS.find((x) => x.name === e.target.value); setRx({ ...rx, drug: e.target.value, presentation: d?.presentation ?? rx.presentation }) }} />
-              <datalist id="dc-drugs">{DRUGS.map((d) => <option key={d.name} value={d.name} />)}</datalist></label>
+              <datalist id="dc-drugs">{DRUGS.map((d) => <option key={`${d.name}-${d.presentation}`} value={d.name} />)}</datalist></label>
             <label className="field"><span>Presentación</span><input className="input" value={rx.presentation} onChange={(e) => setRx({ ...rx, presentation: e.target.value })} /></label>
             <label className="field"><span>Dosis</span><input className="input" value={rx.dose} onChange={(e) => setRx({ ...rx, dose: e.target.value })} /></label>
             <label className="field"><span>Frecuencia</span><select className="select" value={rx.frequency} onChange={(e) => setRx({ ...rx, frequency: e.target.value })}>{FREQUENCIES.map((x) => <option key={x}>{x}</option>)}</select></label>
@@ -1285,7 +1290,9 @@ function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => 
           setBusy(true)
           const r = await discharge(h.id, { diagnoses: dx, summary: f.summary.trim(), condition: f.condition, instructions: f.instructions.trim(), followUp: f.followUp.trim() || undefined, items })
           setBusy(false)
-          if (r) reload()
+          // En hospitalización la epicrisis se generó sola: se abre la vista previa para revisarla y emitirla
+          if (r?.epicrisisId) nav(`/app/epicrisis/${r.epicrisisId}`)
+          else if (r) reload()
         }}><LogOut size={17} />Dar de alta a {fullName(p).split(' ')[0]}</button>
       </div>
     </section>

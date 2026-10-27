@@ -7,6 +7,7 @@ import { date, fullName, recordNumber, shortStaff, time, dxCode } from '../lib/f
 import { medLabel, orderMark, splitOrders, stayPath } from '../lib/inpatient'
 import { authStatus, authTitle } from '../lib/consent'
 import { PdfPages } from '../components/PdfPages'
+import { currentEpicrisis, EpicrisisSheet } from './Epicrisis'
 import { ROLE_LABEL } from '../lib/permissions'
 import type { Consultation, InpatientFile, InpatientNote, Patient, Vitals } from '../lib/types'
 import { ConsultationBody, Identification } from './PatientChart'
@@ -72,6 +73,8 @@ export default function FullRecord() {
   const nursing = file.notes.filter((n) => n.kind === 'nursing').sort((a, b) => a.at.localeCompare(b.at))
   const auths = file.authorizations
   const legacyAuths = file.procedures.filter((x) => x.kind === 'authorization')
+  // La epicrisis vigente va al final; también es un documento aparte
+  const epicrisis = currentEpicrisis(file)
   const sections: [string, string][] = [
     ['fr-hoja', obs ? 'Datos generales' : 'Hoja de hospitalización'],
     ['fr-notas', `Notas de evolución (${entries.length})`],
@@ -79,6 +82,7 @@ export default function FullRecord() {
     ['fr-medicamentos', 'Hoja de medicamentos'],
     ['fr-laboratorios', `Laboratorios (${file.labs.length})`],
     ['fr-autorizaciones', `Anexos: autorizaciones (${auths.length + legacyAuths.length})`],
+    ...(epicrisis ? [['fr-epicrisis', `Epicrisis${epicrisis.status === 'draft' ? ' (borrador sin emitir)' : ''}`] as [string, string]] : []),
   ]
   const page = (sid: string, section: string, children: ReactNode, continuous = false) => (
     <PrintPage key={sid} id={sid} section={section} p={p} record={record} clinic={settings.name} continuous={continuous}>{children}</PrintPage>
@@ -182,6 +186,8 @@ export default function FullRecord() {
         </>, true)}
 
         {file.referrals.map((r, i) => page(`fr-referencia-${i}`, `Anexos: referencia ${r.number}`, <ReferralSheet r={r} />))}
+
+        {epicrisis && page('fr-epicrisis', 'Epicrisis', <EpicrisisSheet e={epicrisis} />)}
       </article>
     </div>
   )

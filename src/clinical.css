@@ -691,3 +691,31 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .section-title { display: flex; gap: 8px; align-items: center; font-size: 17px; margin: 22px 0 10px; color: var(--muted); }
 .set-items li { grid-template-columns: 16px 24px 1fr auto; }
 @media (max-width: 720px) { .set-items li { grid-template-columns: 16px 22px 1fr; } .set-items .orders__tools { grid-column: 3; } }
+
+/* ---------- Ronda 2 (P1): epicrisis ---------- */
+.epi { position: relative; }
+.epi__stamp { position: absolute; top: 18px; right: 50%; transform: translateX(50%) rotate(-4deg); border: 2px solid var(--amber-ink); color: var(--amber-ink); padding: 2px 12px; border-radius: 6px; font-weight: 700; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; background: #fff; }
+.epi__sec { margin-top: 14px; break-inside: avoid; page-break-inside: avoid; }
+.epi__sec h3 { font-size: 13.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--ink-deep); border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 6px; }
+.epi__facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 14px; margin: 0; font-size: 13px; }
+.epi__facts dt { color: var(--muted); font-size: 11.5px; }
+.epi__facts dd { margin: 0; font-weight: 600; }
+.epi__wide { grid-column: 1 / -1; }
+.epi-text { white-space: pre-wrap; margin: 0; font-size: 13.5px; }
+.epi-missing { margin: 0; color: var(--amber-ink); background: #fff4d6; padding: 4px 8px; border-radius: 6px; font-size: 13px; }
+.epi__table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.epi__table th, .epi__table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.epi__table th { font-size: 11.5px; color: var(--muted); font-weight: 650; }
+.epi__sign { display: grid; justify-items: center; gap: 2px; margin: 34px auto 6px; width: 260px; text-align: center; break-inside: avoid; }
+.epi__sign img { max-height: 64px; max-width: 220px; }
+.epi__sign .consent__line { width: 100%; }
+.epi__sign small { color: var(--muted); font-size: 12px; }
+.epi-edit .panel__body { display: grid; gap: 12px; }
+.epi-toggles { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.check-inline { display: inline-flex; gap: 8px; align-items: center; font-size: 14px; }
+.epi-history h3 { font-size: 15px; margin-bottom: 8px; }
+@media (max-width: 720px) {
+  .epi__facts { grid-template-columns: 1fr 1fr; }
+  .epi__table { font-size: 12px; display: block; overflow-x: auto; }
+}
+@media print { .epi__stamp { border-color: #000; color: #000; } }

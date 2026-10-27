@@ -16,6 +16,7 @@ import type { Certificate, Consultation, Patient, Vitals } from '../lib/types'
 import { CERT_KIND } from '../lib/certificates'
 import { vitalLevel, type VitalKey } from '../lib/vitals'
 import { stayPath, yearsOld } from '../lib/inpatient'
+import { PatientEpicrises } from './Epicrisis'
 
 /** Signos de una preclínica. Resalta lo que está fuera de rango según la edad (`src/lib/vitals.ts`). */
 export function VitalsGrid({ v, birthDate }: { v: Vitals; birthDate?: string }) {
@@ -285,6 +286,7 @@ export default function PatientChart() {
               <span className={`badge ${h.status === 'active' ? 'badge--mint' : 'badge--done'}`}>{h.status === 'active' ? (h.kind === 'observation' ? 'En observación' : 'Hospitalizado') : 'Egresado'}</span>
             </Link>
           ))}</div> : <div className="empty">Sin hospitalizaciones.</div>}
+          <PatientEpicrises patientId={p.id} stays={hs} />
         </section>
       )}
 

@@ -31,6 +31,7 @@ import { registerCertificates } from './routes/certificates.js'
 import { registerReferrals } from './routes/referrals.js'
 import { registerConsent } from './routes/consent.js'
 import { registerOrderSets } from './routes/orderSets.js'
+import { registerEpicrisis } from './routes/epicrisis.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { can, permissionsFor, ROLES_BY_KIND, type Permission } from '../src/lib/permissions.js'
 import { yearsOld } from '../src/lib/inpatient.js'
@@ -959,6 +960,7 @@ export function createApp(opts: AppOptions) {
   registerReferrals(app, ctx)
   registerConsent(app, ctx)
   registerOrderSets(app, ctx)
+  registerEpicrisis(app, ctx)
   registerFollowups(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))

@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '28'
+const SCHEMA_VERSION = '29'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -562,6 +562,26 @@ CREATE TABLE IF NOT EXISTS order_set_uses (
   patient_id TEXT
 );
 CREATE INDEX IF NOT EXISTS order_set_uses_set ON order_set_uses (set_id, user_id);
+
+-- v29: ronda 2 (P1). Epicrisis: documento de egreso aparte del expediente. Borrador que el médico revisa y emite;
+-- emitida no se edita: se anula con motivo y se emite la versión siguiente. Las altas anteriores no tienen
+-- epicrisis: se genera con el botón "Generar epicrisis" (no se crean solas para no inventar contenido sin revisión).
+CREATE TABLE IF NOT EXISTS epicrises (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  hospitalization_id TEXT NOT NULL REFERENCES hospitalizations(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  version INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('draft','issued','voided')),
+  data TEXT NOT NULL,
+  created_by TEXT NOT NULL REFERENCES staff(id), created_at TEXT NOT NULL,
+  updated_by TEXT, updated_at TEXT,
+  issued_by TEXT, issued_at TEXT,
+  voided_by TEXT, voided_at TEXT, void_reason TEXT,
+  replaces_id TEXT
+);
+CREATE INDEX IF NOT EXISTS epicrises_stay ON epicrises (hospitalization_id, version);
+CREATE INDEX IF NOT EXISTS epicrises_patient ON epicrises (patient_id);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

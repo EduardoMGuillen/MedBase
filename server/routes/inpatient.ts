@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, diagnosisInput, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
-import { toAttachment, toAuthorization, toBed, toDose, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral } from '../mappers.js'
+import { toAttachment, toAuthorization, toBed, toDose, toEpicrisis, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral } from '../mappers.js'
+import { createEpicrisisDraft } from '../epicrisis.js'
 import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
 import { isScheduled, medLabel } from '../../src/lib/inpatient.js'
@@ -273,7 +274,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const cid = clinicOf(req)
     const h = (await hospRow(cid, String(req.params.id)))!
     const id = String(h.id)
-    const [notes, meds, doses, procedures, labs, marks, auths, referrals] = await Promise.all([
+    const [notes, meds, doses, procedures, labs, marks, auths, referrals, epicrises] = await Promise.all([
       sql.query('SELECT * FROM hosp_notes WHERE hospitalization_id = ? ORDER BY at, id', [id]),
       sql.query('SELECT * FROM hosp_meds WHERE hospitalization_id = ? ORDER BY ordered_at, id', [id]),
       sql.query('SELECT d.* FROM hosp_doses d JOIN hosp_meds m ON m.id = d.med_id WHERE m.hospitalization_id = ? ORDER BY d.given_at', [id]),
@@ -284,12 +285,13 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       // Las archivadas ("No aplica" de observación, v26) no se muestran ni se cuentan
       sql.query('SELECT a.*, t.mime AS file_mime FROM authorizations a LEFT JOIN attachments t ON t.id = a.file_id WHERE a.hospitalization_id = ? AND a.archived_at IS NULL ORDER BY a.created_at', [id]),
       sql.query('SELECT * FROM referrals WHERE hospitalization_id = ? ORDER BY issued_at', [id]),
+      sql.query('SELECT * FROM epicrises WHERE hospitalization_id = ? ORDER BY version', [id]),
     ])
     await audit(userOf(req), `Consultó el expediente de hospitalización de ${await patientName(String(h.patient_id))}`)
     res.json({
       hospitalization: toHospitalization(h), notes: notes.map(toInpatientNote), meds: meds.map(toInpatientMed), doses: doses.map(toDose),
       procedures: procedures.map(toProcedure), labs: labs.map(toAttachment), marks: marks.map(toOrderMark), authorizations: auths.map(toAuthorization),
-      referrals: referrals.map(toReferral),
+      referrals: referrals.map(toReferral), epicrises: epicrises.map(toEpicrisis),
     })
   })
 
@@ -671,6 +673,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const noteId = randomUUID()
     const rxId = b.items.length ? randomUUID() : null
     let folio: string | null = null
+    let epicrisisId: string | undefined
     const name = await patientName(patientId)
     await sql.tx(async (q) => {
       if (rxId) {
@@ -685,8 +688,11 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       await q.run(`UPDATE hosp_meds SET stopped_at = ?, stopped_by = ?, stop_reason = 'Egreso' WHERE hospitalization_id = ? AND stopped_at IS NULL`, [now.toISOString(), user.id, id])
       await q.run(`UPDATE hospitalizations SET status = 'discharged', discharged_at = ?, discharged_by = ?, prescription_id = ? WHERE id = ?`,
         [now.toISOString(), user.id, rxId, id])
-      await audit(user, `Dio de alta a ${name}${folio ? ` con receta ${folio}` : ''}`, q)
+      // P1: al dar el alta en hospitalización se genera sola la epicrisis (borrador para revisar y emitir). En
+      // observación es opcional: se genera con el botón
+      if (h.kind === 'hospital') epicrisisId = (await createEpicrisisDraft(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [id]))!, user.id)).id
+      await audit(user, `Dio de alta a ${name}${folio ? ` con receta ${folio}` : ''}${epicrisisId ? '; se generó la epicrisis para revisar' : ''}`, q)
     })
-    res.status(201).json({ hospitalization: toHospitalization((await hospRow(cid, id))!), prescriptionId: rxId, folio })
+    res.status(201).json({ hospitalization: toHospitalization((await hospRow(cid, id))!), prescriptionId: rxId, folio, epicrisisId })
   })
 }

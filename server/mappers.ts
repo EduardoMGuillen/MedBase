@@ -1,6 +1,6 @@
 import type {
   Appointment, Attachment, AuditEntry, Authorization, AuthorizationData, Background, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
-  ConsentRevocation, ConsentSigning, GuestPatient, Patient, Payment, Prescription, Referral, ReferralData, Service, Staff, Vitals,
+  ConsentRevocation, ConsentSigning, Epicrisis, EpicrisisData, GuestPatient, Patient, Payment, Prescription, Referral, ReferralData, Service, Staff, Vitals,
 } from '../src/lib/types.js'
 import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
 import { DNI_MASK } from '../src/lib/format.js'
@@ -193,4 +193,11 @@ export const toClinic = (r: Row): Clinic => ({
 export const toReferral = (r: Row): Referral => ({
   id: String(r.id), hospitalizationId: String(r.hospitalization_id), patientId: String(r.patient_id), number: String(r.number), data: j<ReferralData>(r.data, {} as ReferralData),
   destination: s(r.destination), issuedBy: String(r.issued_by), issuedAt: String(r.issued_at), voidedAt: s(r.voided_at), voidedBy: s(r.voided_by), voidReason: s(r.void_reason),
+})
+
+export const toEpicrisis = (r: Row): Epicrisis => ({
+  id: String(r.id), hospitalizationId: String(r.hospitalization_id), patientId: String(r.patient_id), version: Number(r.version),
+  status: r.status as Epicrisis['status'], data: j<EpicrisisData>(r.data, {} as EpicrisisData), createdBy: String(r.created_by), createdAt: String(r.created_at),
+  updatedAt: s(r.updated_at), issuedBy: s(r.issued_by), issuedAt: s(r.issued_at), voidedBy: s(r.voided_by), voidedAt: s(r.voided_at), voidReason: s(r.void_reason),
+  replacesId: s(r.replaces_id),
 })

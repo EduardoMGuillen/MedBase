@@ -670,6 +670,60 @@ export interface HospProcedure {
   updatedAt?: string
 }
 
+/**
+ * Epicrisis (P1): resumen de egreso, documento aparte del expediente. Se arma sola con los datos de la estancia; el
+ * médico la revisa, corrige el texto y la emite. Emitida no se edita: se anula con motivo y se emite otra versión.
+ */
+export interface EpicrisisData {
+  clinic: { name: string; address: string; phone: string; logo?: string }
+  patient: { name: string; dni?: string; age: string; sex?: 'F' | 'M'; record: string }
+  admittedAt: string
+  dischargedAt: string
+  stayDays: number
+  room?: string
+  attending: string
+  /** Si vino de observación: cuándo entró a observación. */
+  observationAt?: string
+  admissionDx: { code: string; label: string; system?: 'icd11' }[]
+  /** Historia de la enfermedad actual: de la consulta que lo ingresó o de la nota de ingreso. */
+  hea: string
+  /** Medicamentos administrados, agrupados por orden (no dosis por dosis). */
+  meds: { drug: string; dose: string; route: string; frequency: string; start: string; end?: string; untilDischarge?: boolean }[]
+  procedures: { name: string; at: string }[]
+  evolution: string
+  dischargeDx: { code: string; label: string; system?: 'icd11' }[]
+  /** Laboratorios de la estancia; el médico elige cuáles incluir (ninguno por defecto). */
+  labs: { id: string; title: string; at: string }[]
+  labIds: string[]
+  condition?: string
+  /** Receta de salida, una línea por medicamento. */
+  dischargeRx: string[]
+  instructions: string
+  followUp?: string
+  /** Secciones "agregadas" que el médico quitó. */
+  hidden: ('procedures' | 'dischargeDx' | 'labs' | 'condition')[]
+  /** Quien la emite: nombre, colegiación y su firma guardada, si tiene. */
+  doctor?: { name: string; license?: string; signature?: string }
+}
+
+export interface Epicrisis {
+  id: string
+  hospitalizationId: string
+  patientId: string
+  version: number
+  status: 'draft' | 'issued' | 'voided'
+  data: EpicrisisData
+  createdBy: string
+  createdAt: string
+  updatedAt?: string
+  issuedBy?: string
+  issuedAt?: string
+  voidedBy?: string
+  voidedAt?: string
+  voidReason?: string
+  replacesId?: string
+}
+
 export interface InpatientFile {
   hospitalization: Hospitalization
   notes: InpatientNote[]
@@ -680,6 +734,8 @@ export interface InpatientFile {
   marks: OrderMark[]
   authorizations: Authorization[]
   referrals: Referral[]
+  /** Epicrisis de la estancia (todas sus versiones). */
+  epicrises: Epicrisis[]
 }
 
 // ---------- Crónicos y seguimientos ----------
