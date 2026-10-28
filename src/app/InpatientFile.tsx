@@ -11,6 +11,8 @@ import { courseDone, courseEnd, doseTimes, elapsed, stayPath, INPATIENT_FREQUENC
 import { MedAlertBanner } from './MedAlerts'
 import { NoteColumns, NoteText } from '../components/NoteColumns'
 import { DiagnosisPicker } from '../components/DiagnosisPicker'
+import { DictateButton } from '../components/Dictate'
+import { appendDictation } from '../lib/dictation'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { authTitle, FREQUENT_PROCEDURES, isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
@@ -890,14 +892,17 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
       <div className="note-editor">
       <div className="soap-stack">
         {format === 'soap' ? SOAP.map((s) => (
-          <label key={s.key} className="field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
-            <textarea className="textarea" rows={4} value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} /></label>
+          <label key={s.key} className="field dictate-field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
+            <textarea className="textarea" rows={4} value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} />
+            <DictateButton label={s.label} onText={(t) => setN((x) => ({ ...x, [s.key]: appendDictation(x[s.key], t) }))} /></label>
         )) : (<>
           <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label="Diagnósticos (CIE-11)" />
-          <label className="field"><span>Examen físico</span>
-            <textarea className="textarea" rows={6} value={d.exam} onChange={(e) => setD({ ...d, exam: e.target.value })} /></label>
-          <label className="field"><span>Observaciones</span>
-            <textarea className="textarea" rows={4} value={d.observations} onChange={(e) => setD({ ...d, observations: e.target.value })} /></label>
+          <label className="field dictate-field"><span>Examen físico</span>
+            <textarea className="textarea" rows={6} value={d.exam} onChange={(e) => setD({ ...d, exam: e.target.value })} />
+            <DictateButton label="Examen físico" onText={(t) => setD((x) => ({ ...x, exam: appendDictation(x.exam, t) }))} /></label>
+          <label className="field dictate-field"><span>Observaciones</span>
+            <textarea className="textarea" rows={4} value={d.observations} onChange={(e) => setD({ ...d, observations: e.target.value })} />
+            <DictateButton label="Observaciones" onText={(t) => setD((x) => ({ ...x, observations: appendDictation(x.observations, t) }))} /></label>
         </>)}
       </div>
       <div className="note-editor__orders">

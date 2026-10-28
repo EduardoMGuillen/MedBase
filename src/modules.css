@@ -86,6 +86,21 @@ tr.clickable { cursor: pointer; }
 .tour__skip { margin-right: auto; }
 @media (prefers-reduced-motion: reduce) { .tour__spot, .tour__bar span { transition: none; } }
 
+/* Dictado de voz: el micrófono va en la esquina del campo */
+.dictate-field { position: relative; }
+.dictate-field .textarea { padding-bottom: 44px; }
+.dictate { position: absolute; right: 8px; bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.dictate__btn { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line); background: var(--paper); color: var(--ink); cursor: pointer; }
+.dictate__btn:hover:not(:disabled) { border-color: var(--ink); background: var(--ink-soft); }
+.dictate__btn:disabled { cursor: progress; color: var(--muted); }
+.dictate__btn.is-rec, .dictate__btn.is-rec:hover { background: var(--red-ink); border-color: var(--red-ink); color: #fff; animation: dictate-pulse 1.4s ease-in-out infinite; }
+.dictate__status { font-size: 12.5px; font-weight: 600; color: var(--muted); background: var(--ward); padding: 3px 10px; border-radius: 99px; font-variant-numeric: tabular-nums; }
+.dictate__status.is-rec { color: var(--red-ink); background: var(--red); }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes dictate-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(180, 35, 24, .35); } 50% { box-shadow: 0 0 0 6px rgba(180, 35, 24, 0); } }
+@media (prefers-reduced-motion: reduce) { .dictate__btn.is-rec, .spin { animation: none; } }
+
 /* Constancia */
 .cert__title { font-size: 26px; text-align: center; margin: 32px 0 24px; }
 .cert__to { font-weight: 600; margin-bottom: 14px; }
