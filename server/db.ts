@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '30'
+const SCHEMA_VERSION = '31'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -597,6 +597,15 @@ ALTER TABLE hospitalizations ADD COLUMN IF NOT EXISTS vitals_every_hours INTEGER
 ALTER TABLE clinics
   ADD COLUMN IF NOT EXISTS temp_low DOUBLE PRECISION NOT NULL DEFAULT 36.0,
   ADD COLUMN IF NOT EXISTS temp_high DOUBLE PRECISION NOT NULL DEFAULT 38.0;
+
+-- v31: caja. El recibo es control interno: la factura fiscal sale del talonario de la clínica (CAI de imprenta) y su
+-- número se anota en el cobro. Motivo del descuento y datos de la anulación (motivo, quién y cuándo) en el recibo.
+ALTER TABLE payments
+  ADD COLUMN IF NOT EXISTS invoice_no TEXT,
+  ADD COLUMN IF NOT EXISTS discount_reason TEXT,
+  ADD COLUMN IF NOT EXISTS void_reason TEXT,
+  ADD COLUMN IF NOT EXISTS voided_at TEXT,
+  ADD COLUMN IF NOT EXISTS voided_by TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

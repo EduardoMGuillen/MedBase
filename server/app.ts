@@ -233,6 +233,13 @@ export function createApp(opts: AppOptions) {
     res.json({ ok: true })
   })
 
+  // Recorrido de primer ingreso: terminado o saltado, no vuelve a aparecer en ningún equipo
+  app.post('/api/me/tour', auth, async (req, res) => {
+    await sql.run(`UPDATE staff SET prefs = jsonb_set(COALESCE(NULLIF(prefs, ''), '{}')::jsonb, '{tourDoneAt}', to_jsonb(?::text))::text WHERE id = ?`,
+      [new Date().toISOString(), userOf(req).id])
+    res.json({ ok: true })
+  })
+
   // Doble factor: configurar genera un secreto pendiente; se activa al confirmar un código válido
   app.post('/api/auth/2fa/setup', auth, async (req, res) => {
     const user = userOf(req)

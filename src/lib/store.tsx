@@ -52,7 +52,7 @@ export interface NewAppointment {
   type?: Appointment['type']
 }
 
-export type NewPayment = Pick<Payment, 'patientId' | 'items' | 'discount' | 'method'> & { appointmentId?: string; reference?: string }
+export type NewPayment = Pick<Payment, 'patientId' | 'items' | 'discount' | 'method'> & { appointmentId?: string; reference?: string; discountReason?: string; invoiceNo?: string }
 
 const EMPTY: Data = { staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], settings: DEFAULT_SETTINGS, beds: [], inpatients: [], followups: [], discharges: [] }
 
@@ -274,12 +274,15 @@ function useStoreValue() {
     }, 'Número de colegiación guardado'),
     pay: (p: NewPayment) => run(() => api<Payment>('/payments', { body: p }), 'Cobro registrado'),
     voidPayment: (id: string, reason: string) => run(() => api<Payment>(`/payments/${id}/void`, { body: { reason } }), 'Recibo anulado'),
+    setInvoiceNo: (id: string, invoiceNo: string) => run(() => api<Payment>(`/payments/${id}/invoice`, { method: 'PATCH', body: { invoiceNo } }), 'Factura anotada en el recibo'),
 
     uploadAttachment: (patientId: string, a: { name: string; mime: string; category: Attachment['category']; data: string; title?: string; takenAt?: string; hospitalizationId?: string }) =>
       run(() => api<Attachment>(`/patients/${patientId}/attachments`, { body: a }), 'Archivo adjuntado'),
     deleteAttachment: (id: string) => run(() => api(`/attachments/${id}`, { method: 'DELETE' }), 'Archivo eliminado'),
 
     /** El médico titular terminó o saltó el asistente de primer ingreso. */
+    /** El recorrido de primer ingreso ya se vio (terminado o saltado). Sin aviso: no interrumpe. */
+    finishTour: () => api('/me/tour', { method: 'POST' }).catch(() => null),
     finishSetup: () => run(() => api<ClinicSettings>('/settings/setup-done', { method: 'POST' }), 'Listo. Tu consultorio está configurado.'),
     convertToClinic: (b: { admin: { name: string; email: string }; assistants: Record<string, 'reception' | 'nurse'> }) =>
       run(() => api<{ settings: ClinicSettings; admin: Staff; password: string }>('/settings/convert-to-clinic', { body: b })),

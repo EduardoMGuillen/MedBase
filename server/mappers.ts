@@ -87,6 +87,7 @@ export const toPayment = (r: Row): Payment => ({
   id: String(r.id), receiptNo: String(r.receipt_no), appointmentId: s(r.appointment_id), patientId: String(r.patient_id),
   items: j(r.items, []), discount: Number(r.discount), total: Number(r.total), method: r.method as Payment['method'],
   reference: s(r.reference), receivedBy: String(r.received_by), paidAt: String(r.paid_at), voided: Boolean(r.voided),
+  invoiceNo: s(r.invoice_no), discountReason: s(r.discount_reason), voidReason: s(r.void_reason), voidedAt: s(r.voided_at), voidedBy: s(r.voided_by),
 })
 
 export const toAttachment = (r: Row): Attachment => ({

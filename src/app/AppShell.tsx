@@ -6,9 +6,11 @@ import {
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
 import { SearchPalette } from '../components/Search'
+import { Tour } from '../components/Tour'
 import { useStore } from '../lib/store'
 import { features, ROLE_LABEL, type Permission } from '../lib/permissions'
 import { cap, localISODate, sameDay } from '../lib/format'
+import { tourFor } from '../lib/tours'
 
 const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean; group?: string }[] = [
   { to: '/app', label: 'Inicio', icon: House, end: true, perm: undefined },
@@ -28,12 +30,20 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
 ]
 
 export default function AppShell() {
-  const { user, can, signOut, appointments, followups, refresh, settings, pendingOrders = [], inpatients } = useStore()
+  const { user, can, signOut, appointments, followups, refresh, settings, pendingOrders = [], inpatients, finishTour } = useStore()
   const nav = useNavigate()
   const loc = useLocation()
   const [open, setOpen] = useState(false)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setOpen(false), [loc.pathname])
+  const [manualTour, setManualTour] = useState(false)
+  const [tourClosed, setTourClosed] = useState(false)
+  // Mi cuenta ofrece repetir el recorrido
+  useEffect(() => {
+    const start = () => { setTourClosed(false); setManualTour(true) }
+    window.addEventListener('start-tour', start)
+    return () => window.removeEventListener('start-tour', start)
+  }, [])
 
   // La sala de espera cambia por acciones de otros: se sincroniza cada 30 segundos
   useEffect(() => {
@@ -50,6 +60,9 @@ export default function AppShell() {
   const newOrders = pendingOrders.reduce((s, x) => s + x.pending, 0)
   const inObservation = inpatients.filter((h) => h.kind === 'observation').length
   const platform = user.role === 'superadmin'
+  // Recorrido de primer ingreso; el titular de un consultorio nuevo primero termina la configuración
+  const touring = !tourClosed && (manualTour || (!user.prefs?.tourDoneAt && loc.pathname !== '/app/bienvenida'))
+  const closeTour = () => { setTourClosed(true); setManualTour(false); if (!user.prefs?.tourDoneAt) finishTour() }
   const f = features(settings)
   // En un consultorio el médico titular también cobra y administra: Caja va en el menú y "Administración" es "Mi consultorio"
   const quietBilling = !f.office && (user.role === 'doctor' || user.role === 'nurse')
@@ -87,7 +100,7 @@ export default function AppShell() {
 
   return (
     <div className="shell">
-      <aside className={`side ${open ? 'open' : ''}`} aria-label="Navegación principal">
+      <aside className={`side ${open || touring ? 'open' : ''}`} aria-label="Navegación principal">
         <div className="side__clinic">
           <Logo size={28} />
           <small>{platform ? 'Plataforma' : f.office ? 'Consultorio' : 'Clínica'}</small>
@@ -98,7 +111,7 @@ export default function AppShell() {
             const links = b.items.map((n) => {
               const c = badge(n.to)
               return (
-                <NavLink key={n.to} to={n.to} end={'end' in n ? n.end : undefined} className="side__link">
+                <NavLink key={n.to} to={n.to} end={'end' in n ? n.end : undefined} className="side__link" data-tour={`nav:${n.to}`}>
                   <n.icon size={18} strokeWidth={1.9} />
                   {n.label}
                   {c && <span className={`count${c.alert ? ' count--alert' : ''}`} aria-label={c.label}>{c.n}</span>}
@@ -106,14 +119,14 @@ export default function AppShell() {
               )
             })
             if (!b.group) return <Fragment key={b.items[0].to}>{links}</Fragment>
-            return <NavGroup key={b.group} title={b.group} userId={user.id} paths={b.items.map((n) => n.to)} badges={b.items.map((n) => badge(n.to)).filter((x) => x !== null)}>{links}</NavGroup>
+            return <NavGroup key={b.group} title={b.group} userId={user.id} paths={b.items.map((n) => n.to)} badges={b.items.map((n) => badge(n.to)).filter((x) => x !== null)} forceOpen={touring}>{links}</NavGroup>
           })}
           {quietBilling && can('billing.manage') && (
-            <NavLink to="/app/caja" className="side__link side__link--quiet"><Receipt size={16} strokeWidth={1.9} />Cobrar</NavLink>
+            <NavLink to="/app/caja" className="side__link side__link--quiet" data-tour="nav:/app/caja"><Receipt size={16} strokeWidth={1.9} />Cobrar</NavLink>
           )}
         </nav>
         <div className="side__user">
-          <Link to="/app/cuenta" className="side__me" title="Mi cuenta">
+          <Link to="/app/cuenta" className="side__me" title="Mi cuenta" data-tour="me">
             <Avatar name={user.name} color={user.color} />
             <div>
               <strong>{user.name}</strong>
@@ -132,7 +145,7 @@ export default function AppShell() {
           <button className="icon-btn topbar__menu" aria-label="Abrir menú" onClick={() => setOpen((o) => !o)}><Menu size={20} /></button>
           <span className="topbar__date">{cap(label)}</span>
           {!platform && can('patients.view') && (
-            <button className="search-btn" onClick={() => window.dispatchEvent(new Event('open-search'))}>
+            <button className="search-btn" data-tour="search" onClick={() => window.dispatchEvent(new Event('open-search'))}>
               <Search size={16} /><span>Buscar paciente</span><kbd>Ctrl K</kbd>
             </button>
           )}
@@ -140,6 +153,7 @@ export default function AppShell() {
         <Outlet />
       </div>
       <SearchPalette />
+      {touring && <Tour steps={tourFor(user.role, settings.kind ?? 'clinic', { observationEnabled: settings.observationEnabled })} onClose={closeTour} />}
     </div>
   )
 }
@@ -149,8 +163,8 @@ export default function AppShell() {
  * título; si la página actual está dentro, aparece abierto. Cada usuario deja cada grupo como quiere y se recuerda
  * en este navegador. Cerrado, los contadores de sus opciones se suman junto al título para no perder las alertas.
  */
-function NavGroup({ title, userId, paths, badges, children }: {
-  title: string; userId: string; paths: string[]; badges: { n: number; alert?: boolean }[]; children: React.ReactNode
+function NavGroup({ title, userId, paths, badges, forceOpen, children }: {
+  title: string; userId: string; paths: string[]; badges: { n: number; alert?: boolean }[]; forceOpen?: boolean; children: React.ReactNode
 }) {
   const loc = useLocation()
   const key = `clinara.menu.${userId}.${title}`
@@ -168,16 +182,18 @@ function NavGroup({ title, userId, paths, badges, children }: {
     setOpen(next)
     try { localStorage.setItem(key, next ? '1' : '0') } catch { /* sin almacenamiento */ }
   }
+  // Durante el recorrido todos los grupos se ven, para poder señalar sus opciones
+  const shown = open || !!forceOpen
   const total = badges.reduce((s, b) => s + b.n, 0)
   const id = `nav-${title.toLowerCase().normalize('NFD').replace(/[^a-z]+/g, '-')}`
   return (
-    <div className={`side__grp${open ? ' is-open' : ''}`}>
-      <button type="button" className="side__group side__group--btn" aria-expanded={open} aria-controls={id} onClick={toggle}>
+    <div className={`side__grp${shown ? ' is-open' : ''}`}>
+      <button type="button" className="side__group side__group--btn" aria-expanded={shown} aria-controls={id} onClick={toggle}>
         <span>{title}</span>
-        {!open && total > 0 && <span className={`count${badges.some((b) => b.alert) ? ' count--alert' : ''}`} aria-label={`${total} pendientes en ${title}`}>{total}</span>}
+        {!shown && total > 0 && <span className={`count${badges.some((b) => b.alert) ? ' count--alert' : ''}`} aria-label={`${total} pendientes en ${title}`}>{total}</span>}
         <ChevronDown size={15} className="side__chev" aria-hidden="true" />
       </button>
-      <div className="side__grp-body" id={id} inert={!open}>
+      <div className="side__grp-body" id={id} inert={!shown}>
         <div>{children}</div>
       </div>
     </div>

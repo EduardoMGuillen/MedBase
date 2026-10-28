@@ -36,7 +36,7 @@ export interface Staff {
   /** Tipo de cuenta de su clínica: decide sus permisos y qué módulos ve. */
   clinicKind?: ClinicKind
   /** Preferencias del usuario: el último formato de nota que usó. */
-  prefs?: { noteFormat?: 'soap' | 'dx' }
+  prefs?: { noteFormat?: 'soap' | 'dx'; tourDoneAt?: string }
   /** El médico tiene su firma guardada (la imagen no viaja con la lista del personal). */
   hasSignature?: boolean
 }
@@ -105,6 +105,12 @@ export interface Payment {
   receivedBy: string
   paidAt: string
   voided?: boolean
+  /** Número de la factura del talonario de la clínica (el recibo es control interno). */
+  invoiceNo?: string
+  discountReason?: string
+  voidReason?: string
+  voidedAt?: string
+  voidedBy?: string
 }
 
 export interface Attachment {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ListChecks, ShieldCheck } from 'lucide-react'
+import { Compass, ListChecks, ShieldCheck } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, PageHead } from '../components/ui'
 import { ROLE_LABEL, permissionsFor, PERMISSIONS } from '../lib/permissions'
@@ -13,7 +13,8 @@ export default function Account() {
   const me = staffById(user.id) ?? user
   return (
     <div className="page">
-      <PageHead title="Mi cuenta" sub="Tu contraseña y la verificación en dos pasos." />
+      <PageHead title="Mi cuenta" sub="Tu contraseña y la verificación en dos pasos."
+        actions={<button className="btn btn--ghost" onClick={() => window.dispatchEvent(new Event('start-tour'))}><Compass size={16} />Ver el recorrido otra vez</button>} />
       <div className="chart-head" style={{ gridTemplateColumns: 'auto 1fr' }}>
         <Avatar name={user.name} color={user.color} />
         <div>
