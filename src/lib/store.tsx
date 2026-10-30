@@ -367,7 +367,6 @@ function useStoreValue() {
     }, 'Verificación en dos pasos desactivada'),
     /** AN1: adenda a una nota firmada. */
     addAddendum: (b: Pick<Addendum, 'targetKind' | 'targetId' | 'kind' | 'corrects' | 'text'>) => run(() => api<Addendum>('/addenda', { body: b }), 'Adenda firmada'),
-    resetDemo: () => run(() => api('/admin/reset-demo', { method: 'POST' }), 'Datos de demo restablecidos'),
     createClinic: (c: Pick<Clinic, 'name' | 'address' | 'phone' | 'email'> & { slug?: string; kind?: ClinicKind; admin?: { name: string; email: string }
       owner?: { name: string; email: string; license: string; specialty?: string } }) =>
       run(() => api<{ clinic: Clinic; admin: Staff; password: string }>('/platform/clinics', { body: c }), c.kind === 'office' ? 'Consultorio creado' : 'Clínica creada'),

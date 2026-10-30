@@ -6,11 +6,22 @@ import { ensureDb } from './db.js'
 import { seedDemo } from './demoData.js'
 
 /**
- * DM1: `npm run seed:demo` borra los pacientes de las clínicas demo (con respaldo) y genera los nuevos, relativos a
- * hoy. Sin DATABASE_URL usa la base local (detén `npm run dev` antes: PGlite admite un solo proceso). Con
- * `npm run seed:demo -- .env.neon.local`, la base remota. El respaldo queda en la tabla demo_backups y en data/backups.
+ * DM1: `npm run seed:demo -- --confirmar` borra los pacientes de las clínicas demo (con respaldo) y genera los nuevos,
+ * relativos a hoy. Sin `--confirmar` (o `CONFIRMAR_DEMO=si`) no hace nada: así no se corre por accidente. Sólo toca las
+ * clínicas marcadas con `clinics.is_demo`, nunca una clínica real.
+ *
+ * Sin DATABASE_URL usa la base local (detén `npm run dev` antes: PGlite admite un solo proceso). Con
+ * `npm run seed:demo -- .env.neon.local --confirmar`, la base remota. El respaldo queda en la tabla demo_backups y en
+ * data/backups.
  */
-try { process.loadEnvFile(process.argv[2] ?? '.env') } catch { /* opcional */ }
+const args = process.argv.slice(2)
+const envFile = args.find((a) => !a.startsWith('--'))
+const confirmed = args.includes('--confirmar') || process.env.CONFIRMAR_DEMO === 'si'
+try { process.loadEnvFile(envFile ?? '.env') } catch { /* opcional */ }
+if (!confirmed) {
+  console.error('Esto borra los pacientes de las clínicas demo y genera otros. Para hacerlo: npm run seed:demo -- --confirmar')
+  process.exit(1)
+}
 const sql = createSql()
 const t = Date.now()
 await ensureDb(sql)
@@ -24,5 +35,6 @@ const s = await seedDemo(sql, {
   },
 })
 await sql.close()
-console.log(`Datos demo listos en ${((Date.now() - t) / 1000).toFixed(1)} s: ${s.patients} pacientes, ${s.appointments} citas, ${s.consultations} consultas, ` +
-  `${s.observation} en observación, ${s.hospital} hospitalizados, ${s.discharged} egresados y ${s.followups} seguimientos (clínicas ${s.clinics.join(', ')}).`)
+console.log(`Datos demo listos en ${((Date.now() - t) / 1000).toFixed(1)} s (clínicas ${s.clinics.join(', ')}).`)
+console.table({ antes: s.before, después: s.after })
+console.log(`${s.observation} en observación, ${s.hospital} hospitalizados, ${s.discharged} egresados.`)

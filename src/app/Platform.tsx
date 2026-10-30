@@ -25,7 +25,7 @@ function SecretModal({ s, onClose }: { s: Secret; onClose: () => void }) {
 }
 
 export default function Platform() {
-  const { fetchClinics, fetchPlatformActivity, createClinic, demo, resetDemo, notify } = useStore()
+  const { fetchClinics, fetchPlatformActivity, createClinic, notify } = useStore()
   const [clinics, setClinics] = useState<Clinic[] | null>(null)
   const [activity, setActivity] = useState<Awaited<ReturnType<typeof fetchPlatformActivity>>>([])
   const [creating, setCreating] = useState(false)
@@ -43,7 +43,6 @@ export default function Platform() {
     <div className="page">
       <PageHead title="Clínicas y consultorios" sub="Administración de la plataforma Clinara. Desde aquí no se ven expedientes de pacientes."
         actions={<>
-          {demo && <button className="btn btn--ghost" onClick={async () => { if (confirm('Esto borra todos los cambios de todas las clínicas y vuelve a cargar la demostración.') && await resetDemo()) load() }}>Restablecer demo</button>}
           <button className="btn btn--primary" onClick={() => setCreating(true)}><Plus size={17} />Nueva cuenta</button>
         </>} />
 

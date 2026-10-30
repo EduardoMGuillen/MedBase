@@ -3,7 +3,10 @@ import bcrypt from 'bcryptjs'
 import type { Row, Sql } from './sql.js'
 import { DEMO_PASSWORD, textPdf } from './db.js'
 import { giveDoses, naive, openStay, plusMin, signedSheet, signVisit, type Visit } from './demoScenarios.js'
-import { ensureHospitalAuthorization } from './authorizations.js'
+import { authorizationBase, ensureHospitalAuthorization } from './authorizations.js'
+import { signedConsentPdf } from './consentPdf.js'
+import { toAuthorization } from './mappers.js'
+import { criticalLimitsOf, isCritical, type CriticalGroup } from '../src/lib/clinicalConfig.js'
 import { createEpicrisisDraft } from './epicrisis.js'
 import { medicationOrder } from '../src/lib/format.js'
 import { scheduleFromWeek, slotsOn, weekOf, type Week } from '../src/lib/schedule.js'
@@ -17,6 +20,12 @@ import type { Diagnosis, PrescriptionItem, Schedule } from '../src/lib/types.js'
  * Antes de borrar guarda un respaldo de todo lo que va a quitar (tabla `demo_backups`). Borra únicamente los pacientes
  * de esas clínicas y lo que cuelga de ellos; no toca usuarios, configuración, camas, servicios, horarios ni catálogos.
  * Es idempotente: correrlo dos veces deja lo mismo (borra lo anterior y vuelve a generar con la misma semilla).
+ *
+ * Ronda 5: cada médico con al menos 8 citas hoy (en todos los estados) y 3 diarias en los próximos 14 días; el
+ * Dr. Daniel Fúnez trabaja de lunes a domingo y tiene turno todos los días del mes; los casos para probar OB1
+ * (dosis atrasada de ayer y no aplicada con aviso), OB2 (signos de varios días) y MC6 (autorizaciones en todos los
+ * estados), y un resultado crítico. La bitácora de los pacientes borrados se descarta y queda un solo evento
+ * «Reinicio de datos demo» con los conteos de antes y después.
  *
  * Todos los nombres, identidades y teléfonos son inventados al combinar listas; no corresponden a personas reales.
  */
@@ -234,8 +243,8 @@ const APPEND_ONLY: [string, string][] = [['order_marks', 'order_marks_no_change'
 export async function backupDemo(q: Sql, clinicIds: string[]) {
   const marks = clinicIds.map(() => '?').join(',')
   const data: Record<string, unknown> = {}
-  for (const t of PATIENT_TABLES) {
-    const where = t === 'order_set_uses' ? `clinic_id IN (${marks}) AND patient_id IS NOT NULL` : `clinic_id IN (${marks})`
+  for (const t of [...PATIENT_TABLES, 'audit']) {
+    const where = t === 'order_set_uses' || t === 'audit' ? `clinic_id IN (${marks}) AND patient_id IS NOT NULL` : `clinic_id IN (${marks})`
     const r = await q.one<{ rows: unknown }>(`SELECT COALESCE(json_agg(t), '[]'::json)::text AS rows FROM ${t} t WHERE ${where}`, clinicIds)
     data[t] = JSON.parse(String(r?.rows ?? '[]'))
   }
@@ -253,6 +262,10 @@ async function wipeDemoPatients(q: Sql, clinicIds: string[]) {
   for (const t of PATIENT_TABLES) {
     await q.run(`DELETE FROM ${t} WHERE clinic_id IN (${marks})${t === 'order_set_uses' ? ' AND patient_id IS NOT NULL' : ''}`, clinicIds)
   }
+  // Ronda 5: la bitácora de los pacientes borrados se descarta con ellos (queda en el respaldo); lo demás no se toca
+  await q.exec('ALTER TABLE audit DISABLE TRIGGER audit_no_change')
+  await q.run(`DELETE FROM audit WHERE clinic_id IN (${marks}) AND patient_id IS NOT NULL`, clinicIds)
+  await q.exec('ALTER TABLE audit ENABLE TRIGGER audit_no_change')
   for (const [t, trg] of APPEND_ONLY) await q.exec(`ALTER TABLE ${t} ENABLE TRIGGER ${trg}`)
 }
 
@@ -260,12 +273,27 @@ async function wipeDemoPatients(q: Sql, clinicIds: string[]) {
 
 /** Dr. Daniel Fúnez (Medicina general) y horario de fin de semana para los médicos demo que no lo tienen. */
 async function ensureDemoStaff(q: Sql, clinicIds: string[]) {
-  if (clinicIds.includes(MAIN) && !(await q.one('SELECT 1 FROM staff WHERE lower(email) = ?', [FUNEZ.email]))) {
-    const week: Week = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [d, d === 0 || d === 6 ? [{ start: '08:00', end: '14:00' }] : [{ start: '07:00', end: '12:00' }, { start: '13:00', end: '16:00' }]]))
+  // Ronda 5: todos los días, de 08:00 a 12:00 y de 13:00 a 17:00 (si ya existía con otro horario, se le pone éste)
+  const funezWeek: Week = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [d, [{ start: '08:00', end: '12:00' }, { start: '13:00', end: '17:00' }]]))
+  const funez = clinicIds.includes(MAIN) ? await q.one('SELECT id FROM staff WHERE lower(email) = ?', [FUNEZ.email]) : undefined
+  if (funez) await q.run('UPDATE staff SET schedule = ? WHERE id = ?', [JSON.stringify(scheduleFromWeek(funezWeek, 30)), String(funez.id)])
+  if (clinicIds.includes(MAIN) && !funez) {
+    const week = funezWeek
     const svc = await q.one(`SELECT id FROM services WHERE clinic_id = ? AND id = 'svc-gen'`, [MAIN]) ?? await q.one(`SELECT id FROM services WHERE clinic_id = ? AND active ORDER BY name LIMIT 1`, [MAIN])
     await q.run(`INSERT INTO staff (id, name, role, roles, specialty, email, license, color, active, password_hash, schedule, service_id, clinic_id, prefs) VALUES (?,?,'doctor',?,?,?,?,?,TRUE,?,?,?,?,?)`,
       [FUNEZ.id, FUNEZ.name, JSON.stringify(['doctor']), FUNEZ.specialty, FUNEZ.email, FUNEZ.license, '#9A5B13', bcrypt.hashSync(DEMO_PASSWORD, 10),
         JSON.stringify(scheduleFromWeek(week, 30)), svc ? String(svc.id) : null, MAIN, JSON.stringify({ rxValidityDays: 30, noteFormat: 'dx' })])
+  }
+  // AD3: el Dr. Fúnez tiene turno todos los días del mes en curso (lo que ya estaba asignado no se toca)
+  if (clinicIds.includes(MAIN)) {
+    const by = String((await q.one(`SELECT id FROM staff WHERE clinic_id = ? AND roles LIKE '%admin%' AND email LIKE '%@demo.clinara' ORDER BY id LIMIT 1`, [MAIN]))?.id ?? FUNEZ.id)
+    const now = new Date()
+    const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    for (let n = 1; n <= days; n++) {
+      const day = isoDate(new Date(now.getFullYear(), now.getMonth(), n))
+      if (await q.one('SELECT 1 FROM duty_roster WHERE clinic_id = ? AND day = ? AND staff_id = ? AND removed_at IS NULL', [MAIN, day, FUNEZ.id])) continue
+      await q.run('INSERT INTO duty_roster (id, clinic_id, day, staff_id, assigned_by, assigned_at) VALUES (?,?,?,?,?,?)', [randomUUID(), MAIN, day, FUNEZ.id, by, now.toISOString()])
+    }
   }
   // Fines de semana con citas: a quien no tiene sábado o domingo se le agrega una mañana (lo demás de su horario no cambia)
   const doctors = await q.query(`SELECT id, schedule FROM staff WHERE clinic_id IN (${clinicIds.map(() => '?').join(',')}) AND active AND roles LIKE '%doctor%' AND email LIKE '%@demo.clinara'`, clinicIds)
@@ -280,17 +308,30 @@ async function ensureDemoStaff(q: Sql, clinicIds: string[]) {
 
 // ---------- Generación ----------
 
-export interface DemoSummary { clinics: string[]; patients: number; appointments: number; consultations: number; observation: number; hospital: number; discharged: number; followups: number; backupBytes: number }
+export interface DemoSummary { clinics: string[]; patients: number; appointments: number; consultations: number; observation: number; hospital: number; discharged: number; followups: number; backupBytes: number
+  /** Conteos de las clínicas demo antes y después del reinicio. */
+  before: DemoCounts; after: DemoCounts }
+export type DemoCounts = Record<'pacientes' | 'citas' | 'consultas' | 'estancias' | 'seguimientos' | 'cobros', number>
 
-export async function seedDemo(sql: Sql, opts: { now?: Date; onBackup?: (json: string) => void | Promise<void> } = {}): Promise<DemoSummary> {
+/** Cuántos registros de pacientes hay en las clínicas demo. */
+async function demoCounts(q: Sql, ids: string[]): Promise<DemoCounts> {
+  const marks = ids.map(() => '?').join(',')
+  const n = async (t: string) => Number((await q.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM ${t} WHERE clinic_id IN (${marks})`, ids))!.n)
+  return { pacientes: await n('patients'), citas: await n('appointments'), consultas: await n('consultations'), estancias: await n('hospitalizations'), seguimientos: await n('followups'), cobros: await n('payments') }
+}
+const countText = (c: DemoCounts) => Object.entries(c).map(([k, v]) => `${v} ${k}`).join(', ')
+
+export async function seedDemo(sql: Sql, opts: { now?: Date; by?: string; onBackup?: (json: string) => void | Promise<void> } = {}): Promise<DemoSummary> {
   const now = opts.now ?? new Date()
   const clinics = (await sql.query(`SELECT id, kind FROM clinics WHERE is_demo ORDER BY id`)).map((c) => ({ id: String(c.id), kind: String(c.kind) }))
   if (!clinics.length) throw new Error('No hay clínicas marcadas como demo (clinics.is_demo). No se borra ni se genera nada.')
   const ids = clinics.map((c) => c.id)
   let backup = ''
-  const summary: DemoSummary = { clinics: ids, patients: 0, appointments: 0, consultations: 0, observation: 0, hospital: 0, discharged: 0, followups: 0, backupBytes: 0 }
+  const empty: DemoCounts = { pacientes: 0, citas: 0, consultas: 0, estancias: 0, seguimientos: 0, cobros: 0 }
+  const summary: DemoSummary = { clinics: ids, patients: 0, appointments: 0, consultations: 0, observation: 0, hospital: 0, discharged: 0, followups: 0, backupBytes: 0, before: empty, after: empty }
   await sql.tx(async (q) => {
     await q.run('SELECT pg_advisory_xact_lock(7272742)')
+    summary.before = await demoCounts(q, ids)
     backup = await backupDemo(q, ids)
     await wipeDemoPatients(q, ids)
     await ensureDemoStaff(q, ids)
@@ -300,7 +341,9 @@ export async function seedDemo(sql: Sql, opts: { now?: Date; onBackup?: (json: s
       summary.observation += s.observation; summary.hospital += s.hospital; summary.discharged += s.discharged; summary.followups += s.followups
     }
     await q.run(`INSERT INTO meta (key, value) VALUES ('demo_seeded_on', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [isoDate(now)])
-    await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?,?,?,?)', [new Date().toISOString(), 'sistema', `Datos de demostración regenerados para el ${isoDate(now)} (respaldo previo guardado)`, MAIN])
+    summary.after = await demoCounts(q, ids)
+    await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?,?,?,?)', [new Date().toISOString(), opts.by ?? 'sistema',
+      `Reinicio de datos demo del ${isoDate(now)} (respaldo previo guardado). Antes: ${countText(summary.before)}. Después: ${countText(summary.after)}.`, MAIN])
   })
   summary.backupBytes = backup.length
   await opts.onBackup?.(backup)
@@ -399,6 +442,10 @@ async function generateClinic(q: Sql, clinicId: string, office: boolean, now: Da
       const weekend = [0, 6].includes(day.getDay())
       const fill = off === 0 ? 0.85 : weekend ? 0.45 : 0.6
       const chosen = slots.filter(() => r() < fill)
+      // Ronda 5: hoy al menos 8 (todos los estados) y en los próximos 14 días al menos 3 por médico, si su horario alcanza
+      const min = off === 0 ? 8 : off > 0 && off <= 14 ? 3 : 0
+      for (const s of slots) { if (chosen.length >= min) break; if (!chosen.includes(s)) chosen.push(s) }
+      chosen.sort()
       // Hoy: atendidos, uno en consulta, listos (con preclínica), en sala y por llegar, en ese orden
       const nToday = chosen.length
       chosen.forEach((hhmm, k) => {
@@ -410,10 +457,12 @@ async function generateClinic(q: Sql, clinicId: string, office: boolean, now: Da
         let status: string
         if (off < 0) status = r() < 0.86 ? 'done' : r() < 0.6 ? 'no_show' : 'cancelled'
         else if (off === 0) {
-          // Por posición: al menos uno en cada estado si el médico tiene 5 citas o más hoy
-          const done = Math.max(1, Math.floor(nToday * 0.35))
-          status = k < done ? 'done' : k === done ? 'in_consult' : k <= done + Math.max(1, Math.round(nToday * 0.15)) ? 'triaged'
-            : k <= done + 1 + Math.max(2, Math.round(nToday * 0.3)) && k < nToday - 1 ? 'arrived' : 'scheduled'
+          // Por posición (la demo se prepara antes de abrir): atendidos (uno no llegó), en consulta, listo con preclínica,
+          // en sala de espera, uno confirmado y los demás agendados; la última siempre queda por llegar. Con 8 hay de todos.
+          const done = Math.max(2, Math.floor(nToday * 0.3))
+          const arr = Math.max(1, Math.round(nToday * 0.2))
+          status = k === nToday - 1 ? 'scheduled' : k < done ? (k === 1 ? 'no_show' : 'done') : k === done ? 'in_consult' : k === done + 1 ? 'triaged'
+            : k <= done + 1 + arr ? 'arrived' : k === done + 2 + arr ? 'confirmed' : 'scheduled'
         } else status = off <= 2 && r() < 0.5 ? 'confirmed' : 'scheduled'
         const arrivedAt = ['done', 'in_consult', 'triaged', 'arrived'].includes(status)
           ? new Date(Math.min(at.getTime(), now.getTime()) - int(r, 8, 35) * 60_000).toISOString() : null
@@ -423,14 +472,17 @@ async function generateClinic(q: Sql, clinicId: string, office: boolean, now: Da
       })
     }
   }
-  // Sala de espera sin cita: uno por médico que atiende hoy
+  // Sala de espera sin cita: uno por médico que atiende hoy (en el consultorio, dos)
   for (const d of docs.filter((x) => slotsOn(x.schedule, isoDate(now)).length)) {
-    const pool = forDoc(d).filter((p) => !busy.has(p.id))
-    if (!pool.length) continue
-    const p = pick(r, pool)
-    busy.add(p.id)
-    const at = hoursAgo(now, 0.3)
-    appts.push([`dm-a-${clinicId}-${d.id}-walkin`, p.id, d.id, naive(at), 30, p.age < 12 ? 'Fiebre desde anoche' : 'Dolor abdominal desde la mañana', 'urgent', 'arrived', plusMin(now, -12).toISOString(), 'walkin', clinicId])
+    for (let w = 0; w < (office ? 2 : 1); w++) {
+      const pool = forDoc(d).filter((p) => !busy.has(p.id))
+      if (!pool.length) continue
+      const p = pick(r, pool)
+      busy.add(p.id)
+      const at = hoursAgo(now, 0.3 + w * 0.2)
+      appts.push([`dm-a-${clinicId}-${d.id}-walkin${w ? `-${w}` : ''}`, p.id, d.id, naive(at), 30, p.age < 12 ? 'Fiebre desde anoche' : w ? 'Dolor de garganta y fiebre' : 'Dolor abdominal desde la mañana', 'urgent', 'arrived',
+        plusMin(now, -12 - w * 8).toISOString(), 'walkin', clinicId])
+    }
   }
   await insertRows(q, 'appointments', ['id', 'patient_id', 'doctor_id', 'start', 'minutes', 'reason', 'type', 'status', 'arrived_at', 'source', 'clinic_id'], appts)
   await insertRows(q, 'vitals', ['id', 'patient_id', 'appointment_id', 'taken_by', 'taken_at', 'systolic', 'diastolic', 'heart_rate', 'temperature', 'spo2', 'weight_kg', 'height_cm', 'pain_scale', 'notes',
@@ -487,7 +539,7 @@ const HOSPITAL: StayCase[] = [
       { dx: { exam: 'Tórax: Menos estertores. SpO₂ 95 % con oxígeno a 1 L/min.', observations: 'Afebril desde ayer, tolera la dieta.' }, indications: ['Retirar el oxígeno si SpO₂ mayor de 93 %.'] },
       { soap: { s: 'Se siente mejor, camina en el cuarto.', o: 'T 36.8 °C, SpO₂ 95 % aire ambiente.', a: 'Neumonía resolviendo.', p: 'Valorar egreso mañana.' }, indications: ['Deambulación.'] }],
     nursing: ['Paciente pasa la noche tranquilo, tos productiva. Glucometría nocturna 186 mg/dL.', 'Se retira oxígeno, SpO₂ 94 % al aire ambiente.'],
-    labs: [{ name: 'Hemograma', values: [['Leucocitos', '16 800', '/mm³', 4500, 11000], ['Neutrófilos', '84', '%', 40, 70], ['Hemoglobina', '13.1', 'g/dL', 12, 16]] }] },
+    labs: [{ name: 'Hemograma', values: [['Leucocitos', '16.8', '×10³/µL', 4.5, 11], ['Neutrófilos', '84', '%', 40, 70], ['Hemoglobina', '13.1', 'g/dL', 12, 16]] }] },
   { spec: /interna/i, reason: 'Herida en el pie que no sana y glucosa alta', ageMin: 50, ageMax: 75, days: 6, every: 8,
     history: 'Diabético de 12 años de evolución con úlcera en el pie derecho de 3 semanas, ahora con enrojecimiento y secreción. Glucometrías de 300 mg/dL.',
     exam: 'Pie derecho: Úlcera de 3 cm en cabeza del primer metatarsiano con celulitis perilesional, pulsos pedios presentes.', dx: [icd('5A11', 'Diabetes mellitus tipo 2'), icd('1B70', 'Celulitis')],
@@ -500,7 +552,7 @@ const HOSPITAL: StayCase[] = [
       { soap: { s: 'Menos dolor en el pie.', o: 'Herida con tejido de granulación, sin secreción.', a: 'Celulitis en resolución.', p: 'Completar antibiótico.' }, indications: [] },
       { dx: { exam: 'Glucometrías 140-180 mg/dL.', observations: 'Control glucémico adecuado.' }, indications: ['Educación sobre cuidado de los pies.'] }],
     nursing: ['Curación de herida: tejido de granulación, sin secreción.', 'Glucometría 22:00: 176 mg/dL.'],
-    labs: [{ name: 'Glucosa', values: [['Glucosa', '312', 'mg/dL', 70, 100]] }, { name: 'Química sanguínea', values: [['Creatinina', '1.1', 'mg/dL', 0.6, 1.2], ['Potasio', '4.2', 'mmol/L', 3.5, 5.1]] }] },
+    labs: [{ name: 'Glucosa', values: [['Glucosa', '312', 'mg/dL', 70, 100]] }, { name: 'Química sanguínea', values: [['Creatinina', '1.1', 'mg/dL', 0.6, 1.2], ['Potasio', '4.2', 'mEq/L', 3.5, 5.1]] }] },
   { spec: /pediatr/i, reason: 'Dificultad para respirar y fiebre', ageMin: 1, ageMax: 3, days: 2, every: 4,
     history: 'Tres días de tos, fiebre y respiración rápida; hoy con tiraje y menor ingesta de líquidos.',
     exam: 'Tórax: Tiraje subcostal, sibilancias y crepitantes bilaterales.\nFR 48 rpm.', dx: [icd('CA41', 'Bronquiolitis aguda')],
@@ -528,8 +580,8 @@ const HOSPITAL: StayCase[] = [
     items: [MED('Solución Hartmann', 'Bolsa 1000 mL', '1000 mL', 'Intravenosa', 'Cada 8 horas', ''), MED('Acetaminofén', 'Tableta 500 mg', '1 g', 'Oral', 'Cada 8 horas', '3 días', 'No dar AINES.')],
     vit: { by: '', systolic: 104, diastolic: 66, heartRate: 108, respRate: 20, temperature: 39.2, spo2: 98, weightKg: 70, complaint: 'Fiebre, dolor de cuerpo y vómitos.' },
     temps: [39.2, 38.8, 38.4, 37.9, 38.3, 37.6, 37.2, 37.0, 36.8, 36.9, 36.8, 36.7],
-    notes: [{ soap: { s: 'Menos dolor abdominal, sin vómitos.', o: 'T 37.6 °C, plaquetas 68 000.', a: 'Dengue con signos de alarma, fase crítica.', p: 'Continuar líquidos y vigilancia.' }, indications: ['Plaquetas en 12 horas.'] }],
-    nursing: ['Diuresis adecuada. Sin sangrado activo.'], labs: [{ name: 'Hemograma', values: [['Plaquetas', '68 000', '/mm³', 150000, 450000], ['Hematocrito', '46', '%', 36, 46]] }], pendingExam: 'Hemograma' },
+    notes: [{ soap: { s: 'Menos dolor abdominal, sin vómitos.', o: 'T 37.6 °C, plaquetas 38 000.', a: 'Dengue con signos de alarma, fase crítica.', p: 'Continuar líquidos y vigilancia.' }, indications: ['Plaquetas en 12 horas.'] }],
+    nursing: ['Diuresis adecuada. Sin sangrado activo.'], labs: [{ name: 'Hemograma', values: [['Plaquetas', '38', '×10³/µL', 150, 450], ['Hematocrito', '46', '%', 36, 46]] }], pendingExam: 'Hemograma' },
   { spec: /general/i, reason: 'Diarrea y vómitos en adulto mayor', ageMin: 70, ageMax: 88, days: 1, every: 6,
     history: 'Diez evacuaciones líquidas y vómitos en las últimas 24 horas, con debilidad y mareo al ponerse de pie.',
     exam: 'Mucosas secas, llenado capilar de 3 segundos. Abdomen blando, ruidos aumentados.', dx: [icd('1A40.Z', 'Gastroenteritis o colitis infecciosa sin especificación del agente infeccioso'), icd('5C70.0', 'Deshidratación')],
@@ -537,25 +589,31 @@ const HOSPITAL: StayCase[] = [
     items: [MED('Solución salina 0.9 %', 'Bolsa 1000 mL', '1000 mL', 'Intravenosa', 'Cada 8 horas', ''), MED('Ondansetrón', 'Ampolla 8 mg/4 mL', '8 mg', 'Intravenosa', 'Cada 8 horas', '2 días')],
     vit: { by: '', systolic: 96, diastolic: 58, heartRate: 104, respRate: 18, temperature: 37.4, spo2: 97, weightKg: 58, complaint: 'Diarrea, vómitos y mareo.' },
     temps: [37.4, 37.2, 37.0, 36.8, 36.9, 36.7], notes: [], nursing: ['Dos evacuaciones líquidas en el turno, tolera líquidos claros.'],
-    labs: [{ name: 'Electrolitos', values: [['Sodio', '133', 'mmol/L', 135, 145], ['Potasio', '3.1', 'mmol/L', 3.5, 5.1]] }] },
+    labs: [{ name: 'Electrolitos', values: [['Sodio', '133', 'mEq/L', 135, 145], ['Potasio', '3.1', 'mEq/L', 3.5, 5.1]] }] },
 ]
 const OBSERVATION: StayCase[] = [
-  { spec: /./, reason: 'Crisis asmática', ageMin: 18, ageMax: 50, days: 0, every: 2, history: 'Asmática conocida con disnea y sibilancias desde la madrugada, sin respuesta a su inhalador.',
+  { spec: /general/i, reason: 'Crisis asmática', ageMin: 18, ageMax: 50, days: 0, every: 2, history: 'Asmática conocida con disnea y sibilancias desde la madrugada, sin respuesta a su inhalador.',
     exam: 'Tórax: Sibilancias espiratorias difusas, uso leve de músculos accesorios.', dx: [icd('CA23', 'Asma')], indications: ['Oxígeno para SpO₂ mayor de 92 %.', 'Signos vitales cada 2 horas.'],
     items: [MED('Salbutamol', 'Solución para nebulizar 5 mg/mL', '0.5 mL', 'Inhalada', 'Cada 4 horas', '1 día', 'En 3 mL de solución salina.'), MED('Hidrocortisona', 'Vial 100 mg', '100 mg', 'Intravenosa', 'Cada 8 horas', '1 día')],
     vit: { by: '', systolic: 128, diastolic: 78, heartRate: 112, respRate: 26, temperature: 36.8, spo2: 91, weightKg: 66, complaint: 'Falta de aire y silbido en el pecho.' }, temps: [36.8, 36.9, 36.7],
     notes: [{ dx: { exam: 'Sibilancias escasas. SpO₂ 95 %.', observations: 'Buena respuesta a la segunda nebulización.' }, indications: ['Valorar egreso en 2 horas.'] }], nursing: [], labs: [] },
-  { spec: /./, reason: 'Vómitos y diarrea', ageMin: 20, ageMax: 60, days: 0, every: 2, history: 'Ocho evacuaciones líquidas y cinco vómitos desde ayer. No tolera la vía oral.',
+  { spec: /interna/i, reason: 'Vómitos y diarrea', ageMin: 20, ageMax: 60, days: 0, every: 2, history: 'Ocho evacuaciones líquidas y cinco vómitos desde ayer. No tolera la vía oral.',
     exam: 'Mucosas secas, abdomen blando con ruidos aumentados.', dx: [icd('1A40.Z', 'Gastroenteritis o colitis infecciosa sin especificación del agente infeccioso'), icd('5C70.0', 'Deshidratación')],
     indications: ['Nada por vía oral por 2 horas; luego líquidos claros.', 'Control de ingesta y excreta.'],
     items: [MED('Solución Hartmann', 'Bolsa 1000 mL', '1000 mL', 'Intravenosa', 'Cada 8 horas', ''), MED('Ondansetrón', 'Ampolla 8 mg/4 mL', '8 mg', 'Intravenosa', 'Cada 8 horas', '1 día')],
     vit: { by: '', systolic: 100, diastolic: 62, heartRate: 106, respRate: 20, temperature: 37.3, spo2: 98, weightKg: 62, complaint: 'Vómitos y diarrea.' }, temps: [37.3, 37.1, 36.9],
     notes: [{ dx: { exam: 'Mucosas semihúmedas. FC 90 lpm.', observations: 'Sin vómitos desde el suero.' }, indications: ['Iniciar líquidos claros.'] }], nursing: [], labs: [] },
-  { spec: /./, reason: 'Presión alta y dolor de cabeza', ageMin: 50, ageMax: 75, days: 0, every: 2, history: 'Hipertensa con mal apego, cefalea occipital intensa desde la mañana. Sin déficit neurológico.',
+  { spec: /interna/i, reason: 'Presión alta y dolor de cabeza', ageMin: 50, ageMax: 75, days: 0, every: 2, history: 'Hipertensa con mal apego, cefalea occipital intensa desde la mañana. Sin déficit neurológico.',
     exam: 'Neurológico: Sin focalización. Fondo de ojo sin papiledema.', dx: [icd('BA03', 'Crisis hipertensiva')], indications: ['Reposo, luz tenue.', 'Presión arterial cada 30 minutos.'],
     items: [MED('Captopril', 'Tableta 25 mg', '25 mg', 'Sublingual', 'Dosis única', ''), MED('Losartán', 'Tableta 50 mg', '50 mg', 'Oral', 'Cada 12 horas', '')],
     vit: { by: '', systolic: 186, diastolic: 112, heartRate: 88, respRate: 18, temperature: 36.6, spo2: 97, weightKg: 80, complaint: 'Dolor de cabeza y presión alta.' }, temps: [36.6, 36.7],
     notes: [{ dx: { exam: 'PA 158/96. Cefalea 3/10.', observations: 'Descenso progresivo de la presión.' }, indications: ['Presión cada hora.'] }], nursing: [], labs: [] },
+  { spec: /pediatr/i, reason: 'Fiebre y vómitos', ageMin: 2, ageMax: 10, days: 0, every: 4, history: 'Fiebre de 39 °C desde ayer y cuatro vómitos; toma poco líquido.',
+    exam: 'Mucosas semisecas, faringe hiperémica. Abdomen blando, sin dolor.', dx: [icd('1A40.Z', 'Gastroenteritis o colitis infecciosa sin especificación del agente infeccioso')],
+    indications: ['Suero oral en tomas pequeñas.', 'Control de temperatura cada 4 horas.'],
+    items: [MED('Acetaminofén', 'Jarabe 160 mg/5 mL', '7 mL', 'Oral', 'Cada 6 horas', '2 días', 'Si fiebre.'), MED('Ondansetrón', 'Jarabe 4 mg/5 mL', '2.5 mL', 'Oral', 'Cada 8 horas', '1 día')],
+    vit: { by: '', systolic: 98, diastolic: 60, heartRate: 128, respRate: 26, temperature: 38.9, spo2: 98, weightKg: 22, complaint: 'Fiebre y vómitos.' }, temps: [38.9, 38.1, 37.4],
+    notes: [{ dx: { exam: 'Tolera suero oral. T 37.6 °C.', observations: 'Sin vómitos en la última hora.' }, indications: ['Valorar egreso con suero oral.'] }], nursing: [], labs: [] },
 ]
 
 /** Toma de signos de la estancia con la temperatura de la curva y lo demás coherente con ella. */
@@ -601,25 +659,46 @@ async function generateStays(q: Sql, clinicId: string, office: boolean, docs: Do
     indications: c.indications, items: c.items, vitals: { ...c.vit, by: nurse },
   })
 
-  // Observación: 3 en la clínica, 1 en el consultorio
-  for (const c of OBSERVATION.slice(0, office ? 1 : 3)) {
+  // Observación: 4 en la clínica (con médicos distintos), 1 en el consultorio
+  for (const [i, c] of OBSERVATION.slice(0, office ? 1 : 4).entries()) {
     const p = pickPatient(c)
     if (!p) continue
-    const d = office ? docs[0] : docs.find((x) => /general/i.test(x.specialty)) ?? docs[0]
-    const at = hoursAgo(now, 2 + counts.observation * 1.5)
+    const d = office ? docs[0] : docFor(c)
+    // OB1 (ronda 5): la de la solución c/8h lleva más de un día: una dosis de ayer atrasada y otra no aplicada con su motivo
+    const ob1 = !office && c.items.some((x) => /hartmann/i.test(x.drug))
+    // La primera (todo al día) lleva 6 horas: tomas registradas y una pendiente, para comparar con la de OB1
+    const at = ob1 ? hoursAgo(now, 30) : hoursAgo(now, i === 0 && !office ? 6 : 2 + counts.observation * 1.5)
     const v = visit(c, p, d, at, 'observation')
     await signVisit(q, v)
     const stay = `dm-h-${clinicId}-o${counts.observation + 1}`
     await openStay(q, v, stay, p.phone)
-    await q.run('UPDATE hospitalizations SET vitals_every_hours = ? WHERE id = ?', [c.every, stay])
-    await giveDoses(q, clinicId, stay, office ? nurse : nurse, hoursAgo(now, 0.5))
-    if (c.notes[0]) await noteRow(q, clinicId, stay, d.id, hoursAgo(now, 0.75), c.notes[0], c.dx)
+    await q.run('UPDATE hospitalizations SET vitals_every_hours = ? WHERE id = ?', [ob1 ? 8 : c.every, stay])
+    await giveDoses(q, clinicId, stay, nurse, hoursAgo(now, 0.5))
+    if (ob1) {
+      const med = await q.one(`SELECT id FROM hosp_meds WHERE hospitalization_id = ? AND drug LIKE 'Solución Hartmann%' ORDER BY ordered_at LIMIT 1`, [stay])
+      const given = med ? await q.query('SELECT id FROM hosp_doses WHERE med_id = ? ORDER BY scheduled_at', [String(med.id)]) : []
+      if (given.length >= 3) {
+        await q.run('DELETE FROM hosp_doses WHERE id = ?', [String(given[0].id)])
+        await q.run(`UPDATE hosp_doses SET status = 'skipped', note = 'Paciente fuera del servicio (estudio o quirófano)' WHERE id = ?`, [String(given.at(-1)!.id)])
+      }
+    }
+    // La nota va antes de la dosis no aplicada: el aviso sigue a la vista del médico hasta su siguiente nota
+    if (c.notes[0]) await noteRow(q, clinicId, stay, d.id, hoursAgo(now, ob1 ? 12 : 0.75), c.notes[0], c.dx)
+    // Signos de la estancia; en las dos primeras queda pendiente la toma más reciente
     await insertRows(q, 'vitals', ['id', 'patient_id', 'appointment_id', 'taken_by', 'taken_at', 'systolic', 'diastolic', 'heart_rate', 'temperature', 'spo2', 'weight_kg', 'height_cm', 'pain_scale',
-      'notes', 'resp_rate', 'glucose', 'chief_complaint', 'clinic_id', 'hospitalization_id'], stayVitals(clinicId, stay, p.id, nurse, at, hoursAgo(now, 0.2), c.every, c.temps, c.vit, r, false))
+      'notes', 'resp_rate', 'glucose', 'chief_complaint', 'clinic_id', 'hospitalization_id'], stayVitals(clinicId, stay, p.id, nurse, at, hoursAgo(now, 0.2), ob1 ? 8 : c.every, c.temps, c.vit, r, i < 2))
     counts.observation++
   }
   if (office) return counts
 
+  const limits = criticalLimitsOf(JSON.parse(String((await q.one('SELECT critical_groups FROM clinics WHERE id = ?', [clinicId]))?.critical_groups ?? 'null')) as CriticalGroup[] | null)
+  // MC6 (ronda 5): autorizaciones quirúrgicas en todos los estados: pendientes, firmada en pantalla y «No autoriza»
+  const SURGICAL: Record<number, { procedure: string; state: 'pending' | 'screen' | 'refused' }[]> = {
+    0: [{ procedure: 'Toracocentesis diagnóstica', state: 'pending' }],
+    1: [{ procedure: 'Desbridamiento quirúrgico de úlcera del pie derecho', state: 'screen' }],
+    3: [{ procedure: 'Colocación de catéter ureteral (doble J)', state: 'pending' }],
+    5: [{ procedure: 'Colocación de catéter venoso central', state: 'refused' }],
+  }
   const beds = (await q.query(`SELECT b.id FROM beds b WHERE b.clinic_id = ? AND b.active AND NOT EXISTS (SELECT 1 FROM hospitalizations h WHERE h.bed_id = b.id AND h.status = 'active') ORDER BY b.room`, [clinicId]))
     .map((b) => String(b.id))
   const companions = ['Esposa', 'Hijo', 'Hija', 'Madre', 'Esposo', 'Hermana']
@@ -665,13 +744,21 @@ async function generateStays(q: Sql, clinicId: string, office: boolean, docs: Do
       const eid = `${stay}-ex-${k}`
       const ordered = plusMin(admitted, 30)
       const resAt = plusMin(admitted, 240)
-      const values = lab.values.map(([analyte, value, unit, low, high]) => { const x = Number(value.replace(/\s/g, '')); return { analyte, value, unit, low, high, flag: x < low ? 'low' : x > high ? 'high' : undefined } })
+      const values = lab.values.map(([analyte, value, unit, low, high]) => {
+        const x = Number(value.replace(/\s/g, ''))
+        return { analyte, value, unit, low, high, flag: x < low ? 'low' : x > high ? 'high' : undefined, critical: isCritical(limits, analyte, x) || undefined }
+      })
+      // Un valor crítico (según los umbrales de la clínica, AD1) queda sin revisar: el médico lo ve como alerta crítica
+      const critical = values.some((v) => v.critical)
       await q.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, hospitalization_id, batch_id, grp, name, priority, place, area, status, ordered_by, ordered_at, status_at, status_by, result, critical, reviewed_by, reviewed_at)
-        VALUES (?,?,?,?,?,'lab',?,'urgent','clinic','nursing','reviewed',?,?,?,?,?,FALSE,?,?)`,
-      [eid, clinicId, p.id, stay, `${stay}-ex`, lab.name, d.id, ordered.toISOString(), resAt.toISOString(), nurse, JSON.stringify({ values, at: resAt.toISOString(), by: nurse }), d.id, plusMin(resAt, 40).toISOString()])
-      await insertRows(q, 'exam_events', ['id', 'clinic_id', 'exam_id', 'status', 'by_id', 'at'], [[`${eid}-0`, clinicId, eid, 'ordered', d.id, ordered.toISOString()],
-        [`${eid}-1`, clinicId, eid, 'sample', nurse, plusMin(ordered, 15).toISOString()], [`${eid}-2`, clinicId, eid, 'result', nurse, resAt.toISOString()], [`${eid}-3`, clinicId, eid, 'reviewed', d.id, plusMin(resAt, 40).toISOString()]])
+        VALUES (?,?,?,?,?,'lab',?,'urgent','clinic','nursing',?,?,?,?,?,?,?,?,?)`,
+      [eid, clinicId, p.id, stay, `${stay}-ex`, lab.name, critical ? 'result' : 'reviewed', d.id, ordered.toISOString(), resAt.toISOString(), nurse, JSON.stringify({ values, at: resAt.toISOString(), by: nurse }),
+        critical, critical ? null : d.id, critical ? null : plusMin(resAt, 40).toISOString()])
+      await insertRows(q, 'exam_events', ['id', 'clinic_id', 'exam_id', 'status', 'by_id', 'at', 'note'], [[`${eid}-0`, clinicId, eid, 'ordered', d.id, ordered.toISOString(), null],
+        [`${eid}-1`, clinicId, eid, 'sample', nurse, plusMin(ordered, 15).toISOString(), null], [`${eid}-2`, clinicId, eid, 'result', nurse, resAt.toISOString(), critical ? 'Valor crítico' : null],
+        ...(critical ? [] : [[`${eid}-3`, clinicId, eid, 'reviewed', d.id, plusMin(resAt, 40).toISOString(), null]])])
     }
+    for (const s of SURGICAL[i] ?? []) await surgicalAuthorization(q, h, d, nurse, s.procedure, s.state, plusMin(admitted, 60 * 20))
     if (c.pendingExam) {
       const eid = `${stay}-ex-p`
       const at = hoursAgo(now, 1)
@@ -711,6 +798,38 @@ async function generateStays(q: Sql, clinicId: string, office: boolean, docs: Do
     counts.discharged++
   }
   return counts
+}
+
+/** Firma (imagen mínima) de las firmas en pantalla de la demo. */
+const DEMO_SIGNATURE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+
+/** Autorización quirúrgica de la demo, como la deja la app: pendiente, firmada en pantalla (con su PDF y huella) o «No autoriza». */
+async function surgicalAuthorization(q: Sql, h: Row, d: Doc, nurse: string, procedure: string, state: 'pending' | 'screen' | 'refused', at: Date) {
+  const clinicId = String(h.clinic_id)
+  const base = await authorizationBase(q, h, { id: d.id, role: 'doctor' })
+  const diagnosis = (JSON.parse(String(h.diagnoses ?? '[]')) as { label: string }[]).map((x) => x.label).join('; ')
+  const companion = h.companion_name ? { name: String(h.companion_name), phone: h.companion_phone ? String(h.companion_phone) : undefined, relation: h.companion_relation ? String(h.companion_relation) : undefined } : undefined
+  const id = randomUUID()
+  await q.run(`INSERT INTO authorizations (id, clinic_id, hospitalization_id, patient_id, template, data, created_by, created_at) VALUES (?,?,?,?,'surgical',?,?,?)`,
+    [id, clinicId, String(h.id), String(h.patient_id), JSON.stringify({ procedure, diagnosis, generic: true, companion, ...base, admission: undefined }), d.id, at.toISOString()])
+  const signedAt = plusMin(at, 25)
+  if (state === 'refused') {
+    await q.run(`UPDATE authorizations SET status = 'refused', status_at = ?, status_by = ?, status_note = ?, method = 'paper' WHERE id = ?`,
+      [signedAt.toISOString(), nurse, 'El paciente no autoriza el procedimiento; prefiere continuar con vía periférica. Se le explicaron los riesgos.', id])
+  } else if (state === 'screen') {
+    const staff = (await q.one('SELECT name, doc_name, license FROM staff WHERE id = ?', [d.id]))!
+    const signing = { action: 'accept' as const, signer: 'patient' as const, signature: DEMO_SIGNATURE, signedAt: signedAt.toISOString(), managedBy: nurse, device: 'Tableta de la clínica (demostración)',
+      doctor: { id: d.id, name: String(staff.doc_name || staff.name), license: staff.license ? String(staff.license) : undefined, signature: DEMO_SIGNATURE, at: plusMin(signedAt, 3).toISOString() } }
+    const a = toAuthorization((await q.one('SELECT * FROM authorizations WHERE id = ?', [id]))!)
+    const managed = (await q.one('SELECT name FROM staff WHERE id = ?', [nurse]))!
+    const { bytes, sha256 } = await signedConsentPdf({ a, signing, managedByName: String(managed.name) })
+    const pdfId = randomUUID()
+    await q.run(`INSERT INTO attachments (id, patient_id, name, mime, size, category, data, uploaded_by, uploaded_at, clinic_id, title, taken_at, hospitalization_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [pdfId, String(h.patient_id), 'Autorización quirúrgica firmada en pantalla.pdf', 'application/pdf', bytes.length, 'document', bytes, nurse, signedAt.toISOString(), clinicId,
+        'Autorización quirúrgica firmada en pantalla', signedAt.toISOString(), String(h.id)])
+    await q.run(`UPDATE authorizations SET status = 'signed', method = 'virtual', signing = ?, pdf_id = ?, pdf_sha256 = ?, status_at = ?, status_by = ? WHERE id = ?`,
+      [JSON.stringify(signing), pdfId, sha256, signedAt.toISOString(), nurse, id])
+  }
 }
 
 /** Egreso como lo guarda la app (MC5): nota en el orden de la epicrisis, receta de salida, cama libre y epicrisis emitida. */

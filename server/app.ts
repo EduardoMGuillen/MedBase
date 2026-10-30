@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { seedDemo } from './demoData.js'
-import { attempts, completePendingPatient, createPatient, createPendingPatient, DEMO_PASSWORD, ensureDb, hit, nextFolio, resetDemo } from './db.js'
+import { attempts, completePendingPatient, createPatient, createPendingPatient, DEMO_PASSWORD, ensureDb, hit, nextFolio } from './db.js'
 import type { Sql } from './sql.js'
 import { type Ctx, fail, hasRoleSql, HttpError, localDate, parse, type Row } from './http.js'
 import {
@@ -1085,14 +1085,11 @@ export function createApp(opts: AppOptions) {
     res.json({ password })
   })
 
+  // DM1 (ronda 5): ya no se vacía toda la base desde aquí (borraba también las clínicas reales); sólo se regeneran los
+  // pacientes de las clínicas demo, con respaldo, como en seed:demo
   app.post('/api/admin/reset-demo', auth, need('platform.manage'), async (req, res) => {
     if (!demoMode) fail(403, 'Esta acción sólo está disponible en modo demo.')
-    const me = userOf(req)
-    await resetDemo(sql)
-    // DM1: los pacientes de demostración se generan relativos a hoy
-    await seedDemo(sql)
-    await audit(me, 'Restableció los datos de demo')
-    res.json({ ok: true })
+    res.json(await seedDemo(sql, { by: userOf(req).id }))
   })
 
   /**
@@ -1108,9 +1105,7 @@ export function createApp(opts: AppOptions) {
   })
   app.post('/api/admin/seed-demo', auth, need('platform.manage'), async (req, res) => {
     if (!demoMode) fail(403, 'Esta acción sólo está disponible en modo demo.')
-    const s = await seedDemo(sql)
-    await audit(userOf(req), `Regeneró los pacientes de demostración (${s.patients} pacientes, ${s.appointments} citas)`)
-    res.json(s)
+    res.json(await seedDemo(sql, { by: userOf(req).id }))
   })
 
   registerSettings(app, ctx)
