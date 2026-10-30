@@ -85,7 +85,7 @@ export default function Inpatients() {
       {admitting && (
         <AdmitModal initialPatientId={admitFor ?? undefined} consultationId={params.get('consulta') ?? undefined} bedId={admitting.bedId}
           onClose={() => { setAdmitting(null); if (admitFor) setParams({}) }}
-          onDone={(h) => nav(`/app/hospitalizados/${h.id}`)} />
+          onDone={(h) => nav(`/app/hospitalizados/${h.id}?firmar=1`)} />
       )}
     </div>
   )

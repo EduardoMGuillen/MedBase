@@ -142,6 +142,23 @@ export function registerConsent(app: Express, { sql, auth, need, userOf, clinicO
     res.json(toAuthorization((await sql.one('SELECT * FROM authorizations WHERE id = ?', [a.id]))!))
   })
 
+  /**
+   * MC1: aunque se haya firmado en pantalla, la clínica puede adjuntar también la foto o el PDF de una hoja firmada en
+   * papel. La autorización sigue siendo la firmada en pantalla; la hoja queda como respaldo.
+   */
+  app.post('/api/authorizations/:aid/attach-paper', auth, need('inpatient.orders', 'inpatient.care'), async (req, res) => {
+    const b = parse(z.object({ fileId: z.string().min(1) }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const { a } = await loadAuth(cid, String(req.params.aid))
+    if (a.status !== 'signed' || a.method !== 'virtual') fail(409, 'Sólo se adjunta la hoja en papel a una autorización firmada en pantalla.')
+    if (!(await sql.one('SELECT 1 FROM attachments WHERE id = ? AND clinic_id = ? AND patient_id = ?', [b.fileId, cid, a.patientId]))) fail(400, 'El archivo no corresponde a este paciente.')
+    const history = a.fileId ? [...(a.fileHistory ?? []), { fileId: a.fileId, replacedAt: new Date().toISOString(), replacedBy: user.id, reason: 'Se adjuntó otra hoja en papel' }] : a.fileHistory ?? []
+    await sql.run('UPDATE authorizations SET file_id = ?, file_history = ? WHERE id = ?', [b.fileId, history.length ? JSON.stringify(history) : null, a.id])
+    await audit(user, `Adjuntó la hoja firmada en papel a la ${authTitle(a).toLowerCase()} de ${await patientName(a.patientId)} (firmada en pantalla)`)
+    res.json(toAuthorization((await sql.one('SELECT * FROM authorizations WHERE id = ?', [a.id]))!))
+  })
+
   /** Reemplazar el escaneo de una autorización firmada en papel: el anterior queda en el historial, no se borra. */
   app.post('/api/authorizations/:aid/replace-scan', auth, need('inpatient.orders', 'inpatient.care'), async (req, res) => {
     const b = parse(z.object({ fileId: z.string().min(1), reason: z.string().trim().min(3, 'Escribe por qué se reemplaza el archivo.').max(300) }), req.body)

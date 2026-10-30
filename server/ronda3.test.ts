@@ -1,5 +1,6 @@
 import { after, before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
+import zlib from 'node:zlib'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { createApp } from './app.js'
@@ -364,5 +365,58 @@ describe('AD9 cobros en el momento', () => {
     const rep = (await (await as('admin@demo.clinara')).get(`/api/reports?from=${today}&to=${today}`)).body
     assert.ok(rep.byService.some((s: any) => s.name === 'Curación' && s.total === 300))
     assert.ok(rep.byMethod.find((m: any) => m.method === 'transfer').total >= 200)
+  })
+})
+
+/** Firma de prueba: PNG real con un trazo diagonal (la firma en pantalla rechaza recuadros vacíos). */
+function signaturePng() {
+  const w = 120, h = 40
+  const raw = Buffer.alloc((w * 4 + 1) * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const o = y * (w * 4 + 1) + 1 + x * 4
+    raw[o] = raw[o + 1] = raw[o + 2] = Math.abs(y - Math.round((x * h) / w)) <= 1 ? 20 : 255
+    raw[o + 3] = 255
+  }
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length)
+    const td = Buffer.concat([Buffer.from(type), data])
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(td) >>> 0)
+    return Buffer.concat([len, td, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6
+  return `data:image/png;base64,${Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw, { level: 0 })), chunk('IEND', Buffer.alloc(0))]).toString('base64')}`
+}
+
+describe('MC1 y MC2 firma inmediata', () => {
+  test('al hospitalizar, la autorización ya está llena y se firma de una vez (paciente y médico con su PIN); luego se puede adjuntar la hoja en papel', async () => {
+    const { doc, stayId, patientId } = await admitted('Firma Inmediata')
+    const boot = (await doc.get('/api/bootstrap')).body
+    const free = boot.beds.find((b: any) => b.active && !boot.bedStays.some((s: any) => s.bedId === b.id))
+    assert.equal((await doc.patch(`/api/inpatient/${stayId}`, { bedId: free.id, companionName: 'Rosa Ramírez', companionPhone: '9876-1111' })).status, 200)
+    const file = (await doc.get(`/api/inpatient/${stayId}`)).body
+    const auth = file.authorizations.find((a: any) => a.template === 'hospital')
+    assert.equal(auth.status, 'pending')
+    assert.equal(auth.data.companion.name, 'Rosa Ramírez')
+    await doc.put('/api/me/pin', { password: DEMO_PASSWORD, pin: '2468' })
+    const r = await doc.post(`/api/authorizations/${auth.id}/sign`, { action: 'accept', patient: { signer: 'patient', signature: signaturePng(), readConfirmed: true },
+      doctor: { pin: '2468', signature: signaturePng() } })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.status, 'signed')
+    assert.equal(r.body.method, 'virtual')
+    const pdf = (await doc.post(`/api/patients/${patientId}/attachments`, { name: 'hoja.pdf', mime: 'application/pdf', category: 'document', data: Buffer.from('%PDF-1.4').toString('base64') })).body
+    const att = await doc.post(`/api/authorizations/${auth.id}/attach-paper`, { fileId: pdf.id })
+    assert.equal(att.status, 200, JSON.stringify(att.body))
+    assert.equal(att.body.method, 'virtual')
+    assert.equal(att.body.fileId, pdf.id)
+    await doc.put('/api/me/pin', { password: DEMO_PASSWORD, pin: '' })
+  })
+
+  test('la quirúrgica toma el procedimiento y el diagnóstico que se le dan', async () => {
+    const { doc, stayId } = await admitted('Quirúrgica')
+    const a = await doc.post(`/api/inpatient/${stayId}/authorizations`, { template: 'surgical', procedure: 'Apendicectomía abierta', diagnosis: 'Apendicitis aguda' })
+    assert.equal(a.status, 201, JSON.stringify(a.body))
+    assert.equal(a.body.data.procedure, 'Apendicectomía abierta')
+    assert.equal(a.body.data.diagnosis, 'Apendicitis aguda')
   })
 })

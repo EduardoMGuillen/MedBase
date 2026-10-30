@@ -799,3 +799,12 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
   .vs__bar { gap: 10px; }
   .vs__bar .segmented { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
 }
+
+/* MC1 y MC2: las tres salidas de una autorización recién generada */
+.choice-grid--3 { grid-template-columns: repeat(3, 1fr); }
+.choice--primary { border-color: var(--ink); background: var(--ink-soft); }
+.consent-choice__doc { display: flex; gap: 12px; padding: 12px 14px; border-radius: var(--r-md); background: var(--ward); color: var(--petrol); }
+.consent-choice__doc > div { display: grid; gap: 2px; font-size: 14px; }
+.consent-choice__doc svg { color: var(--ink); flex: none; margin-top: 2px; }
+.consent-choice__dni { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+@media (max-width: 720px) { .choice-grid--3 { grid-template-columns: 1fr; } }

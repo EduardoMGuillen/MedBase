@@ -9,8 +9,8 @@ import { buildScanPdf, renderPdfPages } from '../lib/pdf'
 import { MAX_SCAN_BYTES, uploadLarge } from '../lib/files'
 import type { Authorization } from '../lib/types'
 
-type Mode = 'signed' | 'refused' | 'revoked' | 'replace'
-const TITLE: Record<Mode, string> = { signed: 'Subir hoja firmada', refused: 'No autoriza: subir la hoja firmada', revoked: 'Revocación: subir la hoja firmada', replace: 'Reemplazar escaneo' }
+type Mode = 'signed' | 'refused' | 'revoked' | 'replace' | 'attach'
+const TITLE: Record<Mode, string> = { signed: 'Subir hoja firmada', refused: 'No autoriza: subir la hoja firmada', revoked: 'Revocación: subir la hoja firmada', replace: 'Reemplazar escaneo', attach: 'Adjuntar la hoja firmada en papel' }
 /** Lo que se acepta elegir: fotos y PDF, hasta 15 MB entre todos antes de comprimir las fotos. */
 const PICK_MAX = 60 * 1024 * 1024
 
@@ -81,8 +81,9 @@ export function ScanUpload({ a, mode, onClose, onDone }: { a: Authorization; mod
         title: `${authTitle(a)}: ${mode === 'refused' ? 'no autoriza' : mode === 'revoked' ? 'revocación' : 'hoja firmada'} (papel)`, takenAt: new Date().toISOString(), hospitalizationId: a.hospitalizationId,
       }, setProgress)
       if (mode === 'replace') await api(`/authorizations/${a.id}/replace-scan`, { body: { fileId: att.id, reason: note.trim() } })
+      else if (mode === 'attach') await api(`/authorizations/${a.id}/attach-paper`, { body: { fileId: att.id } })
       else await api(`/authorizations/${a.id}/status`, { body: { status: mode, fileId: att.id, note: note.trim() || undefined } })
-      notify(mode === 'replace' ? 'Escaneo reemplazado; el anterior queda en el historial' : mode === 'signed' ? 'Autorización firmada (papel escaneado)' : mode === 'refused' ? 'Rechazo registrado' : 'Revocación registrada')
+      notify(mode === 'replace' ? 'Escaneo reemplazado; el anterior queda en el historial' : mode === 'attach' ? 'Hoja en papel adjuntada' : mode === 'signed' ? 'Autorización firmada (papel escaneado)' : mode === 'refused' ? 'Rechazo registrado' : 'Revocación registrada')
       onDone()
     } catch (e) {
       notify((e as Error).message, 'error')
@@ -127,7 +128,7 @@ export function ScanUpload({ a, mode, onClose, onDone }: { a: Authorization; mod
         </p>
         <div className="scan-preview">{preview.pages.map((u, i) => <figure key={u}><img src={u} alt={`Página ${i + 1}`} /><figcaption>Página {i + 1}</figcaption></figure>)}</div>
       </>)}
-      {mode !== 'signed' && (
+      {mode !== 'signed' && mode !== 'attach' && (
         <label className="field"><span>{needsNote ? 'Por qué se reemplaza' : 'Nota (opcional)'}</span>
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={needsNote ? 'Ej. Se subió la hoja de otro paciente' : ''} /></label>
       )}

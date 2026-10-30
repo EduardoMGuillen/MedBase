@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Camera, ChevronLeft, FileSignature, FileText, PenLine, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
@@ -97,7 +97,7 @@ export function AuthorizationForm({ file, p, template = 'surgical', initialProce
 export function AuthorizationEntry({ a, file, p, reload }: { a: Authorization; file: InpatientFile; p: Patient; reload: () => void }) {
   const { staffById, can, user, notify } = useStore()
   const [signing, setSigning] = useState<null | { action: 'accept' | 'refuse' | 'revoke'; doctorOnly?: boolean }>(null)
-  const [scan, setScan] = useState<null | 'signed' | 'refused' | 'revoked' | 'replace'>(null)
+  const [scan, setScan] = useState<null | 'signed' | 'refused' | 'revoked' | 'replace' | 'attach'>(null)
   const [choose, setChoose] = useState<null | 'refuse' | 'revoke'>(null)
   const open = file.hospitalization.status === 'active'
   const manage = open && (can('inpatient.orders') || can('inpatient.care'))
@@ -128,6 +128,7 @@ export function AuthorizationEntry({ a, file, p, reload }: { a: Authorization; f
           {manage && a.status === 'signed' && <>
             <button className="btn btn--ghost btn--sm" onClick={() => setChoose('revoke')}>Revocar</button>
             {a.method === 'paper' && a.fileId && <button className="btn btn--ghost btn--sm" onClick={() => setScan('replace')}>Reemplazar escaneo</button>}
+            {a.method === 'virtual' && <button className="btn btn--ghost btn--sm" onClick={() => setScan('attach')}><Camera size={14} />{a.fileId ? 'Cambiar hoja en papel' : 'Adjuntar hoja en papel'}</button>}
           </>}
         </div>
       </div>
@@ -302,7 +303,10 @@ export default function AuthorizationPage() {
   const { id } = useParams()
   const { fetchAuthorization, notify } = useStore()
   const [a, setA] = useState<Authorization | null>(null)
+  const [params] = useSearchParams()
   useEffect(() => { if (id) fetchAuthorization(id).then(setA).catch((e: Error) => notify(e.message, 'error')) }, [id, fetchAuthorization, notify])
+  // MC1/MC2: «Imprimir para firmar en papel» abre esta hoja en otra pestaña y la manda a imprimir
+  useEffect(() => { if (a && params.get('imprimir') === '1') { const t = setTimeout(() => window.print(), 400); return () => clearTimeout(t) } }, [a, params])
   if (!a) return <Loading label="Abriendo autorización" />
   const st = authStatus(a)
   const signed = a.pdfId ?? a.fileId

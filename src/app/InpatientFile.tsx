@@ -20,6 +20,7 @@ import { useNow } from '../lib/hooks'
 import type { Diagnosis, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
 import { bedLabel, DxPicker } from './Inpatients'
 import { GeneralDataModal } from './GeneralData'
+import { AdmitBedStep, ConsentChoice } from './ConsentFlow'
 import { BedFields } from '../components/BedFields'
 import { ReferralModal } from './Referral'
 import { features } from '../lib/permissions'
@@ -40,7 +41,11 @@ export default function InpatientFile() {
   const [file, setFile] = useState<File | null>(null)
   // Desde la alerta de órdenes nuevas se entra directo a las notas; al firmar una consulta con ingreso, a completar la cama
   const [params, setParams] = useSearchParams()
-  const [editing, setEditing] = useState(params.get('completar') === '1')
+  const [editing, setEditing] = useState(false)
+  // MC1: al firmar una consulta con ingreso se elige la cama y se abre de inmediato la autorización de hospitalización
+  const [admitting, setAdmitting] = useState(params.get('completar') === '1')
+  const [consentFor, setConsentFor] = useState<string | null>(null)
+  const wantsConsent = params.get('firmar')
   const [tab, setTab] = useState<Tab>(({ notas: 'notes', signos: 'vitals', medicamentos: 'meds', anexos: 'annexes' } as Record<string, Tab>)[params.get('tab') ?? ''] ?? 'sheet')
   const [missing, setMissing] = useState(false)
   const now = useNow()
@@ -49,6 +54,15 @@ export default function InpatientFile() {
     fetchInpatient(id).then(setFile).catch((e: Error) => { setMissing(true); notify(e.message, 'error') })
   }, [id, fetchInpatient, notify])
   useEffect(load, [load])
+  // MC1: «Pasar a hospitalización» o el ingreso directo llegan con ?firmar=1: se abre la autorización pendiente
+  useEffect(() => {
+    if (!file || !wantsConsent || consentFor || admitting) return
+    const pend = file.authorizations.find((a) => a.template === 'hospital' && a.status === 'pending')
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (pend) setConsentFor(pend.id)
+    setParams({}, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, wantsConsent])
 
   if (missing) return <div className="page"><div className="empty">No se encontró este expediente. Vuelve a <Link to="/app/hospitalizados">Hospitalizados</Link>.</div></div>
   if (!file) return <Loading label="Abriendo expediente" />
@@ -107,13 +121,17 @@ export default function InpatientFile() {
       <MedAlertBanner file={file} />
       {pendingAuth && tab !== 'annexes' && (
         <div className="alert-strip alert-strip--amber" style={{ flexWrap: 'wrap' }}><FileSignature size={16} />{pendingAuth.signing?.action === 'accept' ? 'La autorización de hospitalización ya la firmó el paciente; falta la firma del médico.' : 'La autorización de hospitalización está pendiente de firma.'}
+          {pendingAuth.signing?.action !== 'accept' && (can('inpatient.orders') || can('inpatient.care')) && <button className="btn btn--primary btn--sm" onClick={() => setConsentFor(pendingAuth.id)}>Firmar ahora</button>}
           <button className="btn btn--soft btn--sm" onClick={() => setTab('annexes')}>Ir a Anexos</button></div>
       )}
       {noBed && (
         <div className="alert-strip alert-strip--amber" style={{ flexWrap: 'wrap' }}><BedDouble size={16} />Falta asignar la cama{h.companionName ? '' : ' y anotar al acompañante'}.
-          {(can('inpatient.orders') || can('inpatient.care')) && <button className="btn btn--soft btn--sm" onClick={() => setEditing(true)}>Asignar cama</button>}</div>
+          {(can('inpatient.orders') || can('inpatient.care')) && <button className="btn btn--soft btn--sm" onClick={() => setAdmitting(true)}>Asignar cama</button>}</div>
       )}
-      {editing && <GeneralDataModal h={h} p={p} onClose={() => { setEditing(false); if (params.get('completar')) setParams({}) }} onDone={() => { setEditing(false); if (params.get('completar')) setParams({}); load() }} />}
+      {editing && <GeneralDataModal h={h} p={p} onClose={() => setEditing(false)} onDone={() => { setEditing(false); load() }} />}
+      {admitting && <AdmitBedStep h={h} p={p} onClose={() => { setAdmitting(false); setParams({}, { replace: true }) }}
+        onDone={async () => { setAdmitting(false); const f = await fetchInpatient(h.id); setFile(f); const a = f.authorizations.find((x) => x.template === 'hospital' && x.status === 'pending'); if (a) setConsentFor(a.id); setParams({}, { replace: true }) }} />}
+      {consentFor && <ConsentChoice authorizationId={consentFor} p={p} onDone={() => { setConsentFor(null); setParams({}, { replace: true }); load() }} />}
 
       {tab === 'sheet' && (
         <div className="hc">
