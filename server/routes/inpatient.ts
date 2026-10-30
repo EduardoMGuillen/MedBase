@@ -8,7 +8,7 @@ import { VITALS_FREQUENCIES } from '../../src/lib/vitalsSheet.js'
 import { buildEpicrisis, createEpicrisisDraft, missingForIssue } from '../epicrisis.js'
 import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
-import { isScheduled, medLabel } from '../../src/lib/inpatient.js'
+import { isScheduled, LATE_AFTER_MIN, medLabel } from '../../src/lib/inpatient.js'
 import { examLine, isPending } from '../../src/lib/exams.js'
 import { hasBlank, medHasBlank } from '../../src/lib/orderSets.js'
 import { createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrders.js'
@@ -63,6 +63,10 @@ export async function pendingOrders(sql: Sql, cid: string) {
  * medicamentos, hoja de medicamentos que enfermería va marcando, laboratorios, procedimientos y egreso.
  * Cualquier médico o enfermera de la clínica ve a los hospitalizados: de noche los atiende quien esté de turno.
  */
+/** OB1 (ronda 5): cómo se registra cada resultado de una dosis en la bitácora. */
+const DOSE_VERB = { given: 'Administró', skipped: 'Marcó como no aplicada', omitted: 'Marcó como omitida' } as const
+const DOSE_STATE = { given: 'administrada', skipped: 'no aplicada', omitted: 'omitida' } as const
+
 export function registerInpatient(app: Express, ctx: Ctx) {
   const { sql, auth, need, userOf, clinicOf, audit, patientRow, patientName, assertRxIdentity, staffRow } = ctx
 
@@ -459,7 +463,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const b = parse(z.object({
       scheduledAt: when.optional(),
       givenAt: when.optional(),
-      status: z.enum(['given', 'skipped']).default('given'),
+      // OB1 (ronda 5): «Omitida» con motivo, además de administrada y no aplicada
+      status: z.enum(['given', 'skipped', 'omitted']).default('given'),
       note: z.string().trim().max(300).optional(),
       // Registrar una dosis de un día que ya pasó pide motivo
       reason: z.string().trim().max(300).optional(),
@@ -475,13 +480,13 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     if (med.prn) {
       if (b.scheduledAt) fail(400, 'Un medicamento PRN no tiene horario fijo.')
       if (med.stoppedAt && givenAt >= new Date(med.stoppedAt)) fail(409, `${med.drug} fue omitido por el médico; ya no se administra.`)
-      if (b.status === 'skipped') fail(400, 'Una dosis PRN sólo se registra cuando se aplica.')
+      if (b.status !== 'given') fail(400, 'Una dosis PRN sólo se registra cuando se aplica.')
     } else {
       if (!b.scheduledAt) fail(400, 'Indica la hora de la dosis que estás marcando.')
       const slot = new Date(b.scheduledAt!)
       if (med.stoppedAt && slot >= new Date(med.stoppedAt)) fail(409, `${med.drug} fue omitido por el médico; esa dosis ya no se aplica.`)
       if (!isScheduled(med, slot)) fail(400, 'Esa hora no corresponde al horario indicado del medicamento.')
-      if (b.status === 'skipped' && !b.note) fail(400, 'Escribe por qué no se aplicó la dosis (ayuno, la rechazó, suspendida…).')
+      if (b.status !== 'given' && !b.note) fail(400, b.status === 'omitted' ? 'Escribe por qué se omitió la dosis.' : 'Escribe por qué no se aplicó la dosis (ayuno, la rechazó, suspendida…).')
       scheduledAt = slot.toISOString()
     }
     // Una dosis de hace más de 24 horas es un registro de un día pasado: necesita motivo y queda en la bitácora
@@ -495,7 +500,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       if ((e as { code?: string }).code === '23505') fail(409, 'Esa dosis ya fue registrada. Actualiza la página.')
       throw e
     }
-    await audit(user, `${b.status === 'given' ? 'Administró' : 'Marcó como no aplicada'} ${medLabel(med)} a ${await patientName(String(h.patient_id))} (${user.role === 'doctor' ? 'médico' : 'enfermería'})${b.status === 'skipped' ? `, motivo: ${b.note}` : ''}${late ? `, registro tardío: ${b.reason}` : ''}`)
+    const delayed = b.status === 'given' && scheduledAt && givenAt.getTime() - new Date(scheduledAt).getTime() > LATE_AFTER_MIN * 60_000
+    await audit(user, `${DOSE_VERB[b.status]} ${medLabel(med)}${scheduledAt ? ` (dosis de las ${scheduledAt})` : ''} a ${await patientName(String(h.patient_id))} (${user.role === 'doctor' ? 'médico' : 'enfermería'})${delayed ? ', con retraso' : ''}${b.status !== 'given' ? `, motivo: ${b.note}` : ''}${late ? `, registro tardío: ${b.reason}` : ''}`)
     res.status(201).json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [id]))!))
   })
 
@@ -505,7 +511,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
    */
   app.patch('/api/inpatient/doses/:doseId', auth, need('inpatient.care', 'inpatient.orders'), async (req, res) => {
     const b = parse(z.object({
-      status: z.enum(['given', 'skipped']).optional(),
+      status: z.enum(['given', 'skipped', 'omitted']).optional(),
       givenAt: when.optional(),
       note: z.string().trim().max(300).optional(),
       reason: z.string().trim().min(5, 'Escribe el motivo de la corrección.').max(300),
@@ -516,12 +522,12 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const m = (await sql.one('SELECT * FROM hosp_meds WHERE id = ?', [String(d!.med_id)]))!
     const h = await activeHosp(cid, String(m.hospitalization_id))
     if (b.givenAt && new Date(b.givenAt).getTime() > Date.now() + 60_000) fail(400, 'La hora de administración no puede ser en el futuro.')
-    if (b.status === 'skipped' && !(b.note ?? d!.note)) fail(400, 'Escribe por qué no se administró la dosis.')
-    if (b.status === 'skipped' && !d!.scheduled_at) fail(400, 'Una dosis PRN sólo se registra cuando se aplica.')
+    if (b.status && b.status !== 'given' && !(b.note ?? d!.note)) fail(400, 'Escribe por qué no se administró la dosis.')
+    if (b.status && b.status !== 'given' && !d!.scheduled_at) fail(400, 'Una dosis PRN sólo se registra cuando se aplica.')
     const previous = { status: d!.status, givenAt: d!.given_at, givenBy: d!.given_by, note: d!.note ?? undefined, correctedAt: d!.corrected_at ?? undefined, reason: d!.correction_reason ?? undefined }
     await sql.run('UPDATE hosp_doses SET status = ?, given_at = ?, note = ?, corrected_at = ?, corrected_by = ?, correction_reason = ?, previous = ? WHERE id = ?',
       [b.status ?? d!.status, b.givenAt ? new Date(b.givenAt).toISOString() : d!.given_at, b.note ?? d!.note ?? null, new Date().toISOString(), user.id, b.reason, JSON.stringify(previous), String(d!.id)])
-    await audit(user, `Corrigió la dosis de ${medLabel(toInpatientMed(m))} de ${await patientName(String(h.patient_id))} (antes: ${previous.status === 'given' ? 'administrada' : 'no aplicada'} ${previous.givenAt}): ${b.reason}`)
+    await audit(user, `Corrigió la dosis de ${medLabel(toInpatientMed(m))} de ${await patientName(String(h.patient_id))} (antes: ${DOSE_STATE[previous.status as keyof typeof DOSE_STATE] ?? previous.status} ${previous.givenAt}): ${b.reason}`)
     res.json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [String(d!.id)]))!))
   })
 

@@ -77,13 +77,19 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
       count: late.length, since: late[0].at.getTime(), action: { label: 'Registrar dosis', go: { tab: 'meds', dose: { medId: m.id, at: late[0].at.toISOString() } } } })
   }
 
-  // Dosis no aplicadas con su motivo: ya no alertan, quedan como aviso del día
+  // Dosis no aplicadas u omitidas con su motivo: ya no alertan. Quedan como aviso para el médico hasta su siguiente nota
+  // (OB1, ronda 5): ahí ya lo revisó
+  const reviewed = Math.max(0, ...file.notes.filter((n) => n.kind === 'evolution' || n.kind === 'admission' || n.kind === 'procedure').map((n) => new Date(n.at).getTime()))
   const skipped = new Map<string, typeof file.doses>()
-  for (const d of file.doses) if (d.status === 'skipped' && new Date(d.givenAt).getTime() >= day) skipped.set(d.medId, [...(skipped.get(d.medId) ?? []), d])
+  for (const d of file.doses) if (d.status !== 'given' && new Date(d.givenAt).getTime() > reviewed) skipped.set(d.medId, [...(skipped.get(d.medId) ?? []), d])
   for (const [medId, ds] of skipped) {
     const m = file.meds.find((x) => x.id === medId)
     const why = [...new Set(ds.map((d) => d.note).filter(Boolean))]
-    out.push({ key: `skip-${medId}`, level: 'info', tab: 'meds', text: `${m ? medLabel(m) : 'Medicamento'}: ${plural(ds.length, 'dosis no aplicada', 'dosis no aplicadas')} (${list(ds.map((d) => when(new Date(d.scheduledAt ?? d.givenAt).getTime(), now)))})${why.length ? `. ${why.join('; ')}` : ''}`,
+    const parts = (['skipped', 'omitted'] as const).map((st) => {
+      const xs = ds.filter((d) => d.status === st)
+      return xs.length ? `${plural(xs.length, st === 'skipped' ? 'dosis no aplicada' : 'dosis omitida', st === 'skipped' ? 'dosis no aplicadas' : 'dosis omitidas')} (${list(xs.map((d) => when(new Date(d.scheduledAt ?? d.givenAt).getTime(), now)))})` : ''
+    }).filter(Boolean)
+    out.push({ key: `skip-${medId}`, level: 'info', tab: 'meds', text: `${m ? medLabel(m) : 'Medicamento'}: ${parts.join(' y ')}${why.length ? `. ${why.join('; ')}` : ''}`,
       count: ds.length, since: new Date(ds[0].givenAt).getTime(), action: { label: 'Ver hoja', go: { tab: 'meds' } } })
   }
 

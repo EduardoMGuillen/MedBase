@@ -7,7 +7,7 @@ import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict } from '../lib/catalogs'
-import { defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
+import { defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
 import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
 import { NoteColumns, NoteText } from '../components/NoteColumns'
@@ -243,6 +243,12 @@ function ConsultEntry({ consultationId }: { consultationId: string }) {
 const STATE_LABEL: Record<SlotState, string> = {
   given: 'Administrado', skipped: 'No aplicada', omitted: 'Omitido', late: 'Atrasado', due: 'Toca ahora', upcoming: 'Programado',
 }
+/** OB1 (ronda 5): resultado de una dosis registrada. */
+const DOSE_LABEL: Record<Dose['status'], string> = { given: 'Administrada', skipped: 'No aplicada', omitted: 'Omitida' }
+/** Administrada más de una hora después de la indicada: «con retraso». */
+const givenLate = (d: Dose) => d.status === 'given' && !!d.scheduledAt && new Date(d.givenAt).getTime() - new Date(d.scheduledAt).getTime() > LATE_AFTER_MIN * 60_000
+/** Un registro de hace más de 24 horas pide motivo (la misma regla que el servidor). */
+const oldSlot = (at?: Date) => !!at && at.getTime() < Date.now() - 24 * 3_600_000
 
 /** Inicio del día (00:00) de una fecha. */
 const dayStart = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
@@ -264,6 +270,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
   const [params, setParams] = useSearchParams()
   const now = useNow()
   const today = dayStart(now)
+  const isToday = (d: Date) => d.getTime() === today.getTime()
   // Vista y fecha de referencia en la URL: cambiar de Día a Semana conserva la fecha y sobrevive a recargar
   const view: 'day' | 'week' = params.get('vista') === 'semana' ? 'week' : 'day'
   const fromUrl = params.get('fecha')
@@ -306,7 +313,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
   // Enfermería registra las dosis; el médico también puede hacerlo cuando él la aplica
   const care = (can('inpatient.care') || can('inpatient.orders')) && open
   const by = (id: string) => { const s = staffById(id); return s ? `${shortStaff(s.name)}, ${ROLE_LABEL[mainRole(s)].toLowerCase()}` : '' }
-  const doseTitle = (dose: Dose) => `${dose.status === 'given' ? 'Aplicado' : 'No aplicada'} por ${by(dose.givenBy)}, ${dm(dose.givenAt)}${dose.note ? `: ${dose.note}` : ''}${dose.correctionReason ? `. ${dose.correctionReason.startsWith('Registro tardío') ? '' : 'Corregido: '}${dose.correctionReason} (${shortStaff(staffById(dose.correctedBy ?? '')?.name)})` : ''}`
+  const doseTitle = (dose: Dose) => `${DOSE_LABEL[dose.status]}${givenLate(dose) ? ' con retraso' : ''} por ${by(dose.givenBy)}, ${dm(dose.givenAt)}${dose.note ? `: ${dose.note}` : ''}${dose.correctionReason ? `. ${dose.correctionReason.startsWith('Registro tardío') ? '' : 'Corregido: '}${dose.correctionReason} (${shortStaff(staffById(dose.correctedBy ?? '')?.name)})` : ''}`
   const label = view === 'week'
     ? `${date(start.toISOString(), { day: 'numeric', month: 'short' })} – ${date(addDays(end, -1).toISOString(), { day: 'numeric', month: 'short' })}`
     : ref.getTime() === today.getTime() ? `Hoy, ${date(ref.toISOString(), { weekday: 'short', day: 'numeric', month: 'short' })}` : date(ref.toISOString(), { weekday: 'long', day: 'numeric', month: 'short' })
@@ -366,6 +373,16 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                   </span>
                 </div>
                 <div className="slots">
+                  {/* OB1 (ronda 5): las dosis atrasadas de días anteriores se ven (y se registran) desde el día de hoy */}
+                  {isToday(ref) && doseTimes(m, new Date(m.firstAt), start)
+                    .filter((s) => slotState(s.at, s.omitted, doses.find((d) => d.scheduledAt && new Date(d.scheduledAt).getTime() === s.at.getTime())) === 'late')
+                    .map((s) => (
+                      <button key={s.at.toISOString()} className="slot2 slot2--late slot2--prev" disabled={!care} onClick={() => setMarking({ med: m, at: s.at, late: true })}
+                        title={`Dosis atrasada del ${date(s.at.toISOString())} a las ${time(s.at.toISOString())}`}>
+                        <b>{time(s.at.toISOString())}</b>
+                        <small>{date(s.at.toISOString(), { day: '2-digit', month: '2-digit' })} · Atrasado</small>
+                      </button>
+                    ))}
                   {slots.map((s) => {
                     const dose = doses.find((d) => d.scheduledAt && new Date(d.scheduledAt).getTime() === s.at.getTime())
                     const st = slotState(s.at, s.omitted, dose)
@@ -376,7 +393,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                         onClick={() => (dose ? setCorrecting({ med: m, dose }) : setMarking({ med: m, at: s.at, late: past }))}
                         title={dose ? doseTitle(dose) : STATE_LABEL[st]}>
                         <b>{time(s.at.toISOString())}</b>
-                        <small>{dose ? `${dose.status === 'given' ? '✓' : '✗'} ${time(dose.givenAt)} ${by(dose.givenBy)}` : STATE_LABEL[st]}</small>
+                        <small>{dose ? `${dose.status === 'given' ? '✓' : '✗'} ${time(dose.givenAt)}${givenLate(dose) ? ' con retraso' : ''} ${by(dose.givenBy)}` : STATE_LABEL[st]}</small>
                       </button>
                     )
                   })}
@@ -481,7 +498,10 @@ function StopModal({ med, onClose, onSaved }: { med: InpatientMed; onClose: () =
 
 function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: InpatientMed; at?: Date; late?: boolean; doses: Dose[]; onClose: () => void; onSaved: () => void }) {
   const { recordDose } = useStore()
-  const [given, setGiven] = useState(true)
+  // OB1 (ronda 5): Administrada (aunque sea tarde), No aplicada u Omitida; las dos últimas con motivo
+  const [status, setStatus] = useState<Dose['status']>('given')
+  const given = status === 'given'
+  const old = oldSlot(at)
   // En un día pasado la hora real empieza en la hora indicada
   const [when, setWhen] = useState(() => inputDateTime(late && at ? at : new Date()))
   const [note, setNote] = useState('')
@@ -493,38 +513,49 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
   return (
     <Modal title={medLabel(med)} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className={`btn ${given ? 'btn--primary' : 'btn--danger'}`} disabled={busy || (!given && !note.trim()) || (late && reason.trim().length < 5)} onClick={async () => {
+      <button className={`btn ${given ? 'btn--primary' : 'btn--danger'}`} disabled={busy || (!given && !note.trim()) || (old && reason.trim().length < 5)} onClick={async () => {
         setBusy(true)
-        const ok = await recordDose(med.id, { scheduledAt: at?.toISOString(), givenAt: new Date(when).toISOString(), status: given ? 'given' : 'skipped', note: note.trim() || undefined, reason: late ? reason.trim() : undefined })
+        const ok = await recordDose(med.id, { scheduledAt: at?.toISOString(), givenAt: new Date(when).toISOString(), status, note: note.trim() || undefined, reason: old ? reason.trim() : undefined })
         setBusy(false)
         if (ok) onSaved()
-      }}>{given ? 'Registrar administración' : 'Registrar como no aplicada'}</button>
+      }}>{given ? 'Registrar administración' : status === 'omitted' ? 'Registrar como omitida' : 'Registrar como no aplicada'}</button>
     </>}>
-      <p>{at ? <>Dosis de las <b>{time(at.toISOString())}</b>{at.toDateString() !== new Date().toDateString() ? ` del ${date(at.toISOString())}` : ''}.</> : 'Dosis según necesidad (PRN).'}</p>
+      <p>{at ? <>Dosis de las <b>{time(at.toISOString())}</b>{at.toDateString() !== new Date().toDateString() ? ` del ${date(at.toISOString())}` : ''}.
+        {at.getTime() < Date.now() - LATE_AFTER_MIN * 60_000 && <> <span className="badge badge--amber">Atrasada</span></>}</> : 'Dosis según necesidad (PRN).'}</p>
       {tooSoon && <div className="alert-strip"><TriangleAlert size={16} />La última dosis fue a las {time(last!.givenAt)}; la indicación es cada {med.everyHours} horas.</div>}
       {at && (
-        <div className="segmented" role="radiogroup" aria-label="Resultado">
-          <button role="radio" aria-checked={given} onClick={() => setGiven(true)}>Administrado</button>
-          <button role="radio" aria-checked={!given} onClick={() => setGiven(false)}>No aplicada</button>
-        </div>
+        <DoseStatus value={status} onChange={(s) => { setStatus(s); setNote('') }} />
       )}
-      {!given && <p className="muted" style={{ fontSize: 13.5 }}>Con el motivo, la dosis deja de alertar y queda en la hoja como no aplicada.</p>}
+      {!given && <p className="muted" style={{ fontSize: 13.5 }}>Con el motivo, la dosis deja de alertar y queda en la hoja como {status === 'omitted' ? 'omitida' : 'no aplicada'}.</p>}
       <label className="field"><span>Hora real</span><input className="input" type="datetime-local" value={when} max={inputDateTime(new Date())} onChange={(e) => setWhen(e.target.value)} /></label>
-      {!given && <SkipReasons value={note} onChange={setNote} />}
-      <label className="field"><span>{given ? 'Observación (opcional)' : 'Motivo por el que no se aplicó'}</span>
-        <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={given ? 'Ej. Dolor 7/10' : 'Ej. Paciente en ayuno para cirugía'} /></label>
-      {late && <label className="field"><span>Motivo del registro tardío (queda en la bitácora)</span>
+      {given && at && new Date(when).getTime() - at.getTime() > LATE_AFTER_MIN * 60_000 && (
+        <p className="muted" style={{ fontSize: 13.5 }}>Queda como administrada con retraso: {elapsed(Math.round((new Date(when).getTime() - at.getTime()) / 60_000))} después de la hora indicada.</p>)}
+      {!given && <SkipReasons value={note} onChange={setNote} reasons={status === 'omitted' ? OMIT_REASONS : SKIP_REASONS} />}
+      <label className="field"><span>{given ? 'Observación (opcional)' : status === 'omitted' ? 'Motivo por el que se omitió' : 'Motivo por el que no se aplicó'}</span>
+        <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={given ? 'Ej. Dolor 7/10' : status === 'omitted' ? 'Ej. Suspendida por el médico' : 'Ej. Paciente en ayuno para cirugía'} /></label>
+      {old && <label className="field"><span>Motivo del registro tardío (queda en la bitácora)</span>
         <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Se aplicó en el turno de noche y no se registró" /></label>}
     </Modal>
   )
 }
 
 /** EN2: motivos frecuentes de una dosis no aplicada, de un toque; el texto se puede completar. */
-const SKIP_REASONS = ['Paciente en ayuno', 'El paciente la rechazó', 'Suspendida por el médico', 'Paciente fuera del servicio (estudio o quirófano)', 'No hay el medicamento']
-function SkipReasons({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+const SKIP_REASONS = ['Paciente en ayuno', 'El paciente la rechazó', 'Paciente fuera del servicio (estudio o quirófano)', 'No hay el medicamento']
+/** OB1 (ronda 5): una dosis omitida es la que se decidió no dar. */
+const OMIT_REASONS = ['Suspendida por el médico', 'Cambio de indicación', 'Ya no corresponde (egreso o traslado)']
+function SkipReasons({ value, onChange, reasons = SKIP_REASONS }: { value: string; onChange: (v: string) => void; reasons?: string[] }) {
   return (
     <div className="chips" role="group" aria-label="Motivos frecuentes">
-      {SKIP_REASONS.map((r) => <button key={r} type="button" className="chip chip--toggle" aria-pressed={value === r} onClick={() => onChange(r)}>{r}</button>)}
+      {reasons.map((r) => <button key={r} type="button" className="chip chip--toggle" aria-pressed={value === r} onClick={() => onChange(r)}>{r}</button>)}
+    </div>
+  )
+}
+
+/** OB1 (ronda 5): Administrada, No aplicada u Omitida. */
+function DoseStatus({ value, onChange }: { value: Dose['status']; onChange: (s: Dose['status']) => void }) {
+  return (
+    <div className="segmented" role="radiogroup" aria-label="Resultado">
+      {(['given', 'skipped', 'omitted'] as const).map((s) => <button key={s} type="button" role="radio" aria-checked={value === s} onClick={() => onChange(s)}>{DOSE_LABEL[s]}</button>)}
     </div>
   )
 }
@@ -532,7 +563,8 @@ function SkipReasons({ value, onChange }: { value: string; onChange: (v: string)
 /** Corregir una dosis ya registrada: pide motivo; el registro anterior se guarda y queda en la bitácora. */
 function CorrectDoseModal({ med, dose, onClose, onSaved }: { med: InpatientMed; dose: Dose; onClose: () => void; onSaved: () => void }) {
   const { correctDose } = useStore()
-  const [given, setGiven] = useState(dose.status === 'given')
+  const [status, setStatus] = useState<Dose['status']>(dose.status)
+  const given = status === 'given'
   const [when, setWhen] = useState(inputDateTime(new Date(dose.givenAt)))
   const [note, setNote] = useState(dose.note ?? '')
   const [reason, setReason] = useState('')
@@ -542,21 +574,16 @@ function CorrectDoseModal({ med, dose, onClose, onSaved }: { med: InpatientMed; 
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={busy || reason.trim().length < 5 || (!given && !note.trim())} onClick={async () => {
         setBusy(true)
-        const ok = await correctDose(dose.id, { status: given ? 'given' : 'skipped', givenAt: new Date(when).toISOString(), note: note.trim() || undefined, reason: reason.trim() })
+        const ok = await correctDose(dose.id, { status, givenAt: new Date(when).toISOString(), note: note.trim() || undefined, reason: reason.trim() })
         setBusy(false)
         if (ok) onSaved()
       }}>Guardar corrección</button>
     </>}>
-      <p className="muted" style={{ fontSize: 14 }}>Registrada como {dose.status === 'given' ? 'administrada' : 'no aplicada'} a las {time(dose.givenAt)} del {date(dose.givenAt)}. El registro anterior se conserva.</p>
-      {dose.scheduledAt && (
-        <div className="segmented" role="radiogroup" aria-label="Resultado">
-          <button role="radio" aria-checked={given} onClick={() => setGiven(true)}>Administrado</button>
-          <button role="radio" aria-checked={!given} onClick={() => setGiven(false)}>No aplicada</button>
-        </div>
-      )}
+      <p className="muted" style={{ fontSize: 14 }}>Registrada como {DOSE_LABEL[dose.status].toLowerCase()} a las {time(dose.givenAt)} del {date(dose.givenAt)}. El registro anterior se conserva.</p>
+      {dose.scheduledAt && <DoseStatus value={status} onChange={setStatus} />}
       <label className="field"><span>Hora real</span><input className="input" type="datetime-local" value={when} max={inputDateTime(new Date())} onChange={(e) => setWhen(e.target.value)} /></label>
-      {!given && <SkipReasons value={note} onChange={setNote} />}
-      <label className="field"><span>{given ? 'Observación (opcional)' : 'Motivo por el que no se aplicó'}</span><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+      {!given && <SkipReasons value={note} onChange={setNote} reasons={status === 'omitted' ? OMIT_REASONS : SKIP_REASONS} />}
+      <label className="field"><span>{given ? 'Observación (opcional)' : status === 'omitted' ? 'Motivo por el que se omitió' : 'Motivo por el que no se aplicó'}</span><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
       <label className="field"><span>Motivo de la corrección (queda en la bitácora)</span><input className="input" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Se anotó una hora equivocada" /></label>
     </Modal>
   )

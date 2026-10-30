@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '44'
+const SCHEMA_VERSION = '45'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -828,6 +828,10 @@ CREATE TABLE IF NOT EXISTS demo_backups (
 -- v44 (ronda 5, MC6): una autorización pendiente generada por error se elimina de la lista: queda archivada con
 -- quién, cuándo y por qué (archived_at y archived_reason ya existían desde la v26)
 ALTER TABLE authorizations ADD COLUMN IF NOT EXISTS archived_by TEXT;
+
+-- v45 (ronda 5, OB1): una dosis también se registra como «Omitida» (con motivo), además de administrada y no aplicada
+ALTER TABLE hosp_doses DROP CONSTRAINT IF EXISTS hosp_doses_status_check;
+ALTER TABLE hosp_doses ADD CONSTRAINT hosp_doses_status_check CHECK (status IN ('given','skipped','omitted'));
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

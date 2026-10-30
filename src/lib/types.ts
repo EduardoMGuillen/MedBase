@@ -814,7 +814,8 @@ export interface Dose {
   scheduledAt?: string // vacío en medicamentos PRN
   givenAt: string
   givenBy: string
-  status: 'given' | 'skipped'
+  /** OB1 (ronda 5): «Omitida» con motivo, además de administrada y no aplicada. */
+  status: 'given' | 'skipped' | 'omitted'
   note?: string
   /** Registro tardío o corrección: quién, cuándo y por qué (el registro anterior queda guardado). */
   correctedAt?: string

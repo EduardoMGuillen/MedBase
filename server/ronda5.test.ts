@@ -5,6 +5,8 @@ import type { Server } from 'node:http'
 import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
+import { fileAlerts } from '../src/lib/alerts.js'
+import { bandOf } from '../src/lib/vitalsSheet.js'
 
 let server: Server
 let sql: Sql
@@ -103,5 +105,49 @@ describe('RE1 Mi configuración de recepción', () => {
     assert.equal((await rec.patch('/api/me', { noteFormat: 'soap' })).status, 403)
     assert.equal((await rec.put('/api/me/signature', { signature: 'data:image/png;base64,AAAA', password: DEMO_PASSWORD })).status, 403)
     assert.equal((await rec.put('/api/settings', { name: 'Otra' })).status, 403)
+  })
+})
+
+describe('OB1 pendientes que se resuelven al registrar la dosis', () => {
+  test('la dosis atrasada de ayer se registra desde su alerta (administrada con retraso u omitida con motivo), sale del panel y el aviso se va con la siguiente nota', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
+    // Solución c/8h que empezó hace 30 h: sus dosis de hace 30, 22, 14 y 6 h están atrasadas
+    const first = new Date(Date.now() - 30 * 3_600_000)
+    first.setSeconds(0, 0)
+    const n = await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', exam: 'Estable.',
+      meds: [{ drug: 'Solución Hartmann', dose: '1000 mL', route: 'IV', everyHours: 8, firstAt: first.toISOString() }] })
+    assert.equal(n.status, 201, JSON.stringify(n.body))
+    const band = bandOf({})
+    const file = async () => (await nurse.get(`/api/inpatient/${stay.id}`)).body
+    let f = await file()
+    const med = f.meds.find((m: any) => m.drug === 'Solución Hartmann')
+    const late = () => fileAlerts(f, band, new Date()).find((a) => a.key === `late-${med.id}`)
+    assert.equal(late()?.count, 4)
+    // La de ayer (hace 30 h), administrada tarde: pide el motivo del registro tardío y queda «con retraso» en la bitácora
+    const slot = (h: number) => new Date(first.getTime() + h * 3_600_000).toISOString()
+    assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: slot(0), givenAt: slot(1.5), status: 'given' })).status, 400)
+    const given = await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: slot(0), givenAt: slot(1.5), status: 'given', reason: 'Se aplicó en el turno de noche' })
+    assert.equal(given.status, 201, JSON.stringify(given.body))
+    f = await file()
+    assert.equal(late()?.count, 3, 'sale del panel')
+    // Omitida: pide motivo
+    assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: slot(8), status: 'omitted' })).status, 400)
+    assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: slot(8), status: 'omitted', note: 'Suspendida por el médico' })).status, 201)
+    f = await file()
+    assert.equal(late()?.count, 2)
+    assert.match(fileAlerts(f, band, new Date()).find((a) => a.key === `skip-${med.id}`)!.text, /1 dosis omitida .*Suspendida por el médico/)
+    // Nada se borra: queda en la hoja con autor y hora
+    const recorded = f.doses.filter((d: any) => d.medId === med.id)
+    assert.deepEqual(recorded.map((d: any) => d.status).sort(), ['given', 'omitted'])
+    assert.ok(recorded.every((d: any) => d.givenBy === 's-rios' && d.givenAt))
+    const log = (await nurse.get('/api/audit/mine')).body
+    assert.ok((log.rows ?? log).some((e: any) => /Administró Solución Hartmann.*con retraso/.test(e.action)))
+    assert.ok((log.rows ?? log).some((e: any) => /Marcó como omitida Solución Hartmann/.test(e.action)))
+    // El aviso de la omitida es para el médico: se va con su siguiente nota
+    await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', exam: 'Revisado.' })
+    f = await file()
+    assert.equal(fileAlerts(f, band, new Date()).find((a) => a.key === `skip-${med.id}`), undefined)
   })
 })
