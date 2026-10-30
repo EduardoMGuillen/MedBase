@@ -5,9 +5,6 @@ import { hasRole } from '../lib/permissions'
 /** Especialidades que se sugieren al ingresar (además de las de los médicos de la clínica). */
 const COMMON = ['Medicina general', 'Medicina interna', 'Pediatría', 'Ginecología y obstetricia', 'Cirugía general', 'Ortopedia', 'Cardiología', 'Neumología']
 
-/** AD3: especialidad que se propone para un ingreso: la del médico que ingresa; si no tiene, "Medicina general". */
-export const defaultSpecialty = (u?: { specialty?: string } | null) => u?.specialty?.trim() || 'Medicina general'
-
 /**
  * AD3: cama y especialidad del ingreso. Sólo se ofrecen camas libres (en servicio y sin paciente); la especialidad
  * empieza con la del médico que ingresa y se cambia si ingresa para otro servicio.

@@ -206,3 +206,6 @@ export function currentDiagnoses(file: Pick<InpatientFile, 'notes' | 'hospitaliz
   const last = file.notes.filter((n) => n.diagnoses?.length).sort((a, b) => b.at.localeCompare(a.at))[0]
   return last?.diagnoses ?? file.hospitalization.diagnoses
 }
+
+/** AD3: especialidad que se propone para un ingreso: la del médico que ingresa; si no tiene, "Medicina general". */
+export const defaultSpecialty = (u?: { specialty?: string } | null) => u?.specialty?.trim() || 'Medicina general'

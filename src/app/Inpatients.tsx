@@ -5,8 +5,8 @@ import { useStore } from '../lib/store'
 import { Modal, PageHead } from '../components/ui'
 import { age, dateTime, dniDigits, fullName, inputDateTime } from '../lib/format'
 import { DiagnosisPicker } from '../components/DiagnosisPicker'
-import { stayDay, stayPath } from '../lib/inpatient'
-import { BedFields, defaultSpecialty } from '../components/BedFields'
+import { defaultSpecialty, stayDay, stayPath } from '../lib/inpatient'
+import { BedFields } from '../components/BedFields'
 import type { Bed, Diagnosis, Hospitalization } from '../lib/types'
 
 export const bedLabel = (b?: Pick<Bed, 'room' | 'label'>) => (b ? `Cuarto ${b.room}${b.label ? `-${b.label}` : ''}` : 'Sin cama')

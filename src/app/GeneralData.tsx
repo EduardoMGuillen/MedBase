@@ -3,7 +3,8 @@ import { useStore } from '../lib/store'
 import { formatPhone } from '../lib/format'
 import type { Hospitalization, Patient } from '../lib/types'
 import { IdentificationForm } from './PatientForms'
-import { BedFields, defaultSpecialty } from '../components/BedFields'
+import { BedFields } from '../components/BedFields'
+import { defaultSpecialty } from '../lib/inpatient'
 
 const PATIENT_KEYS = ['firstName', 'lastName', 'birthDate', 'sex', 'phone', 'email', 'dni', 'civilStatus', 'occupation', 'education', 'religion', 'address',
   'emergencyName', 'emergencyPhone', 'emergencyRelation', 'insurance', 'guardianName', 'guardianDni', 'guardianRelation'] as const
