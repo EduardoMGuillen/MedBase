@@ -531,6 +531,9 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
   const discharged = notes.some((n) => n.kind === 'discharge')
   const [writing, setWriting] = useState<null | 'note' | 'procedure' | 'discharge' | 'authorization'>(null)
   const [authFor, setAuthFor] = useState<string | undefined>()
+  // MC2: la quirúrgica recién generada (con sus tres salidas) y la nota de procedimiento que la pidió, para volver a ella
+  const [surgicalFor, setSurgicalFor] = useState<string | null>(null)
+  const [procDraft, setProcDraft] = useState<ProcDraft | undefined>()
   const nav = useNavigate()
   const open = file.hospitalization.status === 'active'
   // Los procedimientos registrados antes de las notas de procedimiento se conservan, sin estado. Las
@@ -561,13 +564,14 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         </section>
       )}
       {can('orders.review') && <PendingOrdersPanel file={file} reload={reload} />}
-      {writing === 'procedure' && <ProcedureNoteForm file={file} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }}
-        onAuthorize={(name) => { setAuthFor(name); setWriting('authorization') }} />}
-      {writing === 'authorization' && <AuthorizationForm file={file} p={p} template="surgical" initialProcedure={authFor} onClose={() => setWriting(null)}
-        onCreated={(a) => { setWriting(null); nav(`/app/autorizaciones/${a.id}`) }} />}
+      {writing === 'procedure' && <ProcedureNoteForm file={file} initial={procDraft} onClose={() => { setWriting(null); setProcDraft(undefined) }} onSaved={() => { setWriting(null); setProcDraft(undefined); reload() }}
+        onAuthorize={(draft) => { setProcDraft(draft); setAuthFor(draft.name); setWriting('authorization') }} />}
+      {writing === 'authorization' && <AuthorizationForm file={file} p={p} template="surgical" initialProcedure={authFor} onClose={() => setWriting(procDraft ? 'procedure' : null)}
+        onCreated={(a) => { setWriting(null); setSurgicalFor(a.id) }} />}
+      {surgicalFor && <ConsentChoice authorizationId={surgicalFor} p={p} onDone={() => { setSurgicalFor(null); reload(); if (procDraft) setWriting('procedure') }} />}
       {writing === 'discharge' && <Discharge file={file} p={p} reload={() => { setWriting(null); reload() }} />}
       {referring && <ReferralModal stayId={h.id} onClose={() => setReferring(false)} />}
-      {converting && <ConvertModal file={file} p={p} onClose={() => setConverting(false)} onDone={() => nav(`/app/hospitalizados/${h.id}?tab=notas`)} />}
+      {converting && <ConvertModal file={file} p={p} onClose={() => setConverting(false)} onDone={() => nav(`/app/hospitalizados/${h.id}?firmar=1`)} />}
       {h.consultationId && <ConsultEntry consultationId={h.consultationId} />}
       {timeline.length ? timeline.map((item) => {
         if (item.legacy) {
@@ -758,10 +762,13 @@ function ProcedureNote({ n, file }: { n: InpatientNote; file: File }) {
  * lavado) se guarda sin más. Sólo si se marca «Procedimiento mayor» se pide la autorización quirúrgica firmada (o la
  * urgencia sin autorización previa), y se puede vincular una quirúrgica firmada en las últimas 24 horas.
  */
-function ProcedureNoteForm({ file, onClose, onSaved, onAuthorize }: { file: File; onClose: () => void; onSaved: () => void; onAuthorize: (procedure: string) => void }) {
+type ProcDraft = { name: string; performedAt: string; text: string; major: boolean; urgent: boolean; justification: string }
+
+function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize }: { file: File; initial?: ProcDraft; onClose: () => void; onSaved: () => void; onAuthorize: (draft: ProcDraft) => void }) {
   const { addProcedureNote } = useStore()
   const now = useNow()
-  const [f, setF] = useState(() => ({ name: '', performedAt: inputDateTime(new Date()), text: '', major: false, urgent: false, justification: '' }))
+  // Si se fue a generar la autorización quirúrgica, al volver la nota sigue como estaba
+  const [f, setF] = useState<ProcDraft>(() => initial ?? { name: '', performedAt: inputDateTime(new Date()), text: '', major: false, urgent: false, justification: '' })
   const [busy, setBusy] = useState(false)
   const performed = new Date(f.performedAt)
   const future = performed.getTime() > now.getTime() + 60_000
@@ -816,7 +823,7 @@ function ProcedureNoteForm({ file, onClose, onSaved, onAuthorize }: { file: File
       {f.major && !covered && (
         <div className="alert-strip alert-strip--amber" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
           <span>No hay autorización quirúrgica firmada para este procedimiento.</span>
-          <button type="button" className="btn btn--soft btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => onAuthorize(f.name.trim())}><FileSignature size={14} />Generar la autorización quirúrgica</button>
+          <button type="button" className="btn btn--soft btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => onAuthorize({ ...f, name: f.name.trim() })}><FileSignature size={14} />Generar la autorización quirúrgica</button>
           <label className="check-line" style={{ background: '#fff' }}><input type="checkbox" checked={f.urgent} onChange={(e) => setF({ ...f, urgent: e.target.checked })} />
             <span><b>Urgencia, sin autorización previa</b><small>Escribe por qué no se pudo obtener antes.</small></span></label>
           {f.urgent && <textarea className="textarea textarea--sm" rows={2} value={f.justification} onChange={(e) => setF({ ...f, justification: e.target.value })} placeholder="Justificación" aria-label="Justificación de la urgencia" />}
@@ -1114,8 +1121,8 @@ function NursingRow({ n, who }: { n: InpatientNote; who?: string }) {
  */
 function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => void }) {
   const { can, staffById } = useStore()
-  const nav = useNavigate()
   const [making, setMaking] = useState<null | 'hospital' | 'surgical'>(null)
+  const [choiceFor, setChoiceFor] = useState<string | null>(null)
   const open = file.hospitalization.status === 'active'
   const write = open && (can('inpatient.orders') || can('inpatient.care'))
   const hospital = file.authorizations.find((a) => a.template === 'hospital' && (a.status === 'pending' || a.status === 'signed'))
@@ -1134,7 +1141,8 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
           </div>
         </section>
       )}
-      {making && <AuthorizationForm file={file} p={p} template={making} onClose={() => setMaking(null)} onCreated={(a) => { setMaking(null); nav(`/app/autorizaciones/${a.id}`) }} />}
+      {making && <AuthorizationForm file={file} p={p} template={making} onClose={() => setMaking(null)} onCreated={(a) => { setMaking(null); setChoiceFor(a.id) }} />}
+      {choiceFor && <ConsentChoice authorizationId={choiceFor} p={p} onDone={() => { setChoiceFor(null); reload() }} />}
       <DischargeDocuments file={file} />
       {file.referrals.map((r) => (
         <article key={r.id} className="panel consult-entry">
