@@ -13,8 +13,6 @@ export default function StaffPage() {
   // Un consultorio sólo tiene a su médico titular y sus asistentes
   const office = features(settings).office
   const ROLES = ROLES_BY_KIND[settings.kind ?? 'clinic']
-  const assistants = staff.filter((s) => s.role === 'assistant' && s.active).length
-  const full = office && assistants >= (settings.maxAssistants ?? 2)
   const [tab, setTab] = useState<Tab>('people')
   const [creating, setCreating] = useState(false)
   const [secret, setSecret] = useState<{ name: string; email: string; password: string } | null>(null)
@@ -22,10 +20,10 @@ export default function StaffPage() {
 
   return (
     <div className="page">
-      <PageHead title={office ? 'Asistentes' : 'Personal y roles'}
-        sub={office ? `Quién te ayuda en el consultorio (hasta ${settings.maxAssistants ?? 2}), qué puede hacer y quién hizo qué.` : 'Quién trabaja en la clínica, qué puede hacer cada rol y quién hizo qué.'}
+      <PageHead title="Personal y roles"
+        sub={office ? `Quién te ayuda en el consultorio: asistentes (hasta ${settings.maxAssistants ?? 2}) y enfermería; qué puede hacer cada rol y quién hizo qué.` : 'Quién trabaja en la clínica, qué puede hacer cada rol y quién hizo qué.'}
         actions={<>
-          <button className="btn btn--primary" disabled={full} title={full ? 'Ya tienes el máximo de asistentes activos' : undefined} onClick={() => setCreating(true)}><UserPlus size={17} />{office ? 'Agregar asistente' : 'Nuevo usuario'}</button>
+          <button className="btn btn--primary" onClick={() => setCreating(true)}><UserPlus size={17} />{office ? 'Agregar personal' : 'Nuevo usuario'}</button>
         </>} />
       <div className="tabs tabs--sticky" role="tablist">
         <button className="tab" role="tab" aria-selected={tab === 'people'} onClick={() => setTab('people')}>Personal</button>
@@ -87,8 +85,8 @@ export default function StaffPage() {
 
       {tab === 'audit' && <AuditLog />}
 
-      {rolesOf && <RolesModal s={rolesOf} roles={ROLES} self={rolesOf.id === user?.id} onClose={() => setRolesOf(null)} />}
-      {creating && <NewStaff roles={ROLES.filter((r) => !office || r === 'assistant')} onClose={() => setCreating(false)} onCreated={(s, password) => { setCreating(false); setSecret({ name: s.name, email: s.email, password }) }} />}
+      {rolesOf && <RolesModal s={rolesOf} roles={ROLES.filter((r) => !office || r !== 'doctor')} self={rolesOf.id === user?.id} onClose={() => setRolesOf(null)} />}
+      {creating && <NewStaff roles={ROLES.filter((r) => !office || r === 'assistant' || r === 'nurse')} onClose={() => setCreating(false)} onCreated={(s, password) => { setCreating(false); setSecret({ name: s.name, email: s.email, password }) }} />}
 
       {secret && (
         <Modal title="Contraseña temporal" onClose={() => setSecret(null)} footer={<button className="btn btn--primary" onClick={() => setSecret(null)}>Listo</button>}>

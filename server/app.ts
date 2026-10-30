@@ -1167,7 +1167,7 @@ export async function assertRoleFits(sql: Sql, clinicId: string, role: string, i
   const c = (await sql.one('SELECT kind, max_assistants FROM clinics WHERE id = ?', [clinicId])) ?? fail(404, 'La clínica no existe.')
   const kind = String(c!.kind ?? 'clinic') as 'clinic' | 'office'
   if (!(ROLES_BY_KIND[kind] as string[]).includes(role)) {
-    fail(400, kind === 'office' ? 'En un consultorio sólo se agregan asistentes. Para sumar otro médico, convierte el consultorio en clínica.' : 'El rol de asistente es para consultorios; en una clínica usa recepción o enfermería.')
+    fail(400, kind === 'office' ? 'En un consultorio se agregan asistentes y enfermería. Para sumar otro médico o recepción, convierte el consultorio en clínica.' : 'El rol de asistente es para consultorios; en una clínica usa recepción o enfermería.')
   }
   if (kind !== 'office') return
   const count = async (r: string) => Number((await sql.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM staff WHERE clinic_id = ? AND ${hasRoleSql(r)} AND active AND id <> ?`, [clinicId, ignoreStaffId]))!.n)
@@ -1177,8 +1177,7 @@ export async function assertRoleFits(sql: Sql, clinicId: string, role: string, i
 
 /** AD5: una clínica nunca se queda sin nadie activo con el rol de Administración. */
 export async function assertNotLastAdmin(sql: Sql, clinicId: string, staffId: string) {
-  const c = await sql.one('SELECT kind FROM clinics WHERE id = ?', [clinicId])
-  if (c?.kind === 'office') return
+  // MI1: también en un consultorio (el titular es su administrador)
   const others = await sql.one(`SELECT 1 FROM staff WHERE clinic_id = ? AND id <> ? AND active AND ${hasRoleSql('admin')}`, [clinicId, staffId])
   if (!others) fail(400, 'Es la única persona con el rol de Administración. Dale ese rol a otra persona antes de quitárselo.')
 }

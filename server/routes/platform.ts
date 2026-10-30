@@ -76,7 +76,11 @@ export function registerPlatform(app: Express, { sql, auth, need, userOf, audit 
     const { user, password } = office
       ? await createStaffMember(sql, id, { name: b.owner!.name, role: 'doctor', email: b.owner!.email, license: b.owner!.license, specialty: b.owner!.specialty })
       : await createStaffMember(sql, id, { name: b.admin!.name, role: 'admin', email: b.admin!.email })
-    if (office) await sql.run('UPDATE clinics SET owner_id = ? WHERE id = ?', [user.id, id])
+    if (office) {
+      await sql.run('UPDATE clinics SET owner_id = ? WHERE id = ?', [user.id, id])
+      // MI1: el titular es médico y administrador; empieza en la vista de administrador para configurar el consultorio
+      await sql.run(`UPDATE staff SET roles = ?, role = 'admin' WHERE id = ?`, [JSON.stringify(['doctor', 'admin']), user.id])
+    }
     await audit({ id: userOf(req).id, clinicId: id }, office ? `Creó el consultorio ${b.name} de ${b.owner!.name}` : `Creó la clínica ${b.name} y su usuario de administración ${b.admin!.name}`)
     const d = since()
     res.status(201).json({ clinic: toClinic((await sql.one(`SELECT c.*, ${CLINIC_STATS} FROM clinics c WHERE c.id = ?`, [d, d, id]))!), admin: user, password })

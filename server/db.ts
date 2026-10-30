@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '41'
+const SCHEMA_VERSION = '42'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -860,6 +860,7 @@ export function ensureDb(sql: Sql) {
       await migrateBedSpecialties(q)
       await migratePayments(q)
       await migrateLabsToExams(q)
+      await migrateOfficeOwners(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -1253,6 +1254,17 @@ export async function migrateMarks(q: Sql) {
 }
 
 /** v33 (AD5): cada persona empieza con su único rol como lista de roles. Idempotente. */
+/**
+ * v42 (MI1): el médico titular de cada consultorio pasa a tener también el rol de Administración (antes su rol de
+ * médico incluía lo administrativo). Una sola vez: si después se le quita, no se vuelve a poner.
+ */
+export async function migrateOfficeOwners(q: Sql) {
+  if (await q.one(`SELECT 1 FROM meta WHERE key = 'office_owner_admin'`)) return
+  await q.run(`UPDATE staff s SET roles = (COALESCE(NULLIF(s.roles, ''), json_build_array(s.role)::text)::jsonb || '["admin"]'::jsonb)::text
+    FROM clinics c WHERE c.owner_id = s.id AND c.kind = 'office' AND NOT (COALESCE(NULLIF(s.roles, ''), json_build_array(s.role)::text)::jsonb @> '["admin"]'::jsonb)`)
+  await q.run(`INSERT INTO meta (key, value) VALUES ('office_owner_admin', ?) ON CONFLICT (key) DO NOTHING`, [new Date().toISOString()])
+}
+
 export async function migrateRoles(q: Sql) {
   await q.run(`UPDATE staff SET roles = json_build_array(role)::text WHERE roles IS NULL OR roles = ''`)
 }

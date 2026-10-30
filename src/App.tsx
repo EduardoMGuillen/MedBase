@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { StoreProvider, useStore } from './lib/store'
-import { features, roleWith, type Permission } from './lib/permissions'
+import { features, hasRole, roleWith, type Permission } from './lib/permissions'
 import { SwitchViewOffer, ViewSwitch } from './components/ViewSwitch'
 import { Loading, Toaster } from './components/ui'
 import Landing from './pages/Landing'
@@ -49,8 +49,9 @@ function Guard({ perm, feature, children }: { perm?: Permission; feature?: 'hosp
 
 /** El médico titular de un consultorio nuevo empieza por el asistente de primer ingreso. */
 function Home() {
-  const { settings, can } = useStore()
-  if (settings.kind === 'office' && can('settings.manage') && !settings.setupDoneAt) return <Navigate to="/app/bienvenida" replace />
+  const { settings, can, user } = useStore()
+  // MI1: el titular configura su consultorio en la vista de administrador (si está en la de médico, se le ofrece cambiar)
+  if (settings.kind === 'office' && (can('settings.manage') || (user && hasRole(user, 'admin'))) && !settings.setupDoneAt) return <Navigate to="/app/bienvenida" replace />
   // AD5: quien tiene varios roles elige aquí su vista
   return <><div className="view-bar"><ViewSwitch /></div><Dashboard /></>
 }

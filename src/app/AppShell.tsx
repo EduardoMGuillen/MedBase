@@ -80,9 +80,11 @@ export default function AppShell() {
       if (user.role === 'nurse' && n.to === '/app/agenda') return false
       if (quietBilling && n.to === '/app/caja') return false
       if (n.doctor && !doctor) return false
+      // MI1: el titular de un consultorio en su vista de administrador ve sólo lo administrativo (lo clínico, en la de médico)
+      if (f.office && user.role === 'admin' && n.group === 'Pacientes') return false
       return true
     }).map((n) => (f.office && n.group === 'Administración'
-      ? { ...n, group: 'Mi consultorio', label: n.to === '/app/personal' ? 'Asistentes' : n.to === '/app/configuracion' ? 'Configuración del consultorio' : n.label }
+      ? { ...n, group: 'Mi consultorio', label: n.to === '/app/personal' ? 'Personal' : n.to === '/app/configuracion' ? 'Configuración del consultorio' : n.label }
       : doctor && n.to === '/app/caja' ? { ...n, label: 'Cobrar' } : n))
     // MC7: Inicio → Agenda → Recetas → Cobrar → Pacientes → Configuración (y en el consultorio, lo administrativo al final)
     .sort((a, b) => navRank(a) - navRank(b))

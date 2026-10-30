@@ -58,12 +58,14 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 }
 
 /**
- * En un consultorio el médico es también el dueño de la cuenta: además de lo del médico, configura, cobra,
- * registra llegadas, ve reportes y bitácora y agrega a su asistente. Los demás roles no existen en un consultorio.
+ * MI1: en un consultorio el médico titular es médico y administrador (dos roles, AD5) y cambia de vista: en la de
+ * médico, lo clínico (y registrar llegadas y aplicar dosis en observación, porque puede no tener personal); en la de
+ * administrador, reportes, personal, configuración, servicios y formas de pago. Puede sumar asistentes y enfermería.
  */
 const OFFICE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
-  doctor: [...new Set<Permission>([...ROLE_PERMISSIONS.doctor, 'checkin.manage', 'inpatient.care', 'staff.manage', 'settings.manage', 'schedule.manage',
-    'drugs.manage', 'reports.view', 'audit.view'])],
+  doctor: [...new Set<Permission>([...ROLE_PERMISSIONS.doctor, 'checkin.manage', 'inpatient.care'])],
+  admin: ROLE_PERMISSIONS.admin,
+  nurse: ROLE_PERMISSIONS.nurse,
   assistant: ROLE_PERMISSIONS.assistant,
 }
 
@@ -75,7 +77,7 @@ export function permissionsFor(role: Role, kind: ClinicKind = 'clinic'): Permiss
 /** Roles que se pueden dar a alguien en cada tipo de cuenta. */
 export const ROLES_BY_KIND: Record<ClinicKind, Exclude<Role, 'superadmin'>[]> = {
   clinic: ['admin', 'doctor', 'nurse', 'reception'],
-  office: ['doctor', 'assistant'],
+  office: ['admin', 'doctor', 'nurse', 'assistant'],
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
