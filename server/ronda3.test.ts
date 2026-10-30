@@ -86,3 +86,26 @@ describe('AD2 vigencia de recetas por médico', () => {
     assert.equal(prefs.rxValidityDays, 15)
   })
 })
+
+/** Paciente nuevo ingresado a hospitalización desde una consulta de la Dra. Herrera (sin cama todavía). */
+async function admitted(name = 'Ingreso') {
+  const w = await walkIn(name)
+  const c = await w.doc.post('/api/consultations', { appointmentId: w.apptId, reason: 'Dolor abdominal', history: 'Dos días con dolor en fosa ilíaca derecha.', diagnoses: DX,
+    orders: ['Signos vitales cada 8 horas.'], admit: true })
+  assert.equal(c.status, 201, JSON.stringify(c.body))
+  return { ...w, stayId: String(c.body.hospitalizationId) }
+}
+
+describe('MC3 nota de procedimiento', () => {
+  test('un procedimiento menor se guarda sin autorización; uno mayor la pide (o la urgencia)', async () => {
+    const { doc, stayId } = await admitted('Procedimiento')
+    const base = { name: 'Infiltración de rodilla derecha', performedAt: new Date(Date.now() - 60_000).toISOString(), text: 'Se infiltra rodilla derecha con técnica estéril, sin complicaciones.' }
+    const minor = await doc.post(`/api/inpatient/${stayId}/procedure-notes`, { ...base, major: false })
+    assert.equal(minor.status, 201, JSON.stringify(minor.body))
+    assert.equal(minor.body.procedure.major, false)
+    assert.equal((await doc.post(`/api/inpatient/${stayId}/procedure-notes`, { ...base, name: 'Laparotomía exploradora', major: true })).status, 409)
+    const urgent = await doc.post(`/api/inpatient/${stayId}/procedure-notes`, { ...base, name: 'Laparotomía exploradora', major: true, urgent: true, justification: 'Abdomen agudo con choque.' })
+    assert.equal(urgent.status, 201)
+    assert.equal(urgent.body.procedure.urgent, true)
+  })
+})
