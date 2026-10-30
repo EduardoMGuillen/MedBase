@@ -207,6 +207,7 @@ describe('AD1 umbrales críticos por grupo', () => {
     groups.push({ id: 'g-gases', name: 'Gases arteriales', analytes: [{ id: 'a-lact', name: 'Lactato', unit: 'mmol/L', high: 4 }, { id: 'a-po2', name: 'pO2', unit: 'mmHg', low: 50 }] })
     groups.find((g: any) => g.name === 'Electrolitos').analytes.find((a: any) => a.name === 'Potasio').high = 6.5
     assert.equal((await admin.put('/api/settings/critical-groups', { groups: [...groups, { id: 'g-x', name: 'Malo', analytes: [{ id: 'a-x', name: 'X', low: 5, high: 2 }] }] })).status, 400)
+    assert.equal((await admin.put('/api/settings/critical-groups', { groups: [...groups, { id: 'g-y', name: 'Repetido', analytes: [{ id: 'a-y', name: 'hematocrito', high: 70 }] }] })).status, 400, 'un analito, un umbral')
     const r = await admin.put('/api/settings/critical-groups', { groups })
     assert.equal(r.status, 200, JSON.stringify(r.body))
     s = (await admin.get('/api/bootstrap')).body.settings

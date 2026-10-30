@@ -153,6 +153,10 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     }
     const active = groups.filter((g) => !g.archivedAt)
     if (new Set(active.map((g) => g.name.toLowerCase())).size !== active.length) fail(400, 'Hay dos grupos con el mismo nombre.')
+    // Un analito tiene un solo umbral: no se repite entre los activos
+    const names = active.flatMap((g) => g.analytes.filter((a) => !a.archivedAt).map((a) => examKey(a.name)))
+    const twice = names.find((n, i) => names.indexOf(n) !== i)
+    if (twice) fail(400, `${active.flatMap((g) => g.analytes).find((a) => examKey(a.name) === twice)!.name} está dos veces: un analito tiene un solo umbral.`)
     const lim = (x?: number) => (x == null ? 'no aplica' : String(x))
     const changes: string[] = []
     for (const g of groups) {

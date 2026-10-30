@@ -45,7 +45,11 @@ export function CriticalThresholds() {
   }
   const field = (a: CriticalAnalyte, side: 'low' | 'high') => text[`${a.id}-${side}`] ?? num(a[side])
   const bad = (a: CriticalAnalyte, side: 'low' | 'high') => { const t = text[`${a.id}-${side}`]; return t != null && Number.isNaN(parseDecimal(t)) }
-  const invalid = groups.some((g) => !g.name.trim() || g.analytes.some((a) => !a.name.trim() || bad(a, 'low') || bad(a, 'high') || (a.low != null && a.high != null && a.low >= a.high)))
+  // Un analito tiene un solo umbral: no se repite entre los activos
+  const key = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+  const activeNames = groups.filter((g) => !g.archivedAt).flatMap((g) => g.analytes.filter((a) => !a.archivedAt).map((a) => key(a.name)))
+  const repeated = (a: CriticalAnalyte) => !a.archivedAt && !!a.name.trim() && activeNames.filter((n) => n === key(a.name)).length > 1
+  const invalid = groups.some((g) => !g.name.trim() || g.analytes.some((a) => !a.name.trim() || bad(a, 'low') || bad(a, 'high') || repeated(a) || (a.low != null && a.high != null && a.low >= a.high)))
   const now = () => new Date().toISOString()
 
   const save = async () => {
@@ -94,19 +98,20 @@ export function CriticalThresholds() {
                 </div>
                 {list.map((a) => (
                   <div key={a.id} className={`crit__row${a.archivedAt ? ' is-archived' : ''}`} role="row">
-                    <input className="input" list="crit-analytes" value={a.name} placeholder="Ej. Hematocrito" aria-label="Analito" disabled={!!a.archivedAt}
+                    <input className="input crit__name" list="crit-analytes" value={a.name} placeholder="Ej. Hematocrito" aria-label="Analito" disabled={!!a.archivedAt}
                       onChange={(e) => setAnalyte(g.id, a.id, (x) => ({ ...x, name: e.target.value, unit: x.unit || units[e.target.value] }))} />
-                    <input className="input" value={a.unit ?? ''} placeholder="Sin unidad" aria-label={`${a.name}: unidad`} disabled={!!a.archivedAt}
+                    <input className="input crit__unit" value={a.unit ?? ''} placeholder="Sin unidad" aria-label={`${a.name}: unidad`} disabled={!!a.archivedAt}
                       onChange={(e) => setAnalyte(g.id, a.id, (x) => ({ ...x, unit: e.target.value }))} />
                     {(['low', 'high'] as const).map((side) => (
-                      <label key={side} className="crit__lim"><span className="crit__lbl">{side === 'low' ? 'Menor de' : 'Mayor de'}</span>
+                      <label key={side} className={`crit__lim crit__${side}`}><span className="crit__lbl">{side === 'low' ? 'Menor de' : 'Mayor de'}</span>
                         <input className={`input num${bad(a, side) ? ' input--blank' : ''}`} inputMode="decimal" value={field(a, side)} placeholder="No aplica" disabled={!!a.archivedAt}
                           aria-label={`${a.name}: crítico si es ${side === 'low' ? 'menor' : 'mayor'} de`} aria-invalid={bad(a, side)} onChange={(e) => setLimit(g.id, a, side, e.target.value)} /></label>
                     ))}
                     {a.archivedAt
-                      ? <button type="button" className="icon-btn" title="Restaurar" aria-label={`Restaurar ${a.name}`} onClick={() => setAnalyte(g.id, a.id, restored)}><RotateCcw size={15} /></button>
-                      : <button type="button" className="icon-btn" title="Archivar" aria-label={`Archivar ${a.name}`} onClick={() => setAnalyte(g.id, a.id, (x) => ({ ...x, archivedAt: now() }))}><Archive size={15} /></button>}
+                      ? <button type="button" className="icon-btn crit__btn" title="Restaurar" aria-label={`Restaurar ${a.name}`} onClick={() => setAnalyte(g.id, a.id, restored)}><RotateCcw size={15} /></button>
+                      : <button type="button" className="icon-btn crit__btn" title="Archivar" aria-label={`Archivar ${a.name}`} onClick={() => setAnalyte(g.id, a.id, (x) => ({ ...x, archivedAt: now() }))}><Archive size={15} /></button>}
                     {a.low != null && a.high != null && a.low >= a.high && <small className="crit__err">El límite inferior debe ser menor que el superior.</small>}
+                    {repeated(a) && <small className="crit__err">{a.name} ya está en la lista: un analito tiene un solo umbral.</small>}
                   </div>
                 ))}
                 {!list.length && <p className="muted" style={{ margin: '6px 0' }}>Sin analitos en este grupo.</p>}
