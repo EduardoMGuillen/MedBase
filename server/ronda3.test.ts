@@ -9,6 +9,7 @@ import { createSql, type Sql } from './sql.js'
 import { filterSummary, periodRange, type Filters } from '../src/lib/patientFilters.js'
 import { alertQuery, alertSummary, fileAlerts, tabCounts } from '../src/lib/alerts.js'
 import { bandOf } from '../src/lib/vitalsSheet.js'
+import { typedExam } from '../src/lib/exams.js'
 
 let server: Server
 let sql: Sql
@@ -27,8 +28,8 @@ before(async () => {
 after(async () => { server.close(); await sql.close() })
 
 /** Cliente mínimo que conserva la cookie de sesión. */
-export async function login(baseUrl: string, email: string) {
-  const res = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password: DEMO_PASSWORD }) })
+export async function login(baseUrl: string, email: string, password = DEMO_PASSWORD) {
+  const res = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) })
   const cookie = res.headers.get('set-cookie')?.split(';')[0] ?? ''
   const call = async (method: string, path: string, body?: unknown) => {
     const r = await fetch(`${baseUrl}${path}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
@@ -639,5 +640,63 @@ describe('MC5 nota de egreso en la hoja de la epicrisis', () => {
     // La cama queda libre
     const file = (await doc.get(`/api/inpatient/${stayId}`)).body
     assert.equal(file.hospitalization.status, 'discharged')
+  })
+})
+
+describe('Correcciones de la revisión contra el pedido', () => {
+  test('AD5: la plataforma no deja a una clínica sin Administración y, al cambiar el rol activo, conserva los demás', async () => {
+    const sa = await as('superadmin@demo.clinara')
+    const created = await sa.post('/api/platform/clinics', { name: 'Clínica Último Admin', address: 'Choluteca', phone: '2780-0000', admin: { name: 'Única Admin', email: 'unica@ultimo.test' } })
+    assert.equal(created.status, 201, JSON.stringify(created.body))
+    const cid = created.body.clinic.id
+    const admin = (await sa.get(`/api/platform/clinics/${cid}/staff`)).body.find((s: any) => s.email === 'unica@ultimo.test')
+    assert.equal((await sa.patch(`/api/platform/staff/${admin.id}`, { active: false })).status, 400)
+    assert.equal((await sa.patch(`/api/platform/staff/${admin.id}`, { role: 'nurse' })).status, 400)
+    // Una médica que también es administración: la plataforma le cambia el rol activo y conserva Administración
+    const doc = await sa.post(`/api/platform/clinics/${cid}/staff`, { name: 'Dra. Doble Rol', role: 'doctor', email: 'doble@ultimo.test', license: 'CMH-2' })
+    assert.equal(doc.status, 201, JSON.stringify(doc.body))
+    const unica = await login(base, 'unica@ultimo.test', created.body.password)
+    assert.equal((await unica.patch(`/api/staff/${doc.body.user.id}`, { roles: ['doctor', 'admin'] })).status, 200)
+    const changed = await sa.patch(`/api/platform/staff/${doc.body.user.id}`, { role: 'nurse' })
+    assert.equal(changed.status, 200, JSON.stringify(changed.body))
+    assert.equal(changed.body.role, 'nurse')
+    assert.deepEqual([...changed.body.roles].sort(), ['admin', 'nurse'])
+    // Ya hay otra persona con Administración: ahora sí se puede desactivar a la primera
+    assert.equal((await sa.patch(`/api/platform/staff/${admin.id}`, { active: false })).status, 200)
+  })
+
+  test('EN2: las dosis atrasadas y las tomas de signos sin registrar no caducan a las 24 horas', async () => {
+    const { doc, nurse, stayId } = await admitted('Sin caducar')
+    const firstAt = new Date().toISOString()
+    const n = await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', exam: 'Estable.',
+      meds: [{ drug: 'Ceftriaxona', dose: '1 g', route: 'IV', everyHours: 8, firstAt }] })
+    assert.equal(n.status, 201, JSON.stringify(n.body))
+    const file = (await nurse.get(`/api/inpatient/${stayId}`)).body
+    // 40 horas después sin registrar nada: dosis de las 0, 8, 16, 24 y 32 h atrasadas (la de las 40 h apenas toca)
+    const later = new Date(Date.now() + 40 * 3_600_000)
+    const alerts = fileAlerts(file, bandOf({}), later)
+    const late = alerts.find((a) => a.key.startsWith('late-'))!
+    assert.equal(late.count, 5, late.text)
+    assert.ok(late.since <= later.getTime() - 24 * 3_600_000, 'la dosis de hace más de 24 h sigue alertando')
+    const missed = alerts.find((a) => a.key === 'vitals-missed')!
+    assert.ok(missed.since <= later.getTime() - 24 * 3_600_000, 'la toma de hace más de 24 h sigue alertando')
+  })
+
+  test('MC4: un examen que agregó la clínica también se sugiere al escribirlo como indicación', () => {
+    const catalog = [{ group: 'lab' as const, name: 'Panel viral respiratorio' }]
+    assert.equal(typedExam('Panel viral respiratorio', catalog)?.name, 'Panel viral respiratorio')
+    assert.equal(typedExam('Panel viral respiratorio'), undefined)
+    assert.equal(typedExam('Hemograma.')?.group, 'lab')
+  })
+
+  test('DM1: el inicio de sesión sólo ofrece cuentas de las clínicas demo que se regeneran cada día', async () => {
+    const accounts = (await (await fetch(`${base}/api/demo-accounts`)).json() as any).accounts
+    assert.ok(accounts.some((a: any) => a.email === 'lherrera@demo.clinara'))
+    assert.ok(accounts.some((a: any) => a.email === 'alopez@demo.clinara'))
+    assert.ok(accounts.some((a: any) => a.email === 'superadmin@demo.clinara'))
+    assert.ok(!accounts.some((a: any) => a.email.endsWith('sanlucas@demo.clinara') || a.email === 'erosales@demo.clinara'))
+    // Las cuentas de San Lucas siguen entrando (sirven para probar el aislamiento entre clínicas)
+    const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'erosales@demo.clinara', password: DEMO_PASSWORD }) })
+    assert.equal(res.status, 200)
   })
 })
