@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { Camera, ChevronLeft, FileSignature, FileText, PenLine, Printer } from 'lucide-react'
+import { Camera, ChevronLeft, FileSignature, FileText, PenLine, Printer, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { date, dateTime, formatPhone, shortStaff, time } from '../lib/format'
@@ -89,13 +89,33 @@ export function AuthorizationForm({ file, p, template = 'surgical', initialProce
   )
 }
 
+/** MC6 (ronda 5): se puede eliminar si sigue pendiente, sin firma en pantalla ni hoja en papel (la de hospitalización, nunca). */
+const deletable = (a: Authorization) => a.template !== 'hospital' && a.status === 'pending' && !a.signing && !a.fileId && !a.pdfId
+
+/** Confirmación de «Eliminar»: no se puede deshacer desde aquí; el motivo queda en la bitácora. */
+function RemoveAuthorization({ a, onClose, onDone }: { a: Authorization; onClose: () => void; onDone: (reason: string) => Promise<void> }) {
+  const [reason, setReason] = useState('Generada por error')
+  const [busy, setBusy] = useState(false)
+  return (
+    <Modal title="Eliminar autorización" onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--danger" disabled={busy || reason.trim().length < 3} onClick={async () => { setBusy(true); await onDone(reason.trim()); setBusy(false) }}><Trash2 size={15} />Eliminar</button>
+    </>}>
+      <p>¿Eliminar esta autorización? Aún no está firmada. Esta acción no se puede deshacer desde aquí.</p>
+      <p className="muted" style={{ fontSize: 14 }}>{authTitle(a)}, generada el {dateTime(a.createdAt)}. Queda en la bitácora con tu nombre y el motivo.</p>
+      <label className="field"><span>Motivo</span><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></label>
+    </Modal>
+  )
+}
+
 /**
  * Autorización en Anexos: estado y acciones. Pendiente: firmar en pantalla, subir la hoja firmada en papel o «No
  * autoriza» (en pantalla o en papel). Firmada: sólo ver e imprimir, revocar y, si fue en papel, reemplazar el escaneo.
  * Nada se edita después de firmar.
  */
 export function AuthorizationEntry({ a, file, p, reload }: { a: Authorization; file: InpatientFile; p: Patient; reload: () => void }) {
-  const { staffById, can, user, notify } = useStore()
+  const { staffById, can, user, notify, deleteAuthorization } = useStore()
+  const [removing, setRemoving] = useState(false)
   const [signing, setSigning] = useState<null | { action: 'accept' | 'refuse' | 'revoke'; doctorOnly?: boolean }>(null)
   const [scan, setScan] = useState<null | 'signed' | 'refused' | 'revoked' | 'replace' | 'attach'>(null)
   const [choose, setChoose] = useState<null | 'refuse' | 'revoke'>(null)
@@ -125,6 +145,9 @@ export function AuthorizationEntry({ a, file, p, reload }: { a: Authorization; f
               <button className="btn btn--soft btn--sm" onClick={() => setScan('signed')}><Camera size={14} />Subir hoja firmada</button>
               <button className="btn btn--ghost btn--sm" onClick={() => setChoose('refuse')}>No autoriza</button>
             </>)}
+          {/* MC6 (ronda 5): la generada por error se elimina mientras nadie la haya firmado ni rechazado */}
+          {open && deletable(a) && (can('inpatient.orders') || can('settings.manage')) && (
+            <button className="btn btn--ghost btn--sm" onClick={() => setRemoving(true)}><Trash2 size={14} />Eliminar</button>)}
           {manage && a.status === 'signed' && <>
             <button className="btn btn--ghost btn--sm" onClick={() => setChoose('revoke')}>Revocar</button>
             {a.method === 'paper' && a.fileId && <button className="btn btn--ghost btn--sm" onClick={() => setScan('replace')}>Reemplazar escaneo</button>}
@@ -152,6 +175,7 @@ export function AuthorizationEntry({ a, file, p, reload }: { a: Authorization; f
           )}
         </div>
       )}
+      {removing && <RemoveAuthorization a={a} onClose={() => setRemoving(false)} onDone={async (reason) => { if (await deleteAuthorization(a.id, reason)) { setRemoving(false); reload() } }} />}
       {choose && (
         <Modal title={choose === 'refuse' ? 'El paciente no autoriza' : 'El paciente revoca la autorización'} onClose={() => setChoose(null)}>
           <p>¿Cómo se firma?</p>

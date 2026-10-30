@@ -311,6 +311,8 @@ function useStoreValue() {
     uploadAttachment: (patientId: string, a: { name: string; mime: string; category: Attachment['category']; data: string; title?: string; takenAt?: string; hospitalizationId?: string }) =>
       run(() => api<Attachment>(`/patients/${patientId}/attachments`, { body: a }), 'Archivo adjuntado'),
     deleteAttachment: (id: string) => run(() => api(`/attachments/${id}`, { method: 'DELETE' }), 'Archivo eliminado'),
+    // MC6 (ronda 5): una autorización pendiente generada por error sale de la lista (queda archivada y en la bitácora)
+    deleteAuthorization: (id: string, reason?: string) => run(() => api(`/authorizations/${id}`, { method: 'DELETE', body: { reason } }), 'Autorización eliminada'),
 
     /** AD5: cambia la vista (rol activo). Los permisos y el menú pasan a ser los de ese rol. */
     switchView: async (role: Staff['role']) => {

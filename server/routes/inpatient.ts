@@ -677,6 +677,27 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     res.json(toAuthorization((await sql.one('SELECT * FROM authorizations WHERE id = ?', [a.id]))!))
   })
 
+  /**
+   * MC6 (ronda 5): eliminar una autorización generada por error. Sólo la pendiente de firma que nadie ha firmado en
+   * pantalla ni en papel; la firmada, la revocada, la de «No autoriza» y la que tiene hoja adjunta son registros legales.
+   * La de hospitalización no se elimina: se genera sola con el ingreso. No se borra: se archiva y queda en la bitácora.
+   */
+  app.delete('/api/authorizations/:aid', auth, need('inpatient.orders', 'settings.manage'), async (req, res) => {
+    const b = parse(z.object({ reason: z.string().trim().max(300).optional() }), req.body ?? {})
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const row = (await sql.one('SELECT * FROM authorizations WHERE id = ? AND clinic_id = ? AND archived_at IS NULL', [String(req.params.aid), cid])) ?? fail(404, 'La autorización no existe.')
+    const a = toAuthorization(row!)
+    if (a.template === 'hospital') fail(409, 'La autorización de hospitalización se genera sola con el ingreso: no se elimina.')
+    if (a.status !== 'pending' || a.signing || a.fileId || a.pdfId) fail(409, 'Sólo se elimina una autorización pendiente de firma, sin firma en pantalla ni hoja en papel.')
+    const reason = b.reason || 'Generada por error'
+    await sql.run('UPDATE authorizations SET archived_at = ?, archived_by = ?, archived_reason = ? WHERE id = ?', [new Date().toISOString(), user.id, reason, a.id])
+    const created = new Intl.DateTimeFormat('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: process.env.TZ || 'America/Tegucigalpa' }).format(new Date(a.createdAt))
+    const author = (await sql.one('SELECT name FROM staff WHERE id = ?', [a.createdBy]))?.name
+    await audit(user, `Eliminó la autorización ${a.data.procedure ? `quirúrgica "${a.data.procedure}"` : 'general'} pendiente de firma de ${a.data.patient.name}, generada el ${created}${author ? ` por ${author}` : ''}. Motivo: ${reason}`)
+    res.json({ ok: true })
+  })
+
   // ---------- Procedimientos y autorizaciones (registros anteriores) ----------
   app.post('/api/inpatient/:id/procedures', auth, need('inpatient.view'), async (req, res) => {
     const b = parse(z.object({

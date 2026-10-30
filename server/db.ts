@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '43'
+const SCHEMA_VERSION = '44'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -824,6 +824,10 @@ CREATE TABLE IF NOT EXISTS demo_backups (
   clinic_ids TEXT NOT NULL,
   data TEXT NOT NULL
 );
+
+-- v44 (ronda 5, MC6): una autorización pendiente generada por error se elimina de la lista: queda archivada con
+-- quién, cuándo y por qué (archived_at y archived_reason ya existían desde la v26)
+ALTER TABLE authorizations ADD COLUMN IF NOT EXISTS archived_by TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

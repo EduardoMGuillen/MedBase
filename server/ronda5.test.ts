@@ -53,3 +53,39 @@ describe('AD5 crónicos y seguimientos para administración', () => {
     assert.equal((await admin.post('/api/followups', { patientId: mine[0].patientId, kind: 'control', title: 'Control', dueDate: '2030-01-01' })).status, 403)
   })
 })
+
+describe('MC6 eliminar una autorización sin firmar', () => {
+  test('el médico elimina la pendiente (queda en la bitácora); la firmada, la de «No autoriza» y la que tiene hoja en papel no se eliminan', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const reception = await as('smejia@demo.clinara')
+    const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
+    const make = async (procedure: string) => {
+      const r = await doc.post(`/api/inpatient/${stay.id}/authorizations`, { template: 'surgical', procedure })
+      assert.equal(r.status, 201, JSON.stringify(r.body))
+      return String(r.body.id)
+    }
+    const listed = async () => (await doc.get(`/api/inpatient/${stay.id}`)).body.authorizations.map((a: any) => a.id)
+    const wrong = await make('Colecistectomía laparoscópica')
+    assert.equal((await nurse.del(`/api/authorizations/${wrong}`)).status, 403)
+    assert.equal((await reception.del(`/api/authorizations/${wrong}`)).status, 403)
+    const r = await doc.del(`/api/authorizations/${wrong}`, { reason: 'Generada por error' })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.ok(!(await listed()).includes(wrong), 'sale de la lista')
+    const row = await sql.one('SELECT archived_at, archived_by, archived_reason FROM authorizations WHERE id = ?', [wrong])
+    assert.ok(row?.archived_at, 'no se borra: queda archivada')
+    assert.equal(row?.archived_by, 's-herrera')
+    const log = (await doc.get('/api/audit/mine')).body
+    assert.ok((log.rows ?? log).some((e: any) => /Eliminó la autorización quirúrgica "Colecistectomía laparoscópica"/.test(e.action)))
+    // «No autoriza» y la hospitalaria no se eliminan
+    const refused = await make('Apendicectomía')
+    assert.equal((await doc.post(`/api/authorizations/${refused}/status`, { status: 'refused', note: 'El paciente no autoriza' })).status, 200)
+    assert.equal((await doc.del(`/api/authorizations/${refused}`)).status, 409)
+    const hospital = (await doc.get(`/api/inpatient/${stay.id}`)).body.authorizations.find((a: any) => a.template === 'hospital')
+    if (hospital) assert.equal((await doc.del(`/api/authorizations/${hospital.id}`)).status, 409)
+    // La que tiene hoja en papel tampoco
+    const paper = await make('Herniorrafia inguinal')
+    await sql.run(`UPDATE authorizations SET status = 'signed', file_id = 'archivo-de-prueba', method = 'paper' WHERE id = ?`, [paper])
+    assert.equal((await doc.del(`/api/authorizations/${paper}`)).status, 409)
+  })
+})
