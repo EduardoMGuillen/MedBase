@@ -251,7 +251,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
    */
   app.patch('/api/inpatient/:id', auth, need('inpatient.orders', 'inpatient.care'), async (req, res) => {
     const b = parse(z.object({
-      bedId: z.string().min(1).optional(),
+      bedId: z.string().min(1, 'Elige la cama.').optional(),
       companionName: z.string().trim().max(100).optional(),
       companionRelation: z.string().trim().max(40).optional(),
       companionPhone: z.string().trim().max(30).optional(),

@@ -9,8 +9,8 @@ const COMMON = ['Medicina general', 'Medicina interna', 'Pediatría', 'Ginecolog
  * AD3: cama y especialidad del ingreso. Sólo se ofrecen camas libres (en servicio y sin paciente); la especialidad
  * empieza con la del médico que ingresa y se cambia si ingresa para otro servicio.
  */
-export function BedFields({ bedId, specialty, onChange, currentBedId, allowNone = false }: {
-  bedId: string; specialty: string; onChange: (v: { bedId: string; specialty: string }) => void; currentBedId?: string; allowNone?: boolean
+export function BedFields({ bedId, specialty, onChange, currentBedId }: {
+  bedId: string; specialty: string; onChange: (v: { bedId: string; specialty: string }) => void; currentBedId?: string
 }) {
   const { beds, bedStays = [], staff } = useStore()
   const free = beds.filter((b) => b.active && (b.id === currentBedId || !bedStays.some((x) => x.bedId === b.id)))
@@ -20,7 +20,8 @@ export function BedFields({ bedId, specialty, onChange, currentBedId, allowNone 
     <div className="form-grid">
       <label className="field"><span>Cama libre</span>
         <select className="select" value={bedId} onChange={(e) => onChange({ bedId: e.target.value, specialty })}>
-          <option value="">{allowNone ? 'Sin cama' : free.length ? 'Elige una cama libre' : 'No hay camas libres'}</option>
+          {/* Una hospitalización siempre tiene cama: al editarla sólo se traslada a otra libre */}
+          {!currentBedId && <option value="">{free.length ? 'Elige una cama libre' : 'No hay camas libres'}</option>}
           {free.map((b) => <option key={b.id} value={b.id}>{bedLabel(b)}{b.id === currentBedId ? ' (actual)' : ''}</option>)}
         </select></label>
       <label className="field"><span>Especialidad del ingreso</span>

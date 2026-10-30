@@ -34,7 +34,7 @@ export function GeneralDataModal({ h, p, onClose, onDone }: { h: Hospitalization
       <fieldset className="fs"><legend>{obs ? 'Observación' : 'Estancia'}</legend>
         <p className="muted" style={{ fontSize: 13.5 }}>La nota de ingreso, los diagnósticos, las órdenes y la fecha y hora del ingreso no se editan. Si hay un error clínico, escribe una nota nueva o cambia la orden.</p>
         <div className="form-grid">
-          {!obs && <div className="span-2"><BedFields bedId={stay.bedId} specialty={stay.specialty} currentBedId={h.bedId} allowNone onChange={(v) => setStay({ ...stay, ...v })} /></div>}
+          {!obs && <div className="span-2"><BedFields bedId={stay.bedId} specialty={stay.specialty} currentBedId={h.bedId} onChange={(v) => setStay({ ...stay, ...v })} /></div>}
           <label className="field"><span>Quién lo acompaña</span><input className="input" value={stay.companionName} onChange={set('companionName')} /></label>
           <label className="field"><span>Parentesco</span><input className="input" value={stay.companionRelation} onChange={set('companionRelation')} /></label>
           <label className="field"><span>Teléfono del acompañante</span><input className="input" inputMode="tel" value={stay.companionPhone} onChange={set('companionPhone')} placeholder="0000-0000" /></label>
