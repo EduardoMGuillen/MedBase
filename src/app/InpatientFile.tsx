@@ -248,7 +248,7 @@ const DOSE_LABEL: Record<Dose['status'], string> = { given: 'Administrada', skip
 /** Administrada más de una hora después de la indicada: «con retraso». */
 const givenLate = (d: Dose) => d.status === 'given' && !!d.scheduledAt && new Date(d.givenAt).getTime() - new Date(d.scheduledAt).getTime() > LATE_AFTER_MIN * 60_000
 /** Un registro de hace más de 24 horas pide motivo (la misma regla que el servidor). */
-const oldSlot = (at?: Date) => !!at && at.getTime() < Date.now() - 24 * 3_600_000
+const oldSlot = (now: number, at?: Date) => !!at && at.getTime() < now - 24 * 3_600_000
 
 /** Inicio del día (00:00) de una fecha. */
 const dayStart = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
@@ -501,7 +501,9 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
   // OB1 (ronda 5): Administrada (aunque sea tarde), No aplicada u Omitida; las dos últimas con motivo
   const [status, setStatus] = useState<Dose['status']>('given')
   const given = status === 'given'
-  const old = oldSlot(at)
+  // La hora en que se abrió el diálogo: si la dosis ya iba atrasada y si es de hace más de 24 horas
+  const [opened] = useState(() => Date.now())
+  const old = oldSlot(opened, at)
   // En un día pasado la hora real empieza en la hora indicada
   const [when, setWhen] = useState(() => inputDateTime(late && at ? at : new Date()))
   const [note, setNote] = useState('')
@@ -521,7 +523,7 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
       }}>{given ? 'Registrar administración' : status === 'omitted' ? 'Registrar como omitida' : 'Registrar como no aplicada'}</button>
     </>}>
       <p>{at ? <>Dosis de las <b>{time(at.toISOString())}</b>{at.toDateString() !== new Date().toDateString() ? ` del ${date(at.toISOString())}` : ''}.
-        {at.getTime() < Date.now() - LATE_AFTER_MIN * 60_000 && <> <span className="badge badge--amber">Atrasada</span></>}</> : 'Dosis según necesidad (PRN).'}</p>
+        {at.getTime() < opened - LATE_AFTER_MIN * 60_000 && <> <span className="badge badge--amber">Atrasada</span></>}</> : 'Dosis según necesidad (PRN).'}</p>
       {tooSoon && <div className="alert-strip"><TriangleAlert size={16} />La última dosis fue a las {time(last!.givenAt)}; la indicación es cada {med.everyHours} horas.</div>}
       {at && (
         <DoseStatus value={status} onChange={(s) => { setStatus(s); setNote('') }} />
