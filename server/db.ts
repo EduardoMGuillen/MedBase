@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '38'
+const SCHEMA_VERSION = '39'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -663,6 +663,33 @@ ALTER TABLE audit
   ADD COLUMN IF NOT EXISTS kind TEXT;
 CREATE INDEX IF NOT EXISTS audit_user ON audit (clinic_id, user_id, id);
 CREATE INDEX IF NOT EXISTS audit_patient ON audit (clinic_id, patient_id);
+
+-- v39: ronda 3 (AD9). Cobros: se generan al cobrar (no por cita). Formas de pago que acepta cada clínica, depósito y
+-- "otro"; banco de la transferencia o del depósito; lo que se pagó al cobrar (amount_paid) y los abonos posteriores, con
+-- el saldo pendiente. Servicios creados desde la caja con su autor y fecha. Los "Por cobrar" de antes no eran registros
+-- (se calculaban de las citas atendidas sin pago): no hay nada que archivar.
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS payment_methods TEXT;
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_method_check;
+ALTER TABLE payments ADD CONSTRAINT payments_method_check CHECK (method IN ('cash','card','transfer','insurance','deposit','other'));
+ALTER TABLE payments
+  ADD COLUMN IF NOT EXISTS bank TEXT,
+  ADD COLUMN IF NOT EXISTS amount_paid DOUBLE PRECISION;
+CREATE TABLE IF NOT EXISTS payment_installments (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  payment_id TEXT NOT NULL REFERENCES payments(id),
+  amount DOUBLE PRECISION NOT NULL,
+  method TEXT NOT NULL,
+  reference TEXT,
+  bank TEXT,
+  received_by TEXT NOT NULL REFERENCES staff(id),
+  paid_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS installments_payment ON payment_installments (payment_id);
+CREATE INDEX IF NOT EXISTS installments_clinic ON payment_installments (clinic_id, paid_at);
+ALTER TABLE services
+  ADD COLUMN IF NOT EXISTS created_by TEXT,
+  ADD COLUMN IF NOT EXISTS created_at TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -707,6 +734,7 @@ export function ensureDb(sql: Sql) {
       await migrateMarks(q)
       await migrateContacts(q)
       await migrateBedSpecialties(q)
+      await migratePayments(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -1034,6 +1062,19 @@ export async function migrateObservationAuthorizations(q: Sql) {
 }
 
 /**
+ * v39 (AD9): los cobros de antes se pagaron completos (amount_paid = total). Cada clínica acepta efectivo y transferencia
+ * y, para no quitarle nada, las formas de pago que ya había usado. Idempotente.
+ */
+export async function migratePayments(q: Sql) {
+  await q.run('UPDATE payments SET amount_paid = total WHERE amount_paid IS NULL')
+  for (const c of await q.query('SELECT id FROM clinics WHERE payment_methods IS NULL')) {
+    const used = (await q.query('SELECT DISTINCT method FROM payments WHERE clinic_id = ?', [String(c.id)])).map((r) => String(r.method))
+    const order = ['cash', 'transfer', 'card', 'deposit', 'insurance', 'other']
+    await q.run('UPDATE clinics SET payment_methods = ? WHERE id = ?', [JSON.stringify(order.filter((m) => m === 'cash' || m === 'transfer' || used.includes(m))), String(c.id)])
+  }
+}
+
+/**
  * v36 (AD3): la especialidad fija de cada cama se archiva y cada estancia recibe la especialidad de su ingreso: la del
  * médico que lo ingresó ("Medicina general" si no tiene) o, en las de antes que ingresó alguien sin especialidad, la que
  * tenía la cama. El estado de cada cama sale de las estancias activas. Idempotente.
@@ -1145,7 +1186,7 @@ export async function nextFolio(q: Sql, clinicId: string, now: Date) {
 /** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
 export async function resetDemo(sql: Sql) {
   await sql.tx(async (q) => {
-    await q.exec(`TRUNCATE staff_marks, epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
+    await q.exec(`TRUNCATE payment_installments, staff_marks, epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
       attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
     await seed(q)

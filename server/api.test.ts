@@ -301,7 +301,7 @@ describe('caja', () => {
     const boot = await rec.get('/api/bootstrap')
     const pending = boot.body.appointments.find((a: any) => a.id === 'a2')
     assert.equal(pending.paid, false)
-    const body = { appointmentId: 'a2', patientId: pending.patientId, items: [{ serviceId: 'svc-mi', name: 'Consulta de medicina interna', price: 800, qty: 1 }], discount: 100, method: 'cash' }
+    const body = { appointmentId: 'a2', patientId: pending.patientId, items: [{ serviceId: 'svc-mi', name: 'Consulta de medicina interna', price: 800, qty: 1 }], discount: 100, discountReason: 'Tercera edad', method: 'cash' }
     const pay = await rec.post('/api/payments', body)
     assert.equal(pay.status, 201)
     assert.equal(pay.body.total, 700)

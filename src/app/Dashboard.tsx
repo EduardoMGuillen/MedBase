@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Activity, Globe, Phone, Receipt, Stethoscope } from 'lucide-react'
 import { useStore } from '../lib/store'
+import { receivedIn } from '../lib/billing'
 import { PageHead, StatusBadge } from '../components/ui'
 import { ReminderButton } from '../components/Reminder'
 import { HBars } from '../components/Charts'
@@ -104,14 +105,17 @@ export function ApptRows({ list, showDoctor = false, action, empty = 'No hay cit
 }
 
 export default function Dashboard() {
-  const { user, appointments, patients, staff, audit, staffById, settings, can, fetchPayments, setStatus } = useStore()
+  const { user, appointments, patients, staff, audit, staffById, settings, can, fetchPayments, fetchBalances, setStatus } = useStore()
   const [todayRevenue, setTodayRevenue] = useState<number | null>(null)
+  const [owed, setOwed] = useState<{ n: number; total: number } | null>(null)
   const [triage, setTriage] = useState<Appointment | null>(null)
   const [completing, setCompleting] = useState<Appointment | null>(null)
   useEffect(() => {
     if (!can('billing.manage')) return
     const k = localISODate(new Date())
-    fetchPayments(k, k).then((ps) => setTodayRevenue(ps.filter((p) => !p.voided && localISODate(new Date(p.paidAt)) === k).reduce((s, p) => s + p.total, 0))).catch(() => null)
+    // AD9: lo recibido hoy (lo pagado al cobrar y los abonos) y los saldos pendientes
+    fetchPayments(k, k).then((ps) => setTodayRevenue(receivedIn(ps, k, k).reduce((s, r) => s + r.amount, 0))).catch(() => null)
+    fetchBalances().then((b) => setOwed({ n: b.length, total: b.reduce((s, p) => s + (p.balance ?? 0), 0) })).catch(() => null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appointments.length, fetchPayments])
   if (!user) return null
@@ -154,7 +158,7 @@ export default function Dashboard() {
           <Link className="stat" to="/app/consulta-externa"><b>{done.length}</b><span>Atendidos</span></Link>
           {/* En su consultorio el médico también cobra */}
           {office && <Link className="stat" to="/app/caja"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span>
-            {mine.some((a) => a.status === 'done' && a.paid === false) && <small>{mine.filter((a) => a.status === 'done' && a.paid === false).length} por cobrar</small>}</Link>}
+            {owed && owed.n > 0 && <small>{owed.n} con saldo pendiente</small>}</Link>}
         </div>
         {next && nextPatient && (
           <section className="panel">
@@ -215,7 +219,6 @@ export default function Dashboard() {
   if (user.role === 'reception' || user.role === 'assistant') {
     const triageQueue = today.filter((a) => a.status === 'arrived')
     const pending = pendingArrivals(appointments, now)
-    const toCharge = appointments.filter((a) => a.status === 'done' && a.paid === false)
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
     const reminders = appointments.filter((a) => sameDay(a.start, tomorrow) && ['scheduled', 'confirmed'].includes(a.status)).sort((a, b) => a.start.localeCompare(b.start))
     const online = appointments.filter((a) => a.source === 'online' && a.status === 'scheduled' && new Date(a.start) >= now).sort((a, b) => a.start.localeCompare(b.start))
@@ -226,8 +229,8 @@ export default function Dashboard() {
         <div className="stats">
           <div className="stat"><b>{today.filter((a) => a.status !== 'cancelled').length}</b><span>Citas hoy</span></div>
           <button className="stat stat--btn" onClick={toArrivals}><b>{pending.length}</b><span>Por llegar</span>{pending.length > 0 && <small>Ver quiénes son</small>}</button>
-          <div className="stat"><b>{toCharge.length}</b><span>Por cobrar</span>{toCharge.length > 0 && <small><Link to="/app/caja">Ir a caja</Link></small>}</div>
-          <div className="stat"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></div>
+          <Link className="stat" to="/app/caja"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></Link>
+          {owed && owed.n > 0 && <Link className="stat" to="/app/caja"><b className="num">{money(owed.total, settings.currency)}</b><span>Saldos pendientes</span><small>{owed.n} {owed.n === 1 ? 'paciente' : 'cobros'}</small></Link>}
         </div>
         {can('vitals.record') && triageQueue.length > 0 && (
           <section className="panel">
@@ -251,7 +254,7 @@ export default function Dashboard() {
           <section className="panel">
             <div className="panel__head"><h2>Agenda {office ? 'del consultorio' : 'de la clínica'} hoy</h2></div>
             <ApptRows list={today.filter((a) => a.status !== 'cancelled')} showDoctor={!office} action={(a) => a.status === 'done' && a.paid === false && (
-              <Link className="btn btn--soft btn--sm" to="/app/caja"><Receipt size={14} />Cobrar</Link>
+              <Link className="btn btn--soft btn--sm" to={`/app/caja?cobrar=${a.id}`}><Receipt size={14} />Cobrar</Link>
             )} />
           </section>
           <div style={{ display: 'grid', gap: 24 }}>

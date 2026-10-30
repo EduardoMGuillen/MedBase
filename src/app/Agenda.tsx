@@ -130,7 +130,7 @@ export default function Agenda() {
             }}>Registrar llegada</button>}
             {can('consult.write') && a.doctorId === user?.id && ['arrived', 'triaged', 'in_consult'].includes(a.status) &&
               <button className="btn btn--primary" onClick={() => navigate(`/app/consulta/${a.id}`)}>Atender</button>}
-            {can('billing.manage') && a.status === 'done' && a.paid === false && <button className="btn btn--primary" onClick={() => navigate('/app/caja')}><Receipt size={15} />Ir a cobrar</button>}
+            {can('billing.manage') && a.status === 'done' && a.paid === false && <button className="btn btn--primary" onClick={() => navigate(`/app/caja?cobrar=${a.id}`)}><Receipt size={15} />Cobrar</button>}
             {!p.pending && <button className="btn btn--ghost" onClick={() => navigate(`/app/pacientes/${p.id}`)}>Abrir expediente</button>}
           </>}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

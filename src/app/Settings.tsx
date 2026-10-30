@@ -6,13 +6,13 @@ import { DrugForm } from '../components/DrugForm'
 import { DRUGS } from '../lib/catalogs'
 import { normalize } from '../lib/patients'
 import { download, parseCsv, toCsv } from '../lib/csv'
-import { clinicWhatsapp, contactLine, date, fillTemplate, fullName, money } from '../lib/format'
+import { clinicWhatsapp, contactLine, date, fillTemplate, fullName, METHOD_LABEL, money } from '../lib/format'
 import { ContactsEditor } from '../components/Contacts'
-import type { Bed, ClinicDrug, ClinicSettings, Service, Staff } from '../lib/types'
+import type { Bed, ClinicDrug, ClinicSettings, PaymentMethod, Service, Staff } from '../lib/types'
 import { ScheduleEditor } from './ScheduleEditor'
 import { features, hasRole } from '../lib/permissions'
 
-type Tab = 'clinic' | 'services' | 'schedules' | 'beds' | 'drugs'
+type Tab = 'clinic' | 'services' | 'payments' | 'schedules' | 'beds' | 'drugs'
 
 export default function Settings() {
   const [tab, setTab] = useState<Tab>('clinic')
@@ -24,12 +24,14 @@ export default function Settings() {
       <div className="tabs tabs--sticky" role="tablist">
         <button className="tab" role="tab" aria-selected={tab === 'clinic'} onClick={() => setTab('clinic')}>{f.office ? 'Consultorio' : 'Clínica'}</button>
         <button className="tab" role="tab" aria-selected={tab === 'services'} onClick={() => setTab('services')}>Servicios y precios</button>
+        <button className="tab" role="tab" aria-selected={tab === 'payments'} onClick={() => setTab('payments')}>Formas de pago</button>
         <button className="tab" role="tab" aria-selected={tab === 'schedules'} onClick={() => setTab('schedules')}>{f.office ? 'Mi horario' : 'Horarios de médicos'}</button>
         {f.hospital && <button className="tab" role="tab" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}>Camas</button>}
         <button className="tab" role="tab" aria-selected={tab === 'drugs'} onClick={() => setTab('drugs')}>Vademécum</button>
       </div>
       {tab === 'clinic' && <ClinicForm />}
       {tab === 'services' && <Services />}
+      {tab === 'payments' && <PaymentMethods />}
       {tab === 'schedules' && <Schedules />}
       {tab === 'beds' && f.hospital && <Beds />}
       {tab === 'drugs' && <ClinicDrugs />}
@@ -333,6 +335,32 @@ function ConvertToClinic({ onClose }: { onClose: () => void }) {
   )
 }
 
+/** AD9: formas de pago que acepta la clínica. Al cobrar sólo aparecen éstas. Al menos una queda activa. */
+function PaymentMethods() {
+  const { settings, savePaymentMethods } = useStore()
+  const all: PaymentMethod[] = ['cash', 'transfer', 'card', 'deposit', 'insurance', 'other']
+  const [on, setOn] = useState<PaymentMethod[]>(settings.paymentMethods ?? ['cash', 'transfer'])
+  const hint: Record<PaymentMethod, string> = {
+    cash: 'Con cálculo del cambio y arqueo al cierre.', transfer: 'Se anota el banco y, si la dan, la referencia.', card: 'Sólo si la clínica tiene terminal (POS). Pide el número de autorización.',
+    deposit: 'Depósito en la cuenta de la clínica, con banco y referencia.', insurance: 'Pagos que cubre la aseguradora, con número de póliza o autorización.', other: 'Cualquier otra forma, con una nota.',
+  }
+  const same = on.length === (settings.paymentMethods ?? ['cash', 'transfer']).length && on.every((m) => (settings.paymentMethods ?? ['cash', 'transfer']).includes(m))
+  return (
+    <section className="panel">
+      <div className="panel__head"><div><h2>Formas de pago</h2><p>Marca las que acepta {features(settings).office ? 'el consultorio' : 'la clínica'}. Al cobrar sólo aparecen éstas.</p></div></div>
+      <div className="panel__body" style={{ display: 'grid', gap: 8, maxWidth: 640 }}>
+        {all.map((m) => (
+          <label key={m} className="check-line"><input type="checkbox" checked={on.includes(m)} disabled={on.length === 1 && on.includes(m)}
+            onChange={(e) => setOn(e.target.checked ? all.filter((x) => x === m || on.includes(x)) : on.filter((x) => x !== m))} />
+            <span><b>{METHOD_LABEL[m]}</b><small>{hint[m]}</small></span></label>
+        ))}
+        <p className="muted" style={{ fontSize: 13.5 }}>Al menos una queda activa.</p>
+        <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={same} onClick={() => savePaymentMethods(on)}>Guardar formas de pago</button>
+      </div>
+    </section>
+  )
+}
+
 function Services() {
   const { services, settings, createService } = useStore()
   const [name, setName] = useState('')
@@ -340,12 +368,13 @@ function Services() {
   return (
     <section className="panel table-wrap">
       <table className="table table--sticky">
-        <thead><tr><th>Servicio</th><th style={{ width: 160 }}>Precio ({settings.currency})</th><th style={{ width: 130 }}>Estado</th><th style={{ width: 120 }} /></tr></thead>
+        <thead><tr><th>Servicio</th><th style={{ width: 160 }}>Precio ({settings.currency})</th><th style={{ width: 130 }}>Estado</th><th>Origen</th><th style={{ width: 120 }} /></tr></thead>
         <tbody>
           {services.map((s) => <ServiceRow key={s.id} s={s} />)}
           <tr>
             <td><input className="input" placeholder="Nuevo servicio, p. ej. Retiro de puntos" value={name} onChange={(e) => setName(e.target.value)} /></td>
             <td><input className="input num" type="number" min={0} step="0.01" placeholder="0.00" value={price} onChange={(e) => setPrice(e.target.value)} /></td>
+            <td />
             <td />
             <td style={{ textAlign: 'right' }}>
               <button className="btn btn--soft btn--sm" disabled={name.trim().length < 2 || price === ''} onClick={async () => {
@@ -360,7 +389,7 @@ function Services() {
 }
 
 function ServiceRow({ s }: { s: Service }) {
-  const { updateService, settings } = useStore()
+  const { updateService, settings, staffById } = useStore()
   const [name, setName] = useState(s.name)
   const [price, setPrice] = useState(String(s.price))
   const dirty = name !== s.name || Number(price) !== s.price
@@ -369,6 +398,7 @@ function ServiceRow({ s }: { s: Service }) {
       <td><input className="input" value={name} onChange={(e) => setName(e.target.value)} aria-label="Nombre del servicio" /></td>
       <td><input className="input num" type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} aria-label={`Precio de ${s.name}`} title={money(s.price, settings.currency)} /></td>
       <td>{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Oculto en caja</span>}</td>
+      <td style={{ fontSize: 13.5 }}>{s.createdBy ? <>Agregado al cobrar por {staffById(s.createdBy)?.name ?? '—'}<br /><small className="muted">{s.createdAt ? date(s.createdAt) : ''}</small></> : <span className="muted">Configuración</span>}</td>
       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
         {dirty
           ? <button className="btn btn--primary btn--sm" onClick={() => updateService(s.id, { name: name.trim(), price: Number(price) })}>Guardar</button>

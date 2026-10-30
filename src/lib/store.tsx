@@ -41,6 +41,7 @@ export interface Report {
   days: { date: string; appointments: number; done: number; revenue: number }[]
   byDoctor: { id: string; name: string; appointments: number; done: number; noShow: number; revenue: number }[]
   byMethod: { method: PaymentMethod; count: number; total: number }[]
+  byService: { name: string; count: number; total: number }[]
   topDiagnoses: { code: string; label: string; system?: 'icd11'; count: number }[]
 }
 
@@ -54,7 +55,8 @@ export interface NewAppointment {
   type?: Appointment['type']
 }
 
-export type NewPayment = Pick<Payment, 'patientId' | 'items' | 'discount' | 'method'> & { appointmentId?: string; reference?: string; discountReason?: string; invoiceNo?: string }
+export type NewPayment = Pick<Payment, 'patientId' | 'discount' | 'method'> & { items: { serviceId?: string; name: string; price: number; qty: number; save?: boolean }[]
+  appointmentId?: string; reference?: string; bank?: string; discountReason?: string; invoiceNo?: string; amountPaid?: number }
 
 const EMPTY: Data = { staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], settings: DEFAULT_SETTINGS, beds: [], inpatients: [], followups: [], discharges: [] }
 
@@ -145,6 +147,7 @@ function useStoreValue() {
     api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null }>(`/consultations/${id}?purpose=${purpose}`), [])
   const fetchAppointments = useCallback((from: string, to: string) => api<Appointment[]>(`/appointments?from=${from}&to=${to}`), [])
   const fetchPayments = useCallback((from: string, to: string) => api<Payment[]>(`/payments?from=${from}&to=${to}`), [])
+  const fetchBalances = useCallback((patientId?: string) => api<Payment[]>(`/payments/balances${patientId ? `?patientId=${patientId}` : ''}`), [])
   const fetchPayment = useCallback((id: string) => api<{ payment: Payment; patient: Patient }>(`/payments/${id}`), [])
   const fetchReport = useCallback((from: string, to: string) => api<Report>(`/reports?from=${from}&to=${to}`), [])
   const searchIcd = useCallback((q: string) =>
@@ -168,7 +171,7 @@ function useStoreValue() {
     signIn, signOut,
     patient: (id: string) => data.patients.find((p) => p.id === id),
     staffById: (id: string) => data.staff.find((s) => s.id === id),
-    fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
+    fetchBalances, fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
     fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient, searchIcd, fetchIcdFrequent, fetchReferralDraft, fetchReferral,
     emitReferral: (stayId: string, b: Partial<ReferralData>) => run(() => api<Referral>(`/inpatient/${stayId}/referral`, { body: b }), 'Referencia emitida; la observación quedó cerrada como «Referido»'),
     voidReferral: (id: string, reason: string) => run(() => api<Referral>(`/referrals/${id}/void`, { body: { reason } }), 'Referencia anulada'),
@@ -295,6 +298,9 @@ function useStoreValue() {
       setSession(await api<Session>('/auth/me'))
     }, 'Número de colegiación guardado'),
     pay: (p: NewPayment) => run(() => api<Payment>('/payments', { body: p }), 'Cobro registrado'),
+    addInstallment: (id: string, b: { amount: number; method: PaymentMethod; reference?: string; bank?: string }) =>
+      run(() => api<Payment>(`/payments/${id}/installments`, { body: b }), 'Abono registrado'),
+    savePaymentMethods: (methods: PaymentMethod[]) => run(() => api<ClinicSettings>('/settings/payment-methods', { method: 'PUT', body: { methods } }), 'Formas de pago guardadas'),
     voidPayment: (id: string, reason: string) => run(() => api<Payment>(`/payments/${id}/void`, { body: { reason } }), 'Recibo anulado'),
     setInvoiceNo: (id: string, invoiceNo: string) => run(() => api<Payment>(`/payments/${id}/invoice`, { method: 'PATCH', body: { invoiceNo } }), 'Factura anotada en el recibo'),
 

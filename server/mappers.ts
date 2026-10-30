@@ -93,13 +93,14 @@ export const toClinicDrug = (r: Row): ClinicDrug => ({
 
 export const toAudit = (r: Row): AuditEntry => ({ id: String(r.id), at: String(r.at), userId: String(r.user_id), action: String(r.action) })
 
-export const toService = (r: Row): Service => ({ id: String(r.id), name: String(r.name), price: Number(r.price), active: Boolean(r.active) })
+export const toService = (r: Row): Service => ({ id: String(r.id), name: String(r.name), price: Number(r.price), active: Boolean(r.active), createdBy: s(r.created_by), createdAt: s(r.created_at) })
 
 export const toPayment = (r: Row): Payment => ({
   id: String(r.id), receiptNo: String(r.receipt_no), appointmentId: s(r.appointment_id), patientId: String(r.patient_id),
   items: j(r.items, []), discount: Number(r.discount), total: Number(r.total), method: r.method as Payment['method'],
   reference: s(r.reference), receivedBy: String(r.received_by), paidAt: String(r.paid_at), voided: Boolean(r.voided),
   invoiceNo: s(r.invoice_no), discountReason: s(r.discount_reason), voidReason: s(r.void_reason), voidedAt: s(r.voided_at), voidedBy: s(r.voided_by),
+  bank: s(r.bank), amountPaid: n(r.amount_paid) ?? Number(r.total),
 })
 
 export const toAttachment = (r: Row): Attachment => ({
@@ -193,6 +194,7 @@ export const clinicSettings = (r: Row): ClinicSettings => ({
   name: String(r.name ?? DEFAULT_SETTINGS.name), address: String(r.address ?? ''), phone: String(r.phone ?? ''), email: String(r.email ?? ''),
   contacts: j<ClinicContact[]>(r.contacts, r.phone ? [{ id: 'principal', number: String(r.phone), label: 'Principal', type: 'call', primary: true }] : []),
   docsWhatsapp: Boolean(r.docs_whatsapp),
+  paymentMethods: j<ClinicSettings['paymentMethods']>(r.payment_methods, ['cash', 'transfer']),
   currency: String(r.currency ?? DEFAULT_SETTINGS.currency), rxValidityDays: Number(r.rx_validity_days ?? DEFAULT_SETTINGS.rxValidityDays),
   reminderTemplate: String(r.reminder_template || DEFAULT_SETTINGS.reminderTemplate),
   recordUsesDni: Boolean(r.record_uses_dni), logo: s(r.logo), dniMask: r.dni_mask == null ? DNI_MASK : String(r.dni_mask),

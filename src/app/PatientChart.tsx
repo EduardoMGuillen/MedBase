@@ -2,14 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BedDouble, FileBadge, FileText, Lock, NotebookPen, Pencil } from 'lucide-react'
 import { MedAlertBanner } from './MedAlerts'
-import type { InpatientFile } from '../lib/types'
+import type { InpatientFile, Payment } from '../lib/types'
 import { FOLLOWUP_KIND } from '../lib/followups'
 import { bedLabel } from './Inpatients'
 import { useStore, type Chart } from '../lib/store'
 import { Loading, StatusBadge } from '../components/ui'
 import { IndicationList, MedLines, NoteColumns } from '../components/NoteColumns'
 import { PatientHeader } from '../components/PatientHeader'
-import { age, BACKGROUND_GROUPS, bmi, date, dxCode, examText, time } from '../lib/format'
+import { age, BACKGROUND_GROUPS, bmi, date, dxCode, examText, time, money } from '../lib/format'
 import { Attachments } from './Attachments'
 import { AllergiesForm, BackgroundForm, IdentificationForm } from './PatientForms'
 import type { Certificate, Consultation, Patient, Vitals } from '../lib/types'
@@ -147,8 +147,15 @@ type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'rx' | 'certs' | 'files'
 
 export default function PatientChart() {
   const { id } = useParams()
-  const { patient, appointments, staffById, can, updatePatient, followups, bed, inpatientOf, stayOf, fetchCertificates } = useStore()
+  const { patient, appointments, staffById, can, updatePatient, followups, bed, inpatientOf, stayOf, fetchCertificates, fetchBalances, settings } = useStore()
   const [certs, setCerts] = useState<Certificate[] | null>(null)
+  // AD9: saldo pendiente del paciente (abonos), visible para quien cobra
+  const [owed, setOwed] = useState<Payment[]>([])
+  useEffect(() => {
+    if (!id || !can('billing.manage')) return
+    fetchBalances(id).then(setOwed).catch(() => null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, fetchBalances])
   const [tab, setTab] = useState<Tab>('history')
   const [editing, setEditing] = useState<null | 'id' | 'allergies' | 'background'>(null)
   const clinical = can('chart.view')
@@ -182,6 +189,7 @@ export default function PatientChart() {
         <PatientHeader p={p} clinical={clinical}>
           {hospitalized && <Link className="btn btn--soft btn--sm" to={stayPath(hospitalized)}><BedDouble size={15} />{hospitalized.kind === 'observation' ? 'En observación' : `Hospitalizado, ${bedLabel(bed(hospitalized.bedId))}`}</Link>}
           {!hospitalized && stayOf(p.id) && <span className="badge badge--ink">{stayOf(p.id) === 'observation' ? 'En observación' : 'Hospitalizado'}</span>}
+          {owed.length > 0 && <Link className="badge badge--amber" to={owed.length === 1 ? `/app/recibos/${owed[0].id}` : '/app/caja'}>Saldo pendiente {money(owed.reduce((s, x) => s + (x.balance ?? 0), 0), settings.currency)}</Link>}
         </PatientHeader>
         <div className="tabs tabs--scroll" role="tablist">
           {tabs.filter((t) => t[2]).map(([k, label]) => (

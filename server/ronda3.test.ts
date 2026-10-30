@@ -325,3 +325,44 @@ describe('AD8 filtros de la biblioteca', () => {
     assert.equal(periodRange('', '', '', now), null)
   })
 })
+
+describe('AD9 cobros en el momento', () => {
+  test('recepción cobra un servicio nuevo con transferencia; queda guardado; sólo formas de pago habilitadas', async () => {
+    const admin = await as('admin@demo.clinara')
+    const set = await admin.put('/api/settings/payment-methods', { methods: ['cash', 'transfer'] })
+    assert.equal(set.status, 200, JSON.stringify(set.body))
+    assert.deepEqual(set.body.paymentMethods, ['cash', 'transfer'])
+    assert.equal((await admin.put('/api/settings/payment-methods', { methods: [] })).status, 400)
+    const rec = await as('smejia@demo.clinara')
+    const { patientId } = await walkIn('Sutura')
+    assert.equal((await rec.post('/api/payments', { patientId, items: [{ name: 'Consulta', price: 100, qty: 1 }], method: 'card', reference: '1234' })).status, 400)
+    const r = await rec.post('/api/payments', { patientId, items: [{ name: 'Sutura', price: 400, qty: 1, save: true }], method: 'transfer', bank: 'Banco Atlántida', reference: 'TR-889' })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(r.body.bank, 'Banco Atlántida')
+    assert.equal(r.body.balance, 0)
+    const svc = (await rec.get('/api/services')).body.find((s: any) => s.name === 'Sutura')
+    assert.ok(svc && svc.price === 400 && svc.createdBy)
+    assert.equal(r.body.items[0].serviceId, svc.id)
+    // Enfermería ya no cobra
+    assert.equal((await (await as('crios@demo.clinara')).post('/api/payments', { patientId, items: [{ name: 'Consulta', price: 1, qty: 1 }], method: 'cash' })).status, 403)
+  })
+
+  test('abono: queda saldo pendiente visible y se completa después; el reporte cuenta lo recibido por forma de pago y servicio', async () => {
+    const rec = await as('smejia@demo.clinara')
+    const { patientId } = await walkIn('Abono')
+    const r = await rec.post('/api/payments', { patientId, items: [{ name: 'Curación', price: 300, qty: 1, save: true }], method: 'cash', amountPaid: 100 })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(r.body.balance, 200)
+    const bal = (await rec.get(`/api/payments/balances?patientId=${patientId}`)).body
+    assert.deepEqual(bal.map((p: any) => p.balance), [200])
+    assert.equal((await rec.post(`/api/payments/${r.body.id}/installments`, { amount: 250, method: 'cash' })).status, 400)
+    const a = await rec.post(`/api/payments/${r.body.id}/installments`, { amount: 200, method: 'transfer', bank: 'BAC Credomatic' })
+    assert.equal(a.status, 201, JSON.stringify(a.body))
+    assert.equal(a.body.balance, 0)
+    assert.equal((await rec.get(`/api/payments/balances?patientId=${patientId}`)).body.length, 0)
+    const today = new Date().toLocaleDateString('en-CA')
+    const rep = (await (await as('admin@demo.clinara')).get(`/api/reports?from=${today}&to=${today}`)).body
+    assert.ok(rep.byService.some((s: any) => s.name === 'Curación' && s.total === 300))
+    assert.ok(rep.byMethod.find((m: any) => m.method === 'transfer').total >= 200)
+  })
+})

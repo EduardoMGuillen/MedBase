@@ -88,10 +88,16 @@ export default function Reports() {
               <HBars rows={report.byMethod.filter((m) => m.count).map((m) => ({ key: m.method, label: METHOD_LABEL[m.method], value: m.total, display: money(m.total, cur) }))} />
             </div>
           </section>
+          {report.byService.length > 0 && <section className="panel">
+            <div className="panel__head"><div><h2>Por servicio</h2><p>Lo cobrado por cada servicio en el periodo (con su parte de los descuentos).</p></div></div>
+            <div className="panel__body">
+              <HBars rows={report.byService.slice(0, 10).map((s) => ({ key: s.name, label: `${s.name} (${s.count})`, value: s.total, display: money(s.total, cur) }))} />
+            </div>
+          </section>}
         </div>
 
         <section className="panel">
-          <div className="panel__head"><div><h2>Diagnósticos más frecuentes</h2><p>Conteo agregado de diagnósticos CIE-10 en consultas firmadas.</p></div></div>
+          <div className="panel__head"><div><h2>Diagnósticos más frecuentes</h2><p>Conteo agregado de diagnósticos en consultas firmadas.</p></div></div>
           <div className="panel__body">
             {report.topDiagnoses.length
               ? <HBars rows={report.topDiagnoses.map((d) => ({ key: `${d.system ?? 'icd10'}:${d.code}:${d.label}`, label: `${d.code === 'S/C' ? '' : `${d.code} `}${d.label}${d.system ? '' : d.code === 'S/C' ? '' : ' (CIE-10)'}`, value: d.count, display: String(d.count) }))} />

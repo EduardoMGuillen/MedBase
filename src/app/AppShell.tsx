@@ -57,7 +57,6 @@ export default function AppShell() {
   if (!user) return null
   const today = new Date()
   const waiting = appointments.filter((a) => sameDay(a.start, today) && a.status === 'arrived').length
-  const toCharge = appointments.filter((a) => a.status === 'done' && a.paid === false && sameDay(a.start, today)).length
   const due = followups.filter((f) => f.dueDate <= localISODate(today) && !f.notifiedAt).length
   // Enfermería: órdenes médicas nuevas sin revisar
   const newOrders = pendingOrders.reduce((s, x) => s + x.pending, 0)
@@ -67,10 +66,10 @@ export default function AppShell() {
   const touring = !tourClosed && (manualTour || (!user.prefs?.tourDoneAt && loc.pathname !== '/app/bienvenida'))
   const closeTour = () => { setTourClosed(true); setManualTour(false); if (!user.prefs?.tourDoneAt) finishTour() }
   const f = features(settings)
-  // En un consultorio el médico titular también cobra y administra: "Administración" es "Mi consultorio". Enfermería
-  // cobra desde un acceso discreto; el médico tiene «Cobrar» debajo de Recetas (MC7)
+  // En un consultorio el médico titular también cobra y administra: "Administración" es "Mi consultorio". El médico tiene
+  // «Cobrar» debajo de Recetas (MC7). Enfermería ya no cobra (AD9).
   const doctor = user.role === 'doctor'
-  const quietBilling = !f.office && user.role === 'nurse'
+  const quietBilling = false
   const items = platform
     ? [{ to: '/app', label: 'Clínicas y consultorios', icon: Building2, end: true }]
     : NAV.filter((n) => {
@@ -92,7 +91,6 @@ export default function AppShell() {
   const badge = (to: string): { n: number; alert?: boolean; label: string } | null => {
     const b = to === '/app/consulta-externa' ? { n: waiting, label: `${waiting} en sala` }
       : to === '/app/seguimientos' ? { n: due, label: `${due} seguimientos vencidos o de hoy` }
-        : to === '/app/caja' ? { n: toCharge, label: `${toCharge} por cobrar hoy` }
           : to === '/app/observacion' ? { n: inObservation, label: `${inObservation} en observación` }
             : to === '/app/hospitalizados' ? { n: newOrders, alert: true, label: `${newOrders} órdenes nuevas sin revisar` } : null
     return b && b.n > 0 ? b : null

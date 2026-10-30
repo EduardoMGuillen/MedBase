@@ -322,3 +322,9 @@ tr.clickable { cursor: pointer; }
   .shortcuts { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
   .shortcuts .chip { white-space: nowrap; }
 }
+
+/* AD9: servicio nuevo dentro del cobro */
+.new-svc { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 8px 10px; align-items: end; padding: 12px; border: 1px dashed var(--ink); border-radius: 12px; background: var(--ink-soft); }
+.new-svc__save { grid-column: 1 / -1; }
+.new-svc__actions { grid-column: 1 / -1; display: flex; gap: 8px; }
+.total-box--warn { color: var(--amber-ink); }

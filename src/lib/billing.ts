@@ -34,3 +34,22 @@ export function matchesPayment(p: Pick<Payment, 'receiptNo' | 'invoiceNo' | 'ref
   if (!q) return true
   return [p.receiptNo, p.invoiceNo, p.reference, patientName].some((v) => v && normalize(v).includes(q))
 }
+
+/**
+ * AD9: dinero recibido en un periodo (fechas locales AAAA-MM-DD): lo pagado al cobrar y los abonos, cada uno en su día
+ * y con su forma de pago. Los recibos anulados no cuentan.
+ */
+export function receivedIn(payments: Payment[], from: string, to: string) {
+  const local = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+  const inRange = (iso: string) => { const d = local(iso); return d >= from && d <= to }
+  const out: { paymentId: string; amount: number; method: Payment['method']; at: string; installment: boolean }[] = []
+  for (const p of payments) {
+    if (p.voided) continue
+    if (inRange(p.paidAt)) out.push({ paymentId: p.id, amount: p.amountPaid ?? p.total, method: p.method, at: p.paidAt, installment: false })
+    for (const i of p.installments ?? []) if (inRange(i.paidAt)) out.push({ paymentId: p.id, amount: i.amount, method: i.method, at: i.paidAt, installment: true })
+  }
+  return out
+}
+
+/** Bancos de Honduras que más se usan para transferencias y depósitos (se puede escribir otro). */
+export const BANKS = ['Banco Atlántida', 'BAC Credomatic', 'Banco Ficohsa', 'Banpaís', 'Banco de Occidente', 'Davivienda', 'Banrural', 'Banco Lafise', 'Banco Promerica', 'Banhprovi', 'Cooperativa']

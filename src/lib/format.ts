@@ -57,7 +57,7 @@ export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 export const money = (n: number, currency = 'L') =>
   `${currency} ${n.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-export const METHOD_LABEL = { cash: 'Efectivo', card: 'Tarjeta', transfer: 'Transferencia', insurance: 'Aseguradora' } as const
+export const METHOD_LABEL = { cash: 'Efectivo', card: 'Tarjeta (POS)', transfer: 'Transferencia', insurance: 'Aseguradora', deposit: 'Depósito', other: 'Otro' } as const
 
 export const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 

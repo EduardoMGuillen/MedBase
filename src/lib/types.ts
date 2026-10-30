@@ -78,6 +78,8 @@ export interface ClinicSettings {
   contacts?: ClinicContact[]
   /** AD1: los membretes muestran también el número de WhatsApp. */
   docsWhatsapp?: boolean
+  /** AD9: formas de pago que acepta la clínica (en caja sólo aparecen éstas). */
+  paymentMethods?: PaymentMethod[]
   email: string
   currency: string // símbolo, p. ej. "L"
   rxValidityDays: number
@@ -112,9 +114,24 @@ export interface Service {
   name: string
   price: number
   active: boolean
+  /** AD9: creado desde la caja ("+ Servicio nuevo"), con su autor y fecha. */
+  createdBy?: string
+  createdAt?: string
 }
 
-export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'insurance'
+/** AD9: depósito y "otro" se agregan; cada clínica elige cuáles acepta. */
+export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'insurance' | 'deposit' | 'other'
+
+/** AD9: abono posterior a un cobro con saldo pendiente. */
+export interface Installment {
+  id: string
+  amount: number
+  method: PaymentMethod
+  reference?: string
+  bank?: string
+  receivedBy: string
+  paidAt: string
+}
 
 export interface Payment {
   id: string
@@ -135,6 +152,13 @@ export interface Payment {
   voidReason?: string
   voidedAt?: string
   voidedBy?: string
+  /** AD9: banco de la transferencia o del depósito. */
+  bank?: string
+  /** AD9: lo que se pagó al cobrar; si es menos que el total, queda saldo. */
+  amountPaid?: number
+  installments?: Installment[]
+  /** Total − lo pagado − los abonos. */
+  balance?: number
 }
 
 export interface Attachment {

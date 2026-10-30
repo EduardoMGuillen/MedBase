@@ -92,7 +92,7 @@ export default function WaitingRoom() {
                     {a.status === 'arrived' && can('vitals.record') &&
                       <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Preclínica</button>}
                     {a.status === 'done' && a.paid === false && can('billing.manage') &&
-                      <Link className="btn btn--ghost btn--sm" to="/app/caja">Cobrar</Link>}
+                      <Link className="btn btn--ghost btn--sm" to={`/app/caja?cobrar=${a.id}`}>Cobrar</Link>}
                     {['arrived', 'triaged', 'in_consult'].includes(a.status) && own && can('consult.write') &&
                       <button className="btn btn--primary btn--sm" onClick={() => nav(`/app/consulta/${a.id}`)}><Stethoscope size={15} />{a.status === 'in_consult' ? 'Continuar' : 'Atender'}</button>}
                     {a.status === 'triaged' && !own && multiDoctor && user?.role === 'doctor' && can('consult.write') &&
