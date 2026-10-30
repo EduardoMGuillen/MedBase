@@ -1,9 +1,9 @@
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { type Ctx, fail, localDate, parse, type Row } from '../http.js'
+import { type Ctx, fail, hasRoleSql, localDate, parse, type Row } from '../http.js'
 import { createPatient, hit } from '../db.js'
-import { clinicSettings, toStaff } from '../mappers.js'
+import { clinicSettings, rolesOf, toStaff } from '../mappers.js'
 import type { Schedule } from '../../src/lib/types.js'
 import { DEFAULT_SLOT, slotsOn } from '../../src/lib/schedule.js'
 import { dniDigits, normalizeDni } from '../../src/lib/format.js'
@@ -20,7 +20,7 @@ export function registerPublic(app: Express, { sql, audit }: Ctx) {
 
   async function freeSlots(clinicId: string, doctorId: string, date: string) {
     const doc = await sql.one('SELECT * FROM staff WHERE id = ? AND clinic_id = ?', [doctorId, clinicId])
-    if (!doc || doc.role !== 'doctor' || !doc.active || !doc.schedule) return []
+    if (!doc || !rolesOf(doc).includes('doctor') || !doc.active || !doc.schedule) return []
     const sch = JSON.parse(String(doc.schedule)) as Schedule
     const step = sch.slot || DEFAULT_SLOT
     const offered = slotsOn(sch, date, step)
@@ -43,14 +43,14 @@ export function registerPublic(app: Express, { sql, audit }: Ctx) {
 
   app.get('/api/public/clinics', async (_req, res) => {
     const rows = await sql.query(`SELECT c.slug, c.name, c.address FROM clinics c
-      WHERE c.active AND EXISTS (SELECT 1 FROM staff s WHERE s.clinic_id = c.id AND s.role = 'doctor' AND s.active) ORDER BY c.name`)
+      WHERE c.active AND EXISTS (SELECT 1 FROM staff s WHERE s.clinic_id = c.id AND ${hasRoleSql('doctor', 's')} AND s.active) ORDER BY c.name`)
     res.json(rows.map((r: Row) => ({ slug: String(r.slug), name: String(r.name), address: String(r.address) })))
   })
 
   app.get('/api/public/:slug/clinic', async (req, res) => {
     const c = await clinicBySlug(String(req.params.slug))
     const s = clinicSettings(c!)
-    const doctors = (await sql.query(`SELECT * FROM staff WHERE clinic_id = ? AND role = 'doctor' AND active ORDER BY name`, [c!.id])).map(toStaff)
+    const doctors = (await sql.query(`SELECT * FROM staff WHERE clinic_id = ? AND ${hasRoleSql('doctor')} AND active ORDER BY name`, [c!.id])).map(toStaff)
       .map((d) => ({ id: d.id, name: d.name, specialty: d.specialty, color: d.color, schedule: d.schedule }))
     res.json({ name: s.name, address: s.address, phone: s.phone, kind: s.kind, doctors })
   })

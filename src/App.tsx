@@ -1,7 +1,8 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { StoreProvider, useStore } from './lib/store'
-import { features, type Permission } from './lib/permissions'
+import { features, roleWith, type Permission } from './lib/permissions'
+import { SwitchViewOffer, ViewSwitch } from './components/ViewSwitch'
 import { Loading, Toaster } from './components/ui'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -39,7 +40,8 @@ function Guard({ perm, feature, children }: { perm?: Permission; feature?: 'hosp
   const { user, can, checking, settings } = useStore()
   if (checking) return <Loading label="Abriendo tu sesión" />
   if (!user) return <Navigate to="/login" replace />
-  if (perm && !can(perm)) return <Navigate to="/app" replace />
+  // AD5: la pantalla es de otro de sus roles: se ofrece cambiar de vista
+  if (perm && !can(perm)) return roleWith(user, perm, settings.kind) ? <SwitchViewOffer perm={perm} /> : <Navigate to="/app" replace />
   if (feature && !features(settings)[feature]) return <Navigate to="/app" replace />
   return children
 }
@@ -48,7 +50,8 @@ function Guard({ perm, feature, children }: { perm?: Permission; feature?: 'hosp
 function Home() {
   const { settings, can } = useStore()
   if (settings.kind === 'office' && can('settings.manage') && !settings.setupDoneAt) return <Navigate to="/app/bienvenida" replace />
-  return <Dashboard />
+  // AD5: quien tiene varios roles elige aquí su vista
+  return <><div className="view-bar"><ViewSwitch /></div><Dashboard /></>
 }
 
 export default function App() {

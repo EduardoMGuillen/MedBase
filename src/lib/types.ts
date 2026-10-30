@@ -24,7 +24,10 @@ export interface Staff {
   id: string
   clinicId?: string // vacío sólo para la administración de la plataforma
   name: string
+  /** Rol activo: la vista con la que trabaja ahora (AD5). Sus permisos son los de este rol. */
   role: Role
+  /** Todos sus roles (AD5). Una persona puede ser, por ejemplo, médico y administración. */
+  roles?: Role[]
   specialty?: string
   email: string
   license?: string

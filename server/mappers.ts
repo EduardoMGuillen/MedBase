@@ -10,8 +10,15 @@ const s = (v: unknown) => (v == null ? undefined : String(v))
 const n = (v: unknown) => (v == null || v === '' ? undefined : Number(v))
 const j = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(String(v)) as T : fallback } catch { return fallback } }
 
+/** AD5: todos los roles de la persona (el activo siempre incluido). */
+export const rolesOf = (r: Row): Staff['role'][] => {
+  const role = r.role as Staff['role']
+  const list = j<Staff['role'][]>(r.roles, [])
+  return list.includes(role) ? list : [role, ...list]
+}
+
 export const toStaff = (r: Row): Staff => ({
-  id: String(r.id), clinicId: s(r.clinic_id), name: String(r.name), role: r.role as Staff['role'], specialty: s(r.specialty), email: String(r.email),
+  id: String(r.id), clinicId: s(r.clinic_id), name: String(r.name), role: r.role as Staff['role'], roles: rolesOf(r), specialty: s(r.specialty), email: String(r.email),
   license: s(r.license), color: String(r.color), active: Boolean(r.active),
   schedule: r.schedule ? j(r.schedule, undefined) : undefined, serviceId: s(r.service_id), twoFactor: Boolean(r.totp_enabled),
   prefs: r.prefs ? j<Staff['prefs']>(r.prefs, {}) : undefined,

@@ -1,6 +1,6 @@
 import type { Express } from 'express'
 import { z } from 'zod'
-import { type Ctx, fail, localDate, parse, type Row } from '../http.js'
+import { type Ctx, fail, hasRoleSql, localDate, parse, type Row } from '../http.js'
 
 /** Indicadores agregados para administración. No incluye datos clínicos individuales. */
 export function registerReports(app: Express, { sql, auth, need, clinicOf }: Ctx) {
@@ -19,7 +19,7 @@ export function registerReports(app: Express, { sql, auth, need, clinicOf }: Ctx
         WHERE p.clinic_id = ? AND NOT p.voided AND p.paid_at BETWEEN ? AND ?`, [cid, lo.toISOString(), hi.toISOString()]),
       sql.query(`SELECT diagnoses, date FROM consultations WHERE clinic_id = ? AND date BETWEEN ? AND ?`, [cid, localDate(lo), hi.toISOString()]),
       sql.query(`SELECT created_at FROM patients WHERE clinic_id = ? AND NOT pending AND created_at BETWEEN ? AND ?`, [cid, localDate(lo), hi.toISOString()]),
-      sql.query(`SELECT id, name FROM staff WHERE clinic_id = ? AND role = 'doctor' ORDER BY name`, [cid]),
+      sql.query(`SELECT id, name FROM staff WHERE clinic_id = ? AND ${hasRoleSql('doctor')} ORDER BY name`, [cid]),
     ])
     const payments = payRows.filter((p) => inRange(String(p.paid_at)))
     const consults = consRows.filter((c) => inRange(String(c.date)))

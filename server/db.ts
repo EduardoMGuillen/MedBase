@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '32'
+const SCHEMA_VERSION = '33'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -610,6 +610,11 @@ ALTER TABLE payments
 -- v32: ronda 3 (AD2). La vigencia de la receta es de cada médico (staff.prefs.rxValidityDays), no de la clínica, y
 -- cada receta guarda la suya. clinics.rx_validity_days se conserva: de ahí sale el valor inicial de cada médico.
 ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS validity_days INTEGER;
+
+-- v33: ronda 3 (AD5). Varios roles por persona: staff.roles (JSON) guarda todos sus roles y staff.role pasa a ser el rol
+-- activo (la vista que eligió, que se recuerda). La bitácora guarda con qué rol se hizo cada acción.
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS roles TEXT;
+ALTER TABLE audit ADD COLUMN IF NOT EXISTS role TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -650,6 +655,7 @@ export function ensureDb(sql: Sql) {
         await migrateObservationAuthorizations(q)
       }
       await migrateRxValidity(q)
+      await migrateRoles(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -974,6 +980,11 @@ export async function migrateObservationAuthorizations(q: Sql) {
     await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?, ?, ?, ?)',
       [new Date().toISOString(), 'sistema', 'v26: se generó la autorización de hospitalización pendiente de una estancia que vino de observación', String(h.clinic_id)])
   }
+}
+
+/** v33 (AD5): cada persona empieza con su único rol como lista de roles. Idempotente. */
+export async function migrateRoles(q: Sql) {
+  await q.run(`UPDATE staff SET roles = json_build_array(role)::text WHERE roles IS NULL OR roles = ''`)
 }
 
 /**

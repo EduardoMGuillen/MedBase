@@ -95,6 +95,30 @@ export const ROLE_SUMMARY: Record<Role, string> = {
 export const can = (who: Role | { role: Role; clinicKind?: ClinicKind }, p: Permission) =>
   (typeof who === 'string' ? ROLE_PERMISSIONS[who] : permissionsFor(who.role, who.clinicKind)).includes(p)
 
+/** AD5: ¿la persona tiene este rol (aunque ahora trabaje con otra vista)? */
+export const hasRole = (s: { role: Role; roles?: Role[] }, r: Role) => (s.roles ?? [s.role]).includes(r)
+
+/** AD5: nombre de cada vista en el selector y en el pie del menú. */
+export const VIEW_LABEL: Record<Role, string> = {
+  superadmin: 'Vista de plataforma',
+  admin: 'Vista de administrador',
+  doctor: 'Vista de médico',
+  nurse: 'Vista de enfermería',
+  reception: 'Vista de recepción',
+  assistant: 'Vista de asistente',
+}
+
+/** Vistas que puede elegir: sus roles, en el orden del menú (administración primero). */
+export function viewsOf(s: { role: Role; roles?: Role[] }): Role[] {
+  const order: Role[] = ['admin', 'doctor', 'nurse', 'reception', 'assistant', 'superadmin']
+  return order.filter((r) => hasRole(s, r))
+}
+
+/** Otro de sus roles que sí tiene este permiso (para ofrecer cambiar de vista), o undefined. */
+export function roleWith(s: { role: Role; roles?: Role[] }, p: Permission, kind: ClinicKind = 'clinic') {
+  return viewsOf(s).find((r) => r !== s.role && permissionsFor(r, kind).includes(p))
+}
+
 /** Permisos que se muestran en la matriz de una clínica (sin los de plataforma). */
 export const CLINIC_PERMISSIONS = (Object.keys(PERMISSIONS) as Permission[]).filter((p) => p !== 'platform.manage')
 

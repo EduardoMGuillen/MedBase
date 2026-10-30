@@ -9,9 +9,9 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { attempts, completePendingPatient, createPatient, createPendingPatient, DEMO_PASSWORD, ensureDb, hit, nextFolio, resetDemo } from './db.js'
 import type { Sql } from './sql.js'
-import { type Ctx, fail, HttpError, localDate, parse, type Row } from './http.js'
+import { type Ctx, fail, hasRoleSql, HttpError, localDate, parse, type Row } from './http.js'
 import {
-  clinicSettings, toAppointment, toAudit, toBed, toClinicDrug, toConsultation, toFollowup, toHospitalization, toPatient, toPrescription, toService, toStaff, toVitals,
+  clinicSettings, rolesOf, toAppointment, toAudit, toBed, toClinicDrug, toConsultation, toFollowup, toHospitalization, toPatient, toPrescription, toService, toStaff, toVitals,
 } from './mappers.js'
 import { newSecret, otpauthUrl, verifyTotp } from './totp.js'
 import { rxValidityOf, validityInput } from './prefs.js'
@@ -34,7 +34,7 @@ import { registerConsent } from './routes/consent.js'
 import { registerOrderSets } from './routes/orderSets.js'
 import { registerEpicrisis } from './routes/epicrisis.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
-import { can, permissionsFor, ROLES_BY_KIND, type Permission } from '../src/lib/permissions.js'
+import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permission } from '../src/lib/permissions.js'
 import { yearsOld } from '../src/lib/inpatient.js'
 import { normalizeDni } from '../src/lib/format.js'
 import { hasBlank, medHasBlank } from '../src/lib/orderSets.js'
@@ -114,8 +114,9 @@ export function createApp(opts: AppOptions) {
   })
 
   /** Registra una acción en la bitácora, ligada a la clínica de quien la hizo. */
-  const audit = async (actor: { id: string; clinicId?: string | null }, action: string, q: Sql = sql) => {
-    await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?, ?, ?, ?)', [new Date().toISOString(), actor.id, action, actor.clinicId ?? null])
+  const audit = async (actor: { id: string; clinicId?: string | null; role?: string }, action: string, q: Sql = sql) => {
+    // AD5: con qué rol (vista activa) se hizo la acción
+    await q.run('INSERT INTO audit (at, user_id, action, clinic_id, role) VALUES (?, ?, ?, ?, ?)', [new Date().toISOString(), actor.id, action, actor.clinicId ?? null, actor.role ?? null])
   }
   const staffRow = (id: string) => sql.one('SELECT * FROM staff WHERE id = ?', [id])
   // Todo lo que pertenece a una clínica se busca siempre junto con la clínica de quien pregunta
@@ -232,6 +233,21 @@ export function createApp(opts: AppOptions) {
     issue(res, (await staffRow(user.id))!)
     await audit(user, 'Cambió su contraseña')
     res.json({ ok: true })
+  })
+
+  /**
+   * AD5: quien tiene varios roles elige con cuál trabaja ("Vista de administrador", "Vista de médico"). El rol activo se
+   * guarda en la base: se recuerda en todos sus equipos y de él salen sus permisos (también en el servidor).
+   */
+  app.post('/api/me/view', auth, async (req, res) => {
+    const { role } = parse(z.object({ role: z.enum(ROLES) }), req.body, 'Elige una vista.')
+    const user = userOf(req)
+    if (!(user.roles ?? [user.role]).includes(role)) fail(403, 'No tienes ese rol.')
+    if (role !== user.role) {
+      await sql.run('UPDATE staff SET role = ? WHERE id = ?', [role, user.id])
+      await audit({ ...user, role }, `Cambió a la ${VIEW_LABEL[role].toLowerCase()} (antes: ${VIEW_LABEL[user.role].toLowerCase()})`)
+    }
+    res.json(session((await sql.one('SELECT s.*, c.kind AS clinic_kind FROM staff s LEFT JOIN clinics c ON c.id = s.clinic_id WHERE s.id = ?', [user.id]))!))
   })
 
   // Recorrido de primer ingreso: terminado o saltado, no vuelve a aparecer en ningún equipo
@@ -530,7 +546,7 @@ export function createApp(opts: AppOptions) {
     const cid = clinicOf(req)
     if (a.patientId) (await patientRow(cid, a.patientId)) ?? fail(400, 'El paciente no existe.')
     const doc = await clinicStaffRow(cid, a.doctorId)
-    if (!doc || doc.role !== 'doctor' || !doc.active) fail(400, 'El médico elegido no está disponible.')
+    if (!doc || !rolesOf(doc).includes('doctor') || !doc.active) fail(400, 'El médico elegido no está disponible.')
     assertInSchedule(doc!, start)
     // Se permiten dos citas a la misma hora con el mismo médico (pasa en la vida real); la agenda avisa antes
     const id = randomUUID()
@@ -559,7 +575,7 @@ export function createApp(opts: AppOptions) {
       reason: 'reason' in req.body ? b.reason ?? '' : String(row!.reason),
     }
     const doc = await clinicStaffRow(cid, next.doctorId)
-    if (!doc || doc.role !== 'doctor' || !doc.active) fail(400, 'El médico elegido no está disponible.')
+    if (!doc || !rolesOf(doc).includes('doctor') || !doc.active) fail(400, 'El médico elegido no está disponible.')
     if (next.doctorId !== row!.doctor_id || next.start !== row!.start) assertInSchedule(doc!, next.start)
     await sql.run('UPDATE appointments SET doctor_id = ?, start = ?, minutes = ?, reason = ?, status = ?, reminded_at = NULL WHERE id = ?',
       [next.doctorId, next.start, next.minutes, next.reason, 'scheduled', String(row!.id)])
@@ -627,7 +643,7 @@ export function createApp(opts: AppOptions) {
     const cid = clinicOf(req)
     ;(await patientRow(cid, b.patientId)) ?? fail(400, 'El paciente no existe.')
     const doc = await clinicStaffRow(cid, b.doctorId)
-    if (!doc || doc.role !== 'doctor' || !doc.active) fail(400, 'El médico elegido no está disponible.')
+    if (!doc || !rolesOf(doc).includes('doctor') || !doc.active) fail(400, 'El médico elegido no está disponible.')
     const now = new Date()
     const id = randomUUID()
     const start = `${localDate(now)}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:00`
@@ -907,6 +923,8 @@ export function createApp(opts: AppOptions) {
     const b = parse(z.object({
       active: z.boolean().optional(),
       role: z.enum(ROLES).optional(),
+      // AD5: uno o varios roles
+      roles: z.array(z.enum(ROLES)).min(1, 'Asigna al menos un rol.').max(ROLES.length).optional(),
       twoFactor: z.literal(false).optional(),
       specialty: z.string().trim().optional(),
       license: z.string().trim().optional(),
@@ -914,13 +932,28 @@ export function createApp(opts: AppOptions) {
       schedule: scheduleInput.optional(),
     }), req.body)
     const id = String(row!.id)
-    if (id === me.id && (b.active === false || (b.role && b.role !== me.role))) fail(400, 'No puedes desactivar ni cambiar el rol de tu propia cuenta.')
-    // El rol nuevo (o reactivar a alguien) tiene que caber en el tipo de cuenta
-    if ((b.role && b.role !== row!.role) || (b.active === true && !row!.active)) await assertRoleFits(sql, clinicOf(req), b.role ?? String(row!.role), id)
+    const cid = clinicOf(req)
+    const prev = rolesOf(row!)
+    const nextRoles = b.roles ? [...new Set(b.roles)] : b.role ? [b.role] : undefined
+    if (id === me.id && b.active === false) fail(400, 'No puedes desactivar tu propia cuenta.')
+    if (id === me.id && nextRoles && prev.includes('admin') && !nextRoles.includes('admin')) fail(400, 'No puedes quitarte a ti mismo el rol de Administración.')
+    // Cada rol nuevo (o reactivar a alguien) tiene que caber en el tipo de cuenta
+    if (nextRoles) for (const r of nextRoles.filter((x) => !prev.includes(x))) await assertRoleFits(sql, cid, r, id)
+    if (b.active === true && !row!.active) for (const r of prev) await assertRoleFits(sql, cid, r, id)
+    // Siempre queda al menos una persona activa con Administración en la clínica
+    if ((nextRoles && prev.includes('admin') && !nextRoles.includes('admin')) || (b.active === false && prev.includes('admin'))) await assertNotLastAdmin(sql, cid, id)
+    const addsDoctor = nextRoles?.includes('doctor') && !prev.includes('doctor')
+    if (addsDoctor && !row!.license && !b.license) fail(400, `Para darle el rol de médico a ${row!.name} escribe su número de colegiación.`)
     const changes: string[] = []
     await sql.tx(async (q) => {
       if (b.active !== undefined) { await q.run('UPDATE staff SET active = ?, token_version = token_version + 1 WHERE id = ?', [b.active, id]); changes.push(b.active ? 'Reactivó a' : 'Desactivó a') }
-      if (b.role) { await q.run('UPDATE staff SET role = ?, token_version = token_version + 1 WHERE id = ?', [b.role, id]); changes.push('Cambió el rol de') }
+      if (nextRoles && nextRoles.join() !== prev.join()) {
+        // El rol activo se conserva si lo sigue teniendo; si no, pasa al primero de los nuevos
+        const active = nextRoles.includes(row!.role as (typeof ROLES)[number]) ? String(row!.role) : nextRoles[0]
+        await q.run('UPDATE staff SET roles = ?, role = ? WHERE id = ?', [JSON.stringify(nextRoles), active, id])
+        if (addsDoctor) await giveDoctorDefaults(q, cid, id)
+        changes.push(`Cambió los roles (${nextRoles.map((r) => ROLE_LABEL[r]).join(', ')}) de`)
+      }
       if (b.twoFactor === false) { await q.run('UPDATE staff SET totp_enabled = FALSE, totp_secret = NULL WHERE id = ?', [id]); changes.push('Quitó la verificación en dos pasos de') }
       if (b.specialty !== undefined) await q.run('UPDATE staff SET specialty = ? WHERE id = ?', [b.specialty || null, id])
       if (b.license !== undefined) await q.run('UPDATE staff SET license = ? WHERE id = ?', [b.license || null, id])
@@ -935,8 +968,8 @@ export function createApp(opts: AppOptions) {
   app.patch('/api/staff/:id/schedule', auth, async (req, res) => {
     const me = userOf(req)
     const row = (await clinicStaffRow(clinicOf(req), String(req.params.id))) ?? fail(404, 'El usuario no existe.')
-    if (row!.role !== 'doctor') fail(400, 'Sólo los médicos tienen horario de atención.')
-    if (!can(me.role, 'schedule.manage') && me.id !== row!.id) fail(403, 'Sólo puedes cambiar tu propio horario.')
+    if (!rolesOf(row!).includes('doctor')) fail(400, 'Sólo los médicos tienen horario de atención.')
+    if (!can(me, 'schedule.manage') && me.id !== row!.id) fail(403, 'Sólo puedes cambiar tu propio horario.')
     const schedule = cleanSchedule(parse(scheduleInput, req.body))
     await sql.run('UPDATE staff SET schedule = ? WHERE id = ?', [JSON.stringify(schedule), String(row!.id)])
     await audit(me, me.id === row!.id ? 'Actualizó su horario de atención' : `Actualizó el horario de ${row!.name}`)
@@ -1029,9 +1062,9 @@ export async function createStaffMember(sql: Sql, clinicId: string, s: { name: s
   const count = Number((await sql.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM staff WHERE clinic_id = ?', [clinicId]))!.n)
   const service = s.role === 'doctor' ? await sql.one(`SELECT id FROM services WHERE clinic_id = ? AND active ORDER BY name LIMIT 1`, [clinicId]) : undefined
   const schedule = s.role === 'doctor' ? JSON.stringify(scheduleFromWeek({ 1: [{ start: '08:00', end: '17:00' }], 2: [{ start: '08:00', end: '17:00' }], 3: [{ start: '08:00', end: '17:00' }], 4: [{ start: '08:00', end: '17:00' }], 5: [{ start: '08:00', end: '17:00' }] }, 30)) : null
-  await sql.run(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id,clinic_id) VALUES (?,?,?,?,?,?,?,TRUE,?,?,?,?)`,
+  await sql.run(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id,clinic_id,roles) VALUES (?,?,?,?,?,?,?,TRUE,?,?,?,?,?)`,
     [id, s.name, s.role, s.specialty || null, s.email, s.license || null, COLORS[count % COLORS.length], bcrypt.hashSync(password, 10),
-      schedule, service ? String(service.id) : null, clinicId])
+      schedule, service ? String(service.id) : null, clinicId, JSON.stringify([s.role])])
   return { user: toStaff((await sql.one('SELECT * FROM staff WHERE id = ?', [id]))!), password }
 }
 
@@ -1048,9 +1081,25 @@ export async function assertRoleFits(sql: Sql, clinicId: string, role: string, i
     fail(400, kind === 'office' ? 'En un consultorio sólo se agregan asistentes. Para sumar otro médico, convierte el consultorio en clínica.' : 'El rol de asistente es para consultorios; en una clínica usa recepción o enfermería.')
   }
   if (kind !== 'office') return
-  const count = async (r: string) => Number((await sql.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM staff WHERE clinic_id = ? AND role = ? AND active AND id <> ?`, [clinicId, r, ignoreStaffId]))!.n)
+  const count = async (r: string) => Number((await sql.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM staff WHERE clinic_id = ? AND ${hasRoleSql(r)} AND active AND id <> ?`, [clinicId, ignoreStaffId]))!.n)
   if (role === 'doctor' && await count('doctor') >= 1) fail(400, 'El consultorio ya tiene su médico titular. Para sumar otro médico, convierte el consultorio en clínica.')
   if (role === 'assistant' && await count('assistant') >= Number(c!.max_assistants ?? 2)) fail(400, `El consultorio ya tiene ${Number(c!.max_assistants ?? 2)} asistentes activos, el máximo de su cuenta.`)
+}
+
+/** AD5: una clínica nunca se queda sin nadie activo con el rol de Administración. */
+export async function assertNotLastAdmin(sql: Sql, clinicId: string, staffId: string) {
+  const c = await sql.one('SELECT kind FROM clinics WHERE id = ?', [clinicId])
+  if (c?.kind === 'office') return
+  const others = await sql.one(`SELECT 1 FROM staff WHERE clinic_id = ? AND id <> ? AND active AND ${hasRoleSql('admin')}`, [clinicId, staffId])
+  if (!others) fail(400, 'Es la única persona con el rol de Administración. Dale ese rol a otra persona antes de quitárselo.')
+}
+
+/** Quien recibe el rol de médico sin haberlo tenido: horario de lunes a viernes y el servicio que se cobra por defecto. */
+async function giveDoctorDefaults(q: Sql, clinicId: string, staffId: string) {
+  const service = await q.one(`SELECT id FROM services WHERE clinic_id = ? AND active ORDER BY name LIMIT 1`, [clinicId])
+  const week = Object.fromEntries([1, 2, 3, 4, 5].map((d) => [d, [{ start: '08:00', end: '17:00' }]]))
+  await q.run('UPDATE staff SET schedule = COALESCE(schedule, ?), service_id = COALESCE(service_id, ?) WHERE id = ?',
+    [JSON.stringify(scheduleFromWeek(week, 30)), service ? String(service.id) : null, staffId])
 }
 
 /** Traduce los errores de conexión más comunes a un mensaje que indica qué revisar. */

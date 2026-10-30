@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, SlidersHorizontal, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { features } from '../lib/permissions'
+import { features, hasRole } from '../lib/permissions'
 import { Avatar, Modal, PageHead } from '../components/ui'
 import { IdentificationForm } from './PatientForms'
 import { age, date, dniDigits, fullName, localISODate } from '../lib/format'
@@ -60,7 +60,7 @@ export default function Patients() {
   // Los pacientes agendados por teléfono que no han completado su registro no cuentan en la biblioteca
   const registered = useMemo(() => patients.filter((p) => !p.pending), [patients])
   const chronicTitles = useMemo(() => [...new Set([...(index?.values() ?? [])].flatMap((x) => x.followups.filter((y) => y.kind === 'chronic').map((y) => y.title)))].sort(), [index])
-  const doctors = staff.filter((x) => x.role === 'doctor')
+  const doctors = staff.filter((x) => hasRole(x, 'doctor'))
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase()

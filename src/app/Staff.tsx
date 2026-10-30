@@ -19,6 +19,7 @@ export default function StaffPage() {
   const [creating, setCreating] = useState(false)
   const [secret, setSecret] = useState<{ name: string; email: string; password: string } | null>(null)
   const [q, setQ] = useState('')
+  const [rolesOf, setRolesOf] = useState<Staff | null>(null)
   const log = audit.filter((e) => !q || e.action.toLowerCase().includes(q.toLowerCase()) || staffById(e.userId)?.name.toLowerCase().includes(q.toLowerCase()))
 
   return (
@@ -42,12 +43,11 @@ export default function StaffPage() {
               <tr key={s.id}>
                 <td><div className="cell-person"><Avatar name={s.name} color={s.color} /><span style={{ fontWeight: 600 }}>{s.name}<small>{[s.specialty, s.license].filter(Boolean).join(', ')}</small></span></div></td>
                 <td>
-                  {s.id === user?.id || office ? (s.id === settings.ownerId ? 'Médico titular' : ROLE_LABEL[s.role]) : (
-                    <select className="select" style={{ height: 34, width: 'auto' }} value={s.role} aria-label={`Rol de ${s.name}`}
-                      onChange={(e) => updateStaff(s.id, { role: e.target.value as Role })}>
-                      {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                    </select>
-                  )}
+                  <div className="role-picks">
+                    {s.id === settings.ownerId && <span className="badge badge--ink">Médico titular</span>}
+                    {(s.roles ?? [s.role]).filter((r) => s.id !== settings.ownerId || r !== 'doctor').map((r) => <span key={r} className="badge">{ROLE_LABEL[r]}</span>)}
+                    {(!office || s.id !== settings.ownerId) && <button className="btn btn--ghost btn--sm" aria-label={`Cambiar los roles de ${s.name}`} onClick={() => setRolesOf(s)}>Roles</button>}
+                  </div>
                 </td>
                 <td>{s.email}</td>
                 <td><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Desactivado</span>}
@@ -100,6 +100,7 @@ export default function StaffPage() {
         </section>
       </>)}
 
+      {rolesOf && <RolesModal s={rolesOf} roles={ROLES} self={rolesOf.id === user?.id} onClose={() => setRolesOf(null)} />}
       {creating && <NewStaff roles={ROLES.filter((r) => !office || r === 'assistant')} onClose={() => setCreating(false)} onCreated={(s, password) => { setCreating(false); setSecret({ name: s.name, email: s.email, password }) }} />}
 
       {secret && (
@@ -110,6 +111,52 @@ export default function StaffPage() {
         </Modal>
       )}
     </div>
+  )
+}
+
+/**
+ * AD5: una persona puede tener varios roles (por ejemplo, médico y administración). Si tiene más de uno, elige su vista
+ * en Inicio. Siempre queda al menos una persona con Administración; nadie se quita a sí mismo ese rol.
+ */
+function RolesModal({ s, roles, self, onClose }: { s: Staff; roles: Role[]; self: boolean; onClose: () => void }) {
+  const { updateStaff } = useStore()
+  const [picked, setPicked] = useState<Role[]>(s.roles ?? [s.role])
+  const [license, setLicense] = useState(s.license ?? '')
+  const [specialty, setSpecialty] = useState(s.specialty ?? '')
+  const [busy, setBusy] = useState(false)
+  const was = s.roles ?? [s.role]
+  const addsDoctor = picked.includes('doctor') && !was.includes('doctor')
+  const lockedAdmin = self && was.includes('admin')
+  const toggle = (r: Role) => setPicked(picked.includes(r) ? picked.filter((x) => x !== r) : roles.filter((x) => x === r || picked.includes(x)))
+  const valid = picked.length > 0 && (!addsDoctor || license.trim().length >= 3)
+  const same = picked.length === was.length && picked.every((r) => was.includes(r))
+  return (
+    <Modal title={`Roles de ${s.name}`} onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={!valid || same || busy} onClick={async () => {
+        setBusy(true)
+        const ok = await updateStaff(s.id, { roles: picked, ...(addsDoctor ? { license: license.trim(), specialty: specialty.trim() || undefined } : {}) }, 'Roles guardados')
+        setBusy(false)
+        if (ok) onClose()
+      }}>Guardar roles</button>
+    </>}>
+      <p className="muted" style={{ fontSize: 14 }}>Marca uno o varios. Con más de un rol, la persona cambia entre sus vistas desde Inicio o desde el pie del menú; sus permisos son los de la vista en la que esté.</p>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {roles.map((r) => (
+          <label key={r} className="check-line">
+            <input type="checkbox" checked={picked.includes(r)} disabled={r === 'admin' && lockedAdmin} onChange={() => toggle(r)} />
+            <span><b>{ROLE_LABEL[r]}</b><small>{r === 'admin' && lockedAdmin ? 'No puedes quitarte a ti mismo el rol de Administración.' : ROLE_SUMMARY[r]}</small></span>
+          </label>
+        ))}
+      </div>
+      {addsDoctor && (
+        <div className="form-grid">
+          <label className="field"><span>Número de colegiación</span><input className="input" value={license} onChange={(e) => setLicense(e.target.value)} placeholder="CMH-00000" /></label>
+          <label className="field"><span>Especialidad</span><input className="input" value={specialty} onChange={(e) => setSpecialty(e.target.value)} /></label>
+        </div>
+      )}
+      {!picked.length && <p className="field__msg field__msg--error">Asigna al menos un rol.</p>}
+    </Modal>
   )
 }
 

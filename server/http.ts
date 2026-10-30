@@ -14,6 +14,13 @@ export class HttpError extends Error {
 
 export const fail = (status: number, message: string): never => { throw new HttpError(status, message) }
 
+/**
+ * AD5: condición SQL "esta persona tiene el rol" (aunque su vista activa sea otra). `alias` es el de la tabla staff.
+ * Las filas de antes de la v33 todavía sin lista de roles valen por su rol.
+ */
+export const hasRoleSql = (role: string, alias = '') =>
+  `(COALESCE(NULLIF(${alias ? `${alias}.` : ''}roles, ''), json_build_array(${alias ? `${alias}.` : ''}role)::text)::jsonb @> '["${role.replace(/[^a-z]/g, '')}"]'::jsonb)`
+
 export function parse<T extends z.ZodType>(schema: T, data: unknown, message?: string): z.infer<T> {
   const r = schema.safeParse(data)
   if (!r.success) fail(400, message ?? r.error.issues[0]?.message ?? 'Revisa los datos enviados.')
@@ -36,7 +43,7 @@ export interface Ctx {
   userOf: (req: Request) => Staff
   /** Clínica de quien hace la petición; falla con 403 para la administración de la plataforma. */
   clinicOf: (req: Request) => string
-  audit: (actor: { id: string; clinicId?: string | null }, action: string, q?: Sql) => Promise<void>
+  audit: (actor: { id: string; clinicId?: string | null; role?: string }, action: string, q?: Sql) => Promise<void>
   patientName: (id: string) => Promise<string>
   staffRow: (id: string) => Promise<Row | undefined>
   clinicStaffRow: (clinicId: string, id: string) => Promise<Row | undefined>

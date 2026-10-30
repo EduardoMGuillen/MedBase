@@ -8,7 +8,7 @@ import { HBars } from '../components/Charts'
 import { date, fullName, localISODate, money, sameDay, time } from '../lib/format'
 import type { Appointment } from '../lib/types'
 import Platform from './Platform'
-import { features } from '../lib/permissions'
+import { features, hasRole } from '../lib/permissions'
 import { VitalsModal } from './WaitingRoom'
 import { ArrivalsPanel } from './Arrivals'
 import { CompleteRegistration } from './NewPatient'
@@ -287,7 +287,7 @@ export default function Dashboard() {
   }
 
   // Administración: indicadores sin información clínica
-  const doctors = staff.filter((s) => s.role === 'doctor' && s.active)
+  const doctors = staff.filter((s) => hasRole(s, 'doctor') && s.active)
   const since = new Date(); since.setDate(since.getDate() - 30)
   const closed = appointments.filter((a) => ['done', 'no_show'].includes(a.status) && new Date(a.start) >= since)
   const attendance = closed.length ? Math.round((closed.filter((a) => a.status === 'done').length / closed.length) * 100) : null

@@ -285,6 +285,18 @@ function useStoreValue() {
       run(() => api<Attachment>(`/patients/${patientId}/attachments`, { body: a }), 'Archivo adjuntado'),
     deleteAttachment: (id: string) => run(() => api(`/attachments/${id}`, { method: 'DELETE' }), 'Archivo eliminado'),
 
+    /** AD5: cambia la vista (rol activo). Los permisos y el menú pasan a ser los de ese rol. */
+    switchView: async (role: Staff['role']) => {
+      try {
+        const s = await api<Session>('/me/view', { body: { role } })
+        setSession(s)
+        await refresh()
+        return true
+      } catch (e) {
+        notify((e as Error).message, 'error')
+        return false
+      }
+    },
     /** El médico titular terminó o saltó el asistente de primer ingreso. */
     /** El recorrido de primer ingreso ya se vio (terminado o saltado). Sin aviso: no interrumpe. */
     finishTour: () => api('/me/tour', { method: 'POST' }).catch(() => null),
@@ -297,7 +309,7 @@ function useStoreValue() {
 
     createStaff: (s: Pick<Staff, 'name' | 'role' | 'email' | 'specialty' | 'license'>) =>
       run(() => api<{ user: Staff; password: string }>('/staff', { body: s }), 'Usuario creado'),
-    updateStaff: (id: string, b: Partial<Pick<Staff, 'active' | 'role' | 'specialty' | 'license' | 'serviceId' | 'schedule'>> & { twoFactor?: false }, success = 'Usuario actualizado') =>
+    updateStaff: (id: string, b: Partial<Pick<Staff, 'active' | 'role' | 'roles' | 'specialty' | 'license' | 'serviceId' | 'schedule'>> & { twoFactor?: false }, success = 'Usuario actualizado') =>
       run(() => api<Staff>(`/staff/${id}`, { method: 'PATCH', body: b }), success),
     resetStaffPassword: (id: string) => run(() => api<{ password: string }>(`/staff/${id}/reset-password`, { method: 'POST' })),
     changePassword: (current: string, next: string) =>

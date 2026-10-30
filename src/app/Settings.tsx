@@ -5,7 +5,7 @@ import { Avatar, Modal, PageHead } from '../components/ui'
 import { date, fillTemplate, money, ROUTES } from '../lib/format'
 import type { ClinicDrug, ClinicSettings, Service, Staff } from '../lib/types'
 import { ScheduleEditor } from './ScheduleEditor'
-import { features } from '../lib/permissions'
+import { features, hasRole } from '../lib/permissions'
 
 type Tab = 'clinic' | 'services' | 'schedules' | 'beds' | 'drugs'
 
@@ -222,7 +222,7 @@ function ClinicForm() {
  */
 function ConvertToClinic({ onClose }: { onClose: () => void }) {
   const { staff, convertToClinic, signOut } = useStore()
-  const assistants = staff.filter((s) => s.role === 'assistant')
+  const assistants = staff.filter((s) => hasRole(s, 'assistant'))
   const [admin, setAdmin] = useState({ name: '', email: '' })
   const [roles, setRoles] = useState<Record<string, 'reception' | 'nurse'>>(() => Object.fromEntries(assistants.map((a) => [a.id, 'reception'])))
   const [sure, setSure] = useState(false)
@@ -313,7 +313,7 @@ function ServiceRow({ s }: { s: Service }) {
 
 function Schedules() {
   const { staff } = useStore()
-  const doctors = staff.filter((s) => s.role === 'doctor')
+  const doctors = staff.filter((s) => hasRole(s, 'doctor'))
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <p style={{ color: 'var(--muted)' }}>Cada día puede tener una o más franjas (por ejemplo, de 08:00 a 12:00 y de 14:00 a 17:00). La agenda y la reserva en línea sólo ofrecen horas dentro del horario. Cada médico también puede cambiar el suyo en <i>Mi cuenta</i>.</p>

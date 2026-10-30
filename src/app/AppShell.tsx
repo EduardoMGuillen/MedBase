@@ -8,7 +8,8 @@ import { Avatar } from '../components/ui'
 import { SearchPalette } from '../components/Search'
 import { Tour } from '../components/Tour'
 import { useStore } from '../lib/store'
-import { features, ROLE_LABEL, type Permission } from '../lib/permissions'
+import { features, ROLE_LABEL, VIEW_LABEL, viewsOf, type Permission } from '../lib/permissions'
+import { ViewSwitch } from '../components/ViewSwitch'
 import { cap, localISODate, sameDay } from '../lib/format'
 import { tourFor } from '../lib/tours'
 
@@ -137,13 +138,14 @@ export default function AppShell() {
             <Avatar name={user.name} color={user.color} />
             <div>
               <strong>{user.name}</strong>
-              <small>{ROLE_LABEL[user.role]}</small>
+              <small>{viewsOf(user).length > 1 ? VIEW_LABEL[user.role] : ROLE_LABEL[user.role]}</small>
             </div>
           </Link>
           <button className="icon-btn" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={async () => { await signOut(); nav('/login') }}>
             <LogOut size={17} />
           </button>
         </div>
+        {viewsOf(user).length > 1 && <div className="side__views"><ViewSwitch compact /></div>}
       </aside>
       {open && <div className="side__scrim" onClick={() => setOpen(false)} aria-hidden="true" />}
 

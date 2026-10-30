@@ -8,6 +8,7 @@ import { cap, dniDigits, formatPhone, fullName, localISODate, time } from '../li
 import { DniInput } from '../components/DniInput'
 import { DAY_NAMES_PLURAL, describeSchedule, slotsOn, weekday } from '../lib/schedule'
 import { normalize, similarPatients } from '../lib/patients'
+import { hasRole } from '../lib/permissions'
 import { CompleteRegistration, SimilarPatients } from './NewPatient'
 import { useIsPhone } from '../lib/hooks'
 import type { Appointment, Patient, Staff } from '../lib/types'
@@ -48,7 +49,7 @@ export default function Agenda() {
   const [rescheduling, setRescheduling] = useState<Appointment | null>(null)
   const [completing, setCompleting] = useState<Appointment | null>(null)
 
-  const doctors = staff.filter((s) => s.role === 'doctor' && s.active)
+  const doctors = staff.filter((s) => hasRole(s, 'doctor') && s.active)
   const shown = doctorFilter === 'all' ? doctors : doctors.filter((d) => d.id === doctorFilter)
   const [from, to] = range(view, cursor)
   const key = `${localISODate(from)}_${localISODate(to)}`

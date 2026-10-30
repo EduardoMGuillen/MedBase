@@ -127,7 +127,7 @@ export function registerPlatform(app: Express, { sql, auth, need, userOf, audit 
     const b = parse(z.object({ active: z.boolean().optional(), role: z.enum(CLINIC_ROLES).optional(), twoFactor: z.literal(false).optional() }), req.body)
     if ((b.role && b.role !== row.role) || (b.active === true && !row.active)) await assertRoleFits(sql, String(row.clinic_id), b.role ?? String(row.role), String(row.id))
     if (b.active !== undefined) await sql.run('UPDATE staff SET active = ?, token_version = token_version + 1 WHERE id = ?', [b.active, row.id])
-    if (b.role) await sql.run('UPDATE staff SET role = ?, token_version = token_version + 1 WHERE id = ?', [b.role, row.id])
+    if (b.role) await sql.run('UPDATE staff SET role = ?, roles = ?, token_version = token_version + 1 WHERE id = ?', [b.role, JSON.stringify([b.role]), row.id])
     if (b.twoFactor === false) await sql.run('UPDATE staff SET totp_enabled = FALSE, totp_secret = NULL WHERE id = ?', [row.id])
     const what = b.active === false ? 'Desactivó a' : b.active ? 'Reactivó a' : b.role ? 'Cambió el rol de' : 'Quitó la verificación en dos pasos de'
     await audit({ id: userOf(req).id, clinicId: String(row.clinic_id) }, `${what} ${row.name}`)

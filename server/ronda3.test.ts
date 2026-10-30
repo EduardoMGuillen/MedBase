@@ -109,3 +109,49 @@ describe('MC3 nota de procedimiento', () => {
     assert.equal(urgent.body.procedure.urgent, true)
   })
 })
+
+describe('AD5 varios roles y vista activa', () => {
+  test('la Dra. Herrera recibe Administración y cambia de vista; los permisos son los de la vista activa', async () => {
+    const admin = await as('admin@demo.clinara')
+    const r = await admin.patch('/api/staff/s-herrera', { roles: ['doctor', 'admin'] })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual(r.body.roles, ['doctor', 'admin'])
+    assert.equal(r.body.role, 'doctor')
+    const doc = await as('lherrera@demo.clinara')
+    let me = (await doc.get('/api/auth/me')).body
+    assert.ok(!me.permissions.includes('staff.manage'))
+    assert.equal((await doc.get('/api/reports?from=2026-01-01&to=2026-01-31')).status, 403)
+    me = (await doc.post('/api/me/view', { role: 'admin' })).body
+    assert.equal(me.user.role, 'admin')
+    assert.ok(me.permissions.includes('staff.manage') && !me.permissions.includes('consult.write'))
+    assert.equal((await doc.get('/api/reports?from=2026-01-01&to=2026-01-31')).status, 200)
+    // La vista se recuerda en la cuenta: una sesión nueva entra en la misma vista
+    assert.equal((await (await as('lherrera@demo.clinara')).get('/api/auth/me')).body.user.role, 'admin')
+    // La bitácora guarda el cambio y el rol de cada acción
+    const row = await sql.one(`SELECT role FROM audit WHERE user_id = 's-herrera' AND action LIKE 'Cambió a la vista de administrador%' ORDER BY id DESC LIMIT 1`)
+    assert.equal(row?.role, 'admin')
+    // No puede elegir un rol que no tiene
+    assert.equal((await doc.post('/api/me/view', { role: 'nurse' })).status, 403)
+    // Sigue en la lista de médicos aunque esté en la vista de administrador (agenda pública)
+    const slug = (await sql.one(`SELECT slug FROM clinics WHERE id = 'c-sb'`))!.slug
+    const pub = (await fetch(`${base}/api/public/${slug}/clinic`).then((x) => x.json())) as { doctors: { id: string }[] }
+    assert.ok(pub.doctors.some((d) => d.id === 's-herrera'))
+    await doc.post('/api/me/view', { role: 'doctor' })
+  })
+
+  test('siempre queda al menos una persona con Administración; nadie se quita a sí mismo ese rol', async () => {
+    const admin = await as('admin@demo.clinara')
+    const self = (await admin.get('/api/auth/me')).body.user
+    assert.equal((await admin.patch(`/api/staff/${self.id}`, { roles: ['reception'] })).status, 400)
+    // Con la Dra. Herrera como segunda administradora, a Roberto se le puede quitar; luego a ella ya no
+    const doc = await as('lherrera@demo.clinara')
+    await doc.post('/api/me/view', { role: 'admin' })
+    assert.equal((await doc.patch(`/api/staff/${self.id}`, { roles: ['reception'] })).status, 200)
+    assert.equal((await doc.patch('/api/staff/s-herrera', { roles: ['doctor'] })).status, 400)
+    assert.equal((await doc.patch(`/api/staff/${self.id}`, { roles: ['admin'] })).status, 200)
+    assert.equal((await admin.patch('/api/staff/s-herrera', { roles: ['doctor'] })).status, 200)
+    // Dar el rol de médico pide la colegiación
+    const nurse = (await sql.one(`SELECT id FROM staff WHERE email = 'crios@demo.clinara'`))!.id
+    assert.equal((await admin.patch(`/api/staff/${nurse}`, { roles: ['nurse', 'doctor'] })).status, 400)
+  })
+})

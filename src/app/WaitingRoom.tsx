@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Activity, BedDouble, LogIn, NotebookPen, Stethoscope, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { features } from '../lib/permissions'
+import { features, hasRole } from '../lib/permissions'
 import { Modal, PageHead, StatusBadge } from '../components/ui'
 import { age, fullName, sameDay, time } from '../lib/format'
 import type { Appointment, Patient } from '../lib/types'
@@ -132,7 +132,7 @@ export default function WaitingRoom() {
 /** Paciente que llega de pie: se busca o se registra y entra a la sala de espera. */
 function WalkInModal({ onClose }: { onClose: () => void }) {
   const { staff, walkIn, addPatient, can, user } = useStore()
-  const doctors = staff.filter((s) => s.role === 'doctor' && s.active)
+  const doctors = staff.filter((s) => hasRole(s, 'doctor') && s.active)
   const [patientId, setPatientId] = useState('')
   const [doctorId, setDoctorId] = useState(user?.role === 'doctor' ? user.id : doctors[0]?.id ?? '')
   const [reason, setReason] = useState('')

@@ -72,7 +72,10 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
       await q.run(`UPDATE clinics SET kind = 'clinic' WHERE id = ?`, [cid])
       // Las asistentes cambian de rol y vuelven a entrar. El servidor ya aplica los permisos de clínica a todos desde
       // ahora (lee el tipo de cuenta en cada petición); quien convierte ve la contraseña y luego vuelve a entrar.
-      for (const a of assistants) await q.run('UPDATE staff SET role = ?, token_version = token_version + 1 WHERE id = ?', [b.assistants[String(a.id)] ?? 'reception', String(a.id)])
+      for (const a of assistants) {
+        const role = b.assistants[String(a.id)] ?? 'reception'
+        await q.run('UPDATE staff SET role = ?, roles = ?, token_version = token_version + 1 WHERE id = ?', [role, JSON.stringify([role]), String(a.id)])
+      }
       await audit(user, `Convirtió el consultorio en clínica; ${assistants.map((a) => `${a.name} pasa a ${b.assistants[String(a.id)] === 'nurse' ? 'enfermería' : 'recepción'}`).join(', ') || 'sin asistentes'}`, q)
     })
     const { user: admin, password } = await createStaffMember(sql, cid, { name: b.admin.name, role: 'admin', email: b.admin.email })
