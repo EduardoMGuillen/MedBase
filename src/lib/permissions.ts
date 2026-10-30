@@ -42,6 +42,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: [
     'agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage',
     'staff.manage', 'settings.manage', 'reports.view', 'audit.view', 'schedule.manage', 'drugs.manage',
+    // AD5 (ronda 5): ve los crónicos y sus recordatorios, avisa y marca hechos (programar uno nuevo sigue siendo del médico)
+    'followups.view',
   ],
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',
