@@ -9,7 +9,7 @@ import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS } from '../lib/catalogs'
 import { defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
-import { tabCounts, type AlertGo } from '../lib/alerts'
+import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
 import { NoteColumns, NoteText } from '../components/NoteColumns'
 import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { DictateButton } from '../components/Dictate'
@@ -51,7 +51,11 @@ export default function InpatientFile() {
   const [admitting, setAdmitting] = useState(params.get('completar') === '1')
   const [consentFor, setConsentFor] = useState<string | null>(null)
   const wantsConsent = params.get('firmar')
-  const [tab, setTab] = useState<Tab>(({ hoja: 'sheet', notas: 'notes', signos: 'vitals', medicamentos: 'meds', enfermeria: 'nursing', anexos: 'annexes', examenes: 'labs' } as Record<string, Tab>)[params.get('tab') ?? ''] ?? 'sheet')
+  const tabParam = ({ hoja: 'sheet', notas: 'notes', signos: 'vitals', medicamentos: 'meds', enfermeria: 'nursing', anexos: 'annexes', examenes: 'labs' } as Record<string, Tab>)[params.get('tab') ?? '']
+  const [tab, setTab] = useState<Tab>(tabParam ?? 'sheet')
+  // RG1: el recorrido cambia de pestaña con ?tab= sin salir del expediente
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (tabParam) setTab(tabParam) }, [tabParam])
   // EN2: una alerta abre el lugar exacto: la dosis atrasada o el registro de signos
   const [focus, setFocus] = useState<{ dose?: { medId: string; at: string }; record?: boolean }>(() => ({
     dose: params.get('dosis') && params.get('hora') ? { medId: params.get('dosis')!, at: params.get('hora')! } : undefined, record: params.get('registrar') === '1' }))
@@ -96,6 +100,13 @@ export default function InpatientFile() {
     + file.epicrises.filter((e) => e.status !== 'voided').length
   const pendingAuth = open && file.authorizations.find((a) => a.template === 'hospital' && a.status === 'pending')
   const counts = tabCounts(alerts)
+  // La pestaña queda en la URL: recargar, volver o el recorrido guiado regresan a ella
+  const selectTab = (k: Tab) => {
+    setTab(k)
+    const q = new URLSearchParams(params)
+    q.set('tab', TAB_PARAM[k])
+    setParams(q, { replace: true })
+  }
   const canCare = can('inpatient.orders') || can('inpatient.care')
   const go = (g: AlertGo) => {
     if ('action' in g) {
@@ -105,7 +116,7 @@ export default function InpatientFile() {
       return
     }
     setFocus({ dose: g.dose, record: g.record })
-    setTab(g.tab)
+    selectTab(g.tab)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   // EX1: la pestaña «Laboratorios» pasa a «Exámenes» (Laboratorio e Imagen y gabinete)
@@ -134,7 +145,7 @@ export default function InpatientFile() {
     <div className="page page--chart">
       <div className="sticky-top">
         <PatientHeader p={p} clinical link>
-          <Link className="btn btn--primary btn--sm" to={`${base}/expediente`}><FileText size={15} />Expediente completo</Link>
+          <Link className="btn btn--primary btn--sm" data-tour="expediente-completo" to={`${base}/expediente`}><FileText size={15} />Expediente completo</Link>
         </PatientHeader>
         <div className="hosp-bar">
           <span><b>{obs ? 'Observación' : bedLabel(b)}</b></span>
@@ -147,10 +158,10 @@ export default function InpatientFile() {
           {h.observationAt && <span className="badge badge--amber">Vino de observación ({dateTime(h.observationAt)})</span>}
           <span className="muted">{h.diagnoses.map((d) => d.label).join('; ')}</span>
         </div>
-        <div className="tabs tabs--scroll" role="tablist">
+        <div className="tabs tabs--scroll" role="tablist" data-tour="expediente-tabs">
           {tabs.map(([k, label]) => {
             const c = counts[k]
-            return <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}
+            return <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => selectTab(k)}>{label}
               {c && <span className={`tab-alert tab-alert--${c.level}`} aria-label={`${c.n} ${c.level === 'critical' ? 'críticas' : 'pendientes'}`}>{c.n}</span>}</button>
           })}
         </div>
@@ -308,7 +319,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
     : ref.getTime() === today.getTime() ? `Hoy, ${date(ref.toISOString(), { weekday: 'short', day: 'numeric', month: 'short' })}` : date(ref.toISOString(), { weekday: 'long', day: 'numeric', month: 'short' })
 
   return (
-    <section className="panel">
+    <section className="panel" data-tour="hoja-medicamentos">
       <div className="panel__head medsheet__head">
         <div><h2>Hoja de medicamentos</h2><p>Se llena sola con lo que el médico indica en sus notas. {care ? 'Toca una hora para registrar la dosis; queda con tu nombre y tu rol.' : 'Enfermería registra cada dosis.'}</p></div>
         <div className="medsheet__nav">
@@ -606,10 +617,10 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
           <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <p className="muted">{hasAdmission ? 'Las notas quedan en orden, de la más antigua a la más reciente. Procedimientos y egreso también son notas de evolución.' : 'Lo primero es la nota de ingreso, con las indicaciones de medicamentos.'}</p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {doctor && <button className="btn btn--primary" onClick={() => setWriting('note')}><NotebookPen size={16} />{hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso'}</button>}
+              {doctor && <button className="btn btn--primary" data-tour="nueva-evolucion" onClick={() => setWriting('note')}><NotebookPen size={16} />{hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso'}</button>}
               {doctor && <button className="btn btn--primary" onClick={() => setWriting('procedure')}><Syringe size={16} />Procedimiento</button>}
               <button className={`btn ${doctor ? 'btn--primary' : 'btn--soft'}`} onClick={() => { setAuthFor(undefined); setWriting('authorization') }}><FileSignature size={16} />Autorización quirúrgica</button>
-              {doctor && hasAdmission && !discharged && <button className="btn btn--primary" onClick={() => setWriting('discharge')}><LogOut size={16} />Egreso</button>}
+              {doctor && hasAdmission && !discharged && <button className="btn btn--primary" data-tour="egreso" onClick={() => setWriting('discharge')}><LogOut size={16} />Egreso</button>}
               {/* El consultorio no hospitaliza: refiere al paciente a otro centro */}
               {doctor && obs && (features(settings).hospital
                 ? <button className="btn btn--soft" onClick={() => setConverting(true)}><BedDouble size={16} />Pasar a hospitalización</button>
@@ -769,7 +780,7 @@ function PendingOrdersPanel({ file, reload }: { file: File; reload: () => void }
   const pending = pendingOrdersOf(file)
   if (file.hospitalization.status !== 'active') return null
   return (
-    <section className={`panel ${pending.length ? 'pending-orders' : ''}`}>
+    <section className={`panel ${pending.length ? 'pending-orders' : ''}`} data-tour="checklist">
       <div className="panel__head"><div><h2>Órdenes por revisar <span className="num" style={{ color: 'var(--faint)' }}>{pending.length}</span></h2>
         <p>{pending.length ? 'Marca cada orden cuando la hayas revisado; queda tu nombre y la hora.' : 'Todas las órdenes médicas están revisadas.'}</p></div></div>
       {pending.length > 0 && (
@@ -1165,7 +1176,7 @@ function NursingNotes({ file, reload }: { file: File; reload: () => void }) {
   return (
     <div className="hc">
       {write && (
-        <section className="panel">
+        <section className="panel" data-tour="nota-enfermeria">
           <div className="panel__head"><div><h2>Nueva nota de enfermería</h2><p>Se guarda con la fecha, la hora y tu nombre.</p></div>{text.trim() && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}</div>
           <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
             <textarea className="textarea" rows={3} value={text} onChange={(e) => setText(e.target.value)} aria-label="Nota de enfermería" placeholder="Estado del paciente, cuidados realizados, novedades del turno." />

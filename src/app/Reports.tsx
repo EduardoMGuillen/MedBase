@@ -41,7 +41,7 @@ export default function Reports() {
 
   return (
     <div className="page">
-      <PageHead title="Reportes" sub="Actividad e ingresos de la clínica. No incluye información clínica de pacientes."
+      <PageHead tour="reportes" title="Reportes" sub="Actividad e ingresos de la clínica. No incluye información clínica de pacientes."
         actions={<>
           <div className="segmented" role="radiogroup" aria-label="Periodo">
             {PRESETS.map((p) => <button key={p.days} role="radio" aria-checked={days === p.days} onClick={() => { setReport(null); setDays(p.days) }}>{p.label}</button>)}

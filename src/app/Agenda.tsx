@@ -81,7 +81,7 @@ export default function Agenda() {
   return (
     <div className="page">
       <PageHead title="Agenda" sub={loaded?.key === key ? `${list.length} citas en este periodo` : 'Cargando citas…'}
-        actions={can('agenda.manage') && <button className="btn btn--primary" onClick={() => setCreating(localISODate(view === 'day' ? cursor : new Date()))}><Plus size={17} />Nueva cita</button>} />
+        actions={can('agenda.manage') && <button className="btn btn--primary" data-tour="nueva-cita" onClick={() => setCreating(localISODate(view === 'day' ? cursor : new Date()))}><Plus size={17} />Nueva cita</button>} />
 
       <div className="cal-bar">
         <div className="cal-bar__nav">

@@ -52,14 +52,14 @@ export default function WaitingRoom() {
       <PageHead title="Consulta externa" sub="Pacientes de hoy: con cita y los que llegan sin cita. Avanzan de izquierda a derecha."
         actions={<>
           {user?.role === 'doctor' && multiDoctor && (
-            <div className="segmented" role="radiogroup" aria-label="Qué pacientes ver">
+            <div className="segmented" role="radiogroup" aria-label="Qué pacientes ver" data-tour="alcance">
               <button role="radio" aria-checked={mine} onClick={() => setMine(true)}>Mis pacientes</button>
               <button role="radio" aria-checked={!mine} onClick={() => setMine(false)}>Toda la clínica</button>
             </div>
           )}
-          {can('checkin.manage') && <button className="btn btn--primary" onClick={() => setWalkIn(true)}><UserPlus size={17} />Paciente sin cita</button>}
+          {can('checkin.manage') && <button className="btn btn--primary" data-tour="sin-cita" onClick={() => setWalkIn(true)}><UserPlus size={17} />Paciente sin cita</button>}
         </>} />
-      <div className="grid-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))' }}>
+      <div className="grid-2" data-tour="sala-espera" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))' }}>
         {lanes.map((lane) => (
           <section key={lane.title} className="panel">
             <div className="panel__head"><div><h2>{lane.title} <span className="num" style={{ color: 'var(--faint)' }}>{lane.list.length}</span></h2><p>{lane.hint}</p></div></div>

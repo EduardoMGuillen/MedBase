@@ -77,7 +77,7 @@ export default function Billing() {
       <PageHead title="Caja" sub="Cobra en el momento, antes o después de la atención. Aquí ves lo cobrado y los saldos pendientes."
         actions={<button className="btn btn--primary" data-tour="nuevo-cobro" onClick={() => setCharging({})}><Plus size={16} />Nuevo cobro</button>} />
 
-      <div className="tabs tabs--sticky" role="tablist">
+      <div className="tabs tabs--sticky" role="tablist" data-tour="caja-tabs">
         <button className="tab" role="tab" aria-selected={tab === 'today'} onClick={() => switchTab('today')}>Cobrado hoy</button>
         {(balances?.length ?? 0) > 0 && <button className="tab" role="tab" aria-selected={tab === 'balances'} onClick={() => switchTab('balances')}>Saldos pendientes ({balances!.length})</button>}
         <button className="tab" role="tab" aria-selected={tab === 'history'} onClick={() => switchTab('history')}>Historial</button>

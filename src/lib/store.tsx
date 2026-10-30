@@ -327,6 +327,10 @@ function useStoreValue() {
     /** El médico titular terminó o saltó el asistente de primer ingreso. */
     /** El recorrido de primer ingreso ya se vio (terminado o saltado). Sin aviso: no interrumpe. */
     finishTour: () => api('/me/tour', { method: 'POST' }).catch(() => null),
+    /** RG1: guarda si terminó, saltó o pausó un recorrido (y en qué paso), y refresca la sesión. */
+    saveTour: async (key: string, state: 'done' | 'skipped' | 'paused', step = 0) => {
+      try { await api('/me/tour', { body: { key, state, step } }); setSession(await api<Session>('/auth/me')) } catch { /* sin conexión: se vuelve a ofrecer */ }
+    },
     finishSetup: () => run(() => api<ClinicSettings>('/settings/setup-done', { method: 'POST' }), 'Listo. Tu consultorio está configurado.'),
     convertToClinic: (b: { admin: { name: string; email: string }; assistants: Record<string, 'reception' | 'nurse'> }) =>
       run(() => api<{ settings: ClinicSettings; admin: Staff; password: string }>('/settings/convert-to-clinic', { body: b })),

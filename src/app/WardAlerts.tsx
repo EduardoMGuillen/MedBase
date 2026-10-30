@@ -36,7 +36,7 @@ export function WardAlerts() {
     .filter((r) => r.alerts.length)
     .sort((a, b) => LEVEL_RANK[a.alerts[0].level] - LEVEL_RANK[b.alerts[0].level] || a.alerts[0].since - b.alerts[0].since)
   return (
-    <section className="panel ward-alerts">
+    <section className="panel ward-alerts" data-tour="pendientes">
       <div className="panel__head"><div><h2>Pendientes por paciente</h2><p>Internados y en observación, por prioridad y hora. Toca la acción para ir al lugar exacto.</p></div></div>
       {rows.length ? <div className="ward-alerts__list">{rows.map(({ f, alerts }) => {
         const h = f.hospitalization

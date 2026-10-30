@@ -33,7 +33,7 @@ export default function Inpatients() {
   return (
     <div className="page">
       <PageHead title="Hospitalizados" sub={`${occupied}/${shown.length} camas`}
-        actions={can('inpatient.orders') && <button className="btn btn--primary" onClick={() => setAdmitting({})}><Plus size={17} />Ingresar paciente</button>} />
+        actions={can('inpatient.orders') && <button className="btn btn--primary" data-tour="ingresar" onClick={() => setAdmitting({})}><Plus size={17} />Ingresar paciente</button>} />
 
       {waiting.length > 0 && (
         <section className="panel" style={{ marginBottom: 16 }}>

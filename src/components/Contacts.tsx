@@ -13,7 +13,7 @@ export function ContactsEditor({ value, onChange }: { value: ClinicContact[]; on
   const only = (i: number, key: 'primary' | 'whatsapp') => onChange(value.map((c, j) => ({ ...c, [key]: j === i ? !c[key] || key === 'primary' : false })))
   const add = () => onChange([...value, { id: `c${Date.now().toString(36)}`, number: '', label: '', type: 'whatsapp', primary: !value.length }])
   return (
-    <div className="contacts">
+    <div className="contacts" data-tour="contactos">
       {value.map((c, i) => (
         <div key={c.id} className="contacts__row">
           <label className="field"><span>Número</span><input className="input num" inputMode="tel" value={c.number} onChange={(e) => set(i, { number: formatPhone(e.target.value) })} placeholder="2232-7710" /></label>

@@ -1,17 +1,18 @@
 import { Fragment, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, BedDouble, BellRing, Building2, CalendarDays, ChevronDown, Eye, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, SlidersHorizontal, Stethoscope, UserCog,
+  BarChart3, BedDouble, BellRing, Building2, CalendarDays, ChevronDown, CircleHelp, Compass, Eye, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, SlidersHorizontal, Stethoscope, UserCog,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
 import { SearchPalette } from '../components/Search'
-import { Tour } from '../components/Tour'
+import { Tour, TourResume, type TourEnd } from '../components/Tour'
 import { useStore } from '../lib/store'
 import { features, ROLE_LABEL, VIEW_LABEL, viewsOf, type Permission } from '../lib/permissions'
 import { ViewSwitch } from '../components/ViewSwitch'
 import { cap, localISODate, sameDay } from '../lib/format'
-import { tourFor } from '../lib/tours'
+import { miniTourFor, tourFor, tourKey, type TourCtx, type TourStep } from '../lib/tours'
+import { stayPath } from '../lib/inpatient'
 
 const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean; group?: string; doctor?: boolean }[] = [
   { to: '/app', label: 'Inicio', icon: House, end: true, perm: undefined },
@@ -33,20 +34,52 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
 ]
 
 export default function AppShell() {
-  const { user, can, signOut, appointments, followups, refresh, settings, pendingOrders = [], inpatients, finishTour } = useStore()
+  const { user, can, signOut, appointments, followups, refresh, settings, pendingOrders = [], inpatients, saveTour } = useStore()
   const nav = useNavigate()
   const loc = useLocation()
   const [open, setOpen] = useState(false)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setOpen(false), [loc.pathname])
-  const [manualTour, setManualTour] = useState(false)
-  const [tourClosed, setTourClosed] = useState(false)
-  // Mi cuenta ofrece repetir el recorrido
+  // RG1: recorrido del rol activo (o mini-recorrido de la pantalla), «¿continuar?», menú del teléfono y el «?»
+  const [tour, setTour] = useState<{ steps: TourStep[]; start: number; mini?: string } | null>(null)
+  const [resume, setResume] = useState<number | null>(null)
+  const [tourMenu, setTourMenu] = useState(false)
+  const [help, setHelp] = useState(false)
+  const key = user ? tourKey(user.role, settings.kind ?? 'clinic') : ''
+  const steps = user ? tourFor(user.role, settings.kind ?? 'clinic', { observationEnabled: settings.observationEnabled }) : []
+  const saved = user?.prefs?.tours?.[key]
+  const startMain = (manual: boolean) => {
+    setHelp(false)
+    if (saved?.state === 'paused' && saved.step > 0) setResume(saved.step)
+    else if (manual || !saved) setTour({ steps, start: 0 })
+  }
+  // Sola la primera vez con este rol (o, si lo dejó a la mitad, la pregunta de continuar), una vez por sesión
   useEffect(() => {
-    const start = () => { setTourClosed(false); setManualTour(true) }
+    if (!user || !key || loc.pathname === '/app/bienvenida' || (!saved && user.prefs?.tourDoneAt)) return
+    if (saved && saved.state !== 'paused') return
+    const flag = `clinara.recorrido.${user.id}.${key}`
+    try { if (sessionStorage.getItem(flag)) return; sessionStorage.setItem(flag, '1') } catch { /* sin almacenamiento */ }
+    startMain(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, key])
+  // Mi configuración también ofrece «Ver el recorrido»
+  useEffect(() => {
+    const start = () => startMain(true)
     window.addEventListener('start-tour', start)
     return () => window.removeEventListener('start-tour', start)
-  }, [])
+  })
+  const endTour = (end: TourEnd, step: number) => {
+    if (!tour?.mini) saveTour(key, end, step)
+    setTour(null)
+    setTourMenu(false)
+  }
+  const mini = miniTourFor(loc.pathname, (t) => !!document.querySelector(`[data-tour="${t}"]`))
+  // Pacientes de la demo para los pasos que los necesitan: un hospitalizado (o en observación) y la nota que lo ingresó
+  // (de preferencia uno con órdenes sin revisar: así enfermería ve sus alertas y el checklist)
+  const flagged = new Set(pendingOrders.map((x) => x.hospitalizationId))
+  const stays = [...inpatients].sort((a, b) => Number(flagged.has(b.id)) - Number(flagged.has(a.id)) || Number(b.kind === 'hospital') - Number(a.kind === 'hospital'))
+  const withNote = stays.find((h) => h.consultationId)
+  const ctx: TourCtx = { stay: stays[0] ? stayPath(stays[0]) : undefined, consultNote: withNote ? `/app/nota/${withNote.consultationId}` : undefined }
 
   // La sala de espera cambia por acciones de otros: se sincroniza cada 30 segundos
   useEffect(() => {
@@ -62,9 +95,7 @@ export default function AppShell() {
   const newOrders = pendingOrders.reduce((s, x) => s + x.pending, 0)
   const inObservation = inpatients.filter((h) => h.kind === 'observation').length
   const platform = user.role === 'superadmin'
-  // Recorrido de primer ingreso; el titular de un consultorio nuevo primero termina la configuración
-  const touring = !tourClosed && (manualTour || (!user.prefs?.tourDoneAt && loc.pathname !== '/app/bienvenida'))
-  const closeTour = () => { setTourClosed(true); setManualTour(false); if (!user.prefs?.tourDoneAt) finishTour() }
+  const touring = !!tour
   const f = features(settings)
   // En un consultorio el médico titular también cobra y administra: "Administración" es "Mi consultorio". El médico tiene
   // «Cobrar» debajo de Recetas (MC7). Enfermería ya no cobra (AD9).
@@ -108,7 +139,7 @@ export default function AppShell() {
 
   return (
     <div className="shell">
-      <aside className={`side ${open || touring ? 'open' : ''}`} aria-label="Navegación principal">
+      <aside className={`side ${open || tourMenu ? 'open' : ''}`} aria-label="Navegación principal">
         <div className="side__clinic">
           <Logo size={28} />
           <small>{platform ? 'Plataforma' : f.office ? 'Consultorio' : 'Clínica'}</small>
@@ -158,11 +189,23 @@ export default function AppShell() {
               <Search size={16} /><span>Buscar paciente</span><kbd>Ctrl K</kbd>
             </button>
           )}
+          <div className="help-menu">
+            <button className="icon-btn" data-tour="help" aria-label="Ayuda: ver el recorrido" title="Ver el recorrido" aria-expanded={help}
+              onClick={() => (mini ? setHelp(!help) : startMain(true))}><CircleHelp size={20} /></button>
+            {help && mini && (
+              <div className="help-menu__pop" role="menu">
+                <button role="menuitem" onClick={() => { setHelp(false); setTour({ steps: mini.steps, start: 0, mini: mini.title }) }}><CircleHelp size={15} />{mini.title}</button>
+                <button role="menuitem" onClick={() => startMain(true)}><Compass size={15} />Ver el recorrido completo</button>
+              </div>
+            )}
+          </div>
         </div>
         <Outlet />
       </div>
       <SearchPalette />
-      {touring && <Tour steps={tourFor(user.role, settings.kind ?? 'clinic', { observationEnabled: settings.observationEnabled })} onClose={closeTour} />}
+      {tour && <Tour key={`${tour.mini ?? key}-${tour.start}`} steps={tour.steps} start={tour.start} title={tour.mini} ctx={ctx} onClose={endTour} onMenu={(o) => setTourMenu(o && window.innerWidth < 900)} />}
+      {resume != null && <TourResume step={resume} total={steps.length} onLater={() => setResume(null)}
+        onContinue={() => { setTour({ steps, start: Math.min(resume, steps.length - 1) }); setResume(null) }} onRestart={() => { setTour({ steps, start: 0 }); setResume(null) }} />}
     </div>
   )
 }

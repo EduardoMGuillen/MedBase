@@ -24,11 +24,11 @@ export default function ConsultNote() {
       <div className="page-head no-print">
         <Link className="btn btn--ghost" to={`/app/pacientes/${p.id}`}><ChevronLeft size={16} />Expediente de {p.firstName}</Link>
         <div className="page-head__actions">
-          {can('consult.write') && <Link className="btn btn--ghost" to={`/app/constancia/${c.id}`}><FileBadge size={16} />Generar constancia</Link>}
+          {can('consult.write') && <Link className="btn btn--ghost" data-tour="constancia" to={`/app/constancia/${c.id}`}><FileBadge size={16} />Generar constancia</Link>}
           <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir nota</button>
         </div>
       </div>
-      <article className="rx-sheet clinical-note">
+      <article className="rx-sheet clinical-note" data-tour="nota-consulta">
         <header className="rx-sheet__head">
           <div className="rx-sheet__doc">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}><LogoMark size={24} /><b>{settings.name}</b></div>

@@ -5,7 +5,8 @@ import type { Server } from 'node:http'
 import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
-import { tourFor } from '../src/lib/tours.js'
+import { miniTourFor, tourFor, tourKey } from '../src/lib/tours.js'
+import { PANTALLAS } from '../src/tours/index.js'
 
 let server: Server
 let sql: Sql
@@ -51,50 +52,76 @@ describe('recorrido de primer ingreso', () => {
   })
 })
 
-describe('pasos de cada perfil', () => {
-  test('recepción: agenda, llegadas, pacientes y caja; nada de hospitalización', () => {
+describe('RG1 recorridos por rol', () => {
+  test('recepción: por llegar, agendar, sala de espera, registrar, filtros, cobrar y recordatorios; nada clínico', () => {
     const t = targets('reception', 'clinic')
-    for (const x of ['nav:/app/agenda', 'nav:/app/consulta-externa', 'nav:/app/pacientes', 'nav:/app/caja', 'search']) assert.ok(t.includes(x), x)
-    assert.ok(!t.includes('nav:/app/hospitalizados'))
+    for (const x of ['por-llegar', 'nueva-cita', 'sala-espera', 'nuevo-paciente', 'filtros', 'nuevo-cobro', 'recordatorios']) assert.ok(t.includes(x), x)
+    assert.ok(t.length >= 8 && t.length <= 12, String(t.length))
+    assert.ok(!t.includes('hoja-medicamentos'))
   })
 
-  test('enfermería: preclínica y hospitalizados, sin agenda', () => {
+  test('enfermería: pendientes, preclínica, alertas, órdenes, medicamentos, signos, exámenes y notas; sin cobrar ni agendar', () => {
     const t = targets('nurse', 'clinic')
-    assert.ok(t.includes('nav:/app/consulta-externa'))
-    assert.ok(t.includes('nav:/app/hospitalizados'))
-    assert.ok(!t.includes('nav:/app/agenda'))
+    for (const x of ['pendientes', 'sala-espera', 'alertas', 'checklist', 'hoja-medicamentos', 'signos-registrar', 'bandeja-examenes', 'nota-enfermeria']) assert.ok(t.includes(x), x)
+    assert.ok(t.length >= 8 && t.length <= 10, String(t.length))
+    assert.ok(!t.includes('nueva-cita') && !t.includes('nuevo-cobro'))
   })
 
-  test('administración: configuración, personal y reportes, sin pantallas clínicas', () => {
-    const t = targets('admin', 'clinic')
-    for (const x of ['nav:/app/configuracion', 'nav:/app/personal', 'nav:/app/reportes']) assert.ok(t.includes(x), x)
-    assert.ok(!t.includes('nav:/app/hospitalizados'))
-    assert.ok(!t.includes('nav:/app/seguimientos'))
-  })
-
-  test('el médico de consultorio cobra y administra; sin hospitalización ni observación si la apagó', () => {
-    const t = targets('doctor', 'office', { observationEnabled: false })
-    for (const x of ['nav:/app/caja', 'nav:/app/configuracion', 'nav:/app/personal']) assert.ok(t.includes(x), x)
-    assert.ok(!t.includes('nav:/app/hospitalizados'))
-    assert.ok(!t.includes('nav:/app/observacion'))
-    assert.ok(targets('doctor', 'office').includes('nav:/app/observacion'))
-  })
-
-  test('el médico de clínica atiende y evoluciona, pero no configura', () => {
+  test('médico de clínica: de la sala de espera al egreso y Mi configuración; no configura la clínica', () => {
     const t = targets('doctor', 'clinic')
-    for (const x of ['nav:/app/consulta-externa', 'nav:/app/hospitalizados', 'nav:/app/seguimientos', 'nav:/app/recetas']) assert.ok(t.includes(x), x)
-    assert.ok(!t.includes('nav:/app/configuracion'))
+    for (const x of ['alcance', 'sala-espera', 'nota-consulta', 'constancia', 'adenda', 'ingresar', 'nueva-evolucion', 'egreso', 'mi-config']) assert.ok(t.includes(x), x)
+    assert.ok(t.length >= 12 && t.length <= 15, String(t.length))
+    assert.ok(!t.includes('tab:servicios'))
   })
 
-  test('la administración de la plataforma sólo ve clínicas y su cuenta', () => {
-    assert.deepEqual(targets('superadmin', 'clinic').filter(Boolean), ['nav:/app', 'me'])
+  test('administración: configuración, contactos, servicios, pagos, horarios, camas, áreas, personal, bitácora y reportes', () => {
+    const t = targets('admin', 'clinic')
+    for (const x of ['contactos', 'tab:servicios', 'tab:pagos', 'tab:horarios', 'tab:camas', 'tab:areas', 'tab:personal', 'tab:bitacora', 'reportes']) assert.ok(t.includes(x), x)
+    assert.ok(!t.includes('sala-espera') && !t.includes('nota-consulta'))
   })
 
-  test('cada perfil empieza con una bienvenida sin señalar nada y termina en su cuenta', () => {
-    for (const [role, kind] of [['reception', 'clinic'], ['nurse', 'clinic'], ['doctor', 'clinic'], ['admin', 'clinic'], ['doctor', 'office'], ['assistant', 'office'], ['superadmin', 'clinic']] as const) {
+  test('consultorio: uno combinado para las dos vistas del titular, con el cambio de vista; sin camas', () => {
+    assert.equal(tourKey('doctor', 'office'), 'consultorio')
+    assert.equal(tourKey('admin', 'office'), 'consultorio')
+    assert.equal(tourKey('admin', 'clinic'), 'administracion')
+    const doc = targets('doctor', 'office')
+    const adm = targets('admin', 'office')
+    assert.ok(doc.includes('vista') && adm.includes('vista'))
+    assert.ok(doc.includes('sala-espera') && !doc.includes('tab:personal'), 'vista de médico: lo clínico')
+    assert.ok(adm.includes('tab:personal') && adm.includes('reportes') && !adm.includes('sala-espera'), 'vista de administrador: lo administrativo')
+    assert.ok(new Set([...doc, ...adm]).size >= 10)
+    assert.ok(!doc.includes('ingresar') && !targets('doctor', 'office', { observationEnabled: false }).includes('nav:/app/observacion'))
+  })
+
+  test('cada recorrido empieza con una bienvenida y termina en el botón de ayuda (Ver el recorrido)', () => {
+    for (const [role, kind] of [['reception', 'clinic'], ['nurse', 'clinic'], ['doctor', 'clinic'], ['admin', 'clinic'], ['doctor', 'office'], ['admin', 'office'], ['assistant', 'office']] as const) {
       const t = tourFor(role, kind)
       assert.equal(t[0].target, undefined, role)
-      assert.equal(t.at(-1)!.target, 'me', role)
+      assert.equal(t.at(-1)!.target, 'help', role)
+      assert.ok(t.every((s) => s.title && s.body), `${role}: pasos con texto`)
     }
   })
+
+  test('mini-recorridos de 3 a 5 pasos en consulta, expediente, signos vitales y caja', () => {
+    for (const k of ['consulta', 'expediente', 'signos', 'cobro'] as const) assert.ok(PANTALLAS[k].steps.length >= 3 && PANTALLAS[k].steps.length <= 5, k)
+    assert.equal(miniTourFor('/app/consulta/abc', () => false), PANTALLAS.consulta)
+    assert.equal(miniTourFor('/app/hospitalizados/x', () => false), PANTALLAS.expediente)
+    assert.equal(miniTourFor('/app/observacion/x', (t) => t === 'signos-ultimo'), PANTALLAS.signos)
+    assert.equal(miniTourFor('/app/caja', () => false), PANTALLAS.cobro)
+    assert.equal(miniTourFor('/app/agenda', () => false), undefined)
+  })
+
+  test('el servidor recuerda por recorrido si lo terminó, lo saltó o en qué paso lo pausó', async () => {
+    const nurse = await as('crios@demo.clinara')
+    assert.equal((await nurse.post('/api/me/tour', { key: 'enfermeria', state: 'paused', step: 4 })).status, 200)
+    assert.deepEqual(pick((await nurse.get('/api/auth/me')).body.user.prefs.tours.enfermeria), { state: 'paused', step: 4 })
+    await nurse.post('/api/me/tour', { key: 'medico', state: 'skipped', step: 2 })
+    await nurse.post('/api/me/tour', { key: 'enfermeria', state: 'done', step: 9 })
+    const tours = (await nurse.get('/api/auth/me')).body.user.prefs.tours
+    assert.deepEqual(pick(tours.enfermeria), { state: 'done', step: 0 })
+    assert.deepEqual(pick(tours.medico), { state: 'skipped', step: 0 })
+    assert.equal((await nurse.post('/api/me/tour', { key: 'Mal Nombre', state: 'done' })).status, 400)
+  })
 })
+
+const pick = (x: { state: string; step: number }) => ({ state: x.state, step: x.step })

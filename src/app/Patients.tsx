@@ -182,9 +182,9 @@ export default function Patients() {
   return (
     <div className="page">
       <PageHead title="Pacientes" sub={`${registered.length} expedientes en la clínica`}
-        actions={can('patients.manage') && <button className="btn btn--primary" onClick={() => setAdding(true)}><UserPlus size={17} />Registrar paciente</button>} />
+        actions={can('patients.manage') && <button className="btn btn--primary" data-tour="nuevo-paciente" onClick={() => setAdding(true)}><UserPlus size={17} />Registrar paciente</button>} />
 
-      <div className="lib-bar">
+      <div className="lib-bar" data-tour="filtros">
         <label className="suggest lib-bar__search">
           <Search size={17} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--faint)' }} />
           <input className="input" style={{ paddingLeft: 38 }} placeholder="Buscar por nombre, expediente o teléfono" value={q} onChange={(e) => setParam({ q: e.target.value })} aria-label="Buscar pacientes" />

@@ -26,9 +26,9 @@ export default function StaffPage() {
           <button className="btn btn--primary" onClick={() => setCreating(true)}><UserPlus size={17} />{office ? 'Agregar personal' : 'Nuevo usuario'}</button>
         </>} />
       <div className="tabs tabs--sticky" role="tablist">
-        <button className="tab" role="tab" aria-selected={tab === 'people'} onClick={() => setTab('people')}>Personal</button>
-        <button className="tab" role="tab" aria-selected={tab === 'roles'} onClick={() => setTab('roles')}>Permisos por rol</button>
-        <button className="tab" role="tab" aria-selected={tab === 'audit'} onClick={() => setTab('audit')}>Bitácora</button>
+        <button className="tab" role="tab" data-tour="tab:personal" aria-selected={tab === 'people'} onClick={() => setTab('people')}>Personal</button>
+        <button className="tab" role="tab" data-tour="tab:permisos" aria-selected={tab === 'roles'} onClick={() => setTab('roles')}>Permisos por rol</button>
+        <button className="tab" role="tab" data-tour="tab:bitacora" aria-selected={tab === 'audit'} onClick={() => setTab('audit')}>Bitácora</button>
       </div>
 
       {tab === 'people' && (

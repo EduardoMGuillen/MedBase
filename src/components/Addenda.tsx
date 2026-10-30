@@ -46,7 +46,7 @@ export function Addenda({ list, targetKind, targetId, canAdd, kinds = ['correcti
           <p className="addendum__text">{a.text}</p>
         </section>
       ))}
-      {canAdd && <button type="button" className="btn btn--ghost btn--sm no-print" onClick={() => setAdding(true)}><FilePlus2 size={14} />Agregar adenda</button>}
+      {canAdd && <button type="button" className="btn btn--ghost btn--sm no-print" data-tour="adenda" onClick={() => setAdding(true)}><FilePlus2 size={14} />Agregar adenda</button>}
       {adding && <AddAddendum targetKind={targetKind} targetId={targetId} kinds={kinds} prescriptionId={prescriptionId} onClose={() => setAdding(false)} onDone={() => { setAdding(false); onAdded() }} />}
     </div>
   )

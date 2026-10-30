@@ -95,13 +95,13 @@ export function VitalsSheet({ file, p, reload, autoRecord, onFocused }: { file: 
             </div>
             <label className="check-inline"><input type="checkbox" checked={pulse} onChange={(e) => setPulse(e.target.checked)} />Pulso sobre la curva</label>
           </div>
-          <div className="panel__body vs-trend__body">
+          <div className="panel__body vs-trend__body" data-tour="signos-curva">
             <ThermalCurve vitals={inRange} t0={t0} t1={t1} every={every} anchor={vitalsAnchor(file)} stayStart={stayStart} band={band} missed={missed} pulse={pulse}
               antipyretics={antipyreticDoses(file).filter((x) => { const t = new Date(x.at).getTime(); return t >= t0 && t <= t1 })} who={(id) => staffById(id)?.name ?? ''}
               series={SERIES} ageYears={ageYears} />
           </div>
         </section>
-        <section className="panel vs-full">
+        <section className="panel vs-full" data-tour="signos-tabla">
           <details>
             <summary><span><b>Ver tabla completa</b><small className="muted">{inRange.length} toma{inRange.length === 1 ? '' : 's'} en el rango elegido. Las más recientes a la derecha; las anuladas, tachadas.</small></span><ChevronDown size={18} aria-hidden /></summary>
             <VitalsTable vitals={inRange} ageYears={ageYears} band={band} who={(id) => shortStaff(staffById(id)?.name)} onVoid={record ? setVoiding : undefined} />
@@ -109,7 +109,7 @@ export function VitalsSheet({ file, p, reload, autoRecord, onFocused }: { file: 
         </section>
       </>)}
       {/* Fijo abajo a la derecha: siempre a mano, también en el celular */}
-      {record && <button className="btn btn--primary vs-fab" onClick={() => setRecording(true)}><Plus size={18} />Registrar signos</button>}
+      {record && <button className="btn btn--primary vs-fab" data-tour="signos-registrar" onClick={() => setRecording(true)}><Plus size={18} />Registrar signos</button>}
       {recording && <RecordVitalsModal file={file} p={p} onClose={() => setRecording(false)} onSaved={() => { setRecording(false); reload() }} />}
       {voiding && <VoidVitalsModal v={voiding} onClose={() => setVoiding(null)} onSaved={() => { setVoiding(null); reload() }} />}
     </div>
@@ -136,7 +136,7 @@ function LatestStrip({ vitals, ageYears, band, who }: { vitals: Vitals[]; ageYea
     { key: 'glucose', label: 'Glucometría', unit: 'mg/dL' }, { key: 'painScale', label: 'Dolor', unit: '/10' }, { key: 'weightKg', label: 'Peso', unit: 'kg' },
   ]
   return (
-    <div className="vs-latest">
+    <div className="vs-latest" data-tour="signos-ultimo">
       {cards.map((c) => {
         const last = [...list].reverse().find((v) => v[c.key] != null)
         if (!last && !c.always) return null

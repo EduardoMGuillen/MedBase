@@ -26,8 +26,8 @@ export default function Followups() {
   return (
     <div className="page">
       <PageHead title="Crónicos y seguimientos" sub="Pacientes que deben volver: controles de crónicos, recordatorios de exámenes y procedimientos programados."
-        actions={can('followups.manage') && <button className="btn btn--primary" onClick={() => setAdding(true)}><Plus size={17} />Programar seguimiento</button>} />
-      <div className="alert-strip alert-strip--calm" style={{ marginBottom: 16 }}>
+        actions={can('followups.manage') && <button className="btn btn--primary" data-tour="programar-seguimiento" onClick={() => setAdding(true)}><Plus size={17} />Programar seguimiento</button>} />
+      <div className="alert-strip alert-strip--calm" style={{ marginBottom: 16 }} data-tour="recordatorios">
         <Smartphone size={18} style={{ flex: 'none' }} />
         Los avisos se registran solos: una semana antes, un día antes y el día del control. Ese día recepción lo ve en su inicio para llamar al paciente. El WhatsApp sigue en simulación hasta conectar la línea de la clínica.
       </div>

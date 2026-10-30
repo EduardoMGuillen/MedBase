@@ -274,9 +274,20 @@ export function createApp(opts: AppOptions) {
   })
 
   // Recorrido de primer ingreso: terminado o saltado, no vuelve a aparecer en ningún equipo
+  /**
+   * RG1: estado de cada recorrido del usuario (por rol activo o tipo de cuenta): terminado, saltado o pausado en un
+   * paso, para no volver a iniciarlo solo y ofrecer «¿Continuar donde lo dejaste?». Sin datos, marca el de antes.
+   */
   app.post('/api/me/tour', auth, async (req, res) => {
-    await sql.run(`UPDATE staff SET prefs = jsonb_set(COALESCE(NULLIF(prefs, ''), '{}')::jsonb, '{tourDoneAt}', to_jsonb(?::text))::text WHERE id = ?`,
-      [new Date().toISOString(), userOf(req).id])
+    const b = parse(z.object({ key: z.string().regex(/^[a-z-]{2,30}$/), state: z.enum(['done', 'skipped', 'paused']), step: z.number().int().min(0).max(60).default(0) }).partial(), req.body ?? {})
+    const at = new Date().toISOString()
+    if (!b.key || !b.state) {
+      await sql.run(`UPDATE staff SET prefs = jsonb_set(COALESCE(NULLIF(prefs, ''), '{}')::jsonb, '{tourDoneAt}', to_jsonb(?::text))::text WHERE id = ?`, [at, userOf(req).id])
+      return res.json({ ok: true })
+    }
+    const entry = JSON.stringify({ state: b.state, step: b.state === 'paused' ? b.step ?? 0 : 0, at })
+    await sql.run(`UPDATE staff SET prefs = jsonb_set(jsonb_set(COALESCE(NULLIF(prefs, ''), '{}')::jsonb, '{tours}', COALESCE(NULLIF(prefs, '')::jsonb -> 'tours', '{}'::jsonb)),
+      ARRAY['tours', ?::text], ?::jsonb)::text WHERE id = ?`, [b.key, entry, userOf(req).id])
     res.json({ ok: true })
   })
 

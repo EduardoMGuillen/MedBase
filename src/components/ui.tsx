@@ -53,9 +53,9 @@ export function Loading({ label = 'Cargando' }: { label?: string }) {
   return <div className="loading" role="status"><span className="loading__dot" />{label}</div>
 }
 
-export function PageHead({ title, sub, actions }: { title: string; sub?: ReactNode; actions?: ReactNode }) {
+export function PageHead({ title, sub, actions, tour }: { title: string; sub?: ReactNode; actions?: ReactNode; tour?: string }) {
   return (
-    <div className="page-head">
+    <div className="page-head" data-tour={tour}>
       <div>
         <h1>{title}</h1>
         {sub && <p>{sub}</p>}

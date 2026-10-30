@@ -401,3 +401,13 @@ tr.clickable { cursor: pointer; }
 .tray-row .badge { justify-self: end; white-space: nowrap; }
 .hc .panel__head h2 svg { display: inline-block; margin-right: 6px; }
 .hc .panel__head h2 { display: flex; align-items: center; }
+
+/* RG1: cerrar (pausa) el recorrido y el «?» de la barra superior con su menú */
+.tour__card { padding-right: 40px; }
+.tour__close { position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; }
+.help-menu { position: relative; margin-left: 8px; }
+.help-menu__pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 250px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow-lift); padding: 6px; display: grid; }
+.help-menu__pop button { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 0; background: none; border-radius: 8px; font: inherit; font-size: 14px; text-align: left; cursor: pointer; color: var(--petrol); }
+.help-menu__pop button:hover, .help-menu__pop button:focus-visible { background: var(--ward); }
+@media (max-width: 560px) { .tour__card { width: calc(100vw - 24px) !important; } .tour__foot { flex-wrap: wrap; } }

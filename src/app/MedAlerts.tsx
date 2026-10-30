@@ -27,7 +27,7 @@ export function AlertBar({ alerts, onGo }: { alerts: FileAlert[]; onGo: (go: Ale
   const rest = alerts.filter((a) => a.level !== 'critical')
   const top: AlertLevel = critical.length ? 'critical' : rest.some((a) => a.level === 'pending') ? 'pending' : 'info'
   return (
-    <section className={`alert-bar alert-bar--${top}`} aria-label="Alertas del expediente">
+    <section className={`alert-bar alert-bar--${top}`} aria-label="Alertas del expediente" data-tour="alertas">
       <button type="button" className="alert-bar__head" aria-expanded={open} onClick={() => setOpen(!open)} disabled={!rest.length}>
         <b>{alertSummary(alerts)}</b>
         {rest.length > 0 && <span className="alert-bar__more">{open ? 'Ocultar' : 'Ver todo'}<ChevronDown size={15} className={open ? 'is-flipped' : ''} /></span>}

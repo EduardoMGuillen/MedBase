@@ -17,7 +17,7 @@ export function ArrivalsPanel({ doctorId, onArrive, id }: { doctorId?: string; o
   const list = pendingArrivals(appointments, now, doctorId)
   const checkIn = can('checkin.manage') && !!onArrive
   return (
-    <section className="panel" id={id}>
+    <section className="panel" id={id} data-tour="por-llegar">
       <div className="panel__head">
         <div><h2>Por llegar hoy <span className="num" style={{ color: 'var(--faint)' }}>{list.length}</span></h2>
           <p>{list.length ? `${doctorId ? 'Tus pacientes' : 'Pacientes'} con cita hoy que todavía no llegan.` : 'Todos los pacientes con cita hoy ya llegaron.'}</p></div>

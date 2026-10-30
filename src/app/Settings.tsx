@@ -23,13 +23,13 @@ export default function Settings() {
     <div className="page">
       <PageHead title="Configuración" sub={f.office ? 'Datos que aparecen en tus recetas y recibos, precios, tu horario y lo que usa tu consultorio.' : 'Datos que aparecen en recetas y recibos, precios, horarios de atención y camas.'} />
       <div className="tabs tabs--sticky" role="tablist">
-        <button className="tab" role="tab" aria-selected={tab === 'clinic'} onClick={() => setTab('clinic')}>{f.office ? 'Consultorio' : 'Clínica'}</button>
-        <button className="tab" role="tab" aria-selected={tab === 'services'} onClick={() => setTab('services')}>Servicios y precios</button>
-        <button className="tab" role="tab" aria-selected={tab === 'payments'} onClick={() => setTab('payments')}>Formas de pago</button>
-        <button className="tab" role="tab" aria-selected={tab === 'areas'} onClick={() => setTab('areas')}>Áreas de servicio</button>
-        <button className="tab" role="tab" aria-selected={tab === 'schedules'} onClick={() => setTab('schedules')}>{f.office ? 'Mi horario' : 'Horarios de médicos'}</button>
-        {f.hospital && <button className="tab" role="tab" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}>Camas</button>}
-        <button className="tab" role="tab" aria-selected={tab === 'drugs'} onClick={() => setTab('drugs')}>Vademécum</button>
+        <button className="tab" role="tab" data-tour="tab:clinica" aria-selected={tab === 'clinic'} onClick={() => setTab('clinic')}>{f.office ? 'Consultorio' : 'Clínica'}</button>
+        <button className="tab" role="tab" data-tour="tab:servicios" aria-selected={tab === 'services'} onClick={() => setTab('services')}>Servicios y precios</button>
+        <button className="tab" role="tab" data-tour="tab:pagos" aria-selected={tab === 'payments'} onClick={() => setTab('payments')}>Formas de pago</button>
+        <button className="tab" role="tab" data-tour="tab:areas" aria-selected={tab === 'areas'} onClick={() => setTab('areas')}>Áreas de servicio</button>
+        <button className="tab" role="tab" data-tour="tab:horarios" aria-selected={tab === 'schedules'} onClick={() => setTab('schedules')}>{f.office ? 'Mi horario' : 'Horarios de médicos'}</button>
+        {f.hospital && <button className="tab" role="tab" data-tour="tab:camas" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}>Camas</button>}
+        <button className="tab" role="tab" data-tour="tab:vademecum" aria-selected={tab === 'drugs'} onClick={() => setTab('drugs')}>Vademécum</button>
       </div>
       {tab === 'clinic' && <ClinicForm />}
       {tab === 'services' && <Services />}

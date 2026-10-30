@@ -228,7 +228,7 @@ export default function Consultation() {
             </div>}
           </section>
 
-          <section className="panel csec">
+          <section className="panel csec" data-tour="consulta-motivo">
             <div className="panel__head"><h2>Motivo de consulta</h2></div>
             <div className="panel__body">
               <textarea className="textarea textarea--sm" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Motivo de consulta" />
@@ -275,7 +275,7 @@ export default function Consultation() {
                 <OrderSetPicker where="consultation" patientId={p.id} onApply={applySet} />
                 <SaveSetButton items={[...indications.map((text) => ({ text })), ...meds.map((m) => ({ med: rxToSetMed(m) })), ...exams.map((e) => ({ exam: e }))]} />
               </div>
-              <div className="plan-block">
+              <div className="plan-block" data-tour="indicaciones">
                 <h3 className="plan-block__title">Indicaciones y plan</h3>
                 {indications.length ? (
                   <ol className="orders">
@@ -316,7 +316,7 @@ export default function Consultation() {
                 )}
               </div>
 
-              <div className="plan-block">
+              <div className="plan-block" data-tour="medicamentos">
                 <h3 className="plan-block__title">Medicamentos <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'van a la hoja de medicamentos' : 'van a la receta'}</span></h3>
                 {admitting && <p className="muted" style={{ fontSize: 13.5 }}>Con ingreso, los días son opcionales: sin días el medicamento queda «hasta nueva orden».</p>}
                 <MedicationList items={meds} patient={p} editing={medForm?.index ?? null} requireDuration={ambulatory}
@@ -382,7 +382,7 @@ export default function Consultation() {
               <p style={{ fontSize: 14, color: 'var(--muted)' }}>
                 {missing.length ? `Para firmar falta ${missing.join(', ')}.` : `Al firmar se cierra la cita${rxCount ? ` y se emite una receta con ${rxCount} medicamento${rxCount > 1 ? 's' : ''}` : ''}${admit && !hospitalized ? ', se ingresa a hospitalización' : observe && !hospitalized ? ' e ingresa a observación' : ''}${inClinic.length ? `${ambulatory ? ', queda en observación para aplicarle ' : '; pasan a la hoja de medicamentos: '}${inClinic.map((m) => m.drug).join(', ')}` : ''}.`}
               </p>
-              <button className="btn btn--primary btn--lg" disabled={missing.length > 0 || signing} onClick={sign}>Firmar consulta{rxCount ? ' y receta' : ''}</button>
+              <button className="btn btn--primary btn--lg" data-tour="firmar" disabled={missing.length > 0 || signing} onClick={sign}>Firmar consulta{rxCount ? ' y receta' : ''}</button>
             </div>
           </section>
         </aside>
