@@ -130,14 +130,22 @@ export function flagOf(value: number, low?: number, high?: number): 'high' | 'lo
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 export const examKey = (name: string) => norm(name)
 
-/** Catálogo que ve el médico: el base y lo agregado por la clínica; favoritos primero. */
-export function examCatalog(clinicExams: { group: ExamGroup; name: string; id: string; active: boolean }[], favs: string[] = []): CatalogExam[] {
-  const all = [...EXAMS, ...clinicExams.filter((e) => e.active && !EXAMS.some((b) => examKey(b.name) === examKey(e.name))).map((e) => ({ group: e.group, name: e.name, clinicId: e.id }))]
+/**
+ * AD4 (ronda 5): catálogo que se ofrece al ordenar: los exámenes activos de la clínica, con los analitos, la región y el
+ * lado del examen de la lista fija del que vienen (aunque se haya renombrado). Mientras el catálogo no ha llegado del
+ * servidor, la lista fija. Favoritos primero.
+ */
+export function examCatalog(clinicExams: { group: ExamGroup; name: string; id: string; active: boolean; baseKey?: string }[], favs: string[] = []): CatalogExam[] {
+  const all: CatalogExam[] = !clinicExams.length ? EXAMS : clinicExams.filter((e) => e.active).map((e) => {
+    const base = e.baseKey ? EXAMS.find((b) => examKey(b.name) === e.baseKey) : undefined
+    return { ...(base ?? {}), group: e.group, name: e.name, clinicId: base ? undefined : e.id }
+  }).sort((a, b) => a.name.localeCompare(b.name, 'es'))
   const f = new Set(favs.map(examKey))
   return [...all.filter((e) => f.has(examKey(e.name))), ...all.filter((e) => !f.has(examKey(e.name)))]
 }
 
-export const findExam = (name: string) => EXAMS.find((e) => examKey(e.name) === examKey(name))
+/** Un examen por su nombre: en el catálogo dado (con lo de la lista fija) o en la lista fija. */
+export const findExam = (name: string, catalog: CatalogExam[] = EXAMS) => catalog.find((e) => examKey(e.name) === examKey(name)) ?? EXAMS.find((e) => examKey(e.name) === examKey(name))
 
 /** Texto de un examen en una orden: «Radiografía de rodilla, derecha» con su indicación. */
 export function examLine(e: Pick<ExamOrder, 'name' | 'region' | 'side'>) {

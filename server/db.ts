@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { groupsFromLimits } from '../src/lib/clinicalConfig.js'
+import { EXAMS, examKey } from '../src/lib/exams.js'
 import { randomUUID } from 'node:crypto'
 import {
   BEDS, CASE_BED, CASE_PATIENT_IDS, CASE_STAFF, DEFAULT_SETTINGS, DEMO_CLINICS, DOCTOR_SETUP, INPATIENT_PATIENTS, MAIN_CLINIC, PATIENTS, SECOND_CLINIC, SERVICES, STAFF,
@@ -14,7 +15,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '47'
+const SCHEMA_VERSION = '48'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -850,6 +851,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS duty_roster_active ON duty_roster (clinic_id, 
 -- v47 (ronda 5, AD1): umbrales críticos de laboratorio por grupo, con analitos propios, unidad y archivados. Los
 -- umbrales planos (critical_limits) pasan a los grupos sin cambiar números y se conservan sin editarse.
 ALTER TABLE clinics ADD COLUMN IF NOT EXISTS critical_groups TEXT;
+
+-- v48 (ronda 5, AD4): el catálogo de exámenes de cada clínica es la batería completa, editable por administración.
+-- La lista fija del código se copia a cada clínica (base_key la enlaza con sus analitos, región y lado); quitar un
+-- examen lo archiva. Los exámenes de la lista fija no tienen autor.
+ALTER TABLE exam_catalog
+  ADD COLUMN IF NOT EXISTS base_key TEXT,
+  ADD COLUMN IF NOT EXISTS archived_at TEXT,
+  ADD COLUMN IF NOT EXISTS archived_by TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TEXT,
+  ADD COLUMN IF NOT EXISTS updated_by TEXT;
+ALTER TABLE exam_catalog ALTER COLUMN created_by DROP NOT NULL;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -898,6 +910,7 @@ export function ensureDb(sql: Sql) {
       await migrateLabsToExams(q)
       await migrateOfficeOwners(q)
       await migrateCriticalGroups(q)
+      for (const c of await q.query('SELECT id FROM clinics')) await ensureExamCatalog(q, String(c.id))
       await markDemoClinics(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
@@ -1275,6 +1288,21 @@ export async function migrateBedSpecialties(q: Sql) {
 }
 
 /** v35 (AD1): el teléfono que tenía cada clínica pasa a ser su contacto principal. Idempotente. */
+/**
+ * v48 (AD4): la lista fija de exámenes pasa al catálogo de la clínica (sólo lo que falta, sin duplicar lo que la clínica
+ * ya había agregado con el mismo nombre). Se llama también al pedir el catálogo, para las clínicas nuevas.
+ */
+export async function ensureExamCatalog(q: Sql, clinicId: string) {
+  if (await q.one('SELECT 1 FROM exam_catalog WHERE clinic_id = ? AND base_key IS NOT NULL LIMIT 1', [clinicId])) return
+  const have = new Set((await q.query('SELECT norm_key FROM exam_catalog WHERE clinic_id = ?', [clinicId])).map((r) => String(r.norm_key)))
+  const now = new Date().toISOString()
+  for (const e of EXAMS) {
+    const key = examKey(e.name)
+    if (have.has(key)) await q.run('UPDATE exam_catalog SET base_key = ? WHERE clinic_id = ? AND norm_key = ? AND base_key IS NULL', [key, clinicId, key])
+    else await q.run('INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, base_key, active, created_by, created_at) VALUES (?,?,?,?,?,?,TRUE,NULL,?)', [randomUUID(), clinicId, e.group, e.name, key, key, now])
+  }
+}
+
 /** v47 (AD1): cada clínica recibe sus umbrales en grupos, con los mismos números que tenía. Sólo llena lo que falta. */
 export async function migrateCriticalGroups(q: Sql) {
   for (const c of await q.query('SELECT id, critical_limits FROM clinics WHERE critical_groups IS NULL')) {

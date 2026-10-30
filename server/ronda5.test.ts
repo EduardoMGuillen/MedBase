@@ -8,6 +8,7 @@ import { createSql, type Sql } from './sql.js'
 import { fileAlerts } from '../src/lib/alerts.js'
 import { bandOf } from '../src/lib/vitalsSheet.js'
 import { groupsFromLimits } from '../src/lib/clinicalConfig.js'
+import { EXAMS } from '../src/lib/exams.js'
 
 let server: Server
 let sql: Sql
@@ -237,5 +238,45 @@ describe('AD1 umbrales críticos por grupo', () => {
     assert.equal(res.status, 200, JSON.stringify(res.body))
     assert.equal(res.body.critical, true)
     assert.deepEqual(res.body.result.values.filter((v: any) => v.critical).map((v: any) => v.analyte), ['Hematocrito'])
+  })
+})
+
+describe('AD4 catálogo de exámenes de la clínica', () => {
+  test('empieza con la lista de antes; Roberto agrega, edita y archiva (en la bitácora); el médico no lo edita; en el consultorio el titular sí', async () => {
+    const admin = await as('admin@demo.clinara')
+    let cat = (await admin.get('/api/exams/catalog')).body.exams
+    for (const e of EXAMS) assert.ok(cat.some((c: any) => c.name === e.name && c.group === e.group && c.active), `falta ${e.name}`)
+    const add = await admin.post('/api/exams/catalog', { group: 'lab', name: 'Dímero D' })
+    assert.equal(add.status, 201, JSON.stringify(add.body))
+    assert.equal((await admin.post('/api/exams/catalog', { group: 'lab', name: 'dimero d' })).status, 409, 'sin duplicados')
+    assert.equal((await admin.patch(`/api/exams/catalog/${add.body.id}`, { name: 'Dímero D cuantitativo' })).status, 200)
+    assert.equal((await admin.patch(`/api/exams/catalog/${add.body.id}`, { active: false })).status, 200)
+    cat = (await admin.get('/api/exams/catalog')).body.exams
+    const d = cat.find((c: any) => c.id === add.body.id)
+    assert.equal(d.name, 'Dímero D cuantitativo')
+    assert.equal(d.active, false, 'archivado, no borrado')
+    assert.ok(d.archivedAt)
+    const log = ((await admin.get('/api/audit/mine')).body.rows ?? (await admin.get('/api/audit/mine')).body) as any[]
+    assert.ok(log.some((e) => /Agregó al catálogo de exámenes \(Laboratorio\): Dímero D$/.test(e.action)))
+    assert.ok(log.some((e) => /«Dímero D» → «Dímero D cuantitativo»/.test(e.action)))
+    assert.ok(log.some((e) => /Archivó del catálogo de exámenes: Dímero D cuantitativo/.test(e.action)))
+    // Archivar el hemograma no cambia los ya ordenados; un examen renombrado conserva sus valores de referencia
+    const hemo = cat.find((c: any) => c.name === 'Hemograma')
+    assert.equal((await admin.patch(`/api/exams/catalog/${hemo.id}`, { name: 'Hemograma completo' })).status, 200)
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
+    await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', exam: 'Control.', exams: [{ group: 'lab', name: 'Hemograma completo', priority: 'routine', place: 'clinic' }] })
+    const order = (await doc.get(`/api/inpatient/${stay.id}`)).body.exams.find((e: any) => e.name === 'Hemograma completo' && e.status === 'ordered')
+    const res = await nurse.post(`/api/exams/${order.id}/result`, { values: [{ analyte: 'Hemoglobina', value: '10' }] })
+    assert.equal(res.body.result.values[0].flag, 'low', 'el rango del hemograma sigue aplicando')
+    assert.equal((await admin.patch(`/api/exams/catalog/${hemo.id}`, { name: 'Hemograma' })).status, 200)
+    // El médico usa el catálogo pero no lo edita, ni por la API
+    assert.equal((await doc.get('/api/exams/catalog')).status, 200)
+    assert.equal((await doc.post('/api/exams/catalog', { group: 'lab', name: 'Ferritina' })).status, 403)
+    assert.equal((await doc.patch(`/api/exams/catalog/${hemo.id}`, { active: false })).status, 403)
+    const owner = await as('alopez@demo.clinara')
+    await owner.post('/api/me/view', { role: 'admin' })
+    assert.equal((await owner.post('/api/exams/catalog', { group: 'lab', name: 'Ferritina' })).status, 201)
   })
 })

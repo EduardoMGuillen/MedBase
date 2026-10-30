@@ -5,7 +5,8 @@ import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
 import { dateTime, inputDateTime, shortStaff } from '../lib/format'
-import { examLine, findExam, GROUP_LABEL, isPending, NEXT_ACTION, STATUS_LABEL } from '../lib/exams'
+import { examCatalog, examLine, findExam, GROUP_LABEL, isPending, NEXT_ACTION, STATUS_LABEL } from '../lib/exams'
+import { useExamCatalog } from '../lib/useExamCatalog'
 import { openFile, uploadLarge } from '../lib/files'
 import type { ExamGroup, ExamOrder } from '../lib/types'
 
@@ -102,7 +103,9 @@ export function ResultView({ e }: { e: ExamOrder }) {
 
 function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => void; onDone: () => void }) {
   const { notify } = useStore()
-  const analytes = findExam(e.name)?.analytes ?? []
+  // AD4: también si la clínica renombró el examen, sus valores con rango vienen del de la lista fija
+  const { exams: clinicExams } = useExamCatalog()
+  const analytes = findExam(e.name, examCatalog(clinicExams))?.analytes ?? []
   const [values, setValues] = useState<Record<string, string>>({})
   const [extra, setExtra] = useState<{ analyte: string; value: string; unit: string }[]>([])
   const [report, setReport] = useState('')

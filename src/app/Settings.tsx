@@ -7,6 +7,7 @@ import { drugProvider } from '../lib/drugProvider'
 import { normalize } from '../lib/patients'
 import { download, parseCsv, toCsv } from '../lib/csv'
 import { CriticalThresholds } from './CriticalThresholds'
+import { ExamCatalogAdmin } from './ExamCatalogAdmin'
 import { clinicWhatsapp, contactLine, date, fillTemplate, fullName, METHOD_LABEL, money } from '../lib/format'
 import { ContactsEditor } from '../components/Contacts'
 import type { Bed, ClinicDrug, ClinicSettings, PaymentMethod, Service, Staff } from '../lib/types'
@@ -14,7 +15,7 @@ import { ScheduleEditor } from './ScheduleEditor'
 import { Roster } from './Roster'
 import { features, hasRole } from '../lib/permissions'
 
-type Tab = 'clinic' | 'services' | 'payments' | 'areas' | 'schedules' | 'roster' | 'beds' | 'drugs'
+type Tab = 'clinic' | 'services' | 'payments' | 'areas' | 'exams' | 'schedules' | 'roster' | 'beds' | 'drugs'
 
 export default function Settings() {
   const [tab, setTab] = useState<Tab>('clinic')
@@ -28,6 +29,8 @@ export default function Settings() {
         <button className="tab" role="tab" data-tour="tab:servicios" aria-selected={tab === 'services'} onClick={() => setTab('services')}>Servicios y precios</button>
         <button className="tab" role="tab" data-tour="tab:pagos" aria-selected={tab === 'payments'} onClick={() => setTab('payments')}>Formas de pago</button>
         <button className="tab" role="tab" data-tour="tab:areas" aria-selected={tab === 'areas'} onClick={() => setTab('areas')}>Áreas de servicio</button>
+        {/* AD4 (ronda 5): la batería de exámenes de la clínica */}
+        <button className="tab" role="tab" data-tour="tab:examenes" aria-selected={tab === 'exams'} onClick={() => setTab('exams')}>Catálogo de exámenes</button>
         <button className="tab" role="tab" data-tour="tab:horarios" aria-selected={tab === 'schedules'} onClick={() => setTab('schedules')}>{f.office ? 'Mi horario' : 'Horarios de médicos'}</button>
         {/* AD3 (ronda 5): qué médico trabaja cada día; un consultorio tiene un solo médico */}
         {!f.office && <button className="tab" role="tab" data-tour="tab:turnos" aria-selected={tab === 'roster'} onClick={() => setTab('roster')}>Rol de turnos</button>}
@@ -38,6 +41,7 @@ export default function Settings() {
       {tab === 'services' && <Services />}
       {tab === 'payments' && <PaymentMethods />}
       {tab === 'areas' && <ServiceAreas />}
+      {tab === 'exams' && <ExamCatalogAdmin />}
       {tab === 'schedules' && <Schedules />}
       {tab === 'roster' && !f.office && <Roster />}
       {tab === 'beds' && f.hospital && <Beds />}

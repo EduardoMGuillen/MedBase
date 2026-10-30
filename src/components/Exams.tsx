@@ -16,6 +16,8 @@ const newExam = (group: ExamGroup, name: string): ExamInput => ({ group, name, p
  */
 export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInput[]; onChange: (v: ExamInput[]) => void; inStay?: boolean }) {
   const [picking, setPicking] = useState(false)
+  const { exams: clinicExams } = useExamCatalog()
+  const catalog = useMemo(() => examCatalog(clinicExams), [clinicExams])
   const set = (i: number, patch: Partial<ExamInput>) => onChange(value.map((e, j) => (j === i ? { ...e, ...patch } : e)))
   const groups: ExamGroup[] = ['lab', 'imaging']
   return (
@@ -27,7 +29,7 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
           <div key={g} className="exams-group">
             <h4>{g === 'lab' ? <FlaskConical size={15} /> : <ScanLine size={15} />}{GROUP_LABEL[g]} <span className="muted">({list.length})</span></h4>
             <ol className="exam-items">{list.map(({ e, i }) => {
-              const cat = findExam(e.name)
+              const cat = findExam(e.name, catalog)
               const needsRegion = cat?.region || (g === 'imaging' && !cat)
               return (
                 <li key={i} className={`exam-item${e.priority === 'urgent' ? ' exam-item--urgent' : ''}`}>
@@ -72,13 +74,14 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
  * del médico arriba y perfiles de un toque. Lo que no está se escribe y se puede guardar en el catálogo, eligiendo su grupo.
  */
 export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes' }: { current: ExamInput[]; onClose: () => void; onAdd: (list: ExamInput[]) => void; title?: string }) {
-  const { user, notify } = useStore()
+  const { user, notify, can } = useStore()
   const { exams: clinicExams, profiles, reload } = useExamCatalog()
   const [q, setQ] = useState('')
   const [group, setGroup] = useState<'' | ExamGroup>('')
   const [picked, setPicked] = useState<ExamInput[]>([])
   const [newGroup, setNewGroup] = useState<ExamGroup>('lab')
-  const [save, setSave] = useState(true)
+  // AD4: sólo administración agrega al catálogo de la clínica
+  const [save, setSave] = useState(can('settings.manage'))
   const favs = useMemo(() => user?.prefs?.favExams ?? [], [user?.prefs?.favExams])
   const catalog = useMemo(() => examCatalog(clinicExams, favs), [clinicExams, favs])
   const n = normalize(q)
@@ -139,7 +142,7 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
               <button type="button" role="radio" aria-checked={newGroup === 'lab'} onClick={() => setNewGroup('lab')}>Laboratorio</button>
               <button type="button" role="radio" aria-checked={newGroup === 'imaging'} onClick={() => setNewGroup('imaging')}>Imagen y gabinete</button>
             </div>
-            <label className="check-inline"><input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} />Guardar en el catálogo</label>
+            {can('settings.manage') && <label className="check-inline"><input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} />Guardar en el catálogo</label>}
             <button type="button" className="btn btn--soft btn--sm" onClick={addNew}><Plus size={14} />Agregar</button>
           </div>
         )}

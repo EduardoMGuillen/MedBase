@@ -599,7 +599,8 @@ export interface ExamOrder extends ExamInput {
 export interface ExamProfile { id: string; name: string; ownerId?: string; items: { group: ExamGroup; name: string }[] }
 
 /** Examen agregado al catálogo por la clínica. */
-export interface ClinicExam { id: string; group: ExamGroup; name: string; active: boolean; createdBy: string; createdAt: string }
+/** AD4 (ronda 5): examen del catálogo de la clínica (la lista fija se copió a cada clínica; `baseKey` la enlaza). */
+export interface ClinicExam { id: string; group: ExamGroup; name: string; active: boolean; baseKey?: string; createdBy?: string; createdAt: string; archivedAt?: string }
 
 /** AN1: adenda (addendum) de una nota firmada: corrección, información adicional o resultado posterior. Inmutable. */
 export interface Addendum {

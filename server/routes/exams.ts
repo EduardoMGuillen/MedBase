@@ -5,6 +5,7 @@ import { type Ctx, fail, parse, type Row } from '../http.js'
 import type { Sql } from '../sql.js'
 import { can } from '../../src/lib/permissions.js'
 import { areaFor, EXAMS, examKey, findExam, flagOf, FLOW, GROUP_LABEL, STATUS_LABEL } from '../../src/lib/exams.js'
+import { ensureExamCatalog } from '../db.js'
 import { criticalLimitsOf, DEFAULT_CRITICAL_GROUPS, isCritical, type CriticalGroup } from '../../src/lib/clinicalConfig.js'
 import type { ClinicExam, ExamInput, ExamOrder, ExamProfile, ExamResultValue, ExamStatus } from '../../src/lib/types.js'
 
@@ -20,6 +21,11 @@ export const examInput = z.object({
 })
 
 const j = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(String(v)) as T : fallback } catch { return fallback } }
+
+const toClinicExam = (r: Row): ClinicExam => ({
+  id: String(r.id), group: r.grp as ClinicExam['group'], name: String(r.name), active: Boolean(r.active), baseKey: r.base_key ? String(r.base_key) : undefined,
+  createdBy: r.created_by ? String(r.created_by) : undefined, createdAt: String(r.created_at), archivedAt: r.archived_at ? String(r.archived_at) : undefined,
+})
 
 export const toExamOrder = (r: Row, events: Row[] = []): ExamOrder => ({
   id: String(r.id), patientId: String(r.patient_id), consultationId: r.consultation_id ? String(r.consultation_id) : undefined,
@@ -85,35 +91,63 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     q.run('INSERT INTO exam_events (id, clinic_id, exam_id, status, by_id, at, note) VALUES (?,?,?,?,?,?,?)', [randomUUID(), cid, examId, status, by, at, note ?? null])
   const label = (r: Row) => `${GROUP_LABEL[r.grp as 'lab']}: ${r.name}${r.region ? ` de ${r.region}` : ''}`
 
-  // Catálogo de la clínica y perfiles (los base están en el código)
+  // AD4 (ronda 5): el catálogo de la clínica es la batería completa (activos y archivados) y los perfiles del médico
   app.get('/api/exams/catalog', auth, async (req, res) => {
     const cid = clinicOf(req)
     const user = userOf(req)
+    await ensureExamCatalog(sql, cid)
     const [catalog, profiles] = await Promise.all([
       sql.query('SELECT * FROM exam_catalog WHERE clinic_id = ? ORDER BY name', [cid]),
       sql.query('SELECT * FROM exam_profiles WHERE clinic_id = ? AND archived_at IS NULL AND (owner_id IS NULL OR owner_id = ?) ORDER BY name', [cid, user.id]),
     ])
     res.json({
-      exams: catalog.map((r): ClinicExam => ({ id: String(r.id), group: r.grp as ClinicExam['group'], name: String(r.name), active: Boolean(r.active), createdBy: String(r.created_by), createdAt: String(r.created_at) })),
+      exams: catalog.map(toClinicExam),
       profiles: profiles.map((r): ExamProfile => ({ id: String(r.id), name: String(r.name), ownerId: r.owner_id ? String(r.owner_id) : undefined, items: j(r.items, []) })),
     })
   })
 
-  app.post('/api/exams/catalog', auth, need('exams.order', 'settings.manage'), async (req, res) => {
-    const b = parse(z.object({ group: z.enum(['lab', 'imaging']), name: z.string().trim().min(2, 'Escribe el nombre del examen.').max(160) }), req.body)
+  // AD4 (ronda 5): sólo administración (en el consultorio, el titular en su vista de administrador) arma el catálogo.
+  // Quitar es archivar: lo ya ordenado en notas anteriores no cambia.
+  const catalogBody = z.object({ group: z.enum(['lab', 'imaging']), name: z.string().trim().min(2, 'Escribe el nombre del examen.').max(160) })
+  const catalogRow = async (cid: string, id: string) => (await sql.one('SELECT * FROM exam_catalog WHERE id = ? AND clinic_id = ?', [id, cid])) ?? fail(404, 'El examen no está en el catálogo.')
+  app.post('/api/exams/catalog', auth, need('settings.manage'), async (req, res) => {
+    const b = parse(catalogBody, req.body)
     const cid = clinicOf(req)
+    await ensureExamCatalog(sql, cid)
     const key = examKey(b.name)
-    const base = EXAMS.find((e) => examKey(e.name) === key)
-    if (base) fail(409, `${base.name} ya está en el catálogo (${GROUP_LABEL[base.group]}).`)
     const existing = await sql.one('SELECT * FROM exam_catalog WHERE clinic_id = ? AND norm_key = ?', [cid, key])
+    if (existing?.active) fail(409, `${existing.name} ya está en el catálogo (${GROUP_LABEL[existing.grp as 'lab']}).`)
+    const now = new Date().toISOString()
     if (existing) {
-      if (!existing.active) await sql.run('UPDATE exam_catalog SET active = TRUE WHERE id = ?', [String(existing.id)])
-      return res.json({ id: String(existing.id), group: existing.grp, name: existing.name, active: true })
+      await sql.run('UPDATE exam_catalog SET active = TRUE, archived_at = NULL, archived_by = NULL, grp = ?, updated_at = ?, updated_by = ? WHERE id = ?', [b.group, now, userOf(req).id, String(existing.id)])
+      await audit(userOf(req), `Volvió a agregar al catálogo de exámenes (${GROUP_LABEL[b.group]}): ${existing.name}`)
+      return res.json(toClinicExam((await catalogRow(cid, String(existing.id)))!))
     }
     const id = randomUUID()
-    await sql.run('INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, created_by, created_at) VALUES (?,?,?,?,?,?,?)', [id, cid, b.group, b.name, key, userOf(req).id, new Date().toISOString()])
+    await sql.run('INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, created_by, created_at) VALUES (?,?,?,?,?,?,?)', [id, cid, b.group, b.name, key, userOf(req).id, now])
     await audit(userOf(req), `Agregó al catálogo de exámenes (${GROUP_LABEL[b.group]}): ${b.name}`)
-    res.status(201).json({ id, group: b.group, name: b.name, active: true })
+    res.status(201).json(toClinicExam((await catalogRow(cid, id))!))
+  })
+  app.patch('/api/exams/catalog/:id', auth, need('settings.manage'), async (req, res) => {
+    const b = parse(catalogBody.partial().extend({ active: z.boolean().optional() }), req.body)
+    const cid = clinicOf(req)
+    const user = userOf(req)
+    const r = (await catalogRow(cid, String(req.params.id)))!
+    const name = b.name ?? String(r.name)
+    const key = examKey(name)
+    if (key !== r.norm_key && await sql.one('SELECT 1 FROM exam_catalog WHERE clinic_id = ? AND norm_key = ? AND id <> ?', [cid, key, String(r.id)])) fail(409, `Ya hay un examen «${name}» en el catálogo.`)
+    const now = new Date().toISOString()
+    const active = b.active ?? Boolean(r.active)
+    await sql.run(`UPDATE exam_catalog SET name = ?, norm_key = ?, grp = ?, active = ?, archived_at = ?, archived_by = ?, updated_at = ?, updated_by = ? WHERE id = ?`,
+      [name, key, b.group ?? r.grp, active, active ? null : r.archived_at ?? now, active ? null : r.archived_by ?? user.id, now, user.id, String(r.id)])
+    const what = [
+      b.name && b.name !== r.name && `«${r.name}» → «${b.name}»`,
+      b.group && b.group !== r.grp && `${GROUP_LABEL[r.grp as 'lab']} → ${GROUP_LABEL[b.group]}`,
+    ].filter(Boolean)
+    if (what.length) await audit(user, `Editó en el catálogo de exámenes: ${what.join('; ')}`)
+    if (b.active === false && r.active) await audit(user, `Archivó del catálogo de exámenes: ${name}`)
+    if (b.active === true && !r.active) await audit(user, `Restauró en el catálogo de exámenes: ${name}`)
+    res.json(toClinicExam((await catalogRow(cid, String(r.id)))!))
   })
 
   // Perfiles: el médico los suyos; administración los de la clínica
@@ -275,9 +309,12 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     for (const f of b.fileIds ?? []) if (!(await sql.one('SELECT 1 FROM attachments WHERE id = ? AND clinic_id = ? AND patient_id = ?', [f, cid, String(r!.patient_id)]))) fail(400, 'El archivo no corresponde a este paciente.')
     // AD1 (ronda 5): los umbrales de los grupos de la clínica (analitos propios incluidos)
     const limits = criticalLimitsOf((await settings(cid)).criticalGroups)
+    // AD4: si la clínica renombró un examen de la lista fija, sus analitos siguen viniendo de él
+    const linked = await sql.one('SELECT base_key FROM exam_catalog WHERE clinic_id = ? AND norm_key = ?', [cid, examKey(String(r!.name))])
+    const base = findExam(String(r!.name)) ?? (linked?.base_key ? EXAMS.find((e) => examKey(e.name) === linked.base_key) : undefined)
     const values: ExamResultValue[] = (b.values ?? []).map((v) => {
       const num = Number(v.value.replace(',', '.'))
-      const ref = findExam(String(r!.name))?.analytes?.find((x) => x.name === v.analyte)
+      const ref = base?.analytes?.find((x) => x.name === v.analyte)
       const low = v.low ?? ref?.low
       const high = v.high ?? ref?.high
       const critical = isCritical(limits, v.analyte, num)
