@@ -91,9 +91,10 @@ export default function FullRecord() {
   const epicrisis = currentEpicrisis(file)
   const sections: [string, string][] = [
     ['fr-hoja', obs ? 'Datos generales' : 'Hoja de hospitalización'],
+    // EN1: los signos vitales van antes de las notas de evolución, como en el expediente
+    ['fr-signos-0', `Hoja de signos vitales (${vitalPages.length} ${vitalPages.length === 1 ? 'hoja' : 'hojas'})`],
     ['fr-notas', `Notas de evolución (${entries.length})`],
     ...(!obs ? [['fr-enfermeria', `Notas de enfermería (${nursing.length})`] as [string, string]] : []),
-    ['fr-signos-0', `Hoja de signos vitales (${vitalPages.length} ${vitalPages.length === 1 ? 'hoja' : 'hojas'})`],
     ['fr-medicamentos', 'Hoja de medicamentos'],
     ['fr-laboratorios', `Exámenes (${(file.exams ?? []).filter((e) => e.status !== 'cancelled').length})`],
     ['fr-autorizaciones', `Anexos: autorizaciones (${auths.length + legacyAuths.length})`],
@@ -134,6 +135,19 @@ export default function FullRecord() {
           <p className="fr-allergy">Alergias: <b>{p.allergies.length ? p.allergies.join(', ') : 'Sin alergias conocidas'}</b>. Tipo de sangre: {p.bloodType ?? 'sin dato'}.</p>
         </>)}
 
+        {vitalPages.map(([a, b], i) => {
+          const takes = file.vitals.filter((v) => { const t = new Date(v.takenAt).getTime(); return t >= a && t < b }).sort((x, y) => x.takenAt.localeCompare(y.takenAt))
+          // La tabla se parte en bloques de 14 tomas para que quepa en la hoja carta
+          const blocks = Array.from({ length: Math.max(1, Math.ceil(takes.length / 14)) }, (_, k) => takes.slice(k * 14, k * 14 + 14))
+          return page(`fr-signos-${i}`, `Hoja de signos vitales · ${i + 1} de ${vitalPages.length}`, <>
+            <h2 className="fr-h">Hoja de signos vitales <small className="muted" style={{ fontWeight: 400, fontSize: 13 }}>{dm(new Date(a).toISOString()).slice(0, 10)} al {dm(new Date(b - 1).toISOString()).slice(0, 10)} · toma cada {vitalsEvery(file)} h</small></h2>
+            <ThermalCurve print vitals={takes} t0={a} t1={b} every={vitalsEvery(file)} anchor={vitalsAnchor(file)} stayStart={stayStart} band={band}
+              missed={missedTakes(file, now).filter((x) => x.getTime() >= a && x.getTime() < b)} antipyretics={antipyreticDoses(file).filter((x) => { const t = new Date(x.at).getTime(); return t >= a && t < b })} />
+            {takes.length ? blocks.map((list, k) => <VitalsTable key={k} print vitals={list} ageYears={p.birthDate ? yearsOld(p.birthDate) : undefined} band={band} who={(id) => shortStaff(staffById(id)?.name)} />)
+              : <p className="muted">Sin tomas en estos días.</p>}
+          </>, true)
+        })}
+
         {entries.length ? entries.map((e, i) => page(i === 0 ? 'fr-notas' : `fr-nota-${i}`, `Notas de evolución · ${i + 1} de ${entries.length}`, <>
           <div className="fr-note-head"><h2 className="fr-h">{e.title}</h2>
             <span>{e.kind === 'consult' && consult ? `${staffById(consult.consultation.doctorId)?.name} · ${dm(consult.consultation.date)}` : e.note ? `${who(e.note.authorId)} · ${dm(e.note.at)}` : e.legacy ? `${staffById(e.legacy.createdBy)?.name} · ${dm(e.legacy.createdAt)}` : ''}</span></div>
@@ -150,19 +164,6 @@ export default function FullRecord() {
             <div key={n.id} className="fr-nursing"><b>{dm(n.at)} · {shortStaff(staffById(n.authorId)?.name)}</b><p>{n.text}</p><PrintedAddenda list={file.addenda ?? []} id={n.id} /></div>
           )) : <p className="muted">Sin notas de enfermería.</p>}
         </>, true)}
-
-        {vitalPages.map(([a, b], i) => {
-          const takes = file.vitals.filter((v) => { const t = new Date(v.takenAt).getTime(); return t >= a && t < b }).sort((x, y) => x.takenAt.localeCompare(y.takenAt))
-          // La tabla se parte en bloques de 14 tomas para que quepa en la hoja carta
-          const blocks = Array.from({ length: Math.max(1, Math.ceil(takes.length / 14)) }, (_, k) => takes.slice(k * 14, k * 14 + 14))
-          return page(`fr-signos-${i}`, `Hoja de signos vitales · ${i + 1} de ${vitalPages.length}`, <>
-            <h2 className="fr-h">Hoja de signos vitales <small className="muted" style={{ fontWeight: 400, fontSize: 13 }}>{dm(new Date(a).toISOString()).slice(0, 10)} al {dm(new Date(b - 1).toISOString()).slice(0, 10)} · toma cada {vitalsEvery(file)} h</small></h2>
-            <ThermalCurve print vitals={takes} t0={a} t1={b} every={vitalsEvery(file)} anchor={vitalsAnchor(file)} stayStart={stayStart} band={band}
-              missed={missedTakes(file, now).filter((x) => x.getTime() >= a && x.getTime() < b)} antipyretics={antipyreticDoses(file).filter((x) => { const t = new Date(x.at).getTime(); return t >= a && t < b })} />
-            {takes.length ? blocks.map((list, k) => <VitalsTable key={k} print vitals={list} ageYears={p.birthDate ? yearsOld(p.birthDate) : undefined} band={band} who={(id) => shortStaff(staffById(id)?.name)} />)
-              : <p className="muted">Sin tomas en estos días.</p>}
-          </>, true)
-        })}
 
         {page('fr-medicamentos', 'Hoja de medicamentos', <>
           <h2 className="fr-h">Hoja de medicamentos</h2>

@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowDown, ArrowRight, ArrowUp, Plus, Thermometer, X } from 'lucide-react'
+import { ChevronDown, Plus, Thermometer, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
 import { VitalsFields } from '../components/VitalsFields'
 import { inputDateTime, shortStaff } from '../lib/format'
 import { yearsOld } from '../lib/inpatient'
-import { parseDecimal, VITALS, vitalLevel, type VitalKey } from '../lib/vitals'
+import { clinicalRange, IMPOSSIBLE, parseDecimal, VITALS, vitalLevel, type VitalKey, type VitalLevel } from '../lib/vitals'
 import { EMPTY_VITALS, FIELDS, fieldIssue, vitalNumber, type VitalsForm } from '../lib/vitalsForm'
 import { activeVitals, antipyreticDoses, bandOf, expectedTakes, frequencyFromOrders, missedTakes, tempClass, VITALS_FREQUENCIES, vitalsAnchor, vitalsEvery, type TempBand } from '../lib/vitalsSheet'
 import { useNow } from '../lib/hooks'
@@ -72,41 +72,87 @@ export function VitalsSheet({ file, p, reload, autoRecord, onFocused }: { file: 
     <div className="hc vs">
       <section className="panel">
         <div className="panel__head vs__head">
-          <div><h2>Signos vitales</h2><p>Curva térmica arriba; los demás signos abajo. Cada toma queda con su autor y no se edita: se anula con motivo.</p></div>
-          {record && <button className="btn btn--primary" onClick={() => setRecording(true)}><Plus size={16} />Registrar signos vitales</button>}
+          <div><h2>Signos vitales</h2><p>Último registro de cada signo. Cada toma queda con su autor y no se edita: se anula con motivo.</p></div>
         </div>
-        <div className="panel__body vs__bar">
-          <label className="vs__every"><span>Toma cada</span>
-            {can('inpatient.orders') && open
-              ? <select className="select" value={every} onChange={(e) => setEvery(Number(e.target.value))} aria-label="Frecuencia de toma">{VITALS_FREQUENCIES.map((n) => <option key={n} value={n}>{n} h</option>)}</select>
-              : <b>{every} h</b>}
-            <small className="muted">{source}</small></label>
-          <div className="segmented" role="radiogroup" aria-label="Rango de la curva">
-            {RANGES.map(([k, label]) => <button key={k} role="radio" aria-checked={range === k} onClick={() => setRange(k)}>{label}</button>)}
-          </div>
-          <label className="check-inline"><input type="checkbox" checked={pulse} onChange={(e) => setPulse(e.target.checked)} />Mostrar pulso (FC)</label>
-        </div>
+        {all.length
+          ? <LatestStrip vitals={all} ageYears={ageYears} band={band} who={(id) => shortStaff(staffById(id)?.name)} />
+          : <div className="empty vs__empty"><Thermometer size={26} /><p>Aún no hay signos vitales registrados.</p></div>}
       </section>
 
-      {!all.length ? (
-        <section className="panel"><div className="empty vs__empty"><Thermometer size={26} /><p>Aún no hay signos vitales registrados.</p>
-          {record && <button className="btn btn--primary" onClick={() => setRecording(true)}><Plus size={16} />Registrar signos vitales</button>}</div></section>
-      ) : (<>
+      {all.length > 0 && (<>
         <section className="panel">
-          <div className="panel__head"><div><h2>Curva térmica</h2><p>Banda normal {band.low.toFixed(1)} a {band.high.toFixed(1)} °C. Toca un punto para ver el detalle.</p></div></div>
-          <div className="panel__body">
+          <div className="panel__head vs-trend__head">
+            <div><h2>Curva térmica y tendencias</h2><p>Todas las gráficas comparten la misma escala de tiempo. Toca un punto para ver el detalle.</p></div>
+          </div>
+          <div className="panel__body vs__bar">
+            <label className="vs__every"><span>Toma cada</span>
+              {can('inpatient.orders') && open
+                ? <select className="select" value={every} onChange={(e) => setEvery(Number(e.target.value))} aria-label="Frecuencia de toma">{VITALS_FREQUENCIES.map((n) => <option key={n} value={n}>{n} h</option>)}</select>
+                : <b>{every} h</b>}
+              <small className="muted">{source}</small></label>
+            <div className="segmented" role="radiogroup" aria-label="Rango de la curva">
+              {RANGES.map(([k, label]) => <button key={k} role="radio" aria-checked={range === k} onClick={() => setRange(k)}>{label}</button>)}
+            </div>
+            <label className="check-inline"><input type="checkbox" checked={pulse} onChange={(e) => setPulse(e.target.checked)} />Pulso sobre la curva</label>
+          </div>
+          <div className="panel__body vs-trend__body">
             <ThermalCurve vitals={inRange} t0={t0} t1={t1} every={every} anchor={vitalsAnchor(file)} stayStart={stayStart} band={band} missed={missed} pulse={pulse}
-              antipyretics={antipyreticDoses(file).filter((x) => { const t = new Date(x.at).getTime(); return t >= t0 && t <= t1 })} who={(id) => staffById(id)?.name ?? ''} />
+              antipyretics={antipyreticDoses(file).filter((x) => { const t = new Date(x.at).getTime(); return t >= t0 && t <= t1 })} who={(id) => staffById(id)?.name ?? ''}
+              series={SERIES} ageYears={ageYears} />
           </div>
         </section>
-        <VitalsCards vitals={inRange.length ? inRange : all} ageYears={ageYears} />
-        <section className="panel">
-          <div className="panel__head"><div><h2>Hoja de signos vitales</h2><p>Las tomas más recientes a la derecha. Valores fuera de rango en color; las anuladas, tachadas.</p></div></div>
-          <VitalsTable vitals={inRange} ageYears={ageYears} band={band} who={(id) => shortStaff(staffById(id)?.name)} onVoid={record ? setVoiding : undefined} />
+        <section className="panel vs-full">
+          <details>
+            <summary><span><b>Ver tabla completa</b><small className="muted">{inRange.length} toma{inRange.length === 1 ? '' : 's'} en el rango elegido. Las más recientes a la derecha; las anuladas, tachadas.</small></span><ChevronDown size={18} aria-hidden /></summary>
+            <VitalsTable vitals={inRange} ageYears={ageYears} band={band} who={(id) => shortStaff(staffById(id)?.name)} onVoid={record ? setVoiding : undefined} />
+          </details>
         </section>
       </>)}
+      {/* Fijo abajo a la derecha: siempre a mano, también en el celular */}
+      {record && <button className="btn btn--primary vs-fab" onClick={() => setRecording(true)}><Plus size={18} />Registrar signos</button>}
       {recording && <RecordVitalsModal file={file} p={p} onClose={() => setRecording(false)} onSaved={() => { setRecording(false); reload() }} />}
       {voiding && <VoidVitalsModal v={voiding} onClose={() => setVoiding(null)} onSaved={() => { setVoiding(null); reload() }} />}
+    </div>
+  )
+}
+
+/** Signos de las minigráficas, en el orden de la hoja. */
+type Series = { key: VitalKey; second?: VitalKey; label: string; unit: string }
+const SERIES: Series[] = [
+  { key: 'systolic', second: 'diastolic', label: 'PA', unit: 'mmHg' }, { key: 'heartRate', label: 'FC', unit: 'lpm' }, { key: 'respRate', label: 'FR', unit: 'rpm' },
+  { key: 'spo2', label: 'SatO₂', unit: '%' }, { key: 'glucose', label: 'Glucometría', unit: 'mg/dL' }, { key: 'painScale', label: 'Dolor', unit: '0–10' },
+]
+const worst = (levels: VitalLevel[]) => levels.reduce((a, b) => (a === 'error' || b === 'error' ? 'error' : a === 'warn' || b === 'warn' ? 'warn' : 'ok'), 'ok' as VitalLevel)
+
+/**
+ * EN1: franja con el último registro de cada signo: valor grande, unidad pequeña, hora y quién lo tomó. Sólo lleva
+ * color lo que está fuera de rango. En el celular, dos columnas.
+ */
+function LatestStrip({ vitals, ageYears, band, who }: { vitals: Vitals[]; ageYears?: number; band: TempBand; who: (id: string) => string }) {
+  const list = activeVitals(vitals)
+  const cards: (Series & { always?: boolean })[] = [
+    { key: 'temperature', label: 'Temperatura', unit: '°C', always: true }, { key: 'systolic', second: 'diastolic', label: 'Presión arterial', unit: 'mmHg', always: true },
+    { key: 'heartRate', label: 'Frec. cardíaca', unit: 'lpm', always: true }, { key: 'respRate', label: 'Frec. respiratoria', unit: 'rpm' }, { key: 'spo2', label: 'Saturación O₂', unit: '%' },
+    { key: 'glucose', label: 'Glucometría', unit: 'mg/dL' }, { key: 'painScale', label: 'Dolor', unit: '/10' }, { key: 'weightKg', label: 'Peso', unit: 'kg' },
+  ]
+  return (
+    <div className="vs-latest">
+      {cards.map((c) => {
+        const last = [...list].reverse().find((v) => v[c.key] != null)
+        if (!last && !c.always) return null
+        const tone = !last ? 'ok' : c.key === 'temperature'
+          ? ({ fever: 'error', hypo: 'cold', normal: 'ok' } as const)[tempClass(last.temperature!, band)]
+          : worst([c.key, c.second].filter((k): k is VitalKey => !!k && last[k] != null).map((k) => vitalLevel(k, last[k]!, ageYears)))
+        return (
+          <article key={c.key} className={`vs-last vs-last--${tone}`}>
+            <span className="vs-last__label">{c.label}</span>
+            {last ? (<>
+              <span className="vs-last__value"><b>{fmt(c.key, last[c.key]!)}{c.second && last[c.second] != null ? `/${last[c.second]}` : ''}</b><small>{c.unit}</small></span>
+              <span className="vs-last__when">{hm(last.takenAt)} · {dmy(last.takenAt)}{last.source === 'preclinic' ? ' · Preclínica' : ''}<br />{who(last.takenBy)}</span>
+            </>) : <span className="vs-last__value"><b className="muted">—</b></span>}
+          </article>
+        )
+      })}
     </div>
   )
 }
@@ -116,9 +162,11 @@ export function VitalsSheet({ file, p, reload, autoRecord, onFocused }: { file: 
  * estancia arriba y la cuadrícula según la frecuencia de toma. Fiebre: triángulo rojo; hipotermia: cuadrado azul; con
  * el valor escrito. Con `print`, en blanco y negro: la banda en gris y la fiebre y la hipotermia con su símbolo y letra.
  */
-export function ThermalCurve({ vitals, t0, t1, every, anchor, stayStart, band, missed = [], antipyretics = [], pulse = false, print = false, who }: {
+export function ThermalCurve({ vitals, t0, t1, every, anchor, stayStart, band, missed = [], antipyretics = [], pulse = false, print = false, who, series = [], ageYears }: {
   vitals: Vitals[]; t0: number; t1: number; every: number; anchor?: number; stayStart: number; band: TempBand; missed?: Date[]
   antipyretics?: ReturnType<typeof antipyreticDoses>; pulse?: boolean; print?: boolean; who?: (id: string) => string
+  /** EN1: minigráficas debajo de la curva, con su misma escala de tiempo (se desplazan juntas en el celular). */
+  series?: Series[]; ageYears?: number
 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(900)
@@ -136,11 +184,11 @@ export function ThermalCurve({ vitals, t0, t1, every, anchor, stayStart, band, m
 
   const hours = (t1 - t0) / HOUR
   const minPx = hours <= 30 ? 26 : hours <= 80 ? 11 : hours <= 180 ? 5.5 : 4
-  const PL = 46
-  const PR = pulse ? 46 : 16
-  const PT = 34
+  const PL = print ? 46 : 58
+  const PR = pulse ? 46 : print ? 16 : 22
+  const PT = print ? 34 : 40
   const PB = 40
-  const plotH = print ? 210 : 260
+  const plotH = print ? 210 : 250
   const W = print ? 700 : Math.max(width, Math.round(hours * minPx) + PL + PR)
   const pxh = (W - PL - PR) / hours
   const H = PT + plotH + PB
@@ -155,7 +203,8 @@ export function ThermalCurve({ vitals, t0, t1, every, anchor, stayStart, band, m
   const dayN = (d: number) => Math.round((d - dayStart(stayStart)) / DAY) + 1
   const c = print
     ? { band: '#e6e6e6', grid: '#d4d4d4', minor: '#ececec', day: '#9a9a9a', line: '#000', fever: '#000', hypo: '#000', text: '#000', pulse: '#555', amber: '#000' }
-    : { band: 'var(--vs-band)', grid: 'var(--line)', minor: 'var(--line-soft)', day: 'var(--faint)', line: 'var(--ink)', fever: 'var(--red-ink)', hypo: '#1d5fd1', text: 'var(--muted)', pulse: '#0f8a6e', amber: 'var(--amber-ink)' }
+    : { band: 'var(--vs-band)', grid: 'var(--line-soft)', minor: 'var(--vs-minor)', day: 'var(--line)', line: 'var(--ink)', fever: 'var(--red-ink)', hypo: '#1d5fd1', text: 'var(--muted)', pulse: '#0f8a6e', amber: 'var(--amber-ink)' }
+  const fs = print ? 11 : 12
   const path = (pts: [number, number][]) => pts.map(([a, b], i) => `${i ? 'L' : 'M'}${a.toFixed(1)},${b.toFixed(1)}`).join(' ')
 
   return (
@@ -166,18 +215,19 @@ export function ThermalCurve({ vitals, t0, t1, every, anchor, stayStart, band, m
             {/* Banda normal */}
             <rect x={PL} y={y(band.high)} width={W - PL - PR} height={y(band.low) - y(band.high)} fill={c.band} />
             {/* Líneas cada 0.5 °C, con número en cada grado */}
-            {Array.from({ length: 17 }, (_, i) => 34 + i * 0.5).map((t) => (
+            {/* En pantalla sólo los grados enteros, suaves; la impresa conserva la cuadrícula cada 0.5 */}
+            {Array.from({ length: 17 }, (_, i) => 34 + i * 0.5).filter((t) => print || Number.isInteger(t)).map((t) => (
               <g key={t}>
                 <line x1={PL} x2={W - PR} y1={y(t)} y2={y(t)} stroke={Number.isInteger(t) ? c.grid : c.minor} strokeWidth={Number.isInteger(t) ? 1 : 0.7} />
-                {Number.isInteger(t) && <text x={PL - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill={c.text}>{t}°</text>}
+                {Number.isInteger(t) && <text x={PL - 10} y={y(t) + 4} textAnchor="end" fontSize={fs} fill={c.text}>{t}°</text>}
               </g>
             ))}
-            {[band.low, band.high].map((t) => <line key={t} x1={PL} x2={W - PR} y1={y(t)} y2={y(t)} stroke={c.day} strokeWidth={1} strokeDasharray="4 3" />)}
+            {print && [band.low, band.high].map((t) => <line key={t} x1={PL} x2={W - PR} y1={y(t)} y2={y(t)} stroke={c.day} strokeWidth={1} strokeDasharray="4 3" />)}
             {/* Cuadrícula de la frecuencia de toma y horas */}
             {slots.map((t) => (
               <g key={t}>
                 <line x1={x(t)} x2={x(t)} y1={PT} y2={PT + plotH} stroke={c.minor} strokeWidth={0.8} />
-                {pxh * every >= 24 && <text x={x(t)} y={PT + plotH + 14} textAnchor="middle" fontSize={10} fill={c.text}>{hm(t).slice(0, 2)}</text>}
+                {pxh * every >= 24 && <text x={x(t)} y={PT + plotH + 16} textAnchor="middle" fontSize={fs - 1} fill={c.text}>{hm(t).slice(0, 2)}</text>}
               </g>
             ))}
             {/* Días de estancia */}
@@ -187,8 +237,8 @@ export function ThermalCurve({ vitals, t0, t1, every, anchor, stayStart, band, m
               const n = dayN(d)
               return (
                 <g key={d}>
-                  <line x1={x(d)} x2={x(d)} y1={PT - 6} y2={PT + plotH} stroke={c.day} strokeWidth={1.2} />
-                  {b - a > 40 && <text x={(a + b) / 2} y={PT - 12} textAnchor="middle" fontSize={11.5} fontWeight={650} fill={c.text}>{b - a > 110 ? `Día ${n} · ${dmy(d)}` : b - a > 60 ? `Día ${n}` : `D${n}`}</text>}
+                  <line x1={x(d)} x2={x(d)} y1={PT - 6} y2={PT + plotH} stroke={c.day} strokeWidth={print ? 1.2 : 1} />
+                  {b - a > 40 && <text x={(a + b) / 2} y={PT - 14} textAnchor="middle" fontSize={fs} fontWeight={650} fill={c.text}>{b - a > 110 ? `Día ${n} · ${dmy(d)}` : b - a > 60 ? `Día ${n}` : `D${n}`}</text>}
                 </g>
               )
             })}
@@ -215,7 +265,7 @@ export function ThermalCurve({ vitals, t0, t1, every, anchor, stayStart, band, m
               </g>
             ))}
             {/* Temperatura: la línea y cada punto en su hora real */}
-            <path d={path(temps.map((v) => [x(new Date(v.takenAt).getTime()), y(v.temperature!)]))} fill="none" stroke={c.line} strokeWidth={2} strokeLinejoin="round" />
+            <path d={path(temps.map((v) => [x(new Date(v.takenAt).getTime()), y(v.temperature!)]))} fill="none" stroke={c.line} strokeWidth={print ? 2 : 2.2} strokeLinejoin="round" strokeLinecap="round" />
             {temps.map((v) => {
               const px = x(new Date(v.takenAt).getTime())
               const py = y(v.temperature!)
@@ -229,13 +279,14 @@ export function ThermalCurve({ vitals, t0, t1, every, anchor, stayStart, band, m
                     : k === 'hypo' ? <rect x={px - 5} y={py - 5} width={10} height={10} fill={print ? '#fff' : c.hypo} stroke={c.hypo} strokeWidth={print ? 1.6 : 0} />
                       : <circle cx={px} cy={py} r={4} fill={print ? '#fff' : 'var(--paper)'} stroke={c.line} strokeWidth={2} />}
                   {k !== 'normal' && (
-                    <text x={px + 8} y={k === 'fever' ? py - 6 : py + 14} fontSize={11.5} fontWeight={700} fill={k === 'fever' ? c.fever : c.hypo}>
+                    <text x={px + 8} y={k === 'fever' ? py - 7 : py + 15} fontSize={fs} fontWeight={700} fill={k === 'fever' ? c.fever : c.hypo}>
                       {print ? `${k === 'fever' ? 'F' : 'H'} ` : ''}{v.temperature!.toFixed(1)}</text>
                   )}
                 </g>
               )
             })}
           </svg>
+          {series.map((sr) => <MiniChart key={sr.key} s={sr} vitals={vitals} x={x} t0={t0} t1={t1} W={W} PL={PL} PR={PR} days={days} ageYears={ageYears} who={who} />)}
           {sel && !print && (
             <div className="vs-tip" style={{ left: Math.min(Math.max(sel.x, 90), W - 90), top: Math.max(sel.y - 64, 2) }} role="status">
               <b>{sel.v.temperature!.toFixed(1)} °C</b>
@@ -247,8 +298,9 @@ export function ThermalCurve({ vitals, t0, t1, every, anchor, stayStart, band, m
       </div>
       <div className="vs-legend" aria-hidden="true">
         <span><i className="vs-legend__band" />Normal {band.low.toFixed(1)}–{band.high.toFixed(1)} °C</span>
-        <span><i className="vs-legend__fever" />Fiebre (≥ {band.high.toFixed(1)}){print ? ', F' : ''}</span>
-        <span><i className="vs-legend__hypo" />Hipotermia (&lt; {band.low.toFixed(1)}){print ? ', H' : ''}</span>
+        <span><i className="vs-legend__fever" />Fiebre{print ? ` (≥ ${band.high.toFixed(1)}), F` : ''}</span>
+        <span><i className="vs-legend__hypo" />Hipotermia{print ? ` (< ${band.low.toFixed(1)}), H` : ''}</span>
+        {series.length > 0 && <span><i className="vs-legend__out" />Fuera de rango</span>}
         {missed.length > 0 && <span><i className="vs-legend__missed" />Toma pendiente{print ? ' (P)' : ''}</span>}
         {antipyretics.length > 0 && <span><i className="vs-legend__anti">A</i>Antipirético</span>}
         {pulse && <span><i className="vs-legend__pulse" />Pulso (lpm, eje derecho)</span>}
@@ -257,55 +309,57 @@ export function ThermalCurve({ vitals, t0, t1, every, anchor, stayStart, band, m
   )
 }
 
-/** Últimos valores de cada parámetro, con tendencia y una minigráfica. */
-function VitalsCards({ vitals, ageYears }: { vitals: Vitals[]; ageYears?: number }) {
-  const list = activeVitals(vitals)
-  const cards: { key: VitalKey; label: string; unit: string; second?: VitalKey }[] = [
-    { key: 'systolic', second: 'diastolic', label: 'Presión arterial', unit: 'mmHg' }, { key: 'heartRate', label: 'Frecuencia cardíaca', unit: 'lpm' },
-    { key: 'respRate', label: 'Frecuencia respiratoria', unit: 'rpm' }, { key: 'spo2', label: 'Saturación O₂', unit: '%' },
-    { key: 'glucose', label: 'Glucometría', unit: 'mg/dL' }, { key: 'painScale', label: 'Dolor', unit: '/10' },
-    ...(list.some((v) => v.weightKg != null) ? [{ key: 'weightKg' as VitalKey, label: 'Peso', unit: 'kg' }] : []),
-  ]
+/** Alto de cada minigráfica (todas iguales). */
+const MINI_H = 58
+/**
+ * EN1: minigráfica de un signo con la misma escala de tiempo que la curva térmica (mismo ancho y márgenes), la banda
+ * normal tenue y los valores fuera de rango marcados. Toca un punto para ver el valor.
+ */
+function MiniChart({ s, vitals, x, t0, t1, W, PL, PR, days, ageYears, who }: {
+  s: Series; vitals: Vitals[]; x: (t: number) => number; t0: number; t1: number; W: number; PL: number; PR: number; days: number[]; ageYears?: number; who?: (id: string) => string
+}) {
+  const pts = activeVitals(vitals).filter((v) => v[s.key] != null && new Date(v.takenAt).getTime() >= t0 && new Date(v.takenAt).getTime() <= t1)
+  const range = clinicalRange(s.key, ageYears)
+  const vals = pts.flatMap((v) => [v[s.key]!, ...(s.second && v[s.second] != null ? [v[s.second]!] : [])])
+  const r2 = s.second ? clinicalRange(s.second, ageYears) : undefined
+  const refs = [range?.[0], range?.[1], r2?.[0], r2?.[1]].filter((n): n is number => n != null)
+  let lo = Math.min(...vals, ...refs)
+  let hi = Math.max(...vals, ...refs)
+  if (!vals.length) { lo = refs.length ? Math.min(...refs) : 0; hi = refs.length ? Math.max(...refs) : 1 }
+  const pad = Math.max(1, (hi - lo) * 0.12)
+  // Sin ejes imposibles (dolor bajo 0, saturación sobre 100)
+  lo = Math.max(lo - pad, IMPOSSIBLE[s.key][0] ?? -Infinity); hi = Math.min(hi + pad, IMPOSSIBLE[s.key][1] ?? Infinity)
+  const T = 18
+  const H = T + MINI_H + 8
+  const y = (v: number) => T + ((hi - v) / (hi - lo)) * MINI_H
+  const line = (k: VitalKey) => pts.filter((v) => v[k] != null).map((v, i) => `${i ? 'L' : 'M'}${x(new Date(v.takenAt).getTime()).toFixed(1)},${y(v[k]!).toFixed(1)}`).join(' ')
+  const band = (r?: readonly [number | null, number | null]) => r ? [Math.min(hi, r[1] ?? hi), Math.max(lo, r[0] ?? lo)] as const : undefined
+  const b1 = band(range)
+  const last = pts.at(-1)
   return (
-    <div className="vs-cards">
-      {cards.map((card) => {
-        const pts = list.filter((v) => v[card.key] != null)
-        const last = pts[pts.length - 1]
-        const prev = pts[pts.length - 2]
-        const level = last ? [card.key, card.second].filter((k): k is VitalKey => !!k).map((k) => (last[k] != null ? vitalLevel(k, last[k]!, ageYears) : 'ok'))
-          .reduce((a, b) => (a === 'error' || b === 'error' ? 'error' : a === 'warn' || b === 'warn' ? 'warn' : 'ok'), 'ok' as 'ok' | 'warn' | 'error') : 'ok'
-        const delta = last && prev ? last[card.key]! - prev[card.key]! : 0
-        const Trend = !prev || Math.abs(delta) < 1e-9 ? ArrowRight : delta > 0 ? ArrowUp : ArrowDown
+    <div className="vs-mini">
+    {/* El nombre queda fijo a la izquierda cuando la curva se desplaza de lado (celular) */}
+    <span className="vs-mini__label" style={{ marginLeft: PL }}><b>{s.label}</b> {s.unit}</span>
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${s.label}: ${pts.length} tomas${last ? `, la última ${fmt(s.key, last[s.key]!)}${s.second && last[s.second] != null ? `/${last[s.second]}` : ''} ${s.unit}` : ''}`}>
+      {b1 && <rect x={PL} y={y(b1[0])} width={W - PL - PR} height={Math.max(0, y(b1[1]) - y(b1[0]))} fill="var(--vs-band)" opacity={0.55} />}
+      <line x1={PL} x2={W - PR} y1={T + MINI_H} y2={T + MINI_H} stroke="var(--line-soft)" />
+      {days.map((d) => <line key={d} x1={x(d)} x2={x(d)} y1={T} y2={T + MINI_H} stroke="var(--line-soft)" />)}
+      <text x={PL - 10} y={T + 9} textAnchor="end" fontSize={10.5} fill="var(--faint)">{Math.round(hi)}</text>
+      <text x={PL - 10} y={T + MINI_H} textAnchor="end" fontSize={10.5} fill="var(--faint)">{Math.round(lo)}</text>
+      {pts.length > 1 && <path d={line(s.key)} fill="none" stroke="var(--ink)" strokeWidth={1.6} strokeLinejoin="round" />}
+      {s.second && pts.length > 1 && <path d={line(s.second)} fill="none" stroke="var(--ink)" strokeWidth={1.3} strokeDasharray="4 3" opacity={0.75} />}
+      {pts.flatMap((v) => [s.key, s.second].filter((k): k is VitalKey => !!k && v[k] != null).map((k) => {
+        const lv = vitalLevel(k, v[k]!, ageYears)
         return (
-          <article key={card.key} className={`vs-card vs-card--${level}`}>
-            <span className="vs-card__label">{card.label}</span>
-            {last ? (<>
-              <span className="vs-card__value"><b>{fmt(card.key, last[card.key]!)}{card.second && last[card.second] != null ? `/${last[card.second]}` : ''}</b><small>{card.unit}</small>
-                <Trend size={16} className="vs-card__trend" aria-label={!prev ? 'Sin toma anterior' : delta > 0 ? 'Subió' : delta < 0 ? 'Bajó' : 'Igual'} /></span>
-              <span className="vs-card__when">{dmy(last.takenAt)} {hm(last.takenAt)}</span>
-              <Sparkline pts={pts.slice(-14).map((v) => [new Date(v.takenAt).getTime(), v[card.key]!, card.second ? v[card.second] : undefined])} />
-            </>) : <span className="muted vs-card__none">Sin tomas</span>}
-          </article>
+          <circle key={`${v.id}-${k}`} cx={x(new Date(v.takenAt).getTime())} cy={y(v[k]!)} r={lv === 'ok' ? 2.6 : 3.6}
+            fill={lv === 'ok' ? 'var(--paper)' : lv === 'warn' ? 'var(--vs-warn)' : 'var(--red-ink)'} stroke={lv === 'ok' ? 'var(--ink)' : 'none'} strokeWidth={1.4}>
+            <title>{VITALS[k].label}: {fmt(k, v[k]!)} {VITALS[k].unit}, {dmy(v.takenAt)} {hm(v.takenAt)}{who ? `, ${who(v.takenBy)}` : ''}</title>
+          </circle>
         )
-      })}
-    </div>
-  )
-}
-
-function Sparkline({ pts }: { pts: [number, number, number | undefined][] }) {
-  if (pts.length < 2) return <svg className="vs-spark" viewBox="0 0 120 34" aria-hidden="true" />
-  const ts = pts.map((p) => p[0])
-  const vs = pts.flatMap((p) => (p[2] != null ? [p[1], p[2]] : [p[1]]))
-  const [a, b] = [Math.min(...ts), Math.max(...ts)]
-  const [lo, hi] = [Math.min(...vs), Math.max(...vs)]
-  const x = (t: number) => 3 + ((t - a) / Math.max(1, b - a)) * 114
-  const y = (v: number) => 30 - ((v - lo) / Math.max(1e-6, hi - lo)) * 26
-  const line = (i: 1 | 2) => pts.filter((p) => p[i] != null).map((p, j) => `${j ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(p[i]!).toFixed(1)}`).join(' ')
-  return (
-    <svg className="vs-spark" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true">
-      <path d={line(1)} fill="none" stroke="currentColor" strokeWidth={1.6} />
-      {pts.some((p) => p[2] != null) && <path d={line(2)} fill="none" stroke="currentColor" strokeWidth={1.2} strokeDasharray="3 2" />}
+      }))}
+      {!pts.length && <text x={(PL + W - PR) / 2} y={T + MINI_H / 2 + 4} textAnchor="middle" fontSize={11.5} fill="var(--faint)">Sin tomas en este rango</text>}
     </svg>
+    </div>
   )
 }
 

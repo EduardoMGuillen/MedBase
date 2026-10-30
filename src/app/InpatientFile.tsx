@@ -112,15 +112,16 @@ export default function InpatientFile() {
   const examTab = `Exámenes (${exams.filter((e) => e.status !== 'cancelled').length})`
   const tabs: [Tab, string][] = obs ? [
     ['sheet', 'Datos generales'],
-    ['notes', `Notas de evolución (${medical.length + (h.consultationId ? 1 : 0)})`],
+    // EN1: Signos vitales va antes de las notas de evolución
     ['vitals', 'Signos vitales'],
+    ['notes', `Notas de evolución (${medical.length + (h.consultationId ? 1 : 0)})`],
     ['meds', 'Hoja de medicamentos'],
     ['labs', examTab],
     ['annexes', `Anexos (${annexes})`],
   ] : [
     ['sheet', 'Hoja de hospitalización'],
-    ['notes', `Notas de evolución (${medical.length + (h.consultationId ? 1 : 0)})`],
     ['vitals', 'Signos vitales'],
+    ['notes', `Notas de evolución (${medical.length + (h.consultationId ? 1 : 0)})`],
     ['meds', 'Medicamentos'],
     ['nursing', `Notas de enfermería (${nursing.length})`],
     ['labs', examTab],
