@@ -18,6 +18,7 @@ import { newSecret, otpauthUrl, verifyTotp } from './totp.js'
 import { rxValidityOf, specialtyOf, validityInput } from './prefs.js'
 import { registerSettings } from './routes/settings.js'
 import { currentMarks, registerMe } from './routes/me.js'
+import { addendaFor, registerNotes } from './routes/notes.js'
 import { registerPublic } from './routes/public.js'
 import { registerBilling } from './routes/billing.js'
 import { registerReports } from './routes/reports.js'
@@ -564,7 +565,7 @@ export function createApp(opts: AppOptions) {
     ])
     await audit(userOf(req), `Consultó el expediente de ${await patientName(id)}`)
     res.json({ vitals: vitals.map(toVitals), consultations: consultations.map(toConsultation), prescriptions: prescriptions.map(toPrescription),
-      hospitalizations: hospitalizations.map(toHospitalization) })
+      hospitalizations: hospitalizations.map(toHospitalization), addenda: await addendaFor(sql, cid, consultations.map((c) => String(c.id))) })
   })
 
   // ---------- Citas ----------
@@ -897,7 +898,7 @@ export function createApp(opts: AppOptions) {
     const vitals = c.vitalsId ? await sql.one('SELECT * FROM vitals WHERE id = ? AND clinic_id = ?', [c.vitalsId, cid]) : undefined
     const what = req.query.purpose === 'certificate' ? 'Emitió constancia médica de' : 'Abrió la nota de consulta de'
     await audit(userOf(req), `${what} ${await patientName(c.patientId)}`)
-    res.json({ consultation: c, patient: toPatient((await patientRow(cid, c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null })
+    res.json({ consultation: c, patient: toPatient((await patientRow(cid, c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null, addenda: await addendaFor(sql, cid, [c.id]) })
   })
 
   /**
@@ -955,6 +956,18 @@ export function createApp(opts: AppOptions) {
     if (p!.pending) fail(409, 'Completa el registro del paciente antes de vincularle la receta.')
     await sql.run('UPDATE prescriptions SET patient_id = ?, linked_at = ?, linked_by = ? WHERE id = ?', [patientId, new Date().toISOString(), user.id, String(row!.id)])
     await audit(user, `Vinculó la receta ${row!.folio} (paciente no registrado) al expediente ${p!.record} de ${p!.first_name} ${p!.last_name}`)
+    res.json(toPrescription((await sql.one('SELECT * FROM prescriptions WHERE id = ?', [String(row!.id)]))!))
+  })
+
+  /** Anular una receta emitida (con motivo). Queda en el historial marcada como anulada; se emite otra si hace falta. */
+  app.post('/api/prescriptions/:id/void', auth, need('rx.write'), async (req, res) => {
+    const { reason } = parse(z.object({ reason: z.string().trim().min(5, 'Escribe por qué se anula la receta.').max(300) }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const row = (await sql.one('SELECT * FROM prescriptions WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La receta no existe.')
+    if (row!.voided_at) fail(409, 'Esta receta ya está anulada.')
+    await sql.run('UPDATE prescriptions SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?', [new Date().toISOString(), user.id, reason, String(row!.id)])
+    await audit(user, `Anuló la receta ${row!.folio}${row!.patient_id ? ` de ${await patientName(String(row!.patient_id))}` : ''}: ${reason}`)
     res.json(toPrescription((await sql.one('SELECT * FROM prescriptions WHERE id = ?', [String(row!.id)]))!))
   })
 
@@ -1061,6 +1074,7 @@ export function createApp(opts: AppOptions) {
 
   registerSettings(app, ctx)
   registerMe(app, ctx)
+  registerNotes(app, ctx)
   registerPublic(app, ctx)
   registerBilling(app, ctx)
   registerReports(app, ctx)

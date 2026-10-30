@@ -99,6 +99,11 @@ export const can = (who: Role | { role: Role; clinicKind?: ClinicKind }, p: Perm
 /** AD5: ¿la persona tiene este rol (aunque ahora trabaje con otra vista)? */
 export const hasRole = (s: { role: Role; roles?: Role[] }, r: Role) => (s.roles ?? [s.role]).includes(r)
 
+/** El rol con que se firma una nota: el clínico de la persona (médico antes que administración), no su vista activa. */
+export function mainRole(s: { role: Role; roles?: Role[] }): Role {
+  return (['doctor', 'nurse', 'assistant', 'reception', 'admin', 'superadmin'] as Role[]).find((r) => hasRole(s, r)) ?? s.role
+}
+
 /** AD5: nombre de cada vista en el selector y en el pie del menú. */
 export const VIEW_LABEL: Record<Role, string> = {
   superadmin: 'Vista de plataforma',

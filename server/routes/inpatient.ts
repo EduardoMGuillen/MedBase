@@ -14,6 +14,7 @@ import { createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrd
 import { authorizationBase, ensureHospitalAuthorization, refreshPendingHospitalAuthorization } from '../authorizations.js'
 import { rxValidityOf, specialtyOf, validityInput } from '../prefs.js'
 import { currentMarks } from './me.js'
+import { addendaFor } from './notes.js'
 
 const dx = z.array(diagnosisInput)
 const when = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'La fecha u hora no es válida.')
@@ -316,6 +317,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       referrals: referrals.map(toReferral), epicrises: epicrises.map(toEpicrisis),
       vitals: vitals.map((v) => ({ ...toVitals(v), source: v.source as 'preclinic' | 'stay' })),
       consultOrders: h.consultation_id ? JSON.parse(String((await sql.one('SELECT orders FROM consultations WHERE id = ?', [String(h.consultation_id)]))?.orders ?? '[]')) as string[] : [],
+      // AN1: adendas de las notas y de la consulta que lo ingresó
+      addenda: await addendaFor(sql, cid, [...notes.map((n) => String(n.id)), ...(h.consultation_id ? [String(h.consultation_id)] : [])]),
     })
   })
 

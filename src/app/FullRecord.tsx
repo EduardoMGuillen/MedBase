@@ -11,8 +11,9 @@ import { ThermalCurve, VitalsTable } from './VitalsSheet'
 import { antipyreticDoses, bandOf, missedTakes, vitalsAnchor, vitalsEvery } from '../lib/vitalsSheet'
 import { useNow } from '../lib/hooks'
 import { EpicrisisSheet } from './Epicrisis'
-import { ROLE_LABEL } from '../lib/permissions'
-import type { Consultation, InpatientFile, InpatientNote, Patient, Vitals } from '../lib/types'
+import { mainRole, ROLE_LABEL } from '../lib/permissions'
+import type { Addendum, Consultation, InpatientFile, InpatientNote, Patient, Vitals } from '../lib/types'
+import { ADDENDUM_KIND } from '../lib/drafts'
 import { ConsultationBody, Identification } from './PatientChart'
 import { NoteColumns, NoteText } from '../components/NoteColumns'
 import { ReferralSheet } from './Referral'
@@ -65,7 +66,7 @@ export default function FullRecord() {
   const h = file.hospitalization
   const obs = h.kind === 'observation'
   const record = recordNumber(p, settings)
-  const who = (sid?: string) => { const s = staffById(sid ?? ''); return s ? `${s.name}, ${ROLE_LABEL[s.role].toLowerCase()}` : '' }
+  const who = (sid?: string) => { const s = staffById(sid ?? ''); return s ? `${s.name}, ${ROLE_LABEL[mainRole(s)].toLowerCase()}` : '' }
 
   const entries: Entry[] = [
     ...(consult ? [{ at: consult.consultation.date, kind: 'consult' as const, title: 'Nota de ingreso (consulta externa)' }] : []),
@@ -135,14 +136,16 @@ export default function FullRecord() {
           <div className="fr-note-head"><h2 className="fr-h">{e.title}</h2>
             <span>{e.kind === 'consult' && consult ? `${staffById(consult.consultation.doctorId)?.name} · ${dm(consult.consultation.date)}` : e.note ? `${who(e.note.authorId)} · ${dm(e.note.at)}` : e.legacy ? `${staffById(e.legacy.createdBy)?.name} · ${dm(e.legacy.createdAt)}` : ''}</span></div>
           {e.kind === 'consult' && consult && <ConsultationBody c={consult.consultation} vitals={consult.vitals} />}
+          {e.kind === 'consult' && consult && <PrintedAddenda list={file.addenda ?? []} id={consult.consultation.id} />}
           {e.legacy && <div className="note"><p><b>{e.legacy.name}</b></p>{e.legacy.notes && <p>{e.legacy.notes}</p>}</div>}
           {e.note && <NoteBody n={e.note} file={file} />}
+          {e.note && <PrintedAddenda list={file.addenda ?? []} id={e.note.id} />}
         </>)) : page('fr-notas', 'Notas de evolución', <p className="muted">Sin notas de evolución.</p>)}
 
         {!obs && page('fr-enfermeria', 'Notas de enfermería', <>
           <h2 className="fr-h">Notas de enfermería</h2>
           {nursing.length ? nursing.map((n) => (
-            <div key={n.id} className="fr-nursing"><b>{dm(n.at)} · {shortStaff(staffById(n.authorId)?.name)}</b><p>{n.text}</p></div>
+            <div key={n.id} className="fr-nursing"><b>{dm(n.at)} · {shortStaff(staffById(n.authorId)?.name)}</b><p>{n.text}</p><PrintedAddenda list={file.addenda ?? []} id={n.id} /></div>
           )) : <p className="muted">Sin notas de enfermería.</p>}
         </>, true)}
 
@@ -248,4 +251,22 @@ function NoteBody({ n, file }: { n: InpatientNote; file: InpatientFile }) {
         {mark?.action === 'check' && <small className="order-check__mark">✓ {shortStaff(staffById(mark.by)?.name)} {dm(mark.at)}</small>}</span></li>
   })}</ol> : <p className="muted">{empty}</p>
   return <NoteColumns left={<NoteText n={n} />} indications={list(indications, 'Sin indicaciones.')} meds={list(meds, 'Sin medicamentos.', true)} />
+}
+
+/** AN1: las adendas de una nota, debajo de ella en la misma página impresa. */
+function PrintedAddenda({ list, id }: { list: Addendum[]; id: string }) {
+  const { staffById } = useStore()
+  const mine = list.filter((a) => a.targetId === id)
+  if (!mine.length) return null
+  return (
+    <div className="addenda addenda--print">
+      {mine.map((a, i) => (
+        <section key={a.id} className={`addendum addendum--${a.kind}`}>
+          <h5>Adenda {i + 1} · {ADDENDUM_KIND[a.kind]} · {staffById(a.authorId)?.name ?? '—'} · {dm(a.at)}</h5>
+          {a.corrects && <p className="addendum__corrects">Se corrige: {a.corrects}</p>}
+          <p className="addendum__text">{a.text}</p>
+        </section>
+      ))}
+    </div>
+  )
 }

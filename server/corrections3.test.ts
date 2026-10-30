@@ -314,7 +314,10 @@ describe('P7 zona horaria', () => {
     await sql.run(`UPDATE clinics SET created_at = ? WHERE id = 'c-al'`, [loaded.toISOString()])
     await sql.run(`UPDATE appointments SET start = '2026-10-27T08:00:00' WHERE id = 'c201'`)
     await sql.run(`UPDATE appointments SET start = '2026-10-27T08:30:00' WHERE id = 'c202'`)
+    // AN1: la consulta firmada es inmutable; para simular el estado viejo se usa el modo de mantenimiento
+    await sql.run(`SELECT set_config('clinara.note_maintenance', 'on', false)`)
     await sql.run(`UPDATE consultations SET date = '2026-10-27T08:30:00.000Z' WHERE id = 'k-r5-1'`)
+    await sql.run(`SELECT set_config('clinara.note_maintenance', 'off', false)`)
     await sql.run(`UPDATE hospitalizations SET admitted_at = '2026-10-27T08:30:00.000Z' WHERE id = 'h-k-r5-1'`)
     await sql.tx((q) => fixOfficeDemoTimes(q))
     assert.equal((await sql.one(`SELECT start FROM appointments WHERE id = 'c202'`))!.start, '2026-10-26T08:30:00')

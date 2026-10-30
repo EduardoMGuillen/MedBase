@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '39'
+const SCHEMA_VERSION = '40'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -690,6 +690,67 @@ CREATE INDEX IF NOT EXISTS installments_clinic ON payment_installments (clinic_i
 ALTER TABLE services
   ADD COLUMN IF NOT EXISTS created_by TEXT,
   ADD COLUMN IF NOT EXISTS created_at TEXT;
+
+-- v40: ronda 4 (AN1). Borradores en el servidor (sobreviven a recargar y a cerrar el navegador), una por persona y nota.
+CREATE TABLE IF NOT EXISTS note_drafts (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT,
+  user_id TEXT NOT NULL REFERENCES staff(id),
+  scope TEXT NOT NULL,
+  ref_id TEXT NOT NULL,
+  data TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS note_drafts_key ON note_drafts (user_id, scope, ref_id);
+-- Adendas (addendum): firmadas e inmutables, debajo de la nota original. Sólo se agregan filas.
+CREATE TABLE IF NOT EXISTS addenda (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  target_kind TEXT NOT NULL CHECK (target_kind IN ('consultation','note')),
+  target_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('correction','info','result')),
+  corrects TEXT,
+  text TEXT NOT NULL,
+  author_id TEXT NOT NULL REFERENCES staff(id),
+  author_role TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS addenda_target ON addenda (clinic_id, target_id, at);
+DROP TRIGGER IF EXISTS addenda_no_change ON addenda;
+CREATE TRIGGER addenda_no_change BEFORE UPDATE OR DELETE ON addenda FOR EACH ROW EXECUTE FUNCTION audit_append_only();
+-- La consulta y las notas firmadas son inmutables en la base: no se cambia su contenido clínico ni se borran. Las
+-- migraciones de datos y el borrado de los pacientes de demostración lo permiten sólo con clinara.note_maintenance = on.
+CREATE OR REPLACE FUNCTION consultation_signed_guard() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  IF current_setting('clinara.note_maintenance', true) = 'on' THEN RETURN COALESCE(NEW, OLD); END IF;
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'La consulta está firmada: no se borra.'; END IF;
+  IF ROW(NEW.patient_id, NEW.doctor_id, NEW.date, NEW.reason, NEW.history, NEW.exam, NEW.observations, NEW.diagnoses, NEW.orders, NEW.indications, NEW.plan, NEW.meds, NEW.symptoms, NEW.symptom_onset)
+     IS DISTINCT FROM ROW(OLD.patient_id, OLD.doctor_id, OLD.date, OLD.reason, OLD.history, OLD.exam, OLD.observations, OLD.diagnoses, OLD.orders, OLD.indications, OLD.plan, OLD.meds, OLD.symptoms, OLD.symptom_onset) THEN
+    RAISE EXCEPTION 'La consulta está firmada: no se edita. Escribe una adenda.';
+  END IF;
+  RETURN NEW;
+END
+$fn$;
+DROP TRIGGER IF EXISTS consultations_signed ON consultations;
+CREATE TRIGGER consultations_signed BEFORE UPDATE OR DELETE ON consultations FOR EACH ROW EXECUTE FUNCTION consultation_signed_guard();
+CREATE OR REPLACE FUNCTION note_signed_guard() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  IF current_setting('clinara.note_maintenance', true) = 'on' THEN RETURN COALESCE(NEW, OLD); END IF;
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'La nota está firmada: no se borra.'; END IF;
+  IF ROW(NEW.hospitalization_id, NEW.kind, NEW.author_id, NEW.at, NEW.subjective, NEW.objective, NEW.assessment, NEW.plan, NEW.text, NEW.data)
+     IS DISTINCT FROM ROW(OLD.hospitalization_id, OLD.kind, OLD.author_id, OLD.at, OLD.subjective, OLD.objective, OLD.assessment, OLD.plan, OLD.text, OLD.data) THEN
+    RAISE EXCEPTION 'La nota está firmada: no se edita. Escribe una adenda.';
+  END IF;
+  RETURN NEW;
+END
+$fn$;
+DROP TRIGGER IF EXISTS hosp_notes_signed ON hosp_notes;
+CREATE TRIGGER hosp_notes_signed BEFORE UPDATE OR DELETE ON hosp_notes FOR EACH ROW EXECUTE FUNCTION note_signed_guard();
+-- Una receta emitida no se edita: se anula con motivo y se emite otra (como las constancias). Una adenda no la cambia.
+ALTER TABLE prescriptions
+  ADD COLUMN IF NOT EXISTS voided_at TEXT,
+  ADD COLUMN IF NOT EXISTS voided_by TEXT,
+  ADD COLUMN IF NOT EXISTS void_reason TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -1007,6 +1068,8 @@ export async function fixOfficeDemoTimes(q: Sql) {
   const today = await q.one(`SELECT start FROM appointments WHERE id = 'c201' AND clinic_id = ?`, [OFFICE_CLINIC])
   const dayShift = today && String(today.start).slice(0, 10) > loadedOn ? -1 : 0
   const offsetMs = 6 * 3_600_000 + dayShift * 24 * 3_600_000
+  // AN1: corrige una hora de la demo, no el contenido clínico; se permite sólo dentro de esta transacción
+  await q.run(`SELECT set_config('clinara.note_maintenance', 'on', true)`)
   const iso = (v: unknown) => new Date(new Date(String(v)).getTime() + offsetMs).toISOString()
   const naive = (v: unknown) => { const d = new Date(`${String(v).slice(0, 19)}Z`); d.setUTCDate(d.getUTCDate() + dayShift); return d.toISOString().slice(0, 19) }
   for (const a of await q.query(`SELECT id, start FROM appointments WHERE clinic_id = ? AND id ~ '^c2[0-9]{2}$'`, [OFFICE_CLINIC])) await q.run('UPDATE appointments SET start = ? WHERE id = ?', [naive(a.start), String(a.id)])
@@ -1186,7 +1249,7 @@ export async function nextFolio(q: Sql, clinicId: string, now: Date) {
 /** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
 export async function resetDemo(sql: Sql) {
   await sql.tx(async (q) => {
-    await q.exec(`TRUNCATE payment_installments, staff_marks, epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
+    await q.exec(`TRUNCATE addenda, note_drafts, payment_installments, staff_marks, epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
       attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
     await seed(q)

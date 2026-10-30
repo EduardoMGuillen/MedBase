@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, Copy, FileText, MessageCircle, Plus, Printer, UserPlus, X } from 'lucide-react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Ban, ChevronLeft, Copy, FileText, MessageCircle, Plus, Printer, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading, Modal, PageHead } from '../components/ui'
 import { age, date, formatPhone, fullName, identityLine, localISODate, medicationLine, recordNumber, time, whatsappUrl } from '../lib/format'
@@ -36,7 +36,14 @@ export default function Prescriptions() {
   const [q, setQ] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [draft, setDraft] = useState<Draft | null>(null)
+  // AN1: «Emitir una nueva» desde una receta anulada llega con ?repetir=<id>: se abre copiada para corregirla
+  const [params, setParams] = useSearchParams()
+  const [draft, setDraft] = useState<Draft | null>(() => {
+    const r = prescriptions.find((x) => x.id === params.get('repetir'))
+    return r ? { key: 0, patientId: r.patientId, guest: r.patientId ? undefined : r.guest, items: r.items.map((x) => ({ ...x })), indications: r.indications ?? [] } : null
+  })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (params.get('repetir')) setParams({}, { replace: true }) }, [])
   // Cada receta nueva o repetida abre un formulario limpio
   const seq = useRef(0)
   const s = normalize(q)
@@ -76,7 +83,7 @@ export default function Prescriptions() {
           if (!name) return null
           return (
             <div key={r.id} className="row rx-row">
-              <Link to={`/app/recetas/${r.id}`} className="num rx-row__when">{date(r.issuedAt)}<br /><span style={{ color: 'var(--muted)' }}>{r.folio}</span></Link>
+              <Link to={`/app/recetas/${r.id}`} className="num rx-row__when">{date(r.issuedAt)}<br /><span style={{ color: 'var(--muted)' }}>{r.folio}</span>{r.voidedAt && <><br /><span className="badge badge--red">Anulada</span></>}</Link>
               <Link to={`/app/recetas/${r.id}`} className="row__who" style={{ textDecoration: 'none' }}>
                 <strong>{name}{r.standalone && <span className="badge badge--ink" style={{ marginLeft: 8 }}>Sin consulta</span>}
                   {!r.patientId && <span className="badge badge--amber" style={{ marginLeft: 8 }}>Paciente no registrado</span>}</strong>
@@ -95,6 +102,21 @@ type Draft = { key: number; patientId: string; guest?: GuestPatient; items: Pres
 const EMPTY_GUEST: GuestPatient = { name: '', birthDate: '', age: '', dni: '', phone: '' }
 
 /** Datos de la persona no registrada: sólo el nombre es obligatorio. Avisa si se parece a alguien de la biblioteca. */
+/** Anular una receta emitida con motivo; después se emite otra (Repetir receta). */
+function VoidRx({ id, folio, onClose, onDone }: { id: string; folio: string; onClose: () => void; onDone: () => void }) {
+  const { voidPrescription } = useStore()
+  const [reason, setReason] = useState('')
+  return (
+    <Modal title={`Anular la receta ${folio}`} onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--danger" disabled={reason.trim().length < 5} onClick={async () => { if (await voidPrescription(id, reason.trim())) onDone() }}>Anular receta</button>
+    </>}>
+      <p>La receta queda en el expediente marcada como anulada; no se borra. Después puedes emitir una nueva con los datos corregidos.</p>
+      <label className="field"><span>Motivo</span><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Dosis de amoxicilina mal escrita" autoFocus /></label>
+    </Modal>
+  )
+}
+
 function GuestFields({ value, onChange, onPick, onCancel }: { value: GuestPatient; onChange: (g: GuestPatient) => void; onPick: (patientId: string) => void; onCancel: () => void }) {
   const { patients } = useStore()
   const now = useNow()
@@ -185,6 +207,7 @@ export function PrescriptionSheet() {
   const { staffById, fetchPrescription, settings, can } = useStore()
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchPrescription>> | null>(null)
   const [missing, setMissing] = useState(false)
+  const [voiding, setVoiding] = useState(false)
   const load = useCallback(() => {
     if (id) fetchPrescription(id).then(setData).catch(() => setMissing(true))
   }, [id, fetchPrescription])
@@ -215,11 +238,16 @@ export function PrescriptionSheet() {
           : <Link className="btn btn--ghost" to="/app/recetas"><ChevronLeft size={16} />Recetas</Link>}
         <div className="page-head__actions">
           {!patient && g && can('rx.write') && can('patients.manage') && <GuestLink rx={rx} guest={g} onLinked={load} />}
-          {p.phone && <a className="btn btn--ghost" href={whatsappUrl(p.phone, rxMessage)} target="_blank" rel="noreferrer"><MessageCircle size={16} />Enviar por WhatsApp</a>}
+          {can('rx.write') && !rx.voidedAt && <button className="btn btn--danger" onClick={() => setVoiding(true)}><Ban size={16} />Anular</button>}
+          {can('rx.write') && rx.voidedAt && <Link className="btn btn--soft" to={`/app/recetas?repetir=${rx.id}`}><Copy size={16} />Emitir una nueva</Link>}
+          {p.phone && !rx.voidedAt && <a className="btn btn--ghost" href={whatsappUrl(p.phone, rxMessage)} target="_blank" rel="noreferrer"><MessageCircle size={16} />Enviar por WhatsApp</a>}
           <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir o guardar PDF (media carta)</button>
         </div>
       </div>
-      <article className="rx-sheet rx-sheet--half">
+      {rx.voidedAt && <div className="alert-strip no-print">Receta anulada el {date(rx.voidedAt)}, {time(rx.voidedAt)}{rx.voidedBy ? ` por ${staffById(rx.voidedBy)?.name ?? '—'}` : ''}. Motivo: {rx.voidReason}</div>}
+      {voiding && <VoidRx id={rx.id} folio={rx.folio} onClose={() => setVoiding(false)} onDone={() => { setVoiding(false); load() }} />}
+      <article className="rx-sheet rx-sheet--half" style={{ position: 'relative' }}>
+        {rx.voidedAt && <div className="void-stamp">ANULADA</div>}
         <header className="rx-sheet__head">
           <DocHeader clinic={{ ...settings, office: settings.kind === 'office' }}
             doctor={{ name: doc.name, specialty: doc.specialty ?? settings.specialty, license: doc.license ?? settings.license }} />

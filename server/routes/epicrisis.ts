@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { type Ctx, fail, parse } from '../http.js'
 import { toEpicrisis } from '../mappers.js'
 import { docName } from './me.js'
+import { addendaFor } from './notes.js'
 import { createEpicrisisDraft, missingForIssue } from '../epicrisis.js'
 import type { EpicrisisData } from '../../src/lib/types.js'
 
@@ -73,6 +74,13 @@ export function registerEpicrisis(app: Express, { sql, auth, need, userOf, clini
     const missing = missingForIssue(data)
     if (missing.length) fail(400, `Antes de emitir, escribe ${missing.join(', ')}.`)
     const me = (await staffRow(user.id))!
+    // AN1: las adendas de la nota de egreso, tal como están al emitir
+    const note = await sql.one(`SELECT id FROM hosp_notes WHERE hospitalization_id = ? AND kind = 'discharge' ORDER BY at DESC LIMIT 1`, [String(r.hospitalization_id)])
+    const adds = note ? await addendaFor(sql, cid, [String(note.id)]) : []
+    if (adds.length) {
+      const names = new Map((await sql.query('SELECT id, name FROM staff WHERE clinic_id = ?', [cid])).map((s) => [String(s.id), String(s.name)]))
+      data.dischargeAddenda = adds.map((a) => ({ kind: a.kind, corrects: a.corrects, text: a.text, author: names.get(a.authorId) ?? '', at: a.at }))
+    }
     data.doctor = { name: docName(me), license: me.license ? String(me.license) : undefined, signature: me.signature ? String(me.signature) : undefined, stamp: me.stamp ? String(me.stamp) : undefined }
     const now = new Date().toISOString()
     await sql.run(`UPDATE epicrises SET status = 'issued', data = ?, issued_by = ?, issued_at = ? WHERE id = ?`, [JSON.stringify(data), user.id, now, String(r.id)])

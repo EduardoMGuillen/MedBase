@@ -235,6 +235,7 @@ describe('pacientes y personal', () => {
       await ensureDb(old)
       // Estado de una base v8: sin los casos, y con un paciente que el personal registró al probar
       await old.exec(`
+        SELECT set_config('clinara.note_maintenance', 'on', false);
         DELETE FROM followups WHERE id LIKE 'cfu%'; DELETE FROM attachments WHERE id LIKE 'cl%'; DELETE FROM hosp_doses WHERE id LIKE 'chd%';
         DELETE FROM hosp_meds WHERE id LIKE 'chm%'; DELETE FROM hosp_procedures WHERE id LIKE 'chp%'; DELETE FROM hosp_notes WHERE id LIKE 'chn%';
         DELETE FROM hospitalizations WHERE id LIKE 'chz%'; DELETE FROM payments WHERE id LIKE 'cp%'; DELETE FROM prescriptions WHERE id LIKE 'crx%';

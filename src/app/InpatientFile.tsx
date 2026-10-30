@@ -5,7 +5,7 @@ import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, fullName, inputDateTime, legacyTag, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
-import { ROLE_LABEL } from '../lib/permissions'
+import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
 import { defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { MedAlertBanner } from './MedAlerts'
@@ -17,10 +17,12 @@ import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
 import { useNow } from '../lib/hooks'
-import type { Diagnosis, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
+import type { Addendum, Diagnosis, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
 import { bedLabel, DxPicker } from './Inpatients'
 import { GeneralDataModal } from './GeneralData'
 import { AdmitBedStep, ConsentChoice } from './ConsentFlow'
+import { Addenda, DraftBadge, SignedBadge } from '../components/Addenda'
+import { useDraftSync } from '../lib/drafts'
 import { BedFields } from '../components/BedFields'
 import { ReferralModal } from './Referral'
 import { features } from '../lib/permissions'
@@ -184,9 +186,10 @@ function ConsultVitals({ consultationId }: { consultationId: string }) {
 
 /** La nota de consulta externa que originó la estancia es la primera nota de evolución. */
 function ConsultEntry({ consultationId }: { consultationId: string }) {
-  const { fetchConsultation, staffById } = useStore()
+  const { fetchConsultation, staffById, can, user } = useStore()
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchConsultation>> | null>(null)
-  useEffect(() => { fetchConsultation(consultationId).then(setData).catch(() => null) }, [consultationId, fetchConsultation])
+  const load = useCallback(() => { fetchConsultation(consultationId).then(setData).catch(() => null) }, [consultationId, fetchConsultation])
+  useEffect(load, [load])
   if (!data) return <section className="panel"><div className="empty">Cargando la nota de consulta…</div></section>
   const c = data.consultation
   const author = staffById(c.doctorId)
@@ -194,10 +197,12 @@ function ConsultEntry({ consultationId }: { consultationId: string }) {
     <article className="panel consult-entry">
       <div className="panel__head">
         <div><h2>Nota de ingreso <span className="badge badge--ink">Consulta externa</span></h2>
-          <p>{author?.name}{author ? `, ${ROLE_LABEL[author.role].toLowerCase()}` : ''} · {date(c.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(c.date)}</p></div>
+          <p>{author?.name}{author ? `, ${ROLE_LABEL[mainRole(author)].toLowerCase()}` : ''} · {date(c.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(c.date)}</p></div>
         <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}>Ver nota completa</Link>
       </div>
-      <div className="panel__body"><ConsultationBody c={c} vitals={data.vitals} /></div>
+      <div className="panel__body"><ConsultationBody c={c} vitals={data.vitals} />
+        <SignedBadge by={author?.name} at={c.date} addenda={(data.addenda ?? []).length} />
+        <Addenda list={data.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={load} /></div>
     </article>
   )
 }
@@ -259,7 +264,7 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
       || dosesOf(m).some((d) => new Date(d.givenAt) >= start && new Date(d.givenAt) < end)))
   // Enfermería registra las dosis; el médico también puede hacerlo cuando él la aplica
   const care = (can('inpatient.care') || can('inpatient.orders')) && open
-  const by = (id: string) => { const s = staffById(id); return s ? `${shortStaff(s.name)}, ${ROLE_LABEL[s.role].toLowerCase()}` : '' }
+  const by = (id: string) => { const s = staffById(id); return s ? `${shortStaff(s.name)}, ${ROLE_LABEL[mainRole(s)].toLowerCase()}` : '' }
   const doseTitle = (dose: Dose) => `${dose.status === 'given' ? 'Aplicado' : 'No administrado'} por ${by(dose.givenBy)}, ${dm(dose.givenAt)}${dose.note ? `: ${dose.note}` : ''}${dose.correctionReason ? `. ${dose.correctionReason.startsWith('Registro tardío') ? '' : 'Corregido: '}${dose.correctionReason} (${shortStaff(staffById(dose.correctedBy ?? '')?.name)})` : ''}`
   const label = view === 'week'
     ? `${date(start.toISOString(), { day: 'numeric', month: 'short' })} – ${date(addDays(end, -1).toISOString(), { day: 'numeric', month: 'short' })}`
@@ -592,7 +597,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         }
         const n = item.note!
         if (n.kind === 'discharge') return <Discharge key={n.id} file={file} p={p} reload={reload} />
-        if (n.kind === 'procedure') return <ProcedureNote key={n.id} n={n} file={file} />
+        if (n.kind === 'procedure') return <ProcedureNote key={n.id} n={n} file={file} reload={reload} />
         return <SoapNote key={n.id} n={n} file={file} reload={reload} />
       }) : !h.consultationId && <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
       {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }} />}
@@ -635,19 +640,21 @@ function ConvertModal({ file, p, onClose, onDone }: { file: File; p: Patient; on
  * con checklist, enfermería marca cada orden y queda su nombre y la hora junto a ella. En celular se apilan.
  */
 function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: () => void }) {
-  const { staffById } = useStore()
+  const { staffById, can, user } = useStore()
   const { meds, indications } = splitOrders(n, file)
   const author = staffById(n.authorId)
   return (
     <article className="panel consult-entry">
       <div className="panel__head">
         <div><h2>{n.kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'}</h2>
-          <p>{author?.name}{author ? `, ${ROLE_LABEL[author.role].toLowerCase()}` : ''} · {date(n.at, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(n.at)}</p></div>
+          <p>{author?.name}{author ? `, ${ROLE_LABEL[mainRole(author)].toLowerCase()}` : ''} · {date(n.at, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(n.at)}</p></div>
       </div>
       <div className="panel__body">
         <NoteColumns left={<NoteText n={n} />}
           indications={indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : <p className="muted">Sin indicaciones.</p>}
           meds={meds.length ? <OrderChecklist n={n} orders={meds} file={file} reload={reload} pill /> : <p className="muted">Sin medicamentos.</p>} />
+        <SignedBadge by={author?.name} at={n.at} addenda={(file.addenda ?? []).filter((a) => a.targetId === n.id).length} />
+        <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={can('inpatient.orders') && user?.role === 'doctor'} onAdded={reload} />
       </div>
     </article>
   )
@@ -732,8 +739,8 @@ function PendingOrdersPanel({ file, reload }: { file: File; reload: () => void }
 }
 
 /** Nota de procedimiento en la línea de tiempo: las dos horas, el texto y la autorización. */
-function ProcedureNote({ n, file }: { n: InpatientNote; file: File }) {
-  const { staffById } = useStore()
+function ProcedureNote({ n, file, reload }: { n: InpatientNote; file: File; reload: () => void }) {
+  const { staffById, can, user } = useStore()
   const x = n.procedure!
   const auth = x.authorizationId ? file.authorizations.find((a) => a.id === x.authorizationId) : undefined
   const legacy = x.authorizationId && !auth ? file.procedures.find((a) => a.id === x.authorizationId) : undefined
@@ -751,6 +758,8 @@ function ProcedureNote({ n, file }: { n: InpatientNote; file: File }) {
         {x.urgent && <p className="badge badge--amber" style={{ whiteSpace: 'normal' }}>Urgencia, sin autorización previa: {x.justification}</p>}
         {signedAt && <p className="badge badge--mint" style={{ whiteSpace: 'normal' }}>Autorización firmada ✓{how} {dm(signedAt)}</p>}
         {auth && auth.status !== 'signed' && <p className="badge badge--red" style={{ whiteSpace: 'normal' }}>Autorización {auth.status === 'revoked' ? 'revocada' : auth.status === 'refused' ? 'rechazada' : 'pendiente'}{auth.statusAt ? ` ${dm(auth.statusAt)}` : ''}</p>}
+        <SignedBadge by={staffById(n.authorId)?.name} at={n.at} addenda={(file.addenda ?? []).filter((a) => a.targetId === n.id).length} />
+        <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={can('inpatient.orders') && user?.role === 'doctor'} onAdded={reload} />
       </div>
     </article>
   )
@@ -770,6 +779,8 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize }: { f
   // Si se fue a generar la autorización quirúrgica, al volver la nota sigue como estaba
   const [f, setF] = useState<ProcDraft>(() => initial ?? { name: '', performedAt: inputDateTime(new Date()), text: '', major: false, urgent: false, justification: '' })
   const [busy, setBusy] = useState(false)
+  // AN1: borrador que se guarda solo
+  const draft = useDraftSync<ProcDraft>('procedimiento', file.hospitalization.id, f, (x) => { if (!initial) setF(x) }, !f.name.trim() && !f.text.trim())
   const performed = new Date(f.performedAt)
   const future = performed.getTime() > now.getTime() + 60_000
   // Quirúrgicas firmadas en las 24 horas antes del procedimiento (también los registros anteriores marcados como autorizados)
@@ -798,9 +809,10 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize }: { f
           urgent, justification: urgent ? f.justification.trim() : undefined,
         })
         setBusy(false)
-        if (ok) onSaved()
-      }}>Guardar nota</button>
+        if (ok) { draft.clear(); onSaved() }
+      }}>Firmar nota</button>
     </>}>
+      {(f.name.trim() || f.text.trim()) && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}
       <div className="form-grid">
         <label className="field"><span>Procedimiento realizado</span><input className="input" autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Escribe qué se hizo" /></label>
         <label className="field"><span>Fecha y hora del procedimiento</span>
@@ -856,6 +868,12 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   const { notify } = useStore()
   const vademecum = useVademecum()
   const active = file.meds.filter((m) => !m.stoppedAt)
+  // AN1: la nota se guarda sola como borrador (aquí y en el servidor) mientras se escribe
+  const [carried] = useState(() => JSON.stringify(carriedOrders(file)))
+  const noteBlank = !Object.values(n).some((v) => v.trim()) && !d.diagnoses.length && !d.exam.trim() && !d.observations.trim() && !meds.length && !stop.length && JSON.stringify(extra) === carried
+  const draft = useDraftSync('evolucion', `${file.hospitalization.id}:${kind}`, { n, format, d, meds, stop, extra }, (x) => {
+    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD(x.d); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra)
+  }, noteBlank)
   const inVademecum = (drug: string) => vademecum.some((x) => normalize(x.name) === normalize(drug))
   // Huecos "___" de un set aplicado: la nota no se firma hasta llenarlos
   const blanks = [...extra.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : []))]
@@ -897,9 +915,10 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
         const omitted = active.filter((m) => ended(m.id)).map((m) => `OMITIR ${m.drug}`)
         const ok = await addInpatientNote(file.hospitalization.id, { kind, format, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: [...extra, ...kept, ...added, ...omitted], indicationCount: extra.length, clientId })
         setBusy(false)
-        if (ok) onSaved()
-      }}>Guardar nota</button>
+        if (ok) { draft.clear(); onSaved() }
+      }}>Firmar nota</button>
     </>}>
+      {!noteBlank && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}
       {p.allergies.length > 0 && <div className="alert-strip"><TriangleAlert size={16} />Alergias: {p.allergies.join(', ')}</div>}
       {kind === 'evolution' && (
         <div className="segmented" role="radiogroup" aria-label="Formato de la nota">
@@ -1076,39 +1095,45 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
 // ---------- Enfermería ----------
 
 function NursingNotes({ file, reload }: { file: File; reload: () => void }) {
-  const { can, staffById, addNursingNote } = useStore()
+  const { can, staffById, addNursingNote, user } = useStore()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  // AN1: la nota de enfermería también se guarda sola como borrador mientras se escribe
+  const draft = useDraftSync<{ text: string }>('enfermeria', file.hospitalization.id, { text }, (d) => setText(d.text ?? ''), !text.trim())
+  const nurse = can('inpatient.care') && user?.role !== 'doctor'
   const notes = file.notes.filter((n) => n.kind === 'nursing').sort((a, b) => b.at.localeCompare(a.at))
   const write = can('inpatient.care') && file.hospitalization.status === 'active'
   return (
     <div className="hc">
       {write && (
         <section className="panel">
-          <div className="panel__head"><h2>Nueva nota de enfermería</h2><p>Se guarda con la fecha, la hora y tu nombre.</p></div>
+          <div className="panel__head"><div><h2>Nueva nota de enfermería</h2><p>Se guarda con la fecha, la hora y tu nombre.</p></div>{text.trim() && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}</div>
           <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
             <textarea className="textarea" rows={3} value={text} onChange={(e) => setText(e.target.value)} aria-label="Nota de enfermería" placeholder="Estado del paciente, cuidados realizados, novedades del turno." />
             <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={text.trim().length < 3 || busy} onClick={async () => {
               setBusy(true)
-              if (await addNursingNote(file.hospitalization.id, text.trim())) { setText(''); reload() }
+              if (await addNursingNote(file.hospitalization.id, text.trim())) { setText(''); draft.clear(); reload() }
               setBusy(false)
             }}>Guardar nota</button>
           </div>
         </section>
       )}
       <section className="panel">
-        {notes.length ? <div className="rows">{notes.map((n) => <NursingRow key={n.id} n={n} who={staffById(n.authorId)?.name} />)}</div>
+        {notes.length ? <div className="rows">{notes.map((n) => <NursingRow key={n.id} n={n} who={staffById(n.authorId)?.name} file={file} reload={reload}
+          canAdd={file.hospitalization.status === 'active' && (nurse || (can('inpatient.orders') && user?.role === 'doctor'))} kinds={nurse ? undefined : ['info']} />)}</div>
           : <div className="empty">Sin notas de enfermería.</div>}
       </section>
     </div>
   )
 }
 
-function NursingRow({ n, who }: { n: InpatientNote; who?: string }) {
+function NursingRow({ n, who, file, reload, canAdd, kinds }: { n: InpatientNote; who?: string; file: File; reload: () => void; canAdd: boolean; kinds?: Addendum['kind'][] }) {
+  const count = (file.addenda ?? []).filter((a) => a.targetId === n.id).length
   return (
     <div className="nnote">
       <div className="nnote__when"><b>{date(n.at, { day: 'numeric', month: 'short' })}</b><span>{time(n.at)}</span></div>
-      <div><p>{n.text}</p><small className="muted">{who}</small></div>
+      <div><p>{n.text}</p><small className="muted">{who}{count > 0 && <span className="badge badge--amber" style={{ marginLeft: 6 }}>Con adenda</span>}</small>
+        <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={canAdd} kinds={kinds} onAdded={reload} /></div>
     </div>
   )
 }

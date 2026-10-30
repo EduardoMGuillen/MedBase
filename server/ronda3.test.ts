@@ -420,3 +420,60 @@ describe('MC1 y MC2 firma inmediata', () => {
     assert.equal(a.body.data.diagnosis, 'Apendicitis aguda')
   })
 })
+
+describe('AN1 (ronda 4) borrador, nota firmada inmutable y adenda', () => {
+  test('el borrador se guarda en el servidor por persona y se borra al firmar', async () => {
+    const { doc, apptId } = await walkIn('Borrador')
+    assert.equal((await doc.get(`/api/drafts/consulta/${apptId}`)).body, null)
+    const put = await doc.put(`/api/drafts/consulta/${apptId}`, { data: { reason: 'Tos', history: 'Tres días con tos seca.' } })
+    assert.equal(put.status, 200)
+    assert.equal((await doc.get(`/api/drafts/consulta/${apptId}`)).body.data.history, 'Tres días con tos seca.')
+    // Otra persona no ve ese borrador
+    assert.equal((await (await as('apaz@demo.clinara')).get(`/api/drafts/consulta/${apptId}`)).body, null)
+    assert.equal((await doc.del(`/api/drafts/consulta/${apptId}`)).status, 200)
+    assert.equal((await doc.get(`/api/drafts/consulta/${apptId}`)).body, null)
+  })
+
+  test('la consulta firmada no se edita ni por la API ni en la base; el intento queda en la bitácora; la adenda va debajo', async () => {
+    const { doc, apptId } = await walkIn('Inmutable')
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Faringitis', diagnoses: DX, items: RX })
+    const id = c.body.consultationId
+    const tryEdit = await doc.patch(`/api/consultations/${id}`, { history: 'Cambiado' })
+    assert.equal(tryEdit.status, 409)
+    assert.ok((await sql.one(`SELECT 1 FROM audit WHERE user_id = 's-herrera' AND action LIKE 'Intentó editar una consulta firmada%' LIMIT 1`)))
+    await assert.rejects(sql.run('UPDATE consultations SET history = ? WHERE id = ?', ['Cambiado', id]))
+    await assert.rejects(sql.run('DELETE FROM consultations WHERE id = ?', [id]))
+    // Adenda: la corrección pide qué se corrige; enfermería no agrega adendas a una consulta
+    assert.equal((await doc.post('/api/addenda', { targetKind: 'consultation', targetId: id, kind: 'correction', text: 'Era amoxicilina 875 mg.' })).status, 400)
+    const a = await doc.post('/api/addenda', { targetKind: 'consultation', targetId: id, kind: 'correction', corrects: 'Dosis de amoxicilina mal escrita', text: 'La dosis correcta es 875 mg cada 12 horas.' })
+    assert.equal(a.status, 201, JSON.stringify(a.body))
+    assert.equal((await (await as('crios@demo.clinara')).post('/api/addenda', { targetKind: 'consultation', targetId: id, kind: 'info', text: 'Nada' })).status, 403)
+    const note = (await doc.get(`/api/consultations/${id}`)).body
+    assert.equal(note.consultation.history, '')
+    assert.deepEqual(note.addenda.map((x: any) => x.corrects), ['Dosis de amoxicilina mal escrita'])
+    await assert.rejects(sql.run('UPDATE addenda SET text = ? WHERE id = ?', ['x', a.body.id]))
+  })
+
+  test('notas de enfermería: adenda de enfermería; el médico sólo agrega información adicional', async () => {
+    const { doc, nurse, stayId } = await admitted('Adenda Enfermería')
+    const n = await nurse.post(`/api/inpatient/${stayId}/nursing`, { text: 'Paciente tranquilo, afebril.' })
+    assert.equal(n.status, 201, JSON.stringify(n.body))
+    assert.equal((await nurse.post('/api/addenda', { targetKind: 'note', targetId: n.body.id, kind: 'correction', corrects: 'Hora', text: 'Fue a las 10:00, no a las 11:00.' })).status, 201)
+    assert.equal((await doc.post('/api/addenda', { targetKind: 'note', targetId: n.body.id, kind: 'correction', corrects: 'Algo', text: 'Corrección del médico.' })).status, 403)
+    assert.equal((await doc.post('/api/addenda', { targetKind: 'note', targetId: n.body.id, kind: 'info', text: 'Se indicó vigilar la diuresis.' })).status, 201)
+    assert.equal((await doc.patch(`/api/inpatient/notes/${n.body.id}`, { text: 'otra' })).status, 409)
+    const file = (await doc.get(`/api/inpatient/${stayId}`)).body
+    assert.equal(file.addenda.filter((x: any) => x.targetId === n.body.id).length, 2)
+  })
+
+  test('la epicrisis toma las adendas de la nota de egreso al emitirse', async () => {
+    const { doc, stayId } = await admitted('Epicrisis Adenda')
+    const d = await doc.post(`/api/inpatient/${stayId}/discharge`, { diagnoses: DX, summary: 'Evolucionó bien con antibiótico intravenoso.', condition: 'Mejorado', instructions: 'Dieta blanda.' })
+    assert.equal(d.status, 201, JSON.stringify(d.body))
+    const noteId = (await doc.get(`/api/inpatient/${stayId}`)).body.notes.find((x: any) => x.kind === 'discharge').id
+    await doc.post('/api/addenda', { targetKind: 'note', targetId: noteId, kind: 'result', text: 'El hemocultivo salió negativo.' })
+    const epi = await doc.post(`/api/epicrisis/${d.body.epicrisisId}/issue`)
+    assert.equal(epi.status, 200, JSON.stringify(epi.body))
+    assert.equal(epi.body.data.dischargeAddenda[0].text, 'El hemocultivo salió negativo.')
+  })
+})

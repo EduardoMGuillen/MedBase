@@ -19,6 +19,8 @@ import type { Diagnosis, PrescriptionItem } from '../lib/types'
 import type { OrderSet } from '../lib/types'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
 import { RxValidityField } from '../components/RxValidity'
+import { useDraftSync } from '../lib/drafts'
+import { DraftBadge } from '../components/Addenda'
 import { useRxValidity } from '../lib/hooks'
 import { hasBlank, medHasBlank, orderKey, rxToSetMed, setMedToRx } from '../lib/orderSets'
 
@@ -38,7 +40,9 @@ const NON_PATHOLOGICAL = ['Personales no patológicos']
 const draftKey = (id?: string) => `clinara.nota.${id}`
 function loadDraft(id?: string): Partial<Draft> {
   try {
-    const d = JSON.parse(localStorage.getItem(draftKey(id)) ?? '{}') as Partial<Draft>
+    // AN1: el borrador se guarda con su hora ({ data, savedAt }); los de antes eran el borrador solo
+    const raw = JSON.parse(localStorage.getItem(draftKey(id)) ?? '{}') as Partial<Draft> & { data?: Partial<Draft>; savedAt?: string }
+    const d = (raw.savedAt !== undefined && raw.data ? raw.data : raw) as Partial<Draft>
     if (d.orders && !d.indications) {
       d.indications = d.orders.filter((o) => !o.rx).map((o) => o.text)
       d.meds = d.orders.flatMap((o) => (o.rx ? [o.rx] : []))
@@ -83,7 +87,6 @@ export default function Consultation() {
   const [editBg, setEditBg] = useState(false)
   const [signing, setSigning] = useState(false)
   const [validity, setValidity] = useRxValidity()
-  const [savedAt, setSavedAt] = useState<string | null>(Object.keys(saved).length ? 'recuperado' : null)
   const orderInput = useRef<HTMLInputElement>(null)
   const mine = !!appt && appt.doctorId === user?.id
   const { chart, reload } = useChart(p?.id, mine)
@@ -101,17 +104,13 @@ export default function Consultation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [todayVitals?.id])
 
-  useEffect(() => {
-    const d: Draft = { reason, history, exam, observations, dx, indications, meds, followups, admit, observe }
-    const blank = !history && !exam && !observations && !dx.length && !indications.length && !meds.length && !followups.length
-    const t = setTimeout(() => {
-      try {
-        if (blank) localStorage.removeItem(draftKey(apptId))
-        else { localStorage.setItem(draftKey(apptId), JSON.stringify(d)); setSavedAt(time(new Date().toISOString())) }
-      } catch { /* sin almacenamiento local */ }
-    }, 600)
-    return () => clearTimeout(t)
-  }, [apptId, reason, history, exam, observations, dx, indications, meds, followups, admit, observe])
+  // AN1: borrador que se guarda solo, en este navegador y en el servidor; sobrevive a recargar y a cerrar el navegador
+  const snapshot: Draft = { reason, history, exam, observations, dx, indications, meds, followups, admit, observe }
+  const blankDraft = !history && !exam && !observations && !dx.length && !indications.length && !meds.length && !followups.length
+  const draft = useDraftSync<Draft>('consulta', apptId, snapshot, (d) => {
+    setReason(d.reason ?? ''); setHistory(d.history ?? ''); setExam(d.exam ?? ''); setObservations(d.observations ?? ''); setDx(d.dx ?? [])
+    setIndications(d.indications ?? []); setMeds(d.meds ?? []); setFollowups(d.followups ?? []); setAdmit(!!d.admit); setObserve(!!d.observe)
+  }, blankDraft, draftKey(apptId))
 
   if (!appt || !p || !user) return <div className="page"><div className="empty">No se encontró la cita. Vuelve a la <Link to="/app/agenda">agenda</Link>.</div></div>
   if (appt.status === 'done') return <div className="page"><div className="empty">Esta consulta ya fue firmada. Puedes verla en el <Link to={`/app/pacientes/${p.id}`}>expediente</Link>.</div></div>
@@ -174,7 +173,7 @@ export default function Consultation() {
     }, meds)
     setSigning(false)
     if (r) {
-      try { localStorage.removeItem(draftKey(apptId)) } catch { /* noop */ }
+      draft.clear()
       // Con ingreso la estancia ya quedó creada al firmar, con esta nota como nota de ingreso y sus medicamentos en la hoja
       if (r.hospitalizationId && r.stayKind === 'hospital') nav(`/app/hospitalizados/${r.hospitalizationId}?completar=1`)
       else if (r.hospitalizationId) nav(`/app/observacion/${r.hospitalizationId}`)
@@ -186,7 +185,7 @@ export default function Consultation() {
     <div className="page page--consult">
       <div className="sticky-top">
         <PatientHeader p={p} clinical link>
-          <span className="ph__draft">{savedAt === 'recuperado' ? 'Borrador recuperado' : savedAt ? `Borrador guardado ${savedAt}` : 'Consulta en curso'}</span>
+          <DraftBadge savedAt={draft.savedAt} restored={draft.restored || Object.keys(saved).length > 0} offline={draft.offline} />
         </PatientHeader>
       </div>
 

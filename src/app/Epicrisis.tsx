@@ -229,6 +229,8 @@ export function EpicrisisSheet({ e }: { e: Pick<Epicrisis, 'status' | 'version' 
       <section className="epi__sec"><h3>Indicaciones al egreso</h3>
         {d.instructions.trim() || d.followUp?.trim() ? <>{d.instructions.trim() && <p className="epi-text">{d.instructions}</p>}{d.followUp && <p className="epi-text"><b>Cita de control:</b> {d.followUp}</p>}</> : <p className="epi-missing">Faltan las indicaciones.</p>}
       </section>
+      {d.dischargeAddenda && d.dischargeAddenda.length > 0 && <section className="epi__sec"><h3>Adendas de la nota de egreso</h3>
+        {d.dischargeAddenda.map((a, i) => <p key={i} className="epi-text"><b>Adenda {i + 1} ({a.kind === 'correction' ? 'corrección' : a.kind === 'info' ? 'información adicional' : 'resultado posterior'}, {a.author}, {date(a.at)}):</b>{a.corrects ? ` Se corrige: ${a.corrects}.` : ''} {a.text}</p>)}</section>}
       <div className="epi__sign">
         {d.doctor?.stamp && <img src={d.doctor.stamp} alt="Sello del médico" className="doc-stamp epi__stamp" />}
         {d.doctor?.signature && <img src={d.doctor.signature} alt="" />}

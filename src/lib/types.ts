@@ -331,6 +331,10 @@ export interface Prescription {
   /** Versión de la firma y del sello con que se emitió (MC6). */
   signatureId?: string
   stampId?: string
+  /** Anulada con motivo (no se borra). */
+  voidedAt?: string
+  voidedBy?: string
+  voidReason?: string
 }
 
 /** Datos de una persona no registrada, tal como se escribieron en su receta. */
@@ -528,6 +532,20 @@ export interface InpatientNote {
   exam?: string
   observations?: string
   procedure?: ProcedureData
+}
+
+/** AN1: adenda (addendum) de una nota firmada: corrección, información adicional o resultado posterior. Inmutable. */
+export interface Addendum {
+  id: string
+  targetKind: 'consultation' | 'note'
+  targetId: string
+  kind: 'correction' | 'info' | 'result'
+  /** Si es corrección: qué se corrige ("Dosis de amoxicilina mal escrita"). */
+  corrects?: string
+  text: string
+  authorId: string
+  authorRole?: string
+  at: string
 }
 
 /** Medicamento dentro de un set de órdenes, con la estructura de la nota (sirve para la hoja y para la receta). */
@@ -786,6 +804,8 @@ export interface EpicrisisData {
   followUp?: string
   /** Secciones "agregadas" que el médico quitó. */
   hidden: ('procedures' | 'dischargeDx' | 'labs' | 'condition')[]
+  /** AN1: adendas de la nota de egreso al momento de emitirla. */
+  dischargeAddenda?: { kind: 'correction' | 'info' | 'result'; corrects?: string; text: string; author: string; at: string }[]
   /** Quien la emite: nombre, colegiación y su firma guardada, si tiene. */
   doctor?: { name: string; license?: string; signature?: string; stamp?: string }
 }
@@ -824,6 +844,8 @@ export interface InpatientFile {
   vitals: Vitals[]
   /** Órdenes de la consulta externa que ingresó al paciente (p. ej. "Signos vitales cada 4 horas"). */
   consultOrders?: string[]
+  /** AN1: adendas de las notas de la estancia y de la consulta de ingreso. */
+  addenda?: Addendum[]
 }
 
 // ---------- Crónicos y seguimientos ----------

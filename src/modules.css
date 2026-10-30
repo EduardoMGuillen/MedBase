@@ -328,3 +328,16 @@ tr.clickable { cursor: pointer; }
 .new-svc__save { grid-column: 1 / -1; }
 .new-svc__actions { grid-column: 1 / -1; display: flex; gap: 8px; }
 .total-box--warn { color: var(--amber-ink); }
+
+/* AN1: borrador, nota firmada y adendas */
+.draft-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); background: var(--amber); color: var(--amber-ink); border-radius: 999px; padding: 3px 10px; }
+.draft-badge b { font-weight: 700; }
+.signed-badge { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; color: var(--mint-ink); }
+.addenda { display: grid; gap: 8px; margin-top: 12px; }
+.addendum { border-left: 4px solid var(--ink); background: var(--ink-soft); border-radius: 0 10px 10px 0; padding: 10px 14px; }
+.addendum--correction { border-left-color: #c27a12; background: #fff6e6; }
+.addendum h5 { font-size: 13px; font-weight: 700; color: var(--petrol); margin: 0 0 4px; }
+.addendum__corrects { font-size: 13.5px; color: var(--amber-ink); margin: 0 0 4px; }
+.addendum__text { white-space: pre-wrap; font-size: 14px; margin: 0; }
+.addenda .btn { justify-self: start; }
+@media print { .addendum { break-inside: avoid; background: none; border-left-width: 3px; } }

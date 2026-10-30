@@ -77,6 +77,7 @@ export const toPrescription = (r: Row): Prescription => ({
   standalone: Boolean(r.standalone) || undefined, indications: r.indications == null ? undefined : j<string[]>(r.indications, []),
   guest: r.guest == null ? undefined : j<GuestPatient>(r.guest, { name: '' }), linkedAt: s(r.linked_at), validityDays: n(r.validity_days),
   signatureId: s(r.signature_id), stampId: s(r.stamp_id),
+  voidedAt: s(r.voided_at), voidedBy: s(r.voided_by), voidReason: s(r.void_reason),
 })
 
 export const toCertificate = (r: Row): Certificate => ({

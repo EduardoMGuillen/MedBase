@@ -5,6 +5,7 @@ import { MedAlertBanner } from './MedAlerts'
 import type { InpatientFile, Payment } from '../lib/types'
 import { FOLLOWUP_KIND } from '../lib/followups'
 import { bedLabel } from './Inpatients'
+import { Addenda } from '../components/Addenda'
 import { useStore, type Chart } from '../lib/store'
 import { Loading, StatusBadge } from '../components/ui'
 import { IndicationList, MedLines, NoteColumns } from '../components/NoteColumns'
@@ -147,7 +148,7 @@ type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'rx' | 'certs' | 'files'
 
 export default function PatientChart() {
   const { id } = useParams()
-  const { patient, appointments, staffById, can, updatePatient, followups, bed, inpatientOf, stayOf, fetchCertificates, fetchBalances, settings } = useStore()
+  const { patient, appointments, staffById, can, updatePatient, followups, bed, inpatientOf, stayOf, fetchCertificates, fetchBalances, settings, user } = useStore()
   const [certs, setCerts] = useState<Certificate[] | null>(null)
   // AD9: saldo pendiente del paciente (abonos), visible para quien cobra
   const [owed, setOwed] = useState<Payment[]>([])
@@ -266,14 +267,15 @@ export default function PatientChart() {
           {cs.length ? cs.map((c) => (
             <article key={c.id} className="panel consult-entry">
               <div className="panel__head">
-                <div><h2>{date(c.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</h2><p>{time(c.date)}, {staffById(c.doctorId)?.name}</p></div>
+                <div><h2>{date(c.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}{chart?.addenda?.some((a) => a.targetId === c.id) && <span className="badge badge--amber" style={{ marginLeft: 8 }}>Con adenda</span>}</h2><p>{time(c.date)}, {staffById(c.doctorId)?.name}</p></div>
                 <div className="page-head__actions">
                   <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}><NotebookPen size={15} />Nota</Link>
                   {c.prescriptionId && can('rx.view') && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${c.prescriptionId}`}><FileText size={15} />Receta</Link>}
                   {can('consult.write') && <Link className="btn btn--ghost btn--sm" to={`/app/constancia/${c.id}`}><FileBadge size={15} />Generar constancia</Link>}
                 </div>
               </div>
-              <div className="panel__body"><ConsultationBody c={c} vitals={vs.find((v) => v.id === c.vitalsId)} /></div>
+              <div className="panel__body"><ConsultationBody c={c} vitals={vs.find((v) => v.id === c.vitalsId)} />
+                <Addenda list={chart?.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={reload} /></div>
             </article>
           )) : <section className="panel"><div className="empty">Este paciente aún no tiene consultas firmadas.</div></section>}
         </div>

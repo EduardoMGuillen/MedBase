@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
-  Appointment, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Referral, ReferralData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
+  Addendum, Appointment, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Referral, ReferralData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
@@ -29,7 +29,7 @@ interface Data {
 
 interface Session { user: Staff; permissions: Permission[]; demo: boolean }
 
-export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescriptions: Prescription[]; hospitalizations: Hospitalization[] }
+export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescriptions: Prescription[]; hospitalizations: Hospitalization[]; addenda?: Addendum[] }
 
 /** Medicamento que el médico indica en una nota de hospitalización. */
 export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'instructions' | 'days' | 'replacesId'> & { firstAt?: string }
@@ -144,7 +144,7 @@ function useStoreValue() {
     api<{ prescription: Prescription; consultation: Consultation | null; hospitalization: Hospitalization | null; patient: Patient | null }>(`/prescriptions/${id}`), [])
   const fetchInpatient = useCallback((id: string) => api<InpatientFile>(`/inpatient/${id}`), [])
   const fetchConsultation = useCallback((id: string, purpose: 'note' | 'certificate' = 'note') =>
-    api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null }>(`/consultations/${id}?purpose=${purpose}`), [])
+    api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null; addenda?: Addendum[] }>(`/consultations/${id}?purpose=${purpose}`), [])
   const fetchAppointments = useCallback((from: string, to: string) => api<Appointment[]>(`/appointments?from=${from}&to=${to}`), [])
   const fetchPayments = useCallback((from: string, to: string) => api<Payment[]>(`/payments?from=${from}&to=${to}`), [])
   const fetchBalances = useCallback((patientId?: string) => api<Payment[]>(`/payments/balances${patientId ? `?patientId=${patientId}` : ''}`), [])
@@ -268,6 +268,7 @@ function useStoreValue() {
 
     issuePrescription: (b: { patientId?: string; guest?: GuestPatient; items: PrescriptionItem[]; indications: string[]; validityDays?: number }) =>
       run(() => api<{ prescriptionId: string; folio: string }>('/prescriptions', { body: b }), 'Receta emitida'),
+    voidPrescription: (id: string, reason: string) => run(() => api<Prescription>(`/prescriptions/${id}/void`, { body: { reason } }), 'Receta anulada'),
     /** Pasa la receta de una persona no registrada al expediente que se le creó (o que ya tenía). */
     linkPrescription: (id: string, patientId: string, success = 'Receta vinculada al expediente') =>
       run(() => api<Prescription>(`/prescriptions/${id}/link`, { body: { patientId } }), success),
@@ -348,6 +349,8 @@ function useStoreValue() {
       const me = await api<Session>('/auth/me')
       setSession(me)
     }, 'Verificación en dos pasos desactivada'),
+    /** AN1: adenda a una nota firmada. */
+    addAddendum: (b: Pick<Addendum, 'targetKind' | 'targetId' | 'kind' | 'corrects' | 'text'>) => run(() => api<Addendum>('/addenda', { body: b }), 'Adenda firmada'),
     resetDemo: () => run(() => api('/admin/reset-demo', { method: 'POST' }), 'Datos de demo restablecidos'),
     createClinic: (c: Pick<Clinic, 'name' | 'address' | 'phone' | 'email'> & { slug?: string; kind?: ClinicKind; admin?: { name: string; email: string }
       owner?: { name: string; email: string; license: string; specialty?: string } }) =>

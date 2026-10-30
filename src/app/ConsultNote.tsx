@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { Addenda, SignedBadge } from '../components/Addenda'
 import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, FileBadge, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -10,9 +11,10 @@ import { BackgroundView, ConsultationBody, Identification } from './PatientChart
 /** Nota de consulta imprimible con el orden de la historia clínica. */
 export default function ConsultNote() {
   const { id } = useParams()
-  const { fetchConsultation, staffById, settings, notify, can } = useStore()
+  const { fetchConsultation, staffById, settings, notify, can, user } = useStore()
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchConsultation>> | null>(null)
-  useEffect(() => { if (id) fetchConsultation(id).then(setData).catch((e: Error) => notify(e.message, 'error')) }, [id, fetchConsultation, notify])
+  const load = useCallback(() => { if (id) fetchConsultation(id).then(setData).catch((e: Error) => notify(e.message, 'error')) }, [id, fetchConsultation, notify])
+  useEffect(load, [load])
   if (!data) return <Loading label="Preparando la nota" />
   const { consultation: c, patient: p, vitals } = data
   const doc = staffById(c.doctorId)!
@@ -44,6 +46,8 @@ export default function ConsultNote() {
         <BackgroundView p={p} compact />
         <h3 className="cn__h">IV. Consulta</h3>
         <ConsultationBody c={c} vitals={vitals} />
+        <SignedBadge by={doc.name} at={c.date} addenda={(data.addenda ?? []).length} />
+        <Addenda list={data.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={load} />
 
         <div className="rx-sheet__sign"><div><em>{doc.name.replace(/^Dra?\.\s*/, '')}</em>{doc.name}<br /><span style={{ color: 'var(--muted)' }}>{doc.license}</span></div></div>
         <footer className="rx-sheet__foot"><span>Documento del expediente clínico. Confidencial.</span><span>Emitido con Clinara</span></footer>
