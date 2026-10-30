@@ -6,7 +6,7 @@ import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
-import { allergyConflict, DRUGS } from '../lib/catalogs'
+import { allergyConflict } from '../lib/catalogs'
 import { defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
 import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
@@ -1104,7 +1104,10 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
   const [open, setOpen] = useState(false)
   const [override, setOverride] = useState(false)
   const conflict = m.drug ? allergyConflict(p.allergies, m.drug) : null
-  const matches = DRUGS.filter((d) => d.name.toLowerCase().includes(m.drug.toLowerCase())).slice(0, 6)
+  // AD4: el mismo vademécum que al recetar (proveedor, medicamentos de la clínica y favoritos primero)
+  const vademecum = useVademecum()
+  const q = normalize(m.drug)
+  const matches = q ? vademecum.filter((d) => normalize(`${d.name} ${d.brand ?? ''}`).includes(q)).slice(0, 6) : vademecum.slice(0, 6)
   const built = (): NewMed | null => {
     if (!m.drug.trim() || !m.dose.trim() || (conflict && !override)) return null
     const everyHours = freq === 'once' ? undefined : Number(freq)

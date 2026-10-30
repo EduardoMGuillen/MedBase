@@ -9,6 +9,8 @@ import { ScheduleEditor } from './ScheduleEditor'
 import { PasswordPanel, TwoFactorPanel } from './Account'
 import { PERMISSIONS, permissionsFor, ROLE_LABEL, VIEW_LABEL, viewsOf } from '../lib/permissions'
 import { drugKey, useVademecum } from '../lib/vademecum'
+import { fromClinicDrug } from '../lib/drugProvider'
+import type { ClinicDrug } from '../lib/types'
 import { normalize } from '../lib/patients'
 import { api } from '../lib/api'
 import { MyActivity } from './Activity'
@@ -173,16 +175,25 @@ function SchedulePanel() {
   )
 }
 
-/** Mi vademécum: favoritos (salen primero al recetar) y medicamentos nuevos para la clínica. */
+/**
+ * Mi vademécum: favoritos (salen primero al recetar) y medicamentos nuevos para la clínica. AD4: quien agregó un
+ * medicamento (o administración) lo edita, lo desactiva o lo reactiva desde aquí.
+ */
 function VademecumPanel() {
-  const { user, saveMyProfile } = useStore()
+  const { user, saveMyProfile, clinicDrugs = [], can } = useStore()
   const drugs = useVademecum()
   const [q, setQ] = useState('')
   const [onlyFav, setOnlyFav] = useState(false)
+  const [onlyClinic, setOnlyClinic] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<ClinicDrug | null>(null)
   const favs = useMemo(() => new Set(user?.prefs?.favDrugs ?? []), [user?.prefs?.favDrugs])
+  const canEdit = (d: ClinicDrug) => can('drugs.manage') || d.createdBy === user?.id
+  const clinicDrug = (id?: string) => clinicDrugs.find((x) => x.id === id)
+  // Los desactivados ya no se ofrecen al recetar; quien puede editarlos los sigue viendo aquí para reactivarlos
+  const inactive = clinicDrugs.filter((d) => !d.active && canEdit(d)).map(fromClinicDrug)
   const n = normalize(q)
-  const list = drugs.filter((d) => (!onlyFav || favs.has(drugKey(d))) && (!n || normalize(`${d.name} ${d.brand ?? ''} ${d.presentation}`).includes(n)))
+  const list = [...drugs, ...inactive].filter((d) => (!onlyFav || favs.has(drugKey(d))) && (!onlyClinic || d.clinicId) && (!n || normalize(`${d.name} ${d.brand ?? ''} ${d.presentation}`).includes(n)))
   const toggle = (key: string) => saveMyProfile({ favDrugs: favs.has(key) ? [...favs].filter((x) => x !== key) : [...favs, key] })
   return (
     <section className="panel">
@@ -192,24 +203,28 @@ function VademecumPanel() {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <input className="input" style={{ maxWidth: 360 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar medicamento" aria-label="Buscar medicamento" />
           <label className="check-inline"><input type="checkbox" checked={onlyFav} onChange={(e) => setOnlyFav(e.target.checked)} />Sólo mis favoritos ({favs.size})</label>
+          <label className="check-inline"><input type="checkbox" checked={onlyClinic} onChange={(e) => setOnlyClinic(e.target.checked)} />Sólo agregados por la clínica</label>
         </div>
         <ul className="fav-list">
           {list.slice(0, 60).map((d) => {
             const key = drugKey(d)
+            const cd = clinicDrug(d.clinicId)
             return (
-              <li key={key}>
+              <li key={key} style={cd && !cd.active ? { opacity: 0.55 } : undefined}>
                 <button type="button" className={`icon-btn fav${favs.has(key) ? ' is-on' : ''}`} aria-pressed={favs.has(key)} aria-label={`${favs.has(key) ? 'Quitar de' : 'Agregar a'} favoritos ${d.name}`} onClick={() => toggle(key)}>
                   <Star size={17} fill={favs.has(key) ? 'currentColor' : 'none'} /></button>
                 <span><b>{d.name}</b> <span className="muted">{d.presentation}{d.brand ? ` · ${d.brand}` : ''}</span></span>
-                {d.clinicId && <span className="badge">De la clínica</span>}
+                {cd && <span className="badge">{cd.active ? 'De la clínica' : 'Desactivado'}</span>}
+                {cd && canEdit(cd) && <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditing(cd)}>Editar</button>}
               </li>
             )
           })}
         </ul>
         {list.length > 60 && <p className="muted" style={{ fontSize: 13.5 }}>Mostrando 60 de {list.length}. Escribe para buscar.</p>}
-        {!list.length && <div className="empty">{onlyFav ? 'Todavía no marcas favoritos.' : 'Ningún medicamento coincide.'}</div>}
+        {!list.length && <div className="empty">{onlyFav ? 'Todavía no marcas favoritos.' : onlyClinic && !n ? 'La clínica todavía no agrega medicamentos.' : 'Ningún medicamento coincide.'}</div>}
       </div>
       {adding && <DrugForm onClose={() => setAdding(false)} />}
+      {editing && <DrugForm drug={editing} onClose={() => setEditing(null)} />}
     </section>
   )
 }

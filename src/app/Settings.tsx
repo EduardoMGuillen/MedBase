@@ -3,7 +3,7 @@ import { Download, Plus, Upload } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead } from '../components/ui'
 import { DrugForm } from '../components/DrugForm'
-import { DRUGS } from '../lib/catalogs'
+import { drugProvider } from '../lib/drugProvider'
 import { normalize } from '../lib/patients'
 import { download, parseCsv, toCsv } from '../lib/csv'
 import { DEFAULT_CRITICAL } from '../lib/exams'
@@ -59,6 +59,8 @@ function ClinicDrugs() {
   const [onlyClinic, setOnlyClinic] = useState(false)
   const [result, setResult] = useState<{ added: number; skipped: { row: number; name: string; reason: string }[] } | null>(null)
   const n = normalize(q)
+  // El catálogo base viene del proveedor (AD4), sin los de la clínica: esos se listan aparte, con sus acciones
+  const DRUGS = drugProvider.catalog([])
   const added = clinicDrugs.filter((d) => !n || normalize(`${d.name} ${d.brand ?? ''} ${d.presentation ?? ''}`).includes(n))
   const base = onlyClinic ? [] : DRUGS.filter((d) => !n || normalize(`${d.name} ${d.presentation}`).includes(n))
   const canEdit = (d: ClinicDrug) => can('drugs.manage') || d.createdBy === user?.id
