@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import type { OrderSet, OrderSetItem } from '../../src/lib/types.js'
+import { examInput } from './exams.js'
 
 const med = z.object({
   drug: z.string().trim().min(1, 'Escribe el medicamento.').max(120),
@@ -14,7 +15,8 @@ const med = z.object({
   days: z.number().int().min(1).max(365).optional(),
   instructions: z.string().trim().max(300).optional(),
 })
-const item = z.union([z.object({ text: z.string().trim().min(1).max(500) }), z.object({ med })])
+// EX1: un set también puede traer exámenes (se insertan en la sección Exámenes, no como texto)
+const item = z.union([z.object({ text: z.string().trim().min(1).max(500) }), z.object({ med }), z.object({ exam: examInput })])
 const body = z.object({
   name: z.string().trim().min(3, 'Ponle un nombre al set (al menos 3 letras).').max(100),
   items: z.array(item).min(1, 'El set necesita al menos una orden.').max(40, 'Un set tiene como máximo 40 órdenes.'),

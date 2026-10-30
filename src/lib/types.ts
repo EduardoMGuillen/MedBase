@@ -78,6 +78,11 @@ export interface ClinicSettings {
   contacts?: ClinicContact[]
   /** AD1: los membretes muestran también el número de WhatsApp. */
   docsWhatsapp?: boolean
+  /** EX1: áreas de servicio propias. Sin ellas, los exámenes los atiende enfermería. */
+  hasLab?: boolean
+  hasImaging?: boolean
+  /** EX1: umbrales críticos de laboratorio (analito → bajo/alto). */
+  criticalLimits?: Record<string, { low?: number; high?: number }>
   /** AD9: formas de pago que acepta la clínica (en caja sólo aparecen éstas). */
   paymentMethods?: PaymentMethod[]
   email: string
@@ -534,6 +539,59 @@ export interface InpatientNote {
   procedure?: ProcedureData
 }
 
+// ---------- Exámenes (EX1) ----------
+
+/** Laboratorio o Imagen y gabinete: los hace gente distinta, en lugares distintos, con órdenes distintas. */
+export type ExamGroup = 'lab' | 'imaging'
+/** Laboratorio: ordered → sample → result → reviewed. Imagen y gabinete: ordered → done → result → reviewed. */
+export type ExamStatus = 'ordered' | 'sample' | 'done' | 'result' | 'reviewed' | 'cancelled'
+
+/** Lo que el médico pide al ordenar un examen. */
+export interface ExamInput {
+  group: ExamGroup
+  name: string
+  /** Imagen: región y lado (radiografía de rodilla derecha). */
+  region?: string
+  side?: 'right' | 'left' | 'both'
+  indication?: string
+  priority: 'routine' | 'urgent'
+  /** Dónde se realiza: en la clínica o externo. */
+  place: 'clinic' | 'external'
+}
+
+export interface ExamResultValue { analyte: string; value: string; unit?: string; low?: number; high?: number; flag?: 'high' | 'low'; critical?: boolean }
+
+export interface ExamOrder extends ExamInput {
+  id: string
+  patientId: string
+  consultationId?: string
+  hospitalizationId?: string
+  noteId?: string
+  /** Los exámenes pedidos juntos (en una consulta o una nota): se imprimen en una orden por grupo. */
+  batchId: string
+  /** Área que lo realiza y recibe la alerta (hoy, sin laboratorio ni imágenes propios, enfermería). */
+  area: 'lab' | 'imaging' | 'nursing' | 'none'
+  status: ExamStatus
+  orderedBy: string
+  orderedAt: string
+  statusAt?: string
+  statusBy?: string
+  cancelReason?: string
+  result?: { values?: ExamResultValue[]; report?: string; fileIds?: string[]; at: string; by: string }
+  /** Algún valor fuera del umbral crítico de la clínica. */
+  critical?: boolean
+  reviewedBy?: string
+  reviewedAt?: string
+  /** Cada cambio de estado con quién y cuándo. */
+  events?: { status: ExamStatus; by: string; at: string; note?: string }[]
+}
+
+/** Perfil o paquete de exámenes (de la clínica o de un médico). */
+export interface ExamProfile { id: string; name: string; ownerId?: string; items: { group: ExamGroup; name: string }[] }
+
+/** Examen agregado al catálogo por la clínica. */
+export interface ClinicExam { id: string; group: ExamGroup; name: string; active: boolean; createdBy: string; createdAt: string }
+
 /** AN1: adenda (addendum) de una nota firmada: corrección, información adicional o resultado posterior. Inmutable. */
 export interface Addendum {
   id: string
@@ -560,8 +618,8 @@ export interface SetMed {
   instructions?: string
 }
 
-/** Una orden de un set: texto (indicación) o medicamento estructurado. */
-export type OrderSetItem = { text: string; med?: undefined } | { med: SetMed; text?: undefined }
+/** Una orden de un set: texto (indicación), medicamento estructurado o examen (EX1). */
+export type OrderSetItem = { text: string; med?: undefined; exam?: undefined } | { med: SetMed; text?: undefined; exam?: undefined } | { exam: ExamInput; text?: undefined; med?: undefined }
 
 /** Set de órdenes de un médico ("Post-op colecistectomía no complicada"). Personal; puede compartirse con la clínica. */
 export interface OrderSet {
@@ -846,6 +904,8 @@ export interface InpatientFile {
   consultOrders?: string[]
   /** AN1: adendas de las notas de la estancia y de la consulta de ingreso. */
   addenda?: Addendum[]
+  /** EX1: exámenes de la estancia (y de la consulta que lo ingresó). */
+  exams?: ExamOrder[]
 }
 
 // ---------- Crónicos y seguimientos ----------

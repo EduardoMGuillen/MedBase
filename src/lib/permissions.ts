@@ -29,6 +29,8 @@ export const PERMISSIONS = {
   'orders.review': 'Marcar como revisadas las órdenes médicas',
   'followups.view': 'Ver crónicos y recordatorios',
   'followups.manage': 'Programar seguimientos de pacientes',
+  'exams.order': 'Ordenar exámenes y revisar sus resultados',
+  'exams.process': 'Tomar muestras, marcar exámenes realizados y cargar resultados',
   'platform.manage': 'Administrar clínicas y usuarios de la plataforma',
 } as const
 
@@ -44,13 +46,15 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',
     'consult.write', 'rx.write', 'rx.view', 'billing.manage', 'inpatient.view', 'inpatient.orders', 'followups.view', 'followups.manage',
+    'exams.order', 'exams.process',
   ],
   // AD9: enfermería ya no cobra (los cobros los generan recepción, el médico o administración)
-  nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'inpatient.view', 'inpatient.care', 'orders.review', 'followups.view'],
+  nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'inpatient.view', 'inpatient.care', 'orders.review', 'followups.view',
+    'exams.process'],
   reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view'],
   // Asistente de consultorio (secretaria o enfermera): recepción, preclínica, caja y aplicar dosis en observación
   assistant: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage',
-    'inpatient.view', 'inpatient.care', 'followups.view'],
+    'inpatient.view', 'inpatient.care', 'followups.view', 'exams.process'],
 }
 
 /**

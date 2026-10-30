@@ -1,4 +1,5 @@
-import type { OrderSetItem, PrescriptionItem, SetMed } from './types.js'
+import type { ExamInput, OrderSetItem, PrescriptionItem, SetMed } from './types.js'
+import { examLine } from './exams.js'
 import { durationDays, frequencyHours, medLabel } from './inpatient.js'
 import { normalize } from './patients.js'
 
@@ -17,7 +18,9 @@ export const medHasBlank = (m: Pick<SetMed, 'drug' | 'dose' | 'instructions' | '
 
 /** Texto de un medicamento del set, como se lee en la nota. */
 export const setMedText = (m: SetMed) => `${medLabel(m)}${m.days ? ` por ${m.days} días` : ''}${m.instructions ? `. ${m.instructions}` : ''}`
-export const itemText = (it: OrderSetItem) => (it.med ? setMedText(it.med) : it.text)
+/** EX1: un examen del set («Hemograma (urgente)»). */
+export const setExamText = (e: ExamInput) => `${examLine(e)}${e.priority === 'urgent' ? ' (urgente)' : ''}${e.place === 'external' ? ', externo' : ''}`
+export const itemText = (it: OrderSetItem) => (it.med ? setMedText(it.med) : it.exam ? setExamText(it.exam) : it.text)
 
 /** Del set a la receta de la consulta externa. Sin días, la duración queda vacía: la consulta pide completarla. */
 export function setMedToRx(m: SetMed): PrescriptionItem {

@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '40'
+const SCHEMA_VERSION = '41'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -751,6 +751,69 @@ ALTER TABLE prescriptions
   ADD COLUMN IF NOT EXISTS voided_at TEXT,
   ADD COLUMN IF NOT EXISTS voided_by TEXT,
   ADD COLUMN IF NOT EXISTS void_reason TEXT;
+
+-- v41: ronda 4 (EX1, reemplaza a MC4). Exámenes: Laboratorio e Imagen y gabinete. Cada examen guarda el área que lo
+-- realiza (laboratorio, imágenes o, mientras la clínica no tenga esas áreas, enfermería) y cada cambio de estado.
+ALTER TABLE clinics
+  ADD COLUMN IF NOT EXISTS has_lab BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS has_imaging BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS critical_limits TEXT;
+CREATE TABLE IF NOT EXISTS exam_catalog (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  grp TEXT NOT NULL CHECK (grp IN ('lab','imaging')),
+  name TEXT NOT NULL,
+  norm_key TEXT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by TEXT NOT NULL REFERENCES staff(id), created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS exam_catalog_key ON exam_catalog (clinic_id, norm_key);
+CREATE TABLE IF NOT EXISTS exam_profiles (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  owner_id TEXT REFERENCES staff(id),
+  name TEXT NOT NULL,
+  items TEXT NOT NULL,
+  created_by TEXT NOT NULL, created_at TEXT NOT NULL,
+  archived_at TEXT
+);
+CREATE TABLE IF NOT EXISTS exam_orders (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  consultation_id TEXT,
+  hospitalization_id TEXT,
+  note_id TEXT,
+  batch_id TEXT NOT NULL,
+  grp TEXT NOT NULL CHECK (grp IN ('lab','imaging')),
+  name TEXT NOT NULL,
+  region TEXT, side TEXT, indication TEXT,
+  priority TEXT NOT NULL DEFAULT 'routine' CHECK (priority IN ('routine','urgent')),
+  place TEXT NOT NULL DEFAULT 'clinic' CHECK (place IN ('clinic','external')),
+  area TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ordered' CHECK (status IN ('ordered','sample','done','result','reviewed','cancelled')),
+  ordered_by TEXT NOT NULL REFERENCES staff(id), ordered_at TEXT NOT NULL,
+  status_at TEXT, status_by TEXT, cancel_reason TEXT,
+  result TEXT, critical BOOLEAN NOT NULL DEFAULT FALSE,
+  reviewed_by TEXT, reviewed_at TEXT,
+  source_attachment_id TEXT
+);
+CREATE INDEX IF NOT EXISTS exam_orders_patient ON exam_orders (clinic_id, patient_id, ordered_at);
+CREATE INDEX IF NOT EXISTS exam_orders_stay ON exam_orders (hospitalization_id);
+CREATE INDEX IF NOT EXISTS exam_orders_open ON exam_orders (clinic_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS exam_orders_attachment ON exam_orders (source_attachment_id) WHERE source_attachment_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS exam_events (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL,
+  exam_id TEXT NOT NULL REFERENCES exam_orders(id),
+  status TEXT NOT NULL,
+  by_id TEXT NOT NULL,
+  at TEXT NOT NULL,
+  note TEXT
+);
+CREATE INDEX IF NOT EXISTS exam_events_exam ON exam_events (exam_id, at);
+DROP TRIGGER IF EXISTS exam_events_no_change ON exam_events;
+CREATE TRIGGER exam_events_no_change BEFORE UPDATE OR DELETE ON exam_events FOR EACH ROW EXECUTE FUNCTION audit_append_only();
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -796,6 +859,7 @@ export function ensureDb(sql: Sql) {
       await migrateContacts(q)
       await migrateBedSpecialties(q)
       await migratePayments(q)
+      await migrateLabsToExams(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -1125,6 +1189,26 @@ export async function migrateObservationAuthorizations(q: Sql) {
 }
 
 /**
+ * v41 (EX1): los resultados que se subían como archivos en la pestaña «Laboratorios» (o como imagen) de una estancia pasan
+ * a ser exámenes con su resultado: el archivo no se mueve ni se borra; el examen lo referencia. Idempotente.
+ */
+export async function migrateLabsToExams(q: Sql) {
+  const rows = await q.query(`SELECT a.* FROM attachments a WHERE a.category IN ('lab','imaging') AND a.hospitalization_id IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM exam_orders e WHERE e.source_attachment_id = a.id)`)
+  for (const a of rows) {
+    const at = String(a.taken_at ?? a.uploaded_at)
+    const id = randomUUID()
+    const grp = a.category === 'imaging' ? 'imaging' : 'lab'
+    const result = JSON.stringify({ fileIds: [String(a.id)], at: String(a.uploaded_at), by: String(a.uploaded_by) })
+    await q.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, hospitalization_id, batch_id, grp, name, priority, place, area, status, ordered_by, ordered_at, status_at, status_by, result, source_attachment_id)
+      VALUES (?,?,?,?,?,?,?,'routine','clinic','nursing','result',?,?,?,?,?,?)`,
+      [id, String(a.clinic_id), String(a.patient_id), String(a.hospitalization_id), `migr-${a.id}`, grp, String(a.title ?? a.name), String(a.uploaded_by), at, String(a.uploaded_at), String(a.uploaded_by), result, String(a.id)])
+    await q.run('INSERT INTO exam_events (id, clinic_id, exam_id, status, by_id, at, note) VALUES (?,?,?,?,?,?,?)',
+      [randomUUID(), String(a.clinic_id), id, 'result', String(a.uploaded_by), String(a.uploaded_at), 'Resultado subido antes de la sección Exámenes (migración v41)'])
+  }
+}
+
+/**
  * v39 (AD9): los cobros de antes se pagaron completos (amount_paid = total). Cada clínica acepta efectivo y transferencia
  * y, para no quitarle nada, las formas de pago que ya había usado. Idempotente.
  */
@@ -1249,7 +1333,7 @@ export async function nextFolio(q: Sql, clinicId: string, now: Date) {
 /** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
 export async function resetDemo(sql: Sql) {
   await sql.tx(async (q) => {
-    await q.exec(`TRUNCATE addenda, note_drafts, payment_installments, staff_marks, epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
+    await q.exec(`TRUNCATE exam_events, exam_orders, exam_profiles, exam_catalog, addenda, note_drafts, payment_installments, staff_marks, epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
       attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
     await seed(q)

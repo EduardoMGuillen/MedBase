@@ -4,7 +4,7 @@ import zlib from 'node:zlib'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb, migrateRxValidity } from './db.js'
+import { DEMO_PASSWORD, ensureDb, migrateLabsToExams, migrateRxValidity } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { filterSummary, periodRange, type Filters } from '../src/lib/patientFilters.js'
 
@@ -475,5 +475,92 @@ describe('AN1 (ronda 4) borrador, nota firmada inmutable y adenda', () => {
     const epi = await doc.post(`/api/epicrisis/${d.body.epicrisisId}/issue`)
     assert.equal(epi.status, 200, JSON.stringify(epi.body))
     assert.equal(epi.body.data.dischargeAddenda[0].text, 'El hemocultivo salió negativo.')
+  })
+})
+
+const EXAMS3 = [
+  { group: 'lab', name: 'Hemograma', priority: 'urgent', place: 'clinic' },
+  { group: 'lab', name: 'Perfil lipídico', priority: 'routine', place: 'clinic' },
+  { group: 'imaging', name: 'Radiografía de tórax', indication: 'Tos de tres semanas', priority: 'routine', place: 'clinic' },
+]
+
+describe('EX1 (ronda 4) exámenes: Laboratorio e Imagen y gabinete', () => {
+  test('en una consulta: dos grupos en el mismo lote (dos órdenes impresas), área enfermería si no hay laboratorio propio', async () => {
+    const { doc, apptId } = await walkIn('Exámenes')
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Control', diagnoses: DX, exams: EXAMS3 })
+    assert.equal(c.status, 201, JSON.stringify(c.body))
+    const batch = (await doc.get(`/api/exams/batch/${c.body.examBatch}`)).body
+    assert.equal(batch.exams.length, 3)
+    assert.deepEqual([...new Set(batch.exams.map((e: any) => e.group))].sort(), ['imaging', 'lab'])
+    assert.ok(batch.exams.every((e: any) => e.area === 'nursing' && e.status === 'ordered'))
+    // Recepción no ordena exámenes
+    assert.equal((await (await as('smejia@demo.clinara')).get(`/api/exams/batch/${c.body.examBatch}`)).status, 403)
+  })
+
+  test('con laboratorio propio, el área destino es Laboratorio; los externos de consulta no van a ninguna bandeja', async () => {
+    const admin = await as('admin@demo.clinara')
+    assert.equal((await admin.put('/api/settings/exam-areas', { hasLab: true, hasImaging: false })).status, 200)
+    const { doc, apptId } = await walkIn('Laboratorio Propio')
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Control', diagnoses: DX,
+      exams: [{ group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' }, { group: 'imaging', name: 'Ultrasonido abdominal', priority: 'routine', place: 'external' }] })
+    const exams = (await doc.get(`/api/exams/batch/${c.body.examBatch}`)).body.exams
+    assert.equal(exams.find((e: any) => e.group === 'lab').area, 'lab')
+    assert.equal(exams.find((e: any) => e.group === 'imaging').area, 'none')
+    await admin.put('/api/settings/exam-areas', { hasLab: false, hasImaging: false })
+  })
+
+  test('en hospitalización: enfermería los ve en su bandeja (urgente arriba), toma la muestra y carga el resultado; el médico recibe «Resultado nuevo» y lo revisa', async () => {
+    const { doc, nurse, stayId } = await admitted('Bandeja')
+    const n = await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', exam: 'Estable.', exams: [EXAMS3[1], EXAMS3[2], EXAMS3[0]] })
+    assert.equal(n.status, 201, JSON.stringify(n.body))
+    const tray = (await nurse.get('/api/exams/tray')).body.filter((e: any) => e.hospitalizationId === stayId)
+    assert.equal(tray.length, 3)
+    assert.equal(tray[0].name, 'Hemograma')
+    assert.equal(tray[0].priority, 'urgent')
+    const hemo = tray[0]
+    assert.equal((await nurse.post(`/api/exams/${hemo.id}/status`, { status: 'done' })).status, 400)
+    assert.equal((await nurse.post(`/api/exams/${hemo.id}/status`, { status: 'sample' })).body.status, 'sample')
+    const r = await nurse.post(`/api/exams/${hemo.id}/result`, { values: [{ analyte: 'Hemoglobina', value: '9.1' }, { analyte: 'Plaquetas', value: '250' }] })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.status, 'result')
+    assert.equal(r.body.result.values[0].flag, 'low')
+    assert.equal(r.body.result.values[0].unit, 'g/dL')
+    assert.equal(r.body.result.values[1].flag, undefined)
+    assert.equal(r.body.critical, undefined)
+    const fresh = (await doc.get('/api/exams/new-results')).body
+    assert.ok(fresh.some((e: any) => e.id === hemo.id))
+    assert.equal((await nurse.post(`/api/exams/${hemo.id}/review`)).status, 403)
+    assert.equal((await doc.post(`/api/exams/${hemo.id}/review`)).body.status, 'reviewed')
+    assert.ok(!(await doc.get('/api/exams/new-results')).body.some((e: any) => e.id === hemo.id))
+    // Cada cambio de estado quedó con quién y cuándo
+    const file = (await doc.get(`/api/inpatient/${stayId}`)).body
+    assert.deepEqual(file.exams.find((e: any) => e.id === hemo.id).events.map((e: any) => e.status), ['ordered', 'sample', 'result', 'reviewed'])
+  })
+
+  test('un valor fuera del umbral crítico es una alerta crítica; cancelar pide motivo', async () => {
+    const { doc, nurse, stayId } = await admitted('Crítico')
+    await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', exam: 'Pálido.', exams: [EXAMS3[0], EXAMS3[2]] })
+    const tray = (await nurse.get('/api/exams/tray')).body.filter((e: any) => e.hospitalizationId === stayId)
+    const r = await nurse.post(`/api/exams/${tray[0].id}/result`, { values: [{ analyte: 'Hemoglobina', value: '5.8' }] })
+    assert.equal(r.body.critical, true)
+    assert.equal((await nurse.post(`/api/exams/${tray[1].id}/cancel`, { reason: '' })).status, 400)
+    assert.equal((await nurse.post(`/api/exams/${tray[1].id}/cancel`, { reason: 'El paciente se trasladó a otro centro.' })).body.status, 'cancelled')
+  })
+
+  test('un set con exámenes los guarda como exámenes; los resultados que se subían como archivos se migran a exámenes', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const s = await doc.post('/api/order-sets', { name: 'Neumonía', items: [{ text: 'Oxígeno por cánula a 2 L/min.' }, { exam: EXAMS3[0] }, { exam: EXAMS3[2] }] })
+    assert.equal(s.status, 201, JSON.stringify(s.body))
+    assert.equal(s.body.items.filter((i: any) => i.exam).length, 2)
+    const { stayId, patientId } = await admitted('Migración')
+    const att = await doc.post(`/api/patients/${patientId}/attachments`, { name: 'hemo.pdf', mime: 'application/pdf', category: 'lab', data: Buffer.from('%PDF-1.4').toString('base64'), title: 'Hemograma', takenAt: new Date().toISOString(), hospitalizationId: stayId })
+    assert.equal(att.status, 201, JSON.stringify(att.body))
+    await migrateLabsToExams(sql)
+    await migrateLabsToExams(sql)
+    const file = (await doc.get(`/api/inpatient/${stayId}`)).body
+    const migrated = file.exams.filter((e: any) => e.result?.fileIds?.includes(att.body.id))
+    assert.equal(migrated.length, 1)
+    assert.equal(migrated[0].name, 'Hemograma')
+    assert.equal(migrated[0].status, 'result')
   })
 })

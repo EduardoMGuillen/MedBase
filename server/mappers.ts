@@ -196,6 +196,7 @@ export const clinicSettings = (r: Row): ClinicSettings => ({
   contacts: j<ClinicContact[]>(r.contacts, r.phone ? [{ id: 'principal', number: String(r.phone), label: 'Principal', type: 'call', primary: true }] : []),
   docsWhatsapp: Boolean(r.docs_whatsapp),
   paymentMethods: j<ClinicSettings['paymentMethods']>(r.payment_methods, ['cash', 'transfer']),
+  hasLab: Boolean(r.has_lab), hasImaging: Boolean(r.has_imaging), criticalLimits: j<ClinicSettings['criticalLimits']>(r.critical_limits, undefined),
   currency: String(r.currency ?? DEFAULT_SETTINGS.currency), rxValidityDays: Number(r.rx_validity_days ?? DEFAULT_SETTINGS.rxValidityDays),
   reminderTemplate: String(r.reminder_template || DEFAULT_SETTINGS.reminderTemplate),
   recordUsesDni: Boolean(r.record_uses_dni), logo: s(r.logo), dniMask: r.dni_mask == null ? DNI_MASK : String(r.dni_mask),

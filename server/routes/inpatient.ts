@@ -15,6 +15,7 @@ import { authorizationBase, ensureHospitalAuthorization, refreshPendingHospitalA
 import { rxValidityOf, specialtyOf, validityInput } from '../prefs.js'
 import { currentMarks } from './me.js'
 import { addendaFor } from './notes.js'
+import { examInput, examsWhere, insertExams } from './exams.js'
 
 const dx = z.array(diagnosisInput)
 const when = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'La fecha u hora no es válida.')
@@ -319,6 +320,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       consultOrders: h.consultation_id ? JSON.parse(String((await sql.one('SELECT orders FROM consultations WHERE id = ?', [String(h.consultation_id)]))?.orders ?? '[]')) as string[] : [],
       // AN1: adendas de las notas y de la consulta que lo ingresó
       addenda: await addendaFor(sql, cid, [...notes.map((n) => String(n.id)), ...(h.consultation_id ? [String(h.consultation_id)] : [])]),
+      // EX1: exámenes de la estancia (y los que pidió la consulta que lo ingresó)
+      exams: await examsWhere(sql, 'clinic_id = ? AND (hospitalization_id = ? OR (consultation_id IS NOT NULL AND consultation_id = ?))', [cid, id, String(h.consultation_id ?? '')]),
     })
   })
 
@@ -337,6 +340,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       orders: z.array(z.string().trim().min(1).max(500)).max(40).default([]),
       // Las primeras `indicationCount` órdenes son indicaciones (columna derecha); el resto, medicamentos
       indicationCount: z.number().int().min(0).max(40).optional(),
+      // EX1: exámenes pedidos en la nota (van a la sección Exámenes, no como texto en las órdenes)
+      exams: z.array(examInput).max(40).default([]),
       // Identificador que genera el formulario al abrirse: si la misma nota llega dos veces (doble clic, reintento),
       // se devuelve la que ya se guardó y no se duplican ni la nota ni sus órdenes de medicamento
       clientId: z.string().uuid().optional(),
@@ -347,7 +352,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       if (empty) fail(400, `Escribe ${empty[1]}.`)
     } else if (b.kind === 'admission') {
       fail(400, 'La nota de ingreso se escribe en formato SOAP.')
-    } else if (!b.diagnoses.length && !b.exam && !b.observations && !b.orders.length && !b.meds.length) {
+    } else if (!b.diagnoses.length && !b.exam && !b.observations && !b.orders.length && !b.meds.length && !b.exams.length) {
       fail(400, 'Escribe al menos un diagnóstico, el examen físico, una observación, una indicación o un medicamento.')
     }
     // Un set de órdenes puede traer espacios "___": se llenan antes de guardar la nota
@@ -377,8 +382,9 @@ export function registerInpatient(app: Express, ctx: Ctx) {
           JSON.stringify({ orders: b.orders, checklist, indications: b.indicationCount === undefined ? undefined : Math.min(b.indicationCount, b.orders.length),
             ...(b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, exam: b.exam, observations: b.observations } : {}) })])
       await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
+      await insertExams(q, { clinicId: cid, patientId: String(h.patient_id), hospitalizationId: id, noteId, by: user.id, at }, b.exams)
       const what = b.kind === 'admission' ? 'nota de ingreso' : 'nota de evolución'
-      const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`].filter(Boolean).join(', ')
+      const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`, b.exams.length && `${b.exams.length} examen(es)`].filter(Boolean).join(', ')
       await audit(user, `Escribió ${what} de ${name}${changes ? `: ${changes}` : ''}`, q)
     })
     res.status(201).json(toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [noteId]))!))

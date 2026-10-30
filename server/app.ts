@@ -19,6 +19,7 @@ import { rxValidityOf, specialtyOf, validityInput } from './prefs.js'
 import { registerSettings } from './routes/settings.js'
 import { currentMarks, registerMe } from './routes/me.js'
 import { addendaFor, registerNotes } from './routes/notes.js'
+import { examInput, insertExams, registerExams } from './routes/exams.js'
 import { registerPublic } from './routes/public.js'
 import { registerBilling } from './routes/billing.js'
 import { registerReports } from './routes/reports.js'
@@ -817,9 +818,11 @@ export function createApp(opts: AppOptions) {
       vitalsId: z.string().optional(),
       items: z.array(rxItem).default([]),
       validityDays: validityInput,
+      // EX1: exámenes de laboratorio e imagen y gabinete; se imprimen en una orden por grupo, aparte de la receta
+      exams: z.array(examInput).max(40).default([]),
     }), req.body)
-    // Basta una indicación o un medicamento; no se exigen ambos
-    if (!c.orders.length && !c.items.length) fail(400, 'Agrega al menos una indicación o un medicamento en el plan y manejo.')
+    // Basta una indicación, un medicamento o un examen; no se exigen todos
+    if (!c.orders.length && !c.items.length && !c.exams.length) fail(400, 'Agrega al menos una indicación, un medicamento o un examen en el plan y manejo.')
     // Un set de órdenes puede traer espacios "___": se llenan antes de firmar
     if (c.orders.some(hasBlank) || c.items.some(medHasBlank)) fail(400, 'Completa los espacios ___ de las órdenes antes de firmar.')
     if (c.admit && c.observe) fail(400, 'Elige ingreso a hospitalización o a observación, no los dos.')
@@ -854,6 +857,7 @@ export function createApp(opts: AppOptions) {
     let medOrders = 0
     const now = new Date()
     let folio: string | null = null
+    let examBatch: string | null = null
     if (rxId) await assertRxIdentity(cid, patientId)
     await sql.tx(async (q) => {
       // El candado del folio también evita que la misma cita se firme dos veces al mismo tiempo
@@ -874,6 +878,8 @@ export function createApp(opts: AppOptions) {
           c.indications ? JSON.stringify(c.indications) : null, stayKind, items.length ? JSON.stringify(items) : null])
       await q.run(`UPDATE appointments SET status = 'done' WHERE id = ?`, [c.appointmentId])
       for (const f of c.followups) await insertFollowup(q, cid, user.id, { ...f, patientId })
+      // Con ingreso, los exámenes son de la estancia (enfermería los gestiona); si no, de la consulta externa
+      examBatch = await insertExams(q, { clinicId: cid, patientId, consultationId: consultId, hospitalizationId: stayId ?? undefined, by: user.id, at: now.toISOString() }, c.exams)
       await audit(user, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
       if (stayId) {
         // La hospitalización se crea sin cama: el médico la elige al terminar de firmar (o la corrige después)
@@ -887,7 +893,7 @@ export function createApp(opts: AppOptions) {
         await audit(user, `Ingresó a ${name} a ${stayKind === 'hospital' ? 'hospitalización' : 'observación'} desde la consulta externa${medOrders ? ` (${medOrders} medicamento(s) a la hoja)` : ''}`, q)
       }
     })
-    res.status(201).json({ consultationId: consultId, prescriptionId: rxId, folio, hospitalizationId: stayId, stayKind, medOrders,
+    res.status(201).json({ consultationId: consultId, prescriptionId: rxId, folio, hospitalizationId: stayId, stayKind, medOrders, examBatch,
       observationId: stayKind === 'observation' ? stayId : null })
   })
 
@@ -1075,6 +1081,7 @@ export function createApp(opts: AppOptions) {
   registerSettings(app, ctx)
   registerMe(app, ctx)
   registerNotes(app, ctx)
+  registerExams(app, ctx)
   registerPublic(app, ctx)
   registerBilling(app, ctx)
   registerReports(app, ctx)

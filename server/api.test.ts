@@ -114,7 +114,7 @@ describe('flujo de la cita', () => {
     assert.equal(noDx.status, 400)
     const noOrders = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor lumbar', diagnoses: [{ code: 'M54.5', label: 'Lumbago' }], orders: [] })
     assert.equal(noOrders.status, 400)
-    assert.match(noOrders.body.error, /al menos una indicación o un medicamento/)
+    assert.match(noOrders.body.error, /al menos una indicación, un medicamento o un examen/)
     const signed = await doc.post('/api/consultations', {
       appointmentId: id, reason: 'Dolor lumbar', symptoms: ['Lumbalgia'], diagnoses: [{ code: 'M54.5', label: 'Lumbago no especificado' }],
       orders: ['Reposo relativo.', 'Naproxeno 550 mg cada 12 horas por 5 días.'], vitalsId: v.body.id,
@@ -184,7 +184,7 @@ describe('pacientes y personal', () => {
       await ensureDb(old)
       // Estado de una base v5: una sola clínica implícita, sin clinic_id ni hospitalización
       await old.exec(`
-        TRUNCATE epicrises, order_set_uses, order_sets, referrals, authorizations, order_marks, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups;
+        TRUNCATE exam_events, exam_orders, epicrises, order_set_uses, order_sets, referrals, authorizations, order_marks, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups;
         DELETE FROM attachments WHERE patient_id IN ('p11', 'p12', 'p13', 'p14');
         DELETE FROM patients WHERE id IN ('p11', 'p12', 'p13', 'p14');
         TRUNCATE audit;
@@ -236,7 +236,7 @@ describe('pacientes y personal', () => {
       // Estado de una base v8: sin los casos, y con un paciente que el personal registró al probar
       await old.exec(`
         SELECT set_config('clinara.note_maintenance', 'on', false);
-        DELETE FROM followups WHERE id LIKE 'cfu%'; DELETE FROM attachments WHERE id LIKE 'cl%'; DELETE FROM hosp_doses WHERE id LIKE 'chd%';
+        TRUNCATE exam_events, exam_orders; DELETE FROM followups WHERE id LIKE 'cfu%'; DELETE FROM attachments WHERE id LIKE 'cl%'; DELETE FROM hosp_doses WHERE id LIKE 'chd%';
         DELETE FROM hosp_meds WHERE id LIKE 'chm%'; DELETE FROM hosp_procedures WHERE id LIKE 'chp%'; DELETE FROM hosp_notes WHERE id LIKE 'chn%';
         DELETE FROM hospitalizations WHERE id LIKE 'chz%'; DELETE FROM payments WHERE id LIKE 'cp%'; DELETE FROM prescriptions WHERE id LIKE 'crx%';
         DELETE FROM consultations WHERE id LIKE 'cc%'; DELETE FROM vitals WHERE id LIKE 'cv%'; DELETE FROM appointments WHERE id LIKE 'ca%';
