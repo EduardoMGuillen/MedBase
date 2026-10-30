@@ -91,6 +91,7 @@ export default function App() {
             <Route path="personal" element={<Guard perm="staff.manage"><StaffPage /></Guard>} />
             <Route path="configuracion" element={<Guard perm="settings.manage"><Settings /></Guard>} />
             <Route path="cuenta" element={<Account />} />
+            <Route path="mi-configuracion" element={<Account />} />
             <Route path="plataforma" element={<Guard perm="platform.manage"><Platform /></Guard>} />
             <Route path="clinicas/:id" element={<Guard perm="platform.manage"><ClinicDetail /></Guard>} />
             <Route path="*" element={<NotFound inApp />} />

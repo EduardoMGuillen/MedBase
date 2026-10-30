@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, BedDouble, BellRing, Building2, CalendarDays, ChevronDown, Eye, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, Stethoscope, UserCog,
+  BarChart3, BedDouble, BellRing, Building2, CalendarDays, ChevronDown, Eye, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, SlidersHorizontal, Stethoscope, UserCog,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
@@ -12,9 +12,11 @@ import { features, ROLE_LABEL, type Permission } from '../lib/permissions'
 import { cap, localISODate, sameDay } from '../lib/format'
 import { tourFor } from '../lib/tours'
 
-const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean; group?: string }[] = [
+const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean; group?: string; doctor?: boolean }[] = [
   { to: '/app', label: 'Inicio', icon: House, end: true, perm: undefined },
   { to: '/app/agenda', label: 'Agenda', icon: CalendarDays, perm: 'agenda.view' },
+  // MC7: el médico ve Recetas y Cobrar debajo de Agenda. Recetas sin consulta: renovar un tratamiento sin abrir una consulta completa
+  { to: '/app/recetas', label: 'Recetas', icon: FilePen, perm: 'rx.write' },
   { to: '/app/caja', label: 'Caja', icon: Receipt, perm: 'billing.manage' },
   // Pacientes se divide en las tres áreas que pidió el médico, más los crónicos
   { to: '/app/consulta-externa', label: 'Consulta externa', icon: Stethoscope, perm: 'agenda.view', group: 'Pacientes' },
@@ -22,11 +24,11 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
   { to: '/app/hospitalizados', label: 'Hospitalizados', icon: BedDouble, perm: 'inpatient.view', group: 'Pacientes' },
   { to: '/app/pacientes', label: 'Biblioteca de pacientes', icon: LibraryBig, perm: 'patients.view', group: 'Pacientes' },
   { to: '/app/seguimientos', label: 'Crónicos y seguimientos', icon: BellRing, perm: 'followups.view', group: 'Pacientes' },
-  // Recetas sin consulta: renovar un tratamiento sin abrir una consulta completa
-  { to: '/app/recetas', label: 'Recetas', icon: FilePen, perm: 'rx.write', group: 'Pacientes' },
   { to: '/app/reportes', label: 'Reportes', icon: BarChart3, perm: 'reports.view', group: 'Administración' },
   { to: '/app/personal', label: 'Personal y roles', icon: UserCog, perm: 'staff.manage', group: 'Administración' },
   { to: '/app/configuracion', label: 'Configuración', icon: SettingsIcon, perm: 'settings.manage', group: 'Administración' },
+  // MC6: la configuración propia del médico (firma, horario, vademécum, sets, preferencias)
+  { to: '/app/mi-configuracion', label: 'Configuración', icon: SlidersHorizontal, perm: 'consult.write', doctor: true },
 ]
 
 export default function AppShell() {
@@ -64,8 +66,10 @@ export default function AppShell() {
   const touring = !tourClosed && (manualTour || (!user.prefs?.tourDoneAt && loc.pathname !== '/app/bienvenida'))
   const closeTour = () => { setTourClosed(true); setManualTour(false); if (!user.prefs?.tourDoneAt) finishTour() }
   const f = features(settings)
-  // En un consultorio el médico titular también cobra y administra: Caja va en el menú y "Administración" es "Mi consultorio"
-  const quietBilling = !f.office && (user.role === 'doctor' || user.role === 'nurse')
+  // En un consultorio el médico titular también cobra y administra: "Administración" es "Mi consultorio". Enfermería
+  // cobra desde un acceso discreto; el médico tiene «Cobrar» debajo de Recetas (MC7)
+  const doctor = user.role === 'doctor'
+  const quietBilling = !f.office && user.role === 'nurse'
   const items = platform
     ? [{ to: '/app', label: 'Clínicas y consultorios', icon: Building2, end: true }]
     : NAV.filter((n) => {
@@ -75,10 +79,13 @@ export default function AppShell() {
       // Enfermería entra al paciente: no usa la agenda. Médico y enfermería cobran, pero desde un acceso más discreto.
       if (user.role === 'nurse' && n.to === '/app/agenda') return false
       if (quietBilling && n.to === '/app/caja') return false
+      if (n.doctor && !doctor) return false
       return true
     }).map((n) => (f.office && n.group === 'Administración'
-      ? { ...n, group: 'Mi consultorio', label: n.to === '/app/personal' ? 'Asistentes' : n.label }
-      : n))
+      ? { ...n, group: 'Mi consultorio', label: n.to === '/app/personal' ? 'Asistentes' : n.to === '/app/configuracion' ? 'Configuración del consultorio' : n.label }
+      : doctor && n.to === '/app/caja' ? { ...n, label: 'Cobrar' } : n))
+    // MC7: Inicio → Agenda → Recetas → Cobrar → Pacientes → Configuración (y en el consultorio, lo administrativo al final)
+    .sort((a, b) => navRank(a) - navRank(b))
   const label = today.toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })
   // Contador de cada opción: lo que está esperando ahí (en rojo, lo que es una alerta)
   const badge = (to: string): { n: number; alert?: boolean; label: string } | null => {
@@ -156,6 +163,14 @@ export default function AppShell() {
       {touring && <Tour steps={tourFor(user.role, settings.kind ?? 'clinic', { observationEnabled: settings.observationEnabled })} onClose={closeTour} />}
     </div>
   )
+}
+
+/** Orden del menú: lo suelto de arriba, los grupos y al final la configuración del médico y la administración. */
+function navRank(n: { to: string; group?: string }) {
+  if (n.to === '/app/mi-configuracion') return 30
+  if (n.group === 'Pacientes') return 20
+  if (n.group) return 40
+  return 10
 }
 
 /**
