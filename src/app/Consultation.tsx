@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { DictateField } from '../components/Dictate'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ClipboardList, FlaskConical, Pencil, Pill, Plus, X } from 'lucide-react'
 import { useStore, type FollowupInput } from '../lib/store'
@@ -240,8 +241,8 @@ export default function Consultation() {
           <section className="panel csec">
             <div className="panel__head"><h2>Historia de la enfermedad actual (HEA)</h2></div>
             <div className="panel__body">
-              <textarea className="textarea textarea--lg" value={history} onChange={(e) => setHistory(e.target.value)} aria-label="Historia de la enfermedad actual"
-                placeholder="Inicio, evolución, características, factores que agravan o alivian, síntomas acompañantes y tratamientos recibidos." />
+              <DictateField label="Historia de la enfermedad actual" onText={(f) => setHistory(f)}><textarea className="textarea textarea--lg" value={history} onChange={(e) => setHistory(e.target.value)} aria-label="Historia de la enfermedad actual"
+                placeholder="Inicio, evolución, características, factores que agravan o alivian, síntomas acompañantes y tratamientos recibidos." /></DictateField>
             </div>
           </section>
 
@@ -249,15 +250,15 @@ export default function Consultation() {
             <div className="panel__head"><h2>Examen físico</h2>
               {!exam.trim() && <button className="btn btn--ghost btn--sm" onClick={() => setExam(EXAM_GUIDE)}><ClipboardList size={15} />Guía por sistemas</button>}</div>
             <div className="panel__body">
-              <textarea className="textarea textarea--lg" value={exam} onChange={(e) => setExam(e.target.value)} aria-label="Examen físico" placeholder="Hallazgos por aparatos y sistemas." />
+              <DictateField label="Examen físico" onText={(f) => setExam(f)}><textarea className="textarea textarea--lg" value={exam} onChange={(e) => setExam(e.target.value)} aria-label="Examen físico" placeholder="Hallazgos por aparatos y sistemas." /></DictateField>
             </div>
           </section>
 
           <section className="panel csec">
             <div className="panel__head"><h2>Observaciones</h2></div>
             <div className="panel__body">
-              <textarea className="textarea textarea--sm" rows={3} value={observations} onChange={(e) => setObservations(e.target.value)} aria-label="Observaciones"
-                placeholder="Lo que no cabe en otro apartado: quién acompaña, actitud, información dada al paciente." />
+              <DictateField label="Observaciones" onText={(f) => setObservations(f)}><textarea className="textarea textarea--sm" rows={3} value={observations} onChange={(e) => setObservations(e.target.value)} aria-label="Observaciones"
+                placeholder="Lo que no cabe en otro apartado: quién acompaña, actitud, información dada al paciente." /></DictateField>
             </div>
           </section>
 

@@ -12,8 +12,7 @@ import { AlertBar } from './MedAlerts'
 import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
 import { NoteColumns, NoteText } from '../components/NoteColumns'
 import { DiagnosisPicker } from '../components/DiagnosisPicker'
-import { DictateButton } from '../components/Dictate'
-import { appendDictation } from '../lib/dictation'
+import { DictateButton, DictateField } from '../components/Dictate'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
@@ -905,7 +904,7 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize }: { f
           <small className="muted">Si escribes la nota después del procedimiento, corrige la hora. La hora en que escribes la nota se guarda sola.</small></label>
       </div>
       <label className="field"><span>Nota</span>
-        <textarea className="textarea textarea--lg" value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} placeholder="Indicación, técnica, hallazgos, complicaciones, estado del paciente al terminar." /></label>
+        <DictateField label="Nota del procedimiento" onText={(f) => setF((x) => ({ ...x, text: f(x.text) }))}><textarea className="textarea textarea--lg" value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} placeholder="Indicación, técnica, hallazgos, complicaciones, estado del paciente al terminar." /></DictateField></label>
       <label className="check-line"><input type="checkbox" checked={f.major} onChange={(e) => setF({ ...f, major: e.target.checked })} />
         <span><b>Procedimiento mayor (requiere autorización quirúrgica)</b><small>Déjalo sin marcar para los procedimientos menores: no piden autorización.</small></span></label>
       {f.major && auths.length > 0 && (
@@ -1026,15 +1025,15 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
         {format === 'soap' ? SOAP.map((s) => (
           <label key={s.key} className="field dictate-field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
             <textarea className="textarea" rows={4} value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} />
-            <DictateButton label={s.label} onText={(t) => setN((x) => ({ ...x, [s.key]: appendDictation(x[s.key], t) }))} /></label>
+            <DictateButton label={s.label} onText={(f) => setN((x) => ({ ...x, [s.key]: f(x[s.key]) }))} /></label>
         )) : (<>
           <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label="Diagnósticos (CIE-11)" />
           <label className="field dictate-field"><span>Examen físico</span>
             <textarea className="textarea" rows={6} value={d.exam} onChange={(e) => setD({ ...d, exam: e.target.value })} />
-            <DictateButton label="Examen físico" onText={(t) => setD((x) => ({ ...x, exam: appendDictation(x.exam, t) }))} /></label>
+            <DictateButton label="Examen físico" onText={(f) => setD((x) => ({ ...x, exam: f(x.exam) }))} /></label>
           <label className="field dictate-field"><span>Observaciones</span>
             <textarea className="textarea" rows={4} value={d.observations} onChange={(e) => setD({ ...d, observations: e.target.value })} />
-            <DictateButton label="Observaciones" onText={(t) => setD((x) => ({ ...x, observations: appendDictation(x.observations, t) }))} /></label>
+            <DictateButton label="Observaciones" onText={(f) => setD((x) => ({ ...x, observations: f(x.observations) }))} /></label>
         </>)}
       </div>
       <div className="note-editor__orders">
@@ -1222,7 +1221,7 @@ function NursingNotes({ file, reload }: { file: File; reload: () => void }) {
         <section className="panel" data-tour="nota-enfermeria">
           <div className="panel__head"><div><h2>Nueva nota de enfermería</h2><p>Se guarda con la fecha, la hora y tu nombre.</p></div>{text.trim() && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}</div>
           <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
-            <textarea className="textarea" rows={3} value={text} onChange={(e) => setText(e.target.value)} aria-label="Nota de enfermería" placeholder="Estado del paciente, cuidados realizados, novedades del turno." />
+            <DictateField label="Nota de enfermería" onText={(f) => setText(f)}><textarea className="textarea" rows={3} value={text} onChange={(e) => setText(e.target.value)} aria-label="Nota de enfermería" placeholder="Estado del paciente, cuidados realizados, novedades del turno." /></DictateField>
             <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={text.trim().length < 3 || busy} onClick={async () => {
               setBusy(true)
               if (await addNursingNote(file.hospitalization.id, text.trim())) { setText(''); draft.clear(); reload() }

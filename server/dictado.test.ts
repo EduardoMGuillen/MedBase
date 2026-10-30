@@ -1,33 +1,41 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { appendDictation, downloadPercent, modelFor, recordingClock } from '../src/lib/dictation.js'
+import { browserEngine, DICTATION_LANGS, DICTATION_MESSAGE, dictationError, insertDictation } from '../src/lib/dictation.js'
 
-describe('dictado de voz', () => {
-  test('el texto dictado se agrega al final de lo escrito, con un espacio y sin espacios sobrantes', () => {
-    assert.equal(appendDictation('', ' Paciente estable.'), 'Paciente estable.')
-    assert.equal(appendDictation('Afebril.', ' Tolera la vía oral. '), 'Afebril. Tolera la vía oral.')
-    assert.equal(appendDictation('Afebril.\n', 'Tolera la vía oral.'), 'Afebril.\nTolera la vía oral.')
-    assert.equal(appendDictation('Afebril.', '   '), 'Afebril.')
+describe('dictado de voz (MC4, ronda 5)', () => {
+  test('lo dictado va en el lugar del cursor, sin borrar lo escrito y con los espacios justos', () => {
+    assert.deepEqual(insertDictation('', ' paciente estable.'), { value: 'Paciente estable.', end: 17 })
+    assert.equal(insertDictation('Afebril.', ' Tolera la vía oral. ').value, 'Afebril. Tolera la vía oral.')
+    assert.equal(insertDictation('Afebril.\n', 'Tolera la vía oral.').value, 'Afebril.\nTolera la vía oral.')
+    assert.equal(insertDictation('Afebril.', '   ').value, 'Afebril.')
+    // En medio del texto: con el cursor después de «Afebril.»
+    const r = insertDictation('Afebril. Abdomen blando.', 'tolera la vía oral.', 8)
+    assert.equal(r.value, 'Afebril. tolera la vía oral. Abdomen blando.')
+    // El siguiente pedazo va después del anterior
+    assert.equal(insertDictation(r.value, 'sin náuseas.', r.end).value, 'Afebril. tolera la vía oral. sin náuseas. Abdomen blando.')
   })
 
-  test('con aceleración gráfica y media precisión usa la tarjeta; si no, el mismo modelo comprimido en el procesador', () => {
-    assert.deepEqual(modelFor({ webgpu: true, f16: true }), {
-      model: 'onnx-community/whisper-small', device: 'webgpu', dtype: { encoder_model: 'fp16', decoder_model_merged: 'q4' },
-    })
-    // whisper-base es 3 veces más rápido en el procesador, pero en las pruebas se comía frases y confundía términos
-    assert.deepEqual(modelFor({ webgpu: true, f16: false }), { model: 'onnx-community/whisper-small', device: 'wasm', dtype: 'q8' })
-    assert.deepEqual(modelFor({ webgpu: false, f16: false }), { model: 'onnx-community/whisper-small', device: 'wasm', dtype: 'q8' })
+  test('español de Honduras primero y, si el navegador no lo tiene, otras variantes de español', () => {
+    assert.equal(DICTATION_LANGS[0], 'es-HN')
+    assert.ok(DICTATION_LANGS.every((l) => l.startsWith('es-')))
   })
 
-  test('el progreso de la descarga suma todos los archivos del modelo', () => {
-    assert.equal(downloadPercent({}), 0)
-    assert.equal(downloadPercent({ a: { loaded: 50, total: 100 }, b: { loaded: 0, total: 300 } }), 13)
-    assert.equal(downloadPercent({ a: { loaded: 100, total: 100 }, b: { loaded: 300, total: 300 } }), 100)
+  test('cada falla tiene un mensaje en español; ninguna es silenciosa', () => {
+    assert.equal(dictationError('not-allowed'), 'denied')
+    assert.equal(dictationError('service-not-allowed'), 'denied')
+    assert.equal(dictationError('audio-capture'), 'no-mic')
+    assert.equal(dictationError('no-speech'), 'no-speech')
+    assert.equal(dictationError('network'), 'network')
+    assert.equal(dictationError('otra-cosa'), 'failed')
+    assert.match(DICTATION_MESSAGE.denied, /Permite el micrófono/)
+    assert.equal(DICTATION_MESSAGE.unsupported, 'Tu navegador no admite dictado; usa Chrome o Edge.')
+    assert.equal(DICTATION_MESSAGE.offline, 'El dictado necesita internet.')
   })
 
-  test('el reloj de la grabación muestra minutos y segundos', () => {
-    assert.equal(recordingClock(0), '0:00')
-    assert.equal(recordingClock(9), '0:09')
-    assert.equal(recordingClock(75), '1:15')
+  test('sin reconocimiento de voz en el navegador (aquí, Node) avisa que no se admite en lugar de fallar en silencio', () => {
+    assert.equal(browserEngine.supported(), false)
+    const seen: string[] = []
+    browserEngine.start({ onPartial: () => {}, onFinal: () => {}, onError: (e) => seen.push(e), onEnd: () => seen.push('fin') })
+    assert.deepEqual(seen, ['unsupported', 'fin'])
   })
 })

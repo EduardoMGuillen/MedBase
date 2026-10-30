@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { DictateField } from '../components/Dictate'
 import { Link, useNavigate } from 'react-router-dom'
 import { FileText, LogOut, Plus } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -105,8 +106,8 @@ export function DischargeWriter({ file, p, onDone }: { file: InpatientFile; p: P
             {pre.admissionDx.length ? <ol className="note__list">{pre.admissionDx.map((x) => <li key={x.code + x.label}>{x.label} <span className="muted">({dxCode(x)})</span></li>)}</ol> : <p className="muted">Sin diagnóstico de ingreso.</p>}
           </section>
           <section className="epi__sec"><h3>3. Historia de la enfermedad actual</h3>
-            <textarea className={`textarea${!hea.trim() && hospital ? ' input--blank' : ''}`} rows={4} value={hea} onChange={(e) => setHea(e.target.value)} aria-label="Historia de la enfermedad actual"
-              placeholder="Se precarga de la consulta que lo ingresó o de la nota de ingreso; corrígela si hace falta." />
+            <DictateField label="Historia de la enfermedad actual" onText={(f) => setHea(f)}><textarea className={`textarea${!hea.trim() && hospital ? ' input--blank' : ''}`} rows={4} value={hea} onChange={(e) => setHea(e.target.value)} aria-label="Historia de la enfermedad actual"
+              placeholder="Se precarga de la consulta que lo ingresó o de la nota de ingreso; corrígela si hace falta." /></DictateField>
           </section>
           <section className="epi__sec"><h3>4. Medicamentos administrados durante la estancia</h3>
             {pre.meds.length ? (
@@ -118,8 +119,8 @@ export function DischargeWriter({ file, p, onDone }: { file: InpatientFile; p: P
             {pre.procedures.length ? <ul className="note__list">{pre.procedures.map((x, i) => <li key={i}>{x.name} · {dm(x.at)}</li>)}</ul> : <p className="muted">Sin procedimientos.</p>}
           </section>
           <section className="epi__sec"><h3>6. Evolución y resumen</h3>
-            <textarea className={`textarea${summary.trim().length < 10 ? ' input--blank' : ''}`} rows={5} value={summary} onChange={(e) => setSummary(e.target.value)} aria-label="Evolución y resumen"
-              placeholder={`Cómo evolucionó durante la estancia y por qué se da el alta.`} />
+            <DictateField label="Evolución y resumen" onText={(f) => setSummary(f)}><textarea className={`textarea${summary.trim().length < 10 ? ' input--blank' : ''}`} rows={5} value={summary} onChange={(e) => setSummary(e.target.value)} aria-label="Evolución y resumen"
+              placeholder={`Cómo evolucionó durante la estancia y por qué se da el alta.`} /></DictateField>
           </section>
           <section className="epi__sec"><h3>7. Diagnóstico de egreso</h3>
             <DxPicker label="Diagnóstico de egreso" value={dx} onChange={setDx} recode={legacyDx} />
@@ -153,7 +154,7 @@ export function DischargeWriter({ file, p, onDone }: { file: InpatientFile; p: P
             <ExamsBlock value={exams} onChange={setExams} />
           </section>
           <section className="epi__sec"><h3>11. Indicaciones al alta y seguimiento</h3>
-            <textarea className="textarea" rows={3} value={instructions} onChange={(e) => setInstructions(e.target.value)} aria-label="Indicaciones al alta" placeholder="Dieta, cuidados de la herida, signos de alarma para regresar." />
+            <DictateField label="Indicaciones al alta" onText={(f) => setInstructions(f)}><textarea className="textarea" rows={3} value={instructions} onChange={(e) => setInstructions(e.target.value)} aria-label="Indicaciones al alta" placeholder="Dieta, cuidados de la herida, signos de alarma para regresar." /></DictateField>
             <label className="field" style={{ marginTop: 10 }}><span>Cita de control</span><input className="input" value={followUp} onChange={(e) => setFollowUp(e.target.value)} /></label>
           </section>
         </article>
