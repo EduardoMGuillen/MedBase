@@ -157,10 +157,13 @@ export function examLine(e: Pick<ExamOrder, 'name' | 'region' | 'side'>) {
   return [e.name + (e.region ? ` de ${e.region}` : ''), e.side ? (e.side === 'right' ? 'derecha' : e.side === 'left' ? 'izquierda' : 'bilateral') : ''].filter(Boolean).join(', ')
 }
 
-/** Si una indicación escrita es un examen del catálogo («hemograma»), para sugerir pasarlo a Exámenes. */
-export function typedExam(text: string) {
+/**
+ * Si una indicación escrita es un examen del catálogo («hemograma»), para sugerir pasarlo a Exámenes. Con `catalog`
+ * (examCatalog) también reconoce los que agregó la clínica.
+ */
+export function typedExam(text: string, catalog: Pick<CatalogExam, 'group' | 'name'>[] = EXAMS) {
   const t = norm(text).replace(/[.]$/, '')
   if (t.length < 3) return undefined
-  return EXAMS.find((e) => { const k = examKey(e.name); return t === k || t.startsWith(`${k} `) || k.startsWith(t) && t.length >= 5 }) ??
-    EXAMS.find((e) => t.includes(examKey(e.name.replace(/\s*\(.*\)$/, ''))) && examKey(e.name).length >= 5)
+  return catalog.find((e) => { const k = examKey(e.name); return t === k || t.startsWith(`${k} `) || k.startsWith(t) && t.length >= 5 }) ??
+    catalog.find((e) => t.includes(examKey(e.name.replace(/\s*\(.*\)$/, ''))) && examKey(e.name).length >= 5)
 }

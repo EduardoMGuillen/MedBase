@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { BedDouble, ChevronLeft, ChevronRight, FileSignature, FileText, LogOut, NotebookPen, Pencil, Pill, Plus, Send, Syringe, TriangleAlert, X } from 'lucide-react'
+import { BedDouble, ChevronLeft, ChevronRight, FileSignature, FileText, FlaskConical, LogOut, NotebookPen, Pencil, Pill, Plus, Send, Syringe, TriangleAlert, X } from 'lucide-react'
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
@@ -25,6 +25,8 @@ import { AdmitBedStep, ConsentChoice } from './ConsentFlow'
 import { ExamList } from './ExamsTab'
 import { DischargeView, DischargeWriter } from './DischargeNote'
 import { ExamsBlock } from '../components/Exams'
+import { examCatalog, examKey, typedExam } from '../lib/exams'
+import { useExamCatalog } from '../lib/useExamCatalog'
 import { Addenda, DraftBadge, SignedBadge } from '../components/Addenda'
 import { useDraftSync } from '../lib/drafts'
 import { BedFields } from '../components/BedFields'
@@ -969,6 +971,12 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
     setExtraText('')
   }
   const addExtra = () => addLines(extraText)
+  // MC4/EX1: un examen escrito como indicación («hemograma») se sugiere pasarlo a Exámenes, como en la consulta
+  const { exams: clinicExams } = useExamCatalog()
+  const examList = useMemo(() => examCatalog(clinicExams), [clinicExams])
+  const typedExamHit = typedExam(extraText, examList)
+  const toExam = (hit: { group: ExamInput['group']; name: string }) =>
+    setExams((x) => (x.some((y) => examKey(y.name) === examKey(hit.name)) ? x : [...x, { group: hit.group, name: hit.name, priority: 'routine', place: 'clinic' }]))
   return (
     <Modal title={kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'} wide onClose={onClose} footer={<>
       {blanks.length ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="status">Completa los espacios ___ de {blanks.join(', ')}.</span>
@@ -1015,11 +1023,15 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
         <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, days, instructions }) => ({ med: { drug, presentation, dose, route, everyHours, prn, days, instructions: instructions || undefined } })), ...exams.map((e) => ({ exam: e }))]} />
       </div>
       <fieldset className="fs"><legend>Indicaciones</legend>
-        <p className="muted" style={{ fontSize: 13.5 }}>Lo que no es medicamento, una por línea: dieta, cuidados, signos vitales, estudios. Puedes pegar una lista completa.</p>
+        <p className="muted" style={{ fontSize: 13.5 }}>Lo que no es medicamento ni examen, una por línea: dieta, cuidados, signos vitales. Puedes pegar una lista completa.</p>
         {extra.length > 0 && <ol className="orders">{extra.map((o, i) => (
           <li key={i}><span className="orders__n">{i + 1}.</span>
             <input className={`input${hasBlank(o) ? ' input--blank' : ''}`} value={o} aria-label={`Indicación ${i + 1}`} aria-invalid={hasBlank(o)} onChange={(e) => setExtra(extra.map((x, j) => j === i ? e.target.value : x))} />
-            <span className="orders__tools"><button type="button" className="icon-btn" aria-label="Quitar indicación" onClick={() => setExtra(extra.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
+            <span className="orders__tools">
+              {(() => { const hit = typedExam(o, examList); return hit && (
+                <button type="button" className="icon-btn" aria-label={`Pasar «${hit.name}» a Exámenes`} title={`Pasar «${hit.name}» a Exámenes`}
+                  onClick={() => { toExam(hit); setExtra(extra.filter((_, j) => j !== i)) }}><FlaskConical size={14} /></button>) })()}
+              <button type="button" className="icon-btn" aria-label="Quitar indicación" onClick={() => setExtra(extra.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
         ))}</ol>}
         <div className="order-add">
           <textarea className="textarea textarea--sm" rows={2} value={extraText} aria-label="Nueva indicación"
@@ -1034,6 +1046,12 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
             }} />
           <button className="btn btn--soft" disabled={!extraText.trim()} type="button" onClick={addExtra} aria-label="Agregar indicación"><Plus size={16} /></button>
         </div>
+        {typedExamHit && !extraText.includes('\n') && (
+          <div className="suggest-med" role="status">
+            <FlaskConical size={15} />¿Agregar «{typedExamHit.name}» como examen? Así se imprime en su orden y enfermería le da seguimiento.
+            <button type="button" className="btn btn--soft btn--sm" onClick={() => { toExam(typedExamHit); setExtraText('') }}>Sí, agregarlo</button>
+          </div>
+        )}
       </fieldset>
       {active.length > 0 && (
         <fieldset className="fs"><legend>Medicamentos activos</legend>

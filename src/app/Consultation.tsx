@@ -17,7 +17,8 @@ import { VitalsModal } from './WaitingRoom'
 import { emptyFollowup, FollowupFields } from './Followups'
 import type { Diagnosis, ExamInput, PrescriptionItem } from '../lib/types'
 import { ExamsBlock } from '../components/Exams'
-import { typedExam } from '../lib/exams'
+import { examCatalog, typedExam } from '../lib/exams'
+import { useExamCatalog } from '../lib/useExamCatalog'
 import type { OrderSet } from '../lib/types'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
 import { RxValidityField } from '../components/RxValidity'
@@ -169,8 +170,9 @@ export default function Consultation() {
   }
   // Si lo que se escribe en indicaciones empieza con un medicamento del vademécum, se sugiere pasarlo a Medicamentos
   const typedDrug = orderText.trim().length >= 4 ? vademecum.find((d) => normalize(orderText).startsWith(normalize(d.name))) : undefined
-  // EX1: si lo que se escribe es un examen («hemograma»), se sugiere pasarlo a Exámenes
-  const typedExamHit = typedExam(orderText)
+  // EX1: si lo que se escribe es un examen («hemograma», o uno que agregó la clínica), se sugiere pasarlo a Exámenes
+  const { exams: clinicExams } = useExamCatalog()
+  const typedExamHit = typedExam(orderText, examCatalog(clinicExams))
 
   const sign = async () => {
     setSigning(true)
@@ -297,7 +299,7 @@ export default function Consultation() {
                       </li>
                     ))}
                   </ol>
-                ) : <p className="muted" style={{ fontSize: 14 }}>Dieta, cuidados, estudios a realizar, cita de control, lo que necesite. Una por línea.</p>}
+                ) : <p className="muted" style={{ fontSize: 14 }}>Dieta, cuidados, cita de control, lo que necesite. Una por línea. Los exámenes van en su sección.</p>}
                 <form className="order-add" onSubmit={(e) => { e.preventDefault(); addOrder(orderText) }}>
                   <input ref={orderInput} className="input" value={orderText} onChange={(e) => setOrderText(e.target.value)} placeholder={`${indications.length + 1}. Escribe una indicación y presiona Enter`} aria-label="Nueva indicación" enterKeyHint="done" />
                   <button className="btn btn--soft" disabled={!orderText.trim()} aria-label="Agregar indicación"><Plus size={16} /></button>
