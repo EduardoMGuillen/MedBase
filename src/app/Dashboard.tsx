@@ -4,6 +4,7 @@ import { Activity, Globe, Phone, Receipt, Stethoscope } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { receivedIn } from '../lib/billing'
 import { ExamTray, NewResults } from './ExamPanels'
+import { WardAlerts } from './WardAlerts'
 import { PageHead, StatusBadge } from '../components/ui'
 import { ReminderButton } from '../components/Reminder'
 import { HBars } from '../components/Charts'
@@ -42,28 +43,6 @@ function FollowupCalls() {
           </div>
         )
       })}</div> : <div className="empty">Nadie pendiente de llamada.</div>}
-    </section>
-  )
-}
-
-/** Enfermería: notas con órdenes médicas sin revisar. Desaparece cuando todas las órdenes de la nota están marcadas. */
-function NewOrders() {
-  const { pendingOrders = [], patient, bed, staffById } = useStore()
-  if (!pendingOrders.length) return null
-  return (
-    <section className="panel pending-orders">
-      <div className="panel__head"><div><h2>Órdenes nuevas</h2><p>Revisa y marca cada orden en la nota del paciente.</p></div></div>
-      <div className="rows">{pendingOrders.map((x) => {
-        const p = patient(x.patientId)
-        const b = x.bedId ? bed(x.bedId) : undefined
-        return (
-          <Link key={x.noteId} className="row" to={`/app/hospitalizados/${x.hospitalizationId}?tab=notas`} style={{ gridTemplateColumns: '1fr auto' }}>
-            <div className="row__who"><strong>{x.pending} {x.pending === 1 ? 'orden nueva' : 'órdenes nuevas'} — {p ? fullName(p) : ''}{b ? `, cuarto ${b.room}${b.label ? `-${b.label}` : ''}` : ''}</strong>
-              <span>{staffById(x.authorId)?.name}, {time(x.at)}</span></div>
-            <span className="btn btn--soft btn--sm">Revisar</span>
-          </Link>
-        )
-      })}</div>
     </section>
   )
 }
@@ -209,7 +188,8 @@ export default function Dashboard() {
             )
           }) : <div className="empty">Cuando un paciente llegue a sala, aparecerá aquí.</div>}
         </section>
-        <NewOrders />
+        {/* EN2: reemplaza «Órdenes nuevas»: las órdenes sin revisar van aquí, junto con dosis, signos y exámenes */}
+        <WardAlerts />
         <ExamTray />
         <ArrivalsPanel />
         {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}

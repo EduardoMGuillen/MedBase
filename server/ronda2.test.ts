@@ -7,7 +7,8 @@ import type { Server } from 'node:http'
 import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb, migrateObservationAuthorizations, resetDemo } from './db.js'
 import { createSql, type Sql } from './sql.js'
-import { bandOf, expectedTakes, frequencyFromOrders, missedTakes, tempClass, vitalAlerts } from '../src/lib/vitalsSheet.js'
+import { bandOf, expectedTakes, frequencyFromOrders, missedTakes, tempClass } from '../src/lib/vitalsSheet.js'
+import { fileAlerts } from '../src/lib/alerts.js'
 
 let server: Server
 let sql: Sql
@@ -417,17 +418,17 @@ describe('S1 hoja de signos vitales', () => {
       if (i === 10) continue // falta la toma de esa hora
       vitals.push({ id: `v${i}`, takenAt: at.toISOString(), takenBy: 's-rios', temperature: i === 3 ? 38.6 : i === 6 ? 35.4 : 36.8, patientId: 'x' })
     }
-    const file: any = { hospitalization: { admittedAt: start.toISOString(), status: 'active' }, notes: [], vitals }
+    const file: any = { hospitalization: { admittedAt: start.toISOString(), status: 'active' }, notes: [], vitals, meds: [], doses: [], marks: [], authorizations: [] }
     const band = bandOf({})
     assert.deepEqual([tempClass(38.6, band), tempClass(35.4, band), tempClass(38.0, band), tempClass(35.9, band), tempClass(36.0, band)], ['fever', 'hypo', 'fever', 'hypo', 'normal'])
     const missed = missedTakes(file, now)
     assert.equal(missed.length, 1, 'una toma esperada sin registrar')
     assert.equal(missed[0].getHours() % 8, 0)
-    const alerts = vitalAlerts(file, band, now)
-    assert.ok(alerts.some((a) => a.startsWith('Signos vitales pendientes')), alerts.join(' | '))
+    const alerts = fileAlerts(file, band, now).map((a) => a.text)
+    assert.ok(alerts.some((a) => a.startsWith('Signos vitales: 1 toma pendiente')), alerts.join(' | '))
     // Con una fiebre en las últimas 24 h, aparece en las alertas
     vitals.push({ id: 'vf', takenAt: new Date(now.getTime() - 3_600_000).toISOString(), takenBy: 's-rios', temperature: 38.6, patientId: 'x' })
-    assert.ok(vitalAlerts(file, band, now).some((a) => a.startsWith('Fiebre: 38.6 °C')))
+    assert.ok(fileAlerts(file, band, now).some((a) => a.level === 'critical' && a.text.startsWith('Fiebre: 38.6 °C')))
     // Cada 4 h: el doble de horas esperadas, y faltan muchas más
     file.hospitalization.vitalsEveryHours = 4
     assert.ok(missedTakes(file, now).length > 5)

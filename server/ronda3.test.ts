@@ -7,6 +7,8 @@ import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb, migrateLabsToExams, migrateRxValidity } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { filterSummary, periodRange, type Filters } from '../src/lib/patientFilters.js'
+import { alertQuery, alertSummary, fileAlerts, tabCounts } from '../src/lib/alerts.js'
+import { bandOf } from '../src/lib/vitalsSheet.js'
 
 let server: Server
 let sql: Sql
@@ -562,5 +564,50 @@ describe('EX1 (ronda 4) exámenes: Laboratorio e Imagen y gabinete', () => {
     assert.equal(migrated.length, 1)
     assert.equal(migrated[0].name, 'Hemograma')
     assert.equal(migrated[0].status, 'result')
+  })
+})
+
+describe('EN2 alertas agrupadas por nivel', () => {
+  test('las dosis atrasadas de un medicamento van en una línea con conteo; «No aplicada» con motivo deja de alertar', async () => {
+    const { doc, nurse, stayId } = await admitted('Alertas')
+    const firstAt = new Date(Date.now() - 9 * 3_600_000).toISOString()
+    const n = await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', exam: 'Estable.',
+      meds: [{ drug: 'Acetaminofén', dose: '1 g', route: 'VO', everyHours: 4, firstAt }] })
+    assert.equal(n.status, 201, JSON.stringify(n.body))
+    const band = bandOf({})
+    let file = (await nurse.get(`/api/inpatient/${stayId}`)).body
+    const late = fileAlerts(file, band, new Date()).filter((a) => a.key.startsWith('late-'))
+    assert.equal(late.length, 1, 'una sola línea por medicamento')
+    assert.equal(late[0].level, 'pending')
+    assert.ok(late[0].count >= 2 && /2 dosis atrasadas|3 dosis atrasadas/.test(late[0].text), late[0].text)
+    assert.equal(late[0].action.label, 'Registrar dosis')
+    // La acción lleva a la dosis exacta
+    assert.match(alertQuery(late[0].action.go), /tab=medicamentos&dosis=.+&hora=/)
+    const med = file.meds[0]
+    assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: firstAt, givenAt: new Date().toISOString(), status: 'skipped' })).status, 400)
+    const skip = await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: firstAt, givenAt: new Date().toISOString(), status: 'skipped', note: 'Paciente en ayuno' })
+    assert.equal(skip.status, 201, JSON.stringify(skip.body))
+    file = (await nurse.get(`/api/inpatient/${stayId}`)).body
+    const after = fileAlerts(file, band, new Date())
+    assert.equal(after.find((a) => a.key.startsWith('late-'))!.count, late[0].count - 1)
+    const info = after.find((a) => a.key.startsWith('skip-'))!
+    assert.equal(info.level, 'info')
+    assert.match(info.text, /1 dosis no aplicada .*Paciente en ayuno/)
+    // Contador de la pestaña: sólo lo crítico y lo pendiente
+    assert.equal(tabCounts(after).meds?.n, late[0].count - 1)
+    assert.match(alertSummary(after), /pendiente/)
+  })
+
+  test('el inicio de enfermería recibe los pendientes de todos los internados; recepción no', async () => {
+    const { nurse, stayId } = await admitted('Pendientes')
+    const list = await nurse.get('/api/inpatient/alerts')
+    assert.equal(list.status, 200)
+    const f = list.body.find((x: any) => x.hospitalization.id === stayId)
+    assert.ok(f && Array.isArray(f.meds) && Array.isArray(f.vitals) && Array.isArray(f.exams))
+    // La autorización de hospitalización pendiente es «pendiente» con su acción de firmar
+    const auth = fileAlerts(f, bandOf({}), new Date()).find((a) => a.key.startsWith('auth-'))
+    assert.equal(auth?.level, 'pending')
+    assert.equal(auth?.action.label, 'Firmar ahora')
+    assert.equal((await (await as('smejia@demo.clinara')).get('/api/inpatient/alerts')).status, 403)
   })
 })

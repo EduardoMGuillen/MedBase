@@ -1,29 +1,43 @@
-import { TriangleAlert } from 'lucide-react'
-import { collectMedAlerts } from '../lib/inpatient'
-import { bandOf, vitalAlerts } from '../lib/vitalsSheet'
-import { useStore } from '../lib/store'
-import { useNow } from '../lib/hooks'
-import type { InpatientFile } from '../lib/types'
+import { useState } from 'react'
+import { ChevronDown, CircleAlert, Clock, Info } from 'lucide-react'
+import { alertSummary, type AlertGo, type AlertLevel, type FileAlert } from '../lib/alerts'
+
+const ICON: Record<AlertLevel, typeof Info> = { critical: CircleAlert, pending: Clock, info: Info }
+
+/** Una alerta: nivel en color, texto agrupado y su acción directa. */
+export function AlertLine({ a, onGo }: { a: FileAlert; onGo: (go: AlertGo) => void }) {
+  const Icon = ICON[a.level]
+  return (
+    <li className={`alert-line alert-line--${a.level}`}>
+      <Icon size={15} aria-hidden />
+      <span>{a.text}</span>
+      <button type="button" className="btn btn--ghost btn--sm" onClick={() => onGo(a.action.go)}>{a.action.label}</button>
+    </li>
+  )
+}
 
 /**
- * Alertas del expediente: dosis que no se cumplieron o van atrasadas, fiebre o hipotermia de las últimas 24 horas y
- * tomas de signos vitales esperadas sin registrar. Las ven médico y enfermería.
+ * EN2: barra compacta arriba del expediente («2 críticas · 3 pendientes»). Lo crítico se ve abierto; lo demás, al
+ * tocar la barra. Las alertas no se descartan: desaparecen al resolverse (o, una dosis, al marcarla «No aplicada»).
  */
-export function MedAlertBanner({ file }: { file: InpatientFile }) {
-  const { settings } = useStore()
-  const now = useNow()
-  const alerts = [...vitalAlerts(file, bandOf(settings), now).map((text) => ({ text })), ...collectMedAlerts(file)]
+export function AlertBar({ alerts, onGo }: { alerts: FileAlert[]; onGo: (go: AlertGo) => void }) {
+  const [open, setOpen] = useState(false)
   if (!alerts.length) return null
+  const critical = alerts.filter((a) => a.level === 'critical')
+  const rest = alerts.filter((a) => a.level !== 'critical')
+  const top: AlertLevel = critical.length ? 'critical' : rest.some((a) => a.level === 'pending') ? 'pending' : 'info'
   return (
-    <div className="alert-strip" role="status" style={{ alignItems: 'flex-start' }}>
-      <TriangleAlert size={18} style={{ flex: 'none', marginTop: 2 }} />
-      <div>
-        <b>Alertas del expediente</b>
-        <ul className="note__list" style={{ margin: '6px 0 0' }}>
-          {alerts.slice(0, 8).map((a) => <li key={a.text}>{a.text}</li>)}
+    <section className={`alert-bar alert-bar--${top}`} aria-label="Alertas del expediente">
+      <button type="button" className="alert-bar__head" aria-expanded={open} onClick={() => setOpen(!open)} disabled={!rest.length}>
+        <b>{alertSummary(alerts)}</b>
+        {rest.length > 0 && <span className="alert-bar__more">{open ? 'Ocultar' : 'Ver todo'}<ChevronDown size={15} className={open ? 'is-flipped' : ''} /></span>}
+      </button>
+      {(critical.length > 0 || open) && (
+        <ul className="alert-bar__list">
+          {critical.map((a) => <AlertLine key={a.key} a={a} onGo={onGo} />)}
+          {open && rest.map((a) => <AlertLine key={a.key} a={a} onGo={onGo} />)}
         </ul>
-        {alerts.length > 8 && <p className="muted" style={{ marginTop: 4 }}>Y {alerts.length - 8} más en la hoja de medicamentos.</p>}
-      </div>
-    </div>
+      )}
+    </section>
   )
 }

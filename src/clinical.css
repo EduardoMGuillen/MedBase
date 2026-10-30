@@ -808,3 +808,40 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .consent-choice__doc svg { color: var(--ink); flex: none; margin-top: 2px; }
 .consent-choice__dni { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
 @media (max-width: 720px) { .choice-grid--3 { grid-template-columns: 1fr; } }
+
+/* EN2: alertas agrupadas. Barra compacta arriba del expediente; crítico rojo, pendiente ámbar, aviso gris azulado */
+.alert-bar { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 12px; background: var(--paper); margin-bottom: 14px; overflow: hidden; }
+.alert-bar--critical { border-left-color: var(--red-ink); }
+.alert-bar--pending { border-left-color: #d68a00; }
+.alert-bar--info { border-left-color: #6b7f99; }
+.alert-bar__head { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 14px; background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.alert-bar__head:disabled { cursor: default; }
+.alert-bar__head b { font-size: 14px; }
+.alert-bar--critical .alert-bar__head b { color: var(--red-ink); }
+.alert-bar--pending .alert-bar__head b { color: var(--amber-ink); }
+.alert-bar__more { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.alert-bar__more .is-flipped { transform: rotate(180deg); }
+.alert-bar__list, .ward-alert ul { list-style: none; margin: 0; padding: 0 8px 8px; display: grid; gap: 4px; }
+.alert-line { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; font-size: 14px; }
+.alert-line > svg { margin-top: 1px; }
+.alert-line--critical { background: var(--red); color: var(--red-ink); }
+.alert-line--critical > span { color: var(--petrol); }
+.alert-line--pending > svg { color: #b77400; }
+.alert-line--info > svg { color: #6b7f99; }
+.alert-line--info > span { color: var(--muted); }
+.alert-line .btn { white-space: nowrap; }
+.tab-alert { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 6px; border-radius: 999px; font-size: 12px; font-weight: 700; vertical-align: 1px; }
+.tab-alert--critical { background: var(--red); color: var(--red-ink); }
+.tab-alert--pending { background: var(--amber); color: var(--amber-ink); }
+/* Inicio de enfermería: pendientes por paciente */
+.ward-alerts__list { display: grid; gap: 10px; padding: 0 16px 16px; }
+.ward-alert { border: 1px solid var(--line); border-left: 4px solid #d68a00; border-radius: 12px; padding: 10px 0 0; }
+.ward-alert--critical { border-left-color: var(--red-ink); }
+.ward-alert header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding: 0 14px 6px; }
+.ward-alert header .badge { margin-left: auto; }
+.ward-alert > .linklike { display: inline-block; margin: 0 16px 10px; font-size: 13px; }
+@media (max-width: 560px) {
+  .alert-line { grid-template-columns: 18px 1fr; }
+  .alert-line .btn { grid-column: 2; justify-self: start; }
+  .ward-alerts__list { padding: 0 10px 12px; }
+}

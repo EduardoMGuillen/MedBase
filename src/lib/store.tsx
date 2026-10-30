@@ -201,7 +201,7 @@ function useStoreValue() {
     correctDose: (doseId: string, b: { status?: Dose['status']; givenAt?: string; note?: string; reason: string }) =>
       run(() => api<Dose>(`/inpatient/doses/${doseId}`, { method: 'PATCH', body: b }), 'Dosis corregida'),
     recordDose: (medId: string, b: { scheduledAt?: string; givenAt?: string; status: Dose['status']; note?: string; reason?: string }) =>
-      run(() => api<Dose>(`/inpatient/meds/${medId}/doses`, { body: b }), b.status === 'given' ? 'Dosis registrada' : 'Dosis marcada como no administrada'),
+      run(() => api<Dose>(`/inpatient/meds/${medId}/doses`, { body: b }), b.status === 'given' ? 'Dosis registrada' : 'Dosis marcada como no aplicada'),
     reviewOrder: (noteId: string, index: number, checked: boolean, reason?: string) =>
       run(() => api<OrderMark>(`/inpatient/notes/${noteId}/orders/${index}/review`, { body: { checked, reason } }), checked ? 'Orden marcada como revisada' : 'Orden desmarcada'),
     createAuthorization: (id: string, b: Omit<AuthorizationData, 'patient' | 'doctor' | 'clinic'> & { template: Authorization['template'] }) =>

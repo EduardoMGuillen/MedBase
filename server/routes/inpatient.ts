@@ -291,9 +291,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   })
 
   // ---------- Expediente de hospitalización ----------
-  app.get('/api/inpatient/:id', auth, need('inpatient.view'), async (req, res) => {
-    const cid = clinicOf(req)
-    const h = (await hospRow(cid, String(req.params.id)))!
+  /** Expediente completo de una estancia (lo que ve la pantalla). */
+  async function fileOf(cid: string, h: Row) {
     const id = String(h.id)
     const [notes, meds, doses, procedures, labs, marks, auths, referrals, epicrises, vitals] = await Promise.all([
       sql.query('SELECT * FROM hosp_notes WHERE hospitalization_id = ? ORDER BY at, id', [id]),
@@ -311,8 +310,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       sql.query(`SELECT v.*, CASE WHEN v.hospitalization_id IS NULL THEN 'preclinic' ELSE 'stay' END AS source FROM vitals v
         WHERE v.hospitalization_id = ? OR v.id = (SELECT c.vitals_id FROM consultations c WHERE c.id = ?) ORDER BY v.taken_at, v.id`, [id, String(h.consultation_id ?? '')]),
     ])
-    await audit(userOf(req), `Consultó el expediente de hospitalización de ${await patientName(String(h.patient_id))}`)
-    res.json({
+    return {
       hospitalization: toHospitalization(h), notes: notes.map(toInpatientNote), meds: meds.map(toInpatientMed), doses: doses.map(toDose),
       procedures: procedures.map(toProcedure), labs: labs.map(toAttachment), marks: marks.map(toOrderMark), authorizations: auths.map(toAuthorization),
       referrals: referrals.map(toReferral), epicrises: epicrises.map(toEpicrisis),
@@ -322,7 +320,32 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       addenda: await addendaFor(sql, cid, [...notes.map((n) => String(n.id)), ...(h.consultation_id ? [String(h.consultation_id)] : [])]),
       // EX1: exámenes de la estancia (y los que pidió la consulta que lo ingresó)
       exams: await examsWhere(sql, 'clinic_id = ? AND (hospitalization_id = ? OR (consultation_id IS NOT NULL AND consultation_id = ?))', [cid, id, String(h.consultation_id ?? '')]),
-    })
+    }
+  }
+
+  /**
+   * EN2: los expedientes de todos los internados y en observación, para la lista de pendientes por paciente del
+   * inicio de enfermería (las alertas se calculan en la pantalla con las mismas reglas del expediente). Va antes
+   * de /api/inpatient/:id. No es una consulta de expediente: no queda en la bitácora por paciente.
+   */
+  app.get('/api/inpatient/alerts', auth, need('inpatient.view'), async (req, res) => {
+    const cid = clinicOf(req)
+    const stays = await sql.query(`SELECT * FROM hospitalizations WHERE clinic_id = ? AND status = 'active' ORDER BY admitted_at`, [cid])
+    const out = []
+    for (const h of stays) {
+      const f = await fileOf(cid, h)
+      // Sólo lo que usan las alertas
+      out.push({ hospitalization: f.hospitalization, notes: f.notes, marks: f.marks, meds: f.meds, doses: f.doses, vitals: f.vitals, consultOrders: f.consultOrders, authorizations: f.authorizations, exams: f.exams })
+    }
+    res.json(out)
+  })
+
+  app.get('/api/inpatient/:id', auth, need('inpatient.view'), async (req, res) => {
+    const cid = clinicOf(req)
+    const h = (await hospRow(cid, String(req.params.id)))!
+    const file = await fileOf(cid, h)
+    await audit(userOf(req), `Consultó el expediente de hospitalización de ${await patientName(String(h.patient_id))}`)
+    res.json(file)
   })
 
   // Nota de ingreso o de evolución (SOAP). Sus indicaciones de medicamentos van a la hoja de enfermería.
@@ -457,7 +480,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       const slot = new Date(b.scheduledAt!)
       if (med.stoppedAt && slot >= new Date(med.stoppedAt)) fail(409, `${med.drug} fue omitido por el médico; esa dosis ya no se aplica.`)
       if (!isScheduled(med, slot)) fail(400, 'Esa hora no corresponde al horario indicado del medicamento.')
-      if (b.status === 'skipped' && !b.note) fail(400, 'Escribe por qué no se administró la dosis.')
+      if (b.status === 'skipped' && !b.note) fail(400, 'Escribe por qué no se aplicó la dosis (ayuno, la rechazó, suspendida…).')
       scheduledAt = slot.toISOString()
     }
     // Una dosis de hace más de 24 horas es un registro de un día pasado: necesita motivo y queda en la bitácora
@@ -471,7 +494,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       if ((e as { code?: string }).code === '23505') fail(409, 'Esa dosis ya fue registrada. Actualiza la página.')
       throw e
     }
-    await audit(user, `${b.status === 'given' ? 'Administró' : 'Registró como no administrado'} ${medLabel(med)} a ${await patientName(String(h.patient_id))} (${user.role === 'doctor' ? 'médico' : 'enfermería'})${late ? `, registro tardío: ${b.reason}` : ''}`)
+    await audit(user, `${b.status === 'given' ? 'Administró' : 'Marcó como no aplicada'} ${medLabel(med)} a ${await patientName(String(h.patient_id))} (${user.role === 'doctor' ? 'médico' : 'enfermería'})${b.status === 'skipped' ? `, motivo: ${b.note}` : ''}${late ? `, registro tardío: ${b.reason}` : ''}`)
     res.status(201).json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [id]))!))
   })
 
@@ -497,7 +520,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const previous = { status: d!.status, givenAt: d!.given_at, givenBy: d!.given_by, note: d!.note ?? undefined, correctedAt: d!.corrected_at ?? undefined, reason: d!.correction_reason ?? undefined }
     await sql.run('UPDATE hosp_doses SET status = ?, given_at = ?, note = ?, corrected_at = ?, corrected_by = ?, correction_reason = ?, previous = ? WHERE id = ?',
       [b.status ?? d!.status, b.givenAt ? new Date(b.givenAt).toISOString() : d!.given_at, b.note ?? d!.note ?? null, new Date().toISOString(), user.id, b.reason, JSON.stringify(previous), String(d!.id)])
-    await audit(user, `Corrigió la dosis de ${medLabel(toInpatientMed(m))} de ${await patientName(String(h.patient_id))} (antes: ${previous.status === 'given' ? 'administrada' : 'no administrada'} ${previous.givenAt}): ${b.reason}`)
+    await audit(user, `Corrigió la dosis de ${medLabel(toInpatientMed(m))} de ${await patientName(String(h.patient_id))} (antes: ${previous.status === 'given' ? 'administrada' : 'no aplicada'} ${previous.givenAt}): ${b.reason}`)
     res.json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [String(d!.id)]))!))
   })
 

@@ -8,7 +8,8 @@ import { date, dateTime, defaultRoute, fullName, inputDateTime, legacyTag, local
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
 import { defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
-import { MedAlertBanner } from './MedAlerts'
+import { AlertBar } from './MedAlerts'
+import { tabCounts, type AlertGo } from '../lib/alerts'
 import { NoteColumns, NoteText } from '../components/NoteColumns'
 import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { DictateButton } from '../components/Dictate'
@@ -16,7 +17,7 @@ import { appendDictation } from '../lib/dictation'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
-import { useNow } from '../lib/hooks'
+import { useFileAlerts, useNow } from '../lib/hooks'
 import type { Addendum, Diagnosis, Dose, ExamInput, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
 import { bedLabel, DxPicker } from './Inpatients'
 import { GeneralDataModal } from './GeneralData'
@@ -49,14 +50,26 @@ export default function InpatientFile() {
   const [admitting, setAdmitting] = useState(params.get('completar') === '1')
   const [consentFor, setConsentFor] = useState<string | null>(null)
   const wantsConsent = params.get('firmar')
-  const [tab, setTab] = useState<Tab>(({ notas: 'notes', signos: 'vitals', medicamentos: 'meds', anexos: 'annexes', examenes: 'labs' } as Record<string, Tab>)[params.get('tab') ?? ''] ?? 'sheet')
+  const [tab, setTab] = useState<Tab>(({ hoja: 'sheet', notas: 'notes', signos: 'vitals', medicamentos: 'meds', enfermeria: 'nursing', anexos: 'annexes', examenes: 'labs' } as Record<string, Tab>)[params.get('tab') ?? ''] ?? 'sheet')
+  // EN2: una alerta abre el lugar exacto: la dosis atrasada o el registro de signos
+  const [focus, setFocus] = useState<{ dose?: { medId: string; at: string }; record?: boolean }>(() => ({
+    dose: params.get('dosis') && params.get('hora') ? { medId: params.get('dosis')!, at: params.get('hora')! } : undefined, record: params.get('registrar') === '1' }))
   const [missing, setMissing] = useState(false)
   const now = useNow()
+  const alerts = useFileAlerts(file)
   const load = useCallback(() => {
     if (!id) return
     fetchInpatient(id).then(setFile).catch((e: Error) => { setMissing(true); notify(e.message, 'error') })
   }, [id, fetchInpatient, notify])
   useEffect(load, [load])
+  // Lo que pidió la alerta ya está en `focus`: se quita de la URL para que recargar no lo vuelva a abrir
+  useEffect(() => {
+    if (!['dosis', 'hora', 'registrar'].some((k) => params.has(k))) return
+    const q = new URLSearchParams(params)
+    for (const k of ['dosis', 'hora', 'registrar']) q.delete(k)
+    setParams(q, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // MC1: «Pasar a hospitalización» o el ingreso directo llegan con ?firmar=1: se abre la autorización pendiente
   useEffect(() => {
     if (!file || !wantsConsent || consentFor || admitting) return
@@ -81,6 +94,19 @@ export default function InpatientFile() {
   const annexes = file.authorizations.length + file.procedures.filter((x) => x.kind === 'authorization').length + file.referrals.length
     + file.epicrises.filter((e) => e.status !== 'voided').length
   const pendingAuth = open && file.authorizations.find((a) => a.template === 'hospital' && a.status === 'pending')
+  const counts = tabCounts(alerts)
+  const canCare = can('inpatient.orders') || can('inpatient.care')
+  const go = (g: AlertGo) => {
+    if ('action' in g) {
+      if (g.action === 'sign' && pendingAuth && canCare) setConsentFor(pendingAuth.id)
+      else if (g.action === 'bed' && canCare) setAdmitting(true)
+      else setTab(g.action === 'sign' ? 'annexes' : 'sheet')
+      return
+    }
+    setFocus({ dose: g.dose, record: g.record })
+    setTab(g.tab)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
   // EX1: la pestaña «Laboratorios» pasa a «Exámenes» (Laboratorio e Imagen y gabinete)
   const exams = file.exams ?? []
   const examTab = `Exámenes (${exams.filter((e) => e.status !== 'cancelled').length})`
@@ -101,7 +127,6 @@ export default function InpatientFile() {
     ['annexes', `Anexos (${annexes})`],
   ]
   const base = `/app/${obs ? 'observacion' : 'hospitalizados'}/${h.id}`
-  const noBed = open && !obs && !h.bedId
 
   return (
     <div className="page page--chart">
@@ -121,19 +146,15 @@ export default function InpatientFile() {
           <span className="muted">{h.diagnoses.map((d) => d.label).join('; ')}</span>
         </div>
         <div className="tabs tabs--scroll" role="tablist">
-          {tabs.map(([k, label]) => <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>)}
+          {tabs.map(([k, label]) => {
+            const c = counts[k]
+            return <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}
+              {c && <span className={`tab-alert tab-alert--${c.level}`} aria-label={`${c.n} ${c.level === 'critical' ? 'críticas' : 'pendientes'}`}>{c.n}</span>}</button>
+          })}
         </div>
       </div>
-      <MedAlertBanner file={file} />
-      {pendingAuth && tab !== 'annexes' && (
-        <div className="alert-strip alert-strip--amber" style={{ flexWrap: 'wrap' }}><FileSignature size={16} />{pendingAuth.signing?.action === 'accept' ? 'La autorización de hospitalización ya la firmó el paciente; falta la firma del médico.' : 'La autorización de hospitalización está pendiente de firma.'}
-          {pendingAuth.signing?.action !== 'accept' && (can('inpatient.orders') || can('inpatient.care')) && <button className="btn btn--primary btn--sm" onClick={() => setConsentFor(pendingAuth.id)}>Firmar ahora</button>}
-          <button className="btn btn--soft btn--sm" onClick={() => setTab('annexes')}>Ir a Anexos</button></div>
-      )}
-      {noBed && (
-        <div className="alert-strip alert-strip--amber" style={{ flexWrap: 'wrap' }}><BedDouble size={16} />Falta asignar la cama{h.companionName ? '' : ' y anotar al acompañante'}.
-          {(can('inpatient.orders') || can('inpatient.care')) && <button className="btn btn--soft btn--sm" onClick={() => setAdmitting(true)}>Asignar cama</button>}</div>
-      )}
+      {/* EN2: barra compacta; la autorización pendiente y la cama sin asignar van en ella como pendientes */}
+      <AlertBar alerts={alerts} onGo={go} />
       {editing && <GeneralDataModal h={h} p={p} onClose={() => setEditing(false)} onDone={() => { setEditing(false); load() }} />}
       {admitting && <AdmitBedStep h={h} p={p} onClose={() => { setAdmitting(false); setParams({}, { replace: true }) }}
         onDone={async () => { setAdmitting(false); const f = await fetchInpatient(h.id); setFile(f); const a = f.authorizations.find((x) => x.template === 'hospital' && x.status === 'pending'); if (a) setConsentFor(a.id); setParams({}, { replace: true }) }} />}
@@ -169,9 +190,9 @@ export default function InpatientFile() {
         </div>
       )}
 
-      {tab === 'meds' && <MedSheet file={file} p={p} reload={load} onWriteNote={() => setTab('notes')} />}
+      {tab === 'meds' && <MedSheet file={file} p={p} reload={load} onWriteNote={() => setTab('notes')} focusDose={focus.dose} onFocused={() => setFocus({})} />}
       {tab === 'notes' && <MedicalNotes file={file} p={p} reload={load} />}
-      {tab === 'vitals' && <VitalsSheet file={file} p={p} reload={load} />}
+      {tab === 'vitals' && <VitalsSheet file={file} p={p} reload={load} autoRecord={focus.record} onFocused={() => setFocus({})} />}
       {tab === 'nursing' && !obs && <NursingNotes file={file} reload={load} />}
       {tab === 'labs' && <ExamList exams={exams} patientId={h.patientId} hospitalizationId={h.id} reload={load} open={open} />}
       {tab === 'annexes' && <Annexes file={file} p={p} reload={load} />}
@@ -214,7 +235,7 @@ function ConsultEntry({ consultationId }: { consultationId: string }) {
 // ---------- Hoja de medicamentos ----------
 
 const STATE_LABEL: Record<SlotState, string> = {
-  given: 'Administrado', skipped: 'No administrado', omitted: 'Omitido', late: 'Atrasado', due: 'Toca ahora', upcoming: 'Programado',
+  given: 'Administrado', skipped: 'No aplicada', omitted: 'Omitido', late: 'Atrasado', due: 'Toca ahora', upcoming: 'Programado',
 }
 
 /** Inicio del día (00:00) de una fecha. */
@@ -232,7 +253,7 @@ const AHEAD_DAYS = 7
  * modo lectura: registrar o corregir algo ahí pide motivo y queda en la bitácora. Es la misma para
  * hospitalización y observación.
  */
-function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; reload: () => void; onWriteNote: () => void }) {
+function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file: File; p: Patient; reload: () => void; onWriteNote: () => void; focusDose?: { medId: string; at: string }; onFocused?: () => void }) {
   const { can, staffById } = useStore()
   const [params, setParams] = useSearchParams()
   const now = useNow()
@@ -255,6 +276,16 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
   const [stopping, setStopping] = useState<InpatientMed | null>(null)
   const [fixing, setFixing] = useState(false)
   const open = file.hospitalization.status === 'active'
+  // EN2: «Registrar dosis» desde una alerta abre esa dosis (si es de un día anterior, como registro tardío)
+  useEffect(() => {
+    if (!focusDose) return
+    const med = file.meds.find((m) => m.id === focusDose.medId)
+    const at = new Date(focusDose.at)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (med && open && (can('inpatient.care') || can('inpatient.orders'))) setMarking({ med, at, late: at < dayStart(new Date()) })
+    onFocused?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusDose])
   const admitted = dayStart(new Date(file.hospitalization.admittedAt))
   const last = addDays(today, AHEAD_DAYS)
   const start = view === 'week' ? weekStart(ref) : ref
@@ -269,7 +300,7 @@ function MedSheet({ file, p, reload, onWriteNote }: { file: File; p: Patient; re
   // Enfermería registra las dosis; el médico también puede hacerlo cuando él la aplica
   const care = (can('inpatient.care') || can('inpatient.orders')) && open
   const by = (id: string) => { const s = staffById(id); return s ? `${shortStaff(s.name)}, ${ROLE_LABEL[mainRole(s)].toLowerCase()}` : '' }
-  const doseTitle = (dose: Dose) => `${dose.status === 'given' ? 'Aplicado' : 'No administrado'} por ${by(dose.givenBy)}, ${dm(dose.givenAt)}${dose.note ? `: ${dose.note}` : ''}${dose.correctionReason ? `. ${dose.correctionReason.startsWith('Registro tardío') ? '' : 'Corregido: '}${dose.correctionReason} (${shortStaff(staffById(dose.correctedBy ?? '')?.name)})` : ''}`
+  const doseTitle = (dose: Dose) => `${dose.status === 'given' ? 'Aplicado' : 'No aplicada'} por ${by(dose.givenBy)}, ${dm(dose.givenAt)}${dose.note ? `: ${dose.note}` : ''}${dose.correctionReason ? `. ${dose.correctionReason.startsWith('Registro tardío') ? '' : 'Corregido: '}${dose.correctionReason} (${shortStaff(staffById(dose.correctedBy ?? '')?.name)})` : ''}`
   const label = view === 'week'
     ? `${date(start.toISOString(), { day: 'numeric', month: 'short' })} – ${date(addDays(end, -1).toISOString(), { day: 'numeric', month: 'short' })}`
     : ref.getTime() === today.getTime() ? `Hoy, ${date(ref.toISOString(), { weekday: 'short', day: 'numeric', month: 'short' })}` : date(ref.toISOString(), { weekday: 'long', day: 'numeric', month: 'short' })
@@ -461,22 +492,34 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
         const ok = await recordDose(med.id, { scheduledAt: at?.toISOString(), givenAt: new Date(when).toISOString(), status: given ? 'given' : 'skipped', note: note.trim() || undefined, reason: late ? reason.trim() : undefined })
         setBusy(false)
         if (ok) onSaved()
-      }}>{given ? 'Registrar administración' : 'Registrar como no administrado'}</button>
+      }}>{given ? 'Registrar administración' : 'Registrar como no aplicada'}</button>
     </>}>
       <p>{at ? <>Dosis de las <b>{time(at.toISOString())}</b>{at.toDateString() !== new Date().toDateString() ? ` del ${date(at.toISOString())}` : ''}.</> : 'Dosis según necesidad (PRN).'}</p>
       {tooSoon && <div className="alert-strip"><TriangleAlert size={16} />La última dosis fue a las {time(last!.givenAt)}; la indicación es cada {med.everyHours} horas.</div>}
       {at && (
         <div className="segmented" role="radiogroup" aria-label="Resultado">
           <button role="radio" aria-checked={given} onClick={() => setGiven(true)}>Administrado</button>
-          <button role="radio" aria-checked={!given} onClick={() => setGiven(false)}>No administrado</button>
+          <button role="radio" aria-checked={!given} onClick={() => setGiven(false)}>No aplicada</button>
         </div>
       )}
+      {!given && <p className="muted" style={{ fontSize: 13.5 }}>Con el motivo, la dosis deja de alertar y queda en la hoja como no aplicada.</p>}
       <label className="field"><span>Hora real</span><input className="input" type="datetime-local" value={when} max={inputDateTime(new Date())} onChange={(e) => setWhen(e.target.value)} /></label>
-      <label className="field"><span>{given ? 'Observación (opcional)' : 'Motivo por el que no se administró'}</span>
+      {!given && <SkipReasons value={note} onChange={setNote} />}
+      <label className="field"><span>{given ? 'Observación (opcional)' : 'Motivo por el que no se aplicó'}</span>
         <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={given ? 'Ej. Dolor 7/10' : 'Ej. Paciente en ayuno para cirugía'} /></label>
       {late && <label className="field"><span>Motivo del registro tardío (queda en la bitácora)</span>
         <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Se aplicó en el turno de noche y no se registró" /></label>}
     </Modal>
+  )
+}
+
+/** EN2: motivos frecuentes de una dosis no aplicada, de un toque; el texto se puede completar. */
+const SKIP_REASONS = ['Paciente en ayuno', 'El paciente la rechazó', 'Suspendida por el médico', 'Paciente fuera del servicio (estudio o quirófano)', 'No hay el medicamento']
+function SkipReasons({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="chips" role="group" aria-label="Motivos frecuentes">
+      {SKIP_REASONS.map((r) => <button key={r} type="button" className="chip chip--toggle" aria-pressed={value === r} onClick={() => onChange(r)}>{r}</button>)}
+    </div>
   )
 }
 
@@ -498,15 +541,16 @@ function CorrectDoseModal({ med, dose, onClose, onSaved }: { med: InpatientMed; 
         if (ok) onSaved()
       }}>Guardar corrección</button>
     </>}>
-      <p className="muted" style={{ fontSize: 14 }}>Registrada como {dose.status === 'given' ? 'administrada' : 'no administrada'} a las {time(dose.givenAt)} del {date(dose.givenAt)}. El registro anterior se conserva.</p>
+      <p className="muted" style={{ fontSize: 14 }}>Registrada como {dose.status === 'given' ? 'administrada' : 'no aplicada'} a las {time(dose.givenAt)} del {date(dose.givenAt)}. El registro anterior se conserva.</p>
       {dose.scheduledAt && (
         <div className="segmented" role="radiogroup" aria-label="Resultado">
           <button role="radio" aria-checked={given} onClick={() => setGiven(true)}>Administrado</button>
-          <button role="radio" aria-checked={!given} onClick={() => setGiven(false)}>No administrado</button>
+          <button role="radio" aria-checked={!given} onClick={() => setGiven(false)}>No aplicada</button>
         </div>
       )}
       <label className="field"><span>Hora real</span><input className="input" type="datetime-local" value={when} max={inputDateTime(new Date())} onChange={(e) => setWhen(e.target.value)} /></label>
-      <label className="field"><span>{given ? 'Observación (opcional)' : 'Motivo por el que no se administró'}</span><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+      {!given && <SkipReasons value={note} onChange={setNote} />}
+      <label className="field"><span>{given ? 'Observación (opcional)' : 'Motivo por el que no se aplicó'}</span><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
       <label className="field"><span>Motivo de la corrección (queda en la bitácora)</span><input className="input" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Se anotó una hora equivocada" /></label>
     </Modal>
   )

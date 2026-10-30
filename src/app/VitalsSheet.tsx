@@ -35,7 +35,7 @@ function rangeOf(range: Range, stayStart: number, end: number, every: number): [
  * Hoja de signos vitales (S1), en hospitalización y observación: arriba la curva térmica y abajo los demás signos
  * (tarjetas y la tabla clásica). Enfermería y el médico registran tomas; el médico cambia la frecuencia de toma.
  */
-export function VitalsSheet({ file, p, reload }: { file: InpatientFile; p: Patient; reload: () => void }) {
+export function VitalsSheet({ file, p, reload, autoRecord, onFocused }: { file: InpatientFile; p: Patient; reload: () => void; autoRecord?: boolean; onFocused?: () => void }) {
   const { can, settings, staffById, notify } = useStore()
   const now = useNow()
   const [range, setRange] = useState<Range>(() => (activeVitals(file.vitals).length > 9 ? '7d' : 'all'))
@@ -45,6 +45,14 @@ export function VitalsSheet({ file, p, reload }: { file: InpatientFile; p: Patie
   const h = file.hospitalization
   const open = h.status === 'active'
   const record = open && can('vitals.record')
+  // EN2: «Registrar signos» desde una alerta abre el registro
+  useEffect(() => {
+    if (!autoRecord) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (record) setRecording(true)
+    onFocused?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRecord])
   const band = bandOf(settings)
   const every = vitalsEvery(file)
   const ordered = frequencyFromOrders(file)

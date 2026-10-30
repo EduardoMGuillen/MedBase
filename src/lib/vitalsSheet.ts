@@ -87,23 +87,3 @@ export function antipyreticDoses(file: Pick<InpatientFile, 'meds' | 'doses'>): {
   })
 }
 
-const hm = (d: Date) => d.toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })
-const dm = (d: Date) => d.toLocaleDateString('es-HN', { day: '2-digit', month: '2-digit' })
-
-/**
- * Alertas de la hoja para el expediente: fiebre o hipotermia en las últimas 24 horas (la más reciente) y tomas
- * esperadas que no se registraron en las últimas 24 horas.
- */
-export function vitalAlerts(file: Pick<InpatientFile, 'notes' | 'hospitalization' | 'vitals' | 'consultOrders'>, band: TempBand, now: Date): string[] {
-  if (file.hospitalization.status !== 'active') return []
-  const out: string[] = []
-  const recent = activeVitals(file.vitals ?? []).filter((v) => v.temperature != null && now.getTime() - new Date(v.takenAt).getTime() <= 24 * HOUR)
-  const last = [...recent].reverse().find((v) => tempClass(v.temperature!, band) !== 'normal')
-  if (last) {
-    const t = new Date(last.takenAt)
-    out.push(`${tempClass(last.temperature!, band) === 'fever' ? 'Fiebre' : 'Hipotermia'}: ${last.temperature!.toFixed(1)} °C a las ${hm(t)} del ${dm(t)}`)
-  }
-  const missed = missedTakes(file, now).filter((s) => now.getTime() - s.getTime() <= 24 * HOUR)
-  if (missed.length) out.push(`Signos vitales pendientes: ${missed.map((s) => `${hm(s)} del ${dm(s)}`).join(', ')} (cada ${vitalsEvery(file)} h)`)
-  return out
-}

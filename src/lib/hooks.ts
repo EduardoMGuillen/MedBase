@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useStore } from './store'
+import { fileAlerts } from './alerts'
+import { bandOf } from './vitalsSheet'
+import { shortStaff } from './format'
+import type { InpatientFile } from './types'
 
 /** Hora actual que se actualiza cada minuto, para el "retrasado N min". */
 export function useNow(everyMs = 60_000) {
@@ -28,4 +32,11 @@ export function useIsPhone() {
 export function useRxValidity() {
   const { user } = useStore()
   return useState(user?.prefs?.rxValidityDays ?? 30)
+}
+
+/** EN2: alertas agrupadas de un expediente de hospitalización u observación. */
+export function useFileAlerts(file: InpatientFile | null) {
+  const { settings, staffById } = useStore()
+  const now = useNow()
+  return file ? fileAlerts(file, bandOf(settings), now, { nameOf: (id) => shortStaff(staffById(id)?.name) }) : []
 }

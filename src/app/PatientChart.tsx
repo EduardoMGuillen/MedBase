@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { BedDouble, FileBadge, FileText, Lock, NotebookPen, Pencil } from 'lucide-react'
-import { MedAlertBanner } from './MedAlerts'
+import { AlertBar } from './MedAlerts'
+import { alertQuery } from '../lib/alerts'
+import { useFileAlerts } from '../lib/hooks'
 import type { InpatientFile, Payment, ExamOrder } from '../lib/types'
 import { FOLLOWUP_KIND } from '../lib/followups'
 import { bedLabel } from './Inpatients'
@@ -48,8 +50,15 @@ function HospAlerts({ id }: { id?: string }) {
     if (!id) { setFile(null); return }
     fetchInpatient(id).then(setFile).catch(() => setFile(null))
   }, [id, fetchInpatient])
+  return <StayAlerts file={file} />
+}
+
+/** EN2: la misma barra del expediente; cada acción abre la estancia en el lugar exacto. */
+function StayAlerts({ file }: { file: InpatientFile | null }) {
+  const alerts = useFileAlerts(file)
+  const nav = useNavigate()
   if (!file) return null
-  return <MedAlertBanner file={file} />
+  return <AlertBar alerts={alerts} onGo={(go) => nav(`${stayPath(file.hospitalization)}?${alertQuery(go)}`)} />
 }
 
 export function useChart(patientId: string | undefined, enabled: boolean) {
