@@ -231,6 +231,9 @@ export function ClinicDetail() {
                       onChange={async (e) => { if (await updatePlatformStaff(s.id, { role: e.target.value as ClinicRole })) load() }}>
                       {ROLES_BY_KIND[clinic.kind ?? 'clinic'].map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                     </select>
+                    {(s.roles ?? []).filter((r) => r !== s.role).length > 0 && (
+                      <small className="muted" style={{ display: 'block', marginTop: 2 }}>También: {(s.roles ?? []).filter((r) => r !== s.role).map((r) => ROLE_LABEL[r]).join(', ')}</small>
+                    )}
                   </td>
                   <td><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Desactivado</span>}
                     {s.twoFactor && <span className="badge badge--ink">Dos pasos</span>}</div></td>

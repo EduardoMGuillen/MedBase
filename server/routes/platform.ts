@@ -4,8 +4,8 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse } from '../http.js'
 import { slugify } from '../db.js'
-import { toAudit, toClinic, toStaff } from '../mappers.js'
-import { assertRoleFits, CLINIC_ROLES, createStaffMember, tempPassword } from '../app.js'
+import { rolesOf, toAudit, toClinic, toStaff } from '../mappers.js'
+import { assertNotLastAdmin, assertRoleFits, CLINIC_ROLES, createStaffMember, tempPassword } from '../app.js'
 import { DEFAULT_SETTINGS } from '../../src/lib/seed.js'
 
 const CLINIC_STATS = `
@@ -129,9 +129,16 @@ export function registerPlatform(app: Express, { sql, auth, need, userOf, audit 
   app.patch('/api/platform/staff/:id', ...guard, async (req, res) => {
     const row = await platformStaff(String(req.params.id))
     const b = parse(z.object({ active: z.boolean().optional(), role: z.enum(CLINIC_ROLES).optional(), twoFactor: z.literal(false).optional() }), req.body)
-    if ((b.role && b.role !== row.role) || (b.active === true && !row.active)) await assertRoleFits(sql, String(row.clinic_id), b.role ?? String(row.role), String(row.id))
+    const cid = String(row.clinic_id)
+    const prev = rolesOf(row)
+    // AD5: el selector cambia el rol activo; los demás roles de la persona se conservan
+    const nextRoles = b.role && b.role !== row.role ? [...new Set(prev.map((r) => (r === row.role ? b.role! : r)))] : prev
+    if (b.role && !prev.includes(b.role)) await assertRoleFits(sql, cid, b.role, String(row.id))
+    if (b.active === true && !row.active) for (const r of nextRoles) await assertRoleFits(sql, cid, r, String(row.id))
+    // Ni la plataforma deja a una clínica sin nadie activo con Administración
+    if ((prev.includes('admin') && !nextRoles.includes('admin')) || (b.active === false && row.active && prev.includes('admin'))) await assertNotLastAdmin(sql, cid, String(row.id))
     if (b.active !== undefined) await sql.run('UPDATE staff SET active = ?, token_version = token_version + 1 WHERE id = ?', [b.active, row.id])
-    if (b.role) await sql.run('UPDATE staff SET role = ?, roles = ?, token_version = token_version + 1 WHERE id = ?', [b.role, JSON.stringify([b.role]), row.id])
+    if (b.role) await sql.run('UPDATE staff SET role = ?, roles = ?, token_version = token_version + 1 WHERE id = ?', [b.role, JSON.stringify(nextRoles), row.id])
     if (b.twoFactor === false) await sql.run('UPDATE staff SET totp_enabled = FALSE, totp_secret = NULL WHERE id = ?', [row.id])
     const what = b.active === false ? 'Desactivó a' : b.active ? 'Reactivó a' : b.role ? 'Cambió el rol de' : 'Quitó la verificación en dos pasos de'
     await audit({ id: userOf(req).id, clinicId: String(row.clinic_id) }, `${what} ${row.name}`)
