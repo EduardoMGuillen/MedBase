@@ -1053,24 +1053,29 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
           </div>
         )}
       </fieldset>
-      {active.length > 0 && (
-        <fieldset className="fs"><legend>Medicamentos activos</legend>
-          <p className="muted" style={{ fontSize: 13.5 }}>Marca OMITIR para suspender un medicamento; desde ahora la hoja de enfermería lo mostrará omitido.</p>
-          <div className="rows">
-            {active.map((m) => (
-              <div key={m.id} className="omit-row">
-                <span className={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id) ? 'struck' : ''}>{medLabel(m)}</span>
-                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <button type="button" className="btn btn--ghost btn--sm" disabled={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id)} onClick={() => { setReplacing(m.id); setAdding(false) }}>Cambiar</button>
-                  <label><input type="checkbox" checked={stop.includes(m.id)} onChange={(e) => { setStop(e.target.checked ? [...stop, m.id] : stop.filter((x) => x !== m.id)); if (e.target.checked) setReplacing(null) }} /> OMITIR</label>
-                </span>
-              </div>
-            ))}
-          </div>
-        </fieldset>
-      )}
+      {/* MC3 (ronda 5): Indicaciones → Exámenes → Medicamentos (con los activos dentro, antes de «Agregar medicamento») */}
+      <fieldset className="fs"><legend>Exámenes</legend>
+        <ExamsBlock value={exams} onChange={setExams} inStay />
+      </fieldset>
       <fieldset className="fs note-editor__meds"><legend>Medicamentos</legend>
-        <p className="muted" style={{ fontSize: 13.5 }}>Debajo de las indicaciones; pasan solos a la hoja de medicamentos.</p>
+        <p className="muted" style={{ fontSize: 13.5 }}>Pasan solos a la hoja de medicamentos.</p>
+        {active.length > 0 && (
+          <div className="note-editor__active">
+            <h4>Medicamentos activos</h4>
+            <p className="muted" style={{ fontSize: 13.5 }}>Marca OMITIR para suspender un medicamento; desde ahora la hoja de enfermería lo mostrará omitido.</p>
+            <div className="rows">
+              {active.map((m) => (
+                <div key={m.id} className="omit-row">
+                  <span className={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id) ? 'struck' : ''}>{medLabel(m)}</span>
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button type="button" className="btn btn--ghost btn--sm" disabled={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id)} onClick={() => { setReplacing(m.id); setAdding(false) }}>Cambiar</button>
+                    <label><input type="checkbox" checked={stop.includes(m.id)} onChange={(e) => { setStop(e.target.checked ? [...stop, m.id] : stop.filter((x) => x !== m.id)); if (e.target.checked) setReplacing(null) }} /> OMITIR</label>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {meds.length > 0 && <ol className="orders">{meds.map((m, i) => (
           <li key={i} className={medHasBlank(m) ? 'orders__blank' : undefined}><span className="orders__n">–</span>
             <span className="orders__text"><Pill size={13} className="orders__pill" />{medLabel(m)}{m.days ? ` por ${m.days} días` : ''}{m.instructions ? `. ${m.instructions}` : ''}
@@ -1085,9 +1090,6 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
           : replacing ? <MedForm p={p} initial={medToNew(active.find((m) => m.id === replacing)!)} onAdd={(m) => { setMeds([...meds, { ...m, replacesId: replacing }]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
           : adding ? <MedForm key={meds.length} p={p} onAdd={(m) => { setMeds([...meds, m]); setAdding(false) }} onAddAnother={(m) => setMeds([...meds, m])} onCancel={() => setAdding(false)} />
           : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
-      </fieldset>
-      <fieldset className="fs"><legend>Exámenes</legend>
-        <ExamsBlock value={exams} onChange={setExams} inStay />
       </fieldset>
       </div>
       </div>

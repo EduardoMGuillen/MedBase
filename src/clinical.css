@@ -280,6 +280,9 @@ button.slot2:not(:disabled):hover { border-color: var(--ink); }
 .omit-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 2px; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
 .omit-row span:last-child { white-space: nowrap; display: inline-flex; gap: 8px; align-items: center; }
 .omit-row label { font-weight: 700; color: var(--red-ink); display: inline-flex; gap: 6px; align-items: center; }
+/* MC3 (ronda 5): los medicamentos activos van dentro del bloque de Medicamentos, antes de agregar uno nuevo */
+.note-editor__active { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ward); }
+.note-editor__active h4 { margin: 0; font-size: 14px; }
 .struck { text-decoration: line-through; color: var(--muted); }
 .nnote { display: grid; grid-template-columns: 70px 1fr; gap: 14px; padding: 14px 22px; border-bottom: 1px solid var(--line-soft); }
 .nnote:last-child { border-bottom: 0; }
