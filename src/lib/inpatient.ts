@@ -200,3 +200,9 @@ export function splitOrders(n: InpatientNote, file: Pick<InpatientFile, 'meds'>)
 
 /** La epicrisis vigente de la estancia (borrador o emitida), si hay. */
 export const currentEpicrisis = (file: Pick<InpatientFile, 'epicrises'>) => [...(file.epicrises ?? [])].reverse().find((e) => e.status !== 'voided')
+
+/** Diagnóstico actual de la estancia: el de la última nota que registró diagnósticos o, si ninguna, el de ingreso. */
+export function currentDiagnoses(file: Pick<InpatientFile, 'notes' | 'hospitalization'>) {
+  const last = file.notes.filter((n) => n.diagnoses?.length).sort((a, b) => b.at.localeCompare(a.at))[0]
+  return last?.diagnoses ?? file.hospitalization.diagnoses
+}

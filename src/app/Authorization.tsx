@@ -4,7 +4,7 @@ import { Camera, ChevronLeft, FileSignature, FileText, PenLine, Printer } from '
 import { useStore } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { date, dateTime, formatPhone, shortStaff, time } from '../lib/format'
-import { yearsOld } from '../lib/inpatient'
+import { currentDiagnoses, yearsOld } from '../lib/inpatient'
 import { authStatus, authTitle, consentStatements, FREQUENT_SURGERIES, HOSPITAL_CONSENT, HOSPITAL_DECLARATION, SURGICAL_GENERIC } from '../lib/consent'
 import type { Authorization, AuthorizationData, InpatientFile, Patient } from '../lib/types'
 import { openFile } from '../lib/files'
@@ -28,9 +28,9 @@ export function AuthorizationForm({ file, p, template = 'surgical', initialProce
   const h = file.hospitalization
   const minor = p.birthDate ? yearsOld(p.birthDate) < 18 : false
   const current = file.authorizations.find((a) => a.template === 'hospital' && (a.status === 'pending' || a.status === 'signed'))
-  const knownDx = h.diagnoses.map((d) => d.label).join('; ')
+  // MC2: el diagnóstico actual (el de la última nota que lo registró o, si no, el de ingreso), editable antes de generarla
   const [procedure, setProcedure] = useState(initialProcedure ?? '')
-  const [diagnosis, setDiagnosis] = useState('')
+  const [diagnosis, setDiagnosis] = useState(() => currentDiagnoses(file).map((d) => d.label).join('; '))
   const [companion, setCompanion] = useState({ name: h.companionName ?? p.emergencyName ?? '', phone: h.companionPhone ?? p.emergencyPhone ?? '', relation: h.companionRelation ?? p.emergencyRelation ?? '' })
   const [rep, setRep] = useState({ on: minor, name: minor ? p.guardianName ?? p.emergencyName ?? '' : '', dni: minor ? p.guardianDni ?? '' : '', relation: minor ? p.guardianRelation ?? p.emergencyRelation ?? '' : '' })
   const [busy, setBusy] = useState(false)
@@ -38,13 +38,13 @@ export function AuthorizationForm({ file, p, template = 'surgical', initialProce
   // Firmada: sólo se abre. Pendiente: se puede completar el acompañante y se reabre la misma hoja (no se duplica)
   const signed = current?.status === 'signed'
   const ready = surgical
-    ? procedure.trim().length >= 3 && (!!knownDx || diagnosis.trim().length >= 3)
+    ? procedure.trim().length >= 3 && diagnosis.trim().length >= 3
     : signed || (companion.name.trim().length >= 3 && companion.phone.replace(/\D/g, '').length >= 7 && (!rep.on || rep.name.trim().length >= 3))
   const generate = async () => {
     if (!ready || busy) return
     setBusy(true)
     const a = surgical
-      ? await createAuthorization(h.id, { template, procedure: procedure.trim(), diagnosis: knownDx ? undefined : diagnosis.trim() })
+      ? await createAuthorization(h.id, { template, procedure: procedure.trim(), diagnosis: diagnosis.trim() })
       : await createAuthorization(h.id, { template, companion: { name: companion.name.trim(), phone: companion.phone.trim(), relation: companion.relation.trim() || undefined },
         representative: rep.on ? { name: rep.name.trim(), dni: rep.dni.trim() || undefined, relation: rep.relation.trim() || undefined } : undefined })
     setBusy(false)
@@ -62,9 +62,8 @@ export function AuthorizationForm({ file, p, template = 'surgical', initialProce
           <label className="field"><span>Procedimiento quirúrgico</span>
             <input className="input" autoFocus list="frequent-surgeries" value={procedure} onChange={(e) => setProcedure(e.target.value)} placeholder="Ej. Apendicectomía o laparotomía exploradora" />
             <datalist id="frequent-surgeries">{FREQUENT_SURGERIES.map((x) => <option key={x} value={x} />)}</datalist></label>
-          {knownDx
-            ? <p className="muted" style={{ fontSize: 13.5 }}>Diagnóstico: <b>{knownDx}</b>. Paciente, médico, fecha y acompañante los pone el sistema; firmas, testigo y representante se llenan a mano en la hoja.</p>
-            : <label className="field"><span>Diagnóstico</span><input className="input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} /></label>}
+          <label className="field"><span>Diagnóstico actual</span><input className="input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} /></label>
+          <p className="muted" style={{ fontSize: 13.5 }}>Paciente, médico, fecha y acompañante los pone el sistema.</p>
         </form>
       ) : signed ? (
         <p>Esta estancia ya tiene su autorización de hospitalización firmada ({dateTime(current!.statusAt ?? current!.createdAt)}). No se crea otra.</p>
