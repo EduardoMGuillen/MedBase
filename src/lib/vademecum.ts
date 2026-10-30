@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { DRUGS, type Drug } from './catalogs'
+import type { Drug } from './catalogs'
+import { drugProvider } from './drugProvider'
 import { useStore } from './store'
 
 /** Clave de un medicamento para los favoritos del médico (el mismo fármaco tiene varias presentaciones). */
@@ -13,10 +14,8 @@ export function useVademecum(): Drug[] {
   const { clinicDrugs, user } = useStore()
   const favs = user?.prefs?.favDrugs
   return useMemo(() => {
-    const all: Drug[] = [...DRUGS, ...(clinicDrugs ?? []).filter((d) => d.active).map((d) => ({
-      name: d.name, presentation: [d.presentation, d.concentration].filter(Boolean).join(' '), group: 'clínica', brand: d.brand, clinicId: d.id,
-      usual: d.route ? { dose: d.usualDose ?? '', route: d.route, frequency: 'Cada 8 horas', duration: '' } : undefined,
-    }))]
+    // AD4: los medicamentos vienen del proveedor (hoy el local; mañana, si se contrata, una API externa)
+    const all: Drug[] = drugProvider.catalog(clinicDrugs ?? [])
     if (!favs?.length) return all
     const set = new Set(favs)
     return [...all.filter((d) => set.has(drugKey(d))), ...all.filter((d) => !set.has(drugKey(d)))]

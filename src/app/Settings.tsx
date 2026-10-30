@@ -1,8 +1,12 @@
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Download, Plus, Upload } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead } from '../components/ui'
-import { clinicWhatsapp, contactLine, date, fillTemplate, fullName, money, ROUTES } from '../lib/format'
+import { DrugForm } from '../components/DrugForm'
+import { DRUGS } from '../lib/catalogs'
+import { normalize } from '../lib/patients'
+import { download, parseCsv, toCsv } from '../lib/csv'
+import { clinicWhatsapp, contactLine, date, fillTemplate, fullName, money } from '../lib/format'
 import { ContactsEditor } from '../components/Contacts'
 import type { Bed, ClinicDrug, ClinicSettings, Service, Staff } from '../lib/types'
 import { ScheduleEditor } from './ScheduleEditor'
@@ -33,51 +37,80 @@ export default function Settings() {
   )
 }
 
-/** Medicamentos que agregaron los médicos porque no estaban en el vademécum. Se editan o desactivan; no se borran. */
-function ClinicDrugs() {
-  const { clinicDrugs = [], staffById } = useStore()
-  const [editing, setEditing] = useState<ClinicDrug | null>(null)
-  return (
-    <section className="panel table-wrap">
-      <div className="panel__head"><div><h2>Agregados por la clínica</h2><p>Los médicos los agregan desde la consulta cuando no aparecen en el vademécum. Un medicamento desactivado ya no se ofrece en las búsquedas.</p></div></div>
-      {clinicDrugs.length ? (
-        <table className="table table--sticky">
-          <thead><tr><th>Nombre genérico</th><th>Comercial</th><th>Presentación</th><th>Vía</th><th>Agregado por</th><th>Estado</th><th /></tr></thead>
-          <tbody>{clinicDrugs.map((d) => (
-            <tr key={d.id} style={d.active ? undefined : { opacity: 0.55 }}>
-              <td><b>{d.name}</b></td><td>{d.brand ?? '—'}</td><td>{[d.presentation, d.concentration].filter(Boolean).join(' ') || '—'}</td><td>{d.route ?? '—'}</td>
-              <td>{staffById(d.createdBy)?.name}<br /><small className="muted">{date(d.createdAt)}</small></td>
-              <td>{d.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Desactivado</span>}</td>
-              <td style={{ textAlign: 'right' }}><button className="btn btn--ghost btn--sm" onClick={() => setEditing(d)}>Editar</button></td>
-            </tr>
-          ))}</tbody>
-        </table>
-      ) : <div className="empty">Todavía no se ha agregado ningún medicamento.</div>}
-      {editing && <ClinicDrugForm d={editing} onClose={() => setEditing(null)} />}
-    </section>
-  )
+const IMPORT_COLUMNS = ['nombre_generico', 'nombre_comercial', 'presentacion', 'concentracion', 'via', 'dosis_habitual', 'indicaciones'] as const
+const IMPORT_FIELDS: Record<(typeof IMPORT_COLUMNS)[number], string> = {
+  nombre_generico: 'name', nombre_comercial: 'brand', presentacion: 'presentation', concentracion: 'concentration', via: 'route', dosis_habitual: 'usualDose', indicaciones: 'usualUse',
 }
 
-function ClinicDrugForm({ d, onClose }: { d: ClinicDrug; onClose: () => void }) {
-  const { updateClinicDrug } = useStore()
-  const [f, setF] = useState({ name: d.name, brand: d.brand ?? '', presentation: d.presentation ?? '', concentration: d.concentration ?? '', route: d.route ?? 'Oral' })
-  const save = async (extra: Partial<ClinicDrug> = {}) => {
-    if (await updateClinicDrug(d.id, { name: f.name.trim(), brand: f.brand.trim(), presentation: f.presentation.trim(), concentration: f.concentration.trim(), route: f.route, ...extra })) onClose()
+/**
+ * AD4: el vademécum completo de la clínica (el catálogo base y lo que agregó la clínica), con buscador. Lo agregado se
+ * edita (quien lo agregó o administración) y se desactiva; el catálogo base no se edita. Se puede importar una lista.
+ */
+function ClinicDrugs() {
+  const { clinicDrugs = [], staffById, user, can, importClinicDrugs } = useStore()
+  const [editing, setEditing] = useState<ClinicDrug | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [q, setQ] = useState('')
+  const [onlyClinic, setOnlyClinic] = useState(false)
+  const [result, setResult] = useState<{ added: number; skipped: { row: number; name: string; reason: string }[] } | null>(null)
+  const n = normalize(q)
+  const added = clinicDrugs.filter((d) => !n || normalize(`${d.name} ${d.brand ?? ''} ${d.presentation ?? ''}`).includes(n))
+  const base = onlyClinic ? [] : DRUGS.filter((d) => !n || normalize(`${d.name} ${d.presentation}`).includes(n))
+  const canEdit = (d: ClinicDrug) => can('drugs.manage') || d.createdBy === user?.id
+  const importFile = async (file: File) => {
+    const rows = parseCsv(await file.text())
+    if (rows.length < 2) return setResult({ added: 0, skipped: [{ row: 1, name: '', reason: 'El archivo no tiene filas debajo del encabezado.' }] })
+    const head = rows[0].map((h) => normalize(h).replace(/\s+/g, '_'))
+    const idx = (c: string) => head.indexOf(c)
+    if (idx('nombre_generico') < 0) return setResult({ added: 0, skipped: [{ row: 1, name: '', reason: 'Falta la columna nombre_generico. Usa la plantilla.' }] })
+    const list = rows.slice(1).map((r) => Object.fromEntries(IMPORT_COLUMNS.filter((c) => idx(c) >= 0 && r[idx(c)]?.trim()).map((c) => [IMPORT_FIELDS[c], r[idx(c)].trim()])))
+    const r = await importClinicDrugs(list)
+    if (r) setResult(r)
   }
   return (
-    <Modal title="Medicamento de la clínica" onClose={onClose} footer={<>
-      <button className={`btn ${d.active ? 'btn--danger' : 'btn--soft'}`} style={{ marginRight: 'auto' }} onClick={() => save({ active: !d.active })}>{d.active ? 'Desactivar' : 'Reactivar'}</button>
-      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={f.name.trim().length < 2} onClick={() => save()}>Guardar</button>
-    </>}>
-      <div className="form-grid">
-        <label className="field span-2"><span>Nombre genérico</span><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
-        <label className="field span-2"><span>Nombre comercial</span><input className="input" value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })} /></label>
-        <label className="field"><span>Presentación</span><input className="input" value={f.presentation} onChange={(e) => setF({ ...f, presentation: e.target.value })} /></label>
-        <label className="field"><span>Concentración</span><input className="input" value={f.concentration} onChange={(e) => setF({ ...f, concentration: e.target.value })} /></label>
-        <label className="field span-2"><span>Vía habitual</span><select className="select" value={f.route} onChange={(e) => setF({ ...f, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
+    <section className="panel table-wrap">
+      <div className="panel__head"><div><h2>Vademécum</h2><p>{DRUGS.length} del catálogo base y {clinicDrugs.filter((d) => d.active).length} agregados por la clínica. Un medicamento desactivado ya no se ofrece al recetar.</p></div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn--ghost btn--sm" onClick={() => download('plantilla-vademecum.csv', toCsv([[...IMPORT_COLUMNS], ['Ademetionina', 'Heptral', 'Tabletas', '400 mg', 'Oral', '1 tableta cada 12 horas', 'Colestasis intrahepática']]))}>
+            <Download size={15} />Plantilla</button>
+          <label className="btn btn--ghost btn--sm"><Upload size={15} />Importar CSV
+            <input type="file" accept=".csv,text/csv" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importFile(f) }} /></label>
+          <button className="btn btn--primary btn--sm" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>
+        </div></div>
+      <div className="panel__body" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', paddingBottom: 0 }}>
+        <input className="input" style={{ maxWidth: 360 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre genérico, comercial o presentación" aria-label="Buscar medicamento" />
+        <label className="check-inline"><input type="checkbox" checked={onlyClinic} onChange={(e) => setOnlyClinic(e.target.checked)} />Sólo agregados por la clínica</label>
       </div>
-    </Modal>
+      {result && (
+        <div className={`alert-strip ${result.added ? 'alert-strip--calm' : 'alert-strip--amber'}`} style={{ margin: '12px 22px 0', flexDirection: 'column', alignItems: 'stretch' }}>
+          <span>Se importaron {result.added} medicamento(s).{result.skipped.length ? ` ${result.skipped.length} fila(s) no se importaron:` : ''}</span>
+          {result.skipped.length > 0 && <ul className="note__list" style={{ margin: 0, fontWeight: 400 }}>{result.skipped.slice(0, 8).map((x) => <li key={x.row}>Fila {x.row}{x.name ? ` (${x.name})` : ''}: {x.reason}</li>)}</ul>}
+          <button className="linklike" style={{ alignSelf: 'flex-start' }} onClick={() => setResult(null)}>Cerrar</button>
+        </div>
+      )}
+      <table className="table table--sticky">
+        <thead><tr><th>Nombre genérico</th><th>Comercial</th><th>Presentación</th><th>Vía</th><th>Origen</th><th /></tr></thead>
+        <tbody>
+          {added.map((d) => (
+            <tr key={d.id} style={d.active ? undefined : { opacity: 0.55 }}>
+              <td><b>{d.name}</b>{d.usualUse && <small className="muted" style={{ display: 'block' }}>{d.usualUse}</small>}</td><td>{d.brand ?? '—'}</td>
+              <td>{[d.presentation, d.concentration].filter(Boolean).join(' ') || '—'}</td><td>{d.route ?? '—'}</td>
+              <td>Agregado por {staffById(d.createdBy)?.name ?? 'la clínica'}<br /><small className="muted">{date(d.createdAt)}{d.active ? '' : ' · desactivado'}</small></td>
+              <td style={{ textAlign: 'right' }}>{canEdit(d) && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(d)}>Editar</button>}</td>
+            </tr>
+          ))}
+          {base.slice(0, n ? 200 : 60).map((d) => (
+            <tr key={`${d.name}|${d.presentation}`}>
+              <td><b>{d.name}</b></td><td>{d.brand ?? '—'}</td><td>{d.presentation}</td><td>{d.usual?.route ?? '—'}</td><td className="muted">Catálogo base</td><td />
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!n && !onlyClinic && base.length > 60 && <p className="muted" style={{ padding: '10px 22px', fontSize: 13.5 }}>Mostrando 60 del catálogo base. Escribe para buscar.</p>}
+      {!added.length && !base.length && <div className="empty">{onlyClinic ? 'La clínica todavía no ha agregado medicamentos.' : 'Ningún medicamento coincide.'}</div>}
+      {editing && <DrugForm drug={editing} onClose={() => setEditing(null)} />}
+      {adding && <DrugForm onClose={() => setAdding(false)} />}
+    </section>
   )
 }
 

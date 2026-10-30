@@ -215,7 +215,9 @@ function useStoreValue() {
     // Vademécum de la clínica
     addClinicDrug: (b: Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route' | 'usualDose' | 'usualUse'>) =>
       run(() => api<ClinicDrug>('/drugs', { body: b }), 'Medicamento agregado al vademécum de la clínica'),
-    updateClinicDrug: (id: string, b: Partial<Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route' | 'active'>>) =>
+    importClinicDrugs: (rows: Record<string, string>[]) =>
+      run(() => api<{ added: number; skipped: { row: number; name: string; reason: string }[] }>('/drugs/import', { body: { rows } })),
+    updateClinicDrug: (id: string, b: Partial<Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route' | 'active' | 'usualDose' | 'usualUse'>>) =>
       run(() => api<ClinicDrug>(`/drugs/${id}`, { method: 'PATCH', body: b }), 'Vademécum actualizado'),
     /** Observación → hospitalización: la misma estancia recibe cama y conserva su expediente. */
     convertToHospital: async (id: string, b: { bedId: string; specialty?: string; companionName?: string; companionRelation?: string; companionPhone?: string; patientPhone?: string }) => {

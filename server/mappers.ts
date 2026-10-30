@@ -87,6 +87,7 @@ export const toCertificate = (r: Row): Certificate => ({
 
 export const toClinicDrug = (r: Row): ClinicDrug => ({
   id: String(r.id), name: String(r.name), brand: s(r.brand), presentation: s(r.presentation), concentration: s(r.concentration), route: s(r.route),
+  usualDose: s(r.usual_dose), usualUse: s(r.usual_use),
   active: Boolean(r.active), createdBy: String(r.created_by), createdAt: String(r.created_at), updatedBy: s(r.updated_by), updatedAt: s(r.updated_at),
 })
 

@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '36'
+const SCHEMA_VERSION = '37'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -650,6 +650,11 @@ ALTER TABLE beds
   ADD COLUMN IF NOT EXISTS archived_specialty TEXT,
   ADD COLUMN IF NOT EXISTS out_of_service_note TEXT;
 ALTER TABLE beds ALTER COLUMN specialty DROP NOT NULL;
+
+-- v37: ronda 3 (AD4). Vademécum: dosis e indicaciones de uso habituales (opcionales) de lo que agrega la clínica.
+ALTER TABLE clinic_drugs
+  ADD COLUMN IF NOT EXISTS usual_dose TEXT,
+  ADD COLUMN IF NOT EXISTS usual_use TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

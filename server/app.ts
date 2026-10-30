@@ -83,7 +83,7 @@ export function createApp(opts: AppOptions) {
   // Los adjuntos traen su propio parser con un límite mayor
   const smallJson = express.json({ limit: '200kb' })
   // También la firma en pantalla (imágenes de las firmas) y las partes de un archivo grande
-  app.use((req, res, next) => (/\/(attachments|sign|signature|parts)$/.test(req.path) ? next() : smallJson(req, res, next)))
+  app.use((req, res, next) => (/\/(attachments|sign|signature|parts|import)$/.test(req.path) ? next() : smallJson(req, res, next)))
   app.use(cookieParser())
   app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff')

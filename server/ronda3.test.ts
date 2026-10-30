@@ -255,3 +255,32 @@ describe('AD3 camas libres u ocupadas; la especialidad es del ingreso', () => {
     assert.equal((await rec.patch(`/api/beds/${bed.body.id}`, { active: true })).status, 403)
   })
 })
+
+describe('AD4 vademécum', () => {
+  test('administración y médicos agregan; lo edita su autor o administración; enfermería no', async () => {
+    const admin = await as('admin@demo.clinara')
+    const doc = await as('apaz@demo.clinara')
+    const a = await doc.post('/api/drugs', { name: 'Ademetionina', brand: 'Heptral', presentation: 'Tabletas', concentration: '400 mg', route: 'Oral', usualDose: '1 tableta cada 12 horas', usualUse: 'Colestasis' })
+    assert.equal(a.status, 201, JSON.stringify(a.body))
+    assert.equal(a.body.usualDose, '1 tableta cada 12 horas')
+    assert.equal((await (await as('mzuniga@demo.clinara')).patch(`/api/drugs/${a.body.id}`, { brand: 'X' })).status, 403)
+    assert.equal((await doc.patch(`/api/drugs/${a.body.id}`, { usualUse: 'Colestasis intrahepática' })).body.usualUse, 'Colestasis intrahepática')
+    assert.equal((await admin.patch(`/api/drugs/${a.body.id}`, { active: false })).body.active, false)
+    assert.equal((await admin.post('/api/drugs', { name: 'Silimarina', presentation: 'Cápsulas', concentration: '140 mg' })).status, 201)
+    assert.equal((await (await as('crios@demo.clinara')).post('/api/drugs', { name: 'Otra cosa' })).status, 403)
+  })
+
+  test('importar una lista salta duplicados por nombre normalizado y lo que ya está en el catálogo base', async () => {
+    const admin = await as('admin@demo.clinara')
+    const r = await admin.post('/api/drugs/import', { rows: [
+      { name: 'Ácido ursodesoxicólico', presentation: 'Tabletas', concentration: '250 mg', route: 'Oral' },
+      { name: 'ACIDO URSODESOXICOLICO ', presentation: 'tabletas', concentration: '250 mg' },
+      { name: 'Acetaminofén' },
+      { name: 'Silimarina', presentation: 'Cápsulas', concentration: '140 mg' },
+      { name: '' },
+    ] })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.added, 1)
+    assert.deepEqual(r.body.skipped.map((x: any) => x.row), [3, 4, 5, 6])
+  })
+})

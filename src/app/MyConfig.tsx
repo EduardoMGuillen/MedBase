@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CalendarClock, Compass, ListChecks, LogOut, PenLine, Pill, Plus, Settings2, ShieldCheck, Star, UserRound } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { Avatar, Modal, PageHead } from '../components/ui'
+import { Avatar, PageHead } from '../components/ui'
+import { DrugForm } from '../components/DrugForm'
 import { SignaturePad } from '../components/SignaturePad'
 import { ScheduleEditor } from './ScheduleEditor'
 import { PasswordPanel, TwoFactorPanel } from './Account'
 import { PERMISSIONS, permissionsFor, ROLE_LABEL, VIEW_LABEL, viewsOf } from '../lib/permissions'
 import { drugKey, useVademecum } from '../lib/vademecum'
 import { normalize } from '../lib/patients'
-import { ROUTES } from '../lib/format'
 import { api } from '../lib/api'
 
 type Section = 'pro' | 'firma' | 'horario' | 'vademecum' | 'sets' | 'prefs' | 'seguridad'
@@ -203,38 +203,8 @@ function VademecumPanel() {
         {list.length > 60 && <p className="muted" style={{ fontSize: 13.5 }}>Mostrando 60 de {list.length}. Escribe para buscar.</p>}
         {!list.length && <div className="empty">{onlyFav ? 'Todavía no marcas favoritos.' : 'Ningún medicamento coincide.'}</div>}
       </div>
-      {adding && <NewDrugModal onClose={() => setAdding(false)} />}
+      {adding && <DrugForm onClose={() => setAdding(false)} />}
     </section>
-  )
-}
-
-/** Medicamento nuevo para el vademécum de la clínica (lo mismo que desde la consulta o desde Configuración). */
-export function NewDrugModal({ onClose, initialName = '' }: { onClose: () => void; initialName?: string }) {
-  const { addClinicDrug } = useStore()
-  const [f, setF] = useState({ name: initialName, brand: '', presentation: '', concentration: '', route: 'Oral', usualDose: '', usualUse: '' })
-  const [busy, setBusy] = useState(false)
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
-  return (
-    <Modal title="Agregar medicamento" onClose={onClose} footer={<>
-      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={f.name.trim().length < 2 || busy} onClick={async () => {
-        setBusy(true)
-        const r = await addClinicDrug({ name: f.name.trim(), brand: f.brand.trim() || undefined, presentation: f.presentation.trim() || undefined, concentration: f.concentration.trim() || undefined,
-          route: f.route, usualDose: f.usualDose.trim() || undefined, usualUse: f.usualUse.trim() || undefined })
-        setBusy(false)
-        if (r) onClose()
-      }}>Agregar</button>
-    </>}>
-      <div className="form-grid">
-        <label className="field span-2"><span>Nombre genérico (obligatorio)</span><input className="input" autoFocus value={f.name} onChange={set('name')} placeholder="Ej. Ademetionina" /></label>
-        <label className="field span-2"><span>Nombre comercial</span><input className="input" value={f.brand} onChange={set('brand')} placeholder="Ej. Heptral" /></label>
-        <label className="field"><span>Presentación</span><input className="input" value={f.presentation} onChange={set('presentation')} placeholder="Ej. Tabletas" /></label>
-        <label className="field"><span>Concentración</span><input className="input" value={f.concentration} onChange={set('concentration')} placeholder="Ej. 400 mg" /></label>
-        <label className="field"><span>Vía</span><select className="select" value={f.route} onChange={set('route')}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
-        <label className="field"><span>Dosis habitual (opcional)</span><input className="input" value={f.usualDose} onChange={set('usualDose')} placeholder="Ej. 1 tableta cada 12 horas" /></label>
-        <label className="field span-2"><span>Indicaciones de uso habitual (opcional)</span><input className="input" value={f.usualUse} onChange={set('usualUse')} placeholder="Ej. Colestasis intrahepática" /></label>
-      </div>
-    </Modal>
   )
 }
 
