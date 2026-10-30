@@ -214,8 +214,8 @@ function useStoreValue() {
       run(() => api<HospProcedure>(`/inpatient/${id}/procedures`, { body: b }), 'Registrado'),
     updateProcedure: (pid: string, b: Pick<HospProcedure, 'status' | 'notes'>) =>
       run(() => api<HospProcedure>(`/inpatient/procedures/${pid}`, { method: 'PATCH', body: b }), 'Estado actualizado'),
-    discharge: (id: string, b: DischargeData & { items: PrescriptionItem[]; validityDays?: number }) =>
-      run(() => api<{ hospitalization: Hospitalization; prescriptionId: string | null; folio: string | null; epicrisisId?: string }>(`/inpatient/${id}/discharge`, { body: b }), 'Paciente dado de alta'),
+    discharge: (id: string, b: DischargeData & { items: PrescriptionItem[]; validityDays?: number; exams?: ExamInput[]; issueEpicrisis?: boolean }) =>
+      run(() => api<{ hospitalization: Hospitalization; prescriptionId: string | null; folio: string | null; epicrisisId?: string; epicrisisIssued?: boolean; examBatch?: string | null }>(`/inpatient/${id}/discharge`, { body: b }), 'Paciente dado de alta'),
     // Vademécum de la clínica
     addClinicDrug: (b: Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route' | 'usualDose' | 'usualUse'>) =>
       run(() => api<ClinicDrug>('/drugs', { body: b }), 'Medicamento agregado al vademécum de la clínica'),

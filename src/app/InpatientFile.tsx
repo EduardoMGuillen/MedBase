@@ -4,10 +4,10 @@ import { BedDouble, ChevronLeft, ChevronRight, FileSignature, FileText, LogOut, 
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
-import { date, dateTime, defaultRoute, fullName, inputDateTime, legacyTag, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
+import { date, dateTime, defaultRoute, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
-import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
-import { defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
+import { allergyConflict, DRUGS } from '../lib/catalogs'
+import { defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
 import { tabCounts, type AlertGo } from '../lib/alerts'
 import { NoteColumns, NoteText } from '../components/NoteColumns'
@@ -18,11 +18,12 @@ import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
 import { useFileAlerts, useNow } from '../lib/hooks'
-import type { Addendum, Diagnosis, Dose, ExamInput, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
-import { bedLabel, DxPicker } from './Inpatients'
+import type { Addendum, Diagnosis, Dose, ExamInput, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient } from '../lib/types'
+import { bedLabel } from './Inpatients'
 import { GeneralDataModal } from './GeneralData'
 import { AdmitBedStep, ConsentChoice } from './ConsentFlow'
 import { ExamList } from './ExamsTab'
+import { DischargeView, DischargeWriter } from './DischargeNote'
 import { ExamsBlock } from '../components/Exams'
 import { Addenda, DraftBadge, SignedBadge } from '../components/Addenda'
 import { useDraftSync } from '../lib/drafts'
@@ -30,7 +31,7 @@ import { BedFields } from '../components/BedFields'
 import { ReferralModal } from './Referral'
 import { features } from '../lib/permissions'
 import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
-import { DischargeDocuments, EpicrisisButton } from './Epicrisis'
+import { DischargeDocuments } from './Epicrisis'
 import { VitalsSheet } from './VitalsSheet'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
 import { hasBlank, medHasBlank, orderKey } from '../lib/orderSets'
@@ -623,7 +624,8 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
       {writing === 'authorization' && <AuthorizationForm file={file} p={p} template="surgical" initialProcedure={authFor} onClose={() => setWriting(procDraft ? 'procedure' : null)}
         onCreated={(a) => { setWriting(null); setSurgicalFor(a.id) }} />}
       {surgicalFor && <ConsentChoice authorizationId={surgicalFor} p={p} onDone={() => { setSurgicalFor(null); reload(); if (procDraft) setWriting('procedure') }} />}
-      {writing === 'discharge' && <Discharge file={file} p={p} reload={() => { setWriting(null); reload() }} />}
+      {/* MC5: la nota de egreso se escribe en la misma hoja que la epicrisis */}
+      {writing === 'discharge' && <DischargeWriter file={file} p={p} onDone={() => { setWriting(null); reload() }} />}
       {referring && <ReferralModal stayId={h.id} onClose={() => setReferring(false)} />}
       {converting && <ConvertModal file={file} p={p} onClose={() => setConverting(false)} onDone={() => nav(`/app/hospitalizados/${h.id}?firmar=1`)} />}
       {h.consultationId && <ConsultEntry consultationId={h.consultationId} />}
@@ -645,7 +647,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
           )
         }
         const n = item.note!
-        if (n.kind === 'discharge') return <Discharge key={n.id} file={file} p={p} reload={reload} />
+        if (n.kind === 'discharge') return n.discharge ? <DischargeView key={n.id} note={n} file={file} reload={reload} /> : null
         if (n.kind === 'procedure') return <ProcedureNote key={n.id} n={n} file={file} reload={reload} />
         return <SoapNote key={n.id} n={n} file={file} reload={reload} />
       }) : !h.consultationId && <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
@@ -1250,101 +1252,3 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
 
 // ---------- Egreso ----------
 
-const CONDITIONS = ['Mejorado', 'Curado', 'Estable', 'Alta voluntaria', 'Trasladado a otro centro']
-const EMPTY_RX: PrescriptionItem = { drug: '', presentation: '', dose: '1 tableta', route: 'Oral', frequency: 'Cada 8 horas', duration: '5 días', instructions: '' }
-
-function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => void }) {
-  const { can, discharge, staffById } = useStore()
-  const nav = useNavigate()
-  const h = file.hospitalization
-  const note = file.notes.find((n) => n.kind === 'discharge')
-  // El campo es CIE-11: los diagnósticos de ingreso que vienen de la CIE-10 no se copian (dirían «CIE-10» en un campo
-  // CIE-11); se ofrecen para buscarlos en la CIE-11 de un toque
-  const [dx, setDx] = useState<Diagnosis[]>(() => h.diagnoses.filter((d) => !legacyTag(d)))
-  const legacyDx = h.diagnoses.filter((d) => legacyTag(d) && !dx.some((x) => normalize(x.label) === normalize(d.label)))
-  const [f, setF] = useState({ summary: '', condition: 'Mejorado', instructions: '', followUp: 'Cita de control en consulta externa en 1 semana.' })
-  const [items, setItems] = useState<PrescriptionItem[]>([])
-  const [rx, setRx] = useState<PrescriptionItem>(EMPTY_RX)
-  const [busy, setBusy] = useState(false)
-
-  if (note?.discharge) {
-    const d = note.discharge
-    return (
-      <article className="panel consult-entry">
-        <div className="panel__head">
-          <div><h2>Nota de egreso</h2><p>{dateTime(note.at)}, {staffById(note.authorId)?.name}</p></div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Link className="btn btn--primary btn--sm" to={`${stayPath(h)}/expediente`}><FileText size={15} />Expediente completo</Link>
-            {h.prescriptionId && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${h.prescriptionId}`}>Receta de egreso</Link>}
-            <EpicrisisButton file={file} />
-          </div>
-        </div>
-        <div className="panel__body"><div className="note">
-          <div className="note__sec"><h4>Resumen</h4><p>{d.summary}</p></div>
-          <div className="note__sec"><h4>Diagnóstico de egreso</h4><ol className="note__list">{d.diagnoses.map((x) => <li key={x.code + x.label}>{x.label} <span className="muted">({dxCode(x)})</span></li>)}</ol></div>
-          <div className="note__sec"><h4>Condición al egreso</h4><p>{d.condition}</p></div>
-          {d.instructions && <div className="note__sec"><h4>Indicaciones</h4><p>{d.instructions}</p></div>}
-          {d.followUp && <div className="note__sec"><h4>Seguimiento</h4><p>{d.followUp}</p></div>}
-        </div></div>
-      </article>
-    )
-  }
-  if (!can('inpatient.orders')) return <section className="panel"><div className="empty">El médico escribe la nota de egreso cuando da de alta al paciente.</div></section>
-
-  const ready = dx.length > 0 && f.summary.trim().length >= 10 && f.condition
-  // Órdenes abiertas ("hasta nueva orden" o con días): si continúan en casa, la receta necesita los días
-  const open = file.meds.filter((m) => !m.stoppedAt && !items.some((it) => it.drug === m.drug))
-  const toRx = (m: InpatientMed): PrescriptionItem => ({
-    drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route,
-    frequency: m.prn ? 'Según necesidad' : m.everyHours ? `Cada ${m.everyHours} horas` : 'Dosis única', duration: '', instructions: m.instructions ?? '',
-  })
-  return (
-    <section className="panel">
-      <div className="panel__head"><div><h2>Nota de egreso</h2><p>{h.kind === 'observation' ? 'Al guardarla se cierra la observación y el paciente sale de la lista' : 'Al guardarla se cierra el expediente de hospitalización, se libera la cama'} y, si agregas medicamentos, se emite la receta de salida.</p></div></div>
-      <div className="panel__body" style={{ display: 'grid', gap: 14 }}>
-        <label className="field"><span>Resumen: por qué ingresó, qué se le hizo y cómo evolucionó</span>
-          <textarea className="textarea" rows={4} value={f.summary} onChange={(e) => setF({ ...f, summary: e.target.value })}
-            placeholder={`Paciente ingresó por ${h.reason.toLowerCase()} Se le realizó... Evolucionó...`} /></label>
-        <DxPicker label="Diagnóstico de egreso" value={dx} onChange={setDx} recode={legacyDx} />
-        <div className="form-grid">
-          <label className="field"><span>Condición al egreso</span><select className="select" value={f.condition} onChange={(e) => setF({ ...f, condition: e.target.value })}>{CONDITIONS.map((c) => <option key={c}>{c}</option>)}</select></label>
-          <label className="field"><span>Seguimiento</span><input className="input" value={f.followUp} onChange={(e) => setF({ ...f, followUp: e.target.value })} /></label>
-          <label className="field span-2"><span>Indicaciones al alta</span><textarea className="textarea textarea--sm" rows={2} value={f.instructions} onChange={(e) => setF({ ...f, instructions: e.target.value })} placeholder="Dieta, cuidados de la herida, signos de alarma." /></label>
-        </div>
-        <fieldset className="fs"><legend>Medicamentos para la casa (receta de egreso)</legend>
-          {open.length > 0 && <>
-            <p className="muted" style={{ fontSize: 13.5 }}>Órdenes que siguen abiertas. Si alguna continúa en casa, pásala a la receta y escribe cuántos días.</p>
-            <div className="rows">{open.map((m) => (
-              <div key={m.id} className="omit-row"><span>{medLabel(m)}{m.days ? '' : ' · hasta nueva orden'}</span>
-                <button type="button" className="btn btn--soft btn--sm" onClick={() => setRx(toRx(m))}><Plus size={14} />Continúa en casa</button></div>
-            ))}</div>
-          </>}
-          {items.length > 0 && <ol className="orders">{items.map((it, i) => (
-            <li key={i}><span className="orders__n">{i + 1}.</span><span className="orders__text"><Pill size={13} className="orders__pill" />{it.drug} {it.presentation}: {it.dose} {it.frequency.toLowerCase()} por {it.duration}</span>
-              <span className="orders__tools"><button className="icon-btn" aria-label="Quitar" onClick={() => setItems(items.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
-          ))}</ol>}
-          <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (rx.drug.trim() && rx.duration.trim()) { setItems([...items, { ...rx, drug: rx.drug.trim() }]); setRx(EMPTY_RX) } }}>
-            <label className="field"><span>Medicamento</span><input className="input" list="dc-drugs" value={rx.drug}
-              onChange={(e) => { const d = DRUGS.find((x) => x.name === e.target.value); setRx({ ...rx, drug: e.target.value, presentation: d?.presentation ?? rx.presentation }) }} />
-              <datalist id="dc-drugs">{DRUGS.map((d) => <option key={`${d.name}-${d.presentation}`} value={d.name} />)}</datalist></label>
-            <label className="field"><span>Presentación</span><input className="input" value={rx.presentation} onChange={(e) => setRx({ ...rx, presentation: e.target.value })} /></label>
-            <label className="field"><span>Dosis</span><input className="input" value={rx.dose} onChange={(e) => setRx({ ...rx, dose: e.target.value })} /></label>
-            <label className="field"><span>Frecuencia</span><select className="select" value={rx.frequency} onChange={(e) => setRx({ ...rx, frequency: e.target.value })}>{FREQUENCIES.map((x) => <option key={x}>{x}</option>)}</select></label>
-            <label className="field"><span>Total de días</span><input className={`input ${rx.drug.trim() && !rx.duration.trim() ? 'input--warn' : ''}`} value={rx.duration} onChange={(e) => setRx({ ...rx, duration: e.target.value })} placeholder="Ej. 5 días" />
-              {rx.drug.trim() && !rx.duration.trim() && <small className="field__msg field__msg--warn">La receta de egreso lleva los días.</small>}</label>
-            <button className="btn btn--soft" style={{ alignSelf: 'end' }} disabled={!rx.drug.trim() || !rx.duration.trim()}><Plus size={15} />Agregar</button>
-          </form>
-          {allergyConflict(p.allergies, rx.drug) && <div className="alert-strip"><TriangleAlert size={16} />{p.firstName} es alérgica/o a {allergyConflict(p.allergies, rx.drug)}.</div>}
-        </fieldset>
-        <button className="btn btn--primary btn--lg" style={{ justifySelf: 'start' }} disabled={!ready || busy} onClick={async () => {
-          setBusy(true)
-          const r = await discharge(h.id, { diagnoses: dx, summary: f.summary.trim(), condition: f.condition, instructions: f.instructions.trim(), followUp: f.followUp.trim() || undefined, items })
-          setBusy(false)
-          // En hospitalización la epicrisis se generó sola: se abre la vista previa para revisarla y emitirla
-          if (r?.epicrisisId) nav(`/app/epicrisis/${r.epicrisisId}`)
-          else if (r) reload()
-        }}><LogOut size={17} />Dar de alta a {fullName(p).split(' ')[0]}</button>
-      </div>
-    </section>
-  )
-}

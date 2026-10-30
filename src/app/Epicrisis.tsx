@@ -226,6 +226,7 @@ export function EpicrisisSheet({ e }: { e: Pick<Epicrisis, 'status' | 'version' 
       {show('labs') && labs.length > 0 && <section className="epi__sec"><h3>Estudios relevantes</h3><ul className="note__list">{labs.map((l) => <li key={l.id}>{l.title} · {dm(l.at)}</li>)}</ul></section>}
       {show('condition') && d.condition && <section className="epi__sec"><h3>Condición al egreso</h3><p className="epi-text">{d.condition}</p></section>}
       <section className="epi__sec"><h3>Medicamentos al alta</h3>{d.dischargeRx.length ? <ol className="note__list">{d.dischargeRx.map((x, i) => <li key={i}>{x}</li>)}</ol> : <p className="muted">Sin receta de salida.</p>}</section>
+      {d.pendingExams && d.pendingExams.length > 0 && <section className="epi__sec"><h3>Exámenes pendientes al alta</h3><ul className="note__list">{d.pendingExams.map((x, i) => <li key={i}>{x}</li>)}</ul></section>}
       <section className="epi__sec"><h3>Indicaciones al egreso</h3>
         {d.instructions.trim() || d.followUp?.trim() ? <>{d.instructions.trim() && <p className="epi-text">{d.instructions}</p>}{d.followUp && <p className="epi-text"><b>Cita de control:</b> {d.followUp}</p>}</> : <p className="epi-missing">Faltan las indicaciones.</p>}
       </section>

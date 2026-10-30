@@ -5,15 +5,16 @@ import { type Ctx, diagnosisInput, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
 import { toAttachment, toAuthorization, toBed, toDose, toEpicrisis, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral, toVitals } from '../mappers.js'
 import { VITALS_FREQUENCIES } from '../../src/lib/vitalsSheet.js'
-import { createEpicrisisDraft } from '../epicrisis.js'
+import { buildEpicrisis, createEpicrisisDraft, missingForIssue } from '../epicrisis.js'
 import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
 import { isScheduled, medLabel } from '../../src/lib/inpatient.js'
+import { examLine, isPending } from '../../src/lib/exams.js'
 import { hasBlank, medHasBlank } from '../../src/lib/orderSets.js'
 import { createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrders.js'
 import { authorizationBase, ensureHospitalAuthorization, refreshPendingHospitalAuthorization } from '../authorizations.js'
 import { rxValidityOf, specialtyOf, validityInput } from '../prefs.js'
-import { currentMarks } from './me.js'
+import { currentMarks, docName } from './me.js'
 import { addendaFor } from './notes.js'
 import { examInput, examsWhere, insertExams } from './exams.js'
 
@@ -63,7 +64,7 @@ export async function pendingOrders(sql: Sql, cid: string) {
  * Cualquier médico o enfermera de la clínica ve a los hospitalizados: de noche los atiende quien esté de turno.
  */
 export function registerInpatient(app: Express, ctx: Ctx) {
-  const { sql, auth, need, userOf, clinicOf, audit, patientRow, patientName, assertRxIdentity } = ctx
+  const { sql, auth, need, userOf, clinicOf, audit, patientRow, patientName, assertRxIdentity, staffRow } = ctx
 
   const hospRow = async (cid: string, id: string) =>
     (await sql.one('SELECT * FROM hospitalizations WHERE id = ? AND clinic_id = ?', [id, cid])) ?? fail(404, 'La hospitalización no existe.')
@@ -768,6 +769,19 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   })
 
   // ---------- Egreso ----------
+  /**
+   * MC5: la nota de egreso se escribe en la misma hoja que la epicrisis. Esto arma lo automático (datos del ingreso,
+   * diagnósticos, HEA precargada, medicamentos administrados, procedimientos) como si el alta fuera ahora, y los exámenes
+   * de la estancia que siguen pendientes.
+   */
+  app.get('/api/inpatient/:id/discharge-preview', auth, need('inpatient.orders'), async (req, res) => {
+    const cid = clinicOf(req)
+    const h = await activeHosp(cid, String(req.params.id))
+    const data = await buildEpicrisis(sql, h)
+    const exams = await examsWhere(sql, 'clinic_id = ? AND (hospitalization_id = ? OR (consultation_id IS NOT NULL AND consultation_id = ?))', [cid, String(h.id), String(h.consultation_id ?? '')])
+    res.json({ ...data, pendingExams: exams.filter(isPending).map(examLine) })
+  })
+
   app.post('/api/inpatient/:id/discharge', auth, need('inpatient.orders'), async (req, res) => {
     const b = parse(z.object({
       diagnoses: dx.min(1, 'Agrega el diagnóstico de egreso.'),
@@ -777,9 +791,13 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       followUp: z.string().trim().max(300).optional(),
       items: z.array(z.object({
         drug: z.string().trim().min(1), presentation: z.string().default(''), dose: z.string().trim().min(1, 'Escribe la dosis.'), route: z.string().optional(),
-        frequency: z.string().min(1), duration: z.string().trim().min(1, 'Escribe la duración.'), instructions: z.string().optional(),
+        frequency: z.string().min(1), duration: z.string().trim().min(1, 'Escribe la duración.'), instructions: z.string().optional(), quantity: z.string().max(60).optional(),
       })).default([]),
       validityDays: validityInput,
+      // MC5: HEA corregida, exámenes que se piden al alta y emitir la epicrisis con el mismo contenido
+      hea: z.string().trim().max(6000).optional(),
+      exams: z.array(examInput).max(40).default([]),
+      issueEpicrisis: z.boolean().default(false),
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
@@ -793,6 +811,12 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     let folio: string | null = null
     let epicrisisId: string | undefined
     const name = await patientName(patientId)
+    // Fuera de la transacción (una sola conexión): exámenes de la estancia sin resultado y quién firma la epicrisis
+    const stayExams = await examsWhere(sql, 'clinic_id = ? AND (hospitalization_id = ? OR (consultation_id IS NOT NULL AND consultation_id = ?))', [cid, id, String(h.consultation_id ?? '')])
+    const pendingExams = [...stayExams.filter(isPending).map(examLine), ...b.exams.map((e) => examLine(e))]
+    const me = b.issueEpicrisis ? (await staffRow(user.id))! : undefined
+    let examBatch: string | null = null
+    let issued = false
     await sql.tx(async (q) => {
       if (rxId) {
         folio = await nextFolio(q, cid, now)
@@ -800,18 +824,30 @@ export function registerInpatient(app: Express, ctx: Ctx) {
         await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, hospitalization_id, issued_at, items, clinic_id, validity_days, signature_id, stamp_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
           [rxId, folio, patientId, user.id, noteId, id, now.toISOString(), JSON.stringify(b.items), cid, await rxValidityOf(q, user.id, b.validityDays), marks.signatureId, marks.stampId])
       }
-      const data = { diagnoses: b.diagnoses, summary: b.summary, condition: b.condition, instructions: b.instructions, followUp: b.followUp }
+      const data = { diagnoses: b.diagnoses, summary: b.summary, condition: b.condition, instructions: b.instructions, followUp: b.followUp, hea: b.hea || undefined,
+        pendingExams: pendingExams.length ? pendingExams : undefined }
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, plan, data) VALUES (?,?,?,'discharge',?,?,?,?)`,
         [noteId, cid, id, user.id, now.toISOString(), b.instructions, JSON.stringify(data)])
+      // Exámenes al alta: el paciente ya no está internado (externo = sólo la orden impresa; en la clínica, al área)
+      examBatch = await insertExams(q, { clinicId: cid, patientId, hospitalizationId: id, noteId, by: user.id, at: now.toISOString(), inStay: false }, b.exams)
       // Al cerrar el expediente, las indicaciones que seguían activas dejan de generar dosis
       await q.run(`UPDATE hosp_meds SET stopped_at = ?, stopped_by = ?, stop_reason = 'Egreso' WHERE hospitalization_id = ? AND stopped_at IS NULL`, [now.toISOString(), user.id, id])
       await q.run(`UPDATE hospitalizations SET status = 'discharged', discharged_at = ?, discharged_by = ?, prescription_id = ? WHERE id = ?`,
         [now.toISOString(), user.id, rxId, id])
       // P1: al dar el alta en hospitalización se genera sola la epicrisis (borrador para revisar y emitir). En
       // observación es opcional: se genera con el botón
-      if (h.kind === 'hospital') epicrisisId = (await createEpicrisisDraft(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [id]))!, user.id)).id
-      await audit(user, `Dio de alta a ${name}${folio ? ` con receta ${folio}` : ''}${epicrisisId ? '; se generó la epicrisis para revisar' : ''}`, q)
+      if (h.kind === 'hospital') {
+        const epi = await createEpicrisisDraft(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [id]))!, user.id)
+        epicrisisId = epi.id
+        // MC5: lo que se escribió en la nota de egreso es lo que se emite: si está completa, sale emitida con su firma
+        if (me && !missingForIssue(epi.data).length) {
+          const signed = { ...epi.data, doctor: { name: docName(me), license: me.license ? String(me.license) : undefined, signature: me.signature ? String(me.signature) : undefined, stamp: me.stamp ? String(me.stamp) : undefined } }
+          await q.run(`UPDATE epicrises SET status = 'issued', data = ?, issued_by = ?, issued_at = ? WHERE id = ?`, [JSON.stringify(signed), user.id, now.toISOString(), epi.id])
+          issued = true
+        }
+      }
+      await audit(user, `Dio de alta a ${name}${folio ? ` con receta ${folio}` : ''}${b.exams.length ? `, ${b.exams.length} examen(es) pendientes al alta` : ''}${issued ? '; emitió la epicrisis' : epicrisisId ? '; se generó la epicrisis para revisar' : ''}`, q)
     })
-    res.status(201).json({ hospitalization: toHospitalization((await hospRow(cid, id))!), prescriptionId: rxId, folio, epicrisisId })
+    res.status(201).json({ hospitalization: toHospitalization((await hospRow(cid, id))!), prescriptionId: rxId, folio, epicrisisId, epicrisisIssued: issued, examBatch })
   })
 }

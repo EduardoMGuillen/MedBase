@@ -66,7 +66,8 @@ export async function buildEpicrisis(q: Sql, h: Row): Promise<EpicrisisData> {
     room: bed ? `Cuarto ${bed.room}${bed.label ? `-${bed.label}` : ''}` : undefined, attending: String(attending?.name ?? ''),
     observationAt: h.observation_at ? String(h.observation_at) : undefined,
     admissionDx: j(h.diagnoses, []),
-    hea: String(consult?.history ?? '').trim() || String(admission?.subjective ?? '').trim(),
+    // MC5: la HEA corregida en la nota de egreso manda
+    hea: d?.hea?.trim() || String(consult?.history ?? '').trim() || String(admission?.subjective ?? '').trim(),
     meds: [...grouped.values()].sort((a, b) => a.start.localeCompare(b.start)),
     procedures: [
       ...notes.filter((n) => n.kind === 'procedure').map((n) => { const x = j<{ name: string; performedAt: string }>(n.data, { name: '', performedAt: String(n.at) }); return { name: x.name, at: x.performedAt } }),
@@ -78,6 +79,7 @@ export async function buildEpicrisis(q: Sql, h: Row): Promise<EpicrisisData> {
     labIds: [],
     condition: d?.condition || undefined,
     dischargeRx: j<PrescriptionItem[]>(rx?.items, []).map(medicationOrder),
+    pendingExams: d?.pendingExams?.length ? d.pendingExams : undefined,
     instructions: d?.instructions ?? '',
     followUp: d?.followUp || undefined,
     hidden: [],

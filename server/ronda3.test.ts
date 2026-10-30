@@ -611,3 +611,33 @@ describe('EN2 alertas agrupadas por nivel', () => {
     assert.equal((await (await as('smejia@demo.clinara')).get('/api/inpatient/alerts')).status, 403)
   })
 })
+
+describe('MC5 nota de egreso en la hoja de la epicrisis', () => {
+  test('la vista previa trae la HEA de la consulta; al guardar sale la epicrisis emitida con el mismo contenido', async () => {
+    const { doc, nurse, stayId } = await admitted('Egreso')
+    const pre = await doc.get(`/api/inpatient/${stayId}/discharge-preview`)
+    assert.equal(pre.status, 200, JSON.stringify(pre.body))
+    assert.match(pre.body.hea, /fosa ilíaca derecha/)
+    assert.equal((await nurse.get(`/api/inpatient/${stayId}/discharge-preview`)).status, 403)
+    const r = await doc.post(`/api/inpatient/${stayId}/discharge`, {
+      diagnoses: DX, summary: 'Evolucionó afebril, tolera la vía oral; se da de alta.', condition: 'Mejorado', instructions: 'Dieta blanda.', followUp: 'Control en 1 semana.',
+      hea: 'Dos días con dolor en fosa ilíaca derecha y fiebre. (corregida)', items: RX, validityDays: 10,
+      exams: [{ group: 'lab', name: 'Hemograma', priority: 'routine', place: 'external' }], issueEpicrisis: true,
+    })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(r.body.epicrisisIssued, true)
+    assert.ok(r.body.examBatch)
+    const epi = (await doc.get(`/api/epicrisis/${r.body.epicrisisId}`)).body
+    assert.equal(epi.status, 'issued')
+    assert.match(epi.data.hea, /\(corregida\)/)
+    assert.equal(epi.data.evolution, 'Evolucionó afebril, tolera la vía oral; se da de alta.')
+    assert.ok(epi.data.pendingExams.includes('Hemograma'))
+    assert.equal(epi.data.dischargeRx.length, 1)
+    assert.equal((await doc.get(`/api/prescriptions/${r.body.prescriptionId}`)).body.prescription.validityDays, 10)
+    // El examen al alta externo no cae en la bandeja de enfermería
+    assert.ok(!(await nurse.get('/api/exams/tray')).body.some((e: any) => e.hospitalizationId === stayId && e.name === 'Hemograma'))
+    // La cama queda libre
+    const file = (await doc.get(`/api/inpatient/${stayId}`)).body
+    assert.equal(file.hospitalization.status, 'discharged')
+  })
+})

@@ -883,3 +883,11 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .vs-mini svg { display: block; }
 .vs-mini__label { position: sticky; left: 0; z-index: 1; display: block; width: max-content; height: 18px; margin-bottom: -18px; padding: 0 8px 0 4px; background: var(--paper); font-size: 12px; color: var(--muted); line-height: 16px; }
 .vs-mini__label b { color: var(--petrol); font-weight: 650; }
+
+/* MC5: la nota de egreso se escribe en la misma hoja (mismo orden y secciones) que la epicrisis */
+.epi--write { display: grid; }
+.epi--write .epi__sec { display: grid; gap: 8px; margin-top: 18px; break-inside: auto; }
+.epi--write .epi__sec:first-child { margin-top: 0; }
+@media (max-width: 720px) { .epi--write .epi__facts { grid-template-columns: 1fr 1fr; } }
+.epi--write .table-scroll { overflow-x: auto; }
+.discharge-open { display: grid; gap: 6px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; }

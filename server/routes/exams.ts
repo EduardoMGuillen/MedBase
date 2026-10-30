@@ -44,14 +44,14 @@ export async function examsWhere(q: Sql, where: string, args: unknown[]) {
  * Inserta los exámenes pedidos juntos (un lote: se imprimen en una orden por grupo). El área destino se guarda desde ya:
  * laboratorio o imágenes si la clínica los tiene; si no, enfermería; externo, enfermería en una estancia o nadie.
  */
-export async function insertExams(q: Sql, c: { clinicId: string; patientId: string; consultationId?: string; hospitalizationId?: string; noteId?: string; by: string; at: string },
+export async function insertExams(q: Sql, c: { clinicId: string; patientId: string; consultationId?: string; hospitalizationId?: string; noteId?: string; by: string; at: string; inStay?: boolean },
   list: ExamInput[]) {
   if (!list.length) return null
   const clinic = (await q.one('SELECT has_lab, has_imaging FROM clinics WHERE id = ?', [c.clinicId]))!
   const batch = randomUUID()
   for (const e of list) {
     const id = randomUUID()
-    const area = areaFor(e.group, e.place, !!c.hospitalizationId, { hasLab: Boolean(clinic.has_lab), hasImaging: Boolean(clinic.has_imaging) })
+    const area = areaFor(e.group, e.place, c.inStay ?? !!c.hospitalizationId, { hasLab: Boolean(clinic.has_lab), hasImaging: Boolean(clinic.has_imaging) })
     await q.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, consultation_id, hospitalization_id, note_id, batch_id, grp, name, region, side, indication, priority, place, area, status, ordered_by, ordered_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ordered',?,?)`,
     [id, c.clinicId, c.patientId, c.consultationId ?? null, c.hospitalizationId ?? null, c.noteId ?? null, batch, e.group, e.name, e.region || null, e.side ?? null, e.indication || null,

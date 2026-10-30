@@ -499,6 +499,10 @@ export interface DischargeData {
   condition: string // condición al egreso
   instructions: string
   followUp?: string
+  /** MC5: historia de la enfermedad actual, precargada y corregida en la nota de egreso (va igual a la epicrisis). */
+  hea?: string
+  /** MC5: exámenes pendientes al alta (los de la estancia sin resultado y los que se piden al egresar). */
+  pendingExams?: string[]
 }
 
 /** Nota de procedimiento: un solo texto, con la hora del procedimiento aparte de la hora en que se escribió. */
@@ -858,6 +862,8 @@ export interface EpicrisisData {
   condition?: string
   /** Receta de salida, una línea por medicamento. */
   dischargeRx: string[]
+  /** MC5: exámenes pendientes al alta. */
+  pendingExams?: string[]
   instructions: string
   followUp?: string
   /** Secciones "agregadas" que el médico quitó. */
