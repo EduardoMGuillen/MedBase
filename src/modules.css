@@ -408,3 +408,19 @@ tr.clickable { cursor: pointer; }
 .help-menu__pop button { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 0; background: none; border-radius: 8px; font: inherit; font-size: 14px; text-align: left; cursor: pointer; color: var(--petrol); }
 .help-menu__pop button:hover, .help-menu__pop button:focus-visible { background: var(--ward); }
 @media (max-width: 560px) { .tour__card { width: calc(100vw - 24px) !important; } .tour__foot { flex-wrap: wrap; } }
+
+/* AD2 (ronda 5): Horarios de médicos, un médico a la vez: la lista con buscador a la izquierda y su horario */
+.sched-pick { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
+.sched-pick__list { position: sticky; top: 64px; }
+.sched-pick__list ul { list-style: none; margin: 0; padding: 0 8px 8px; max-height: 60vh; overflow: auto; }
+.sched-pick__item { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; padding: 8px 10px; border-radius: var(--r-md); border: 0; background: none; cursor: pointer; color: var(--petrol); }
+.sched-pick__item span { display: grid; min-width: 0; }
+.sched-pick__item b { font-weight: 600; font-size: 14px; }
+.sched-pick__item small { color: var(--muted); font-size: 12.5px; }
+.sched-pick__item:hover { background: var(--ward); }
+.sched-pick__item.is-on { background: var(--ink-soft); }
+@media (max-width: 860px) {
+  .sched-pick { grid-template-columns: minmax(0, 1fr); }
+  .sched-pick__list { position: static; }
+  .sched-pick__list ul { max-height: 220px; }
+}

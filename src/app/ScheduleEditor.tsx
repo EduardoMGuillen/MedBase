@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { DAY_NAMES } from '../lib/format'
@@ -11,7 +11,11 @@ const ORDER = [1, 2, 3, 4, 5, 6, 0] // lunes a domingo
  * Horario de atención de un médico: cada día con una o más franjas (ej. lunes 08:00–12:00 y 14:00–17:00).
  * La agenda sólo ofrece horas dentro de estas franjas, y la reserva en línea también.
  */
-export function ScheduleEditor({ d, extra, onSaved }: { d: Staff; extra?: React.ReactNode; onSaved?: () => void }) {
+export function ScheduleEditor({ d, extra, onSaved, onDirty }: {
+  d: Staff; extra?: React.ReactNode; onSaved?: () => void
+  /** AD2 (ronda 5): avisa si hay cambios sin guardar y entrega cómo guardarlos (para preguntar antes de cambiar de médico). */
+  onDirty?: (save: (() => Promise<boolean>) | null) => void
+}) {
   const { updateSchedule } = useStore()
   const initialWeek = weekOf(d.schedule)
   const [week, setWeek] = useState<Week>(initialWeek)
@@ -19,6 +23,16 @@ export function ScheduleEditor({ d, extra, onSaved }: { d: Staff; extra?: React.
   const [busy, setBusy] = useState(false)
   const problems = scheduleProblems(week)
   const dirty = JSON.stringify(scheduleFromWeek(week, slot)) !== JSON.stringify(scheduleFromWeek(initialWeek, d.schedule?.slot || DEFAULT_SLOT))
+  const save = async () => {
+    setBusy(true)
+    const ok = !!(await updateSchedule(d.id, scheduleFromWeek(week, slot)))
+    setBusy(false)
+    if (ok) onSaved?.()
+    return ok
+  }
+  const pending = dirty && !problems.length
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onDirty?.(dirty ? save : null) }, [dirty, pending, week, slot])
   const setDay = (day: number, ranges: Week[number]) => setWeek((w) => {
     const next = { ...w }
     if (ranges.length) next[day] = ranges; else delete next[day]
@@ -60,11 +74,7 @@ export function ScheduleEditor({ d, extra, onSaved }: { d: Staff; extra?: React.
         {extra}
       </div>
       {problems.length > 0 && <ul className="sched__problems">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
-      <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={!dirty || problems.length > 0 || busy} onClick={async () => {
-        setBusy(true)
-        if (await updateSchedule(d.id, scheduleFromWeek(week, slot))) onSaved?.()
-        setBusy(false)
-      }}>Guardar horario</button>
+      <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={!dirty || problems.length > 0 || busy} onClick={save}>Guardar horario</button>
     </div>
   )
 }

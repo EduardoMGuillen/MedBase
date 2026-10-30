@@ -378,7 +378,7 @@ button.stat--btn:hover b { color: var(--ink); }
 .sched__problems { margin: 0; padding-left: 18px; color: var(--red-ink); font-size: 13.5px; font-weight: 600; }
 @media (max-width: 720px) {
   .sched__day { grid-template-columns: 1fr; padding: 12px; }
-  .sched__range .input { width: 128px; }
+  .sched__range .input { width: 112px; padding-left: 8px; padding-right: 4px; }
 }
 
 /* ---------- Nueva cita ---------- */
