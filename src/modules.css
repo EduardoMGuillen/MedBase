@@ -220,3 +220,14 @@ tr.clickable { cursor: pointer; }
 .rx-validity > span:first-child { font-size: 13.5px; color: var(--muted); }
 .rx-validity__input { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
 .rx-validity__input .input { width: 84px; }
+
+/* AD6: la barra de pestañas y el encabezado de las tablas largas se quedan fijos al bajar */
+.tabs--sticky { position: sticky; top: 0; z-index: 20; background: var(--ward); margin-top: -8px; padding-top: 8px; }
+.table--sticky thead th { position: sticky; top: 0; z-index: 3; box-shadow: inset 0 -1px 0 var(--line); }
+.page:has(> .tabs--sticky) .table--sticky thead th { top: 52px; }
+@media (max-width: 860px) {
+  /* En el teléfono la tabla se desplaza dentro de su recuadro (a lo ancho y a lo alto) y su encabezado queda arriba */
+  .table-wrap:has(> .table--sticky) { max-height: calc(100dvh - 150px); overflow: auto; overscroll-behavior: contain; }
+  .page:has(> .tabs--sticky) .table--sticky thead th { top: 0; }
+}
+@media print { .tabs--sticky, .table--sticky thead th { position: static; } }

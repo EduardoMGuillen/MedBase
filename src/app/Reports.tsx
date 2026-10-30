@@ -74,7 +74,7 @@ export default function Reports() {
         <div className="grid-2">
           {report.byDoctor.length > 1 && <section className="panel table-wrap">
             <div className="panel__head"><h2>Por médico</h2></div>
-            <table className="table">
+            <table className="table table--sticky">
               <thead><tr><th>Médico</th><th style={{ textAlign: 'right' }}>Citas</th><th style={{ textAlign: 'right' }}>Atendidas</th><th style={{ textAlign: 'right' }}>No asistió</th><th style={{ textAlign: 'right' }}>Ingresos</th></tr></thead>
               <tbody>{report.byDoctor.map((d) => (
                 <tr key={d.id}><td>{d.name}</td><td className="num" style={{ textAlign: 'right' }}>{d.appointments}</td><td className="num" style={{ textAlign: 'right' }}>{d.done}</td>

@@ -16,7 +16,7 @@ export default function Settings() {
   return (
     <div className="page">
       <PageHead title="Configuración" sub={f.office ? 'Datos que aparecen en tus recetas y recibos, precios, tu horario y lo que usa tu consultorio.' : 'Datos que aparecen en recetas y recibos, precios, horarios de atención y camas.'} />
-      <div className="tabs" role="tablist">
+      <div className="tabs tabs--sticky" role="tablist">
         <button className="tab" role="tab" aria-selected={tab === 'clinic'} onClick={() => setTab('clinic')}>{f.office ? 'Consultorio' : 'Clínica'}</button>
         <button className="tab" role="tab" aria-selected={tab === 'services'} onClick={() => setTab('services')}>Servicios y precios</button>
         <button className="tab" role="tab" aria-selected={tab === 'schedules'} onClick={() => setTab('schedules')}>{f.office ? 'Mi horario' : 'Horarios de médicos'}</button>
@@ -40,7 +40,7 @@ function ClinicDrugs() {
     <section className="panel table-wrap">
       <div className="panel__head"><div><h2>Agregados por la clínica</h2><p>Los médicos los agregan desde la consulta cuando no aparecen en el vademécum. Un medicamento desactivado ya no se ofrece en las búsquedas.</p></div></div>
       {clinicDrugs.length ? (
-        <table className="table">
+        <table className="table table--sticky">
           <thead><tr><th>Nombre genérico</th><th>Comercial</th><th>Presentación</th><th>Vía</th><th>Agregado por</th><th>Estado</th><th /></tr></thead>
           <tbody>{clinicDrugs.map((d) => (
             <tr key={d.id} style={d.active ? undefined : { opacity: 0.55 }}>
@@ -90,7 +90,7 @@ function Beds() {
   const sorted = [...beds].sort((a, b) => a.room.localeCompare(b.room, 'es', { numeric: true }) || a.label.localeCompare(b.label))
   return (
     <section className="panel table-wrap">
-      <table className="table">
+      <table className="table table--sticky">
         <thead><tr><th>Cuarto</th><th>Cama</th><th>Especialidad</th><th>Estado</th></tr></thead>
         <tbody>
           {sorted.map((b) => (
@@ -272,7 +272,7 @@ function Services() {
   const [price, setPrice] = useState('')
   return (
     <section className="panel table-wrap">
-      <table className="table">
+      <table className="table table--sticky">
         <thead><tr><th>Servicio</th><th style={{ width: 160 }}>Precio ({settings.currency})</th><th style={{ width: 130 }}>Estado</th><th style={{ width: 120 }} /></tr></thead>
         <tbody>
           {services.map((s) => <ServiceRow key={s.id} s={s} />)}

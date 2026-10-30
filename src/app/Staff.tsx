@@ -28,7 +28,7 @@ export default function StaffPage() {
         actions={<>
           <button className="btn btn--primary" disabled={full} title={full ? 'Ya tienes el máximo de asistentes activos' : undefined} onClick={() => setCreating(true)}><UserPlus size={17} />{office ? 'Agregar asistente' : 'Nuevo usuario'}</button>
         </>} />
-      <div className="tabs" role="tablist">
+      <div className="tabs tabs--sticky" role="tablist">
         <button className="tab" role="tab" aria-selected={tab === 'people'} onClick={() => setTab('people')}>Personal</button>
         <button className="tab" role="tab" aria-selected={tab === 'roles'} onClick={() => setTab('roles')}>Permisos por rol</button>
         <button className="tab" role="tab" aria-selected={tab === 'audit'} onClick={() => setTab('audit')}>Bitácora</button>
@@ -36,7 +36,7 @@ export default function StaffPage() {
 
       {tab === 'people' && (
         <section className="panel table-wrap">
-          <table className="table">
+          <table className="table table--sticky">
             <thead><tr><th>Nombre</th><th>Rol</th><th>Correo</th><th>Estado</th><th /></tr></thead>
             <tbody>{staff.map((s) => (
               <tr key={s.id}>
@@ -73,7 +73,7 @@ export default function StaffPage() {
 
       {tab === 'roles' && (
         <section className="panel table-wrap">
-          <table className="table matrix">
+          <table className="table matrix table--sticky">
             <thead><tr><th>Permiso</th>{ROLES.map((r) => <th key={r}>{ROLE_LABEL[r]}</th>)}</tr></thead>
             <tbody>{CLINIC_PERMISSIONS.map((p) => (
               <tr key={p}>
@@ -90,7 +90,7 @@ export default function StaffPage() {
       {tab === 'audit' && (<>
         <input className="input" style={{ maxWidth: 420 }} placeholder="Filtrar por persona o acción" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filtrar bitácora" />
         <section className="panel table-wrap">
-          <table className="table">
+          <table className="table table--sticky">
             <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th></tr></thead>
             <tbody>{log.map((e) => (
               <tr key={e.id}><td className="num" style={{ whiteSpace: 'nowrap' }}>{date(e.at)} {time(e.at)}</td><td>{e.userId === 'online' ? 'Reserva en línea' : staffById(e.userId)?.name ?? 'Administración de Clinara'}</td><td>{e.action}</td></tr>

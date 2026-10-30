@@ -74,7 +74,7 @@ export default function Billing() {
       <PageHead title="Caja" sub={pending.length ? `${pending.length} ${pending.length === 1 ? 'consulta atendida espera' : 'consultas atendidas esperan'} cobro.` : 'No hay consultas pendientes de cobro.'}
         actions={<button className="btn btn--ghost" onClick={() => setCharging({})}><Plus size={16} />Cobro sin cita</button>} />
 
-      <div className="tabs" role="tablist">
+      <div className="tabs tabs--sticky" role="tablist">
         <button className="tab" role="tab" aria-selected={tab === 'pending'} onClick={() => switchTab('pending')}>Por cobrar ({pending.length})</button>
         <button className="tab" role="tab" aria-selected={tab === 'today'} onClick={() => switchTab('today')}>Cierre de hoy</button>
         <button className="tab" role="tab" aria-selected={tab === 'history'} onClick={() => switchTab('history')}>Historial</button>
@@ -130,7 +130,7 @@ export default function Billing() {
         {noInvoice > 0 && <div className="alert-strip alert-strip--amber no-print"><FileText size={16} />{noInvoice} {noInvoice === 1 ? 'cobro no tiene' : 'cobros no tienen'} anotado el número de factura del talonario. Ábrelos para anotarlo.</div>}
         {tab === 'today' && <CashCount expected={byMethod('cash')} currency={cur} />}
         <section className="panel table-wrap">
-          <table className="table">
+          <table className="table table--sticky">
             <thead><tr><th>Recibo</th><th>Factura</th><th>Fecha</th><th>Paciente</th><th>Forma de pago</th><th>Cobró</th><th style={{ textAlign: 'right' }}>Total</th></tr></thead>
             <tbody>{shown.map((p) => {
               const pt = patient(p.patientId)

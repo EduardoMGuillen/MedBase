@@ -202,7 +202,7 @@ export default function Patients() {
       )}
 
       <section className="panel table-wrap">
-        <table className="table">
+        <table className="table table--sticky">
           <thead><tr>
             <th><button className="th-sort" onClick={() => toggle('name')}>Paciente{mark('name')}</button></th>
             <th><button className="th-sort" onClick={() => toggle('age')}>Edad{mark('age')}</button></th>
