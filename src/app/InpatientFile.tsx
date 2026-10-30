@@ -32,7 +32,7 @@ import { useDraftSync } from '../lib/drafts'
 import { BedFields } from '../components/BedFields'
 import { ReferralModal } from './Referral'
 import { features } from '../lib/permissions'
-import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
+import { ConsultationBody, Identification } from './PatientChart'
 import { DischargeDocuments } from './Epicrisis'
 import { VitalsSheet } from './VitalsSheet'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
@@ -177,6 +177,11 @@ export default function InpatientFile() {
 
       {tab === 'sheet' && (
         <div className="hc">
+          {/* OB3 (ronda 5): primero los datos del paciente y después el ingreso; los signos vitales están en su pestaña */}
+          <section className="panel hc__sec">
+            <div className="panel__head"><h2>Datos del paciente</h2></div>
+            <div className="panel__body"><Identification p={p} /></div>
+          </section>
           <section className="panel hc__sec">
             <div className="panel__head"><h2>{obs ? 'Ingreso a observación' : 'Hoja de hospitalización'}</h2>
               {open && (can('inpatient.orders') || can('inpatient.care')) && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(true)}>Editar datos generales</button>}</div>
@@ -195,12 +200,7 @@ export default function InpatientFile() {
               </dl>
               <h4 style={{ marginTop: 16 }}>Diagnósticos de ingreso</h4>
               <ol className="note__list">{h.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol>
-              {obs && h.consultationId && <ConsultVitals consultationId={h.consultationId} />}
             </div>
-          </section>
-          <section className="panel hc__sec">
-            <div className="panel__head"><h2>Datos del paciente</h2></div>
-            <div className="panel__body"><Identification p={p} /></div>
           </section>
         </div>
       )}
@@ -213,15 +213,6 @@ export default function InpatientFile() {
       {tab === 'annexes' && <Annexes file={file} p={p} reload={load} />}
     </div>
   )
-}
-
-/** Signos de la preclínica de la consulta que ingresó a observación: no se vuelven a escribir. */
-function ConsultVitals({ consultationId }: { consultationId: string }) {
-  const { fetchConsultation } = useStore()
-  const [data, setData] = useState<Awaited<ReturnType<typeof fetchConsultation>> | null>(null)
-  useEffect(() => { fetchConsultation(consultationId).then(setData).catch(() => null) }, [consultationId, fetchConsultation])
-  if (!data?.vitals) return null
-  return <><h4 style={{ marginTop: 16 }}>Signos de la preclínica ({time(data.vitals.takenAt)})</h4><VitalsGrid v={data.vitals} birthDate={data.patient.birthDate} /></>
 }
 
 /** La nota de consulta externa que originó la estancia es la primera nota de evolución. */
