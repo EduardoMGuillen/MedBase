@@ -4,7 +4,7 @@ import { ChevronLeft, FileBadge, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
 import { LogoMark } from '../components/Logo'
-import { date, fullName, time } from '../lib/format'
+import { contactLine, date, fullName, time } from '../lib/format'
 import { BackgroundView, ConsultationBody, Identification } from './PatientChart'
 
 /** Nota de consulta imprimible con el orden de la historia clínica. */
@@ -30,7 +30,7 @@ export default function ConsultNote() {
         <header className="rx-sheet__head">
           <div className="rx-sheet__doc">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}><LogoMark size={24} /><b>{settings.name}</b></div>
-            <p>{settings.address}, tel. {settings.phone}</p>
+            <p>{settings.address}, tel. {contactLine(settings)}</p>
           </div>
           <div className="rx-sheet__folio">Nota de consulta<b>{fullName(p)}</b>Exp. {p.record}</div>
         </header>

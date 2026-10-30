@@ -57,10 +57,27 @@ export interface Clinic extends ClinicSettings {
   stats?: { staff: number; patients: number; appointments30: number; consultations30: number; lastActivity?: string }
 }
 
+/** AD1: un teléfono de la clínica, con su etiqueta libre y si es para llamadas, WhatsApp o ambos. */
+export interface ClinicContact {
+  id: string
+  number: string
+  label: string
+  type: 'call' | 'whatsapp' | 'both'
+  /** El principal sale en recetas, constancias, recibos y membretes (es `phone`). */
+  primary?: boolean
+  /** El número de WhatsApp de la clínica: el de la variable {telefono} del recordatorio. */
+  whatsapp?: boolean
+}
+
 export interface ClinicSettings {
   name: string
   address: string
+  /** Teléfono principal (el contacto marcado como principal). */
   phone: string
+  /** AD1: todos los contactos de la clínica. */
+  contacts?: ClinicContact[]
+  /** AD1: los membretes muestran también el número de WhatsApp. */
+  docsWhatsapp?: boolean
   email: string
   currency: string // símbolo, p. ej. "L"
   rxValidityDays: number

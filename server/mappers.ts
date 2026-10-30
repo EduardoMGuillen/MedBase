@@ -1,5 +1,5 @@
 import type {
-  Appointment, Attachment, AuditEntry, Authorization, AuthorizationData, Background, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
+  Appointment, Attachment, AuditEntry, ClinicContact, Authorization, AuthorizationData, Background, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
   ConsentRevocation, ConsentSigning, Epicrisis, EpicrisisData, GuestPatient, Patient, Payment, Prescription, Referral, ReferralData, Service, Staff, Vitals,
 } from '../src/lib/types.js'
 import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
@@ -188,6 +188,8 @@ export const toFollowup = (r: Row): Followup => ({
 /** Configuración que ve la clínica (encabezado de recetas, recibos y recordatorios). */
 export const clinicSettings = (r: Row): ClinicSettings => ({
   name: String(r.name ?? DEFAULT_SETTINGS.name), address: String(r.address ?? ''), phone: String(r.phone ?? ''), email: String(r.email ?? ''),
+  contacts: j<ClinicContact[]>(r.contacts, r.phone ? [{ id: 'principal', number: String(r.phone), label: 'Principal', type: 'call', primary: true }] : []),
+  docsWhatsapp: Boolean(r.docs_whatsapp),
   currency: String(r.currency ?? DEFAULT_SETTINGS.currency), rxValidityDays: Number(r.rx_validity_days ?? DEFAULT_SETTINGS.rxValidityDays),
   reminderTemplate: String(r.reminder_template || DEFAULT_SETTINGS.reminderTemplate),
   recordUsesDni: Boolean(r.record_uses_dni), logo: s(r.logo), dniMask: r.dni_mask == null ? DNI_MASK : String(r.dni_mask),

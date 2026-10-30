@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import { clinicSettings, toAttachment, toConsultation, toDose, toInpatientMed, toInpatientNote, toReferral, toVitals } from '../mappers.js'
-import { age as ageText, dxCode, examText } from '../../src/lib/format.js'
+import { age as ageText, contactLine, dxCode, examText } from '../../src/lib/format.js'
 import { medLabel } from '../../src/lib/inpatient.js'
 import { splitOrders } from '../../src/lib/inpatient.js'
 import type { ReferralData } from '../../src/lib/types.js'
@@ -39,7 +39,7 @@ export async function referralDraft(q: Sql, cid: string, h: Row, doctorId: strin
     patient: { name: `${p.first_name} ${p.last_name}`, dni: p.dni ? String(p.dni) : undefined, age: ageText(String(p.birth_date ?? '')), sex: (p.sex ?? undefined) as 'F' | 'M' | undefined,
       record: cfg.recordUsesDni && p.dni ? String(p.dni) : String(p.record) },
     doctor: { name: String(doc.doc_name || doc.name), license: doc.license ? String(doc.license) : undefined, specialty: doc.specialty ? String(doc.specialty) : undefined },
-    place: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo, office: cfg.kind === 'office' || undefined },
+    place: { name: cfg.name, address: cfg.address, phone: contactLine(cfg), logo: cfg.logo, office: cfg.kind === 'office' || undefined },
     admittedAt: String(h.admitted_at),
     reason: diagnoses.map((d) => d.label).join('; '),
     history: consult?.history ?? '',

@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead } from '../components/ui'
-import { date, fillTemplate, money, ROUTES } from '../lib/format'
+import { clinicWhatsapp, contactLine, date, fillTemplate, money, ROUTES } from '../lib/format'
+import { ContactsEditor } from '../components/Contacts'
 import type { ClinicDrug, ClinicSettings, Service, Staff } from '../lib/types'
 import { ScheduleEditor } from './ScheduleEditor'
 import { features, hasRole } from '../lib/permissions'
@@ -142,7 +143,7 @@ function ClinicForm() {
   const office = features(settings).office
   const set = <K extends keyof ClinicSettings>(k: K, v: ClinicSettings[K]) => setF({ ...f, [k]: v })
   const preview = fillTemplate(f.reminderTemplate, {
-    paciente: 'María José', clinica: f.name, medico: 'Dra. Lucía Herrera', fecha: 'martes 20 de octubre', hora: '09:30', telefono: f.phone,
+    paciente: 'María José', clinica: f.name, medico: 'Dra. Lucía Herrera', fecha: 'martes 20 de octubre', hora: '09:30', telefono: clinicWhatsapp(f),
   })
   const dirty = JSON.stringify(f) !== JSON.stringify(settings)
   return (
@@ -152,7 +153,11 @@ function ClinicForm() {
         <div className="panel__body form-grid">
           <label className="field span-2"><span>Nombre</span><input className="input" value={f.name} onChange={(e) => set('name', e.target.value)} /></label>
           <label className="field span-2"><span>Dirección</span><input className="input" value={f.address} onChange={(e) => set('address', e.target.value)} /></label>
-          <label className="field"><span>Teléfono</span><input className="input" value={f.phone} onChange={(e) => set('phone', e.target.value)} /></label>
+          <div className="field span-2"><span>Teléfonos y WhatsApp</span>
+            <ContactsEditor value={f.contacts ?? []} onChange={(contacts) => setF({ ...f, contacts, phone: contacts.find((c) => c.primary)?.number ?? '' })} />
+            <label className="check-line"><input type="checkbox" checked={!!f.docsWhatsapp} onChange={(e) => set('docsWhatsapp', e.target.checked)} />
+              <span><b>Poner también el WhatsApp en recetas, constancias y recibos</b><small>{f.docsWhatsapp ? contactLine(f) : `Tel. ${f.phone} · WhatsApp ${clinicWhatsapp(f)}`}</small></span></label>
+          </div>
           <label className="field"><span>Correo</span><input className="input" type="email" value={f.email} onChange={(e) => set('email', e.target.value)} /></label>
           <label className="field"><span>Símbolo de moneda</span><input className="input" value={f.currency} maxLength={4} onChange={(e) => set('currency', e.target.value)} /></label>
           <label className="field span-2" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>

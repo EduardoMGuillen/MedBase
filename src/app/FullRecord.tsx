@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
-import { date, fullName, recordNumber, shortStaff, time, dxCode } from '../lib/format'
+import { contactLine, date, fullName, recordNumber, shortStaff, time, dxCode } from '../lib/format'
 import { currentEpicrisis, medLabel, orderMark, splitOrders, stayPath, yearsOld } from '../lib/inpatient'
 import { authStatus, authTitle } from '../lib/consent'
 import { PdfPages } from '../components/PdfPages'
@@ -113,7 +113,7 @@ export default function FullRecord() {
 
       <article className="fr-doc">
         {page('fr-hoja', sections[0][1], <>
-          <div className="fr-title"><ClinicLogo settings={settings} size={20} /><div><b>{settings.name}</b><br /><small>{settings.address}{settings.phone ? `, tel. ${settings.phone}` : ''}</small></div></div>
+          <div className="fr-title"><ClinicLogo settings={settings} size={20} /><div><b>{settings.name}</b><br /><small>{settings.address}{settings.phone ? `, tel. ${contactLine(settings)}` : ''}</small></div></div>
           <h2 className="fr-h">{obs ? 'Observación: datos generales' : 'Hoja de hospitalización'}</h2>
           <dl className="fr-facts">
             <div><dt>Ingreso</dt><dd>{dm(h.admittedAt)}</dd></div>

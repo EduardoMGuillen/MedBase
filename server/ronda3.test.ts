@@ -201,3 +201,28 @@ describe('MC6 Mi configuración', () => {
     await doc.put('/api/me/pin', { password: DEMO_PASSWORD, pin: '' })
   })
 })
+
+describe('AD1 teléfonos y WhatsApp de la clínica', () => {
+  test('varios contactos: uno principal (el de los documentos) y uno de WhatsApp; el paciente los ve en la reserva', async () => {
+    const admin = await as('admin@demo.clinara')
+    const cfg = (await admin.get('/api/bootstrap')).body.settings
+    // Migración: el teléfono que tenía es el contacto principal
+    assert.deepEqual(cfg.contacts.map((c: any) => [c.number, !!c.primary]), [[cfg.phone, true]])
+    const contacts = [
+      { id: 'a', number: '2232-7710', label: 'Recepción', type: 'call', primary: true },
+      { id: 'b', number: '9876-5432', label: 'Citas por WhatsApp', type: 'whatsapp', whatsapp: true },
+    ]
+    assert.equal((await admin.put('/api/settings', { ...cfg, contacts: contacts.map((c) => ({ ...c, primary: false })) })).status, 400)
+    assert.equal((await admin.put('/api/settings', { ...cfg, contacts: [contacts[0], { ...contacts[1], type: 'call' }] })).status, 400)
+    const r = await admin.put('/api/settings', { ...cfg, contacts, docsWhatsapp: true })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.phone, '2232-7710')
+    assert.equal(r.body.docsWhatsapp, true)
+    const pub = await fetch(`${base}/api/public/${(await sql.one(`SELECT slug FROM clinics WHERE id = 'c-sb'`))!.slug}/clinic`).then((x) => x.json()) as { contacts: { number: string }[] }
+    assert.deepEqual(pub.contacts.map((c) => c.number), ['2232-7710', '9876-5432'])
+    // Recepción ve los contactos pero no los edita
+    const rec = await as('smejia@demo.clinara')
+    assert.equal((await rec.get('/api/bootstrap')).body.settings.contacts.length, 2)
+    assert.equal((await rec.put('/api/settings', { ...cfg, contacts })).status, 403)
+  })
+})

@@ -6,7 +6,7 @@ import { toCertificate } from '../mappers.js'
 import { currentMarks, docName } from './me.js'
 import type { Sql } from '../sql.js'
 import { yearsOld } from '../../src/lib/inpatient.js'
-import { age, normalizeDni } from '../../src/lib/format.js'
+import { age, contactLine, normalizeDni } from '../../src/lib/format.js'
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha no es válida.')
 const hhmm = z.string().regex(/^\d{2}:\d{2}$/, 'La hora no es válida.')
@@ -77,7 +77,7 @@ export function registerCertificates(app: Express, { sql, auth, need, userOf, cl
         guardian: minor && !p!.dni && p!.guardian_name ? `${p!.guardian_name}${p!.guardian_dni ? `, identidad ${p!.guardian_dni}` : ''}` : undefined,
       },
       doctor: { name: docName(doc), specialty: doc.specialty ? String(doc.specialty) : undefined, license: String(doc.license) },
-      clinic: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo, office: cfg.kind === 'office' || undefined },
+      clinic: { name: cfg.name, address: cfg.address, phone: contactLine(cfg), logo: cfg.logo, office: cfg.kind === 'office' || undefined },
     }
     const id = randomUUID()
     const now = new Date()

@@ -1,7 +1,9 @@
 import { ClinicLogo } from '../app/Prescriptions'
+import { contactLine } from '../lib/format'
+import type { ClinicContact } from '../lib/types'
 
 interface Props {
-  clinic: { name: string; address: string; phone: string; logo?: string; office?: boolean }
+  clinic: { name: string; address: string; phone: string; logo?: string; office?: boolean; contacts?: ClinicContact[]; docsWhatsapp?: boolean }
   doctor: { name: string; specialty?: string; license?: string }
 }
 
@@ -12,7 +14,8 @@ interface Props {
 export function DocHeader({ clinic, doctor }: Props) {
   const logoSettings = { ...clinic, email: '', currency: 'L', rxValidityDays: 30, reminderTemplate: '', recordUsesDni: false }
   const who = [doctor.specialty, doctor.license && `colegiación ${doctor.license}`].filter(Boolean).join(', ')
-  const where = `${clinic.address}${clinic.phone ? `, tel. ${clinic.phone}` : ''}`
+  // Los documentos emitidos ya guardan la línea del teléfono; la configuración actual la arma con sus contactos (AD1)
+  const where = `${clinic.address}${clinic.phone ? `, tel. ${contactLine(clinic)}` : ''}`
   if (clinic.office) {
     return (
       <div className="rx-sheet__doc doc-head--office">

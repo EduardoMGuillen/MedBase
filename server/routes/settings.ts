@@ -11,7 +11,17 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
     const s = parse(z.object({
       name: z.string().trim().min(2, 'Escribe el nombre de la clínica.'),
       address: z.string().trim().min(3, 'Escribe la dirección.'),
-      phone: z.string().trim().min(7, 'Escribe un teléfono válido.'),
+      phone: z.string().trim().optional(),
+      // AD1: varios contactos; uno principal y, opcional, uno de WhatsApp
+      contacts: z.array(z.object({
+        id: z.string().trim().min(1).max(40),
+        number: z.string().trim().regex(/^[\d\s+()-]{7,20}$/, 'Revisa los números de teléfono: cada uno debe tener al menos 7 dígitos.'),
+        label: z.string().trim().max(40).default(''),
+        type: z.enum(['call', 'whatsapp', 'both']),
+        primary: z.boolean().optional(),
+        whatsapp: z.boolean().optional(),
+      })).min(1, 'Agrega al menos un teléfono.').max(12).optional(),
+      docsWhatsapp: z.boolean().optional(),
       email: z.string().trim().email('El correo no es válido.').or(z.literal('')),
       currency: z.string().trim().min(1).max(4),
       // AD2: la vigencia de las recetas ya no se configura por clínica (es de cada médico); se acepta y se ignora
@@ -35,11 +45,18 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
     }), req.body)
     const cid = clinicOf(req)
     if (s.tempLow != null && s.tempHigh != null && s.tempLow >= s.tempHigh) fail(400, 'La temperatura de fiebre debe ser mayor que la mínima normal.')
+    // Contactos: exactamente un principal (su número es clinics.phone) y a lo sumo uno de WhatsApp, que acepte WhatsApp
+    const contacts = s.contacts ?? (s.phone ? [{ id: 'principal', number: s.phone, label: 'Principal', type: 'call' as const, primary: true }] : undefined)
+    if (!contacts?.length) fail(400, 'Agrega al menos un teléfono.')
+    if (contacts!.filter((c) => c.primary).length !== 1) fail(400, 'Marca un teléfono como principal.')
+    if (contacts!.filter((c) => c.whatsapp).length > 1) fail(400, 'Marca un solo número como el WhatsApp de la clínica.')
+    if (contacts!.some((c) => c.whatsapp && c.type === 'call')) fail(400, 'El número de WhatsApp de la clínica tiene que aceptar WhatsApp.')
+    const phone = contacts!.find((c) => c.primary)!.number
     await sql.run(`UPDATE clinics SET name = ?, address = ?, phone = ?, email = ?, currency = ?, reminder_template = ?, record_uses_dni = ?, logo = ?,
       obs_alert_hours = ?, obs_order_checklist = ?, dni_mask = ?, observation_enabled = COALESCE(?, observation_enabled), specialty = COALESCE(?, specialty), license = COALESCE(?, license),
-      temp_low = COALESCE(?, temp_low), temp_high = COALESCE(?, temp_high) WHERE id = ?`,
-      [s.name, s.address, s.phone, s.email, s.currency, s.reminderTemplate, s.recordUsesDni, s.logo ?? null, s.obsAlertHours, s.obsOrderChecklist, s.dniMask,
-        s.observationEnabled ?? null, s.specialty ?? null, s.license ?? null, s.tempLow ?? null, s.tempHigh ?? null, cid])
+      temp_low = COALESCE(?, temp_low), temp_high = COALESCE(?, temp_high), contacts = ?, docs_whatsapp = COALESCE(?, docs_whatsapp) WHERE id = ?`,
+      [s.name, s.address, phone, s.email, s.currency, s.reminderTemplate, s.recordUsesDni, s.logo ?? null, s.obsAlertHours, s.obsOrderChecklist, s.dniMask,
+        s.observationEnabled ?? null, s.specialty ?? null, s.license ?? null, s.tempLow ?? null, s.tempHigh ?? null, JSON.stringify(contacts), s.docsWhatsapp ?? null, cid])
     await audit(userOf(req), 'Actualizó la configuración de la clínica')
     res.json(await settings(cid))
   })

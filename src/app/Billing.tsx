@@ -4,7 +4,7 @@ import { ChevronLeft, Download, FileText, Plus, Printer, Receipt, Search, X } fr
 import { useStore } from '../lib/store'
 import { Loading, Modal, PageHead } from '../components/ui'
 import { LogoMark } from '../components/Logo'
-import { date, fullName, localISODate, METHOD_LABEL, money, time } from '../lib/format'
+import { contactLine, date, fullName, localISODate, METHOD_LABEL, money, time } from '../lib/format'
 import { normalize } from '../lib/patients'
 import { cashSuggestions, daysWaiting, discountAmount, matchesPayment } from '../lib/billing'
 import type { Appointment, Payment, PaymentMethod } from '../lib/types'
@@ -362,7 +362,7 @@ export function ReceiptSheet() {
         <header className="rx-sheet__head">
           <div className="rx-sheet__doc">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}><LogoMark size={26} /><b style={{ fontSize: 18 }}>{settings.name}</b></div>
-            <p>{settings.address}</p><p>Tel. {settings.phone}{settings.email ? `, ${settings.email}` : ''}</p>
+            <p>{settings.address}</p><p>Tel. {contactLine(settings)}{settings.email ? `, ${settings.email}` : ''}</p>
           </div>
           <div className="rx-sheet__folio">Recibo<b>{p.receiptNo}</b>{date(p.paidAt)}, {time(p.paidAt)}</div>
         </header>

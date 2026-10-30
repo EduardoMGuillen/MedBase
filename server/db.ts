@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '34'
+const SCHEMA_VERSION = '35'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -635,6 +635,12 @@ CREATE TABLE IF NOT EXISTS staff_marks (
 );
 ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS signature_id TEXT, ADD COLUMN IF NOT EXISTS stamp_id TEXT;
 ALTER TABLE certificates ADD COLUMN IF NOT EXISTS signature_id TEXT, ADD COLUMN IF NOT EXISTS stamp_id TEXT;
+
+-- v35: ronda 3 (AD1). Varios teléfonos y contactos de WhatsApp de la clínica (JSON). clinics.phone sigue siendo el
+-- principal (lo leen todos los documentos); docs_whatsapp pone también el de WhatsApp en los membretes.
+ALTER TABLE clinics
+  ADD COLUMN IF NOT EXISTS contacts TEXT,
+  ADD COLUMN IF NOT EXISTS docs_whatsapp BOOLEAN NOT NULL DEFAULT FALSE;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -677,6 +683,7 @@ export function ensureDb(sql: Sql) {
       await migrateRxValidity(q)
       await migrateRoles(q)
       await migrateMarks(q)
+      await migrateContacts(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -1000,6 +1007,14 @@ export async function migrateObservationAuthorizations(q: Sql) {
     await ensureHospitalAuthorization(q, h, { id: String(h.converted_by ?? h.admitted_by), role: 'doctor' })
     await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?, ?, ?, ?)',
       [new Date().toISOString(), 'sistema', 'v26: se generó la autorización de hospitalización pendiente de una estancia que vino de observación', String(h.clinic_id)])
+  }
+}
+
+/** v35 (AD1): el teléfono que tenía cada clínica pasa a ser su contacto principal. Idempotente. */
+export async function migrateContacts(q: Sql) {
+  for (const c of await q.query(`SELECT id, phone FROM clinics WHERE contacts IS NULL`)) {
+    const list = String(c.phone ?? '').trim() ? [{ id: 'principal', number: String(c.phone).trim(), label: 'Principal', type: 'call', primary: true }] : []
+    await q.run('UPDATE clinics SET contacts = ? WHERE id = ?', [JSON.stringify(list), String(c.id)])
   }
 }
 

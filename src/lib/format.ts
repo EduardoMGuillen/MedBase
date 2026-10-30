@@ -1,4 +1,4 @@
-import type { ApptStatus, Background, Diagnosis, Patient, PrescriptionItem } from './types'
+import type { ApptStatus, Background, ClinicContact, Diagnosis, Patient, PrescriptionItem } from './types'
 
 export const fullName = (p: Patient) => `${p.firstName} ${p.lastName}`
 
@@ -122,6 +122,20 @@ export function identityLine(p: Pick<Patient, 'dni' | 'birthDate' | 'guardianNam
 }
 
 /** Enlace de WhatsApp. Números de 8 dígitos se asumen de Honduras (+504). */
+/** AD1: número de WhatsApp de la clínica (el marcado; si no, el principal si acepta WhatsApp; si no, el principal). */
+export function clinicWhatsapp(s: { phone: string; contacts?: ClinicContact[] }) {
+  return s.contacts?.find((c) => c.whatsapp)?.number ?? s.contacts?.find((c) => c.primary && c.type !== 'call')?.number ?? s.phone
+}
+
+/** AD1: lo que dicen los membretes: "2232-7710" o, si la clínica lo pidió, "2232-7710 · WhatsApp 9876-5432". */
+export function contactLine(s: { phone: string; contacts?: ClinicContact[]; docsWhatsapp?: boolean }) {
+  const wa = s.contacts?.find((c) => c.whatsapp)?.number
+  return s.docsWhatsapp && wa && wa !== s.phone ? `${s.phone} · WhatsApp ${wa}` : s.phone
+}
+
+/** Enlace para llamar desde el teléfono. */
+export const telUrl = (phone: string) => `tel:${phone.replace(/[^\d+]/g, '')}`
+
 export function whatsappUrl(phone: string, text: string) {
   let digits = phone.replace(/\D/g, '')
   if (digits.length === 8) digits = `504${digits}`

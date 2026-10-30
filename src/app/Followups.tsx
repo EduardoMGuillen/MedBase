@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { CheckCheck, MessageCircle, Plus, Smartphone, Trash2 } from 'lucide-react'
 import { useStore, type FollowupInput } from '../lib/store'
 import { Modal, PageHead } from '../components/ui'
-import { date, dateTime, fullName, localISODate } from '../lib/format'
+import { clinicWhatsapp, date, dateTime, fullName, localISODate } from '../lib/format'
 import { addDays, CHRONIC_PRESETS, FOLLOWUP_KIND, followupMessage } from '../lib/followups'
 import type { Followup } from '../lib/types'
 import { PatientPicker } from './Inpatients'
@@ -95,7 +95,7 @@ function CompleteButton({ f }: { f: Followup }) {
 function WhatsAppMock({ f, onClose }: { f: Followup; onClose: () => void }) {
   const { patient, settings, notifyFollowup } = useStore()
   const p = patient(f.patientId)!
-  const [text, setText] = useState(followupMessage(f, { paciente: p.firstName.split(' ')[0], clinica: settings.name, telefono: settings.phone }))
+  const [text, setText] = useState(followupMessage(f, { paciente: p.firstName.split(' ')[0], clinica: settings.name, telefono: clinicWhatsapp(settings) }))
   const [sent, setSent] = useState(false)
   return (
     <Modal title={`WhatsApp a ${fullName(p)}`} onClose={onClose} footer={sent ? <button className="btn btn--primary" onClick={onClose}>Cerrar</button> : <>

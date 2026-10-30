@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Row, Sql } from './sql.js'
 import { clinicSettings, toAuthorization } from './mappers.js'
-import { age as ageText } from '../src/lib/format.js'
+import { age as ageText, contactLine } from '../src/lib/format.js'
 import { yearsOld } from '../src/lib/inpatient.js'
 import type { AuthorizationData } from '../src/lib/types.js'
 
@@ -22,7 +22,7 @@ export async function authorizationBase(q: Sql, h: Row, generatedBy: { id: strin
       record: cfg.recordUsesDni && p.dni ? String(p.dni) : String(p.record), minor: birth ? yearsOld(birth) < 18 : false,
     },
     doctor: { name: String(doc.doc_name || doc.name), license: doc.license ? String(doc.license) : undefined },
-    clinic: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo, office: cfg.kind === 'office' || undefined },
+    clinic: { name: cfg.name, address: cfg.address, phone: contactLine(cfg), logo: cfg.logo, office: cfg.kind === 'office' || undefined },
     admission: { at: String(h.admitted_at), diagnosis: (JSON.parse(String(h.diagnoses ?? '[]')) as { label: string }[]).map((d) => d.label).join('; ') || undefined },
   } satisfies Partial<AuthorizationData>
 }

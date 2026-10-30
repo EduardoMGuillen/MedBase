@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Row, Sql } from './sql.js'
 import { clinicSettings, toEpicrisis } from './mappers.js'
-import { age as ageText, medicationOrder } from '../src/lib/format.js'
+import { age as ageText, contactLine, medicationOrder } from '../src/lib/format.js'
 import type { DischargeData, EpicrisisData, PrescriptionItem } from '../src/lib/types.js'
 
 const j = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(String(v)) as T : fallback } catch { return fallback } }
@@ -57,7 +57,7 @@ export async function buildEpicrisis(q: Sql, h: Row): Promise<EpicrisisData> {
   }
   const birth = String(p!.birth_date ?? '')
   return {
-    clinic: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo },
+    clinic: { name: cfg.name, address: cfg.address, phone: contactLine(cfg), logo: cfg.logo },
     patient: {
       name: `${p!.first_name} ${p!.last_name}`, dni: p!.dni ? String(p!.dni) : undefined, age: birth ? ageText(birth) : 'Sin dato',
       sex: (p!.sex ?? undefined) as 'F' | 'M' | undefined, record: cfg.recordUsesDni && p!.dni ? String(p!.dni) : String(p!.record),

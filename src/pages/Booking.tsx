@@ -6,10 +6,11 @@ import { Avatar, Loading } from '../components/ui'
 import { api } from '../lib/api'
 import { cap, DAY_NAMES, formatPhone, localISODate } from '../lib/format'
 import { DniInput } from '../components/DniInput'
-import type { Schedule } from '../lib/types'
+import type { ClinicContact, Schedule } from '../lib/types'
+import { ContactButtons } from '../components/Contacts'
 import { describeSchedule, rangesOn } from '../lib/schedule'
 
-interface Clinic { name: string; address: string; phone: string; kind?: 'clinic' | 'office'; doctors: { id: string; name: string; specialty?: string; color: string; schedule?: Schedule }[] }
+interface Clinic { name: string; address: string; phone: string; contacts?: ClinicContact[]; kind?: 'clinic' | 'office'; doctors: { id: string; name: string; specialty?: string; color: string; schedule?: Schedule }[] }
 
 const DAYS_AHEAD = 21
 
@@ -113,6 +114,7 @@ function ClinicBooking({ slug }: { slug: string }) {
         ) : (<>
           <div className="booking__intro">
             <h1>Reserva tu cita</h1>
+            <ContactButtons contacts={clinic.contacts ?? []} clinicName={clinic.name} />
             <p>{clinic.address}. {single ? `Con ${clinic.doctors[0].name}${clinic.doctors[0].specialty ? `, ${clinic.doctors[0].specialty.toLowerCase()}` : ''}. Elige día y hora` : 'Elige médico, día y hora'}; no necesitas crear una cuenta.</p>
           </div>
 

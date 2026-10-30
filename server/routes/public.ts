@@ -52,7 +52,8 @@ export function registerPublic(app: Express, { sql, audit }: Ctx) {
     const s = clinicSettings(c!)
     const doctors = (await sql.query(`SELECT * FROM staff WHERE clinic_id = ? AND ${hasRoleSql('doctor')} AND active ORDER BY name`, [c!.id])).map(toStaff)
       .map((d) => ({ id: d.id, name: d.name, specialty: d.specialty, color: d.color, schedule: d.schedule }))
-    res.json({ name: s.name, address: s.address, phone: s.phone, kind: s.kind, doctors })
+    // AD1: el paciente ve los contactos de la clínica (llamar y WhatsApp)
+    res.json({ name: s.name, address: s.address, phone: s.phone, contacts: s.contacts ?? [], kind: s.kind, doctors })
   })
 
   app.get('/api/public/:slug/slots', async (req, res) => {

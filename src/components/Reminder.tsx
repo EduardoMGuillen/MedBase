@@ -1,6 +1,6 @@
 import { MessageCircle } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { fillTemplate, time, whatsappUrl } from '../lib/format'
+import { clinicWhatsapp, fillTemplate, time, whatsappUrl } from '../lib/format'
 import type { Appointment } from '../lib/types'
 
 /** Abre WhatsApp con el recordatorio listo para enviar y lo marca como enviado. */
@@ -14,7 +14,7 @@ export function ReminderButton({ appt, compact = false }: { appt: Appointment; c
     medico: staffById(appt.doctorId)?.name ?? 'su médico',
     fecha: new Date(appt.start).toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' }),
     hora: time(appt.start),
-    telefono: settings.phone,
+    telefono: clinicWhatsapp(settings),
   })
   return (
     <a className={`btn ${appt.remindedAt ? 'btn--ghost' : 'btn--soft'} btn--sm`} href={whatsappUrl(p.phone, text)} target="_blank" rel="noreferrer"
