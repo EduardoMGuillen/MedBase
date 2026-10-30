@@ -226,3 +226,32 @@ describe('AD1 teléfonos y WhatsApp de la clínica', () => {
     assert.equal((await rec.put('/api/settings', { ...cfg, contacts })).status, 403)
   })
 })
+
+describe('AD3 camas libres u ocupadas; la especialidad es del ingreso', () => {
+  test('el ingreso toma la especialidad del médico (editable); la cama no tiene especialidad y se libera al alta', async () => {
+    const admin = await as('admin@demo.clinara')
+    const bed = await admin.post('/api/beds', { room: '301', label: 'A' })
+    assert.equal(bed.status, 201, JSON.stringify(bed.body))
+    assert.equal(bed.body.specialty, undefined)
+    const { doc, stayId } = await admitted('Cama')
+    let h = (await doc.get(`/api/inpatient/${stayId}`)).body.hospitalization
+    assert.equal(h.specialty, 'Medicina interna')
+    const r = await doc.patch(`/api/inpatient/${stayId}`, { bedId: bed.body.id, specialty: 'Cirugía general' })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    h = r.body
+    assert.equal(h.specialty, 'Cirugía general')
+    // Ocupada: no se puede poner fuera de servicio
+    assert.equal((await admin.patch(`/api/beds/${bed.body.id}`, { active: false, outOfServiceNote: 'Mantenimiento' })).status, 409)
+    const d = await doc.post(`/api/inpatient/${stayId}/discharge`, { diagnoses: DX, summary: 'Evolucionó bien, sin complicaciones.', condition: 'Mejorado' })
+    assert.equal(d.status, 201, JSON.stringify(d.body))
+    // Libre otra vez: ahora sí, fuera de servicio con su motivo; se renombra
+    const off = await admin.patch(`/api/beds/${bed.body.id}`, { active: false, outOfServiceNote: 'Mantenimiento' })
+    assert.equal(off.status, 200)
+    assert.equal(off.body.outOfServiceNote, 'Mantenimiento')
+    assert.equal((await admin.patch(`/api/beds/${bed.body.id}`, { room: '302' })).body.room, '302')
+    // Recepción ve el estado de las camas, pero no las edita
+    const rec = await as('smejia@demo.clinara')
+    assert.ok((await rec.get('/api/bootstrap')).body.beds.some((b: any) => b.id === bed.body.id))
+    assert.equal((await rec.patch(`/api/beds/${bed.body.id}`, { active: true })).status, 403)
+  })
+})

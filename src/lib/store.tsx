@@ -23,6 +23,8 @@ interface Data {
   clinicDrugs?: ClinicDrug[] // vademécum propio de la clínica
   pendingOrders?: PendingOrders[] // órdenes médicas sin revisar (enfermería)
   stays?: { patientId: string; kind: Hospitalization['kind'] }[] // quién está hospitalizado o en observación (todos los roles)
+  /** AD3: camas ocupadas (estancia, paciente y especialidad del ingreso), para todos los roles. */
+  bedStays?: { id: string; bedId: string; patientId: string; specialty?: string }[]
 }
 
 interface Session { user: Staff; permissions: Permission[]; demo: boolean }
@@ -180,13 +182,13 @@ function useStoreValue() {
       run(() => api<Appointment>('/appointments/walk-in', { body: b }), 'Paciente agregado a la consulta externa de hoy'),
 
     // Hospitalización
-    admit: async (b: Pick<Hospitalization, 'patientId' | 'bedId' | 'reason' | 'diagnoses' | 'consultationId' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'> & { admittedAt?: string }) => {
+    admit: async (b: Pick<Hospitalization, 'patientId' | 'bedId' | 'reason' | 'diagnoses' | 'consultationId' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone' | 'specialty'> & { admittedAt?: string }) => {
       const h = await run(() => api<Hospitalization & { medOrders: number }>('/inpatient', { body: b }))
       if (h) notify(`Paciente ingresado${h.consultationId ? ', vinculado a su consulta externa' : ''}${h.medOrders ? `; ${h.medOrders} medicamento${h.medOrders > 1 ? 's' : ''} pasaron a la hoja` : ''}.`)
       return h
     },
     /** Editar datos generales de la estancia: cama, acompañante y teléfonos. El ingreso en sí no se edita. */
-    updateAdmission: (id: string, b: Partial<Pick<Hospitalization, 'bedId' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'>>) =>
+    updateAdmission: (id: string, b: Partial<Pick<Hospitalization, 'bedId' | 'specialty' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'>>) =>
       run(() => api<Hospitalization>(`/inpatient/${id}`, { method: 'PATCH', body: b }), 'Datos generales guardados'),
     addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string }) =>
       run(() => api<InpatientNote>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
@@ -216,13 +218,13 @@ function useStoreValue() {
     updateClinicDrug: (id: string, b: Partial<Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route' | 'active'>>) =>
       run(() => api<ClinicDrug>(`/drugs/${id}`, { method: 'PATCH', body: b }), 'Vademécum actualizado'),
     /** Observación → hospitalización: la misma estancia recibe cama y conserva su expediente. */
-    convertToHospital: async (id: string, b: { bedId: string; companionName?: string; companionRelation?: string; companionPhone?: string; patientPhone?: string }) => {
+    convertToHospital: async (id: string, b: { bedId: string; specialty?: string; companionName?: string; companionRelation?: string; companionPhone?: string; patientPhone?: string }) => {
       const h = await run(() => api<Hospitalization & { medOrders: number }>(`/inpatient/${id}/convert`, { body: b }))
       if (h) notify(`Paciente pasado a hospitalización${h.medOrders ? `; ${h.medOrders} medicamento${h.medOrders > 1 ? 's' : ''} de la consulta pasaron a la hoja` : ''}.`)
       return h
     },
     createBed: (b: Omit<Bed, 'id'>) => run(() => api<Bed>('/beds', { body: b }), 'Cama agregada'),
-    updateBed: (id: string, b: Partial<Omit<Bed, 'id'>>) => run(() => api<Bed>(`/beds/${id}`, { method: 'PATCH', body: b }), 'Cama actualizada'),
+    updateBed: (id: string, b: Partial<Omit<Bed, 'id'>>, success = 'Cama actualizada') => run(() => api<Bed>(`/beds/${id}`, { method: 'PATCH', body: b }), success),
 
     // Crónicos y seguimientos (el envío por WhatsApp es simulado)
     createFollowup: (b: FollowupInput & { patientId: string }) => run(() => api<Followup>('/followups', { body: b }), 'Seguimiento programado'),

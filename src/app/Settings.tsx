@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead } from '../components/ui'
-import { clinicWhatsapp, contactLine, date, fillTemplate, money, ROUTES } from '../lib/format'
+import { clinicWhatsapp, contactLine, date, fillTemplate, fullName, money, ROUTES } from '../lib/format'
 import { ContactsEditor } from '../components/Contacts'
-import type { ClinicDrug, ClinicSettings, Service, Staff } from '../lib/types'
+import type { Bed, ClinicDrug, ClinicSettings, Service, Staff } from '../lib/types'
 import { ScheduleEditor } from './ScheduleEditor'
 import { features, hasRole } from '../lib/permissions'
 
@@ -81,41 +81,70 @@ function ClinicDrugForm({ d, onClose }: { d: ClinicDrug; onClose: () => void }) 
   )
 }
 
-/** Camas de hospitalización. Cada cama tiene especialidad; cualquier médico puede atender a quien esté en ella. */
+/**
+ * Camas (AD3): sin especialidad fija. El estado sale solo de los pacientes hospitalizados (Libre u Ocupada, con el
+ * paciente y la especialidad de su ingreso); "Fuera de servicio" es lo único que se marca a mano (mantenimiento).
+ */
 function Beds() {
-  const { beds, createBed, updateBed } = useStore()
+  const { beds, bedStays = [], patient, createBed, updateBed } = useStore()
   const [room, setRoom] = useState('')
   const [label, setLabel] = useState('')
-  const [specialty, setSpecialty] = useState(beds[0]?.specialty ?? 'Medicina interna')
-  const specialties = [...new Set(['Medicina interna', 'Cirugía', 'Pediatría', 'Ginecología y obstetricia', 'Observación', ...beds.map((b) => b.specialty)])]
+  const [editing, setEditing] = useState<string | null>(null)
   const sorted = [...beds].sort((a, b) => a.room.localeCompare(b.room, 'es', { numeric: true }) || a.label.localeCompare(b.label))
+  const stayIn = (id: string) => bedStays.find((h) => h.bedId === id)
+  const counts = { free: sorted.filter((b) => b.active && !stayIn(b.id)).length, busy: sorted.filter((b) => stayIn(b.id)).length, off: sorted.filter((b) => !b.active).length }
   return (
     <section className="panel table-wrap">
+      <div className="panel__head"><div><h2>Camas</h2><p>{counts.free} libres · {counts.busy} ocupadas{counts.off ? ` · ${counts.off} fuera de servicio` : ''}. Se ocupan al ingresar a un paciente y se liberan al darle de alta o trasladarlo.</p></div></div>
       <table className="table table--sticky">
-        <thead><tr><th>Cuarto</th><th>Cama</th><th>Especialidad</th><th>Estado</th></tr></thead>
+        <thead><tr><th>Cuarto</th><th>Cama</th><th>Estado</th><th /></tr></thead>
         <tbody>
-          {sorted.map((b) => (
-            <tr key={b.id}>
-              <td className="num">{b.room}</td><td>{b.label || '—'}</td>
-              <td><select className="select" value={b.specialty} onChange={(e) => updateBed(b.id, { specialty: e.target.value })}>{specialties.map((s) => <option key={s}>{s}</option>)}</select></td>
-              <td><button className={`btn btn--sm ${b.active ? 'btn--ghost' : 'btn--soft'}`} onClick={() => updateBed(b.id, { active: !b.active })}>{b.active ? 'Desactivar' : 'Activar'}</button>
-                {!b.active && <span className="muted" style={{ marginLeft: 8 }}>Inactiva</span>}</td>
-            </tr>
-          ))}
+          {sorted.map((b) => {
+            const h = stayIn(b.id)
+            const p = h && patient(h.patientId)
+            return (
+              <tr key={b.id} style={b.active ? undefined : { opacity: 0.7 }}>
+                {editing === b.id ? <BedRename b={b} onDone={() => setEditing(null)} /> : <><td className="num">{b.room}</td><td>{b.label || '—'}</td></>}
+                <td>{!b.active ? <><span className="badge badge--amber">Fuera de servicio</span>{b.outOfServiceNote && <small className="muted" style={{ display: 'block' }}>{b.outOfServiceNote}</small>}</>
+                  : h ? <><span className="badge badge--ink">Ocupada</span> <span style={{ fontSize: 14 }}>{p ? fullName(p) : 'Paciente'}{h.specialty ? ` · ${h.specialty}` : ''}</span></>
+                    : <span className="badge badge--mint">Libre</span>}</td>
+                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  {editing !== b.id && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(b.id)}>Renombrar</button>}{' '}
+                  {b.active
+                    ? <button className="btn btn--ghost btn--sm" disabled={!!h} title={h ? 'Tiene un paciente: dale de alta o trasládalo primero' : undefined} onClick={() => {
+                      const note = prompt('Motivo (por ejemplo, mantenimiento):', 'Mantenimiento')
+                      if (note !== null) updateBed(b.id, { active: false, outOfServiceNote: note.trim() || undefined }, 'Cama fuera de servicio')
+                    }}>Fuera de servicio</button>
+                    : <button className="btn btn--soft btn--sm" onClick={() => updateBed(b.id, { active: true }, 'Cama en servicio')}>Volver a servicio</button>}
+                </td>
+              </tr>
+            )
+          })}
           <tr>
             <td><input className="input" placeholder="Ej. 106" value={room} onChange={(e) => setRoom(e.target.value)} aria-label="Cuarto" /></td>
             <td><input className="input" placeholder="Opcional, ej. A" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Cama" /></td>
-            <td><input className="input" list="bed-specialties" value={specialty} onChange={(e) => setSpecialty(e.target.value)} aria-label="Especialidad" />
-              <datalist id="bed-specialties">{specialties.map((s) => <option key={s} value={s} />)}</datalist></td>
-            <td><button className="btn btn--soft btn--sm" disabled={!room.trim() || specialty.trim().length < 2} onClick={async () => {
-              if (await createBed({ room: room.trim(), label: label.trim(), specialty: specialty.trim(), active: true })) { setRoom(''); setLabel('') }
+            <td />
+            <td style={{ textAlign: 'right' }}><button className="btn btn--soft btn--sm" disabled={!room.trim()} onClick={async () => {
+              if (await createBed({ room: room.trim(), label: label.trim(), active: true })) { setRoom(''); setLabel('') }
             }}><Plus size={14} />Agregar cama</button></td>
           </tr>
         </tbody>
       </table>
-      {!beds.length && <div className="empty">Agrega las camas de la clínica con su número de cuarto y especialidad.</div>}
+      {!beds.length && <div className="empty">Agrega las camas de la clínica con su número de cuarto.</div>}
     </section>
   )
+}
+
+function BedRename({ b, onDone }: { b: Bed; onDone: () => void }) {
+  const { updateBed } = useStore()
+  const [room, setRoom] = useState(b.room)
+  const [label, setLabel] = useState(b.label)
+  const save = async () => { if (room.trim() && (room !== b.room || label !== b.label)) { if (!(await updateBed(b.id, { room: room.trim(), label: label.trim() }, 'Cama renombrada'))) return } onDone() }
+  return (<>
+    <td><input className="input" value={room} autoFocus onChange={(e) => setRoom(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') onDone() }} aria-label="Cuarto" /></td>
+    <td><div style={{ display: 'flex', gap: 6 }}><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') onDone() }} aria-label="Cama" />
+      <button className="btn btn--primary btn--sm" onClick={save}>Guardar</button></div></td>
+  </>)
 }
 
 /** Reduce el logo a 240 px de alto como máximo para que no pese en cada carga. */

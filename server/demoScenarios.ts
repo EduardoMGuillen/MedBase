@@ -161,9 +161,10 @@ async function giveDoses(q: Sql, clinicId: string, stayId: string, by: string, u
   }
 }
 
-async function freeBed(q: Sql, clinicId: string, specialty: string, prefer: string) {
-  const beds = await q.query(`SELECT b.id FROM beds b WHERE b.clinic_id = ? AND b.active AND b.specialty = ?
-    AND NOT EXISTS (SELECT 1 FROM hospitalizations h WHERE h.bed_id = b.id AND h.status = 'active') ORDER BY b.id`, [clinicId, specialty])
+/** Cama libre (AD3: las camas no tienen especialidad; `specialty` queda como la del ingreso). */
+async function freeBed(q: Sql, clinicId: string, _specialty: string, prefer: string) {
+  const beds = await q.query(`SELECT b.id FROM beds b WHERE b.clinic_id = ? AND b.active
+    AND NOT EXISTS (SELECT 1 FROM hospitalizations h WHERE h.bed_id = b.id AND h.status = 'active') ORDER BY b.id`, [clinicId])
   return beds.some((b) => b.id === prefer) ? prefer : beds[0] ? String(beds[0].id) : undefined
 }
 

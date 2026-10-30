@@ -12,7 +12,7 @@ import { isScheduled, medLabel } from '../../src/lib/inpatient.js'
 import { hasBlank, medHasBlank } from '../../src/lib/orderSets.js'
 import { createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrders.js'
 import { authorizationBase, ensureHospitalAuthorization, refreshPendingHospitalAuthorization } from '../authorizations.js'
-import { rxValidityOf, validityInput } from '../prefs.js'
+import { rxValidityOf, specialtyOf, validityInput } from '../prefs.js'
 import { currentMarks } from './me.js'
 
 const dx = z.array(diagnosisInput)
@@ -104,11 +104,12 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   }
 
   // ---------- Camas (las configura administración) ----------
+  // AD3: la cama no tiene especialidad: está libre, ocupada (según las estancias) o fuera de servicio (active = false)
   const bedBody = z.object({
     room: z.string().trim().min(1, 'Escribe el número de cuarto.').max(20),
     label: z.string().trim().max(10).default(''),
-    specialty: z.string().trim().min(2, 'Escribe la especialidad de la cama.').max(60),
     active: z.boolean().default(true),
+    outOfServiceNote: z.string().trim().max(200).optional(),
   })
 
   app.post('/api/beds', auth, need('settings.manage'), async (req, res) => {
@@ -117,8 +118,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     await assertHospital(cid)
     if (await sql.one('SELECT 1 FROM beds WHERE clinic_id = ? AND room = ? AND label = ?', [cid, b.room, b.label])) fail(409, 'Ya existe esa cama en ese cuarto.')
     const id = randomUUID()
-    await sql.run('INSERT INTO beds (id, clinic_id, room, label, specialty, active) VALUES (?,?,?,?,?,?)', [id, cid, b.room, b.label, b.specialty, b.active])
-    await audit(userOf(req), `Agregó la ${bedName(b)} (${b.specialty})`)
+    await sql.run('INSERT INTO beds (id, clinic_id, room, label, active) VALUES (?,?,?,?,?)', [id, cid, b.room, b.label, b.active])
+    await audit(userOf(req), `Agregó la ${bedName(b)}`)
     res.status(201).json(toBed((await sql.one('SELECT * FROM beds WHERE id = ?', [id]))!))
   })
 
@@ -128,11 +129,20 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const row = (await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La cama no existe.')
     const b = parse(bedBody.partial(), req.body)
     if (b.active === false && await sql.one(`SELECT 1 FROM hospitalizations WHERE bed_id = ? AND status = 'active'`, [String(row!.id)])) {
-      fail(409, 'La cama tiene un paciente hospitalizado. Trasládalo o dale de alta antes de desactivarla.')
+      fail(409, 'La cama tiene un paciente hospitalizado. Trasládalo o dale de alta antes de ponerla fuera de servicio.')
     }
-    await sql.run('UPDATE beds SET room = ?, label = ?, specialty = ?, active = ? WHERE id = ?',
-      [b.room ?? row!.room, b.label ?? row!.label, b.specialty ?? row!.specialty, b.active ?? row!.active, String(row!.id)])
-    await audit(userOf(req), `Actualizó la ${bedName(row!)}`)
+    const room = b.room ?? String(row!.room)
+    const label = b.label ?? String(row!.label)
+    if ((room !== row!.room || label !== row!.label) && await sql.one('SELECT 1 FROM beds WHERE clinic_id = ? AND room = ? AND label = ? AND id <> ?', [cid, room, label, String(row!.id)])) {
+      fail(409, 'Ya existe esa cama en ese cuarto.')
+    }
+    const active = b.active ?? Boolean(row!.active)
+    await sql.run('UPDATE beds SET room = ?, label = ?, active = ?, out_of_service_note = ? WHERE id = ?',
+      [room, label, active, active ? null : b.outOfServiceNote ?? row!.out_of_service_note ?? null, String(row!.id)])
+    const what = b.active === false ? `Puso fuera de servicio la ${bedName(row!)}${b.outOfServiceNote ? ` (${b.outOfServiceNote})` : ''}`
+      : b.active === true && !row!.active ? `Volvió a poner en servicio la ${bedName(row!)}`
+        : `Renombró la ${bedName(row!)} a ${bedName({ room, label })}`
+    await audit(userOf(req), what)
     res.json(toBed((await sql.one('SELECT * FROM beds WHERE id = ?', [String(row!.id)]))!))
   })
 
@@ -149,11 +159,14 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       companionRelation: z.string().trim().max(40).optional(),
       companionPhone: z.string().trim().max(30).optional(),
       patientPhone: z.string().trim().max(30).optional(),
+      // AD3: la especialidad del ingreso; si no llega, la del médico que ingresa
+      specialty: z.string().trim().max(60).optional(),
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
     await assertHospital(cid)
     ;(await patientRow(cid, b.patientId)) ?? fail(404, 'El paciente no existe.')
+    const specialty = b.specialty || specialtyOf(user)
     const bed = await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ? AND active', [b.bedId, cid])
     if (!bed) fail(400, 'La cama elegida no existe o está desactivada.')
     if (b.consultationId && !(await sql.one('SELECT 1 FROM consultations WHERE id = ? AND patient_id = ? AND clinic_id = ?', [b.consultationId, b.patientId, cid]))) {
@@ -174,12 +187,12 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       if (await q.one(`SELECT 1 FROM hospitalizations WHERE bed_id = ? AND status = 'active'`, [b.bedId])) fail(409, 'Esa cama ya está ocupada. Elige otra.')
       if (await q.one(`SELECT 1 FROM hospitalizations WHERE patient_id = ? AND status = 'active'`, [b.patientId])) fail(409, 'Este paciente ya está hospitalizado.')
       await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, companion_name, companion_relation,
-          companion_phone, patient_phone, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active')`,
+          companion_phone, patient_phone, status, specialty) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?)`,
         [id, cid, b.patientId, b.bedId, consultationId ?? null, admittedAt.toISOString(), user.id, b.reason, JSON.stringify(b.diagnoses),
-          b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null])
+          b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null, specialty])
       medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: id })
       await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [id]))!, user)
-      await audit(user, `Ingresó a ${name} en la ${bedName(bed!)} (${bed!.specialty})${consultationId && !b.consultationId ? ', vinculado a su consulta externa' : ''}${medOrders ? ` con ${medOrders} medicamento(s) de la consulta` : ''}`, q)
+      await audit(user, `Ingresó a ${name} en la ${bedName(bed!)} (${specialty})${consultationId && !b.consultationId ? ', vinculado a su consulta externa' : ''}${medOrders ? ` con ${medOrders} medicamento(s) de la consulta` : ''}`, q)
     })
     res.status(201).json({ ...toHospitalization((await hospRow(cid, id))!), medOrders })
   })
@@ -196,12 +209,14 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       companionRelation: z.string().trim().max(40).optional(),
       companionPhone: z.string().trim().max(30).optional(),
       patientPhone: z.string().trim().max(30).optional(),
+      specialty: z.string().trim().max(60).optional(),
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
     await assertHospital(cid)
     const h = await activeHosp(cid, String(req.params.id))
     if (h.kind !== 'observation') fail(409, 'Este paciente ya está hospitalizado.')
+    const specialty = b.specialty || specialtyOf(user)
     const bed = await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ? AND active', [b.bedId, cid])
     if (!bed) fail(400, 'La cama elegida no existe o está desactivada.')
     const name = await patientName(String(h.patient_id))
@@ -212,14 +227,14 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       if (await q.one(`SELECT 1 FROM hospitalizations WHERE bed_id = ? AND status = 'active'`, [b.bedId])) fail(409, 'Esa cama ya está ocupada. Elige otra.')
       await q.run(`UPDATE hospitalizations SET kind = 'hospital', bed_id = ?, observation_at = admitted_at, admitted_at = ?, converted_at = ?, converted_by = ?,
           reason = COALESCE(?, reason), companion_name = COALESCE(?, companion_name), companion_relation = COALESCE(?, companion_relation),
-          companion_phone = COALESCE(?, companion_phone), patient_phone = COALESCE(?, patient_phone) WHERE id = ?`,
-        [b.bedId, now, now, user.id, b.reason || null, b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null, String(h.id)])
+          companion_phone = COALESCE(?, companion_phone), patient_phone = COALESCE(?, patient_phone), specialty = ? WHERE id = ?`,
+        [b.bedId, now, now, user.id, b.reason || null, b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null, specialty, String(h.id)])
       // Las órdenes de la observación siguen (misma estancia, mismas dosis). Se completan las que falten de la
       // consulta de origen: ya es una hospitalización, así que pasan todos sus medicamentos.
       medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: String(h.id), firstNotBefore: now })
       // Al hospitalizarlo se genera la autorización de hospitalización (la observación no la lleva)
       await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [String(h.id)]))!, user)
-      await audit(user, `Pasó a ${name} de observación a hospitalización en la ${bedName(bed!)}${medOrders ? `; ${medOrders} medicamento(s) de la consulta a la hoja` : ''}`, q)
+      await audit(user, `Pasó a ${name} de observación a hospitalización (${specialty}) en la ${bedName(bed!)}${medOrders ? `; ${medOrders} medicamento(s) de la consulta a la hoja` : ''}`, q)
     })
     res.json({ ...toHospitalization((await hospRow(cid, String(h.id)))!), medOrders })
   })
@@ -238,7 +253,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       companionRelation: z.string().trim().max(40).optional(),
       companionPhone: z.string().trim().max(30).optional(),
       patientPhone: z.string().trim().max(30).optional(),
-    }).strict(), req.body, 'Sólo se editan los datos generales: cama, acompañante y teléfonos.')
+      specialty: z.string().trim().min(2).max(60).optional(),
+    }).strict(), req.body, 'Sólo se editan los datos generales: cama, especialidad, acompañante y teléfonos.')
     const user = userOf(req)
     const cid = clinicOf(req)
     const h = await activeHosp(cid, String(req.params.id))
@@ -246,8 +262,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const bed = b.bedId ? await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ? AND active', [b.bedId, cid]) : undefined
     if (b.bedId && !bed) fail(400, 'La cama elegida no existe o está desactivada.')
     const name = await patientName(String(h.patient_id))
-    const cols = { bedId: 'bed_id', companionName: 'companion_name', companionRelation: 'companion_relation', companionPhone: 'companion_phone', patientPhone: 'patient_phone' } as const
-    const labels = { bedId: 'cama', companionName: 'acompañante', companionRelation: 'parentesco del acompañante', companionPhone: 'teléfono del acompañante', patientPhone: 'teléfono del paciente' }
+    const cols = { bedId: 'bed_id', specialty: 'specialty', companionName: 'companion_name', companionRelation: 'companion_relation', companionPhone: 'companion_phone', patientPhone: 'patient_phone' } as const
+    const labels = { bedId: 'cama', specialty: 'especialidad del ingreso', companionName: 'acompañante', companionRelation: 'parentesco del acompañante', companionPhone: 'teléfono del acompañante', patientPhone: 'teléfono del paciente' }
     const bedText = async (id: unknown) => { const x = id ? await sql.one('SELECT room, label FROM beds WHERE id = ?', [String(id)]) : undefined; return x ? bedName(x) : 'sin cama' }
     const changes: string[] = []
     for (const k of Object.keys(cols) as (keyof typeof cols)[]) {
@@ -264,8 +280,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       }
       // Lo que llega vacío se borra (p. ej. un teléfono equivocado); lo que no llega no se toca
       const v = (k: keyof typeof cols) => (b[k] === undefined ? h[cols[k]] ?? null : b[k] || null)
-      await q.run(`UPDATE hospitalizations SET bed_id = ?, companion_name = ?, companion_relation = ?, companion_phone = ?, patient_phone = ? WHERE id = ?`,
-        [v('bedId'), v('companionName'), v('companionRelation'), v('companionPhone'), v('patientPhone'), String(h.id)])
+      await q.run(`UPDATE hospitalizations SET bed_id = ?, specialty = ?, companion_name = ?, companion_relation = ?, companion_phone = ?, patient_phone = ? WHERE id = ?`,
+        [v('bedId'), v('specialty'), v('companionName'), v('companionRelation'), v('companionPhone'), v('patientPhone'), String(h.id)])
       await refreshPendingHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [String(h.id)]))!)
       if (changes.length) await audit(user, `Editó los datos generales de la estancia de ${name}: ${changes.join('; ')}`, q)
     })

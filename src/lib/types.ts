@@ -422,8 +422,9 @@ export interface Bed {
   id: string
   room: string // número de cuarto
   label: string // cama dentro del cuarto, p. ej. "A"
-  specialty: string // las camas se asignan por especialidad, no por médico
+  /** AD3: activa = en servicio (libre u ocupada según las estancias); inactiva = fuera de servicio, con su motivo. */
   active: boolean
+  outOfServiceNote?: string
 }
 
 export interface Hospitalization {
@@ -452,6 +453,8 @@ export interface Hospitalization {
   authPending?: boolean
   /** Hoja de signos vitales: cada cuántas horas se toman (lo cambia el médico). Vacío: lo que diga la orden, o 8. */
   vitalsEveryHours?: number
+  /** AD3: especialidad del ingreso (la del médico que ingresa, editable). La cama no tiene especialidad. */
+  specialty?: string
   /** Cómo terminó: 'referred' si se refirió a otro centro (con el destino en outcomeNote). */
   outcome?: 'referred' | 'discharged'
   outcomeNote?: string

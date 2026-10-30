@@ -6,13 +6,14 @@ import { Modal, PageHead } from '../components/ui'
 import { age, dateTime, dniDigits, fullName, inputDateTime } from '../lib/format'
 import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { stayDay, stayPath } from '../lib/inpatient'
+import { BedFields, defaultSpecialty } from '../components/BedFields'
 import type { Bed, Diagnosis, Hospitalization } from '../lib/types'
 
 export const bedLabel = (b?: Pick<Bed, 'room' | 'label'>) => (b ? `Cuarto ${b.room}${b.label ? `-${b.label}` : ''}` : 'Sin cama')
 
 /**
- * Hospitalizados: tablero de cuartos. Cualquier especialidad puede ocupar cualquier cama.
- * El conteo es de la clínica: ocupadas/total.
+ * Hospitalizados: tablero de cuartos. Las camas no tienen especialidad (AD3): cada paciente lleva la de su ingreso.
+ * El conteo es de la clínica: ocupadas/en servicio.
  */
 export default function Inpatients() {
   const { beds, inpatients, patient, can } = useStore()
@@ -60,7 +61,7 @@ export default function Inpatients() {
               return (
                 <div key={b.id} className="bed bed--free">
                   <div className="bed__head"><b>{bedLabel(b)}</b><span>Libre</span></div>
-                  <p className="muted">Cualquier especialidad</p>
+                  <p className="muted">La especialidad la da quien ingresa</p>
                   {can('inpatient.orders') && <button className="btn btn--ghost btn--sm" onClick={() => setAdmitting({ bedId: b.id })}><Plus size={14} />Ingresar aquí</button>}
                 </div>
               )
@@ -69,6 +70,7 @@ export default function Inpatients() {
               <Link key={b.id} to={`/app/hospitalizados/${h.id}`} className="bed">
                 <div className="bed__head"><b>{bedLabel(b)}</b><span>Ocupado</span></div>
                 <strong className="bed__name">{fullName(p)}</strong>
+                {h.specialty && <span className="badge badge--ink bed__spec">{h.specialty}</span>}
                 <span className="bed__meta">{age(p.birthDate)}, {p.sex === 'F' ? 'femenino' : 'masculino'} · Día {stayDay(h.admittedAt)} de estancia</span>
                 <span className="bed__dx">{h.diagnoses.map((d) => d.label).join('; ')}</span>
                 {p.allergies.length > 0 && <span className="chip chip--red">Alergias: {p.allergies.join(', ')}</span>}
@@ -135,16 +137,16 @@ export function DxPicker({ value, onChange, label = 'Diagnósticos', recode }: {
 export function AdmitModal({ initialPatientId, consultationId, bedId, onClose, onDone }: {
   initialPatientId?: string; consultationId?: string; bedId?: string; onClose: () => void; onDone: (h: Hospitalization) => void
 }) {
-  const { beds, inpatients, patient, admit, fetchConsultation, inpatientOf } = useStore()
+  const { patient, admit, fetchConsultation, inpatientOf } = useStore()
   const [patientId, setPatientId] = useState(initialPatientId ?? '')
   const p = patientId ? patient(patientId) : undefined
-  const free = beds.filter((b) => b.active && !inpatients.some((h) => h.bedId === b.id))
-    .sort((a, b) => a.room.localeCompare(b.room, 'es', { numeric: true }) || a.label.localeCompare(b.label))
   const [f, setF] = useState({
     bedId: bedId ?? '', admittedAt: inputDateTime(new Date()), reason: '', companionName: '', companionRelation: '', companionPhone: '', patientPhone: '',
   })
   const [dx, setDx] = useState<Diagnosis[]>([])
   const [busy, setBusy] = useState(false)
+  const { user } = useStore()
+  const [specialty, setSpecialty] = useState(() => defaultSpecialty(user))
 
   // Desde la consulta externa: se toman su motivo y sus diagnósticos
   useEffect(() => {
@@ -171,7 +173,7 @@ export function AdmitModal({ initialPatientId, consultationId, bedId, onClose, o
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
         const h = await admit({
-          patientId, bedId: f.bedId, admittedAt: new Date(f.admittedAt).toISOString(), reason: f.reason.trim(), diagnoses: dx, consultationId,
+          patientId, bedId: f.bedId, admittedAt: new Date(f.admittedAt).toISOString(), reason: f.reason.trim(), diagnoses: dx, consultationId, specialty: specialty.trim() || undefined,
           companionName: f.companionName.trim() || undefined, companionRelation: f.companionRelation.trim() || undefined,
           companionPhone: f.companionPhone.trim() || undefined, patientPhone: f.patientPhone.trim() || undefined,
         })
@@ -184,11 +186,7 @@ export function AdmitModal({ initialPatientId, consultationId, bedId, onClose, o
       <p className="muted" style={{ fontSize: 13.5 }}>Si el paciente tuvo una consulta externa con ingreso en las últimas 48 horas, este ingreso se vincula a ella y jala sus órdenes y medicamentos sin duplicarlos.</p>
       {already && <div className="alert-strip">Este paciente ya está {already.kind === 'observation' ? 'en observación: desde su expediente puedes pasarlo a hospitalización' : 'hospitalizado'}. <Link to={stayPath(already)}>Abrir su expediente</Link>.</div>}
       <div className="form-grid">
-        <label className="field"><span>Cama</span>
-          <select className="select" value={f.bedId} onChange={set('bedId')}>
-            <option value="">Elige un cuarto libre</option>
-            {free.map((b) => <option key={b.id} value={b.id}>{bedLabel(b)}</option>)}
-          </select></label>
+        <div className="span-2"><BedFields bedId={f.bedId} specialty={specialty} onChange={(v) => { setF({ ...f, bedId: v.bedId }); setSpecialty(v.specialty) }} /></div>
         <label className="field"><span>Fecha y hora del ingreso</span><input className="input" type="datetime-local" value={f.admittedAt} onChange={set('admittedAt')} /></label>
         <label className="field span-2"><span>Motivo del ingreso</span><textarea className="textarea textarea--sm" rows={2} value={f.reason} onChange={set('reason')} /></label>
       </div>

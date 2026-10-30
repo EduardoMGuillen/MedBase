@@ -294,3 +294,5 @@ tr.clickable { cursor: pointer; }
   .tabs--sticky::-webkit-scrollbar { display: none; }
   .tabs--sticky .tab { white-space: nowrap; }
 }
+
+.bed__spec { justify-self: start; }

@@ -431,9 +431,9 @@ export const INPATIENT_PATIENTS: Patient[] = [
 
 /** Camas por especialidad: 5 de medicina interna y 10 de cirugía, como en el ejemplo del médico. */
 export const BEDS: (Bed & { clinicId: string })[] = [
-  ...[101, 102, 103, 104, 105].map((r) => ({ id: `bed-${r}`, clinicId: MAIN_CLINIC, room: String(r), label: '', specialty: 'Medicina interna', active: true })),
-  ...[201, 202, 203, 204, 205, 206, 207, 208, 209, 210].map((r) => ({ id: `bed-${r}`, clinicId: MAIN_CLINIC, room: String(r), label: '', specialty: 'Cirugía', active: true })),
-  ...[1, 2, 3, 4].map((r) => ({ id: `sl-bed-${r}`, clinicId: SECOND_CLINIC, room: String(r), label: '', specialty: 'Medicina general', active: true })),
+  ...[101, 102, 103, 104, 105].map((r) => ({ id: `bed-${r}`, clinicId: MAIN_CLINIC, room: String(r), label: '', active: true })),
+  ...[201, 202, 203, 204, 205, 206, 207, 208, 209, 210].map((r) => ({ id: `bed-${r}`, clinicId: MAIN_CLINIC, room: String(r), label: '', active: true })),
+  ...[1, 2, 3, 4].map((r) => ({ id: `sl-bed-${r}`, clinicId: SECOND_CLINIC, room: String(r), label: '', active: true })),
 ]
 
 /** Hospitalizados de la clínica principal, con horarios relativos a `now` para que la hoja siempre esté viva. */

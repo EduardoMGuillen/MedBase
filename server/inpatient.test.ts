@@ -59,11 +59,13 @@ describe('horario de medicamentos', () => {
 })
 
 describe('hospitalización', () => {
-  test('la demo trae camas por especialidad y hospitalizados que ve el personal clínico', async () => {
+  test('la demo trae camas (sin especialidad fija desde la ronda 3 de Emil) y hospitalizados que ve el personal clínico', async () => {
     const nurse = await as('crios@demo.clinara')
     const boot = (await nurse.get('/api/bootstrap')).body
     assert.equal(boot.beds.length, 15)
-    assert.equal(boot.beds.filter((b: any) => b.specialty === 'Cirugía').length, 10)
+    assert.ok(boot.beds.every((b: any) => b.specialty === undefined))
+    // La especialidad es del ingreso
+    assert.ok(boot.inpatients.filter((h: any) => h.kind === 'hospital').every((h: any) => h.specialty))
     assert.ok(boot.inpatients.length >= 4)
     const rec = await as('smejia@demo.clinara')
     assert.equal((await rec.get('/api/bootstrap')).body.inpatients.length, 0)

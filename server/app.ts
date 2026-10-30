@@ -14,7 +14,7 @@ import {
   clinicSettings, rolesOf, toAppointment, toAudit, toBed, toClinicDrug, toConsultation, toFollowup, toHospitalization, toPatient, toPrescription, toService, toStaff, toVitals,
 } from './mappers.js'
 import { newSecret, otpauthUrl, verifyTotp } from './totp.js'
-import { rxValidityOf, validityInput } from './prefs.js'
+import { rxValidityOf, specialtyOf, validityInput } from './prefs.js'
 import { registerSettings } from './routes/settings.js'
 import { currentMarks, registerMe } from './routes/me.js'
 import { registerPublic } from './routes/public.js'
@@ -309,7 +309,7 @@ export function createApp(opts: AppOptions) {
     const user = userOf(req)
     // La administración de la plataforma no carga datos de ninguna clínica
     if (!user.clinicId) {
-      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], beds: [], inpatients: [], followups: [], discharges: [], clinicDrugs: [], pendingOrders: [], stays: [],
+      return res.json({ staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], beds: [], inpatients: [], followups: [], discharges: [], clinicDrugs: [], pendingOrders: [], stays: [], bedStays: [],
         settings: { ...clinicSettings({ name: 'Clinara' }) } })
     }
     const cid = user.clinicId
@@ -318,7 +318,7 @@ export function createApp(opts: AppOptions) {
     const since = new Date(); since.setDate(since.getDate() - 90)
     const none = Promise.resolve([] as Row[])
     if (can(user, 'followups.view')) await sweepFollowupReminders(sql, cid)
-    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges, clinicDrugs, pending, stays] = await Promise.all([
+    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges, clinicDrugs, pending, stays, bedStays] = await Promise.all([
       sql.query('SELECT * FROM staff WHERE clinic_id = ? ORDER BY name', [cid]),
       // Los pendientes de registro sí viajan (agenda y 'Por llegar'); los que se unieron a otro expediente no
       sql.query('SELECT * FROM patients WHERE clinic_id = ? AND merged_into IS NULL ORDER BY last_name', [cid]),
@@ -330,7 +330,8 @@ export function createApp(opts: AppOptions) {
       clinical ? sql.query(`SELECT v.* FROM vitals v JOIN appointments a ON a.id = v.appointment_id WHERE v.clinic_id = ? AND a.start LIKE ?`, [cid, `${localDate(new Date())}%`]) : Promise.resolve([]),
       sql.query('SELECT * FROM services WHERE clinic_id = ? ORDER BY name', [cid]),
       settings(cid),
-      can(user, 'inpatient.view') || can(user, 'settings.manage') ? sql.query('SELECT * FROM beds WHERE clinic_id = ? ORDER BY specialty, room, label', [cid]) : none,
+      // AD3: todos los roles ven el estado de las camas (libre u ocupada); sólo administración las edita
+      sql.query('SELECT * FROM beds WHERE clinic_id = ? ORDER BY room, label', [cid]),
       // Con aviso de la autorización de hospitalización pendiente de firma, para enfermería y el médico
       can(user, 'inpatient.view') ? sql.query(`SELECT h.*, EXISTS(SELECT 1 FROM authorizations a WHERE a.hospitalization_id = h.id AND a.template = 'hospital' AND a.status = 'pending') AS auth_pending
         FROM hospitalizations h WHERE h.clinic_id = ? AND h.status = 'active' ORDER BY h.admitted_at`, [cid]) : none,
@@ -341,6 +342,8 @@ export function createApp(opts: AppOptions) {
       can(user, 'orders.review') ? pendingOrders(sql, cid) : Promise.resolve([]),
       // Estado del paciente (hospitalizado o en observación) para todos los roles, sin datos clínicos
       sql.query(`SELECT patient_id, kind FROM hospitalizations WHERE clinic_id = ? AND status = 'active'`, [cid]),
+      // AD3: estado de cada cama (quién la ocupa y la especialidad del ingreso), sin datos clínicos, para todos los roles
+      sql.query(`SELECT id, bed_id, patient_id, specialty FROM hospitalizations WHERE clinic_id = ? AND status = 'active' AND bed_id IS NOT NULL AND kind = 'hospital'`, [cid]),
     ])
     res.json({
       staff: staff.map(toStaff),
@@ -358,6 +361,7 @@ export function createApp(opts: AppOptions) {
       clinicDrugs: clinicDrugs.map(toClinicDrug),
       pendingOrders: pending,
       stays: stays.map((r) => ({ patientId: String(r.patient_id), kind: String(r.kind) })),
+      bedStays: bedStays.map((r) => ({ id: String(r.id), bedId: String(r.bed_id), patientId: String(r.patient_id), specialty: r.specialty ? String(r.specialty) : undefined })),
     })
   })
 
@@ -822,9 +826,9 @@ export function createApp(opts: AppOptions) {
       await audit(user, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
       if (stayId) {
         // La hospitalización se crea sin cama: el médico la elige al terminar de firmar (o la corrige después)
-        await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, patient_phone, status, kind)
-          VALUES (?,?,?,NULL,?,?,?,?,?,?,'active',?)`,
-          [stayId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null, stayKind])
+        await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, patient_phone, status, kind, specialty)
+          VALUES (?,?,?,NULL,?,?,?,?,?,?,'active',?,?)`,
+          [stayId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null, stayKind, specialtyOf(user)])
         medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: stayId })
         // La autorización de hospitalización queda generada, pendiente de firma, desde el ingreso. La observación
         // no lleva autorización (ronda 3, P6): se genera si después pasa a hospitalización.

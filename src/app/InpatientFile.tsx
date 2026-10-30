@@ -20,6 +20,7 @@ import { useNow } from '../lib/hooks'
 import type { Diagnosis, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
 import { bedLabel, DxPicker } from './Inpatients'
 import { GeneralDataModal } from './GeneralData'
+import { BedFields, defaultSpecialty } from '../components/BedFields'
 import { ReferralModal } from './Referral'
 import { features } from '../lib/permissions'
 import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
@@ -90,6 +91,7 @@ export default function InpatientFile() {
         </PatientHeader>
         <div className="hosp-bar">
           <span><b>{obs ? 'Observación' : bedLabel(b)}</b></span>
+          {!obs && h.specialty && <span className="badge badge--ink">{h.specialty}</span>}
           <span>{obs ? 'Entró a observación' : 'Ingresó'} {dateTime(h.admittedAt)}</span>
           {open ? (obs
             ? <span className="badge badge--ink">{elapsed(Math.floor((now.getTime() - new Date(h.admittedAt).getTime()) / 60_000))} en observación</span>
@@ -122,6 +124,7 @@ export default function InpatientFile() {
               <dl className="facts">
                 <div><dt>Fecha y hora del ingreso</dt><dd>{date(h.admittedAt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(h.admittedAt)}</dd></div>
                 {!obs && <div><dt>Cuarto</dt><dd>{bedLabel(b)}</dd></div>}
+                {!obs && <div><dt>Especialidad del ingreso</dt><dd>{h.specialty ?? '—'}</dd></div>}
                 {h.observationAt && <div><dt>En observación desde</dt><dd>{dateTime(h.observationAt)}</dd></div>}
                 <div><dt>{obs ? 'Médico' : 'Ingresado por'}</dt><dd>{staffById(h.admittedBy)?.name}</dd></div>
                 <div><dt>Procedencia</dt><dd>{h.consultationId ? <Link to={`/app/nota/${h.consultationId}`}>Consulta externa</Link> : 'Emergencia o ingreso directo'}</dd></div>
@@ -577,10 +580,8 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
 
 /** Observación → hospitalización: se elige la cama y se completan los datos del acompañante. Todo lo demás se conserva. */
 function ConvertModal({ file, p, onClose, onDone }: { file: File; p: Patient; onClose: () => void; onDone: () => void }) {
-  const { beds, inpatients, convertToHospital } = useStore()
-  const free = beds.filter((b) => b.active && !inpatients.some((x) => x.bedId === b.id))
-    .sort((a, b) => a.room.localeCompare(b.room, 'es', { numeric: true }) || a.label.localeCompare(b.label))
-  const [f, setF] = useState({ bedId: '', companionName: p.emergencyName ?? '', companionRelation: p.emergencyRelation ?? '', companionPhone: p.emergencyPhone ?? '', patientPhone: file.hospitalization.patientPhone ?? p.phone })
+  const { convertToHospital, user } = useStore()
+  const [f, setF] = useState({ bedId: '', specialty: defaultSpecialty(user), companionName: p.emergencyName ?? '', companionRelation: p.emergencyRelation ?? '', companionPhone: p.emergencyPhone ?? '', patientPhone: file.hospitalization.patientPhone ?? p.phone })
   const [busy, setBusy] = useState(false)
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
   return (
@@ -588,18 +589,14 @@ function ConvertModal({ file, p, onClose, onDone }: { file: File; p: Patient; on
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!f.bedId || busy} onClick={async () => {
         setBusy(true)
-        const r = await convertToHospital(file.hospitalization.id, { bedId: f.bedId, companionName: f.companionName.trim() || undefined, companionRelation: f.companionRelation.trim() || undefined,
+        const r = await convertToHospital(file.hospitalization.id, { bedId: f.bedId, specialty: f.specialty.trim() || undefined, companionName: f.companionName.trim() || undefined, companionRelation: f.companionRelation.trim() || undefined,
           companionPhone: f.companionPhone.trim() || undefined, patientPhone: f.patientPhone.trim() || undefined })
         setBusy(false)
         if (r) onDone()
       }}><BedDouble size={16} />Hospitalizar</button>
     </>}>
       <p className="muted" style={{ fontSize: 14 }}>Las notas, los medicamentos, los laboratorios y las autorizaciones de la observación pasan al expediente de hospitalización, en orden y con su autoría.</p>
-      <label className="field"><span>Cama</span>
-        <select className="select" value={f.bedId} onChange={set('bedId')}>
-          <option value="">Elige un cuarto libre</option>
-          {free.map((b) => <option key={b.id} value={b.id}>{bedLabel(b)} · {b.specialty}</option>)}
-        </select></label>
+      <BedFields bedId={f.bedId} specialty={f.specialty} onChange={(v) => setF({ ...f, ...v })} />
       <div className="form-grid">
         <label className="field"><span>Quién lo acompaña</span><input className="input" value={f.companionName} onChange={set('companionName')} /></label>
         <label className="field"><span>Parentesco</span><input className="input" value={f.companionRelation} onChange={set('companionRelation')} /></label>

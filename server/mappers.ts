@@ -107,7 +107,8 @@ export const toAttachment = (r: Row): Attachment => ({
   title: s(r.title), takenAt: s(r.taken_at), hospitalizationId: s(r.hospitalization_id),
 })
 
-export const toBed = (r: Row): Bed => ({ id: String(r.id), room: String(r.room), label: String(r.label ?? ''), specialty: String(r.specialty), active: Boolean(r.active) })
+// AD3: la cama ya no tiene especialidad (la que tenía queda archivada en la base)
+export const toBed = (r: Row): Bed => ({ id: String(r.id), room: String(r.room), label: String(r.label ?? ''), active: Boolean(r.active), outOfServiceNote: s(r.out_of_service_note) })
 
 export const toHospitalization = (r: Row): Hospitalization => ({
   id: String(r.id), kind: (r.kind as Hospitalization['kind']) ?? 'hospital', patientId: String(r.patient_id), bedId: s(r.bed_id), consultationId: s(r.consultation_id), admittedAt: String(r.admitted_at),
@@ -118,6 +119,7 @@ export const toHospitalization = (r: Row): Hospitalization => ({
   authPending: r.auth_pending == null ? undefined : Boolean(r.auth_pending),
   outcome: (s(r.outcome) as Hospitalization['outcome']) ?? undefined, outcomeNote: s(r.outcome_note),
   vitalsEveryHours: r.vitals_every_hours == null ? undefined : Number(r.vitals_every_hours),
+  specialty: s(r.specialty),
 })
 
 export const toInpatientNote = (r: Row): InpatientNote => ({
