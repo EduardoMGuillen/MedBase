@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '42'
+const SCHEMA_VERSION = '43'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -814,6 +814,16 @@ CREATE TABLE IF NOT EXISTS exam_events (
 CREATE INDEX IF NOT EXISTS exam_events_exam ON exam_events (exam_id, at);
 DROP TRIGGER IF EXISTS exam_events_no_change ON exam_events;
 CREATE TRIGGER exam_events_no_change BEFORE UPDATE OR DELETE ON exam_events FOR EACH ROW EXECUTE FUNCTION audit_append_only();
+
+-- v43 (DM1): indicador explícito de clínica de demostración (sólo en ellas se borran y regeneran pacientes) y
+-- respaldo de lo que se borra antes de cada regeneración
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS demo_backups (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  clinic_ids TEXT NOT NULL,
+  data TEXT NOT NULL
+);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -861,6 +871,7 @@ export function ensureDb(sql: Sql) {
       await migratePayments(q)
       await migrateLabsToExams(q)
       await migrateOfficeOwners(q)
+      await markDemoClinics(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -1258,6 +1269,16 @@ export async function migrateMarks(q: Sql) {
  * v42 (MI1): el médico titular de cada consultorio pasa a tener también el rol de Administración (antes su rol de
  * médico incluía lo administrativo). Una sola vez: si después se le quita, no se vuelve a poner.
  */
+/**
+ * v43 (DM1): marca como demo la Clínica Santa Brígida y el Consultorio Dra. Ana López, sólo si su personal es el de
+ * demostración (@demo.clinara). Una clínica real nunca queda marcada.
+ */
+export async function markDemoClinics(q: Sql) {
+  await q.run(`UPDATE clinics c SET is_demo = TRUE WHERE c.id IN ('c-sb', 'c-al') AND NOT c.is_demo
+    AND EXISTS (SELECT 1 FROM staff s WHERE s.clinic_id = c.id AND s.email LIKE '%@demo.clinara')
+    AND NOT EXISTS (SELECT 1 FROM staff s WHERE s.clinic_id = c.id AND s.email NOT LIKE '%@demo.clinara')`)
+}
+
 export async function migrateOfficeOwners(q: Sql) {
   if (await q.one(`SELECT 1 FROM meta WHERE key = 'office_owner_admin'`)) return
   await q.run(`UPDATE staff s SET roles = (COALESCE(NULLIF(s.roles, ''), json_build_array(s.role)::text)::jsonb || '["admin"]'::jsonb)::text
@@ -1314,7 +1335,7 @@ export async function linkPendingAdmissions(q: Sql) {
 }
 
 /** PDF de una página con texto plano, para los laboratorios de demostración. */
-function textPdf(title: string, lines: string[]) {
+export function textPdf(title: string, lines: string[]) {
   const esc = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7e]/g, '').replace(/([\\()])/g, '\\$1')
   const body = [`BT /F1 16 Tf 56 760 Td (${esc(title)}) Tj ET`, ...lines.map((l, i) => `BT /F1 12 Tf 56 ${724 - i * 18} Td (${esc(l)}) Tj ET`)].join('\n')
   const objs = [
@@ -1350,6 +1371,11 @@ export async function resetDemo(sql: Sql) {
       attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
     await seed(q)
+    // Lo que las migraciones hacen sobre una base nueva: roles, titular del consultorio como administrador y clínicas demo
+    await migrateRoles(q)
+    await q.run(`DELETE FROM meta WHERE key = 'office_owner_admin'`)
+    await migrateOfficeOwners(q)
+    await markDemoClinics(q)
   })
 }
 

@@ -8,6 +8,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { seedDemo } from './demoData.js'
 import { attempts, completePendingPatient, createPatient, createPendingPatient, DEMO_PASSWORD, ensureDb, hit, nextFolio, resetDemo } from './db.js'
 import type { Sql } from './sql.js'
 import { type Ctx, fail, hasRoleSql, HttpError, localDate, parse, type Row } from './http.js'
@@ -1074,8 +1075,28 @@ export function createApp(opts: AppOptions) {
     if (!demoMode) fail(403, 'Esta acción sólo está disponible en modo demo.')
     const me = userOf(req)
     await resetDemo(sql)
+    // DM1: los pacientes de demostración se generan relativos a hoy
+    await seedDemo(sql)
     await audit(me, 'Restableció los datos de demo')
     res.json({ ok: true })
+  })
+
+  /**
+   * DM1: regenera los pacientes de las clínicas demo para hoy (respaldo, borrado sólo en clínicas con is_demo y datos
+   * nuevos de 30 días atrás a 60 adelante). La tarea diaria de Vercel (vercel.json, 11:00 UTC = 05:00 en Honduras)
+   * llama con `Authorization: Bearer CRON_SECRET`; la plataforma lo puede correr a mano.
+   */
+  app.get('/api/cron/demo', async (req, res) => {
+    if (!demoMode) fail(403, 'Esta acción sólo está disponible en modo demo.')
+    const secret = process.env.CRON_SECRET
+    if (!secret || req.headers.authorization !== `Bearer ${secret}`) fail(401, 'No autorizado.')
+    res.json(await seedDemo(sql))
+  })
+  app.post('/api/admin/seed-demo', auth, need('platform.manage'), async (req, res) => {
+    if (!demoMode) fail(403, 'Esta acción sólo está disponible en modo demo.')
+    const s = await seedDemo(sql)
+    await audit(userOf(req), `Regeneró los pacientes de demostración (${s.patients} pacientes, ${s.appointments} citas)`)
+    res.json(s)
   })
 
   registerSettings(app, ctx)

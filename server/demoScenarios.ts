@@ -38,8 +38,8 @@ const OFFICE_ASSISTANT = 's3-asistente'
 const dayAt = (dayOffset: number, h: number, m = 0) => { const d = new Date(); d.setDate(d.getDate() + dayOffset); d.setHours(h, m, 0, 0); return d }
 const ago = (hours: number) => { const d = new Date(Date.now() - hours * HOUR); d.setSeconds(0, 0); d.setMinutes(Math.floor(d.getMinutes() / 5) * 5); return d }
 /** Hora local sin zona, como se guarda el inicio de una cita. */
-const naive = (d: Date) => { const pad = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00` }
-const plusMin = (d: Date, min: number) => new Date(d.getTime() + min * 60_000)
+export const naive = (d: Date) => { const pad = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00` }
+export const plusMin = (d: Date, min: number) => new Date(d.getTime() + min * 60_000)
 
 const person = (id: string, firstName: string, lastName: string, birthDate: string, sex: 'F' | 'M', phone: string, extra: Partial<Patient>): Patient => ({
   id, record: '', firstName, lastName, birthDate, sex, phone, allergies: [], conditions: [], createdAt: new Date().toISOString(), ...extra,
@@ -86,14 +86,14 @@ async function insertPatients(q: Sql, clinicId: string, patients: Patient[]) {
   }
 }
 
-interface Visit {
+export interface Visit {
   id: string; clinicId: string; patientId: string; doctorId: string; at: Date; reason: string; history: string; exam: string; observations?: string
   diagnoses: Diagnosis[]; indications: string[]; items: PrescriptionItem[]; stayKind: 'observation' | 'hospital'
   vitals: { by: string; systolic: number; diastolic: number; heartRate: number; respRate: number; temperature: number; spo2: number; weightKg?: number; glucose?: number; complaint: string }
 }
 
 /** Cita atendida, preclínica y consulta firmada con ingreso, igual que al firmar en la consulta externa (todos los medicamentos se aplican en la clínica). */
-async function signVisit(q: Sql, v: Visit) {
+export async function signVisit(q: Sql, v: Visit) {
   const appt = `ap-${v.id}`
   const vit = `vt-${v.id}`
   const arrived = plusMin(v.at, -25)
@@ -113,7 +113,7 @@ async function signVisit(q: Sql, v: Visit) {
   return vit
 }
 
-async function openStay(q: Sql, v: Visit, stayId: string, phone: string, extra: { bedId?: string; companion?: [string, string, string] } = {}) {
+export async function openStay(q: Sql, v: Visit, stayId: string, phone: string, extra: { bedId?: string; companion?: [string, string, string] } = {}) {
   const [name, relation, cphone] = extra.companion ?? [null, null, null]
   await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, companion_name, companion_relation,
       companion_phone, patient_phone, status, kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?)`,
@@ -143,7 +143,7 @@ async function evolutionNote(q: Sql, o: {
  * Dosis aplicadas: todas las horas indicadas hasta `until` (las más recientes quedan por aplicar) y, de los PRN,
  * las que se indiquen. Quien aplica y la demora (5 a 15 min) imitan la hoja real.
  */
-async function giveDoses(q: Sql, clinicId: string, stayId: string, by: string, until: Date, prn: { drug: string; at: Date; note?: string }[] = []) {
+export async function giveDoses(q: Sql, clinicId: string, stayId: string, by: string, until: Date, prn: { drug: string; at: Date; note?: string }[] = []) {
   const meds = await q.query('SELECT * FROM hosp_meds WHERE hospitalization_id = ?', [stayId])
   let i = 0
   for (const m of meds) {
@@ -169,7 +169,7 @@ async function freeBed(q: Sql, clinicId: string, _specialty: string, prefer: str
 }
 
 /** Hoja firmada de demostración (un PDF de texto) que se sube como respaldo de una autorización firmada. */
-async function signedSheet(q: Sql, clinicId: string, patientId: string, stayId: string, title: string, at: Date, by: string, pdf: (title: string, lines: string[]) => Uint8Array) {
+export async function signedSheet(q: Sql, clinicId: string, patientId: string, stayId: string, title: string, at: Date, by: string, pdf: (title: string, lines: string[]) => Uint8Array) {
   const id = randomUUID()
   const file = pdf(`${title} - firmada (demostracion)`, ['Copia de demostracion: en la clinica se sube la foto o el PDF de la hoja firmada.'])
   await q.run(`INSERT INTO attachments (id, patient_id, name, mime, size, category, data, uploaded_by, uploaded_at, clinic_id, title, taken_at, hospitalization_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
