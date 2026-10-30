@@ -54,9 +54,11 @@ export function registerMe(app: Express, { sql, auth, userOf, audit }: Ctx) {
       // RE1 (ronda 5): preferencia de cualquier rol
       agendaView: z.enum(['day', 'week', 'month']).optional(),
     }), req.body)
-    // RE1: el nombre en documentos y las preferencias son de todos; lo profesional (colegiación, sello, recetas, notas) es del médico
+    // RE1: el nombre en documentos y las preferencias son del médico y de recepción (sus apartados de Mi configuración); lo
+    // profesional (colegiación, sello, recetas, notas) sólo del médico
     const clinical = [b.license, b.specialty, b.stamp, b.rxValidityDays, b.noteFormat, b.favDrugs, b.favExams].some((x) => x !== undefined)
     if (clinical && user.role !== 'doctor') fail(403, 'Sólo los médicos registran número de colegiación, sello y vigencia de recetas.')
+    if (user.role !== 'doctor' && user.role !== 'reception') fail(403, 'Tu vista no tiene datos personales ni preferencias que guardar.')
     const done: string[] = []
     if (b.license) { await sql.run('UPDATE staff SET license = ? WHERE id = ?', [b.license, user.id]); done.push('su número de colegiación') }
     if (b.docName !== undefined) { await sql.run('UPDATE staff SET doc_name = ? WHERE id = ?', [b.docName || null, user.id]); done.push('su nombre en documentos') }
