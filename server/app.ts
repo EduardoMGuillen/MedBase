@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import QRCode from 'qrcode'
 import { randomBytes, randomUUID } from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -38,6 +39,7 @@ import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminder
 import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permission } from '../src/lib/permissions.js'
 import { yearsOld } from '../src/lib/inpatient.js'
 import { normalizeDni } from '../src/lib/format.js'
+import { AUDIT_KINDS, auditKind, type AuditKind } from '../src/lib/audit.js'
 import { hasBlank, medHasBlank } from '../src/lib/orderSets.js'
 import { DAY_NAMES_PLURAL, rangesOn, scheduleFromWeek, scheduleProblems, SLOT_OPTIONS, weekday, weekOf, withinSchedule } from '../src/lib/schedule.js'
 import type { ApptStatus, Staff } from '../src/lib/types.js'
@@ -114,17 +116,25 @@ export function createApp(opts: AppOptions) {
     next()
   })
 
-  /** Registra una acción en la bitácora, ligada a la clínica de quien la hizo. */
-  const audit = async (actor: { id: string; clinicId?: string | null; role?: string }, action: string, q: Sql = sql) => {
-    // AD5: con qué rol (vista activa) se hizo la acción
-    await q.run('INSERT INTO audit (at, user_id, action, clinic_id, role) VALUES (?, ?, ?, ?, ?)', [new Date().toISOString(), actor.id, action, actor.clinicId ?? null, actor.role ?? null])
+  /**
+   * AD7: cada petición recuerda el último paciente que consultó (por su nombre o su ficha), y la bitácora lo guarda con
+   * la acción. Así cada registro sabe de qué paciente fue sin repetirlo en cada ruta.
+   */
+  const reqPatient = new AsyncLocalStorage<{ patientId?: string }>()
+  app.use('/api', (_req, _res, next) => reqPatient.run({}, next))
+  const seen = (id: unknown) => { const s = reqPatient.getStore(); if (s && id) s.patientId = String(id) }
+
+  /** Registra una acción en la bitácora, ligada a la clínica de quien la hizo, con su rol (AD5), su paciente y su tipo (AD7). */
+  const audit = async (actor: { id: string; clinicId?: string | null; role?: string }, action: string, q: Sql = sql, patientId?: string) => {
+    await q.run('INSERT INTO audit (at, user_id, action, clinic_id, role, patient_id, kind) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [new Date().toISOString(), actor.id, action, actor.clinicId ?? null, actor.role ?? null, patientId ?? reqPatient.getStore()?.patientId ?? null, auditKind(action)])
   }
   const staffRow = (id: string) => sql.one('SELECT * FROM staff WHERE id = ?', [id])
   // Todo lo que pertenece a una clínica se busca siempre junto con la clínica de quien pregunta
   const clinicStaffRow = (cid: string, id: string) => sql.one('SELECT * FROM staff WHERE id = ? AND clinic_id = ?', [id, cid])
-  const patientRow = (cid: string, id: string) => sql.one('SELECT * FROM patients WHERE id = ? AND clinic_id = ?', [id, cid])
-  const apptRow = (cid: string, id: string) => sql.one('SELECT * FROM appointments WHERE id = ? AND clinic_id = ?', [id, cid])
-  const patientName = async (id: string) => { const p = await sql.one('SELECT first_name, last_name FROM patients WHERE id = ?', [id]); return p ? `${p.first_name} ${p.last_name}` : id }
+  const patientRow = async (cid: string, id: string) => { const r = await sql.one('SELECT * FROM patients WHERE id = ? AND clinic_id = ?', [id, cid]); if (r) seen(r.id); return r }
+  const apptRow = async (cid: string, id: string) => { const r = await sql.one('SELECT * FROM appointments WHERE id = ? AND clinic_id = ?', [id, cid]); if (r) seen(r.patient_id); return r }
+  const patientName = async (id: string) => { const p = await sql.one('SELECT first_name, last_name FROM patients WHERE id = ?', [id]); if (p) seen(id); return p ? `${p.first_name} ${p.last_name}` : id }
   const settings = async (cid: string) => {
     const c = await sql.one('SELECT * FROM clinics WHERE id = ?', [cid])
     return c ? clinicSettings(c) : fail(404, 'La clínica no existe.')
@@ -208,7 +218,7 @@ export function createApp(opts: AppOptions) {
     }
     await sql.run('DELETE FROM rate_limits WHERE key = ?', [key])
     issue(res, row!)
-    await audit({ id: String(row!.id), clinicId: row!.clinic_id as string | null }, 'Inició sesión')
+    await audit({ id: String(row!.id), clinicId: row!.clinic_id as string | null, role: String(row!.role) }, 'Inició sesión')
     res.json(session(row!))
   })
 
@@ -302,6 +312,46 @@ export function createApp(opts: AppOptions) {
       WHERE s.active AND s.email LIKE '%@demo.clinara' AND (c.active IS NULL OR c.active)
       ORDER BY c.created_at NULLS FIRST, CASE s.role WHEN 'doctor' THEN 0 WHEN 'nurse' THEN 1 WHEN 'reception' THEN 2 WHEN 'admin' THEN 3 ELSE 4 END, s.name`)
     res.json({ accounts: rows.map((r) => ({ ...toStaff(r), clinicName: r.clinic_name ?? undefined })), password: DEMO_PASSWORD })
+  })
+
+  // ---------- Bitácora (AD7) ----------
+  /**
+   * Cada persona ve su propia actividad; administración ve la de todos, con filtros por persona, rol, tipo de acción,
+   * paciente y fechas. Nadie la edita ni la borra (la tabla no lo permite).
+   */
+  const auditFilters = z.object({
+    userId: z.string().optional(), role: z.string().optional(), kind: z.string().optional(), patientId: z.string().optional(),
+    q: z.string().trim().max(80).optional(),
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  })
+  async function auditRows(cid: string, f: z.infer<typeof auditFilters>) {
+    const where = ['a.clinic_id = ?']
+    const args: unknown[] = [cid]
+    if (f.userId) { where.push('a.user_id = ?'); args.push(f.userId) }
+    if (f.role) { where.push('a.role = ?'); args.push(f.role) }
+    if (f.patientId) {
+      // Las filas de antes de la v38 no tienen paciente: se buscan también por su nombre en el texto
+      const p = await sql.one('SELECT first_name, last_name FROM patients WHERE id = ? AND clinic_id = ?', [f.patientId, cid])
+      where.push('(a.patient_id = ? OR (a.patient_id IS NULL AND a.action ILIKE ?))'); args.push(f.patientId, p ? `%${p.first_name} ${p.last_name}%` : '-')
+    }
+    if (f.q) { where.push('a.action ILIKE ?'); args.push(`%${f.q.replace(/[%_]/g, '')}%`) }
+    // Las fechas se comparan en hora de Honduras (UTC-6)
+    if (f.from) { where.push('a.at >= ?'); args.push(new Date(`${f.from}T00:00:00-06:00`).toISOString()) }
+    if (f.to) { where.push('a.at < ?'); const d = new Date(`${f.to}T00:00:00-06:00`); d.setUTCDate(d.getUTCDate() + 1); args.push(d.toISOString()) }
+    const rows = await sql.query(`SELECT a.*, p.first_name, p.last_name FROM audit a LEFT JOIN patients p ON p.id = a.patient_id
+      WHERE ${where.join(' AND ')} ORDER BY a.id DESC LIMIT 3000`, args)
+    const list = rows.map((r) => ({ ...toAudit(r), role: r.role ? String(r.role) : undefined, kind: (r.kind ? String(r.kind) : auditKind(String(r.action))) as AuditKind,
+      patientId: r.patient_id ? String(r.patient_id) : undefined, patientName: r.first_name ? `${r.first_name} ${r.last_name}` : undefined }))
+    return (f.kind && f.kind in AUDIT_KINDS ? list.filter((x) => x.kind === f.kind) : list).slice(0, 2000)
+  }
+
+  app.get('/api/audit/mine', auth, async (req, res) => {
+    const user = userOf(req)
+    res.json(await auditRows(clinicOf(req), { ...parse(auditFilters, req.query), userId: user.id }))
+  })
+
+  app.get('/api/audit', auth, need('audit.view'), async (req, res) => {
+    res.json(await auditRows(clinicOf(req), parse(auditFilters, req.query)))
   })
 
   // ---------- Datos iniciales según el rol ----------

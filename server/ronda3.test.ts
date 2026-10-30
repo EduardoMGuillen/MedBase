@@ -284,3 +284,24 @@ describe('AD4 vademécum', () => {
     assert.deepEqual(r.body.skipped.map((x: any) => x.row), [3, 4, 5, 6])
   })
 })
+
+describe('AD7 bitácora propia y de todos', () => {
+  test('cada quien ve la suya (con rol y paciente); administración ve la de todos y la filtra; nadie la cambia', async () => {
+    const { nurse, patientId } = await walkIn('Bitácora')
+    const mine = (await nurse.get('/api/audit/mine')).body
+    const nurseId = (await nurse.get('/api/auth/me')).body.user.id
+    assert.ok(mine.length > 0 && mine.every((r: any) => r.userId === nurseId))
+    const reg = mine.find((r: any) => r.action.startsWith('Registró al paciente Bitácora'))
+    assert.equal(reg.patientId, patientId)
+    assert.equal(reg.role, 'nurse')
+    assert.equal(reg.kind, 'patients')
+    assert.equal((await nurse.get('/api/audit')).status, 403)
+    const admin = await as('admin@demo.clinara')
+    const byPatient = (await admin.get(`/api/audit?patientId=${patientId}`)).body
+    assert.ok(byPatient.length >= 2 && byPatient.every((r: any) => r.patientId === patientId || r.action.includes('Bitácora')))
+    const byPerson = (await admin.get(`/api/audit?userId=${nurseId}&kind=agenda`)).body
+    assert.ok(byPerson.length > 0 && byPerson.every((r: any) => r.userId === nurseId && r.kind === 'agenda'))
+    await assert.rejects(sql.run('UPDATE audit SET action = ? WHERE id = (SELECT MAX(id) FROM audit)', ['cambiado']))
+    await assert.rejects(sql.run('DELETE FROM audit WHERE id = (SELECT MAX(id) FROM audit)'))
+  })
+})

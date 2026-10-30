@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '37'
+const SCHEMA_VERSION = '38'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -655,6 +655,14 @@ ALTER TABLE beds ALTER COLUMN specialty DROP NOT NULL;
 ALTER TABLE clinic_drugs
   ADD COLUMN IF NOT EXISTS usual_dose TEXT,
   ADD COLUMN IF NOT EXISTS usual_use TEXT;
+
+-- v38: ronda 3 (AD7). Bitácora: el paciente de cada acción y su tipo, para filtrarla. Las filas anteriores no se tocan
+-- (la bitácora no admite cambios): su tipo se deduce del texto al consultarla.
+ALTER TABLE audit
+  ADD COLUMN IF NOT EXISTS patient_id TEXT,
+  ADD COLUMN IF NOT EXISTS kind TEXT;
+CREATE INDEX IF NOT EXISTS audit_user ON audit (clinic_id, user_id, id);
+CREATE INDEX IF NOT EXISTS audit_patient ON audit (clinic_id, patient_id);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

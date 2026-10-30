@@ -3,13 +3,13 @@ import { Check, Minus, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead } from '../components/ui'
 import { CLINIC_PERMISSIONS, features, PERMISSIONS, permissionsFor, ROLE_LABEL, ROLE_SUMMARY, ROLES_BY_KIND } from '../lib/permissions'
-import { date, time } from '../lib/format'
+import { AuditLog } from './Activity'
 import type { Role, Staff } from '../lib/types'
 
 type Tab = 'people' | 'roles' | 'audit'
 
 export default function StaffPage() {
-  const { staff, updateStaff, resetStaffPassword, audit, staffById, user, settings } = useStore()
+  const { staff, updateStaff, resetStaffPassword, user, settings } = useStore()
   // Un consultorio sólo tiene a su médico titular y sus asistentes
   const office = features(settings).office
   const ROLES = ROLES_BY_KIND[settings.kind ?? 'clinic']
@@ -18,9 +18,7 @@ export default function StaffPage() {
   const [tab, setTab] = useState<Tab>('people')
   const [creating, setCreating] = useState(false)
   const [secret, setSecret] = useState<{ name: string; email: string; password: string } | null>(null)
-  const [q, setQ] = useState('')
   const [rolesOf, setRolesOf] = useState<Staff | null>(null)
-  const log = audit.filter((e) => !q || e.action.toLowerCase().includes(q.toLowerCase()) || staffById(e.userId)?.name.toLowerCase().includes(q.toLowerCase()))
 
   return (
     <div className="page">
@@ -87,18 +85,7 @@ export default function StaffPage() {
         </section>
       )}
 
-      {tab === 'audit' && (<>
-        <input className="input" style={{ maxWidth: 420 }} placeholder="Filtrar por persona o acción" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filtrar bitácora" />
-        <section className="panel table-wrap">
-          <table className="table table--sticky">
-            <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th></tr></thead>
-            <tbody>{log.map((e) => (
-              <tr key={e.id}><td className="num" style={{ whiteSpace: 'nowrap' }}>{date(e.at)} {time(e.at)}</td><td>{e.userId === 'online' ? 'Reserva en línea' : staffById(e.userId)?.name ?? 'Administración de Clinara'}</td><td>{e.action}</td></tr>
-            ))}</tbody>
-          </table>
-          {!log.length && <div className="empty">{q ? 'Nada coincide con el filtro.' : 'La bitácora se llena a medida que el equipo usa el sistema.'}</div>}
-        </section>
-      </>)}
+      {tab === 'audit' && <AuditLog />}
 
       {rolesOf && <RolesModal s={rolesOf} roles={ROLES} self={rolesOf.id === user?.id} onClose={() => setRolesOf(null)} />}
       {creating && <NewStaff roles={ROLES.filter((r) => !office || r === 'assistant')} onClose={() => setCreating(false)} onCreated={(s, password) => { setCreating(false); setSecret({ name: s.name, email: s.email, password }) }} />}

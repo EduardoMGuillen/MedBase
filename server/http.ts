@@ -43,7 +43,8 @@ export interface Ctx {
   userOf: (req: Request) => Staff
   /** Clínica de quien hace la petición; falla con 403 para la administración de la plataforma. */
   clinicOf: (req: Request) => string
-  audit: (actor: { id: string; clinicId?: string | null; role?: string }, action: string, q?: Sql) => Promise<void>
+  /** Bitácora: con el rol de quien la hizo y, si no se indica, el último paciente que consultó la petición (AD7). */
+  audit: (actor: { id: string; clinicId?: string | null; role?: string }, action: string, q?: Sql, patientId?: string) => Promise<void>
   patientName: (id: string) => Promise<string>
   staffRow: (id: string) => Promise<Row | undefined>
   clinicStaffRow: (clinicId: string, id: string) => Promise<Row | undefined>

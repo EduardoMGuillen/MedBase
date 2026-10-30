@@ -296,3 +296,9 @@ tr.clickable { cursor: pointer; }
 }
 
 .bed__spec { justify-self: start; }
+
+/* AD7: filtros de la bitácora */
+.audit-filters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 12px; align-items: end; }
+.audit-filters__q { grid-column: span 2; }
+.audit-filters__patient { grid-column: span 3; }
+@media (max-width: 1080px) { .audit-filters { grid-template-columns: 1fr 1fr; } .audit-filters__q, .audit-filters__patient { grid-column: 1 / -1; } }
