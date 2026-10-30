@@ -137,13 +137,13 @@ export default function FullRecord() {
 
         {vitalPages.map(([a, b], i) => {
           const takes = file.vitals.filter((v) => { const t = new Date(v.takenAt).getTime(); return t >= a && t < b }).sort((x, y) => x.takenAt.localeCompare(y.takenAt))
-          // La tabla se parte en bloques de 14 tomas para que quepa en la hoja carta
-          const blocks = Array.from({ length: Math.max(1, Math.ceil(takes.length / 14)) }, (_, k) => takes.slice(k * 14, k * 14 + 14))
+          // OB2 (ronda 5): la misma tabla que en pantalla (una fila por toma, la más reciente arriba, pendientes incluidas)
+          const pending = missedTakes(file, now).filter((x) => x.getTime() >= a && x.getTime() < b)
           return page(`fr-signos-${i}`, `Hoja de signos vitales · ${i + 1} de ${vitalPages.length}`, <>
             <h2 className="fr-h">Hoja de signos vitales <small className="muted" style={{ fontWeight: 400, fontSize: 13 }}>{dm(new Date(a).toISOString()).slice(0, 10)} al {dm(new Date(b - 1).toISOString()).slice(0, 10)} · toma cada {vitalsEvery(file)} h</small></h2>
             <ThermalCurve print vitals={takes} t0={a} t1={b} every={vitalsEvery(file)} anchor={vitalsAnchor(file)} stayStart={stayStart} band={band}
-              missed={missedTakes(file, now).filter((x) => x.getTime() >= a && x.getTime() < b)} antipyretics={antipyreticDoses(file).filter((x) => { const t = new Date(x.at).getTime(); return t >= a && t < b })} />
-            {takes.length ? blocks.map((list, k) => <VitalsTable key={k} print vitals={list} ageYears={p.birthDate ? yearsOld(p.birthDate) : undefined} band={band} who={(id) => shortStaff(staffById(id)?.name)} />)
+              antipyretics={antipyreticDoses(file).filter((x) => { const t = new Date(x.at).getTime(); return t >= a && t < b })} />
+            {takes.length || pending.length ? <VitalsTable print vitals={takes} pending={pending} ageYears={p.birthDate ? yearsOld(p.birthDate) : undefined} band={band} who={(id) => shortStaff(staffById(id)?.name)} />
               : <p className="muted">Sin tomas en estos días.</p>}
           </>, true)
         })}

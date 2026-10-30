@@ -11,7 +11,7 @@ export const enfermeria: TourStep[] = [
   { route: stay(), target: 'alertas', perm: 'inpatient.view', title: 'Alertas del expediente', body: 'Una barra corta: lo crítico en rojo, lo pendiente en ámbar. Se resuelve con su botón; no se borra.' },
   { route: stay('notas'), target: 'checklist', perm: 'orders.review', title: 'Órdenes del médico', body: 'Revisa y marca cada orden nueva. Mientras falte alguna, el inicio y el menú la siguen avisando.' },
   { route: stay('medicamentos'), target: 'hoja-medicamentos', perm: 'inpatient.care', title: 'Hoja de medicamentos', body: 'Toca una hora para registrar la dosis. Si no se aplicó (ayuno, la rechazó), márcala «No aplicada» con el motivo y deja de alertar.' },
-  { route: stay('signos'), target: 'signos-registrar', perm: 'vitals.record', title: 'Signos vitales', body: 'Registra la toma con este botón; la curva térmica y las gráficas se actualizan solas. Las tomas que faltan salen en las alertas.' },
+  { route: stay('signos'), target: 'signos-registrar', perm: 'vitals.record', title: 'Signos vitales', body: 'Registra la toma con este botón; la curva térmica y la tabla de tomas se actualizan solas. Las tomas que faltan salen en las alertas y en la tabla.' },
   { route: stay('enfermeria'), target: 'nota-enfermeria', perm: 'inpatient.care', feature: 'hospital', title: 'Notas de enfermería', body: 'Escribe lo que pasó en tu turno. Se guarda como borrador mientras escribes y, firmada, sólo se le agregan adendas.' },
   HELP,
 ]

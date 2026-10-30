@@ -744,9 +744,7 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .vs-legend__band { background: var(--vs-band); border: 1px solid var(--line); }
 .vs-legend__fever { width: 0 !important; height: 0 !important; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 10px solid var(--red-ink); }
 .vs-legend__hypo { width: 10px !important; background: var(--vs-hypo); }
-.vs-legend__missed { border-left: 2px dashed var(--amber-ink); width: 2px !important; height: 12px !important; }
 .vs-legend__anti { width: 12px !important; height: 12px !important; border: 1px solid var(--ink); border-radius: 3px; font-size: 9px; font-weight: 700; display: grid !important; place-items: center; color: var(--ink); }
-.vs-legend__pulse { border-top: 2px dashed #0f8a6e; height: 0 !important; }
 
 .vs-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
 .vs-card { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 12px 14px 8px; display: grid; gap: 2px; color: var(--ink); }
@@ -763,21 +761,27 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .vs-card--error { border-color: var(--red-ink); background: #fff6f5; color: var(--red-ink); }
 .vs-card--error .vs-card__value b { color: var(--red-ink); }
 
-.vs-table__scroll { overflow-x: auto; border-top: 1px solid var(--line-soft); }
-.vs-table { border-collapse: separate; border-spacing: 0; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 100%; }
-.vs-table th, .vs-table td { padding: 7px 10px; border-bottom: 1px solid var(--line-soft); text-align: center; white-space: nowrap; }
-.vs-table thead th { vertical-align: top; position: relative; font-weight: 500; color: var(--muted); font-size: 11.5px; }
-.vs-table thead th span, .vs-table thead th b, .vs-table thead th small { display: block; }
-.vs-table thead th b { color: var(--petrol); font-size: 13px; }
-.vs-table thead th small { max-width: 92px; overflow: hidden; text-overflow: ellipsis; margin: 0 auto; }
-/* La primera columna queda fija al desplazar */
-.vs-table th[scope='row'], .vs-table thead th:first-child { position: sticky; left: 0; background: var(--paper); text-align: left; z-index: 1; font-weight: 650; color: var(--petrol);
-  box-shadow: 1px 0 0 var(--line-soft); font-size: 12.5px; }
-.vs-table .is-void { text-decoration: line-through; color: var(--faint); background: repeating-linear-gradient(-45deg, transparent 0 6px, var(--line-soft) 6px 7px); }
-.vs-table .is-void .vs-val { color: var(--faint) !important; background: none !important; }
-.vs-voided { color: var(--red-ink) !important; text-decoration: none; font-weight: 650; }
-.vs-void { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; opacity: .55; }
+/* OB2 (ronda 5): tabla de tomas, una fila por toma. Encabezado fijo y primera columna fija al desplazar de lado */
+.vs-log__scroll { overflow: auto; max-height: 560px; border-top: 1px solid var(--line-soft); overscroll-behavior: contain; }
+.vs-log { border-collapse: separate; border-spacing: 0; font-size: 13.5px; font-variant-numeric: tabular-nums; min-width: 100%; }
+.vs-log th, .vs-log td { padding: 8px 12px; border-bottom: 1px solid var(--line-soft); text-align: center; white-space: nowrap; }
+.vs-log thead th { position: sticky; top: 0; z-index: 2; background: var(--paper); font-size: 12px; font-weight: 650; color: var(--petrol); box-shadow: 0 1px 0 var(--line); }
+.vs-log thead th small { display: block; font-weight: 500; color: var(--faint); font-size: 11px; }
+.vs-log tbody th { position: sticky; left: 0; z-index: 1; background: var(--paper); text-align: left; font-weight: 500; color: var(--muted); box-shadow: 1px 0 0 var(--line-soft); padding-right: 30px; }
+.vs-log tbody th b { color: var(--petrol); font-weight: 650; margin-left: 4px; }
+.vs-log thead th:first-child { left: 0; z-index: 3; text-align: left; }
+.vs-log__who { color: var(--muted); }
+.vs-log__notes { text-align: left !important; white-space: normal !important; min-width: 160px; color: var(--muted); }
+.vs-log__pending td { text-align: left; background: #fffbf3; }
+.vs-log__pending th { background: #fffbf3 !important; }
+.vs-log__record { margin-left: 10px; }
+.vs-log .is-void th, .vs-log .is-void td { text-decoration: line-through; color: var(--faint); background: repeating-linear-gradient(-45deg, var(--paper) 0 6px, var(--line-soft) 6px 7px); }
+.vs-log .is-void .vs-val { color: var(--faint) !important; background: none !important; }
+.vs-log .is-void .vs-voided { text-decoration: none; }
+.vs-voided { color: var(--red-ink) !important; font-weight: 650; }
+.vs-void { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); width: 22px; height: 22px; opacity: .55; }
 .vs-void:hover { opacity: 1; }
+.vs-val__dir { margin-left: 2px; font-weight: 800; }
 .vs-val { padding: 1px 6px; border-radius: 6px; }
 .vs-val--warn { background: var(--amber); color: var(--amber-ink); font-weight: 650; }
 .vs-val--error, .vs-val--fever { background: var(--red); color: var(--red-ink); font-weight: 700; }
@@ -785,16 +789,17 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 
 /* Impresión de la hoja en el expediente completo: en blanco y negro, con letras F, H y P además del color */
 .vs-curve--print .vs-legend { color: #000; }
-.vs-table--print { font-size: 10px; }
-.vs-table--print th, .vs-table--print td { padding: 3px 4px; }
-.vs-table--print .vs-val--fever, .vs-table--print .vs-val--hypo, .vs-table--print .vs-val--warn, .vs-table--print .vs-val--error { background: none; color: #000; text-decoration: underline; }
+.vs-log--print { font-size: 10px; }
+.vs-log--print th, .vs-log--print td { padding: 3px 5px; }
+.vs-log__scroll--print { max-height: none; overflow: visible; }
+.vs-log--print .vs-val--fever, .vs-log--print .vs-val--hypo, .vs-log--print .vs-val--warn, .vs-log--print .vs-val--error { background: none; color: #000; text-decoration: underline; }
+.vs-log--print thead th { position: static; }
 @media print {
   .vs-legend__band { background: #e6e6e6; }
   .vs-legend__fever { border-bottom-color: #000; }
   .vs-legend__hypo { background: #fff; border: 1.5px solid #000; }
-  .vs-legend__missed { border-left-color: #000; }
   .vs-legend__anti { border-color: #000; color: #000; }
-  .vs-table__scroll { overflow: visible; }
+  .vs-log__scroll { overflow: visible; max-height: none; }
 }
 @media (max-width: 720px) {
   .vs-cards { grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -865,16 +870,6 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .vs-last--cold { border-color: #b9cdf3; background: #f6f9ff; }
 .vs-last--cold .vs-last__value b { color: var(--vs-hypo); }
 .vs-trend__body { padding-top: 4px; }
-.vs-mini { display: block; margin-top: 6px; font-family: var(--text); }
-.vs-mini circle { cursor: default; }
-.vs-legend__out { width: 9px !important; height: 9px !important; border-radius: 50%; background: var(--vs-warn); }
-.vs-full details > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; cursor: pointer; }
-.vs-full details > summary::-webkit-details-marker { display: none; }
-.vs-full details > summary span { display: grid; gap: 2px; }
-.vs-full details > summary b { font-family: var(--display); font-size: 17px; color: var(--petrol); }
-.vs-full details > summary small { font-size: 13px; }
-.vs-full details > summary svg { color: var(--muted); transition: transform .15s; flex: none; }
-.vs-full details[open] > summary svg { transform: rotate(180deg); }
 .vs-fab { position: fixed; right: 24px; bottom: 24px; z-index: 30; box-shadow: 0 8px 24px rgba(14, 34, 51, .22); border-radius: 999px; padding: 12px 20px; }
 .vs { padding-bottom: 72px; }
 @media (max-width: 720px) {
@@ -883,9 +878,6 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
   .vs-fab { right: 16px; bottom: 16px; }
 }
 @media print { .vs-fab { display: none; } }
-.vs-mini svg { display: block; }
-.vs-mini__label { position: sticky; left: 0; z-index: 1; display: block; width: max-content; height: 18px; margin-bottom: -18px; padding: 0 8px 0 4px; background: var(--paper); font-size: 12px; color: var(--muted); line-height: 16px; }
-.vs-mini__label b { color: var(--petrol); font-weight: 650; }
 
 /* MC5: la nota de egreso se escribe en la misma hoja (mismo orden y secciones) que la epicrisis */
 .epi--write { display: grid; }

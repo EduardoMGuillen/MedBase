@@ -24,8 +24,8 @@ export const PANTALLAS: Record<'consulta' | 'expediente' | 'signos' | 'cobro', {
     title: 'Signos vitales',
     steps: [
       { target: 'signos-ultimo', title: 'Último registro', body: 'El valor más reciente de cada signo, con la hora y quién lo tomó. Sólo lleva color lo que está fuera de rango.' },
-      { target: 'signos-curva', title: 'Curva y tendencias', body: 'La curva térmica y las gráficas de los demás signos comparten la escala de tiempo. Toca un punto para ver el detalle.' },
-      { target: 'signos-tabla', title: 'Tabla completa', body: 'La hoja clásica, plegada. Una toma equivocada se anula con motivo; no se borra.' },
+      { target: 'signos-curva', title: 'Curva térmica', body: 'La temperatura de cada toma, con la banda normal. Toca un punto para ver el valor, la hora y quién la tomó.' },
+      { target: 'signos-tabla', title: 'Tomas', body: 'Todos los signos, una fila por toma, la más reciente arriba. Lo fuera de rango lleva ↑ o ↓; las pendientes se registran desde aquí.' },
       { target: 'signos-registrar', title: 'Registrar signos', body: 'Siempre a mano, abajo a la derecha.' },
     ],
   },
