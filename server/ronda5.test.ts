@@ -89,3 +89,19 @@ describe('MC6 eliminar una autorización sin firmar', () => {
     assert.equal((await doc.del(`/api/authorizations/${paper}`)).status, 409)
   })
 })
+
+describe('RE1 Mi configuración de recepción', () => {
+  test('Sofía Mejía guarda su nombre en documentos y su preferencia de agenda (queda en la bitácora); lo clínico y la configuración de la clínica le siguen cerrados', async () => {
+    const rec = await as('smejia@demo.clinara')
+    assert.equal((await rec.patch('/api/me', { agendaView: 'week', docName: 'Sofía Mejía Ruiz' })).status, 200)
+    const me = (await rec.get('/api/auth/me')).body.user
+    assert.equal(me.prefs.agendaView, 'week')
+    assert.equal(me.docName, 'Sofía Mejía Ruiz')
+    const log = (await rec.get('/api/audit/mine')).body
+    assert.ok((log.rows ?? log).some((e: any) => /vista de la agenda/.test(e.action)))
+    assert.equal((await rec.patch('/api/me', { license: 'CMH-1' })).status, 403)
+    assert.equal((await rec.patch('/api/me', { noteFormat: 'soap' })).status, 403)
+    assert.equal((await rec.put('/api/me/signature', { signature: 'data:image/png;base64,AAAA', password: DEMO_PASSWORD })).status, 403)
+    assert.equal((await rec.put('/api/settings', { name: 'Otra' })).status, 403)
+  })
+})

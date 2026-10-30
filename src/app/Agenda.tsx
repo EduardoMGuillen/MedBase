@@ -40,7 +40,8 @@ export default function Agenda() {
   const { staff, patients, user, can, patient, fetchAppointments, notify } = store
   const navigate = useNavigate()
   const phone = useIsPhone()
-  const [view, setView] = useState<View>('day')
+  // RE1 (ronda 5): cada quien elige en Mi configuración con qué vista se abre la agenda
+  const [view, setView] = useState<View>(() => user?.prefs?.agendaView ?? 'day')
   const [cursor, setCursor] = useState(() => new Date())
   const [doctorFilter, setDoctorFilter] = useState<string>(() => (user?.role === 'doctor' ? user.id : 'all'))
   const [loaded, setLoaded] = useState<{ key: string; list: Appointment[] } | null>(null)

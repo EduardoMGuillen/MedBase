@@ -10,41 +10,47 @@ import { PasswordPanel, TwoFactorPanel } from './Account'
 import { PERMISSIONS, permissionsFor, ROLE_LABEL, VIEW_LABEL, viewsOf } from '../lib/permissions'
 import { drugKey, useVademecum } from '../lib/vademecum'
 import { fromClinicDrug } from '../lib/drugProvider'
-import type { ClinicDrug } from '../lib/types'
+import type { ClinicDrug, Role } from '../lib/types'
 import { normalize } from '../lib/patients'
 import { api } from '../lib/api'
 import { MyActivity } from './Activity'
 import { MyExams } from './MyExams'
 
-type Section = 'pro' | 'firma' | 'horario' | 'vademecum' | 'sets' | 'examenes' | 'prefs' | 'seguridad' | 'actividad'
+type Section = 'pro' | 'datos' | 'firma' | 'horario' | 'vademecum' | 'sets' | 'examenes' | 'prefs' | 'seguridad' | 'actividad'
 
-const SECTIONS: { key: Section; label: string; icon: typeof Pill; doctor?: boolean }[] = [
-  { key: 'pro', label: 'Datos profesionales', icon: UserRound, doctor: true },
-  { key: 'firma', label: 'Firma electrónica', icon: PenLine, doctor: true },
-  { key: 'horario', label: 'Mi horario', icon: CalendarClock, doctor: true },
-  { key: 'vademecum', label: 'Mi vademécum', icon: Pill, doctor: true },
-  { key: 'sets', label: 'Mis sets de órdenes', icon: ListChecks, doctor: true },
-  { key: 'examenes', label: 'Mis exámenes frecuentes', icon: FlaskConical, doctor: true },
-  { key: 'prefs', label: 'Preferencias', icon: Settings2, doctor: true },
+/** Apartados y quién los ve (sin `roles`, todos). */
+const SECTIONS: { key: Section; label: string; icon: typeof Pill; roles?: Role[] }[] = [
+  { key: 'pro', label: 'Datos profesionales', icon: UserRound, roles: ['doctor'] },
+  // RE1 (ronda 5): recepción tiene sus datos personales (sin especialidad, colegiación ni sello)
+  { key: 'datos', label: 'Datos personales', icon: UserRound, roles: ['reception'] },
+  { key: 'firma', label: 'Firma electrónica', icon: PenLine, roles: ['doctor'] },
+  { key: 'horario', label: 'Mi horario', icon: CalendarClock, roles: ['doctor'] },
+  { key: 'vademecum', label: 'Mi vademécum', icon: Pill, roles: ['doctor'] },
+  { key: 'sets', label: 'Mis sets de órdenes', icon: ListChecks, roles: ['doctor'] },
+  { key: 'examenes', label: 'Mis exámenes frecuentes', icon: FlaskConical, roles: ['doctor'] },
+  { key: 'prefs', label: 'Preferencias', icon: Settings2, roles: ['doctor', 'reception'] },
   { key: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
   { key: 'actividad', label: 'Mi actividad', icon: History },
 ]
 
 /**
  * MC6: "Mi configuración". El médico prepara aquí lo que usa al atender (firma, horario, vademécum, sets, exámenes,
- * preferencias). Recepción, enfermería y administración ven sólo Seguridad y Mi actividad. Cada apartado guarda solo.
+ * preferencias). RE1 (ronda 5): recepción ve sus datos personales, sus preferencias, Seguridad y Mi actividad.
+ * Enfermería y administración ven sólo Seguridad y Mi actividad. Cada apartado guarda solo.
  */
 export default function MyConfig() {
   const { user } = useStore()
   const [params, setParams] = useSearchParams()
   if (!user) return null
   const doctor = user.role === 'doctor'
-  const sections = SECTIONS.filter((s) => !s.doctor || doctor)
+  const mine = doctor || user.role === 'reception'
+  const sections = SECTIONS.filter((s) => !s.roles || s.roles.includes(user.role))
   const current = sections.find((s) => s.key === params.get('seccion'))?.key ?? sections[0].key
   const go = (k: Section) => setParams({ seccion: k }, { replace: true })
   return (
     <div className="page">
-      <PageHead tour="mi-config" title={doctor ? 'Mi configuración' : 'Mi cuenta'} sub={doctor ? 'Lo que preparas una vez y usas al atender: tu firma, tu horario, tus medicamentos y tus preferencias.' : 'Tu contraseña, la verificación en dos pasos y lo que has hecho en el sistema.'}
+      <PageHead tour="mi-config" title={mine ? 'Mi configuración' : 'Mi cuenta'} sub={doctor ? 'Lo que preparas una vez y usas al atender: tu firma, tu horario, tus medicamentos y tus preferencias.'
+        : mine ? 'Tu nombre, cómo se abre tu agenda, tu contraseña y lo que has hecho en el sistema.' : 'Tu contraseña, la verificación en dos pasos y lo que has hecho en el sistema.'}
         actions={<button className="btn btn--ghost" onClick={() => window.dispatchEvent(new Event('start-tour'))}><Compass size={16} />Ver el recorrido</button>} />
       <div className="chart-head" style={{ gridTemplateColumns: 'auto 1fr' }}>
         <Avatar name={user.name} color={user.color} />
@@ -64,6 +70,7 @@ export default function MyConfig() {
         </nav>
         <div className="myconf__body">
           {current === 'pro' && <ProfessionalPanel />}
+          {current === 'datos' && <PersonalPanel />}
           {current === 'firma' && <SignaturePanel />}
           {current === 'horario' && <SchedulePanel />}
           {current === 'vademecum' && <VademecumPanel />}
@@ -110,6 +117,27 @@ function ProfessionalPanel() {
             {stamp && <button className="btn btn--ghost btn--sm" onClick={async () => { if (await saveMyProfile({ stamp: '' }, 'Sello quitado')) setStamp(null) }}>Quitar</button>}
           </div>
         </div>
+      </div>
+    </section>
+  )
+}
+
+/** RE1 (ronda 5): datos personales de quien no es médico: el nombre como aparece en recibos y documentos. */
+function PersonalPanel() {
+  const { user, saveMyProfile } = useStore()
+  const [docName, setDocName] = useState(user?.docName ?? user?.name ?? '')
+  if (!user) return null
+  const dirty = docName.trim() !== (user.docName ?? user.name)
+  return (
+    <section className="panel">
+      <div className="panel__head"><div><h2>Datos personales</h2><p>Así apareces en los recibos y en los documentos que generas.</p></div></div>
+      <div className="panel__body" style={{ display: 'grid', gap: 14 }}>
+        <div className="form-grid">
+          <label className="field span-2"><span>Nombre como aparece en documentos</span><input className="input" value={docName} onChange={(e) => setDocName(e.target.value)} /></label>
+          <label className="field span-2"><span>Correo para entrar</span><input className="input" value={user.email} disabled /></label>
+        </div>
+        <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={!dirty || docName.trim().length < 3}
+          onClick={() => saveMyProfile({ docName: docName.trim() === user.name ? '' : docName.trim() }, 'Datos personales guardados')}>Guardar datos</button>
       </div>
     </section>
   )
@@ -238,17 +266,30 @@ function SetsPanel() {
   )
 }
 
+const AGENDA_VIEWS = [['day', 'Día'], ['week', 'Semana'], ['month', 'Mes']] as const
+
 function PreferencesPanel() {
   const { user, saveMyProfile } = useStore()
   const [days, setDays] = useState(String(user?.prefs?.rxValidityDays ?? 30))
   if (!user) return null
+  const doctor = user.role === 'doctor'
   const format = user.prefs?.noteFormat ?? 'dx'
+  const agenda = user.prefs?.agendaView ?? 'day'
   const n = Math.round(Number(days))
   const valid = n >= 1 && n <= 365
   return (
     <section className="panel">
-      <div className="panel__head"><div><h2>Preferencias</h2><p>Cómo empiezan tus notas y tus recetas. Las puedes cambiar en cada nota o receta.</p></div></div>
+      <div className="panel__head"><div><h2>Preferencias</h2><p>{doctor ? 'Cómo empiezan tu agenda, tus notas y tus recetas. Las puedes cambiar en cada nota o receta.' : 'Cómo se abre tu agenda. La puedes cambiar en cualquier momento.'}</p></div></div>
       <div className="panel__body" style={{ display: 'grid', gap: 18 }}>
+        {/* RE1 (ronda 5): con qué vista se abre la agenda */}
+        <div className="field"><span>La agenda se abre en</span>
+          <div className="segmented" role="radiogroup" aria-label="Vista de la agenda al abrirla">
+            {AGENDA_VIEWS.map(([v, label]) => (
+              <button key={v} role="radio" aria-checked={agenda === v} onClick={() => agenda !== v && saveMyProfile({ agendaView: v }, `La agenda se abrirá en la vista de ${label.toLowerCase()}`)}>{label}</button>
+            ))}
+          </div>
+        </div>
+        {doctor && (<>
         <div className="field"><span>Formato de nota de evolución por defecto</span>
           <div className="segmented" role="radiogroup" aria-label="Formato de nota por defecto">
             <button role="radio" aria-checked={format === 'dx'} onClick={() => format !== 'dx' && saveMyProfile({ noteFormat: 'dx' }, 'Formato Estándar por defecto')}>Estándar</button>
@@ -261,6 +302,7 @@ function PreferencesPanel() {
             <input className="input num" style={{ width: 120 }} type="number" min={1} max={365} value={days} onChange={(e) => setDays(e.target.value)} /></label>
           <button className="btn btn--primary" disabled={!valid || n === (user.prefs?.rxValidityDays ?? 30)}>Guardar</button>
         </form>
+        </>)}
       </div>
     </section>
   )

@@ -9,11 +9,12 @@ import { SearchPalette } from '../components/Search'
 import { Tour, TourResume, type TourEnd } from '../components/Tour'
 import { useStore } from '../lib/store'
 import { features, ROLE_LABEL, VIEW_LABEL, viewsOf, type Permission } from '../lib/permissions'
+import type { Role } from '../lib/types'
 import { cap, localISODate, sameDay } from '../lib/format'
 import { miniTourFor, tourFor, tourKey, type TourCtx, type TourStep } from '../lib/tours'
 import { stayPath } from '../lib/inpatient'
 
-const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean; group?: string; doctor?: boolean }[] = [
+const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean; group?: string; roles?: Role[] }[] = [
   { to: '/app', label: 'Inicio', icon: House, end: true, perm: undefined },
   { to: '/app/agenda', label: 'Agenda', icon: CalendarDays, perm: 'agenda.view' },
   // MC7: el médico ve Recetas y Cobrar debajo de Agenda. Recetas sin consulta: renovar un tratamiento sin abrir una consulta completa
@@ -28,8 +29,9 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
   { to: '/app/reportes', label: 'Reportes', icon: BarChart3, perm: 'reports.view', group: 'Administración' },
   { to: '/app/personal', label: 'Personal y roles', icon: UserCog, perm: 'staff.manage', group: 'Administración' },
   { to: '/app/configuracion', label: 'Configuración', icon: SettingsIcon, perm: 'settings.manage', group: 'Administración' },
-  // MC6: la configuración propia del médico (firma, horario, vademécum, sets, preferencias)
-  { to: '/app/mi-configuracion', label: 'Configuración', icon: SlidersHorizontal, perm: 'consult.write', doctor: true },
+  // MC6: la configuración propia del médico (firma, horario, vademécum, sets, preferencias). RE1 (ronda 5): también
+  // recepción. Se llama «Mi configuración» para no confundirla con la Configuración de la clínica (administración).
+  { to: '/app/mi-configuracion', label: 'Mi configuración', icon: SlidersHorizontal, roles: ['doctor', 'reception'] },
 ]
 
 export default function AppShell() {
@@ -109,7 +111,7 @@ export default function AppShell() {
       // Enfermería entra al paciente: no usa la agenda. Médico y enfermería cobran, pero desde un acceso más discreto.
       if (user.role === 'nurse' && n.to === '/app/agenda') return false
       if (quietBilling && n.to === '/app/caja') return false
-      if (n.doctor && !doctor) return false
+      if (n.roles && !n.roles.includes(user.role)) return false
       // MI1: el titular de un consultorio en su vista de administrador ve sólo lo administrativo (lo clínico, en la de médico)
       if (f.office && user.role === 'admin' && n.group === 'Pacientes') return false
       return true

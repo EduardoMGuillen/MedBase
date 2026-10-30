@@ -39,7 +39,7 @@ export interface Staff {
   /** Tipo de cuenta de su clínica: decide sus permisos y qué módulos ve. */
   clinicKind?: ClinicKind
   /** Preferencias del usuario: el último formato de nota que usó. */
-  prefs?: { noteFormat?: 'soap' | 'dx'; tourDoneAt?: string; rxValidityDays?: number; favDrugs?: string[]; favExams?: string[]
+  prefs?: { noteFormat?: 'soap' | 'dx'; tourDoneAt?: string; rxValidityDays?: number; favDrugs?: string[]; favExams?: string[]; agendaView?: 'day' | 'week' | 'month'
     /** RG1: estado de cada recorrido guiado (por rol activo o tipo de cuenta). */
     tours?: Record<string, { state: 'done' | 'skipped' | 'paused'; step: number; at: string }> }
   /** El médico tiene su firma guardada (la imagen no viaja con la lista del personal). */

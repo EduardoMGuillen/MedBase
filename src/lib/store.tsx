@@ -278,7 +278,7 @@ function useStoreValue() {
       run(() => api<Certificate>('/certificates', { body: b }), 'Constancia emitida'),
     voidCertificate: (id: string, reason: string) => run(() => api<Certificate>(`/certificates/${id}/void`, { body: { reason } }), 'Constancia anulada'),
     /** MC6: Mi configuración (datos profesionales, sello, preferencias, favoritos). Cada apartado guarda por separado. */
-    saveMyProfile: (b: Partial<{ docName: string; specialty: string; license: string; stamp: string; rxValidityDays: number; noteFormat: 'dx' | 'soap'; favDrugs: string[]; favExams: string[] }>, success?: string) =>
+    saveMyProfile: (b: Partial<{ docName: string; specialty: string; license: string; stamp: string; rxValidityDays: number; noteFormat: 'dx' | 'soap'; favDrugs: string[]; favExams: string[]; agendaView: 'day' | 'week' | 'month' }>, success?: string) =>
       run(async () => {
         await api('/me', { method: 'PATCH', body: b })
         setSession(await api<Session>('/auth/me'))
