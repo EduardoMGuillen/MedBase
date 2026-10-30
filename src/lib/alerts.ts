@@ -116,7 +116,8 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
       since: new Date(e.result?.at ?? e.statusAt ?? e.orderedAt).getTime(), action: { label: 'Ver resultado', go: { tab: 'labs' } } })
   }
   for (const g of ['lab', 'imaging'] as ExamGroup[]) {
-    const pend = exams.filter((e) => e.group === g && isPending(e)).sort((a, b) => Number(b.priority === 'urgent') - Number(a.priority === 'urgent') || a.orderedAt.localeCompare(b.orderedAt))
+    // MC5 (ronda 5): lo externo no es un pendiente de la clínica
+    const pend = exams.filter((e) => e.group === g && isPending(e) && e.area !== 'none').sort((a, b) => Number(b.priority === 'urgent') - Number(a.priority === 'urgent') || a.orderedAt.localeCompare(b.orderedAt))
     if (!pend.length) continue
     const urgent = pend.filter((e) => e.priority === 'urgent').length
     out.push({ key: `exams-${g}`, level: 'pending', tab: 'labs', text: `${GROUP_LABEL[g]}: ${plural(pend.length, 'examen pendiente', 'exámenes pendientes')}${urgent ? ` (${urgent} urgente${urgent > 1 ? 's' : ''})` : ''}: ${list(pend.map(examLine), 3)}`,

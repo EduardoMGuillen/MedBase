@@ -49,14 +49,18 @@ export async function examsWhere(q: Sql, where: string, args: unknown[]) {
 
 /**
  * Inserta los exámenes pedidos juntos (un lote: se imprimen en una orden por grupo). El área destino se guarda desde ya:
- * laboratorio o imágenes si la clínica los tiene; si no, enfermería; externo, enfermería en una estancia o nadie.
+ * laboratorio o imágenes si la clínica los tiene; si no, enfermería; externo, nadie (sólo va en la orden impresa).
  */
 export async function insertExams(q: Sql, c: { clinicId: string; patientId: string; consultationId?: string; hospitalizationId?: string; noteId?: string; by: string; at: string; inStay?: boolean },
   list: ExamInput[]) {
   if (!list.length) return null
   const clinic = (await q.one('SELECT has_lab, has_imaging FROM clinics WHERE id = ?', [c.clinicId]))!
+  // MC5 (ronda 5): un examen que no está en el catálogo activo de la clínica es externo (texto libre que se hace fuera)
+  await ensureExamCatalog(q, c.clinicId)
+  const known = new Set((await q.query('SELECT norm_key FROM exam_catalog WHERE clinic_id = ? AND active', [c.clinicId])).map((r) => String(r.norm_key)))
   const batch = randomUUID()
-  for (const e of list) {
+  for (const raw of list) {
+    const e = known.has(examKey(raw.name)) ? raw : { ...raw, place: 'external' as const }
     const id = randomUUID()
     const area = areaFor(e.group, e.place, c.inStay ?? !!c.hospitalizationId, { hasLab: Boolean(clinic.has_lab), hasImaging: Boolean(clinic.has_imaging) })
     await q.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, consultation_id, hospitalization_id, note_id, batch_id, grp, name, region, side, indication, priority, place, area, status, ordered_by, ordered_at)

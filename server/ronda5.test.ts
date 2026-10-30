@@ -311,3 +311,32 @@ describe('MC2 mis sets de exámenes', () => {
     assert.ok(log.some((e) => /Archivó el set de exámenes/.test(e.action)))
   })
 })
+
+describe('MC5 ordenar exámenes del catálogo o externos', () => {
+  test('un examen que no está en el catálogo (o que se archivó) queda como externo: sale en la orden impresa y no llega a ninguna bandeja', async () => {
+    const admin = await as('admin@demo.clinara')
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const cat = (await admin.get('/api/exams/catalog')).body.exams
+    const ves = cat.find((c: any) => c.name === 'Velocidad de eritrosedimentación')
+    assert.equal((await admin.patch(`/api/exams/catalog/${ves.id}`, { active: false })).status, 200)
+    const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
+    const n = await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', exam: 'Prurito.', exams: [
+      { group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' },
+      { group: 'lab', name: 'Panel de alergias', priority: 'routine', place: 'external' },
+      { group: 'lab', name: 'Velocidad de eritrosedimentación', priority: 'routine', place: 'clinic' },
+    ] })
+    assert.equal(n.status, 201, JSON.stringify(n.body))
+    const exams = (await doc.get(`/api/inpatient/${stay.id}`)).body.exams
+    const panel = exams.find((e: any) => e.name === 'Panel de alergias')
+    const ves2 = exams.filter((e: any) => e.name === 'Velocidad de eritrosedimentación').at(-1)
+    assert.deepEqual([panel.place, panel.area], ['external', 'none'])
+    assert.deepEqual([ves2.place, ves2.area], ['external', 'none'], 'lo archivado ya no se pide a la clínica')
+    const tray = (await nurse.get('/api/exams/tray')).body
+    const ids = JSON.stringify(tray)
+    assert.ok(!ids.includes(panel.id) && !ids.includes(ves2.id), 'no llegan a la bandeja de enfermería')
+    const batch = (await doc.get(`/api/exams/batch/${panel.batchId}`)).body
+    assert.deepEqual(batch.exams.map((e: any) => [e.name, e.place]).sort(), [['Hemograma', 'clinic'], ['Panel de alergias', 'external'], ['Velocidad de eritrosedimentación', 'external']])
+    assert.equal((await admin.patch(`/api/exams/catalog/${ves.id}`, { active: true })).status, 200)
+  })
+})

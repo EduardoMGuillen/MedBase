@@ -110,11 +110,11 @@ export const isPending = (e: Pick<ExamOrder, 'status'>) => ['ordered', 'sample',
 
 /**
  * Área que recibe el examen. Laboratorio va al laboratorio de la clínica y, si no tiene, a enfermería (toma de muestra);
- * imagen y gabinete, a imágenes o a enfermería (coordinar o realizar, como el EKG). Externo: en hospitalización y
- * observación enfermería lo coordina; en consulta externa sólo se imprime la orden.
+ * imagen y gabinete, a imágenes o a enfermería (coordinar o realizar, como el EKG). MC5 (ronda 5): lo externo no va a
+ * ninguna bandeja de la clínica (ni en consulta externa ni en una estancia): sólo sale en la orden que se lleva el paciente.
  */
-export function areaFor(group: ExamGroup, place: 'clinic' | 'external', inStay: boolean, s: { hasLab?: boolean; hasImaging?: boolean }): ExamOrder['area'] {
-  if (place === 'external') return inStay ? 'nursing' : 'none'
+export function areaFor(group: ExamGroup, place: 'clinic' | 'external', _inStay: boolean, s: { hasLab?: boolean; hasImaging?: boolean }): ExamOrder['area'] {
+  if (place === 'external') return 'none'
   if (group === 'lab') return s.hasLab ? 'lab' : 'nursing'
   return s.hasImaging ? 'imaging' : 'nursing'
 }

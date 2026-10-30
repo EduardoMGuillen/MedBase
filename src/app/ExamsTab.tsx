@@ -21,7 +21,7 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
   const { can } = useStore()
   const [uploading, setUploading] = useState<ExamGroup | null>(null)
   const groups: ExamGroup[] = ['lab', 'imaging']
-  const batches = [...new Set(exams.filter((e) => e.area !== 'none' || e.consultationId).map((e) => e.batchId))]
+  const batches = [...new Set(exams.map((e) => e.batchId))]
   return (
     <div className="hc" data-tour="examenes-tab">
       {groups.map((g) => {

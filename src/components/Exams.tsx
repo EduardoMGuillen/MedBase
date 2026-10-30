@@ -7,7 +7,7 @@ import { Modal } from './ui'
 import { examCatalog, examKey, examLine, findExam, GROUP_LABEL } from '../lib/exams'
 import { useOrderSets } from '../lib/useOrderSets'
 import { normalize } from '../lib/patients'
-import type { ExamGroup, ExamInput } from '../lib/types'
+import type { ExamGroup, ExamInput, OrderSet } from '../lib/types'
 
 const newExam = (group: ExamGroup, name: string): ExamInput => ({ group, name, priority: 'routine', place: 'clinic' })
 
@@ -31,11 +31,13 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
             <h4>{g === 'lab' ? <FlaskConical size={15} /> : <ScanLine size={15} />}{GROUP_LABEL[g]} <span className="muted">({list.length})</span></h4>
             <ol className="exam-items">{list.map(({ e, i }) => {
               const cat = findExam(e.name, catalog)
+              // MC5 (ronda 5): lo que no está en el catálogo de la clínica sólo puede ser externo
+              const outside = !catalog.some((c) => examKey(c.name) === examKey(e.name))
               const needsRegion = cat?.region || (g === 'imaging' && !cat)
               return (
                 <li key={i} className={`exam-item${e.priority === 'urgent' ? ' exam-item--urgent' : ''}`}>
                   <div className="exam-item__head">
-                    <b>{examLine(e)}</b>
+                    <b>{examLine(e)}</b>{e.place === 'external' && <span className="badge badge--amber">Externo</span>}
                     <button type="button" className="icon-btn" aria-label={`Quitar ${e.name}`} onClick={() => onChange(value.filter((_, j) => j !== i))}><X size={15} /></button>
                   </div>
                   <div className="exam-item__fields">
@@ -51,10 +53,12 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
                       <button type="button" role="radio" aria-checked={e.priority === 'routine'} onClick={() => set(i, { priority: 'routine' })}>Rutina</button>
                       <button type="button" role="radio" aria-checked={e.priority === 'urgent'} onClick={() => set(i, { priority: 'urgent' })}>Urgente</button>
                     </div>
-                    <div className="segmented segmented--sm" role="radiogroup" aria-label={`Dónde se realiza ${e.name}`}>
-                      <button type="button" role="radio" aria-checked={e.place === 'clinic'} onClick={() => set(i, { place: 'clinic' })}>En la clínica</button>
-                      <button type="button" role="radio" aria-checked={e.place === 'external'} onClick={() => set(i, { place: 'external' })}>Externo</button>
-                    </div>
+                    {outside ? <small className="muted">No está en el catálogo de la clínica: se hace fuera y sólo va en la orden impresa.</small> : (
+                      <div className="segmented segmented--sm" role="radiogroup" aria-label={`Dónde se realiza ${e.name}`}>
+                        <button type="button" role="radio" aria-checked={e.place === 'clinic'} onClick={() => set(i, { place: 'clinic' })}>En la clínica</button>
+                        <button type="button" role="radio" aria-checked={e.place === 'external'} onClick={() => set(i, { place: 'external' })}>Externo</button>
+                      </div>
+                    )}
                   </div>
                   {g === 'imaging' && !e.indication?.trim() && <small className="muted">Sugerido: escribe la indicación clínica para quien realiza el estudio.</small>}
                 </li>
@@ -63,7 +67,7 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
           </div>
         )
       })}
-      {!value.length && <p className="muted" style={{ fontSize: 14 }}>Sin exámenes. {inStay ? 'Enfermería recibe los pendientes en su bandeja.' : 'Se imprimen aparte de la receta: una orden de laboratorio y otra de imagen y gabinete.'}</p>}
+      {!value.length && <p className="muted" style={{ fontSize: 14 }}>Sin exámenes. {inStay ? 'Enfermería recibe los pendientes en su bandeja (los externos no).' : 'Se imprimen aparte de la receta: una orden de laboratorio y otra de imagen y gabinete.'}</p>}
       <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setPicking(true)}><Plus size={16} />Ordenar examen</button>
       {picking && <ExamPicker current={value} onClose={() => setPicking(false)} onAdd={(list) => { onChange([...value, ...list]); setPicking(false) }} />}
     </div>
@@ -79,14 +83,13 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
   current: ExamInput[]; onClose: () => void; onAdd: (list: ExamInput[]) => void; title?: string; catalogOnly?: boolean
 }) {
   const { notify, can } = useStore()
-  const { exams: clinicExams, reload } = useExamCatalog()
-  const { sets } = useOrderSets(!catalogOnly && can('exams.order'), 'exams')
+  const { exams: clinicExams } = useExamCatalog()
+  const { sets, reload: reloadSets } = useOrderSets(!catalogOnly && can('exams.order'), 'exams')
+  const [savingSet, setSavingSet] = useState(false)
   const [q, setQ] = useState('')
   const [group, setGroup] = useState<'' | ExamGroup>('')
   const [picked, setPicked] = useState<ExamInput[]>([])
   const [newGroup, setNewGroup] = useState<ExamGroup>('lab')
-  // AD4: sólo administración agrega al catálogo de la clínica
-  const [save, setSave] = useState(can('settings.manage'))
   const catalog = useMemo(() => examCatalog(clinicExams), [clinicExams])
   const n = normalize(q)
   const have = new Set([...current, ...picked].map((e) => examKey(e.name)))
@@ -101,16 +104,17 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
     setPicked([...picked, ...known.filter((x) => !have.has(examKey(x.name))).map((x) => newExam(x.group, catalog.find((c) => examKey(c.name) === examKey(x.name))!.name))])
     if (gone.length) notify(`${gone.map((e) => e.name).join(', ')} ya no ${gone.length === 1 ? 'está' : 'están'} en el catálogo de la clínica: no se ${gone.length === 1 ? 'agregó' : 'agregaron'}.`, 'error')
   }
-  const addNew = async () => {
-    const name = q.trim()
-    if (save) {
-      try { await api('/exams/catalog', { body: { group: newGroup, name } }); reload() } catch (e) { notify((e as Error).message, 'error') }
-    }
-    setPicked([...picked, newExam(newGroup, name)]); setQ('')
+  // MC5 (ronda 5): lo que no está en el catálogo se pide como externo (texto libre); no entra al catálogo de la clínica
+  const addExternal = () => {
+    setPicked([...picked, { ...newExam(newGroup, q.trim()), place: 'external' }])
+    setQ('')
   }
+  const inCatalog = (name: string) => catalog.some((c) => examKey(c.name) === examKey(name))
   return (
     <Modal title={title} wide onClose={onClose} footer={<>
       <span className="muted" style={{ marginRight: 'auto', fontSize: 13.5 }}>{picked.length ? `${picked.length} elegido${picked.length > 1 ? 's' : ''}` : 'Toca los exámenes para elegirlos'}</span>
+      {!catalogOnly && can('exams.order') && picked.some((e) => inCatalog(e.name)) && (
+        <button className="btn btn--ghost" onClick={() => setSavingSet(true)}><ListChecks size={15} />Guardar selección como set</button>)}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!picked.length} onClick={() => onAdd(picked)}>Agregar {picked.length || ''}</button>
     </>}>
@@ -147,16 +151,65 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
         })}
         {q.trim().length >= 3 && !exact && !catalogOnly && (
           <div className="exam-picker__new">
-            <span>¿No está? Agregar «{q.trim()}» como</span>
-            <div className="segmented segmented--sm" role="radiogroup" aria-label="Grupo del examen nuevo">
+            <span>No está en el catálogo de la clínica.</span>
+            <div className="segmented segmented--sm" role="radiogroup" aria-label="Grupo del examen externo">
               <button type="button" role="radio" aria-checked={newGroup === 'lab'} onClick={() => setNewGroup('lab')}>Laboratorio</button>
               <button type="button" role="radio" aria-checked={newGroup === 'imaging'} onClick={() => setNewGroup('imaging')}>Imagen y gabinete</button>
             </div>
-            {can('settings.manage') && <label className="check-inline"><input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} />Guardar en el catálogo</label>}
-            <button type="button" className="btn btn--soft btn--sm" onClick={addNew}><Plus size={14} />Agregar</button>
+            <button type="button" className="btn btn--soft btn--sm" onClick={addExternal}><Plus size={14} />Agregar «{q.trim()}» como examen externo</button>
+            <small className="muted">Se hace fuera de la clínica: va en la orden impresa con la etiqueta «Externo» y no llega a ninguna bandeja.</small>
           </div>
         )}
+        {picked.some((e) => e.place === 'external' && !inCatalog(e.name)) && (
+          <p className="muted" style={{ fontSize: 13.5 }}>Externos: {picked.filter((e) => e.place === 'external' && !inCatalog(e.name)).map((e) => e.name).join(', ')}.</p>
+        )}
       </div>
+      {savingSet && <ExamSetForm initial={picked.filter((e) => inCatalog(e.name))} onClose={() => setSavingSet(false)} onSaved={() => { setSavingSet(false); reloadSets() }} />}
+    </Modal>
+  )
+}
+
+/** Exámenes de un set de exámenes. */
+const examsOf = (s: OrderSet) => s.items.flatMap((it) => (it.exam ? [it.exam] : []))
+
+/** MC2 (ronda 5). Crear o editar un set de exámenes: nombre y exámenes del catálogo (con el buscador de ordenar exámenes). */
+export function ExamSetForm({ set, initial = [], onClose, onSaved }: { set?: OrderSet; initial?: ExamInput[]; onClose: () => void; onSaved: (s: OrderSet) => void }) {
+  const { notify } = useStore()
+  const [name, setName] = useState(set?.name ?? '')
+  const [exams, setExams] = useState<ExamInput[]>(() => (set ? examsOf(set) : initial).map((e) => ({ group: e.group, name: e.name, priority: 'routine', place: 'clinic' })))
+  const [picking, setPicking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const save = async () => {
+    setBusy(true)
+    try {
+      const items = exams.map((e) => ({ exam: e }))
+      const s = set
+        ? await api<OrderSet>(`/order-sets/${set.id}`, { method: 'PATCH', body: { name: name.trim(), items } })
+        : await api<OrderSet>('/order-sets', { body: { name: name.trim(), items, kind: 'exams' } })
+      notify(set ? 'Set guardado' : `Set «${name.trim()}» creado`)
+      onSaved(s)
+    } catch (e) { notify((e as Error).message, 'error') } finally { setBusy(false) }
+  }
+  return (
+    <Modal title={set ? 'Editar set de exámenes' : 'Crear set de exámenes'} onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={busy || name.trim().length < 3 || !exams.length} onClick={save}>Guardar set</button>
+    </>}>
+      <label className="field"><span>Nombre del set</span><input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Mi control prenatal" /></label>
+      {(['lab', 'imaging'] as const).map((g) => {
+        const list = exams.filter((e) => e.group === g)
+        if (!list.length) return null
+        return (
+          <div key={g} className="field"><span>{g === 'lab' ? <FlaskConical size={14} /> : <ScanLine size={14} />} {GROUP_LABEL[g]}</span>
+            <div className="chips">{list.map((e) => (
+              <span key={e.name} className="chip">{e.name}<button type="button" className="icon-btn" aria-label={`Quitar ${e.name}`} onClick={() => setExams(exams.filter((x) => x !== e))}><X size={12} /></button></span>
+            ))}</div>
+          </div>
+        )
+      })}
+      {!exams.length && <p className="muted">Sin exámenes todavía.</p>}
+      <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setPicking(true)}><Plus size={15} />Agregar exámenes</button>
+      {picking && <ExamPicker current={exams} catalogOnly title="Agregar exámenes al set" onClose={() => setPicking(false)} onAdd={(list) => { setExams([...exams, ...list]); setPicking(false) }} />}
     </Modal>
   )
 }

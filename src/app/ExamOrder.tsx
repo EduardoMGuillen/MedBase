@@ -37,7 +37,7 @@ export default function ExamOrderPage() {
   const groups = (['lab', 'imaging'] as ExamGroup[]).filter((g) => data.exams.some((e) => e.group === g && e.status !== 'cancelled'))
   const minor = p.birthDate ? yearsOld(p.birthDate) < 18 : false
   const text = (g: ExamGroup) => [`${settings.name}. Orden de ${GROUP_LABEL[g].toLowerCase()} del ${date(data.exams[0].orderedAt)}.`, `Paciente: ${fullName(p)}.`, `${data.doctor.name}, colegiación ${data.doctor.license ?? ''}.`, '',
-    ...data.exams.filter((e) => e.group === g && e.status !== 'cancelled').map((e, i) => `${i + 1}. ${examLine(e)}${e.priority === 'urgent' ? ' (URGENTE)' : ''}${e.indication ? `. ${e.indication}` : ''}`)].join('\n')
+    ...data.exams.filter((e) => e.group === g && e.status !== 'cancelled').map((e, i) => `${i + 1}. ${examLine(e)}${e.priority === 'urgent' ? ' (URGENTE)' : ''}${e.place === 'external' ? ' (EXTERNO)' : ''}${e.indication ? `. ${e.indication}` : ''}`)].join('\n')
   return (
     <div className={`page${only ? ` print-only-${only}` : ''}`}>
       <div className="page-head no-print">
@@ -66,7 +66,7 @@ export default function ExamOrderPage() {
             </div>
             <h2 className="exam-order__title">{g === 'lab' ? 'Exámenes de laboratorio' : 'Estudios de imagen y gabinete'}</h2>
             <ol className="exam-order__list">{list.map((e) => (
-              <li key={e.id}><b>{examLine(e)}</b>{e.priority === 'urgent' && <span className="exam-order__urgent">URGENTE</span>}
+              <li key={e.id}><b>{examLine(e)}</b>{e.priority === 'urgent' && <span className="exam-order__urgent">URGENTE</span>}{e.place === 'external' && <span className="exam-order__ext">Externo</span>}
                 {e.indication && <p>Indicación: {e.indication}</p>}
                 {e.place === 'external' && <p className="muted">Se realiza fuera de la clínica.</p>}</li>
             ))}</ol>
