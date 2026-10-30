@@ -26,6 +26,7 @@ export default function Account() {
         <PasswordPanel />
         <TwoFactorPanel />
       </div>
+      {user.role === 'doctor' && <RxValidityPanel />}
       {user.role === 'doctor' && (
         <section className="panel">
           <div className="panel__head"><div><h2>Mis sets de órdenes</h2><p>Órdenes que usas siempre igual, guardadas con un nombre para aplicarlas en un solo paso.</p></div>
@@ -43,6 +44,25 @@ export default function Account() {
         <div className="panel__body"><div className="chips">{permissionsFor(user.role, user.clinicKind).map((p) => <span key={p} className="chip">{PERMISSIONS[p]}</span>)}</div></div>
       </section>
     </div>
+  )
+}
+
+/** AD2: la vigencia de las recetas es de cada médico. Al emitir una receta se puede cambiar sólo para esa. */
+function RxValidityPanel() {
+  const { user, saveMyRxValidity } = useStore()
+  const saved = user?.prefs?.rxValidityDays ?? 30
+  const [days, setDays] = useState(String(saved))
+  const n = Math.round(Number(days))
+  const valid = n >= 1 && n <= 365
+  return (
+    <section className="panel">
+      <div className="panel__head"><div><h2>Vigencia de mis recetas</h2><p>Lo que dice el pie de tus recetas. Al emitir una receta la puedes cambiar sólo para esa.</p></div></div>
+      <form className="panel__body" style={{ display: 'flex', gap: 10, alignItems: 'end', flexWrap: 'wrap' }} onSubmit={(e) => { e.preventDefault(); if (valid) saveMyRxValidity(n) }}>
+        <label className="field"><span>Vigencia de mis recetas (días)</span>
+          <input className="input num" style={{ width: 120 }} type="number" min={1} max={365} value={days} onChange={(e) => setDays(e.target.value)} /></label>
+        <button className="btn btn--primary" disabled={!valid || n === saved}>Guardar</button>
+      </form>
+    </section>
   )
 }
 

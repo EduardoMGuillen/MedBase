@@ -155,7 +155,6 @@ function ClinicForm() {
           <label className="field"><span>Teléfono</span><input className="input" value={f.phone} onChange={(e) => set('phone', e.target.value)} /></label>
           <label className="field"><span>Correo</span><input className="input" type="email" value={f.email} onChange={(e) => set('email', e.target.value)} /></label>
           <label className="field"><span>Símbolo de moneda</span><input className="input" value={f.currency} maxLength={4} onChange={(e) => set('currency', e.target.value)} /></label>
-          <label className="field"><span>Vigencia de recetas (días)</span><input className="input num" type="number" min={1} max={365} value={f.rxValidityDays} onChange={(e) => set('rxValidityDays', Number(e.target.value))} /></label>
           <label className="field span-2" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <input type="checkbox" checked={f.recordUsesDni} onChange={(e) => set('recordUsesDni', e.target.checked)} />
             <span style={{ margin: 0 }}>Usar el número de identidad como número de expediente en recetas y constancias</span></label>

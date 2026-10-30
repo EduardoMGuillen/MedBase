@@ -65,7 +65,7 @@ export const toPrescription = (r: Row): Prescription => ({
   id: String(r.id), folio: String(r.folio), patientId: String(r.patient_id ?? ''), doctorId: String(r.doctor_id),
   consultationId: String(r.consultation_id), hospitalizationId: s(r.hospitalization_id), issuedAt: String(r.issued_at), items: j(r.items, []),
   standalone: Boolean(r.standalone) || undefined, indications: r.indications == null ? undefined : j<string[]>(r.indications, []),
-  guest: r.guest == null ? undefined : j<GuestPatient>(r.guest, { name: '' }), linkedAt: s(r.linked_at),
+  guest: r.guest == null ? undefined : j<GuestPatient>(r.guest, { name: '' }), linkedAt: s(r.linked_at), validityDays: n(r.validity_days),
 })
 
 export const toCertificate = (r: Row): Certificate => ({

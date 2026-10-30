@@ -214,3 +214,9 @@ tr.clickable { cursor: pointer; }
   .search-btn, .palette, .side__scrim { display: none !important; }
   .page-head .btn, .tabs, .cal-toolbar { display: none !important; }
 }
+
+/* AD2: vigencia de una receta en particular */
+.rx-validity { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rx-validity > span:first-child { font-size: 13.5px; color: var(--muted); }
+.rx-validity__input { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+.rx-validity__input .input { width: 84px; }

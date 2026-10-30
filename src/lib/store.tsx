@@ -208,7 +208,7 @@ function useStoreValue() {
       run(() => api<HospProcedure>(`/inpatient/${id}/procedures`, { body: b }), 'Registrado'),
     updateProcedure: (pid: string, b: Pick<HospProcedure, 'status' | 'notes'>) =>
       run(() => api<HospProcedure>(`/inpatient/procedures/${pid}`, { method: 'PATCH', body: b }), 'Estado actualizado'),
-    discharge: (id: string, b: DischargeData & { items: PrescriptionItem[] }) =>
+    discharge: (id: string, b: DischargeData & { items: PrescriptionItem[]; validityDays?: number }) =>
       run(() => api<{ hospitalization: Hospitalization; prescriptionId: string | null; folio: string | null; epicrisisId?: string }>(`/inpatient/${id}/discharge`, { body: b }), 'Paciente dado de alta'),
     // Vademécum de la clínica
     addClinicDrug: (b: Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route'>) =>
@@ -249,7 +249,7 @@ function useStoreValue() {
       run(() => api<Patient>(`/patients/${id}`, { method: 'PATCH', body: p }), 'Ficha actualizada'),
     addVitals: (v: Omit<Vitals, 'id' | 'takenAt' | 'takenBy'>) =>
       run(() => api<Vitals>('/vitals', { body: v }), 'Preclínica guardada'),
-    finishConsult: async (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[]; observe?: boolean; admit?: boolean }, items: PrescriptionItem[]) => {
+    finishConsult: async (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[]; observe?: boolean; admit?: boolean; validityDays?: number }, items: PrescriptionItem[]) => {
       const r = await run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null; observationId: string | null
         hospitalizationId: string | null; stayKind: Hospitalization['kind'] | null; medOrders: number }>('/consultations', { body: { ...c, items } }))
       // Se dice en voz alta qué pasó con los medicamentos: a la receta, a la hoja de medicamentos o a las dos
@@ -259,7 +259,7 @@ function useStoreValue() {
       return r
     },
 
-    issuePrescription: (b: { patientId?: string; guest?: GuestPatient; items: PrescriptionItem[]; indications: string[] }) =>
+    issuePrescription: (b: { patientId?: string; guest?: GuestPatient; items: PrescriptionItem[]; indications: string[]; validityDays?: number }) =>
       run(() => api<{ prescriptionId: string; folio: string }>('/prescriptions', { body: b }), 'Receta emitida'),
     /** Pasa la receta de una persona no registrada al expediente que se le creó (o que ya tenía). */
     linkPrescription: (id: string, patientId: string, success = 'Receta vinculada al expediente') =>
@@ -268,6 +268,11 @@ function useStoreValue() {
     createCertificate: (b: Omit<CertificateData, 'patient' | 'doctor' | 'clinic' | 'restTo' | 'diagnoses'> & { patientId: string; consultationId?: string; kind: Certificate['kind'] }) =>
       run(() => api<Certificate>('/certificates', { body: b }), 'Constancia emitida'),
     voidCertificate: (id: string, reason: string) => run(() => api<Certificate>(`/certificates/${id}/void`, { body: { reason } }), 'Constancia anulada'),
+    /** AD2: vigencia de mis recetas (días). Se guarda en mis preferencias y vale para las recetas que emita desde ahora. */
+    saveMyRxValidity: (rxValidityDays: number) => run(async () => {
+      await api('/me', { method: 'PATCH', body: { rxValidityDays } })
+      setSession(await api<Session>('/auth/me'))
+    }, 'Vigencia de tus recetas guardada'),
     saveMyLicense: (license: string) => run(async () => {
       await api('/me', { method: 'PATCH', body: { license } })
       setSession(await api<Session>('/auth/me'))

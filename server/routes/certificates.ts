@@ -115,10 +115,20 @@ export function registerCertificates(app: Express, { sql, auth, need, userOf, cl
   // El médico registra su número de colegiación una sola vez (lo piden constancias y recetas)
   app.patch('/api/me', auth, async (req, res) => {
     const user = userOf(req)
-    const { license } = parse(z.object({ license: z.string().trim().min(3, 'Escribe tu número de colegiación.').max(30) }), req.body)
-    if (user.role !== 'doctor') fail(403, 'Sólo los médicos registran número de colegiación.')
-    await sql.run('UPDATE staff SET license = ? WHERE id = ?', [license, user.id])
-    await audit(user, 'Registró su número de colegiación')
+    const b = parse(z.object({
+      license: z.string().trim().min(3, 'Escribe tu número de colegiación.').max(30).optional(),
+      // AD2: la vigencia de las recetas es de cada médico
+      rxValidityDays: z.number().int().min(1, 'La vigencia debe ser de al menos 1 día.').max(365, 'La vigencia no puede pasar de 365 días.').optional(),
+    }), req.body)
+    if (user.role !== 'doctor') fail(403, 'Sólo los médicos registran número de colegiación y vigencia de recetas.')
+    if (b.license) {
+      await sql.run('UPDATE staff SET license = ? WHERE id = ?', [b.license, user.id])
+      await audit(user, 'Registró su número de colegiación')
+    }
+    if (b.rxValidityDays) {
+      await sql.run(`UPDATE staff SET prefs = jsonb_set(COALESCE(NULLIF(prefs, ''), '{}')::jsonb, '{rxValidityDays}', to_jsonb(?::int))::text WHERE id = ?`, [b.rxValidityDays, user.id])
+      await audit(user, `Cambió la vigencia de sus recetas a ${b.rxValidityDays} días`)
+    }
     res.json({ ok: true })
   })
 }

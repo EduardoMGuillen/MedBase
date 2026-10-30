@@ -36,7 +36,7 @@ export interface Staff {
   /** Tipo de cuenta de su clínica: decide sus permisos y qué módulos ve. */
   clinicKind?: ClinicKind
   /** Preferencias del usuario: el último formato de nota que usó. */
-  prefs?: { noteFormat?: 'soap' | 'dx'; tourDoneAt?: string }
+  prefs?: { noteFormat?: 'soap' | 'dx'; tourDoneAt?: string; rxValidityDays?: number }
   /** El médico tiene su firma guardada (la imagen no viaja con la lista del personal). */
   hasSignature?: boolean
 }
@@ -278,6 +278,8 @@ export interface Prescription {
   /** Persona que no está en la biblioteca: sus datos escritos a mano (patientId vacío hasta que se vincule). */
   guest?: GuestPatient
   linkedAt?: string
+  /** Días de vigencia con que se emitió (los elige el médico; 30 por defecto). */
+  validityDays?: number
 }
 
 /** Datos de una persona no registrada, tal como se escribieron en su receta. */

@@ -15,6 +15,8 @@ import type { ClinicSettings, GuestPatient, Patient, Prescription, PrescriptionI
 import { DniInput } from '../components/DniInput'
 import { DocHeader } from '../components/DocHeader'
 import { SimilarPatients } from './NewPatient'
+import { RxValidityField } from '../components/RxValidity'
+import { useRxValidity } from '../lib/hooks'
 import { IdentificationForm, IdentityPrompt } from './PatientForms'
 
 /** Logo de la clínica en recetas y constancias; si no hay uno cargado, el de Clinara. */
@@ -127,6 +129,7 @@ function NewPrescription({ initial, onClose }: { initial: Omit<Draft, 'key'>; on
   const [indications, setIndications] = useState(initial.indications.join('\n'))
   const [medForm, setMedForm] = useState<{ index: number; initial?: PrescriptionItem } | null>(initial.items.length ? null : { index: -1 })
   const [busy, setBusy] = useState(false)
+  const [validity, setValidity] = useRxValidity()
   const p = patientId ? patient(patientId) : undefined
   // Para el formulario de medicamento: de la persona no registrada no se conocen alergias
   const who = p ?? (guest ? { firstName: guest.name.split(' ')[0] || 'El paciente', allergies: [] as string[] } : undefined)
@@ -157,12 +160,13 @@ function NewPrescription({ initial, onClose }: { initial: Omit<Draft, 'key'>; on
           </div>
           <label className="field"><span>Indicaciones (opcional, una por línea)</span>
             <textarea className="textarea textarea--sm" rows={3} value={indications} onChange={(e) => setIndications(e.target.value)} placeholder="Ej. Control de presión arterial en casa. Cita de control en 3 meses." /></label>
+          <RxValidityField value={validity} onChange={setValidity} />
         </>)}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
             setBusy(true)
             const g = guest && Object.fromEntries(Object.entries({ ...guest, name: guest.name.trim(), age: guest.birthDate ? undefined : guest.age?.trim() }).filter(([, v]) => v)) as unknown as GuestPatient
-            const r = await issuePrescription({ ...(g ? { guest: g } : { patientId }), items, indications: indications.split('\n').map((x) => x.trim()).filter(Boolean) })
+            const r = await issuePrescription({ ...(g ? { guest: g } : { patientId }), items, indications: indications.split('\n').map((x) => x.trim()).filter(Boolean), validityDays: validity })
             setBusy(false)
             if (r) nav(`/app/recetas/${r.prescriptionId}`)
           }}><FileText size={16} />Emitir receta</button>
@@ -242,7 +246,7 @@ export function PrescriptionSheet() {
             <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{notes.map((n, i) => <li key={i}>{n}</li>)}</ul></div>
         )}
         <div className="rx-sheet__sign"><div><em>{doc.name.replace(/^Dra?\.\s*/, '')}</em>{doc.name}<br /><span style={{ color: 'var(--muted)' }}>{doc.license}</span></div></div>
-        <footer className="rx-sheet__foot"><span>Receta válida por {settings.rxValidityDays} días a partir de su emisión.</span><span>Emitida con Clinara</span></footer>
+        <footer className="rx-sheet__foot"><span>Receta válida por {rx.validityDays ?? settings.rxValidityDays} días a partir de su emisión.</span><span>Emitida con Clinara</span></footer>
       </article>
     </div>
   )

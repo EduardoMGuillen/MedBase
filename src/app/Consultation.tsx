@@ -18,6 +18,8 @@ import { emptyFollowup, FollowupFields } from './Followups'
 import type { Diagnosis, PrescriptionItem } from '../lib/types'
 import type { OrderSet } from '../lib/types'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
+import { RxValidityField } from '../components/RxValidity'
+import { useRxValidity } from '../lib/hooks'
 import { hasBlank, medHasBlank, orderKey, rxToSetMed, setMedToRx } from '../lib/orderSets'
 
 /**
@@ -80,6 +82,7 @@ export default function Consultation() {
   const [triage, setTriage] = useState(false)
   const [editBg, setEditBg] = useState(false)
   const [signing, setSigning] = useState(false)
+  const [validity, setValidity] = useRxValidity()
   const [savedAt, setSavedAt] = useState<string | null>(Object.keys(saved).length ? 'recuperado' : null)
   const orderInput = useRef<HTMLInputElement>(null)
   const mine = !!appt && appt.doctorId === user?.id
@@ -167,7 +170,7 @@ export default function Consultation() {
       appointmentId: appt.id, reason: reason.trim(), symptoms: [], history, exam, observations: observations.trim(), diagnoses: dx,
       // En el expediente el manejo se lee completo: primero las indicaciones y luego los medicamentos
       orders: [...indications, ...meds.map(medicationOrder)], indications,
-      plan: '', vitalsId: todayVitals?.id, followups, observe: observe && !hospitalized && place.observation, admit: admit && !hospitalized && place.hospital,
+      plan: '', vitalsId: todayVitals?.id, followups, validityDays: validity, observe: observe && !hospitalized && place.observation, admit: admit && !hospitalized && place.hospital,
     }, meds)
     setSigning(false)
     if (r) {
@@ -354,6 +357,7 @@ export default function Consultation() {
                       <span><b>Ingreso a hospitalización</b><small>Esta nota queda como nota de ingreso y sus medicamentos pasan a la hoja. Al firmar eliges la cama.</small></span></label>}
                   </>
               )}
+              {rxCount > 0 && <RxValidityField value={validity} onChange={setValidity} />}
               <p style={{ fontSize: 14, color: 'var(--muted)' }}>
                 {missing.length ? `Para firmar falta ${missing.join(', ')}.` : `Al firmar se cierra la cita${rxCount ? ` y se emite una receta con ${rxCount} medicamento${rxCount > 1 ? 's' : ''}` : ''}${admit && !hospitalized ? ', se ingresa a hospitalización' : observe && !hospitalized ? ' e ingresa a observación' : ''}${inClinic.length ? `${ambulatory ? ', queda en observación para aplicarle ' : '; pasan a la hoja de medicamentos: '}${inClinic.map((m) => m.drug).join(', ')}` : ''}.`}
               </p>

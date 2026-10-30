@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '31'
+const SCHEMA_VERSION = '32'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -606,6 +606,10 @@ ALTER TABLE payments
   ADD COLUMN IF NOT EXISTS void_reason TEXT,
   ADD COLUMN IF NOT EXISTS voided_at TEXT,
   ADD COLUMN IF NOT EXISTS voided_by TEXT;
+
+-- v32: ronda 3 (AD2). La vigencia de la receta es de cada médico (staff.prefs.rxValidityDays), no de la clínica, y
+-- cada receta guarda la suya. clinics.rx_validity_days se conserva: de ahí sale el valor inicial de cada médico.
+ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS validity_days INTEGER;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -645,6 +649,7 @@ export function ensureDb(sql: Sql) {
         await addDemoScenarios(q)
         await migrateObservationAuthorizations(q)
       }
+      await migrateRxValidity(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -969,6 +974,16 @@ export async function migrateObservationAuthorizations(q: Sql) {
     await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?, ?, ?, ?)',
       [new Date().toISOString(), 'sistema', 'v26: se generó la autorización de hospitalización pendiente de una estancia que vino de observación', String(h.clinic_id)])
   }
+}
+
+/**
+ * v32 (AD2): cada médico recibe como vigencia de sus recetas la que tenía su clínica, y las recetas ya emitidas guardan
+ * la vigencia con la que se imprimieron (así la reimpresión dice lo mismo). Idempotente: sólo llena lo que falta.
+ */
+export async function migrateRxValidity(q: Sql) {
+  await q.run(`UPDATE prescriptions p SET validity_days = c.rx_validity_days FROM clinics c WHERE c.id = p.clinic_id AND p.validity_days IS NULL`)
+  await q.run(`UPDATE staff s SET prefs = jsonb_set(COALESCE(NULLIF(s.prefs, ''), '{}')::jsonb, '{rxValidityDays}', to_jsonb(c.rx_validity_days))::text
+    FROM clinics c WHERE c.id = s.clinic_id AND s.role = 'doctor' AND (COALESCE(NULLIF(s.prefs, ''), '{}')::jsonb -> 'rxValidityDays') IS NULL`)
 }
 
 /**

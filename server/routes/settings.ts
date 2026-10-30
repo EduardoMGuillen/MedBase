@@ -14,7 +14,8 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
       phone: z.string().trim().min(7, 'Escribe un teléfono válido.'),
       email: z.string().trim().email('El correo no es válido.').or(z.literal('')),
       currency: z.string().trim().min(1).max(4),
-      rxValidityDays: z.number().int().min(1).max(365),
+      // AD2: la vigencia de las recetas ya no se configura por clínica (es de cada médico); se acepta y se ignora
+      rxValidityDays: z.number().optional(),
       reminderTemplate: z.string().trim().min(10, 'El mensaje de recordatorio es muy corto.').max(600),
       recordUsesDni: z.boolean().default(false),
       obsAlertHours: z.number().int().min(1, 'Las horas de alerta deben ser al menos 1.').max(240).default(24),
@@ -34,10 +35,10 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
     }), req.body)
     const cid = clinicOf(req)
     if (s.tempLow != null && s.tempHigh != null && s.tempLow >= s.tempHigh) fail(400, 'La temperatura de fiebre debe ser mayor que la mínima normal.')
-    await sql.run(`UPDATE clinics SET name = ?, address = ?, phone = ?, email = ?, currency = ?, rx_validity_days = ?, reminder_template = ?, record_uses_dni = ?, logo = ?,
+    await sql.run(`UPDATE clinics SET name = ?, address = ?, phone = ?, email = ?, currency = ?, reminder_template = ?, record_uses_dni = ?, logo = ?,
       obs_alert_hours = ?, obs_order_checklist = ?, dni_mask = ?, observation_enabled = COALESCE(?, observation_enabled), specialty = COALESCE(?, specialty), license = COALESCE(?, license),
       temp_low = COALESCE(?, temp_low), temp_high = COALESCE(?, temp_high) WHERE id = ?`,
-      [s.name, s.address, s.phone, s.email, s.currency, s.rxValidityDays, s.reminderTemplate, s.recordUsesDni, s.logo ?? null, s.obsAlertHours, s.obsOrderChecklist, s.dniMask,
+      [s.name, s.address, s.phone, s.email, s.currency, s.reminderTemplate, s.recordUsesDni, s.logo ?? null, s.obsAlertHours, s.obsOrderChecklist, s.dniMask,
         s.observationEnabled ?? null, s.specialty ?? null, s.license ?? null, s.tempLow ?? null, s.tempHigh ?? null, cid])
     await audit(userOf(req), 'Actualizó la configuración de la clínica')
     res.json(await settings(cid))

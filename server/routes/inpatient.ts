@@ -12,6 +12,7 @@ import { isScheduled, medLabel } from '../../src/lib/inpatient.js'
 import { hasBlank, medHasBlank } from '../../src/lib/orderSets.js'
 import { createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrders.js'
 import { authorizationBase, ensureHospitalAuthorization, refreshPendingHospitalAuthorization } from '../authorizations.js'
+import { rxValidityOf, validityInput } from '../prefs.js'
 
 const dx = z.array(diagnosisInput)
 const when = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'La fecha u hora no es válida.')
@@ -729,6 +730,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
         drug: z.string().trim().min(1), presentation: z.string().default(''), dose: z.string().trim().min(1, 'Escribe la dosis.'), route: z.string().optional(),
         frequency: z.string().min(1), duration: z.string().trim().min(1, 'Escribe la duración.'), instructions: z.string().optional(),
       })).default([]),
+      validityDays: validityInput,
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
@@ -745,8 +747,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     await sql.tx(async (q) => {
       if (rxId) {
         folio = await nextFolio(q, cid, now)
-        await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, hospitalization_id, issued_at, items, clinic_id) VALUES (?,?,?,?,?,?,?,?,?)`,
-          [rxId, folio, patientId, user.id, noteId, id, now.toISOString(), JSON.stringify(b.items), cid])
+        await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, hospitalization_id, issued_at, items, clinic_id, validity_days) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          [rxId, folio, patientId, user.id, noteId, id, now.toISOString(), JSON.stringify(b.items), cid, await rxValidityOf(q, user.id, b.validityDays)])
       }
       const data = { diagnoses: b.diagnoses, summary: b.summary, condition: b.condition, instructions: b.instructions, followUp: b.followUp }
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, plan, data) VALUES (?,?,?,'discharge',?,?,?,?)`,

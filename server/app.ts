@@ -14,6 +14,7 @@ import {
   clinicSettings, toAppointment, toAudit, toBed, toClinicDrug, toConsultation, toFollowup, toHospitalization, toPatient, toPrescription, toService, toStaff, toVitals,
 } from './mappers.js'
 import { newSecret, otpauthUrl, verifyTotp } from './totp.js'
+import { rxValidityOf, validityInput } from './prefs.js'
 import { registerSettings } from './routes/settings.js'
 import { registerPublic } from './routes/public.js'
 import { registerBilling } from './routes/billing.js'
@@ -734,6 +735,7 @@ export function createApp(opts: AppOptions) {
       admit: z.boolean().default(false),
       vitalsId: z.string().optional(),
       items: z.array(rxItem).default([]),
+      validityDays: validityInput,
     }), req.body)
     // Basta una indicación o un medicamento; no se exigen ambos
     if (!c.orders.length && !c.items.length) fail(400, 'Agrega al menos una indicación o un medicamento en el plan y manejo.')
@@ -779,8 +781,8 @@ export function createApp(opts: AppOptions) {
       const closed = await q.one(`SELECT 1 FROM appointments WHERE id = ? AND status = 'done'`, [c.appointmentId])
       if (closed) fail(409, 'Esta cita ya está cerrada.')
       if (rxId) {
-        await q.run(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items,clinic_id) VALUES (?,?,?,?,?,?,?,?)`,
-          [rxId, folio, patientId, user.id, consultId, now.toISOString(), JSON.stringify(rxItems), cid])
+        await q.run(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items,clinic_id,validity_days) VALUES (?,?,?,?,?,?,?,?,?)`,
+          [rxId, folio, patientId, user.id, consultId, now.toISOString(), JSON.stringify(rxItems), cid, await rxValidityOf(q, user.id, c.validityDays)])
       }
       await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id,orders,observations,clinic_id,indications,
           admit_kind, meds)
@@ -835,6 +837,7 @@ export function createApp(opts: AppOptions) {
       }).optional(),
       items: z.array(rxItem).min(1, 'Agrega al menos un medicamento.').max(20),
       indications: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
+      validityDays: validityInput,
     }), req.body)
     if (!b.patientId === !b.guest) fail(400, 'Elige al paciente o escribe sus datos.')
     const noDays = b.items.find((it) => !it.duration && !/única/i.test(it.frequency))
@@ -850,8 +853,9 @@ export function createApp(opts: AppOptions) {
     let folio = ''
     await sql.tx(async (q) => {
       folio = await nextFolio(q, cid, now)
-      await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, issued_at, items, clinic_id, standalone, indications, guest) VALUES (?,?,?,?,?,?,?,?,TRUE,?,?)`,
-        [id, folio, b.patientId ?? null, user.id, '', now.toISOString(), JSON.stringify(b.items), cid, JSON.stringify(b.indications), guest ? JSON.stringify(guest) : null])
+      await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, issued_at, items, clinic_id, standalone, indications, guest, validity_days) VALUES (?,?,?,?,?,?,?,?,TRUE,?,?,?)`,
+        [id, folio, b.patientId ?? null, user.id, '', now.toISOString(), JSON.stringify(b.items), cid, JSON.stringify(b.indications), guest ? JSON.stringify(guest) : null,
+          await rxValidityOf(q, user.id, b.validityDays)])
       await audit(user, `Emitió la receta sin consulta ${folio} de ${who}`, q)
     })
     res.status(201).json({ prescriptionId: id, folio })
