@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type {
-  Addendum, Appointment, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Referral, ReferralData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
+  Addendum, Appointment, ExamInput, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Referral, ReferralData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
@@ -159,6 +159,7 @@ function useStoreValue() {
   const fetchCertificate = useCallback((id: string) => api<Certificate>(`/certificates/${id}`), [])
   const fetchCertificates = useCallback((patientId: string) => api<Certificate[]>(`/patients/${patientId}/certificates`), [])
   const fetchPatientIndex = useCallback(() => api<PatientIndex[]>('/patients/index'), [])
+  const fetchAttachmentMeta = useCallback((id: string) => api<{ name: string; mime: string; size: number }>(`/attachments/${id}/meta`), [])
   const fetchAttachments = useCallback((patientId: string) => api<Attachment[]>(`/patients/${patientId}/attachments`), [])
   // Administración de la plataforma
   const fetchClinics = useCallback(() => api<Clinic[]>('/platform/clinics'), [])
@@ -171,7 +172,7 @@ function useStoreValue() {
     signIn, signOut,
     patient: (id: string) => data.patients.find((p) => p.id === id),
     staffById: (id: string) => data.staff.find((s) => s.id === id),
-    fetchBalances, fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
+    fetchBalances, fetchAttachmentMeta, fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
     fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient, searchIcd, fetchIcdFrequent, fetchReferralDraft, fetchReferral,
     emitReferral: (stayId: string, b: Partial<ReferralData>) => run(() => api<Referral>(`/inpatient/${stayId}/referral`, { body: b }), 'Referencia emitida; la observación quedó cerrada como «Referido»'),
     voidReferral: (id: string, reason: string) => run(() => api<Referral>(`/referrals/${id}/void`, { body: { reason } }), 'Referencia anulada'),
@@ -193,7 +194,7 @@ function useStoreValue() {
     /** Editar datos generales de la estancia: cama, acompañante y teléfonos. El ingreso en sí no se edita. */
     updateAdmission: (id: string, b: Partial<Pick<Hospitalization, 'bedId' | 'specialty' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'>>) =>
       run(() => api<Hospitalization>(`/inpatient/${id}`, { method: 'PATCH', body: b }), 'Datos generales guardados'),
-    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string }) =>
+    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string; exams?: ExamInput[] }) =>
       run(() => api<InpatientNote>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
     stopMed: (medId: string, reason: string) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/stop`, { body: { reason } }), 'Orden suspendida'),
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),
@@ -256,8 +257,8 @@ function useStoreValue() {
       run(() => api<Patient>(`/patients/${id}`, { method: 'PATCH', body: p }), 'Ficha actualizada'),
     addVitals: (v: Omit<Vitals, 'id' | 'takenAt' | 'takenBy'>) =>
       run(() => api<Vitals>('/vitals', { body: v }), 'Preclínica guardada'),
-    finishConsult: async (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[]; observe?: boolean; admit?: boolean; validityDays?: number }, items: PrescriptionItem[]) => {
-      const r = await run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null; observationId: string | null
+    finishConsult: async (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[]; observe?: boolean; admit?: boolean; validityDays?: number; exams?: ExamInput[] }, items: PrescriptionItem[]) => {
+      const r = await run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null; observationId: string | null; examBatch: string | null
         hospitalizationId: string | null; stayKind: Hospitalization['kind'] | null; medOrders: number }>('/consultations', { body: { ...c, items } }))
       // Se dice en voz alta qué pasó con los medicamentos: a la receta, a la hoja de medicamentos o a las dos
       if (r) notify([r.folio ? `Consulta y receta ${r.folio} firmadas` : 'Consulta firmada',
@@ -301,6 +302,8 @@ function useStoreValue() {
     pay: (p: NewPayment) => run(() => api<Payment>('/payments', { body: p }), 'Cobro registrado'),
     addInstallment: (id: string, b: { amount: number; method: PaymentMethod; reference?: string; bank?: string }) =>
       run(() => api<Payment>(`/payments/${id}/installments`, { body: b }), 'Abono registrado'),
+    saveExamAreas: (b: { hasLab: boolean; hasImaging: boolean; criticalLimits?: Record<string, { low?: number; high?: number }> }) =>
+      run(() => api<ClinicSettings>('/settings/exam-areas', { method: 'PUT', body: b }), 'Áreas de servicio guardadas'),
     savePaymentMethods: (methods: PaymentMethod[]) => run(() => api<ClinicSettings>('/settings/payment-methods', { method: 'PUT', body: { methods } }), 'Formas de pago guardadas'),
     voidPayment: (id: string, reason: string) => run(() => api<Payment>(`/payments/${id}/void`, { body: { reason } }), 'Recibo anulado'),
     setInvoiceNo: (id: string, invoiceNo: string) => run(() => api<Payment>(`/payments/${id}/invoice`, { method: 'PATCH', body: { invoiceNo } }), 'Factura anotada en el recibo'),

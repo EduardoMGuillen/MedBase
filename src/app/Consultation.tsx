@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ClipboardList, Pencil, Pill, Plus, X } from 'lucide-react'
+import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ClipboardList, FlaskConical, Pencil, Pill, Plus, X } from 'lucide-react'
 import { useStore, type FollowupInput } from '../lib/store'
 import { PatientHeader } from '../components/PatientHeader'
 import { date, medicationOrder, missingDays, time } from '../lib/format'
@@ -15,7 +15,9 @@ import { BackgroundView, useChart, VitalsGrid } from './PatientChart'
 import { BackgroundForm, IdentityPrompt } from './PatientForms'
 import { VitalsModal } from './WaitingRoom'
 import { emptyFollowup, FollowupFields } from './Followups'
-import type { Diagnosis, PrescriptionItem } from '../lib/types'
+import type { Diagnosis, ExamInput, PrescriptionItem } from '../lib/types'
+import { ExamsBlock } from '../components/Exams'
+import { typedExam } from '../lib/exams'
 import type { OrderSet } from '../lib/types'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
 import { RxValidityField } from '../components/RxValidity'
@@ -30,7 +32,7 @@ import { hasBlank, medHasBlank, orderKey, rxToSetMed, setMedToRx } from '../lib/
  */
 interface Draft {
   reason: string; history: string; exam: string; observations: string; dx: Diagnosis[]
-  indications: string[]; meds: PrescriptionItem[]
+  indications: string[]; meds: PrescriptionItem[]; exams?: ExamInput[]
   followups: FollowupInput[]; admit: boolean; observe?: boolean
   orders?: { text: string; rx?: PrescriptionItem }[]
 }
@@ -78,6 +80,8 @@ export default function Consultation() {
   const [dx, setDx] = useState<Diagnosis[]>(saved.dx ?? [])
   const [indications, setIndications] = useState<string[]>(saved.indications ?? [])
   const [meds, setMeds] = useState<PrescriptionItem[]>(saved.meds ?? [])
+  // EX1: exámenes de laboratorio e imagen y gabinete, al nivel de medicamentos e indicaciones
+  const [exams, setExams] = useState<ExamInput[]>(saved.exams ?? [])
   const [orderText, setOrderText] = useState('')
   const [editingOrder, setEditingOrder] = useState<number | null>(null)
   // null: formulario cerrado; -1: medicamento nuevo; n: editando el medicamento n
@@ -105,11 +109,11 @@ export default function Consultation() {
   }, [todayVitals?.id])
 
   // AN1: borrador que se guarda solo, en este navegador y en el servidor; sobrevive a recargar y a cerrar el navegador
-  const snapshot: Draft = { reason, history, exam, observations, dx, indications, meds, followups, admit, observe }
-  const blankDraft = !history && !exam && !observations && !dx.length && !indications.length && !meds.length && !followups.length
+  const snapshot: Draft = { reason, history, exam, observations, dx, indications, meds, exams, followups, admit, observe }
+  const blankDraft = !history && !exam && !observations && !dx.length && !indications.length && !meds.length && !exams.length && !followups.length
   const draft = useDraftSync<Draft>('consulta', apptId, snapshot, (d) => {
     setReason(d.reason ?? ''); setHistory(d.history ?? ''); setExam(d.exam ?? ''); setObservations(d.observations ?? ''); setDx(d.dx ?? [])
-    setIndications(d.indications ?? []); setMeds(d.meds ?? []); setFollowups(d.followups ?? []); setAdmit(!!d.admit); setObserve(!!d.observe)
+    setIndications(d.indications ?? []); setMeds(d.meds ?? []); setExams(d.exams ?? []); setFollowups(d.followups ?? []); setAdmit(!!d.admit); setObserve(!!d.observe)
   }, blankDraft, draftKey(apptId))
 
   if (!appt || !p || !user) return <div className="page"><div className="empty">No se encontró la cita. Vuelve a la <Link to="/app/agenda">agenda</Link>.</div></div>
@@ -131,7 +135,7 @@ export default function Consultation() {
   const blanks = [...indications.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : []))]
   // La receta lleva la identidad del paciente; en adultos es obligatoria
   const needsDni = rxCount > 0 && !p.dni && yearsOld(p.birthDate) >= 18
-  const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !indications.length && !meds.length && 'al menos una indicación o un medicamento',
+  const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !indications.length && !meds.length && !exams.length && 'al menos una indicación, un medicamento o un examen',
     noDays.length > 0 && `el total de días de ${noDays.map((m) => m.drug).join(', ')} (va a la receta)`,
     needsDni && 'el número de identidad para la receta',
     blanks.length > 0 && `los espacios ___ de ${blanks.join(', ')}`].filter(Boolean)
@@ -140,6 +144,9 @@ export default function Consultation() {
   const applySet = (set: OrderSet) => {
     const texts = set.items.flatMap((it) => (it.text ? [it.text] : []))
     const added = set.items.flatMap((it) => (it.med ? [setMedToRx(it.med)] : []))
+    // EX1: los exámenes del set van a la sección Exámenes, no como texto
+    const fromSet = set.items.flatMap((it) => (it.exam ? [it.exam] : []))
+    setExams((x) => [...x, ...fromSet.filter((e) => !x.some((y) => y.name === e.name))])
     const repeated = [
       ...texts.filter((t) => indications.some((x) => orderKey(x) === orderKey(t))),
       ...added.filter((m) => meds.some((x) => orderKey(medicationOrder(x)) === orderKey(medicationOrder(m)))).map((m) => m.drug),
@@ -162,6 +169,8 @@ export default function Consultation() {
   }
   // Si lo que se escribe en indicaciones empieza con un medicamento del vademécum, se sugiere pasarlo a Medicamentos
   const typedDrug = orderText.trim().length >= 4 ? vademecum.find((d) => normalize(orderText).startsWith(normalize(d.name))) : undefined
+  // EX1: si lo que se escribe es un examen («hemograma»), se sugiere pasarlo a Exámenes
+  const typedExamHit = typedExam(orderText)
 
   const sign = async () => {
     setSigning(true)
@@ -169,7 +178,7 @@ export default function Consultation() {
       appointmentId: appt.id, reason: reason.trim(), symptoms: [], history, exam, observations: observations.trim(), diagnoses: dx,
       // En el expediente el manejo se lee completo: primero las indicaciones y luego los medicamentos
       orders: [...indications, ...meds.map(medicationOrder)], indications,
-      plan: '', vitalsId: todayVitals?.id, followups, validityDays: validity, observe: observe && !hospitalized && place.observation, admit: admit && !hospitalized && place.hospital,
+      plan: '', vitalsId: todayVitals?.id, followups, validityDays: validity, exams, observe: observe && !hospitalized && place.observation, admit: admit && !hospitalized && place.hospital,
     }, meds)
     setSigning(false)
     if (r) {
@@ -177,7 +186,9 @@ export default function Consultation() {
       // Con ingreso la estancia ya quedó creada al firmar, con esta nota como nota de ingreso y sus medicamentos en la hoja
       if (r.hospitalizationId && r.stayKind === 'hospital') nav(`/app/hospitalizados/${r.hospitalizationId}?completar=1`)
       else if (r.hospitalizationId) nav(`/app/observacion/${r.hospitalizationId}`)
-      else nav(r.prescriptionId ? `/app/recetas/${r.prescriptionId}` : `/app/pacientes/${p.id}`)
+      // EX1: las órdenes de exámenes se imprimen aparte de la receta
+      else if (r.prescriptionId) nav(`/app/recetas/${r.prescriptionId}${r.examBatch ? `?examenes=${r.examBatch}` : ''}`)
+      else nav(r.examBatch ? `/app/examenes/orden/${r.examBatch}` : `/app/pacientes/${p.id}`)
     }
   }
 
@@ -262,7 +273,7 @@ export default function Consultation() {
             <div className="panel__body csec__body">
               <div className="set-bar">
                 <OrderSetPicker where="consultation" patientId={p.id} onApply={applySet} />
-                <SaveSetButton items={[...indications.map((text) => ({ text })), ...meds.map((m) => ({ med: rxToSetMed(m) }))]} />
+                <SaveSetButton items={[...indications.map((text) => ({ text })), ...meds.map((m) => ({ med: rxToSetMed(m) })), ...exams.map((e) => ({ exam: e }))]} />
               </div>
               <div className="plan-block">
                 <h3 className="plan-block__title">Indicaciones y plan</h3>
@@ -291,6 +302,12 @@ export default function Consultation() {
                   <input ref={orderInput} className="input" value={orderText} onChange={(e) => setOrderText(e.target.value)} placeholder={`${indications.length + 1}. Escribe una indicación y presiona Enter`} aria-label="Nueva indicación" enterKeyHint="done" />
                   <button className="btn btn--soft" disabled={!orderText.trim()} aria-label="Agregar indicación"><Plus size={16} /></button>
                 </form>
+                {typedExamHit && !typedDrug && (
+                  <div className="suggest-med" role="status">
+                    <FlaskConical size={15} />¿Agregar «{typedExamHit.name}» como examen? Así se imprime en su orden y se le da seguimiento.
+                    <button className="btn btn--soft btn--sm" onClick={() => { setExams([...exams, { group: typedExamHit.group, name: typedExamHit.name, priority: 'routine', place: 'clinic' }]); setOrderText('') }}>Sí, agregarlo</button>
+                  </div>
+                )}
                 {typedDrug && (
                   <div className="suggest-med" role="status">
                     <Pill size={15} />«{typedDrug.name}» es un medicamento. ¿Agregarlo como medicamento para que vaya a la receta?
@@ -313,6 +330,11 @@ export default function Consultation() {
                 ) : (
                   <button className="btn btn--primary" style={{ justifySelf: 'start' }} onClick={() => setMedForm({ index: -1 })}><Plus size={16} />Agregar medicamento</button>
                 )}
+              </div>
+
+              <div className="plan-block">
+                <h3 className="plan-block__title">Exámenes <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'enfermería los recibe en su bandeja' : 'se imprimen aparte de la receta'}</span></h3>
+                <ExamsBlock value={exams} onChange={setExams} inStay={admitting} />
               </div>
             </div>
           </section>

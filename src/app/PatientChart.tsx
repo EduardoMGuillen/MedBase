@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BedDouble, FileBadge, FileText, Lock, NotebookPen, Pencil } from 'lucide-react'
 import { MedAlertBanner } from './MedAlerts'
-import type { InpatientFile, Payment } from '../lib/types'
+import type { InpatientFile, Payment, ExamOrder } from '../lib/types'
 import { FOLLOWUP_KIND } from '../lib/followups'
 import { bedLabel } from './Inpatients'
 import { Addenda } from '../components/Addenda'
+import { ExamList } from './ExamsTab'
+import { api } from '../lib/api'
 import { useStore, type Chart } from '../lib/store'
 import { Loading, StatusBadge } from '../components/ui'
 import { IndicationList, MedLines, NoteColumns } from '../components/NoteColumns'
@@ -144,7 +146,7 @@ export function ConsultationBody({ c, vitals }: { c: Consultation; vitals?: Vita
     meds={<MedLines items={c.orders.slice(c.indications.length)} />} />
 }
 
-type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'rx' | 'certs' | 'files'
+type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'exams' | 'rx' | 'certs' | 'files'
 
 export default function PatientChart() {
   const { id } = useParams()
@@ -157,7 +159,12 @@ export default function PatientChart() {
     fetchBalances(id).then(setOwed).catch(() => null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, fetchBalances])
-  const [tab, setTab] = useState<Tab>('history')
+  const [tab, setTab] = useState<Tab>(() => (new URLSearchParams(window.location.search).get('tab') === 'examenes' ? 'exams' : 'history'))
+  // EX1: exámenes del paciente (de consulta externa y de sus estancias), con sus resultados
+  const [exams, setExams] = useState<ExamOrder[] | null>(null)
+  const loadExams = useCallback(() => { if (id && can('chart.view')) api<ExamOrder[]>(`/patients/${id}/exams`).then(setExams).catch(() => setExams([])) }, [id, can])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (tab === 'exams') loadExams() }, [tab, id])
   const [editing, setEditing] = useState<null | 'id' | 'allergies' | 'background'>(null)
   const clinical = can('chart.view')
   const p = patient(id!)
@@ -180,7 +187,7 @@ export default function PatientChart() {
   const n = (k: unknown[]) => (chart ? ` (${k.length})` : '')
   const tabs: [Tab, string, boolean][] = [
     ['history', 'Historia clínica', true], ['consults', `Consultas${n(cs)}`, clinical], ['hosp', `Hospitalizaciones${n(hs)}`, clinical && (!chart || hs.length > 0)],
-    ['vitals', 'Signos vitales', clinical], ['rx', `Recetas${n(rxs)}`, clinical && can('rx.view')], ['certs', `Constancias${certs ? ` (${certs.length})` : ''}`, clinical], ['files', 'Archivos', clinical],
+    ['vitals', 'Signos vitales', clinical], ['exams', `Exámenes${exams ? ` (${exams.filter((e) => e.status !== 'cancelled').length})` : ''}`, clinical], ['rx', `Recetas${n(rxs)}`, clinical && can('rx.view')], ['certs', `Constancias${certs ? ` (${certs.length})` : ''}`, clinical], ['files', 'Archivos', clinical],
   ]
   const save = async (data: Partial<Patient>) => { if (await updatePatient(p.id, data)) { setEditing(null); reload() } }
 
@@ -340,6 +347,7 @@ export default function PatientChart() {
       )}
 
       {tab === 'files' && clinical && <Attachments patientId={p.id} />}
+      {tab === 'exams' && clinical && (exams ? <ExamList exams={exams} patientId={p.id} reload={loadExams} /> : <Loading />)}
 
       {editing === 'id' && <IdentificationForm title="Ficha de identificación" submitLabel="Guardar cambios" initial={p} onClose={() => setEditing(null)} onSave={save} />}
       {editing === 'allergies' && <AllergiesForm initial={p} onClose={() => setEditing(null)} onSave={save} />}

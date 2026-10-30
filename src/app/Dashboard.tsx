@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Activity, Globe, Phone, Receipt, Stethoscope } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { receivedIn } from '../lib/billing'
+import { ExamTray, NewResults } from './ExamPanels'
 import { PageHead, StatusBadge } from '../components/ui'
 import { ReminderButton } from '../components/Reminder'
 import { HBars } from '../components/Charts'
@@ -171,6 +172,8 @@ export default function Dashboard() {
             <div className="panel__body"><strong>{fullName(nextPatient)}</strong><p className="muted" style={{ marginTop: 4 }}>{nextPatient.record}</p></div>
           </section>
         )}
+        <NewResults />
+        {office && <ExamTray />}
         <ArrivalsPanel doctorId={user.id} onArrive={office ? arrive : undefined} />
         {office && completion}
         {office && <FollowupCalls />}
@@ -207,6 +210,7 @@ export default function Dashboard() {
           }) : <div className="empty">Cuando un paciente llegue a sala, aparecerá aquí.</div>}
         </section>
         <NewOrders />
+        <ExamTray />
         <ArrivalsPanel />
         {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}
       </div>
@@ -247,6 +251,7 @@ export default function Dashboard() {
           </section>
         )}
         {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}
+        {can('exams.process') && <ExamTray />}
         <ArrivalsPanel id="por-llegar" onArrive={arrive} />
         {completion}
         <FollowupCalls />

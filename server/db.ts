@@ -1194,7 +1194,8 @@ export async function migrateObservationAuthorizations(q: Sql) {
  */
 export async function migrateLabsToExams(q: Sql) {
   const rows = await q.query(`SELECT a.* FROM attachments a WHERE a.category IN ('lab','imaging') AND a.hospitalization_id IS NOT NULL
-    AND NOT EXISTS (SELECT 1 FROM exam_orders e WHERE e.source_attachment_id = a.id)`)
+    AND NOT EXISTS (SELECT 1 FROM exam_orders e WHERE e.source_attachment_id = a.id)
+    AND NOT EXISTS (SELECT 1 FROM exam_orders e WHERE e.clinic_id = a.clinic_id AND e.result LIKE '%' || a.id || '%')`)
   for (const a of rows) {
     const at = String(a.taken_at ?? a.uploaded_at)
     const id = randomUUID()

@@ -6,13 +6,14 @@ import { DrugForm } from '../components/DrugForm'
 import { DRUGS } from '../lib/catalogs'
 import { normalize } from '../lib/patients'
 import { download, parseCsv, toCsv } from '../lib/csv'
+import { DEFAULT_CRITICAL } from '../lib/exams'
 import { clinicWhatsapp, contactLine, date, fillTemplate, fullName, METHOD_LABEL, money } from '../lib/format'
 import { ContactsEditor } from '../components/Contacts'
 import type { Bed, ClinicDrug, ClinicSettings, PaymentMethod, Service, Staff } from '../lib/types'
 import { ScheduleEditor } from './ScheduleEditor'
 import { features, hasRole } from '../lib/permissions'
 
-type Tab = 'clinic' | 'services' | 'payments' | 'schedules' | 'beds' | 'drugs'
+type Tab = 'clinic' | 'services' | 'payments' | 'areas' | 'schedules' | 'beds' | 'drugs'
 
 export default function Settings() {
   const [tab, setTab] = useState<Tab>('clinic')
@@ -25,6 +26,7 @@ export default function Settings() {
         <button className="tab" role="tab" aria-selected={tab === 'clinic'} onClick={() => setTab('clinic')}>{f.office ? 'Consultorio' : 'Clínica'}</button>
         <button className="tab" role="tab" aria-selected={tab === 'services'} onClick={() => setTab('services')}>Servicios y precios</button>
         <button className="tab" role="tab" aria-selected={tab === 'payments'} onClick={() => setTab('payments')}>Formas de pago</button>
+        <button className="tab" role="tab" aria-selected={tab === 'areas'} onClick={() => setTab('areas')}>Áreas de servicio</button>
         <button className="tab" role="tab" aria-selected={tab === 'schedules'} onClick={() => setTab('schedules')}>{f.office ? 'Mi horario' : 'Horarios de médicos'}</button>
         {f.hospital && <button className="tab" role="tab" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}>Camas</button>}
         <button className="tab" role="tab" aria-selected={tab === 'drugs'} onClick={() => setTab('drugs')}>Vademécum</button>
@@ -32,6 +34,7 @@ export default function Settings() {
       {tab === 'clinic' && <ClinicForm />}
       {tab === 'services' && <Services />}
       {tab === 'payments' && <PaymentMethods />}
+      {tab === 'areas' && <ServiceAreas />}
       {tab === 'schedules' && <Schedules />}
       {tab === 'beds' && f.hospital && <Beds />}
       {tab === 'drugs' && <ClinicDrugs />}
@@ -332,6 +335,46 @@ function ConvertToClinic({ onClose }: { onClose: () => void }) {
       <label className="check-line"><input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} />
         <span><b>Entiendo que no se puede volver a consultorio</b><small>Queda en la bitácora. Ningún dato se borra.</small></span></label>
     </Modal>
+  )
+}
+
+/**
+ * EX1: áreas de servicio. Si la clínica tiene laboratorio o imágenes propios, los exámenes se dirigen a esa área; si no
+ * (por omisión), los atiende enfermería. Hoy la app no tiene esos roles: las alertas siguen yendo a enfermería hasta que
+ * se creen y se asignen. También los umbrales críticos de laboratorio (fuera de ellos, alerta crítica al médico).
+ */
+function ServiceAreas() {
+  const { settings, saveExamAreas } = useStore()
+  const [lab, setLab] = useState(!!settings.hasLab)
+  const [img, setImg] = useState(!!settings.hasImaging)
+  const [limits, setLimits] = useState<Record<string, { low?: number; high?: number }>>({ ...DEFAULT_CRITICAL, ...(settings.criticalLimits ?? {}) })
+  const set = (k: string, side: 'low' | 'high', v: string) => setLimits({ ...limits, [k]: { ...limits[k], [side]: v === '' ? undefined : Number(v) } })
+  return (
+    <div className="grid-2">
+      <section className="panel">
+        <div className="panel__head"><div><h2>Áreas de servicio</h2><p>¿Quién realiza los exámenes en {features(settings).office ? 'el consultorio' : 'la clínica'}?</p></div></div>
+        <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
+          <label className="check-line"><input type="checkbox" checked={lab} onChange={(e) => setLab(e.target.checked)} />
+            <span><b>Laboratorio propio</b><small>Los exámenes de laboratorio quedan dirigidos al laboratorio. Sin él, enfermería toma la muestra.</small></span></label>
+          <label className="check-line"><input type="checkbox" checked={img} onChange={(e) => setImg(e.target.checked)} />
+            <span><b>Imágenes propias</b><small>Rayos X, ultrasonido, EKG… quedan dirigidos al área de imágenes. Sin ella, enfermería los coordina o realiza.</small></span></label>
+          <p className="muted" style={{ fontSize: 13.5 }}>Mientras no haya personas con rol de laboratorio o de imágenes, los pendientes siguen llegando a la bandeja de enfermería. Cuando se agreguen esos roles, bastará con asignarlos.</p>
+          <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={lab === !!settings.hasLab && img === !!settings.hasImaging} onClick={() => saveExamAreas({ hasLab: lab, hasImaging: img })}>Guardar áreas</button>
+        </div>
+      </section>
+      <section className="panel table-wrap">
+        <div className="panel__head"><div><h2>Umbrales críticos de laboratorio</h2><p>Un resultado fuera de estos valores avisa al médico como crítico.</p></div></div>
+        <table className="table">
+          <thead><tr><th>Analito</th><th>Crítico si es menor de</th><th>Crítico si es mayor de</th></tr></thead>
+          <tbody>{Object.keys(limits).map((k) => (
+            <tr key={k}><td>{k}</td>
+              <td><input className="input num" style={{ width: 100 }} inputMode="decimal" value={limits[k].low ?? ''} onChange={(e) => set(k, 'low', e.target.value)} aria-label={`${k}: mínimo`} /></td>
+              <td><input className="input num" style={{ width: 100 }} inputMode="decimal" value={limits[k].high ?? ''} onChange={(e) => set(k, 'high', e.target.value)} aria-label={`${k}: máximo`} /></td></tr>
+          ))}</tbody>
+        </table>
+        <div className="panel__body"><button className="btn btn--primary" onClick={() => saveExamAreas({ hasLab: !!settings.hasLab, hasImaging: !!settings.hasImaging, criticalLimits: limits })}>Guardar umbrales</button></div>
+      </section>
+    </div>
   )
 }
 

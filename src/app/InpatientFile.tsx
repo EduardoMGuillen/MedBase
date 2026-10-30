@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { BedDouble, Camera, ChevronLeft, ChevronRight, FileSignature, FileText, LogOut, NotebookPen, Pencil, Pill, Plus, Send, Syringe, TriangleAlert, X } from 'lucide-react'
+import { BedDouble, ChevronLeft, ChevronRight, FileSignature, FileText, LogOut, NotebookPen, Pencil, Pill, Plus, Send, Syringe, TriangleAlert, X } from 'lucide-react'
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
@@ -17,17 +17,18 @@ import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
 import { useNow } from '../lib/hooks'
-import type { Addendum, Diagnosis, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
+import type { Addendum, Diagnosis, Dose, ExamInput, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
 import { bedLabel, DxPicker } from './Inpatients'
 import { GeneralDataModal } from './GeneralData'
 import { AdmitBedStep, ConsentChoice } from './ConsentFlow'
+import { ExamList } from './ExamsTab'
+import { ExamsBlock } from '../components/Exams'
 import { Addenda, DraftBadge, SignedBadge } from '../components/Addenda'
 import { useDraftSync } from '../lib/drafts'
 import { BedFields } from '../components/BedFields'
 import { ReferralModal } from './Referral'
 import { features } from '../lib/permissions'
 import { ConsultationBody, Identification, VitalsGrid } from './PatientChart'
-import { toBase64 } from './Attachments'
 import { DischargeDocuments, EpicrisisButton } from './Epicrisis'
 import { VitalsSheet } from './VitalsSheet'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
@@ -48,7 +49,7 @@ export default function InpatientFile() {
   const [admitting, setAdmitting] = useState(params.get('completar') === '1')
   const [consentFor, setConsentFor] = useState<string | null>(null)
   const wantsConsent = params.get('firmar')
-  const [tab, setTab] = useState<Tab>(({ notas: 'notes', signos: 'vitals', medicamentos: 'meds', anexos: 'annexes' } as Record<string, Tab>)[params.get('tab') ?? ''] ?? 'sheet')
+  const [tab, setTab] = useState<Tab>(({ notas: 'notes', signos: 'vitals', medicamentos: 'meds', anexos: 'annexes', examenes: 'labs' } as Record<string, Tab>)[params.get('tab') ?? ''] ?? 'sheet')
   const [missing, setMissing] = useState(false)
   const now = useNow()
   const load = useCallback(() => {
@@ -80,12 +81,15 @@ export default function InpatientFile() {
   const annexes = file.authorizations.length + file.procedures.filter((x) => x.kind === 'authorization').length + file.referrals.length
     + file.epicrises.filter((e) => e.status !== 'voided').length
   const pendingAuth = open && file.authorizations.find((a) => a.template === 'hospital' && a.status === 'pending')
+  // EX1: la pestaña «Laboratorios» pasa a «Exámenes» (Laboratorio e Imagen y gabinete)
+  const exams = file.exams ?? []
+  const examTab = `Exámenes (${exams.filter((e) => e.status !== 'cancelled').length})`
   const tabs: [Tab, string][] = obs ? [
     ['sheet', 'Datos generales'],
     ['notes', `Notas de evolución (${medical.length + (h.consultationId ? 1 : 0)})`],
     ['vitals', 'Signos vitales'],
     ['meds', 'Hoja de medicamentos'],
-    ['labs', `Laboratorio (${file.labs.length})`],
+    ['labs', examTab],
     ['annexes', `Anexos (${annexes})`],
   ] : [
     ['sheet', 'Hoja de hospitalización'],
@@ -93,7 +97,7 @@ export default function InpatientFile() {
     ['vitals', 'Signos vitales'],
     ['meds', 'Medicamentos'],
     ['nursing', `Notas de enfermería (${nursing.length})`],
-    ['labs', `Laboratorios (${file.labs.length})`],
+    ['labs', examTab],
     ['annexes', `Anexos (${annexes})`],
   ]
   const base = `/app/${obs ? 'observacion' : 'hospitalizados'}/${h.id}`
@@ -169,7 +173,7 @@ export default function InpatientFile() {
       {tab === 'notes' && <MedicalNotes file={file} p={p} reload={load} />}
       {tab === 'vitals' && <VitalsSheet file={file} p={p} reload={load} />}
       {tab === 'nursing' && !obs && <NursingNotes file={file} reload={load} />}
-      {tab === 'labs' && <Labs file={file} reload={load} />}
+      {tab === 'labs' && <ExamList exams={exams} patientId={h.patientId} hospitalizationId={h.id} reload={load} open={open} />}
       {tab === 'annexes' && <Annexes file={file} p={p} reload={load} />}
     </div>
   )
@@ -862,6 +866,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   const [adding, setAdding] = useState(kind === 'admission')
   const [replacing, setReplacing] = useState<string | null>(null)
   const [extra, setExtra] = useState<string[]>(() => carriedOrders(file))
+  // EX1: exámenes pedidos en la nota
+  const [exams, setExams] = useState<ExamInput[]>([])
   const [extraText, setExtraText] = useState('')
   const [busy, setBusy] = useState(false)
   const [editingMed, setEditingMed] = useState<number | null>(null)
@@ -870,20 +876,23 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   const active = file.meds.filter((m) => !m.stoppedAt)
   // AN1: la nota se guarda sola como borrador (aquí y en el servidor) mientras se escribe
   const [carried] = useState(() => JSON.stringify(carriedOrders(file)))
-  const noteBlank = !Object.values(n).some((v) => v.trim()) && !d.diagnoses.length && !d.exam.trim() && !d.observations.trim() && !meds.length && !stop.length && JSON.stringify(extra) === carried
-  const draft = useDraftSync('evolucion', `${file.hospitalization.id}:${kind}`, { n, format, d, meds, stop, extra }, (x) => {
-    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD(x.d); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra)
+  const noteBlank = !Object.values(n).some((v) => v.trim()) && !d.diagnoses.length && !d.exam.trim() && !d.observations.trim() && !meds.length && !stop.length && !exams.length && JSON.stringify(extra) === carried
+  const draft = useDraftSync('evolucion', `${file.hospitalization.id}:${kind}`, { n, format, d, meds, stop, extra, exams }, (x) => {
+    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD(x.d); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams)
   }, noteBlank)
   const inVademecum = (drug: string) => vademecum.some((x) => normalize(x.name) === normalize(drug))
   // Huecos "___" de un set aplicado: la nota no se firma hasta llenarlos
   const blanks = [...extra.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : []))]
   // SOAP: los cuatro campos, como siempre. Estándar: algo escrito, una indicación o un medicamento.
   const ready = !blanks.length && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
-    : d.diagnoses.length > 0 || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0)
+    : d.diagnoses.length > 0 || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0 || exams.length > 0)
   /** Un set se agrega al final: indicaciones y medicamentos (que pasan a la hoja al guardar), todo editable. */
   const applySet = (set: OrderSet) => {
     const texts = set.items.flatMap((it) => (it.text ? [it.text] : []))
     const added: NewMed[] = set.items.flatMap((it) => (it.med ? [{ ...it.med, instructions: it.med.instructions ?? '', firstAt: it.med.prn ? undefined : new Date().toISOString() }] : []))
+    // EX1: los exámenes del set van a la sección Exámenes, no como texto en la columna de órdenes
+    const fromSet = set.items.flatMap((it) => (it.exam ? [it.exam] : []))
+    setExams((x) => [...x, ...fromSet.filter((e) => !x.some((y) => y.name === e.name))])
     const repeated = [
       ...texts.filter((t) => extra.some((x) => orderKey(x) === orderKey(t))),
       ...added.filter((m) => [...meds, ...active].some((x) => orderKey(medLabel(x)) === orderKey(medLabel(m)))).map((m) => medLabel(m)),
@@ -913,7 +922,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
         const kept = active.filter((m) => !ended(m.id)).map((m) => medLabel(m))
         const added = meds.map((m) => medLabel(m))
         const omitted = active.filter((m) => ended(m.id)).map((m) => `OMITIR ${m.drug}`)
-        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: [...extra, ...kept, ...added, ...omitted], indicationCount: extra.length, clientId })
+        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: [...extra, ...kept, ...added, ...omitted], indicationCount: extra.length, clientId })
         setBusy(false)
         if (ok) { draft.clear(); onSaved() }
       }}>Firmar nota</button>
@@ -945,7 +954,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
       <div className="note-editor__orders">
       <div className="set-bar">
         <OrderSetPicker where={file.hospitalization.kind === 'observation' ? 'observation' : 'hospital'} patientId={p.id} onApply={applySet} />
-        <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, days, instructions }) => ({ med: { drug, presentation, dose, route, everyHours, prn, days, instructions: instructions || undefined } }))]} />
+        <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, days, instructions }) => ({ med: { drug, presentation, dose, route, everyHours, prn, days, instructions: instructions || undefined } })), ...exams.map((e) => ({ exam: e }))]} />
       </div>
       <fieldset className="fs"><legend>Indicaciones</legend>
         <p className="muted" style={{ fontSize: 13.5 }}>Lo que no es medicamento, una por línea: dieta, cuidados, signos vitales, estudios. Puedes pegar una lista completa.</p>
@@ -1000,6 +1009,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
           : replacing ? <MedForm p={p} initial={medToNew(active.find((m) => m.id === replacing)!)} onAdd={(m) => { setMeds([...meds, { ...m, replacesId: replacing }]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
           : adding ? <MedForm key={meds.length} p={p} onAdd={(m) => { setMeds([...meds, m]); setAdding(false) }} onAddAnother={(m) => setMeds([...meds, m])} onCancel={() => setAdding(false)} />
           : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
+      </fieldset>
+      <fieldset className="fs"><legend>Exámenes</legend>
+        <ExamsBlock value={exams} onChange={setExams} inStay />
       </fieldset>
       </div>
       </div>
@@ -1190,69 +1202,6 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
 }
 
 // ---------- Laboratorios ----------
-
-const LAB_TESTS = ['Hemograma', 'Química sanguínea', 'Glucosa', 'Creatinina y nitrógeno ureico', 'Electrolitos', 'Examen general de orina', 'Pruebas de función hepática',
-  'Tiempos de coagulación', 'Gases arteriales', 'Hemocultivo', 'Radiografía', 'Ultrasonido', 'Tomografía']
-
-function Labs({ file, reload }: { file: File; reload: () => void }) {
-  const { can, staffById, uploadAttachment, notify } = useStore()
-  const [title, setTitle] = useState('')
-  const [takenAt, setTakenAt] = useState(inputDateTime(new Date()))
-  const [picked, setPicked] = useState<globalThis.File | null>(null)
-  const [busy, setBusy] = useState(false)
-  const input = useRef<HTMLInputElement>(null)
-  const open = file.hospitalization.status === 'active'
-  const byTest = new Map<string, typeof file.labs>()
-  for (const l of file.labs) byTest.set(l.title ?? 'Sin nombre', [...(byTest.get(l.title ?? 'Sin nombre') ?? []), l])
-
-  return (
-    <div className="hc">
-      {open && can('chart.view') && (
-        <section className="panel">
-          <div className="panel__head"><div><h2>Subir resultado</h2><p>Mientras el laboratorio no esté conectado al sistema, toma una foto del examen o sube el PDF.</p></div></div>
-          <div className="panel__body form-grid">
-            <label className="field"><span>Qué examen es</span>
-              <input className="input" list="lab-tests" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ej. Hemograma" />
-              <datalist id="lab-tests">{LAB_TESTS.map((t) => <option key={t} value={t} />)}</datalist></label>
-            <label className="field"><span>Fecha y hora de la toma</span><input className="input" type="datetime-local" value={takenAt} max={inputDateTime(new Date())} onChange={(e) => setTakenAt(e.target.value)} /></label>
-            <div className="field span-2"><span>Foto o PDF</span>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <button className="btn btn--soft" onClick={() => input.current?.click()}><Camera size={16} />{picked ? 'Cambiar archivo' : 'Tomar foto o elegir archivo'}</button>
-                {picked && <span className="muted">{picked.name}</span>}
-              </div>
-              <input ref={input} type="file" accept="image/*,application/pdf" capture="environment" hidden onChange={(e) => setPicked(e.target.files?.[0] ?? null)} />
-            </div>
-            <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={!title.trim() || !takenAt || !picked || busy} onClick={async () => {
-              if (!picked) return
-              if (picked.size > 3 * 1024 * 1024) { notify('El archivo pesa más de 3 MB. Toma la foto con menor resolución.', 'error'); return }
-              setBusy(true)
-              const ok = await uploadAttachment(file.hospitalization.patientId, {
-                name: picked.name, mime: picked.type, category: 'lab', data: await toBase64(picked), title: title.trim(),
-                takenAt: new Date(takenAt).toISOString(), hospitalizationId: file.hospitalization.id,
-              })
-              setBusy(false)
-              if (ok) { setTitle(''); setPicked(null); reload() }
-            }}>Guardar resultado</button>
-          </div>
-        </section>
-      )}
-      {file.labs.length ? [...byTest.entries()].map(([test, list]) => (
-        <section key={test} className="panel">
-          <div className="panel__head"><h2>{test}</h2><p>{list.length} resultado{list.length > 1 ? 's' : ''}</p></div>
-          <div className="rows">
-            {list.map((l) => (
-              <a key={l.id} className="row" style={{ gridTemplateColumns: '150px 1fr auto' }} href={`/api/attachments/${l.id}`} target="_blank" rel="noreferrer">
-                <span className="num" style={{ fontSize: 13.5 }}>{l.takenAt ? dateTime(l.takenAt) : dateTime(l.uploadedAt)}</span>
-                <div className="row__who"><strong>{l.name}</strong><span>Subido por {staffById(l.uploadedBy)?.name}</span></div>
-                <FileText size={18} color="var(--faint)" />
-              </a>
-            ))}
-          </div>
-        </section>
-      )) : <section className="panel"><div className="empty">Sin resultados de laboratorio en esta hospitalización.</div></section>}
-    </div>
-  )
-}
 
 // ---------- Egreso ----------
 

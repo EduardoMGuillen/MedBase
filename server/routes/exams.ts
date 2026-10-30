@@ -147,7 +147,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
 
   app.get('/api/patients/:id/exams', auth, need('chart.view'), async (req, res) => {
     const cid = clinicOf(req)
-    ;(await patientRow(cid, String(req.params.id))) ?? fail(404, 'El paciente no existe.')
+    if (!(await patientRow(cid, String(req.params.id)))) fail(404, 'El paciente no existe.')
     res.json(await examsWhere(sql, 'clinic_id = ? AND patient_id = ?', [cid, String(req.params.id)]))
   })
 
@@ -275,7 +275,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
       takenAt: z.string().optional(), fileIds: z.array(z.string()).min(1).max(10), report: z.string().trim().max(6000).optional() }), req.body)
     const cid = clinicOf(req)
     const user = userOf(req)
-    ;(await patientRow(cid, b.patientId)) ?? fail(404, 'El paciente no existe.')
+    if (!(await patientRow(cid, b.patientId))) fail(404, 'El paciente no existe.')
     const at = b.takenAt ?? new Date().toISOString()
     const id = randomUUID()
     const who = await patientName(b.patientId)

@@ -14,6 +14,8 @@ import { EpicrisisSheet } from './Epicrisis'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import type { Addendum, Consultation, InpatientFile, InpatientNote, Patient, Vitals } from '../lib/types'
 import { ADDENDUM_KIND } from '../lib/drafts'
+import { examLine, GROUP_LABEL, STATUS_LABEL } from '../lib/exams'
+import { ResultView } from './ExamsTab'
 import { ConsultationBody, Identification } from './PatientChart'
 import { NoteColumns, NoteText } from '../components/NoteColumns'
 import { ReferralSheet } from './Referral'
@@ -93,7 +95,7 @@ export default function FullRecord() {
     ...(!obs ? [['fr-enfermeria', `Notas de enfermería (${nursing.length})`] as [string, string]] : []),
     ['fr-signos-0', `Hoja de signos vitales (${vitalPages.length} ${vitalPages.length === 1 ? 'hoja' : 'hojas'})`],
     ['fr-medicamentos', 'Hoja de medicamentos'],
-    ['fr-laboratorios', `Laboratorios (${file.labs.length})`],
+    ['fr-laboratorios', `Exámenes (${(file.exams ?? []).filter((e) => e.status !== 'cancelled').length})`],
     ['fr-autorizaciones', `Anexos: autorizaciones (${auths.length + legacyAuths.length})`],
     ...(epicrisis ? [['fr-epicrisis', `Epicrisis${epicrisis.status === 'draft' ? ' (borrador sin emitir)' : ''}`] as [string, string]] : []),
   ]
@@ -184,14 +186,25 @@ export default function FullRecord() {
           ) : <p className="muted">Sin medicamentos indicados.</p>}
         </>, true)}
 
-        {page('fr-laboratorios', 'Laboratorios', <>
-          <h2 className="fr-h">Laboratorios</h2>
-          {file.labs.length ? file.labs.map((l) => (
-            <div key={l.id} className="fr-lab">
-              <b>{l.title || l.name}</b> · tomado {dm(l.takenAt ?? l.uploadedAt)} · subido por {staffById(l.uploadedBy)?.name}
-              {l.mime.startsWith('image/') ? <img src={`/api/attachments/${l.id}`} alt={l.title || l.name} /> : <p className="muted">Documento PDF en el expediente electrónico ({l.name}).</p>}
-            </div>
-          )) : <p className="muted">Sin resultados de laboratorio.</p>}
+        {/* EX1: «Laboratorios» pasa a «Exámenes»: primero Laboratorio y luego Imagen y gabinete */}
+        {page('fr-laboratorios', 'Exámenes', <>
+          <h2 className="fr-h">Exámenes</h2>
+          {(['lab', 'imaging'] as const).map((g) => {
+            const list = (file.exams ?? []).filter((e) => e.group === g).sort((a, b) => a.orderedAt.localeCompare(b.orderedAt))
+            return (
+              <div key={g}>
+                <h3 className="fr-h3">{GROUP_LABEL[g]}</h3>
+                {list.length ? list.map((e) => (
+                  <div key={e.id} className="fr-lab">
+                    <b>{examLine(e)}</b>{e.priority === 'urgent' ? ' (urgente)' : ''} · pedido {dm(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)} · {STATUS_LABEL[g][e.status]}{e.cancelReason ? `: ${e.cancelReason}` : ''}
+                    {e.indication && <p>Indicación: {e.indication}</p>}
+                    {e.result && <ResultView e={e} />}
+                    {e.result?.fileIds?.map((f) => <PdfOrImage key={f} id={f} />)}
+                  </div>
+                )) : <p className="muted">Sin exámenes de {GROUP_LABEL[g].toLowerCase()}.</p>}
+              </div>
+            )
+          })}
         </>, true)}
 
         {page('fr-autorizaciones', 'Autorizaciones (anexos)', <>
@@ -269,4 +282,13 @@ function PrintedAddenda({ list, id }: { list: Addendum[]; id: string }) {
       ))}
     </div>
   )
+}
+
+/** Archivo de un resultado en la impresión: la foto se imprime; el PDF se nombra (está en el expediente electrónico). */
+function PdfOrImage({ id }: { id: string }) {
+  const { fetchAttachmentMeta } = useStore()
+  const [meta, setMeta] = useState<{ mime: string; name: string } | null>(null)
+  useEffect(() => { fetchAttachmentMeta(id).then(setMeta).catch(() => null) }, [id, fetchAttachmentMeta])
+  if (!meta) return null
+  return meta.mime.startsWith('image/') ? <img src={`/api/attachments/${id}`} alt={meta.name} /> : <p className="muted">Documento PDF en el expediente electrónico ({meta.name}).</p>
 }

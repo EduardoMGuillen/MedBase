@@ -56,6 +56,12 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
    * Un archivo grande se lee por partes: el cliente pide rangos (`Range: bytes=a-b`) de hasta 3 MB, porque Vercel no
    * devuelve más de 4,5 MB por respuesta. Sin rango se devuelve completo (archivos chicos, como siempre).
    */
+  // Nombre y tipo de un archivo (sin bajarlo), para decidir cómo mostrarlo
+  app.get('/api/attachments/:id/meta', auth, need('chart.view'), async (req, res) => {
+    const row = (await sql.one('SELECT name, mime, size FROM attachments WHERE id = ? AND clinic_id = ?', [String(req.params.id), clinicOf(req)])) ?? fail(404, 'El archivo no existe.')
+    res.json({ name: String(row!.name), mime: String(row!.mime), size: Number(row!.size) })
+  })
+
   app.get('/api/attachments/:id', auth, need('chart.view'), async (req, res) => {
     const row = (await sql.one('SELECT * FROM attachments WHERE id = ? AND clinic_id = ?', [String(req.params.id), clinicOf(req)])) ?? fail(404, 'El archivo no existe.')
     const data = Buffer.from(row!.data as Uint8Array)

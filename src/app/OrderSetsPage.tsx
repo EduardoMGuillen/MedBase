@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, Copy, GripVertical, ListChecks, Pencil, Pill, Plus, Trash2, Users, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Copy, GripVertical, ListChecks, Pencil, Pill, Plus, Trash2, Users, X, FlaskConical } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Loading, Modal, PageHead } from '../components/ui'
@@ -8,6 +8,8 @@ import { features } from '../lib/permissions'
 import { ROUTES } from '../lib/format'
 import { INPATIENT_FREQUENCIES } from '../lib/inpatient'
 import { hasBlank, itemText, medHasBlank } from '../lib/orderSets'
+import { ExamPicker } from '../components/Exams'
+import { GROUP_LABEL } from '../lib/exams'
 import { useVademecum } from '../lib/vademecum'
 import { normalize } from '../lib/patients'
 import type { OrderSet, OrderSetItem, SetMed } from '../lib/types'
@@ -38,7 +40,7 @@ export default function OrderSetsPage() {
         </div>
       </div>
       <div className="panel__body">
-        <ol className="set-preview">{s.items.map((it, i) => <li key={i} className={it.med ? 'is-med' : ''}>{it.med && <Pill size={12} className="orders__pill" />}{itemText(it)}</li>)}</ol>
+        <ol className="set-preview">{s.items.map((it, i) => <li key={i} className={it.med ? 'is-med' : ''}>{it.med && <Pill size={12} className="orders__pill" />}{it.exam && <FlaskConical size={12} className="orders__pill" />}{itemText(it)}</li>)}</ol>
       </div>
     </article>
   )
@@ -66,6 +68,7 @@ function SetEditor({ set, office, onClose, onSaved }: { set?: OrderSet; office: 
   const [name, setName] = useState(set?.name ?? '')
   const [shared, setShared] = useState(set?.shared ?? false)
   const [items, setItems] = useState<OrderSetItem[]>(set?.items ?? [])
+  const [pickingExams, setPickingExams] = useState(false)
   const [text, setText] = useState('')
   const [med, setMed] = useState<{ index: number; value: SetMed } | null>(null)
   const [drag, setDrag] = useState<number | null>(null)
@@ -115,7 +118,9 @@ function SetEditor({ set, office, onClose, onSaved }: { set?: OrderSet; office: 
               className={`${drag === i ? 'is-dragging' : ''}${(it.text && hasBlank(it.text)) || (it.med && medHasBlank(it.med)) ? ' has-blank' : ''}`}>
               <span className="set-items__grip" aria-hidden="true"><GripVertical size={14} /></span>
               <span className="orders__n">{i + 1}.</span>
-              {it.med
+              {it.exam
+                ? <span className="orders__text"><FlaskConical size={13} className="orders__pill" />{itemText(it)} <small className="muted">· {GROUP_LABEL[it.exam.group]}</small></span>
+                : it.med
                 ? <button type="button" className="orders__text" onClick={() => setMed({ index: i, value: it.med! })}><Pill size={13} className="orders__pill" />{itemText(it)}</button>
                 : <input className={`input${hasBlank(it.text) ? ' input--blank' : ''}`} value={it.text} aria-label={`Orden ${i + 1}`} onChange={(e) => setItems(items.map((x, j) => (j === i ? { text: e.target.value } : x)))} />}
               <span className="orders__tools">
@@ -135,6 +140,10 @@ function SetEditor({ set, office, onClose, onSaved }: { set?: OrderSet; office: 
           <button type="button" className="btn btn--soft" disabled={!text.trim()} onClick={addText} aria-label="Agregar orden"><Plus size={16} /></button>
         </div>
         <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setMed({ index: -1, value: EMPTY_SET_MED })}><Pill size={15} />Agregar medicamento</button>
+        {/* EX1: un set puede incluir exámenes de los dos grupos */}
+        <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setPickingExams(true)}><FlaskConical size={15} />Agregar exámenes</button>
+        {pickingExams && <ExamPicker current={items.flatMap((x) => (x.exam ? [x.exam] : []))} title="Exámenes del set" onClose={() => setPickingExams(false)}
+          onAdd={(l) => { setItems([...items, ...l.map((exam) => ({ exam }))]); setPickingExams(false) }} />}
       </>)}
     </Modal>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { CalendarClock, Compass, History, ListChecks, LogOut, PenLine, Pill, Plus, Settings2, ShieldCheck, Star, UserRound } from 'lucide-react'
+import { CalendarClock, Compass, FlaskConical, History, ListChecks, LogOut, PenLine, Pill, Plus, Settings2, ShieldCheck, Star, UserRound } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, PageHead } from '../components/ui'
 import { DrugForm } from '../components/DrugForm'
@@ -12,8 +12,9 @@ import { drugKey, useVademecum } from '../lib/vademecum'
 import { normalize } from '../lib/patients'
 import { api } from '../lib/api'
 import { MyActivity } from './Activity'
+import { MyExams } from './MyExams'
 
-type Section = 'pro' | 'firma' | 'horario' | 'vademecum' | 'sets' | 'prefs' | 'seguridad' | 'actividad'
+type Section = 'pro' | 'firma' | 'horario' | 'vademecum' | 'sets' | 'examenes' | 'prefs' | 'seguridad' | 'actividad'
 
 const SECTIONS: { key: Section; label: string; icon: typeof Pill; doctor?: boolean }[] = [
   { key: 'pro', label: 'Datos profesionales', icon: UserRound, doctor: true },
@@ -21,6 +22,7 @@ const SECTIONS: { key: Section; label: string; icon: typeof Pill; doctor?: boole
   { key: 'horario', label: 'Mi horario', icon: CalendarClock, doctor: true },
   { key: 'vademecum', label: 'Mi vademécum', icon: Pill, doctor: true },
   { key: 'sets', label: 'Mis sets de órdenes', icon: ListChecks, doctor: true },
+  { key: 'examenes', label: 'Mis exámenes frecuentes', icon: FlaskConical, doctor: true },
   { key: 'prefs', label: 'Preferencias', icon: Settings2, doctor: true },
   { key: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
   { key: 'actividad', label: 'Mi actividad', icon: History },
@@ -64,6 +66,7 @@ export default function MyConfig() {
           {current === 'horario' && <SchedulePanel />}
           {current === 'vademecum' && <VademecumPanel />}
           {current === 'sets' && <SetsPanel />}
+          {current === 'examenes' && <MyExams />}
           {current === 'prefs' && <PreferencesPanel />}
           {current === 'seguridad' && <SecurityPanel />}
           {current === 'actividad' && <MyActivity />}

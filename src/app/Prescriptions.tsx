@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ban, ChevronLeft, Copy, FileText, MessageCircle, Plus, Printer, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading, Modal, PageHead } from '../components/ui'
@@ -208,6 +208,7 @@ export function PrescriptionSheet() {
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchPrescription>> | null>(null)
   const [missing, setMissing] = useState(false)
   const [voiding, setVoiding] = useState(false)
+  const examBatch = new URLSearchParams(useLocation().search).get('examenes')
   const load = useCallback(() => {
     if (id) fetchPrescription(id).then(setData).catch(() => setMissing(true))
   }, [id, fetchPrescription])
@@ -244,6 +245,8 @@ export function PrescriptionSheet() {
           <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir o guardar PDF (media carta)</button>
         </div>
       </div>
+      {examBatch && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap' }}>También se ordenaron exámenes: se imprimen en su propia orden, aparte de la receta.
+        <Link className="btn btn--soft btn--sm" to={`/app/examenes/orden/${examBatch}`}><Printer size={14} />Ver e imprimir las órdenes de exámenes</Link></div>}
       {rx.voidedAt && <div className="alert-strip no-print">Receta anulada el {date(rx.voidedAt)}, {time(rx.voidedAt)}{rx.voidedBy ? ` por ${staffById(rx.voidedBy)?.name ?? '—'}` : ''}. Motivo: {rx.voidReason}</div>}
       {voiding && <VoidRx id={rx.id} folio={rx.folio} onClose={() => setVoiding(false)} onDone={() => { setVoiding(false); load() }} />}
       <article className="rx-sheet rx-sheet--half" style={{ position: 'relative' }}>
