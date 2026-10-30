@@ -5,16 +5,16 @@ import { roleWith, VIEW_LABEL, viewsOf, type Permission } from '../lib/permissio
 
 /**
  * AD5: selector "Vista de administrador / Vista de médico" para quien tiene varios roles. Al cambiar, cambian el
- * inicio, el menú y los permisos; la vista elegida queda guardada en su cuenta.
+ * inicio, el menú y los permisos; la vista elegida queda guardada en su cuenta. Sólo está en Inicio (MC1, ronda 5).
  */
-export function ViewSwitch({ compact = false, onSwitched }: { compact?: boolean; onSwitched?: () => void }) {
+export function ViewSwitch({ onSwitched }: { onSwitched?: () => void }) {
   const { user, switchView } = useStore()
   const nav = useNavigate()
   if (!user) return null
   const roles = viewsOf(user)
   if (roles.length < 2) return null
   return (
-    <div className={`segmented view-switch${compact ? ' view-switch--compact' : ''}`} role="radiogroup" aria-label="Vista con la que trabajas" data-tour="vista">
+    <div className="segmented view-switch" role="radiogroup" aria-label="Vista con la que trabajas" data-tour="vista">
       {roles.map((r) => (
         <button key={r} type="button" role="radio" aria-checked={user.role === r} onClick={async () => {
           if (r === user.role) return

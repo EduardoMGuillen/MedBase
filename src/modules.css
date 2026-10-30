@@ -237,16 +237,13 @@ tr.clickable { cursor: pointer; }
 .view-bar { padding: 18px 36px 0; display: flex; }
 .view-bar:empty { display: none; }
 .view-switch button { white-space: nowrap; }
-.side__views { padding: 8px 4px 0; }
-.view-switch--compact { display: grid; grid-auto-flow: row; width: 100%; }
-.view-switch--compact button { font-size: 12.5px; padding: 6px 8px; }
 .switch-offer .panel__body { display: grid; grid-template-columns: auto 1fr; gap: 14px 16px; align-items: start; color: var(--petrol); }
 .switch-offer h2 { font-size: 18px; }
 .switch-offer p { color: var(--muted); margin-top: 4px; }
 .switch-offer__actions { grid-column: 2; display: flex; gap: 8px; flex-wrap: wrap; }
 .role-picks { display: flex; flex-wrap: wrap; gap: 6px; }
 .role-picks .badge { cursor: default; }
-@media (max-width: 860px) { .view-bar { padding: 14px 16px 0; } .view-switch:not(.view-switch--compact) { width: 100%; } .view-switch:not(.view-switch--compact) button { flex: 1; } }
+@media (max-width: 860px) { .view-bar { padding: 14px 16px 0; } .view-switch { width: 100%; } .view-switch button { flex: 1; } }
 
 /* MC6: Mi configuración */
 .myconf { display: grid; grid-template-columns: 230px 1fr; gap: 20px; align-items: start; }
