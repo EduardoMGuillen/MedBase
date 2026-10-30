@@ -60,15 +60,15 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
     }
   }
 
-  // Tomas de signos esperadas sin registrar (últimas 24 h)
-  const missed = missedTakes(file, now).filter((s) => s.getTime() >= day)
+  // Tomas de signos esperadas sin registrar, desde el ingreso: no caducan, se resuelven registrando la toma (con su hora)
+  const missed = missedTakes(file, now)
   if (missed.length) {
     out.push({ key: 'vitals-missed', level: 'pending', tab: 'vitals', text: `Signos vitales: ${plural(missed.length, 'toma pendiente', 'tomas pendientes')} (${list(missed.map((s) => when(s.getTime(), now)))}) · cada ${vitalsEvery(file)} h`, count: missed.length, since: missed[0].getTime(), action: { label: 'Registrar signos', go: { tab: 'vitals', record: true } } })
   }
 
-  // Dosis atrasadas de las últimas 24 h, agrupadas por medicamento
+  // Dosis atrasadas desde que empezó la orden, agrupadas por medicamento: no caducan; se registran o se marcan «No aplicada»
   for (const m of file.meds.filter((x) => !x.prn)) {
-    const late = doseTimes(m, new Date(day), new Date(t + HOUR)).filter((s) => {
+    const late = doseTimes(m, new Date(m.firstAt), new Date(t + HOUR)).filter((s) => {
       const dose = file.doses.find((d) => d.medId === m.id && d.scheduledAt && new Date(d.scheduledAt).getTime() === s.at.getTime())
       return slotState(s.at, s.omitted, dose, now) === 'late'
     })
