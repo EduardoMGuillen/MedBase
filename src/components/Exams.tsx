@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { FlaskConical, Plus, ScanLine, Star, X } from 'lucide-react'
+import { FlaskConical, ListChecks, Plus, ScanLine, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { Modal } from './ui'
-import { BASE_PROFILES, examCatalog, examKey, examLine, findExam, GROUP_LABEL } from '../lib/exams'
+import { examCatalog, examKey, examLine, findExam, GROUP_LABEL } from '../lib/exams'
+import { useOrderSets } from '../lib/useOrderSets'
 import { normalize } from '../lib/patients'
 import type { ExamGroup, ExamInput } from '../lib/types'
 
@@ -70,26 +71,36 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
 }
 
 /**
- * Buscador único de exámenes: resultados agrupados en Laboratorio e Imagen y gabinete (con filtro por grupo), favoritos
- * del médico arriba y perfiles de un toque. Lo que no está se escribe y se puede guardar en el catálogo, eligiendo su grupo.
+ * Buscador único de exámenes: resultados agrupados en Laboratorio e Imagen y gabinete (con filtro por grupo) y, MC2
+ * (ronda 5), los sets de exámenes del médico de un toque. Lo que no está se escribe y se puede guardar en el catálogo,
+ * eligiendo su grupo. `catalogOnly`: sólo exámenes del catálogo (al armar un set).
  */
-export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes' }: { current: ExamInput[]; onClose: () => void; onAdd: (list: ExamInput[]) => void; title?: string }) {
-  const { user, notify, can } = useStore()
-  const { exams: clinicExams, profiles, reload } = useExamCatalog()
+export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes', catalogOnly = false }: {
+  current: ExamInput[]; onClose: () => void; onAdd: (list: ExamInput[]) => void; title?: string; catalogOnly?: boolean
+}) {
+  const { notify, can } = useStore()
+  const { exams: clinicExams, reload } = useExamCatalog()
+  const { sets } = useOrderSets(!catalogOnly && can('exams.order'), 'exams')
   const [q, setQ] = useState('')
   const [group, setGroup] = useState<'' | ExamGroup>('')
   const [picked, setPicked] = useState<ExamInput[]>([])
   const [newGroup, setNewGroup] = useState<ExamGroup>('lab')
   // AD4: sólo administración agrega al catálogo de la clínica
   const [save, setSave] = useState(can('settings.manage'))
-  const favs = useMemo(() => user?.prefs?.favExams ?? [], [user?.prefs?.favExams])
-  const catalog = useMemo(() => examCatalog(clinicExams, favs), [clinicExams, favs])
+  const catalog = useMemo(() => examCatalog(clinicExams), [clinicExams])
   const n = normalize(q)
   const have = new Set([...current, ...picked].map((e) => examKey(e.name)))
   const hits = catalog.filter((e) => (!group || e.group === group) && (!n || normalize(e.name).includes(n)))
   const exact = catalog.some((e) => examKey(e.name) === examKey(q))
   const toggle = (g: ExamGroup, name: string) => setPicked(have.has(examKey(name)) ? picked.filter((p) => examKey(p.name) !== examKey(name)) : [...picked, newExam(g, name)])
-  const allProfiles = [...BASE_PROFILES.map((p) => ({ ...p, ownerId: undefined })), ...profiles]
+  // Un set elige todos sus exámenes; los que la clínica archivó se omiten con aviso
+  const applySet = (s: { name: string; items: { exam?: ExamInput }[] }) => {
+    const list = s.items.flatMap((it) => (it.exam ? [it.exam] : []))
+    const known = list.filter((e) => catalog.some((c) => examKey(c.name) === examKey(e.name)))
+    const gone = list.filter((e) => !known.includes(e))
+    setPicked([...picked, ...known.filter((x) => !have.has(examKey(x.name))).map((x) => newExam(x.group, catalog.find((c) => examKey(c.name) === examKey(x.name))!.name))])
+    if (gone.length) notify(`${gone.map((e) => e.name).join(', ')} ya no ${gone.length === 1 ? 'está' : 'están'} en el catálogo de la clínica: no se ${gone.length === 1 ? 'agregó' : 'agregaron'}.`, 'error')
+  }
   const addNew = async () => {
     const name = q.trim()
     if (save) {
@@ -111,12 +122,11 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
           <button type="button" role="radio" aria-checked={group === 'imaging'} onClick={() => setGroup('imaging')}>Imagen y gabinete</button>
         </div>
       </div>
-      {!q && (
+      {!q && !catalogOnly && !!sets?.length && (
         <div className="exam-picker__profiles">
-          <small className="muted">Perfiles</small>
-          <div className="chips">{allProfiles.map((p) => (
-            <button key={p.id} type="button" className="chip chip--toggle" title={p.items.map((x) => x.name).join(', ')}
-              onClick={() => setPicked([...picked, ...p.items.filter((x) => !have.has(examKey(x.name))).map((x) => newExam(x.group, x.name))])}>{p.name}{p.ownerId ? ' (mío)' : ''}</button>
+          <small className="muted"><ListChecks size={13} /> Mis sets</small>
+          <div className="chips">{sets.map((s) => (
+            <button key={s.id} type="button" className="chip chip--toggle" title={s.items.flatMap((it) => (it.exam ? [it.exam.name] : [])).join(', ')} onClick={() => applySet(s)}>{s.name}</button>
           ))}</div>
         </div>
       )}
@@ -129,13 +139,13 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
               <h4>{GROUP_LABEL[g]}</h4>
               <div className="exam-picker__list">{list.slice(0, q ? 40 : 60).map((e) => (
                 <button key={e.name} type="button" className={`exam-pick${have.has(examKey(e.name)) ? ' is-on' : ''}`} aria-pressed={have.has(examKey(e.name))} onClick={() => toggle(e.group, e.name)}>
-                  {favs.some((f) => examKey(f) === examKey(e.name)) && <Star size={13} fill="currentColor" className="exam-pick__fav" />}{e.name}{e.clinicId && <small className="muted"> · de la clínica</small>}
+                  {e.name}
                 </button>
               ))}</div>
             </div>
           )
         })}
-        {q.trim().length >= 3 && !exact && (
+        {q.trim().length >= 3 && !exact && !catalogOnly && (
           <div className="exam-picker__new">
             <span>¿No está? Agregar «{q.trim()}» como</span>
             <div className="segmented segmented--sm" role="radiogroup" aria-label="Grupo del examen nuevo">

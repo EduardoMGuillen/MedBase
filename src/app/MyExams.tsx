@@ -1,67 +1,102 @@
 import { useMemo, useState } from 'react'
-import { Plus, Star, Trash2 } from 'lucide-react'
+import { Archive, Copy, FlaskConical, Pencil, Plus, ScanLine, TriangleAlert, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
+import { Modal } from '../components/ui'
 import { ExamPicker } from '../components/Exams'
+import { useOrderSets } from '../lib/useOrderSets'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { examCatalog, examKey, GROUP_LABEL } from '../lib/exams'
-import { normalize } from '../lib/patients'
-import type { ExamGroup, ExamInput } from '../lib/types'
+import type { ExamInput, OrderSet } from '../lib/types'
+
+/** Exámenes de un set de exámenes. */
+const examsOf = (s: OrderSet) => s.items.flatMap((it) => (it.exam ? [it.exam] : []))
 
 /**
- * MC6 + EX1: «Mis exámenes frecuentes». Los favoritos salen primero al ordenar; los perfiles propios agregan varios
- * exámenes de un toque (igual que los sets de órdenes).
+ * MC2 (ronda 5): «Mis sets de exámenes» reemplaza a «Mis exámenes frecuentes». Cada médico arma los suyos con exámenes
+ * del catálogo de la clínica (nadie más los ve) y al ordenar los elige de un toque. Crear, editar, duplicar y archivar;
+ * empiezan con los cinco perfiles que antes eran fijos. Las estrellas de antes quedan guardadas sin mostrarse.
  */
 export function MyExams() {
-  const { user, saveMyProfile, notify } = useStore()
-  const { exams: clinicExams, profiles, reload } = useExamCatalog()
-  const [q, setQ] = useState('')
-  const [making, setMaking] = useState<{ name: string; items: ExamInput[] } | null>(null)
-  const [picking, setPicking] = useState(false)
-  const favs = useMemo(() => user?.prefs?.favExams ?? [], [user?.prefs?.favExams])
-  const isFav = (name: string) => favs.some((f) => examKey(f) === examKey(name))
-  const list = examCatalog(clinicExams).filter((e) => !q || normalize(e.name).includes(normalize(q)))
-  const toggle = (name: string) => saveMyProfile({ favExams: isFav(name) ? favs.filter((f) => examKey(f) !== examKey(name)) : [...favs, name] })
-  const mine = profiles.filter((p) => p.ownerId === user?.id)
-  return (<>
+  const { notify } = useStore()
+  const { sets, reload } = useOrderSets(true, 'exams')
+  const { exams: clinicExams } = useExamCatalog()
+  const active = useMemo(() => new Set(examCatalog(clinicExams).map((e) => examKey(e.name))), [clinicExams])
+  const [editing, setEditing] = useState<OrderSet | 'new' | null>(null)
+  const act = async (fn: () => Promise<unknown>, ok: string) => { try { await fn(); notify(ok); reload() } catch (e) { notify((e as Error).message, 'error') } }
+  return (
     <section className="panel">
-      <div className="panel__head"><div><h2>Mis exámenes frecuentes</h2><p>Marca con la estrella los que más pides: salen primero al ordenar exámenes.</p></div></div>
-      <div className="panel__body" style={{ display: 'grid', gap: 12 }}>
-        <input className="input" style={{ maxWidth: 360 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar examen" aria-label="Buscar examen" />
-        {(['lab', 'imaging'] as ExamGroup[]).map((g) => (
-          <div key={g}>
-            <h3 style={{ fontSize: 14, marginBottom: 6 }}>{GROUP_LABEL[g]}</h3>
-            <div className="exam-picker__list">{list.filter((e) => e.group === g).map((e) => (
-              <button key={e.name} type="button" className={`exam-pick${isFav(e.name) ? ' is-on' : ''}`} aria-pressed={isFav(e.name)} onClick={() => toggle(e.name)}>
-                <Star size={13} fill={isFav(e.name) ? 'currentColor' : 'none'} className="exam-pick__fav" />{e.name}</button>
+      <div className="panel__head" style={{ flexWrap: 'wrap', gap: 10 }}>
+        <div><h2>Mis sets de exámenes</h2><p>Varios exámenes con un nombre, para pedirlos de un toque al ordenar. Sólo tú los ves.</p></div>
+        <button className="btn btn--primary btn--sm" onClick={() => setEditing('new')}><Plus size={15} />Crear set</button>
+      </div>
+      <div className="panel__body">
+        {!sets ? <p className="muted">Cargando…</p> : !sets.length ? <div className="empty">Todavía no tienes sets de exámenes.</div> : (
+          <ul className="exsets">
+            {sets.map((s) => {
+              const list = examsOf(s)
+              const gone = list.filter((e) => !active.has(examKey(e.name)))
+              return (
+                <li key={s.id}>
+                  <div className="exsets__head">
+                    <b>{s.name}</b><small className="muted">{list.length} examen{list.length === 1 ? '' : 'es'}</small>
+                    <span className="exsets__acts">
+                      <button className="btn btn--ghost btn--sm" onClick={() => setEditing(s)}><Pencil size={13} />Editar</button>
+                      <button className="btn btn--ghost btn--sm" onClick={() => act(() => api(`/order-sets/${s.id}/duplicate`, { method: 'POST' }), `Se duplicó «${s.name}»`)}><Copy size={13} />Duplicar</button>
+                      <button className="btn btn--ghost btn--sm" onClick={() => { if (confirm(`¿Archivar el set «${s.name}»? Deja de aparecer al ordenar.`)) void act(() => api(`/order-sets/${s.id}`, { method: 'DELETE' }), 'Set archivado') }}><Archive size={13} />Archivar</button>
+                    </span>
+                  </div>
+                  <p className="exsets__items">{list.map((e) => e.name).join(' · ')}</p>
+                  {gone.length > 0 && <p className="exsets__warn"><TriangleAlert size={14} />{gone.map((e) => e.name).join(', ')} ya no {gone.length === 1 ? 'está' : 'están'} en el catálogo de la clínica: al ordenar se {gone.length === 1 ? 'omite' : 'omiten'}.</p>}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+      {editing && <ExamSetForm set={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}
+    </section>
+  )
+}
+
+/** Crear o editar un set de exámenes: nombre y exámenes del catálogo (con el buscador de ordenar exámenes). */
+export function ExamSetForm({ set, initial = [], onClose, onSaved }: { set?: OrderSet; initial?: ExamInput[]; onClose: () => void; onSaved: (s: OrderSet) => void }) {
+  const { notify } = useStore()
+  const [name, setName] = useState(set?.name ?? '')
+  const [exams, setExams] = useState<ExamInput[]>(() => (set ? examsOf(set) : initial).map((e) => ({ group: e.group, name: e.name, priority: 'routine', place: 'clinic' })))
+  const [picking, setPicking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const save = async () => {
+    setBusy(true)
+    try {
+      const items = exams.map((e) => ({ exam: e }))
+      const s = set
+        ? await api<OrderSet>(`/order-sets/${set.id}`, { method: 'PATCH', body: { name: name.trim(), items } })
+        : await api<OrderSet>('/order-sets', { body: { name: name.trim(), items, kind: 'exams' } })
+      notify(set ? 'Set guardado' : `Set «${name.trim()}» creado`)
+      onSaved(s)
+    } catch (e) { notify((e as Error).message, 'error') } finally { setBusy(false) }
+  }
+  return (
+    <Modal title={set ? 'Editar set de exámenes' : 'Crear set de exámenes'} onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={busy || name.trim().length < 3 || !exams.length} onClick={save}>Guardar set</button>
+    </>}>
+      <label className="field"><span>Nombre del set</span><input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Mi control prenatal" /></label>
+      {(['lab', 'imaging'] as const).map((g) => {
+        const list = exams.filter((e) => e.group === g)
+        if (!list.length) return null
+        return (
+          <div key={g} className="field"><span>{g === 'lab' ? <FlaskConical size={14} /> : <ScanLine size={14} />} {GROUP_LABEL[g]}</span>
+            <div className="chips">{list.map((e) => (
+              <span key={e.name} className="chip">{e.name}<button type="button" className="icon-btn" aria-label={`Quitar ${e.name}`} onClick={() => setExams(exams.filter((x) => x !== e))}><X size={12} /></button></span>
             ))}</div>
           </div>
-        ))}
-      </div>
-    </section>
-    <section className="panel">
-      <div className="panel__head"><div><h2>Mis perfiles de exámenes</h2><p>Varios exámenes con un nombre («Control de mi paciente diabético») para pedirlos de un toque.</p></div>
-        {!making && <button className="btn btn--primary btn--sm" onClick={() => setMaking({ name: '', items: [] })}><Plus size={15} />Nuevo perfil</button>}</div>
-      <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
-        {making && (
-          <div className="new-svc" style={{ gridTemplateColumns: '1fr' }}>
-            <label className="field"><span>Nombre del perfil</span><input className="input" value={making.name} onChange={(e) => setMaking({ ...making, name: e.target.value })} /></label>
-            <p style={{ fontSize: 14 }}>{making.items.length ? making.items.map((i) => i.name).join(', ') : 'Sin exámenes todavía.'}</p>
-            <div className="new-svc__actions">
-              <button className="btn btn--soft btn--sm" onClick={() => setPicking(true)}><Plus size={14} />Elegir exámenes</button>
-              <button className="btn btn--primary btn--sm" disabled={making.name.trim().length < 3 || making.items.length < 2} onClick={async () => {
-                try { await api('/exams/profiles', { body: { name: making.name.trim(), items: making.items.map(({ group, name }) => ({ group, name })) } }); setMaking(null); reload(); notify('Perfil guardado') } catch (e) { notify((e as Error).message, 'error') }
-              }}>Guardar perfil</button>
-              <button className="btn btn--ghost btn--sm" onClick={() => setMaking(null)}>Cancelar</button>
-            </div>
-          </div>
-        )}
-        {mine.length ? <ul className="fav-list">{mine.map((p) => (
-          <li key={p.id}><span><b>{p.name}</b> <span className="muted">{p.items.map((i) => i.name).join(', ')}</span></span>
-            <button className="icon-btn" aria-label={`Quitar el perfil ${p.name}`} onClick={async () => { await api(`/exams/profiles/${p.id}`, { method: 'DELETE' }).catch(() => null); reload() }}><Trash2 size={15} /></button></li>
-        ))}</ul> : !making && <p className="muted">Todavía no tienes perfiles propios. Los de la clínica y los básicos (Control de diabetes, Preoperatorio…) ya están al ordenar.</p>}
-      </div>
-      {picking && making && <ExamPicker current={making.items} title="Exámenes del perfil" onClose={() => setPicking(false)} onAdd={(l) => { setMaking({ ...making, items: [...making.items, ...l] }); setPicking(false) }} />}
-    </section>
-  </>)
+        )
+      })}
+      {!exams.length && <p className="muted">Sin exámenes todavía.</p>}
+      <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setPicking(true)}><Plus size={15} />Agregar exámenes</button>
+      {picking && <ExamPicker current={exams} catalogOnly title="Agregar exámenes al set" onClose={() => setPicking(false)} onAdd={(list) => { setExams([...exams, ...list]); setPicking(false) }} />}
+    </Modal>
+  )
 }

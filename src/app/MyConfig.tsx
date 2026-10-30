@@ -27,7 +27,8 @@ const SECTIONS: { key: Section; label: string; icon: typeof Pill; roles?: Role[]
   { key: 'horario', label: 'Mi horario', icon: CalendarClock, roles: ['doctor'] },
   { key: 'vademecum', label: 'Mi vademécum', icon: Pill, roles: ['doctor'] },
   { key: 'sets', label: 'Mis sets de órdenes', icon: ListChecks, roles: ['doctor'] },
-  { key: 'examenes', label: 'Mis exámenes frecuentes', icon: FlaskConical, roles: ['doctor'] },
+  // MC2 (ronda 5): sets de exámenes del médico (reemplazan a «Mis exámenes frecuentes»)
+  { key: 'examenes', label: 'Mis sets de exámenes', icon: FlaskConical, roles: ['doctor'] },
   { key: 'prefs', label: 'Preferencias', icon: Settings2, roles: ['doctor', 'reception'] },
   { key: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
   { key: 'actividad', label: 'Mi actividad', icon: History },

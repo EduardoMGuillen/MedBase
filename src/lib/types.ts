@@ -638,6 +638,8 @@ export interface OrderSet {
   name: string
   items: OrderSetItem[]
   shared: boolean
+  /** MC2 (ronda 5): set de órdenes (indicaciones, medicamentos y exámenes) o set de exámenes (sólo exámenes, del médico). */
+  kind?: 'orders' | 'exams'
   createdAt: string
   updatedAt?: string
   /** Cuántas veces lo aplicó quien consulta la lista, y la última vez. */

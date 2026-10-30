@@ -490,3 +490,12 @@ tr.clickable { cursor: pointer; }
 .excat__list li.is-archived { opacity: .6; }
 .excat__acts { display: inline-flex; gap: 4px; flex: none; }
 @media (max-width: 720px) { .excat__list li { flex-wrap: wrap; } }
+
+/* MC2 (ronda 5): Mis sets de exámenes, una lista limpia */
+.exsets { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.exsets li { border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 10px 12px; display: grid; gap: 4px; }
+.exsets__head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.exsets__head b { color: var(--petrol); font-size: 15px; }
+.exsets__acts { margin-left: auto; display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.exsets__items { margin: 0; font-size: 13.5px; color: var(--muted); }
+.exsets__warn { margin: 0; display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--amber-ink); }

@@ -8,7 +8,7 @@ import { createSql, type Sql } from './sql.js'
 import { fileAlerts } from '../src/lib/alerts.js'
 import { bandOf } from '../src/lib/vitalsSheet.js'
 import { groupsFromLimits } from '../src/lib/clinicalConfig.js'
-import { EXAMS } from '../src/lib/exams.js'
+import { BASE_PROFILES, EXAMS } from '../src/lib/exams.js'
 
 let server: Server
 let sql: Sql
@@ -278,5 +278,36 @@ describe('AD4 catálogo de exámenes de la clínica', () => {
     const owner = await as('alopez@demo.clinara')
     await owner.post('/api/me/view', { role: 'admin' })
     assert.equal((await owner.post('/api/exams/catalog', { group: 'lab', name: 'Ferritina' })).status, 201)
+  })
+})
+
+describe('MC2 mis sets de exámenes', () => {
+  test('cada médico recibe los cinco perfiles como sets suyos; crea, edita, duplica y archiva los suyos; otro médico no los ve', async () => {
+    const herrera = await as('lherrera@demo.clinara')
+    const paz = await as('apaz@demo.clinara')
+    let mine = (await herrera.get('/api/order-sets?kind=exams')).body
+    for (const p of BASE_PROFILES) assert.ok(mine.some((s: any) => s.name === p.name && s.kind === 'exams'), `falta ${p.name}`)
+    assert.equal((await herrera.get('/api/order-sets?kind=exams')).body.length, mine.length, 'se entregan una sola vez')
+    const exam = (name: string, group = 'lab') => ({ exam: { group, name, priority: 'routine', place: 'clinic' } })
+    const items = ['Hemograma', 'Tipo y Rh', 'Glucosa en ayunas', 'Examen general de orina (EGO)', 'VDRL'].map((n) => exam(n))
+    const created = await herrera.post('/api/order-sets', { name: 'Mi control prenatal', kind: 'exams', items: [...items, exam('Ultrasonido obstétrico', 'imaging')] })
+    assert.equal(created.status, 201, JSON.stringify(created.body))
+    assert.equal(created.body.items.length, 6)
+    assert.equal((await herrera.post('/api/order-sets', { name: 'Con texto', kind: 'exams', items: [{ text: 'Dieta blanda.' }] })).status, 400, 'sólo exámenes')
+    assert.equal((await herrera.post('/api/order-sets', { name: 'Compartido', kind: 'exams', shared: true, items })).status, 400, 'no se comparten')
+    assert.ok(!(await paz.get('/api/order-sets?kind=exams')).body.some((s: any) => s.name === 'Mi control prenatal'), 'otro médico no lo ve')
+    assert.ok(!(await herrera.get('/api/order-sets')).body.some((s: any) => s.kind === 'exams'), 'no se mezclan con los sets de órdenes')
+    assert.equal((await paz.patch(`/api/order-sets/${created.body.id}`, { name: 'Robado' })).status, 403)
+    assert.equal((await herrera.patch(`/api/order-sets/${created.body.id}`, { name: 'Mi control prenatal (1.er trimestre)' })).status, 200)
+    const dup = await herrera.post(`/api/order-sets/${created.body.id}/duplicate`)
+    assert.equal(dup.status, 201)
+    assert.equal(dup.body.kind, 'exams')
+    assert.equal((await herrera.del(`/api/order-sets/${dup.body.id}`)).status, 200)
+    mine = (await herrera.get('/api/order-sets?kind=exams')).body
+    assert.ok(mine.some((s: any) => s.name === 'Mi control prenatal (1.er trimestre)'))
+    assert.ok(!mine.some((s: any) => s.id === dup.body.id), 'archivado')
+    const log = ((await herrera.get('/api/audit/mine')).body.rows ?? (await herrera.get('/api/audit/mine')).body) as any[]
+    assert.ok(log.some((e) => /Creó el set de exámenes "Mi control prenatal" \(6 exámenes\)/.test(e.action)))
+    assert.ok(log.some((e) => /Archivó el set de exámenes/.test(e.action)))
   })
 })

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import type { OrderSet, OrderSetItem } from '../../src/lib/types.js'
 import { examInput } from './exams.js'
+import { BASE_PROFILES } from '../../src/lib/exams.js'
 
 const med = z.object({
   drug: z.string().trim().min(1, 'Escribe el medicamento.').max(120),
@@ -21,10 +22,14 @@ const body = z.object({
   name: z.string().trim().min(3, 'Ponle un nombre al set (al menos 3 letras).').max(100),
   items: z.array(item).min(1, 'El set necesita al menos una orden.').max(40, 'Un set tiene como máximo 40 órdenes.'),
   shared: z.boolean().default(false),
+  // MC2 (ronda 5): un set de exámenes sólo lleva exámenes y es sólo de su médico
+  kind: z.enum(['orders', 'exams']).default('orders'),
 })
+const kindOf = (r: Row) => (r.kind === 'exams' ? 'exams' : 'orders')
+const SET_LABEL = { orders: 'set de órdenes', exams: 'set de exámenes' } as const
 
 const toOrderSet = (r: Row): OrderSet => ({
-  id: String(r.id), ownerId: String(r.owner_id), name: String(r.name), items: JSON.parse(String(r.items)) as OrderSetItem[], shared: Boolean(r.shared),
+  id: String(r.id), ownerId: String(r.owner_id), name: String(r.name), items: JSON.parse(String(r.items)) as OrderSetItem[], shared: Boolean(r.shared), kind: kindOf(r),
   createdAt: String(r.created_at), updatedAt: r.updated_at ? String(r.updated_at) : undefined, uses: Number(r.uses ?? 0), lastUsedAt: r.last_used ? String(r.last_used) : undefined,
 })
 
@@ -42,9 +47,35 @@ export function registerOrderSets(app: Express, { sql, auth, need, userOf, clini
   /** Lo que puede ver: los suyos y los compartidos de la clínica. */
   const visible = (r: Row, userId: string) => String(r.owner_id) === userId || Boolean(r.shared)
 
+  /**
+   * MC2 (ronda 5): la primera vez que un médico abre sus sets de exámenes recibe, como sets suyos y editables, los cinco
+   * perfiles que antes eran fijos y los perfiles que él mismo había creado. Se hace una sola vez (queda en sus preferencias).
+   */
+  const seedExamSets = async (cid: string, userId: string) => {
+    const me = await sql.one(`SELECT prefs FROM staff WHERE id = ?`, [userId])
+    if ((JSON.parse(String(me?.prefs || '{}')) as { examSetsSeeded?: string }).examSetsSeeded) return
+    const own = await sql.query('SELECT name, items FROM exam_profiles WHERE clinic_id = ? AND owner_id = ? AND archived_at IS NULL', [cid, userId])
+    const now = new Date().toISOString()
+    const taken = new Set<string>()
+    for (const p of [...BASE_PROFILES.map((x) => ({ name: x.name, items: x.items })), ...own.map((r) => ({ name: String(r.name), items: JSON.parse(String(r.items)) as { group: 'lab' | 'imaging'; name: string }[] }))]) {
+      if (taken.has(p.name.toLowerCase())) continue
+      taken.add(p.name.toLowerCase())
+      const items = p.items.map((e) => ({ exam: { group: e.group, name: e.name, priority: 'routine', place: 'clinic' } }))
+      await sql.run(`INSERT INTO order_sets (id, clinic_id, owner_id, name, items, shared, created_at, kind) VALUES (?,?,?,?,?,FALSE,?,'exams')`, [randomUUID(), cid, userId, p.name, JSON.stringify(items), now])
+    }
+    await sql.run(`UPDATE staff SET prefs = jsonb_set(COALESCE(NULLIF(prefs, ''), '{}')::jsonb, '{examSetsSeeded}', to_jsonb(?::text))::text WHERE id = ?`, [now, userId])
+  }
+
   app.get('/api/order-sets', auth, need('consult.write'), async (req, res) => {
     const user = userOf(req)
-    const rows = await sql.query(`${select} WHERE s.clinic_id = ? AND s.archived_at IS NULL AND (s.owner_id = ? OR s.shared) ORDER BY s.name`, [user.id, user.id, clinicOf(req), user.id])
+    const kind = req.query.kind === 'exams' ? 'exams' : 'orders'
+    if (kind === 'exams') {
+      await seedExamSets(clinicOf(req), user.id)
+      // Cada médico ve sólo los suyos
+      const rows = await sql.query(`${select} WHERE s.clinic_id = ? AND s.archived_at IS NULL AND s.owner_id = ? AND s.kind = 'exams' ORDER BY s.name`, [user.id, user.id, clinicOf(req), user.id])
+      return res.json(rows.map(toOrderSet))
+    }
+    const rows = await sql.query(`${select} WHERE s.clinic_id = ? AND s.archived_at IS NULL AND s.kind = 'orders' AND (s.owner_id = ? OR s.shared) ORDER BY s.name`, [user.id, user.id, clinicOf(req), user.id])
     // Primero los más usados por este médico, luego los usados hace menos tiempo, luego por nombre
     res.json(rows.map(toOrderSet).sort((a, b) => b.uses - a.uses || (b.lastUsedAt ?? '').localeCompare(a.lastUsedAt ?? '') || a.name.localeCompare(b.name, 'es')))
   })
@@ -54,32 +85,36 @@ export function registerOrderSets(app: Express, { sql, auth, need, userOf, clini
     const user = userOf(req)
     const cid = clinicOf(req)
     if (b.shared && await office(cid)) fail(400, 'En un consultorio los sets son sólo tuyos.')
-    if (await sql.one('SELECT 1 FROM order_sets WHERE clinic_id = ? AND owner_id = ? AND lower(name) = lower(?) AND archived_at IS NULL', [cid, user.id, b.name])) {
+    if (b.kind === 'exams' && b.items.some((it) => !('exam' in it))) fail(400, 'Un set de exámenes sólo lleva exámenes.')
+    if (b.kind === 'exams' && b.shared) fail(400, 'Los sets de exámenes son sólo tuyos.')
+    if (await sql.one('SELECT 1 FROM order_sets WHERE clinic_id = ? AND owner_id = ? AND lower(name) = lower(?) AND archived_at IS NULL AND kind = ?', [cid, user.id, b.name, b.kind])) {
       fail(409, `Ya tienes un set que se llama "${b.name}". Usa otro nombre.`)
     }
     const id = randomUUID()
-    await sql.run('INSERT INTO order_sets (id, clinic_id, owner_id, name, items, shared, created_at) VALUES (?,?,?,?,?,?,?)',
-      [id, cid, user.id, b.name, JSON.stringify(b.items), b.shared, new Date().toISOString()])
-    await audit(user, `Creó el set de órdenes "${b.name}" (${b.items.length} órdenes${b.shared ? ', compartido con la clínica' : ''})`)
+    await sql.run('INSERT INTO order_sets (id, clinic_id, owner_id, name, items, shared, created_at, kind) VALUES (?,?,?,?,?,?,?,?)',
+      [id, cid, user.id, b.name, JSON.stringify(b.items), b.shared, new Date().toISOString(), b.kind])
+    await audit(user, b.kind === 'exams' ? `Creó el set de exámenes "${b.name}" (${b.items.length} exámenes)` : `Creó el set de órdenes "${b.name}" (${b.items.length} órdenes${b.shared ? ', compartido con la clínica' : ''})`)
     res.status(201).json(toOrderSet(await one(cid, user.id, id)))
   })
 
   app.patch('/api/order-sets/:id', auth, need('consult.write'), async (req, res) => {
-    const b = parse(body.partial(), req.body)
+    const b = parse(body.omit({ kind: true }).partial(), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
     const row = await one(cid, user.id, String(req.params.id))
     if (String(row.owner_id) !== user.id) fail(403, 'Sólo quien creó el set lo edita. Puedes duplicarlo como tuyo.')
+    if (kindOf(row) === 'exams' && b.items?.some((it) => !('exam' in it))) fail(400, 'Un set de exámenes sólo lleva exámenes.')
+    if (kindOf(row) === 'exams' && b.shared) fail(400, 'Los sets de exámenes son sólo tuyos.')
     if (b.shared && await office(cid)) fail(400, 'En un consultorio los sets son sólo tuyos.')
     if (b.name && b.name.toLowerCase() !== String(row.name).toLowerCase()
-      && await sql.one('SELECT 1 FROM order_sets WHERE clinic_id = ? AND owner_id = ? AND lower(name) = lower(?) AND archived_at IS NULL AND id <> ?', [cid, user.id, b.name, String(row.id)])) {
+      && await sql.one('SELECT 1 FROM order_sets WHERE clinic_id = ? AND owner_id = ? AND lower(name) = lower(?) AND archived_at IS NULL AND kind = ? AND id <> ?', [cid, user.id, b.name, kindOf(row), String(row.id)])) {
       fail(409, `Ya tienes un set que se llama "${b.name}". Usa otro nombre.`)
     }
     await sql.run('UPDATE order_sets SET name = ?, items = ?, shared = ?, updated_at = ? WHERE id = ?',
       [b.name ?? row.name, b.items ? JSON.stringify(b.items) : row.items, b.shared ?? row.shared, new Date().toISOString(), String(row.id)])
     const what = [b.name && b.name !== row.name && `renombró "${row.name}" a "${b.name}"`, b.items && `${b.items.length} órdenes`,
       b.shared !== undefined && b.shared !== Boolean(row.shared) && (b.shared ? 'lo compartió con la clínica' : 'dejó de compartirlo')].filter(Boolean).join(', ')
-    await audit(user, `Editó el set de órdenes "${b.name ?? row.name}"${what ? `: ${what}` : ''}`)
+    await audit(user, `Editó el ${SET_LABEL[kindOf(row)]} "${b.name ?? row.name}"${what ? `: ${what}` : ''}`)
     res.json(toOrderSet(await one(cid, user.id, String(row.id))))
   })
 
@@ -89,13 +124,13 @@ export function registerOrderSets(app: Express, { sql, auth, need, userOf, clini
     const cid = clinicOf(req)
     const row = await one(cid, user.id, String(req.params.id))
     if (!visible(row, user.id)) fail(404, 'El set no existe.')
-    const mine = new Set((await sql.query('SELECT lower(name) AS n FROM order_sets WHERE clinic_id = ? AND owner_id = ? AND archived_at IS NULL', [cid, user.id])).map((r) => String(r.n)))
+    const mine = new Set((await sql.query('SELECT lower(name) AS n FROM order_sets WHERE clinic_id = ? AND owner_id = ? AND archived_at IS NULL AND kind = ?', [cid, user.id, kindOf(row)])).map((r) => String(r.n)))
     let name = `${row.name} (copia)`
     for (let i = 2; mine.has(name.toLowerCase()); i++) name = `${row.name} (copia ${i})`
     const id = randomUUID()
-    await sql.run('INSERT INTO order_sets (id, clinic_id, owner_id, name, items, shared, created_at) VALUES (?,?,?,?,?,FALSE,?)',
-      [id, cid, user.id, name.slice(0, 100), String(row.items), new Date().toISOString()])
-    await audit(user, `Duplicó el set de órdenes "${row.name}" como "${name}"`)
+    await sql.run('INSERT INTO order_sets (id, clinic_id, owner_id, name, items, shared, created_at, kind) VALUES (?,?,?,?,?,FALSE,?,?)',
+      [id, cid, user.id, name.slice(0, 100), String(row.items), new Date().toISOString(), kindOf(row)])
+    await audit(user, `Duplicó el ${SET_LABEL[kindOf(row)]} "${row.name}" como "${name}"`)
     res.status(201).json(toOrderSet(await one(cid, user.id, id)))
   })
 
@@ -105,7 +140,7 @@ export function registerOrderSets(app: Express, { sql, auth, need, userOf, clini
     const row = await one(cid, user.id, String(req.params.id))
     if (String(row.owner_id) !== user.id) fail(403, 'Sólo quien creó el set lo elimina.')
     await sql.run('UPDATE order_sets SET archived_at = ? WHERE id = ?', [new Date().toISOString(), String(row.id)])
-    await audit(user, `Eliminó (archivó) el set de órdenes "${row.name}"`)
+    await audit(user, `Archivó el ${SET_LABEL[kindOf(row)]} "${row.name}"`)
     res.json({ ok: true })
   })
 
