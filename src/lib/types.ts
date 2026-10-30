@@ -478,7 +478,7 @@ export interface InpatientNote {
   checklist?: boolean
   /** Cuántas de las órdenes son indicaciones (van primero); el resto son medicamentos. Notas anteriores: sin dato. */
   indicationCount?: number
-  /** 'dx': Diagnóstico · Examen físico · Observaciones. Sin dato: SOAP. */
+  /** 'dx': formato Estándar (diagnóstico, examen físico y observaciones). Sin dato: SOAP. */
   format?: 'soap' | 'dx'
   diagnoses?: Diagnosis[]
   exam?: string

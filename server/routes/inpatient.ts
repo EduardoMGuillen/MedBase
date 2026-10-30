@@ -308,7 +308,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const text = z.string().trim().max(6000).default('')
     const b = parse(z.object({
       kind: z.enum(['admission', 'evolution']),
-      // Dos formatos: SOAP (como siempre) o Diagnóstico · Examen físico · Observaciones
+      // Dos formatos: Estándar (diagnóstico, examen físico y observaciones) o SOAP. El de cada médico se elige en Mi configuración
       format: z.enum(['soap', 'dx']).default('soap'),
       subjective: text, objective: text, assessment: text, plan: text,
       diagnoses: z.array(diagnosisInput).max(20).default([]),
@@ -322,7 +322,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       // se devuelve la que ya se guardó y no se duplican ni la nota ni sus órdenes de medicamento
       clientId: z.string().uuid().optional(),
     }), req.body)
-    // SOAP: los cuatro campos, como siempre. Formato 2: al menos un campo, una indicación o un medicamento.
+    // SOAP: los cuatro campos, como siempre. Estándar: al menos un campo, una indicación o un medicamento.
     if (b.format === 'soap') {
       const empty = ([['subjective', 'el subjetivo (S)'], ['objective', 'el objetivo (O)'], ['assessment', 'el análisis (A)'], ['plan', 'el plan (P)']] as const).find(([k]) => !b[k])
       if (empty) fail(400, `Escribe ${empty[1]}.`)
@@ -357,8 +357,6 @@ export function registerInpatient(app: Express, ctx: Ctx) {
         [noteId, cid, id, b.kind, user.id, at, b.format === 'soap' ? b.subjective : '', b.format === 'soap' ? b.objective : '', b.format === 'soap' ? b.assessment : '', b.format === 'soap' ? b.plan : '',
           JSON.stringify({ orders: b.orders, checklist, indications: b.indicationCount === undefined ? undefined : Math.min(b.indicationCount, b.orders.length),
             ...(b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, exam: b.exam, observations: b.observations } : {}) })])
-      // Se recuerda el último formato que usó este médico
-      await q.run(`UPDATE staff SET prefs = jsonb_set(COALESCE(NULLIF(prefs, ''), '{}')::jsonb, '{noteFormat}', to_jsonb(?::text))::text WHERE id = ?`, [b.format, user.id])
       await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
       const what = b.kind === 'admission' ? 'nota de ingreso' : 'nota de evolución'
       const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`].filter(Boolean).join(', ')

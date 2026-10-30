@@ -189,8 +189,9 @@ describe('P4 dos formatos de nota', () => {
     assert.equal((await doc.post(`/api/inpatient/${id}/notes`, { kind: 'evolution', subjective: 'S', objective: 'O', assessment: 'A' })).status, 400)
     const file = (await doc.get(`/api/inpatient/${id}`)).body
     assert.ok(file.meds.some((m: any) => m.drug === 'Enalapril'))
+    // Ronda 3 de Emil (MC4): el formato por defecto lo elige el médico en Mi configuración; escribir una nota no lo cambia
     const me = (await doc.get('/api/bootstrap')).body.staff.find((s: any) => s.id === 's-herrera')
-    assert.equal(me.prefs.noteFormat, 'dx')
+    assert.notEqual(me.prefs?.noteFormat, 'soap')
     // Las notas anteriores siguen siendo SOAP
     // Una estancia de la demo original (los casos de la v25 ya traen notas en el formato 2)
     const old = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.id !== id && h.kind === 'hospital' && /^hz\d/.test(h.id))

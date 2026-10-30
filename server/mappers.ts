@@ -127,7 +127,7 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
   orders: r.kind === 'admission' || r.kind === 'evolution' ? j<{ orders?: string[] }>(r.data, {}).orders ?? [] : undefined,
   checklist: r.kind === 'admission' || r.kind === 'evolution' ? j<{ checklist?: boolean }>(r.data, {}).checklist || undefined : undefined,
   indicationCount: r.kind === 'admission' || r.kind === 'evolution' ? j<{ indications?: number }>(r.data, {}).indications : undefined,
-  // Formato 2 (Diagnóstico · Examen físico · Observaciones); las notas sin formato son SOAP
+  // Formato Estándar (diagnóstico, examen físico y observaciones); las notas sin formato son SOAP
   ...(r.kind === 'evolution' && j<{ format?: string }>(r.data, {}).format === 'dx'
     ? { format: 'dx' as const, diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses ?? [], exam: j<{ exam?: string }>(r.data, {}).exam ?? '',
       observations: j<{ observations?: string }>(r.data, {}).observations ?? '' }

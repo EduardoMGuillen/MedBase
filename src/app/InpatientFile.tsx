@@ -818,15 +818,10 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   // Una nota, un identificador: si se guarda dos veces no se duplica (ni sus medicamentos en la hoja)
   const [clientId] = useState(() => crypto.randomUUID())
   const [n, setN] = useState({ subjective: '', objective: '', assessment: kind === 'admission' ? file.hospitalization.diagnoses.map((d) => d.label).join('. ') : '', plan: '' })
-  // Segundo formato: cada formato guarda su borrador mientras el modal está abierto; no se traduce de uno a otro
-  const { user, staffById } = useStore()
-  const formatKey = `clinara.formatoNota.${user?.id}`
-  const [format, setFormatState] = useState<'soap' | 'dx'>(() => {
-    if (kind === 'admission') return 'soap'
-    try { const v = localStorage.getItem(formatKey); if (v === 'soap' || v === 'dx') return v } catch { /* sin almacenamiento */ }
-    return staffById(user?.id ?? '')?.prefs?.noteFormat ?? user?.prefs?.noteFormat ?? 'soap'
-  })
-  const setFormat = (f: 'soap' | 'dx') => { setFormatState(f); try { localStorage.setItem(formatKey, f) } catch { /* sin almacenamiento */ } }
+  // Dos formatos (MC4): Estándar ('dx': diagnóstico, examen físico y observaciones) y SOAP. Empieza en el que el médico
+  // eligió en Mi configuración (Estándar si no eligió); cada formato guarda su borrador mientras el modal está abierto
+  const { user } = useStore()
+  const [format, setFormat] = useState<'soap' | 'dx'>(() => (kind === 'admission' ? 'soap' : user?.prefs?.noteFormat ?? 'dx'))
   const [d, setD] = useState<{ diagnoses: Diagnosis[]; exam: string; observations: string }>({ diagnoses: [], exam: '', observations: '' })
   const [meds, setMeds] = useState<NewMed[]>([])
   const [stop, setStop] = useState<string[]>([])
@@ -842,7 +837,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   const inVademecum = (drug: string) => vademecum.some((x) => normalize(x.name) === normalize(drug))
   // Huecos "___" de un set aplicado: la nota no se firma hasta llenarlos
   const blanks = [...extra.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : []))]
-  // SOAP: los cuatro campos, como siempre. Formato 2: algo escrito, una indicación o un medicamento.
+  // SOAP: los cuatro campos, como siempre. Estándar: algo escrito, una indicación o un medicamento.
   const ready = !blanks.length && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
     : d.diagnoses.length > 0 || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0)
   /** Un set se agrega al final: indicaciones y medicamentos (que pasan a la hoja al guardar), todo editable. */
@@ -886,8 +881,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
       {p.allergies.length > 0 && <div className="alert-strip"><TriangleAlert size={16} />Alergias: {p.allergies.join(', ')}</div>}
       {kind === 'evolution' && (
         <div className="segmented" role="radiogroup" aria-label="Formato de la nota">
-          <button type="button" role="radio" aria-checked={format === 'soap'} onClick={() => setFormat('soap')}>SOAP</button>
-          <button type="button" role="radio" aria-checked={format === 'dx'} onClick={() => setFormat('dx')}>Diagnóstico · Examen físico · Observaciones</button>
+          <button type="button" role="radio" aria-checked={format === 'dx'} onClick={() => setFormat('dx')} title="Diagnóstico, examen físico y observaciones">Estándar</button>
+          <button type="button" role="radio" aria-checked={format === 'soap'} onClick={() => setFormat('soap')} title="Subjetivo, objetivo, análisis y plan">SOAP</button>
         </div>
       )}
       <div className="note-editor">
