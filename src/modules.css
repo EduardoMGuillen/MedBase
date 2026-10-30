@@ -302,3 +302,23 @@ tr.clickable { cursor: pointer; }
 .audit-filters__q { grid-column: span 2; }
 .audit-filters__patient { grid-column: span 3; }
 @media (max-width: 1080px) { .audit-filters { grid-template-columns: 1fr 1fr; } .audit-filters__q, .audit-filters__patient { grid-column: 1 / -1; } }
+
+/* AD8: filtros de la biblioteca escritos como frases, atajos y resumen */
+.shortcuts { gap: 6px; }
+.chip--toggle { cursor: pointer; border: 1px solid var(--line); background: var(--paper); font-weight: 600; }
+.chip--toggle:hover { border-color: var(--ink); }
+.chip--toggle.is-on { background: var(--ink-soft); border-color: var(--ink); color: var(--ink-deep); }
+.filters2 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 20px; }
+.filters2__group { display: grid; gap: 8px; align-content: start; }
+.filters2__group h3 { font-size: 13.5px; font-weight: 650; color: var(--petrol); }
+.filters2__group--wide { grid-column: span 2; }
+.filters2__phrase { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+.filters2__phrase .input.num { width: 76px; }
+.filters2__phrase .input[type='date'] { width: auto; }
+.filter-summary { font-size: 14.5px; font-weight: 600; color: var(--petrol); margin: -8px 0 -6px; }
+@media (max-width: 860px) {
+  .filters2 { grid-template-columns: 1fr; }
+  .filters2__group--wide { grid-column: auto; }
+  .shortcuts { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .shortcuts .chip { white-space: nowrap; }
+}

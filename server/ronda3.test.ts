@@ -5,6 +5,7 @@ import type { Server } from 'node:http'
 import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb, migrateRxValidity } from './db.js'
 import { createSql, type Sql } from './sql.js'
+import { filterSummary, periodRange, type Filters } from '../src/lib/patientFilters.js'
 
 let server: Server
 let sql: Sql
@@ -303,5 +304,24 @@ describe('AD7 bitácora propia y de todos', () => {
     assert.ok(byPerson.length > 0 && byPerson.every((r: any) => r.userId === nurseId && r.kind === 'agenda'))
     await assert.rejects(sql.run('UPDATE audit SET action = ? WHERE id = (SELECT MAX(id) FROM audit)', ['cambiado']))
     await assert.rejects(sql.run('DELETE FROM audit WHERE id = (SELECT MAX(id) FROM audit)'))
+  })
+})
+
+describe('AD8 filtros de la biblioteca', () => {
+  const none: Filters = { q: '', sexo: '', edadMin: '', edadMax: '', periodo: '', fecha: '', desde: '', hasta: '', medico: '', seguimiento: '', cita: '', estado: '' }
+  test('la frase dice en palabras lo filtrado', () => {
+    assert.equal(filterSummary(12, { ...none, sexo: 'F', edadMin: '18', edadMax: '40', periodo: 'mes' }, { total: 150 }), 'Mostrando 12 mujeres de 18 a 40 años atendidas este mes')
+    assert.equal(filterSummary(3, { ...none, edadMax: '17', cita: 'sin' }, { total: 150 }), 'Mostrando 3 niños y niñas menores de 18 años sin cita de control')
+    assert.equal(filterSummary(1, { ...none, sexo: 'M', estado: 'hospitalizado' }, { total: 150 }), 'Mostrando 1 hombre hospitalizado')
+    assert.equal(filterSummary(150, none, { total: 150 }), '150 expedientes en la biblioteca')
+  })
+  test('las fechas rápidas se cuentan desde hoy', () => {
+    const now = new Date(2026, 9, 30, 10) // jueves 30 de octubre de 2026
+    assert.deepEqual(periodRange('hoy', '', '', now), ['2026-10-30', '2026-10-30'])
+    assert.deepEqual(periodRange('semana', '', '', now), ['2026-10-26', '2026-10-30'])
+    assert.deepEqual(periodRange('mes', '', '', now), ['2026-10-01', '2026-10-30'])
+    assert.deepEqual(periodRange('anio', '', '', now), ['2026-01-01', '2026-10-30'])
+    assert.deepEqual(periodRange('personalizado', '2026-01-05', '', now), ['2026-01-05', '9999-12-31'])
+    assert.equal(periodRange('', '', '', now), null)
   })
 })

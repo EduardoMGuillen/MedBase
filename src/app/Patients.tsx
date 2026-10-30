@@ -9,18 +9,26 @@ import { age, date, dniDigits, fullName, localISODate } from '../lib/format'
 import { useIsPhone } from '../lib/hooks'
 import { yearsOld } from '../lib/inpatient'
 import type { Patient, PatientIndex } from '../lib/types'
+import { FILTER_KEYS, filterSummary, periodRange, PERIODS, shortcutOn, SHORTCUTS, WHERE, type Filters, type Period } from '../lib/patientFilters'
 
 const PALETTE = ['#2335C9', '#0F8A6E', '#B4407A', '#C27A12', '#6A4BC4', '#2C7DA0']
 export const patientColor = (id: string) => PALETTE[[...id].reduce((s, c) => s + c.charCodeAt(0), 0) % PALETTE.length]
 
 type SortKey = 'name' | 'age' | 'last' | 'next'
 
-/** Filtros de la biblioteca. Viven en la URL para que se conserven al recargar o compartir el enlace. */
-const FILTER_KEYS = ['sexo', 'edadMin', 'edadMax', 'fecha', 'desde', 'hasta', 'medico', 'seguimiento', 'cita', 'estado'] as const
-type FilterKey = (typeof FILTER_KEYS)[number]
-const DATE_FIELD = { registro: 'Fecha de registro', ultima: 'Última consulta', proxima: 'Próxima cita' } as const
-const STATE_LABEL = { activo: 'Activos (sin internar)', hospitalizado: 'Hospitalizados', observacion: 'En observación' } as const
+const DATE_FIELD = { ultima: 'Última consulta', registro: 'Fecha de registro', proxima: 'Próxima cita' } as const
 const dmy = (iso: string) => { const [y, m, d] = iso.slice(0, 10).split('-'); return `${d}/${m}/${y}` }
+/** Enlaces viejos: "activo" (sin internar) pasa a "en casa". */
+const whereOf = (estado: string) => (estado === 'activo' ? 'casa' : estado)
+
+/** Opciones de un filtro como botones (uno elegido). */
+function Seg({ value, options, onPick, label }: { value: string; options: [string, string][]; onPick: (v: string) => void; label: string }) {
+  return (
+    <div className="segmented" role="radiogroup" aria-label={label}>
+      {options.map(([k, v]) => <button key={k} type="button" role="radio" aria-checked={value === k} onClick={() => onPick(k)}>{v}</button>)}
+    </div>
+  )
+}
 
 export default function Patients() {
   const { patients, appointments, discharges = [], staff, can, addPatient, fetchPatientIndex, settings } = useStore()
@@ -28,7 +36,7 @@ export default function Patients() {
   const phone = useIsPhone()
   const [params, setParams] = useSearchParams()
   // El estado local manda y se copia a la URL: dos cambios seguidos no se pisan
-  const [values, setValues] = useState<Record<FilterKey | 'q', string>>(() => Object.fromEntries(['q', ...FILTER_KEYS].map((k) => [k, params.get(k) ?? ''])) as Record<FilterKey | 'q', string>)
+  const [values, setValues] = useState<Filters>(() => Object.fromEntries(['q', ...FILTER_KEYS].map((k) => [k, params.get(k) ?? ''])) as Filters)
   const q = values.q
   const f = values
   const [adding, setAdding] = useState(false)
@@ -43,7 +51,7 @@ export default function Patients() {
     return () => { alive = false }
   }, [fetchPatientIndex, appointments.length, patients.length])
 
-  const setParam = (changes: Partial<Record<FilterKey | 'q', string>>) => setValues((v) => ({ ...v, ...changes }))
+  const setParam = (changes: Partial<Filters>) => setValues((v) => ({ ...v, ...changes }))
   useEffect(() => {
     setParams(Object.fromEntries(Object.entries(values).filter(([, v]) => v)), { replace: true })
   }, [values, setParams])
@@ -56,17 +64,23 @@ export default function Patients() {
     .filter((a) => a.patientId === id && new Date(a.start) > new Date() && ['scheduled', 'confirmed'].includes(a.status))
     .sort((a, b) => a.start.localeCompare(b.start))[0]
   const lastStamp = (id: string) => [lastVisit(id), dischargeOf(id)].filter(Boolean).sort().at(-1) ?? ''
+  // En sala: llegó hoy y espera, tiene preclínica o está en consulta
+  const inWaitingRoom = useMemo(() => {
+    const today = localISODate(new Date())
+    return new Set(appointments.filter((a) => a.start.startsWith(today) && ['arrived', 'triaged', 'in_consult'].includes(a.status)).map((a) => a.patientId))
+  }, [appointments])
 
   // Los pacientes agendados por teléfono que no han completado su registro no cuentan en la biblioteca
   const registered = useMemo(() => patients.filter((p) => !p.pending), [patients])
   const chronicTitles = useMemo(() => [...new Set([...(index?.values() ?? [])].flatMap((x) => x.followups.filter((y) => y.kind === 'chronic').map((y) => y.title)))].sort(), [index])
   const doctors = staff.filter((x) => hasRole(x, 'doctor'))
+  const range = periodRange(f.periodo || (f.desde || f.hasta ? 'personalizado' : ''), f.desde, f.hasta)
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase()
     // La identidad se encuentra con o sin guiones
     const sd = dniDigits(s)
-    const dateField = f.fecha || (f.desde || f.hasta ? 'ultima' : '')
+    const dateField = f.fecha || 'ultima'
     const filtered = registered.filter((p) => {
       if (s && !(fullName(p).toLowerCase().includes(s) || p.record.toLowerCase().includes(s) || p.phone.includes(s) || (sd.length >= 3 && dniDigits(p.dni).includes(sd)))) return false
       const ix = index?.get(p.id)
@@ -76,17 +90,17 @@ export default function Patients() {
         if (f.edadMin && !(y >= Number(f.edadMin))) return false
         if (f.edadMax && !(y <= Number(f.edadMax))) return false
       }
-      if (dateField && (f.desde || f.hasta)) {
+      if (range) {
         const raw = dateField === 'registro' ? p.createdAt : dateField === 'ultima' ? lastVisit(p.id) : ix?.nextApptAt ?? nextAppt(p.id)?.start
         if (!raw) return false
         const d = raw.length === 10 ? raw : localISODate(new Date(raw))
-        if (f.desde && d < f.desde) return false
-        if (f.hasta && d > f.hasta) return false
+        if (d < range[0] || d > range[1]) return false
       }
       if (f.medico && ix?.lastDoctorId !== f.medico && ix?.nextDoctorId !== f.medico) return false
       if (f.seguimiento) {
         const fu = ix?.followups ?? []
         if (f.seguimiento === 'cualquiera' && !fu.length) return false
+        if (f.seguimiento === 'cronico' && !fu.some((x) => x.kind === 'chronic') && !p.conditions.length) return false
         if (f.seguimiento === 'recordatorio' && !fu.some((x) => x.kind === 'reminder')) return false
         if (f.seguimiento === 'procedimiento' && !fu.some((x) => x.kind === 'procedure')) return false
         if (f.seguimiento.startsWith('cronico:') && !fu.some((x) => x.kind === 'chronic' && x.title === f.seguimiento.slice(8))) return false
@@ -95,7 +109,8 @@ export default function Patients() {
       if (f.cita === 'sin' && (ix?.nextApptAt ?? nextAppt(p.id))) return false
       if (f.estado) {
         const st = ix?.status ?? 'active'
-        if ({ activo: 'active', hospitalizado: 'hospital', observacion: 'observation' }[f.estado] !== st) return false
+        const where = st === 'hospital' ? 'hospitalizado' : st === 'observation' ? 'observacion' : inWaitingRoom.has(p.id) ? 'sala' : 'casa'
+        if (whereOf(f.estado) !== where) return false
       }
       return true
     })
@@ -113,58 +128,54 @@ export default function Patients() {
     }
     return [...filtered].sort(cmp)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registered, values, sort, appointments, discharges, index])
+  }, [registered, values, sort, appointments, discharges, index, inWaitingRoom])
 
   // Un chip por filtro activo; la X quita ese filtro
-  const chips: { label: string; clear: Partial<Record<FilterKey, string>> }[] = []
+  const chips: { label: string; clear: Partial<Filters> }[] = []
   if (f.sexo) chips.push({ label: f.sexo === 'F' ? 'Mujeres' : 'Hombres', clear: { sexo: '' } })
-  if (f.edadMin || f.edadMax) chips.push({ label: f.edadMin && f.edadMax ? `Edad ${f.edadMin} a ${f.edadMax} años` : f.edadMin ? `Desde ${f.edadMin} años` : `Hasta ${f.edadMax} años`, clear: { edadMin: '', edadMax: '' } })
-  if (f.desde || f.hasta) {
+  if (f.edadMin || f.edadMax) chips.push({ label: f.edadMin && f.edadMax ? `Edad: de ${f.edadMin} a ${f.edadMax} años` : f.edadMin ? `Edad: ${f.edadMin} años o más` : `Edad: hasta ${f.edadMax} años`, clear: { edadMin: '', edadMax: '' } })
+  if (range) {
     const field = DATE_FIELD[(f.fecha || 'ultima') as keyof typeof DATE_FIELD]
-    chips.push({ label: `${field}: ${f.desde ? `desde ${dmy(f.desde)}` : ''}${f.desde && f.hasta ? ' ' : ''}${f.hasta ? `hasta ${dmy(f.hasta)}` : ''}`, clear: { fecha: '', desde: '', hasta: '' } })
+    const p = f.periodo && f.periodo !== 'personalizado' ? PERIODS[f.periodo as Period] : `${f.desde ? `desde ${dmy(f.desde)}` : ''}${f.desde && f.hasta ? ' ' : ''}${f.hasta ? `hasta ${dmy(f.hasta)}` : ''}`
+    chips.push({ label: `${field}: ${p.toLowerCase()}`, clear: { periodo: '', fecha: '', desde: '', hasta: '' } })
   }
-  if (f.medico) chips.push({ label: `Médico: ${staff.find((x) => x.id === f.medico)?.name ?? 'otro'}`, clear: { medico: '' } })
-  if (f.seguimiento) chips.push({ label: f.seguimiento === 'cualquiera' ? 'Con seguimiento activo' : f.seguimiento === 'recordatorio' ? 'Con recordatorio' : f.seguimiento === 'procedimiento' ? 'Con procedimiento programado' : `Crónico: ${f.seguimiento.slice(8)}`, clear: { seguimiento: '' } })
-  if (f.cita) chips.push({ label: f.cita === 'con' ? 'Con próxima cita' : 'Sin próxima cita', clear: { cita: '' } })
-  if (f.estado) chips.push({ label: STATE_LABEL[f.estado as keyof typeof STATE_LABEL] ?? f.estado, clear: { estado: '' } })
+  if (f.medico) chips.push({ label: `Lo atendió: ${staff.find((x) => x.id === f.medico)?.name ?? 'otro médico'}`, clear: { medico: '' } })
+  if (f.seguimiento) chips.push({ label: f.seguimiento === 'cronico' ? 'Crónicos' : f.seguimiento === 'cualquiera' ? 'Con seguimiento activo' : f.seguimiento === 'recordatorio' ? 'Con recordatorio' : f.seguimiento === 'procedimiento' ? 'Con procedimiento programado' : `Crónico: ${f.seguimiento.slice(8)}`, clear: { seguimiento: '' } })
+  if (f.cita) chips.push({ label: f.cita === 'con' ? 'Próxima cita: tiene' : 'Próxima cita: no tiene', clear: { cita: '' } })
+  if (f.estado) chips.push({ label: `Dónde está: ${(WHERE[whereOf(f.estado) as keyof typeof WHERE] ?? f.estado).toLowerCase()}`, clear: { estado: '' } })
   const clearAll = () => setParam(Object.fromEntries(FILTER_KEYS.map((k) => [k, ''])))
+  const summary = filterSummary(list.length, f, { doctorName: staff.find((x) => x.id === f.medico)?.name, total: registered.length })
 
   const toggle = (key: SortKey) => setSort((s) => s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: 1 })
   const mark = (key: SortKey) => sort.key === key ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''
+  const where = Object.entries(WHERE).filter(([k]) => (k !== 'hospitalizado' || features(settings).hospital) && (k !== 'observacion' || features(settings).observation))
 
   const filterFields = (
-    <div className="form-grid form-grid--4 filters">
-      <label className="field"><span>Sexo</span>
-        <select className="select" value={f.sexo} onChange={(e) => setParam({ sexo: e.target.value })}>
-          <option value="">Todos</option><option value="F">Femenino</option><option value="M">Masculino</option></select></label>
-      <div className="field"><span>Edad (años)</span>
-        <div className="range-pair">
-          <input className="input num" inputMode="numeric" placeholder="Desde" aria-label="Edad desde" value={f.edadMin} onChange={(e) => setParam({ edadMin: e.target.value.replace(/\D/g, '') })} />
-          <input className="input num" inputMode="numeric" placeholder="Hasta" aria-label="Edad hasta" value={f.edadMax} onChange={(e) => setParam({ edadMax: e.target.value.replace(/\D/g, '') })} />
-        </div></div>
-      <label className="field"><span>Médico tratante</span>
+    <div className="filters2">
+      <div className="filters2__group"><h3>Sexo</h3>
+        <Seg label="Sexo" value={f.sexo} onPick={(v) => setParam({ sexo: v })} options={[['', 'Todos'], ['F', 'Mujeres'], ['M', 'Hombres']]} /></div>
+      <div className="filters2__group"><h3>Edad</h3>
+        <div className="filters2__phrase">de <input className="input num" inputMode="numeric" aria-label="Edad desde" value={f.edadMin} onChange={(e) => setParam({ edadMin: e.target.value.replace(/\D/g, '') })} />
+          a <input className="input num" inputMode="numeric" aria-label="Edad hasta" value={f.edadMax} onChange={(e) => setParam({ edadMax: e.target.value.replace(/\D/g, '') })} /> años</div></div>
+      <div className="filters2__group filters2__group--wide"><h3>Última consulta</h3>
+        <Seg label="Última consulta" value={f.periodo || (f.desde || f.hasta ? 'personalizado' : '')} onPick={(v) => setParam({ periodo: v, fecha: '', ...(v === 'personalizado' ? {} : { desde: '', hasta: '' }) })}
+          options={[['', 'Cualquier fecha'], ...Object.entries(PERIODS)]} />
+        {(f.periodo === 'personalizado' || (!f.periodo && (f.desde || f.hasta))) && (
+          <div className="filters2__phrase">entre <input className="input" type="date" aria-label="Desde la fecha" value={f.desde} onChange={(e) => setParam({ desde: e.target.value })} />
+            y <input className="input" type="date" aria-label="Hasta la fecha" value={f.hasta} onChange={(e) => setParam({ hasta: e.target.value })} /></div>
+        )}</div>
+      <div className="filters2__group"><h3>Próxima cita</h3>
+        <Seg label="Próxima cita" value={f.cita} onPick={(v) => setParam({ cita: v })} options={[['', 'Cualquiera'], ['con', 'Tiene'], ['sin', 'No tiene']]} /></div>
+      <label className="filters2__group"><h3>Médico que lo atendió</h3>
         <select className="select" value={f.medico} onChange={(e) => setParam({ medico: e.target.value })}>
-          <option value="">Todos</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
-      <label className="field"><span>Estado</span>
-        <select className="select" value={f.estado} onChange={(e) => setParam({ estado: e.target.value })}>
-          <option value="">Todos</option>{Object.entries(STATE_LABEL).filter(([k]) => k !== 'hospitalizado' || features(settings).hospital)
-            .map(([k, v]) => <option key={k} value={k}>{k === 'activo' && !features(settings).hospital ? 'Activos (sin observación)' : v}</option>)}</select></label>
-      <label className="field"><span>Filtrar por fecha de</span>
-        <select className="select" value={f.fecha || 'ultima'} onChange={(e) => setParam({ fecha: e.target.value })}>
-          {Object.entries(DATE_FIELD).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-      <div className="field"><span>Entre</span>
-        <div className="range-pair">
-          <input className="input" type="date" aria-label="Desde la fecha" value={f.desde} onChange={(e) => setParam({ desde: e.target.value })} />
-          <input className="input" type="date" aria-label="Hasta la fecha" value={f.hasta} onChange={(e) => setParam({ hasta: e.target.value })} />
-        </div></div>
-      <label className="field"><span>Crónicos y seguimientos</span>
+          <option value="">Cualquier médico</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
+      <label className="filters2__group"><h3>Padecimiento crónico</h3>
         <select className="select" value={f.seguimiento} onChange={(e) => setParam({ seguimiento: e.target.value })}>
-          <option value="">Todos</option><option value="cualquiera">Con seguimiento activo</option>
-          {chronicTitles.map((t) => <option key={t} value={`cronico:${t}`}>Crónico: {t}</option>)}
-          <option value="recordatorio">Con recordatorio</option><option value="procedimiento">Con procedimiento programado</option></select></label>
-      <label className="field"><span>Próxima cita</span>
-        <select className="select" value={f.cita} onChange={(e) => setParam({ cita: e.target.value })}>
-          <option value="">Todos</option><option value="con">Con próxima cita</option><option value="sin">Sin próxima cita</option></select></label>
+          <option value="">Con o sin padecimiento</option><option value="cronico">Con algún padecimiento crónico</option>
+          {chronicTitles.map((t) => <option key={t} value={`cronico:${t}`}>{t}</option>)}
+          <option value="cualquiera">Con cualquier seguimiento activo</option><option value="recordatorio">Con recordatorio</option><option value="procedimiento">Con procedimiento programado</option></select></label>
+      <div className="filters2__group filters2__group--wide"><h3>Dónde está ahora</h3>
+        <Seg label="Dónde está ahora" value={whereOf(f.estado)} onPick={(v) => setParam({ estado: v })} options={[['', 'En cualquier lugar'], ...where]} /></div>
     </div>
   )
 
@@ -183,6 +194,14 @@ export default function Patients() {
         <span className="lib-bar__count num">{list.length === registered.length ? `${registered.length} expedientes` : `${list.length} de ${registered.length} expedientes`}</span>
       </div>
 
+      <div className="chips shortcuts" aria-label="Atajos">
+        {SHORTCUTS.map((s) => {
+          const on = shortcutOn(f, s)
+          return <button key={s.label} type="button" className={`chip chip--toggle${on ? ' is-on' : ''}`} aria-pressed={on}
+            onClick={() => setParam(on ? Object.fromEntries(Object.keys(s.set).map((k) => [k, ''])) : s.set)}>{s.label}</button>
+        })}
+      </div>
+
       {showFilters && !phone && <section className="panel"><div className="panel__body">{filterFields}</div></section>}
       {showFilters && phone && (
         <Modal title="Filtros" onClose={() => setShowFilters(false)} footer={<>
@@ -190,6 +209,8 @@ export default function Patients() {
           <button className="btn btn--primary" onClick={() => setShowFilters(false)}>Ver {list.length} de {registered.length}</button>
         </>}>{filterFields}</Modal>
       )}
+
+      <p className="filter-summary" role="status">{summary}</p>
 
       {chips.length > 0 && (
         <div className="chips filter-chips" aria-label="Filtros activos">
