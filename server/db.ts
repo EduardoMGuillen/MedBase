@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs'
+import { groupsFromLimits } from '../src/lib/clinicalConfig.js'
 import { randomUUID } from 'node:crypto'
 import {
   BEDS, CASE_BED, CASE_PATIENT_IDS, CASE_STAFF, DEFAULT_SETTINGS, DEMO_CLINICS, DOCTOR_SETUP, INPATIENT_PATIENTS, MAIN_CLINIC, PATIENTS, SECOND_CLINIC, SERVICES, STAFF,
@@ -13,7 +14,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '46'
+const SCHEMA_VERSION = '47'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -845,6 +846,10 @@ CREATE TABLE IF NOT EXISTS duty_roster (
 );
 CREATE INDEX IF NOT EXISTS duty_roster_day ON duty_roster (clinic_id, day);
 CREATE UNIQUE INDEX IF NOT EXISTS duty_roster_active ON duty_roster (clinic_id, day, staff_id) WHERE removed_at IS NULL;
+
+-- v47 (ronda 5, AD1): umbrales críticos de laboratorio por grupo, con analitos propios, unidad y archivados. Los
+-- umbrales planos (critical_limits) pasan a los grupos sin cambiar números y se conservan sin editarse.
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS critical_groups TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -892,6 +897,7 @@ export function ensureDb(sql: Sql) {
       await migratePayments(q)
       await migrateLabsToExams(q)
       await migrateOfficeOwners(q)
+      await migrateCriticalGroups(q)
       await markDemoClinics(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
@@ -1269,6 +1275,14 @@ export async function migrateBedSpecialties(q: Sql) {
 }
 
 /** v35 (AD1): el teléfono que tenía cada clínica pasa a ser su contacto principal. Idempotente. */
+/** v47 (AD1): cada clínica recibe sus umbrales en grupos, con los mismos números que tenía. Sólo llena lo que falta. */
+export async function migrateCriticalGroups(q: Sql) {
+  for (const c of await q.query('SELECT id, critical_limits FROM clinics WHERE critical_groups IS NULL')) {
+    const limits = c.critical_limits ? JSON.parse(String(c.critical_limits)) as Record<string, { low?: number; high?: number }> : undefined
+    await q.run('UPDATE clinics SET critical_groups = ? WHERE id = ?', [JSON.stringify(groupsFromLimits(limits)), String(c.id)])
+  }
+}
+
 export async function migrateContacts(q: Sql) {
   for (const c of await q.query(`SELECT id, phone FROM clinics WHERE contacts IS NULL`)) {
     const list = String(c.phone ?? '').trim() ? [{ id: 'principal', number: String(c.phone).trim(), label: 'Principal', type: 'call', primary: true }] : []

@@ -6,7 +6,7 @@ import { DrugForm } from '../components/DrugForm'
 import { drugProvider } from '../lib/drugProvider'
 import { normalize } from '../lib/patients'
 import { download, parseCsv, toCsv } from '../lib/csv'
-import { DEFAULT_CRITICAL } from '../lib/exams'
+import { CriticalThresholds } from './CriticalThresholds'
 import { clinicWhatsapp, contactLine, date, fillTemplate, fullName, METHOD_LABEL, money } from '../lib/format'
 import { ContactsEditor } from '../components/Contacts'
 import type { Bed, ClinicDrug, ClinicSettings, PaymentMethod, Service, Staff } from '../lib/types'
@@ -347,14 +347,12 @@ function ConvertToClinic({ onClose }: { onClose: () => void }) {
 /**
  * EX1: áreas de servicio. Si la clínica tiene laboratorio o imágenes propios, los exámenes se dirigen a esa área; si no
  * (por omisión), los atiende enfermería. Hoy la app no tiene esos roles: las alertas siguen yendo a enfermería hasta que
- * se creen y se asignen. También los umbrales críticos de laboratorio (fuera de ellos, alerta crítica al médico).
+ * se creen y se asignen. También los umbrales críticos de laboratorio, por grupo (fuera de ellos, alerta crítica al médico).
  */
 function ServiceAreas() {
   const { settings, saveExamAreas } = useStore()
   const [lab, setLab] = useState(!!settings.hasLab)
   const [img, setImg] = useState(!!settings.hasImaging)
-  const [limits, setLimits] = useState<Record<string, { low?: number; high?: number }>>({ ...DEFAULT_CRITICAL, ...(settings.criticalLimits ?? {}) })
-  const set = (k: string, side: 'low' | 'high', v: string) => setLimits({ ...limits, [k]: { ...limits[k], [side]: v === '' ? undefined : Number(v) } })
   return (
     <div className="grid-2">
       <section className="panel">
@@ -368,18 +366,8 @@ function ServiceAreas() {
           <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={lab === !!settings.hasLab && img === !!settings.hasImaging} onClick={() => saveExamAreas({ hasLab: lab, hasImaging: img })}>Guardar áreas</button>
         </div>
       </section>
-      <section className="panel table-wrap">
-        <div className="panel__head"><div><h2>Umbrales críticos de laboratorio</h2><p>Un resultado fuera de estos valores avisa al médico como crítico.</p></div></div>
-        <table className="table">
-          <thead><tr><th>Analito</th><th>Crítico si es menor de</th><th>Crítico si es mayor de</th></tr></thead>
-          <tbody>{Object.keys(limits).map((k) => (
-            <tr key={k}><td>{k}</td>
-              <td><input className="input num" style={{ width: 100 }} inputMode="decimal" value={limits[k].low ?? ''} onChange={(e) => set(k, 'low', e.target.value)} aria-label={`${k}: mínimo`} /></td>
-              <td><input className="input num" style={{ width: 100 }} inputMode="decimal" value={limits[k].high ?? ''} onChange={(e) => set(k, 'high', e.target.value)} aria-label={`${k}: máximo`} /></td></tr>
-          ))}</tbody>
-        </table>
-        <div className="panel__body"><button className="btn btn--primary" onClick={() => saveExamAreas({ hasLab: !!settings.hasLab, hasImaging: !!settings.hasImaging, criticalLimits: limits })}>Guardar umbrales</button></div>
-      </section>
+      {/* AD1 (ronda 5): umbrales por grupo, con analitos propios */}
+      <CriticalThresholds />
     </div>
   )
 }

@@ -126,19 +126,6 @@ export function flagOf(value: number, low?: number, high?: number): 'high' | 'lo
   return undefined
 }
 
-/** Umbrales críticos por omisión (configurables por clínica en Áreas de servicio). Fuera de ellos: alerta crítica. */
-export const DEFAULT_CRITICAL: Record<string, { low?: number; high?: number }> = {
-  Hemoglobina: { low: 7, high: 20 },
-  Plaquetas: { low: 50, high: 1000 },
-  Leucocitos: { low: 2, high: 30 },
-  Glucosa: { low: 50, high: 400 },
-  Potasio: { low: 2.8, high: 6.2 },
-  Sodio: { low: 120, high: 160 },
-  Creatinina: { high: 5 },
-  INR: { high: 5 },
-  'Troponina I': { high: 0.4 },
-  pH: { low: 7.2, high: 7.6 },
-}
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 export const examKey = (name: string) => norm(name)

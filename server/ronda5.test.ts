@@ -7,6 +7,7 @@ import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { fileAlerts } from '../src/lib/alerts.js'
 import { bandOf } from '../src/lib/vitalsSheet.js'
+import { groupsFromLimits } from '../src/lib/clinicalConfig.js'
 
 let server: Server
 let sql: Sql
@@ -184,5 +185,56 @@ describe('AD3 rol de turnos', () => {
     const owner = await as('alopez@demo.clinara')
     await owner.post('/api/me/view', { role: 'admin' })
     assert.equal((await owner.post('/api/roster', { day: d(7), staffId: 's-alopez' })).status, 400)
+  })
+})
+
+describe('AD1 umbrales críticos por grupo', () => {
+  test('los umbrales de antes quedan en grupos con sus mismos números (lo desconocido va a «Otros»)', () => {
+    const groups = groupsFromLimits({ Hemoglobina: { low: 6.5, high: 20 }, Lactato: { high: 4 } })
+    const all = groups.flatMap((g) => g.analytes.map((a) => [g.name, a.name, a.low, a.high]))
+    assert.deepEqual(all.find((x) => x[1] === 'Hemoglobina'), ['Hemograma', 'Hemoglobina', 6.5, 20])
+    assert.deepEqual(all.find((x) => x[1] === 'Potasio'), ['Electrolitos', 'Potasio', 2.8, 6.2])
+    assert.deepEqual(all.find((x) => x[1] === 'Lactato'), ['Otros', 'Lactato', undefined, 4])
+  })
+
+  test('Roberto agrega Hematocrito (20 y 60), uno con sólo límite superior y otro con sólo inferior; se archiva sin perderse; la bitácora guarda el antes y el después; un resultado nuevo dispara el aviso crítico', async () => {
+    const admin = await as('admin@demo.clinara')
+    let s = (await admin.get('/api/bootstrap')).body.settings
+    const groups = structuredClone(s.criticalGroups)
+    assert.equal(groups.find((g: any) => g.name === 'Hemograma').analytes.find((a: any) => a.name === 'Hemoglobina').low, 7, 'los valores de antes, intactos')
+    const hemo = groups.find((g: any) => g.name === 'Hemograma')
+    hemo.analytes.push({ id: 'a-hto', name: 'Hematocrito', unit: '%', low: 20, high: 60 })
+    groups.push({ id: 'g-gases', name: 'Gases arteriales', analytes: [{ id: 'a-lact', name: 'Lactato', unit: 'mmol/L', high: 4 }, { id: 'a-po2', name: 'pO2', unit: 'mmHg', low: 50 }] })
+    groups.find((g: any) => g.name === 'Electrolitos').analytes.find((a: any) => a.name === 'Potasio').high = 6.5
+    assert.equal((await admin.put('/api/settings/critical-groups', { groups: [...groups, { id: 'g-x', name: 'Malo', analytes: [{ id: 'a-x', name: 'X', low: 5, high: 2 }] }] })).status, 400)
+    const r = await admin.put('/api/settings/critical-groups', { groups })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    s = (await admin.get('/api/bootstrap')).body.settings
+    const hto = s.criticalGroups.find((g: any) => g.name === 'Hemograma').analytes.find((a: any) => a.name === 'Hematocrito')
+    assert.deepEqual([hto.low, hto.high, hto.unit], [20, 60, '%'])
+    // Archivar: deja de contar pero no se pierde
+    const next = structuredClone(s.criticalGroups)
+    next.find((g: any) => g.id === 'g-gases').analytes.find((a: any) => a.id === 'a-po2').archivedAt = new Date().toISOString()
+    assert.equal((await admin.put('/api/settings/critical-groups', { groups: next.filter((g: any) => g.id !== 'g-otros') })).status, 200)
+    s = (await admin.get('/api/bootstrap')).body.settings
+    assert.ok(s.criticalGroups.find((g: any) => g.id === 'g-gases').analytes.find((a: any) => a.id === 'a-po2').archivedAt)
+    assert.ok(s.criticalGroups.find((g: any) => g.id === 'g-otros').archivedAt, 'un grupo que no se mandó queda archivado, no borrado')
+    const log = ((await admin.get('/api/audit/mine')).body.rows ?? (await admin.get('/api/audit/mine')).body) as any[]
+    assert.ok(log.some((e) => /agregó Hematocrito \(%\) a «Hemograma»: menor de 20, mayor de 60/.test(e.action)))
+    assert.ok(log.some((e) => /Potasio: crítico si es mayor de 6\.2 → 6\.5/.test(e.action)))
+    assert.ok(log.some((e) => /archivó pO2 de «Gases arteriales»/.test(e.action)))
+    // Por URL o API, sólo administración
+    assert.equal((await (await as('lherrera@demo.clinara')).put('/api/settings/critical-groups', { groups })).status, 403)
+    // Un hematocrito de 18 en un hemograma es crítico, igual que un analito de antes
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
+    const n = await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', exam: 'Palidez.', exams: [{ group: 'lab', name: 'Hemograma', priority: 'urgent', place: 'clinic' }] })
+    assert.equal(n.status, 201, JSON.stringify(n.body))
+    const exam = (await doc.get(`/api/inpatient/${stay.id}`)).body.exams.filter((e: any) => e.name === 'Hemograma' && e.status === 'ordered').at(-1)
+    const res = await nurse.post(`/api/exams/${exam.id}/result`, { values: [{ analyte: 'Hematocrito', value: '18' }, { analyte: 'Hemoglobina', value: '9' }] })
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    assert.equal(res.body.critical, true)
+    assert.deepEqual(res.body.result.values.filter((v: any) => v.critical).map((v: any) => v.analyte), ['Hematocrito'])
   })
 })

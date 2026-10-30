@@ -4,6 +4,7 @@ import type {
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
 import type { Permission } from './permissions'
+import type { CriticalGroup } from './clinicalConfig'
 import { api, ApiError } from './api'
 import { DEFAULT_SETTINGS } from './seed'
 
@@ -302,6 +303,12 @@ function useStoreValue() {
     pay: (p: NewPayment) => run(() => api<Payment>('/payments', { body: p }), 'Cobro registrado'),
     addInstallment: (id: string, b: { amount: number; method: PaymentMethod; reference?: string; bank?: string }) =>
       run(() => api<Payment>(`/payments/${id}/installments`, { body: b }), 'Abono registrado'),
+    // AD1 (ronda 5): umbrales críticos por grupo
+    saveCriticalGroups: (groups: CriticalGroup[]) => run(async () => {
+      const s = await api<ClinicSettings>('/settings/critical-groups', { method: 'PUT', body: { groups } })
+      setData((d) => ({ ...d, settings: s }))
+      return true
+    }, 'Umbrales guardados'),
     saveExamAreas: (b: { hasLab: boolean; hasImaging: boolean; criticalLimits?: Record<string, { low?: number; high?: number }> }) =>
       run(() => api<ClinicSettings>('/settings/exam-areas', { method: 'PUT', body: b }), 'Áreas de servicio guardadas'),
     savePaymentMethods: (methods: PaymentMethod[]) => run(() => api<ClinicSettings>('/settings/payment-methods', { method: 'PUT', body: { methods } }), 'Formas de pago guardadas'),

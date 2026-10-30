@@ -1,3 +1,4 @@
+import type { CriticalGroup } from './clinicalConfig.js'
 export type Role = 'superadmin' | 'admin' | 'doctor' | 'nurse' | 'reception' | 'assistant'
 
 /** Tipo de cuenta: clínica (varios médicos, hospitalización) o consultorio de un médico independiente. */
@@ -85,6 +86,8 @@ export interface ClinicSettings {
   hasImaging?: boolean
   /** EX1: umbrales críticos de laboratorio (analito → bajo/alto). */
   criticalLimits?: Record<string, { low?: number; high?: number }>
+  /** AD1 (ronda 5): umbrales críticos por grupo (mandan sobre `criticalLimits`, que se conserva sin editarse). */
+  criticalGroups?: CriticalGroup[]
   /** AD9: formas de pago que acepta la clínica (en caja sólo aparecen éstas). */
   paymentMethods?: PaymentMethod[]
   email: string

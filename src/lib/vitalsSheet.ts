@@ -1,4 +1,5 @@
 import type { Dose, InpatientFile, InpatientMed, Vitals } from './types.js'
+import { DEFAULT_TEMP_BAND } from './clinicalConfig.js'
 
 /**
  * Hoja de signos vitales (S1): frecuencia de toma, tomas esperadas, fiebre e hipotermia y antipiréticos. La usan la
@@ -15,7 +16,7 @@ const HOUR = 3_600_000
 
 /** Banda normal de la clínica (36.0 a 38.0 °C por defecto): desde `high` es fiebre, por debajo de `low` hipotermia. */
 export type TempBand = { low: number; high: number }
-export const bandOf = (s: { tempLow?: number; tempHigh?: number }): TempBand => ({ low: s.tempLow ?? 36, high: s.tempHigh ?? 38 })
+export const bandOf = (s: { tempLow?: number; tempHigh?: number }): TempBand => ({ low: s.tempLow ?? DEFAULT_TEMP_BAND.low, high: s.tempHigh ?? DEFAULT_TEMP_BAND.high })
 export const tempClass = (t: number, b: TempBand) => (t >= b.high ? 'fever' : t < b.low ? 'hypo' : 'normal') as 'fever' | 'hypo' | 'normal'
 
 /**

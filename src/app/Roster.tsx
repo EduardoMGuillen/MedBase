@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 import { Modal } from '../components/ui'
 import { cap, localISODate } from '../lib/format'
 import { hasRole } from '../lib/permissions'
+import { useNow } from '../lib/hooks'
 
 interface Shift { id: string; day: string; staffId: string }
 const DOW = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
@@ -23,6 +24,7 @@ function rosterName(name: string) {
  */
 export function Roster() {
   const { staff, notify } = useStore()
+  const now = useNow()
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
   const [shifts, setShifts] = useState<Shift[] | null>(null)
   const [open, setOpen] = useState<string | null>(null)
@@ -41,7 +43,7 @@ export function Roster() {
     api<Shift[]>(`/roster?from=${from}&to=${to}`).then(setShifts).catch((e: Error) => notify(e.message, 'error'))
   }, [from, to, notify])
   useEffect(load, [load])
-  const today = localISODate(new Date())
+  const today = localISODate(now)
   const of = (day: string) => (shifts ?? []).filter((s) => s.day === day)
   const name = (id: string) => staff.find((s) => s.id === id)?.name ?? 'Médico'
   const toggle = async (day: string, staffId: string) => {

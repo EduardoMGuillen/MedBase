@@ -4,7 +4,8 @@ import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import type { Sql } from '../sql.js'
 import { can } from '../../src/lib/permissions.js'
-import { areaFor, DEFAULT_CRITICAL, EXAMS, examKey, findExam, flagOf, FLOW, GROUP_LABEL, STATUS_LABEL } from '../../src/lib/exams.js'
+import { areaFor, EXAMS, examKey, findExam, flagOf, FLOW, GROUP_LABEL, STATUS_LABEL } from '../../src/lib/exams.js'
+import { criticalLimitsOf, DEFAULT_CRITICAL_GROUPS, isCritical, type CriticalGroup } from '../../src/lib/clinicalConfig.js'
 import type { ClinicExam, ExamInput, ExamOrder, ExamProfile, ExamResultValue, ExamStatus } from '../../src/lib/types.js'
 
 /** Un examen que se ordena (en la consulta, en una nota o en un set). */
@@ -136,6 +137,61 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     res.json({ ok: true })
   })
 
+  /**
+   * AD1 (ronda 5): umbrales críticos por grupo. Se guarda la lista completa (los archivados se conservan) y cada cambio
+   * queda en la bitácora con el valor anterior y el nuevo.
+   */
+  const analyteInput = z.object({ id: z.string().min(1).max(60), name: z.string().trim().min(1, 'Escribe el nombre del analito.').max(60), unit: z.string().trim().max(20).optional(),
+    low: z.number().finite().optional(), high: z.number().finite().optional(), archivedAt: z.string().optional() })
+  const groupInput = z.object({ id: z.string().min(1).max(60), name: z.string().trim().min(2, 'Escribe el nombre del grupo.').max(60), archivedAt: z.string().optional(), analytes: z.array(analyteInput).max(80) })
+  app.put('/api/settings/critical-groups', auth, need('settings.manage'), async (req, res) => {
+    const { groups } = parse(z.object({ groups: z.array(groupInput).max(40) }), req.body)
+    const cid = clinicOf(req)
+    const before: CriticalGroup[] = (await settings(cid)).criticalGroups ?? DEFAULT_CRITICAL_GROUPS
+    for (const g of groups) for (const a of g.analytes) {
+      if (a.low != null && a.high != null && a.low >= a.high) fail(400, `${a.name}: el límite inferior debe ser menor que el superior.`)
+    }
+    const active = groups.filter((g) => !g.archivedAt)
+    if (new Set(active.map((g) => g.name.toLowerCase())).size !== active.length) fail(400, 'Hay dos grupos con el mismo nombre.')
+    const lim = (x?: number) => (x == null ? 'no aplica' : String(x))
+    const changes: string[] = []
+    for (const g of groups) {
+      const old = before.find((x) => x.id === g.id)
+      if (!old) changes.push(`agregó el grupo «${g.name}»`)
+      else {
+        if (old.name !== g.name) changes.push(`renombró el grupo «${old.name}» a «${g.name}»`)
+        if (!old.archivedAt && g.archivedAt) changes.push(`archivó el grupo «${g.name}»`)
+        if (old.archivedAt && !g.archivedAt) changes.push(`restauró el grupo «${g.name}»`)
+      }
+      for (const a of g.analytes) {
+        const o = old?.analytes.find((x) => x.id === a.id) ?? before.flatMap((x) => x.analytes).find((x) => x.id === a.id)
+        if (!o) { changes.push(`agregó ${a.name}${a.unit ? ` (${a.unit})` : ''} a «${g.name}»: menor de ${lim(a.low)}, mayor de ${lim(a.high)}`); continue }
+        const d: string[] = []
+        if (o.name !== a.name) d.push(`nombre «${o.name}» → «${a.name}»`)
+        if ((o.unit ?? '') !== (a.unit ?? '')) d.push(`unidad ${o.unit || 'sin unidad'} → ${a.unit || 'sin unidad'}`)
+        if (o.low !== a.low) d.push(`crítico si es menor de ${lim(o.low)} → ${lim(a.low)}`)
+        if (o.high !== a.high) d.push(`crítico si es mayor de ${lim(o.high)} → ${lim(a.high)}`)
+        if (d.length) changes.push(`${a.name}: ${d.join('; ')}`)
+        if (!o.archivedAt && a.archivedAt) changes.push(`archivó ${a.name} de «${g.name}»`)
+        if (o.archivedAt && !a.archivedAt) changes.push(`restauró ${a.name} en «${g.name}»`)
+      }
+    }
+    // Nada se borra: un grupo o analito que ya no viene se conserva archivado
+    const now = new Date().toISOString()
+    const kept: CriticalGroup[] = groups.map((g) => ({ ...g, analytes: [...g.analytes] }))
+    for (const g of before) {
+      const same = kept.find((x) => x.id === g.id)
+      if (!same) { kept.push({ ...g, archivedAt: g.archivedAt ?? now }); if (!g.archivedAt) changes.push(`archivó el grupo «${g.name}»`); continue }
+      for (const a of g.analytes) if (!same.analytes.some((x) => x.id === a.id)) {
+        same.analytes.push({ ...a, archivedAt: a.archivedAt ?? now })
+        if (!a.archivedAt) changes.push(`archivó ${a.name} de «${g.name}»`)
+      }
+    }
+    await sql.run('UPDATE clinics SET critical_groups = ? WHERE id = ?', [JSON.stringify(kept), cid])
+    for (const c of changes) await audit(userOf(req), `Umbrales críticos de laboratorio: ${c}`)
+    res.json(await settings(cid))
+  })
+
   // Áreas de servicio y umbrales críticos (administración)
   app.put('/api/settings/exam-areas', auth, need('settings.manage'), async (req, res) => {
     const b = parse(z.object({ hasLab: z.boolean(), hasImaging: z.boolean(), criticalLimits: z.record(z.string().max(60), z.object({ low: z.number().optional(), high: z.number().optional() })).optional() }), req.body)
@@ -213,14 +269,14 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     const r = await examRow(cid, String(req.params.id))
     if (['result', 'reviewed', 'cancelled'].includes(String(r!.status))) fail(409, 'Este examen ya tiene resultado o está cancelado.')
     for (const f of b.fileIds ?? []) if (!(await sql.one('SELECT 1 FROM attachments WHERE id = ? AND clinic_id = ? AND patient_id = ?', [f, cid, String(r!.patient_id)]))) fail(400, 'El archivo no corresponde a este paciente.')
-    const limits = { ...DEFAULT_CRITICAL, ...((await settings(cid)).criticalLimits ?? {}) }
+    // AD1 (ronda 5): los umbrales de los grupos de la clínica (analitos propios incluidos)
+    const limits = criticalLimitsOf((await settings(cid)).criticalGroups)
     const values: ExamResultValue[] = (b.values ?? []).map((v) => {
       const num = Number(v.value.replace(',', '.'))
       const ref = findExam(String(r!.name))?.analytes?.find((x) => x.name === v.analyte)
       const low = v.low ?? ref?.low
       const high = v.high ?? ref?.high
-      const lim = limits[v.analyte]
-      const critical = Number.isFinite(num) && !!lim && ((lim.low != null && num < lim.low) || (lim.high != null && num > lim.high))
+      const critical = isCritical(limits, v.analyte, num)
       return { ...v, unit: v.unit ?? ref?.unit, low, high, flag: Number.isFinite(num) ? flagOf(num, low, high) : undefined, critical: critical || undefined }
     })
     const at = new Date().toISOString()
