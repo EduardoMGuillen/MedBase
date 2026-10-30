@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '45'
+const SCHEMA_VERSION = '46'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -832,6 +832,19 @@ ALTER TABLE authorizations ADD COLUMN IF NOT EXISTS archived_by TEXT;
 -- v45 (ronda 5, OB1): una dosis también se registra como «Omitida» (con motivo), además de administrada y no aplicada
 ALTER TABLE hosp_doses DROP CONSTRAINT IF EXISTS hosp_doses_status_check;
 ALTER TABLE hosp_doses ADD CONSTRAINT hosp_doses_status_check CHECK (status IN ('given','skipped','omitted'));
+
+-- v46 (ronda 5, AD3): rol de turnos, qué médico trabaja cada día (informativo; la agenda sigue con los horarios).
+-- Quitar a alguien no borra la fila: queda con quién y cuándo la quitó.
+CREATE TABLE IF NOT EXISTS duty_roster (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  day TEXT NOT NULL,
+  staff_id TEXT NOT NULL REFERENCES staff(id),
+  assigned_by TEXT NOT NULL, assigned_at TEXT NOT NULL,
+  removed_by TEXT, removed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS duty_roster_day ON duty_roster (clinic_id, day);
+CREATE UNIQUE INDEX IF NOT EXISTS duty_roster_active ON duty_roster (clinic_id, day, staff_id) WHERE removed_at IS NULL;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

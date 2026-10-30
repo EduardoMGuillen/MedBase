@@ -37,6 +37,7 @@ import { registerCertificates } from './routes/certificates.js'
 import { registerReferrals } from './routes/referrals.js'
 import { registerConsent } from './routes/consent.js'
 import { registerOrderSets } from './routes/orderSets.js'
+import { registerRoster } from './routes/roster.js'
 import { registerEpicrisis } from './routes/epicrisis.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permission } from '../src/lib/permissions.js'
@@ -1127,6 +1128,7 @@ export function createApp(opts: AppOptions) {
   registerReferrals(app, ctx)
   registerConsent(app, ctx)
   registerOrderSets(app, ctx)
+  registerRoster(app, ctx)
   registerEpicrisis(app, ctx)
   registerFollowups(app, ctx)
 

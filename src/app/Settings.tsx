@@ -11,9 +11,10 @@ import { clinicWhatsapp, contactLine, date, fillTemplate, fullName, METHOD_LABEL
 import { ContactsEditor } from '../components/Contacts'
 import type { Bed, ClinicDrug, ClinicSettings, PaymentMethod, Service, Staff } from '../lib/types'
 import { ScheduleEditor } from './ScheduleEditor'
+import { Roster } from './Roster'
 import { features, hasRole } from '../lib/permissions'
 
-type Tab = 'clinic' | 'services' | 'payments' | 'areas' | 'schedules' | 'beds' | 'drugs'
+type Tab = 'clinic' | 'services' | 'payments' | 'areas' | 'schedules' | 'roster' | 'beds' | 'drugs'
 
 export default function Settings() {
   const [tab, setTab] = useState<Tab>('clinic')
@@ -28,6 +29,8 @@ export default function Settings() {
         <button className="tab" role="tab" data-tour="tab:pagos" aria-selected={tab === 'payments'} onClick={() => setTab('payments')}>Formas de pago</button>
         <button className="tab" role="tab" data-tour="tab:areas" aria-selected={tab === 'areas'} onClick={() => setTab('areas')}>Áreas de servicio</button>
         <button className="tab" role="tab" data-tour="tab:horarios" aria-selected={tab === 'schedules'} onClick={() => setTab('schedules')}>{f.office ? 'Mi horario' : 'Horarios de médicos'}</button>
+        {/* AD3 (ronda 5): qué médico trabaja cada día; un consultorio tiene un solo médico */}
+        {!f.office && <button className="tab" role="tab" data-tour="tab:turnos" aria-selected={tab === 'roster'} onClick={() => setTab('roster')}>Rol de turnos</button>}
         {f.hospital && <button className="tab" role="tab" data-tour="tab:camas" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}>Camas</button>}
         <button className="tab" role="tab" data-tour="tab:vademecum" aria-selected={tab === 'drugs'} onClick={() => setTab('drugs')}>Vademécum</button>
       </div>
@@ -36,6 +39,7 @@ export default function Settings() {
       {tab === 'payments' && <PaymentMethods />}
       {tab === 'areas' && <ServiceAreas />}
       {tab === 'schedules' && <Schedules />}
+      {tab === 'roster' && !f.office && <Roster />}
       {tab === 'beds' && f.hospital && <Beds />}
       {tab === 'drugs' && <ClinicDrugs />}
     </div>

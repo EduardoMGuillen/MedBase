@@ -151,3 +151,38 @@ describe('OB1 pendientes que se resuelven al registrar la dosis', () => {
     assert.equal(fileAlerts(f, band, new Date()).find((a) => a.key === `skip-${med.id}`), undefined)
   })
 })
+
+describe('AD3 rol de turnos', () => {
+  test('administración asigna un médico por día (o dos), quita uno, cambia de mes sin perder nada y todo queda en la bitácora; los demás no entran', async () => {
+    const admin = await as('admin@demo.clinara')
+    const y = new Date().getFullYear() + 1
+    const d = (n: number) => `${y}-11-${String(n).padStart(2, '0')}`
+    for (const [day, id] of [[3, 's-herrera'], [4, 's-paz'], [5, 's-zuniga'], [5, 's-herrera']] as const) {
+      const r = await admin.post('/api/roster', { day: d(day), staffId: id })
+      assert.equal(r.status, 201, JSON.stringify(r.body))
+    }
+    assert.equal((await admin.post('/api/roster', { day: d(3), staffId: 's-herrera' })).status, 409, 'no se repite')
+    assert.equal((await admin.post('/api/roster', { day: d(6), staffId: 's-rios' })).status, 400, 'sólo médicos')
+    let month = (await admin.get(`/api/roster?from=${d(1)}&to=${d(30)}`)).body
+    assert.deepEqual(month.map((s: any) => `${s.day.slice(8)}:${s.staffId}`), ['03:s-herrera', '04:s-paz', '05:s-zuniga', '05:s-herrera'])
+    const del = await admin.del(`/api/roster/${month.find((s: any) => s.day === d(5) && s.staffId === 's-herrera').id}`)
+    assert.equal(del.status, 200)
+    // Otro mes y de vuelta: lo guardado sigue ahí
+    assert.equal((await admin.get(`/api/roster?from=${y}-12-01&to=${y}-12-31`)).body.length, 0)
+    month = (await admin.get(`/api/roster?from=${d(1)}&to=${d(30)}`)).body
+    assert.equal(month.length, 3)
+    assert.equal((await sql.one(`SELECT COUNT(*)::int AS n FROM duty_roster WHERE removed_at IS NOT NULL`))!.n, 1, 'quitar no borra la fila')
+    const log = ((await admin.get('/api/audit/mine')).body.rows ?? (await admin.get('/api/audit/mine')).body) as any[]
+    assert.ok(log.some((e) => /Rol de turnos: asignó a Dra\. Lucía Herrera/.test(e.action)))
+    assert.ok(log.some((e) => /Rol de turnos: quitó a Dra\. Lucía Herrera/.test(e.action)))
+    for (const email of ['lherrera@demo.clinara', 'smejia@demo.clinara', 'crios@demo.clinara']) {
+      const u = await as(email)
+      assert.equal((await u.get(`/api/roster?from=${d(1)}&to=${d(30)}`)).status, 403, email)
+      assert.equal((await u.post('/api/roster', { day: d(7), staffId: 's-paz' })).status, 403, email)
+    }
+    // En el consultorio no aplica
+    const owner = await as('alopez@demo.clinara')
+    await owner.post('/api/me/view', { role: 'admin' })
+    assert.equal((await owner.post('/api/roster', { day: d(7), staffId: 's-alopez' })).status, 400)
+  })
+})
