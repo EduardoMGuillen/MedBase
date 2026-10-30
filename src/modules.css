@@ -231,3 +231,4 @@ tr.clickable { cursor: pointer; }
   .page:has(> .tabs--sticky) .table--sticky thead th { top: 0; }
 }
 @media print { .tabs--sticky, .table--sticky thead th { position: static; } }
+.dx-recode { display: grid; gap: 6px; margin-bottom: 8px; }

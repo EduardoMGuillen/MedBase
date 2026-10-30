@@ -12,7 +12,11 @@ type Hit = Required<Pick<Diagnosis, 'code' | 'label'>> & Pick<Diagnosis, 'uri' |
  * de la CIE-11 (la API de la OMS si está configurada; si no, el archivo oficial que trae Clinara). Siempre se
  * puede escribir el diagnóstico sin código. Es el mismo en la consulta, el ingreso y el egreso.
  */
-export function DiagnosisPicker({ value, onChange, label, placeholder }: { value: Diagnosis[]; onChange: (v: Diagnosis[]) => void; label?: string; placeholder?: string }) {
+export function DiagnosisPicker({ value, onChange, label, placeholder, recode = [] }: {
+  value: Diagnosis[]; onChange: (v: Diagnosis[]) => void; label?: string; placeholder?: string
+  /** Diagnósticos de antes (CIE-10) que conviene volver a buscar en la CIE-11: se ofrecen como búsqueda de un toque. */
+  recode?: Diagnosis[]
+}) {
   const { searchIcd, fetchIcdFrequent } = useStore()
   const [q, setQ] = useState('')
   const [frequent, setFrequent] = useState<Hit[]>([])
@@ -43,6 +47,14 @@ export function DiagnosisPicker({ value, onChange, label, placeholder }: { value
         <li key={d.code + d.label}><span><b>{d.label}</b> <span className="muted">{d.code === 'S/C' ? 'sin código' : d.code}</span>{legacyTag(d) && <span className="badge" style={{ marginLeft: 6 }}>{legacyTag(d)}</span>}</span>
           <button type="button" className="icon-btn" aria-label={`Quitar ${d.label}`} onClick={() => onChange(value.filter((x) => x !== d))}><X size={15} /></button></li>
       ))}</ol>}
+      {recode.length > 0 && !s && (
+        <div className="dx-recode">
+          <small className="muted">Del ingreso, registrados con la CIE-10: búscalos en la CIE-11</small>
+          <div className="chips">{recode.map((d) => (
+            <button type="button" key={d.code + d.label} className="chip" onClick={() => setQ(d.label)}>{d.label} <span className="muted">({d.code}, CIE-10)</span></button>
+          ))}</div>
+        </div>
+      )}
       <div className="suggest">
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar diagnóstico CIE-11" autoComplete="off"
           placeholder={placeholder ?? 'Busca en la CIE-11 por nombre o código, por ejemplo faringitis o CA02'}

@@ -4,7 +4,7 @@ import { BedDouble, Camera, ChevronLeft, ChevronRight, FileSignature, FileText, 
 import { useStore, type NewMed } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
-import { date, dateTime, defaultRoute, fullName, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
+import { date, dateTime, defaultRoute, fullName, inputDateTime, legacyTag, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
 import { ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict, DRUGS, FREQUENCIES } from '../lib/catalogs'
 import { courseDone, courseEnd, doseTimes, elapsed, stayPath, INPATIENT_FREQUENCIES, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
@@ -1221,7 +1221,10 @@ function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => 
   const nav = useNavigate()
   const h = file.hospitalization
   const note = file.notes.find((n) => n.kind === 'discharge')
-  const [dx, setDx] = useState(h.diagnoses)
+  // El campo es CIE-11: los diagnósticos de ingreso que vienen de la CIE-10 no se copian (dirían «CIE-10» en un campo
+  // CIE-11); se ofrecen para buscarlos en la CIE-11 de un toque
+  const [dx, setDx] = useState<Diagnosis[]>(() => h.diagnoses.filter((d) => !legacyTag(d)))
+  const legacyDx = h.diagnoses.filter((d) => legacyTag(d) && !dx.some((x) => normalize(x.label) === normalize(d.label)))
   const [f, setF] = useState({ summary: '', condition: 'Mejorado', instructions: '', followUp: 'Cita de control en consulta externa en 1 semana.' })
   const [items, setItems] = useState<PrescriptionItem[]>([])
   const [rx, setRx] = useState<PrescriptionItem>(EMPTY_RX)
@@ -1265,7 +1268,7 @@ function Discharge({ file, p, reload }: { file: File; p: Patient; reload: () => 
         <label className="field"><span>Resumen: por qué ingresó, qué se le hizo y cómo evolucionó</span>
           <textarea className="textarea" rows={4} value={f.summary} onChange={(e) => setF({ ...f, summary: e.target.value })}
             placeholder={`Paciente ingresó por ${h.reason.toLowerCase()} Se le realizó... Evolucionó...`} /></label>
-        <DxPicker label="Diagnóstico de egreso" value={dx} onChange={setDx} />
+        <DxPicker label="Diagnóstico de egreso" value={dx} onChange={setDx} recode={legacyDx} />
         <div className="form-grid">
           <label className="field"><span>Condición al egreso</span><select className="select" value={f.condition} onChange={(e) => setF({ ...f, condition: e.target.value })}>{CONDITIONS.map((c) => <option key={c}>{c}</option>)}</select></label>
           <label className="field"><span>Seguimiento</span><input className="input" value={f.followUp} onChange={(e) => setF({ ...f, followUp: e.target.value })} /></label>

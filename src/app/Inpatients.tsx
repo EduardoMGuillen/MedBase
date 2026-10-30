@@ -127,8 +127,8 @@ export function PatientPicker({ value, onChange, onNotFound, notFoundLabel }: { 
 }
 
 /** Diagnósticos del ingreso y del egreso: el mismo buscador CIE-11 de la consulta. */
-export function DxPicker({ value, onChange, label = 'Diagnósticos' }: { value: Diagnosis[]; onChange: (v: Diagnosis[]) => void; label?: string }) {
-  return <DiagnosisPicker value={value} onChange={onChange} label={`${label} (CIE-11)`} />
+export function DxPicker({ value, onChange, label = 'Diagnósticos', recode }: { value: Diagnosis[]; onChange: (v: Diagnosis[]) => void; label?: string; recode?: Diagnosis[] }) {
+  return <DiagnosisPicker value={value} onChange={onChange} label={`${label} (CIE-11)`} recode={recode} />
 }
 
 /** Hoja de hospitalización: fecha y hora del ingreso, cama, acompañante, teléfonos y diagnósticos. */
