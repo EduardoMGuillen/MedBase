@@ -324,6 +324,8 @@ export function createApp(opts: AppOptions) {
     if (!demoMode) return res.json({ accounts: [], password: null })
     const rows = await sql.query(`SELECT s.*, c.name AS clinic_name FROM staff s LEFT JOIN clinics c ON c.id = s.clinic_id
       WHERE s.active AND s.email LIKE '%@demo.clinara' AND (c.active IS NULL OR c.active)
+        -- DM1: sólo las clínicas demo, que se regeneran cada día (San Lucas queda para probar el aislamiento entre clínicas)
+        AND (c.id IS NULL OR c.is_demo)
       ORDER BY c.created_at NULLS FIRST, CASE s.role WHEN 'doctor' THEN 0 WHEN 'nurse' THEN 1 WHEN 'reception' THEN 2 WHEN 'admin' THEN 3 ELSE 4 END, s.name`)
     res.json({ accounts: rows.map((r) => ({ ...toStaff(r), clinicName: r.clinic_name ?? undefined })), password: DEMO_PASSWORD })
   })
