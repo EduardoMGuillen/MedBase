@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse } from '../http.js'
 import { toCertificate } from '../mappers.js'
+import { currentMarks, docName } from './me.js'
 import type { Sql } from '../sql.js'
 import { yearsOld } from '../../src/lib/inpatient.js'
 import { age, normalizeDni } from '../../src/lib/format.js'
@@ -75,15 +76,16 @@ export function registerCertificates(app: Express, { sql, auth, need, userOf, cl
         record: cfg.recordUsesDni && p!.dni ? String(p!.dni) : String(p!.record),
         guardian: minor && !p!.dni && p!.guardian_name ? `${p!.guardian_name}${p!.guardian_dni ? `, identidad ${p!.guardian_dni}` : ''}` : undefined,
       },
-      doctor: { name: String(doc.name), specialty: doc.specialty ? String(doc.specialty) : undefined, license: String(doc.license) },
+      doctor: { name: docName(doc), specialty: doc.specialty ? String(doc.specialty) : undefined, license: String(doc.license) },
       clinic: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo, office: cfg.kind === 'office' || undefined },
     }
     const id = randomUUID()
     const now = new Date()
     await sql.tx(async (q) => {
       const number = await nextNumber(q, cid, now)
-      await q.run(`INSERT INTO certificates (id, clinic_id, number, patient_id, consultation_id, doctor_id, kind, data, issued_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-        [id, cid, number, b.patientId, b.consultationId ?? null, user.id, b.kind, JSON.stringify(data), now.toISOString()])
+      const marks = await currentMarks(q, user.id)
+      await q.run(`INSERT INTO certificates (id, clinic_id, number, patient_id, consultation_id, doctor_id, kind, data, issued_at, signature_id, stamp_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [id, cid, number, b.patientId, b.consultationId ?? null, user.id, b.kind, JSON.stringify(data), now.toISOString(), marks.signatureId, marks.stampId])
       const kinds = { attention: 'de atención', rest: 'de incapacidad', free: 'libre', companion: 'para el acompañante' }
       await audit(user, `Emitió la constancia ${kinds[b.kind]} ${number} de ${p!.first_name} ${p!.last_name}${b.includeDx ? ' (con diagnóstico)' : ''}`, q)
     })
@@ -110,25 +112,5 @@ export function registerCertificates(app: Express, { sql, auth, need, userOf, cl
     await sql.run('UPDATE certificates SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?', [new Date().toISOString(), user.id, reason, String(row!.id)])
     await audit(user, `Anuló la constancia ${row!.number}: ${reason}`)
     res.json(toCertificate((await sql.one('SELECT * FROM certificates WHERE id = ?', [String(row!.id)]))!))
-  })
-
-  // El médico registra su número de colegiación una sola vez (lo piden constancias y recetas)
-  app.patch('/api/me', auth, async (req, res) => {
-    const user = userOf(req)
-    const b = parse(z.object({
-      license: z.string().trim().min(3, 'Escribe tu número de colegiación.').max(30).optional(),
-      // AD2: la vigencia de las recetas es de cada médico
-      rxValidityDays: z.number().int().min(1, 'La vigencia debe ser de al menos 1 día.').max(365, 'La vigencia no puede pasar de 365 días.').optional(),
-    }), req.body)
-    if (user.role !== 'doctor') fail(403, 'Sólo los médicos registran número de colegiación y vigencia de recetas.')
-    if (b.license) {
-      await sql.run('UPDATE staff SET license = ? WHERE id = ?', [b.license, user.id])
-      await audit(user, 'Registró su número de colegiación')
-    }
-    if (b.rxValidityDays) {
-      await sql.run(`UPDATE staff SET prefs = jsonb_set(COALESCE(NULLIF(prefs, ''), '{}')::jsonb, '{rxValidityDays}', to_jsonb(?::int))::text WHERE id = ?`, [b.rxValidityDays, user.id])
-      await audit(user, `Cambió la vigencia de sus recetas a ${b.rxValidityDays} días`)
-    }
-    res.json({ ok: true })
   })
 }

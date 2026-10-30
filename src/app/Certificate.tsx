@@ -9,11 +9,12 @@ import { CERT_KIND, certificateText, plainText } from '../lib/certificates'
 import type { Certificate as Cert, CertificateData } from '../lib/types'
 import { DocHeader } from '../components/DocHeader'
 import { DniInput } from '../components/DniInput'
+import { MarkImage } from '../components/MarkImage'
 
 type Kind = Cert['kind']
 
 /** Hoja de la constancia, tamaño carta, con espacio para firma y sello. */
-function CertificateSheet({ kind, data, issuedAt, number, voided }: { kind: Kind; data: CertificateData; issuedAt: string; number?: string; voided?: boolean }) {
+function CertificateSheet({ kind, data, issuedAt, number, voided, signatureId, stampId }: { kind: Kind; data: CertificateData; issuedAt: string; number?: string; voided?: boolean; signatureId?: string; stampId?: string }) {
   const paras = certificateText(kind, data, issuedAt)
   return (
     <article className="rx-sheet cert" style={{ position: 'relative' }}>
@@ -26,8 +27,8 @@ function CertificateSheet({ kind, data, issuedAt, number, voided }: { kind: Kind
       <p className="cert__to">{data.to}:</p>
       {paras.map((p, i) => <p key={i} className="cert__body">{p.map((x, j) => (x.b ? <b key={j}>{x.text}</b> : <span key={j}>{x.text}</span>))}</p>)}
       <div className="cert__sign">
-        <div className="cert__stamp">Sello</div>
-        <div className="rx-sheet__sign" style={{ marginTop: 0 }}><div><em>&nbsp;</em>{data.doctor.name}<br /><span style={{ color: 'var(--muted)' }}>Colegiación {data.doctor.license}</span></div></div>
+        {stampId ? <MarkImage id={stampId} alt="Sello del médico" className="doc-stamp" /> : <div className="cert__stamp">Sello</div>}
+        <div className="rx-sheet__sign" style={{ marginTop: 0 }}><div>{signatureId ? <MarkImage id={signatureId} alt={`Firma de ${data.doctor.name}`} className="doc-signature" /> : <em>&nbsp;</em>}{data.doctor.name}<br /><span style={{ color: 'var(--muted)' }}>Colegiación {data.doctor.license}</span></div></div>
       </div>
       <footer className="rx-sheet__foot"><span>{data.clinic.office ? '' : data.clinic.name}</span><span>Emitida con Clinara</span></footer>
     </article>
@@ -181,7 +182,7 @@ export function CertificateView() {
         <div className="alert-strip no-print">Anulada el {date(cert.voidedAt)} a las {time(cert.voidedAt)} por {staffById(cert.voidedBy ?? '')?.name}: {cert.voidReason}.
           {cert.consultationId && can('consult.write') && <> <Link to={`/app/constancia/${cert.consultationId}`}>Emitir otra</Link></>}</div>
       )}
-      <CertificateSheet kind={cert.kind} data={cert.data} issuedAt={cert.issuedAt} number={cert.number} voided={!!cert.voidedAt} />
+      <CertificateSheet kind={cert.kind} data={cert.data} issuedAt={cert.issuedAt} number={cert.number} voided={!!cert.voidedAt} signatureId={cert.signatureId} stampId={cert.stampId} />
       {voiding && (
         <Modal title={`Anular constancia ${cert.number}`} onClose={() => setVoiding(false)} footer={<>
           <button className="btn btn--ghost" onClick={() => setVoiding(false)}>Cancelar</button>

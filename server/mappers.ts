@@ -24,6 +24,9 @@ export const toStaff = (r: Row): Staff => ({
   prefs: r.prefs ? j<Staff['prefs']>(r.prefs, {}) : undefined,
   clinicKind: r.clinic_kind == null ? undefined : (String(r.clinic_kind) as Staff['clinicKind']),
   hasSignature: r.signature ? true : undefined,
+  hasStamp: r.stamp ? true : undefined,
+  hasPin: r.pin_hash ? true : undefined,
+  docName: s(r.doc_name),
 })
 
 export const toPatient = (r: Row, clinical: boolean): Patient => ({
@@ -73,12 +76,13 @@ export const toPrescription = (r: Row): Prescription => ({
   consultationId: String(r.consultation_id), hospitalizationId: s(r.hospitalization_id), issuedAt: String(r.issued_at), items: j(r.items, []),
   standalone: Boolean(r.standalone) || undefined, indications: r.indications == null ? undefined : j<string[]>(r.indications, []),
   guest: r.guest == null ? undefined : j<GuestPatient>(r.guest, { name: '' }), linkedAt: s(r.linked_at), validityDays: n(r.validity_days),
+  signatureId: s(r.signature_id), stampId: s(r.stamp_id),
 })
 
 export const toCertificate = (r: Row): Certificate => ({
   id: String(r.id), number: String(r.number), patientId: String(r.patient_id), consultationId: s(r.consultation_id) || undefined, doctorId: String(r.doctor_id),
   kind: r.kind as Certificate['kind'], data: j<CertificateData>(r.data, {} as CertificateData), issuedAt: String(r.issued_at),
-  voidedAt: s(r.voided_at), voidedBy: s(r.voided_by), voidReason: s(r.void_reason),
+  voidedAt: s(r.voided_at), voidedBy: s(r.voided_by), voidReason: s(r.void_reason), signatureId: s(r.signature_id), stampId: s(r.stamp_id),
 })
 
 export const toClinicDrug = (r: Row): ClinicDrug => ({

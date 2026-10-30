@@ -155,3 +155,49 @@ describe('AD5 varios roles y vista activa', () => {
     assert.equal((await admin.patch(`/api/staff/${nurse}`, { roles: ['nurse', 'doctor'] })).status, 400)
   })
 })
+
+const PNG = (c: string) => `data:image/png;base64,iVBORw0KGgo${c}AAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk`
+
+describe('MC6 Mi configuración', () => {
+  test('datos profesionales, sello y preferencias se guardan por separado; enfermería no los tiene', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    assert.equal((await doc.patch('/api/me', { docName: 'Dra. Lucía Herrera Mejía', specialty: 'Medicina interna', stamp: PNG('s1') })).status, 200)
+    assert.equal((await doc.patch('/api/me', { noteFormat: 'soap' })).status, 200)
+    const me = (await doc.get('/api/auth/me')).body.user
+    assert.equal(me.docName, 'Dra. Lucía Herrera Mejía')
+    assert.equal(me.hasStamp, true)
+    assert.equal(me.prefs.noteFormat, 'soap')
+    assert.equal((await doc.get('/api/me/marks')).body.stamp, PNG('s1'))
+    assert.equal((await (await as('crios@demo.clinara')).patch('/api/me', { docName: 'X' })).status, 403)
+    await doc.patch('/api/me', { noteFormat: 'dx' })
+  })
+
+  test('cambiar la firma no altera la receta ya emitida (guardó su versión)', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    assert.equal((await doc.put('/api/me/signature', { signature: PNG('a'), password: 'mala' })).status, 400)
+    assert.equal((await doc.put('/api/me/signature', { signature: PNG('a'), password: DEMO_PASSWORD })).status, 200)
+    const p = (await walkIn('Firma')).patientId
+    const r1 = await doc.post('/api/prescriptions', { patientId: p, items: RX })
+    const rx1 = (await doc.get(`/api/prescriptions/${r1.body.prescriptionId}`)).body.prescription
+    assert.ok(rx1.signatureId && rx1.stampId)
+    await doc.put('/api/me/signature', { signature: PNG('b'), password: DEMO_PASSWORD })
+    const r2 = await doc.post('/api/prescriptions', { patientId: p, items: RX })
+    const rx2 = (await doc.get(`/api/prescriptions/${r2.body.prescriptionId}`)).body.prescription
+    assert.notEqual(rx1.signatureId, rx2.signatureId)
+    assert.equal((await doc.get(`/api/marks/${rx1.signatureId}`)).body.image, PNG('a'))
+    assert.equal((await doc.get(`/api/marks/${rx2.signatureId}`)).body.image, PNG('b'))
+    // Otra clínica no la ve
+    assert.equal((await (await as('erosales@demo.clinara')).get(`/api/marks/${rx1.signatureId}`)).status, 404)
+  })
+
+  test('PIN para confirmar firmas y cerrar las demás sesiones', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    assert.equal((await doc.put('/api/me/pin', { password: DEMO_PASSWORD, pin: '12' })).status, 400)
+    assert.equal((await doc.put('/api/me/pin', { password: DEMO_PASSWORD, pin: '4321' })).status, 200)
+    assert.equal((await doc.get('/api/auth/me')).body.user.hasPin, true)
+    const other = await as('lherrera@demo.clinara')
+    assert.equal((await doc.post('/api/me/sessions/close')).status, 200)
+    assert.equal((await other.get('/api/bootstrap')).status, 401)
+    await doc.put('/api/me/pin', { password: DEMO_PASSWORD, pin: '' })
+  })
+})

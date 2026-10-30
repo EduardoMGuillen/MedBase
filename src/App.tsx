@@ -22,7 +22,7 @@ import Billing, { ReceiptSheet } from './app/Billing'
 import Reports from './app/Reports'
 import Settings from './app/Settings'
 import StaffPage from './app/Staff'
-import Account from './app/Account'
+import MyConfig from './app/MyConfig'
 import Platform, { ClinicDetail } from './app/Platform'
 import Inpatients from './app/Inpatients'
 import InpatientFile from './app/InpatientFile'
@@ -93,8 +93,8 @@ export default function App() {
             <Route path="reportes" element={<Guard perm="reports.view"><Reports /></Guard>} />
             <Route path="personal" element={<Guard perm="staff.manage"><StaffPage /></Guard>} />
             <Route path="configuracion" element={<Guard perm="settings.manage"><Settings /></Guard>} />
-            <Route path="cuenta" element={<Account />} />
-            <Route path="mi-configuracion" element={<Account />} />
+            <Route path="cuenta" element={<MyConfig />} />
+            <Route path="mi-configuracion" element={<MyConfig />} />
             <Route path="plataforma" element={<Guard perm="platform.manage"><Platform /></Guard>} />
             <Route path="clinicas/:id" element={<Guard perm="platform.manage"><ClinicDetail /></Guard>} />
             <Route path="*" element={<NotFound inApp />} />

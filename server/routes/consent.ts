@@ -1,9 +1,9 @@
 import express, { type Express } from 'express'
-import bcrypt from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import { toAuthorization } from '../mappers.js'
+import { checkSecret, docName, saveMark } from './me.js'
 import { signedConsentPdf } from '../consentPdf.js'
 import { authTitle, deviceLabel } from '../../src/lib/consent.js'
 import { normalizeDni } from '../../src/lib/format.js'
@@ -37,15 +37,15 @@ export function registerConsent(app: Express, { sql, auth, need, userOf, clinicO
   }
 
   /** Verifica la contraseña del médico que firma (la sesión ya está abierta: se pide otra vez). */
-  async function confirmDoctor(userId: string, password: string) {
+  async function confirmDoctor(userId: string, secret: { password?: string; pin?: string }) {
     const key = `confirm:${userId}`
     const tries = await sql.one<{ n: number; reset_at: number }>('SELECT n, reset_at FROM rate_limits WHERE key = ?', [key])
     if (tries && Number(tries.reset_at) > Date.now() && Number(tries.n) >= 5) fail(429, 'Demasiados intentos con la contraseña. Espera 5 minutos.')
     const row = (await staffRow(userId))!
-    if (!bcrypt.compareSync(password, String(row.password_hash))) {
+    if (!(await checkSecret(sql, userId, secret))) {
       await sql.run(`INSERT INTO rate_limits (key, n, reset_at) VALUES (?, 1, ?) ON CONFLICT (key) DO UPDATE SET n = CASE WHEN rate_limits.reset_at < ? THEN 1 ELSE rate_limits.n + 1 END,
         reset_at = CASE WHEN rate_limits.reset_at < ? THEN excluded.reset_at ELSE rate_limits.reset_at END`, [key, Date.now() + 5 * 60_000, Date.now(), Date.now()])
-      fail(401, 'La contraseña no es correcta.')
+      fail(401, secret.pin ? 'El PIN no es correcto.' : 'La contraseña no es correcta.')
     }
     await sql.run('DELETE FROM rate_limits WHERE key = ?', [key])
     return row
@@ -75,7 +75,9 @@ export function registerConsent(app: Express, { sql, auth, need, userOf, clinicO
         readConfirmed: z.literal(true, 'Marca la casilla «He leído este documento».'),
       }).optional(),
       // La firma del médico: su contraseña otra vez y su firma (la guardada o una nueva)
-      doctor: z.object({ password: z.string().min(1, 'Escribe tu contraseña.'), signature: signature.optional(), save: z.boolean().default(false) }).optional(),
+      // El médico confirma con su contraseña o con su PIN (MC6)
+      doctor: z.object({ password: z.string().optional(), pin: z.string().optional(), signature: signature.optional(), save: z.boolean().default(false) })
+        .refine((d) => d.password || d.pin, 'Escribe tu contraseña o tu PIN.').optional(),
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
@@ -106,10 +108,10 @@ export function registerConsent(app: Express, { sql, auth, need, userOf, clinicO
     let doctorRow: Row | undefined
     if (b.action === 'accept' && b.doctor) {
       if (user.role !== 'doctor') fail(403, 'Sólo un médico firma como médico.')
-      doctorRow = await confirmDoctor(user.id, b.doctor.password)
+      doctorRow = await confirmDoctor(user.id, b.doctor)
       const drawn = b.doctor.signature ?? (doctorRow.signature ? String(doctorRow.signature) : undefined)
       if (!drawn) fail(400, 'Dibuja tu firma. Se guardará en tu perfil para las próximas.')
-      s.doctor = { id: user.id, name: String(doctorRow.name), license: doctorRow.license ? String(doctorRow.license) : undefined, signature: drawn, at: new Date().toISOString() }
+      s.doctor = { id: user.id, name: docName(doctorRow), license: doctorRow.license ? String(doctorRow.license) : undefined, signature: drawn, at: new Date().toISOString() }
     }
 
     const name = await patientName(a.patientId)
@@ -126,7 +128,7 @@ export function registerConsent(app: Express, { sql, auth, need, userOf, clinicO
     const title = `${b.action === 'revoke' ? 'Revocación' : b.action === 'refuse' ? 'Rechazo' : authTitle(a)} firmado en pantalla`
     await sql.tx(async (q) => {
       const pdfId = await storePdf(q, a, cid, user.id, title, bytes)
-      if (doctorRow && b.doctor?.save && b.doctor.signature) await q.run('UPDATE staff SET signature = ? WHERE id = ?', [b.doctor.signature, user.id])
+      if (doctorRow && b.doctor?.save && b.doctor.signature) await saveMark(q, cid, user.id, 'signature', b.doctor.signature)
       if (b.action === 'revoke') {
         const revocation: ConsentRevocation = { method: 'virtual', at: now, by: user.id, signing: s, pdfId, pdfSha256: sha256 }
         await q.run(`UPDATE authorizations SET status = 'revoked', revocation = ?, status_at = ?, status_by = ? WHERE id = ?`, [JSON.stringify(revocation), now, user.id, a.id])
@@ -154,18 +156,10 @@ export function registerConsent(app: Express, { sql, auth, need, userOf, clinicO
     res.json(toAuthorization((await sql.one('SELECT * FROM authorizations WHERE id = ?', [a.id]))!))
   })
 
-  // Firma guardada del médico: se usa al firmar en pantalla
+  // Firma guardada del médico: se usa al firmar en pantalla (se guarda desde Mi configuración, routes/me.ts)
   app.get('/api/me/signature', auth, need('inpatient.orders'), async (req, res) => {
     const row = (await staffRow(userOf(req).id))!
-    res.json({ signature: row.signature ? String(row.signature) : null })
-  })
-  app.put('/api/me/signature', bigJson, auth, need('inpatient.orders'), async (req, res) => {
-    const b = parse(z.object({ signature, password: z.string().min(1, 'Escribe tu contraseña.') }), req.body)
-    const user = userOf(req)
-    await confirmDoctor(user.id, b.password)
-    await sql.run('UPDATE staff SET signature = ? WHERE id = ?', [b.signature, user.id])
-    await audit(user, 'Guardó su firma para las autorizaciones')
-    res.json({ ok: true })
+    res.json({ signature: row.signature ? String(row.signature) : null, pin: !!row.pin_hash })
   })
 }
 

@@ -13,7 +13,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '33'
+const SCHEMA_VERSION = '34'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -615,6 +615,26 @@ ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS validity_days INTEGER;
 -- activo (la vista que eligió, que se recuerda). La bitácora guarda con qué rol se hizo cada acción.
 ALTER TABLE staff ADD COLUMN IF NOT EXISTS roles TEXT;
 ALTER TABLE audit ADD COLUMN IF NOT EXISTS role TEXT;
+
+-- v34: ronda 3 (MC6). "Mi configuración" del médico: nombre en documentos, sello, PIN para confirmar firmas. Cada firma o
+-- sello guardado es una versión en staff_marks; recetas y constancias apuntan a la versión con que se emitieron, así que
+-- cambiar la firma no altera los documentos ya emitidos.
+ALTER TABLE staff
+  ADD COLUMN IF NOT EXISTS doc_name TEXT,
+  ADD COLUMN IF NOT EXISTS stamp TEXT,
+  ADD COLUMN IF NOT EXISTS signature_id TEXT,
+  ADD COLUMN IF NOT EXISTS stamp_id TEXT,
+  ADD COLUMN IF NOT EXISTS pin_hash TEXT;
+CREATE TABLE IF NOT EXISTS staff_marks (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT,
+  staff_id TEXT NOT NULL REFERENCES staff(id),
+  kind TEXT NOT NULL CHECK (kind IN ('signature','stamp')),
+  image TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS signature_id TEXT, ADD COLUMN IF NOT EXISTS stamp_id TEXT;
+ALTER TABLE certificates ADD COLUMN IF NOT EXISTS signature_id TEXT, ADD COLUMN IF NOT EXISTS stamp_id TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -656,6 +676,7 @@ export function ensureDb(sql: Sql) {
       }
       await migrateRxValidity(q)
       await migrateRoles(q)
+      await migrateMarks(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -982,6 +1003,15 @@ export async function migrateObservationAuthorizations(q: Sql) {
   }
 }
 
+/** v34 (MC6): la firma que ya tenía guardada cada médico pasa a ser su primera versión. Idempotente. */
+export async function migrateMarks(q: Sql) {
+  for (const r of await q.query(`SELECT id, clinic_id, signature FROM staff WHERE signature IS NOT NULL AND signature_id IS NULL`)) {
+    const id = randomUUID()
+    await q.run('INSERT INTO staff_marks (id, clinic_id, staff_id, kind, image, created_at) VALUES (?,?,?,?,?,?)', [id, r.clinic_id ?? null, String(r.id), 'signature', String(r.signature), new Date().toISOString()])
+    await q.run('UPDATE staff SET signature_id = ? WHERE id = ?', [id, String(r.id)])
+  }
+}
+
 /** v33 (AD5): cada persona empieza con su único rol como lista de roles. Idempotente. */
 export async function migrateRoles(q: Sql) {
   await q.run(`UPDATE staff SET roles = json_build_array(role)::text WHERE roles IS NULL OR roles = ''`)
@@ -1064,7 +1094,7 @@ export async function nextFolio(q: Sql, clinicId: string, now: Date) {
 /** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
 export async function resetDemo(sql: Sql) {
   await sql.tx(async (q) => {
-    await q.exec(`TRUNCATE epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
+    await q.exec(`TRUNCATE staff_marks, epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
       attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
     await seed(q)

@@ -1,72 +1,9 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Compass, ListChecks, ShieldCheck } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { Avatar, PageHead } from '../components/ui'
-import { ROLE_LABEL, permissionsFor, PERMISSIONS } from '../lib/permissions'
-import { ScheduleEditor } from './ScheduleEditor'
 
-export default function Account() {
-  const { user, staffById } = useStore()
-  if (!user) return null
-  // El horario viene de la lista del personal, que se actualiza al guardar
-  const me = staffById(user.id) ?? user
-  return (
-    <div className="page">
-      <PageHead title="Mi cuenta" sub="Tu contraseña y la verificación en dos pasos."
-        actions={<button className="btn btn--ghost" onClick={() => window.dispatchEvent(new Event('start-tour'))}><Compass size={16} />Ver el recorrido otra vez</button>} />
-      <div className="chart-head" style={{ gridTemplateColumns: 'auto 1fr' }}>
-        <Avatar name={user.name} color={user.color} />
-        <div>
-          <h1 style={{ fontSize: 24 }}>{user.name}</h1>
-          <div className="chart-meta"><span>{ROLE_LABEL[user.role]}{user.specialty ? `, ${user.specialty}` : ''}</span><span>{user.email}</span>{user.license && <span>Colegiación <b>{user.license}</b></span>}</div>
-        </div>
-      </div>
-      <div className="grid-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        <PasswordPanel />
-        <TwoFactorPanel />
-      </div>
-      {user.role === 'doctor' && <RxValidityPanel />}
-      {user.role === 'doctor' && (
-        <section className="panel">
-          <div className="panel__head"><div><h2>Mis sets de órdenes</h2><p>Órdenes que usas siempre igual, guardadas con un nombre para aplicarlas en un solo paso.</p></div>
-            <Link className="btn btn--soft" to="/app/sets-de-ordenes"><ListChecks size={16} />Abrir mis sets</Link></div>
-        </section>
-      )}
-      {user.role === 'doctor' && (
-        <section className="panel">
-          <div className="panel__head"><div><h2>Mi horario de atención</h2><p>La agenda y la reserva en línea sólo ofrecen horas dentro de tu horario.</p></div></div>
-          <div className="panel__body"><ScheduleEditor key={JSON.stringify(me.schedule)} d={me} /></div>
-        </section>
-      )}
-      <section className="panel">
-        <div className="panel__head"><h2>Lo que tu rol permite</h2></div>
-        <div className="panel__body"><div className="chips">{permissionsFor(user.role, user.clinicKind).map((p) => <span key={p} className="chip">{PERMISSIONS[p]}</span>)}</div></div>
-      </section>
-    </div>
-  )
-}
-
-/** AD2: la vigencia de las recetas es de cada médico. Al emitir una receta se puede cambiar sólo para esa. */
-function RxValidityPanel() {
-  const { user, saveMyRxValidity } = useStore()
-  const saved = user?.prefs?.rxValidityDays ?? 30
-  const [days, setDays] = useState(String(saved))
-  const n = Math.round(Number(days))
-  const valid = n >= 1 && n <= 365
-  return (
-    <section className="panel">
-      <div className="panel__head"><div><h2>Vigencia de mis recetas</h2><p>Lo que dice el pie de tus recetas. Al emitir una receta la puedes cambiar sólo para esa.</p></div></div>
-      <form className="panel__body" style={{ display: 'flex', gap: 10, alignItems: 'end', flexWrap: 'wrap' }} onSubmit={(e) => { e.preventDefault(); if (valid) saveMyRxValidity(n) }}>
-        <label className="field"><span>Vigencia de mis recetas (días)</span>
-          <input className="input num" style={{ width: 120 }} type="number" min={1} max={365} value={days} onChange={(e) => setDays(e.target.value)} /></label>
-        <button className="btn btn--primary" disabled={!valid || n === saved}>Guardar</button>
-      </form>
-    </section>
-  )
-}
-
-function PasswordPanel() {
+/** Paneles de seguridad de la cuenta (contraseña y verificación en dos pasos); los usa Mi configuración (MC6). */
+export function PasswordPanel() {
   const { changePassword } = useStore()
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
@@ -90,7 +27,7 @@ function PasswordPanel() {
   )
 }
 
-function TwoFactorPanel() {
+export function TwoFactorPanel() {
   const { user, setupTwoFactor, enableTwoFactor, disableTwoFactor } = useStore()
   const [setup, setSetup] = useState<{ secret: string; qr: string } | null>(null)
   const [code, setCode] = useState('')

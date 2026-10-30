@@ -16,6 +16,7 @@ import { DniInput } from '../components/DniInput'
 import { DocHeader } from '../components/DocHeader'
 import { SimilarPatients } from './NewPatient'
 import { RxValidityField } from '../components/RxValidity'
+import { MarkImage } from '../components/MarkImage'
 import { useRxValidity } from '../lib/hooks'
 import { IdentificationForm, IdentityPrompt } from './PatientForms'
 
@@ -245,7 +246,10 @@ export function PrescriptionSheet() {
           <div style={{ marginTop: 24, fontSize: 14 }}><b>Indicaciones generales</b>
             <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{notes.map((n, i) => <li key={i}>{n}</li>)}</ul></div>
         )}
-        <div className="rx-sheet__sign"><div><em>{doc.name.replace(/^Dra?\.\s*/, '')}</em>{doc.name}<br /><span style={{ color: 'var(--muted)' }}>{doc.license}</span></div></div>
+        <div className="rx-sheet__sign">
+          {rx.stampId && <MarkImage id={rx.stampId} alt="Sello del médico" className="doc-stamp" />}
+          <div>{rx.signatureId ? <MarkImage id={rx.signatureId} alt={`Firma de ${doc.name}`} className="doc-signature" /> : <em>{doc.name.replace(/^Dra?\.\s*/, '')}</em>}{doc.docName ?? doc.name}<br /><span style={{ color: 'var(--muted)' }}>{doc.license}</span></div>
+        </div>
         <footer className="rx-sheet__foot"><span>Receta válida por {rx.validityDays ?? settings.rxValidityDays} días a partir de su emisión.</span><span>Emitida con Clinara</span></footer>
       </article>
     </div>

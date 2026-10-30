@@ -39,9 +39,13 @@ export interface Staff {
   /** Tipo de cuenta de su clínica: decide sus permisos y qué módulos ve. */
   clinicKind?: ClinicKind
   /** Preferencias del usuario: el último formato de nota que usó. */
-  prefs?: { noteFormat?: 'soap' | 'dx'; tourDoneAt?: string; rxValidityDays?: number }
+  prefs?: { noteFormat?: 'soap' | 'dx'; tourDoneAt?: string; rxValidityDays?: number; favDrugs?: string[]; favExams?: string[] }
   /** El médico tiene su firma guardada (la imagen no viaja con la lista del personal). */
   hasSignature?: boolean
+  /** MC6: tiene sello guardado y PIN para confirmar firmas; nombre como aparece en sus documentos. */
+  hasStamp?: boolean
+  hasPin?: boolean
+  docName?: string
 }
 
 /** Una clínica dentro de la plataforma. */
@@ -283,6 +287,9 @@ export interface Prescription {
   linkedAt?: string
   /** Días de vigencia con que se emitió (los elige el médico; 30 por defecto). */
   validityDays?: number
+  /** Versión de la firma y del sello con que se emitió (MC6). */
+  signatureId?: string
+  stampId?: string
 }
 
 /** Datos de una persona no registrada, tal como se escribieron en su receta. */
@@ -343,6 +350,8 @@ export interface Certificate {
   voidedAt?: string
   voidedBy?: string
   voidReason?: string
+  signatureId?: string
+  stampId?: string
 }
 
 export interface CertificateData {
@@ -373,6 +382,9 @@ export interface ClinicDrug {
   presentation?: string
   concentration?: string
   route?: string
+  /** AD4: dosis e indicaciones de uso habituales (opcionales). */
+  usualDose?: string
+  usualUse?: string
   active: boolean
   createdBy: string
   createdAt: string
@@ -731,7 +743,7 @@ export interface EpicrisisData {
   /** Secciones "agregadas" que el médico quitó. */
   hidden: ('procedures' | 'dischargeDx' | 'labs' | 'condition')[]
   /** Quien la emite: nombre, colegiación y su firma guardada, si tiene. */
-  doctor?: { name: string; license?: string; signature?: string }
+  doctor?: { name: string; license?: string; signature?: string; stamp?: string }
 }
 
 export interface Epicrisis {

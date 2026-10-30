@@ -16,6 +16,7 @@ import {
 import { newSecret, otpauthUrl, verifyTotp } from './totp.js'
 import { rxValidityOf, validityInput } from './prefs.js'
 import { registerSettings } from './routes/settings.js'
+import { currentMarks, registerMe } from './routes/me.js'
 import { registerPublic } from './routes/public.js'
 import { registerBilling } from './routes/billing.js'
 import { registerReports } from './routes/reports.js'
@@ -248,6 +249,15 @@ export function createApp(opts: AppOptions) {
       await audit({ ...user, role }, `Cambió a la ${VIEW_LABEL[role].toLowerCase()} (antes: ${VIEW_LABEL[user.role].toLowerCase()})`)
     }
     res.json(session((await sql.one('SELECT s.*, c.kind AS clinic_kind FROM staff s LEFT JOIN clinics c ON c.id = s.clinic_id WHERE s.id = ?', [user.id]))!))
+  })
+
+  // MC6: cerrar la sesión en los demás equipos (esta sigue abierta con un pase nuevo)
+  app.post('/api/me/sessions/close', auth, async (req, res) => {
+    const user = userOf(req)
+    await sql.run('UPDATE staff SET token_version = token_version + 1 WHERE id = ?', [user.id])
+    issue(res, (await staffRow(user.id))!)
+    await audit(user, 'Cerró su sesión en los demás equipos')
+    res.json({ ok: true })
   })
 
   // Recorrido de primer ingreso: terminado o saltado, no vuelve a aparecer en ningún equipo
@@ -797,8 +807,9 @@ export function createApp(opts: AppOptions) {
       const closed = await q.one(`SELECT 1 FROM appointments WHERE id = ? AND status = 'done'`, [c.appointmentId])
       if (closed) fail(409, 'Esta cita ya está cerrada.')
       if (rxId) {
-        await q.run(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items,clinic_id,validity_days) VALUES (?,?,?,?,?,?,?,?,?)`,
-          [rxId, folio, patientId, user.id, consultId, now.toISOString(), JSON.stringify(rxItems), cid, await rxValidityOf(q, user.id, c.validityDays)])
+        const marks = await currentMarks(q, user.id)
+        await q.run(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items,clinic_id,validity_days,signature_id,stamp_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          [rxId, folio, patientId, user.id, consultId, now.toISOString(), JSON.stringify(rxItems), cid, await rxValidityOf(q, user.id, c.validityDays), marks.signatureId, marks.stampId])
       }
       await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id,orders,observations,clinic_id,indications,
           admit_kind, meds)
@@ -869,9 +880,11 @@ export function createApp(opts: AppOptions) {
     let folio = ''
     await sql.tx(async (q) => {
       folio = await nextFolio(q, cid, now)
-      await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, issued_at, items, clinic_id, standalone, indications, guest, validity_days) VALUES (?,?,?,?,?,?,?,?,TRUE,?,?,?)`,
+      const marks = await currentMarks(q, user.id)
+      await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, issued_at, items, clinic_id, standalone, indications, guest, validity_days, signature_id, stamp_id)
+        VALUES (?,?,?,?,?,?,?,?,TRUE,?,?,?,?,?)`,
         [id, folio, b.patientId ?? null, user.id, '', now.toISOString(), JSON.stringify(b.items), cid, JSON.stringify(b.indications), guest ? JSON.stringify(guest) : null,
-          await rxValidityOf(q, user.id, b.validityDays)])
+          await rxValidityOf(q, user.id, b.validityDays), marks.signatureId, marks.stampId])
       await audit(user, `Emitió la receta sin consulta ${folio} de ${who}`, q)
     })
     res.status(201).json({ prescriptionId: id, folio })
@@ -993,6 +1006,7 @@ export function createApp(opts: AppOptions) {
   })
 
   registerSettings(app, ctx)
+  registerMe(app, ctx)
   registerPublic(app, ctx)
   registerBilling(app, ctx)
   registerReports(app, ctx)

@@ -247,3 +247,28 @@ tr.clickable { cursor: pointer; }
 .role-picks { display: flex; flex-wrap: wrap; gap: 6px; }
 .role-picks .badge { cursor: default; }
 @media (max-width: 860px) { .view-bar { padding: 14px 16px 0; } .view-switch:not(.view-switch--compact) { width: 100%; } .view-switch:not(.view-switch--compact) button { flex: 1; } }
+
+/* MC6: Mi configuración */
+.myconf { display: grid; grid-template-columns: 230px 1fr; gap: 20px; align-items: start; }
+.myconf__nav { display: grid; gap: 2px; position: sticky; top: 12px; }
+.myconf__tab { display: flex; align-items: center; gap: 10px; border: 0; background: transparent; padding: 10px 12px; border-radius: 10px; color: var(--muted); font-weight: 600; font-size: 14px; text-align: left; cursor: pointer; }
+.myconf__tab:hover { background: var(--paper); color: var(--petrol); }
+.myconf__tab.is-on { background: var(--ink-soft); color: var(--ink-deep); }
+.myconf__body { display: grid; gap: 16px; min-width: 0; }
+.mark-box { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; background: #fbfcfc; min-height: 72px; }
+.mark-box img { max-height: 90px; max-width: 260px; object-fit: contain; }
+.mark-box--sig img { max-height: 120px; max-width: 100%; }
+.fav-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.fav-list li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+.fav-list li > span:nth-child(2) { flex: 1; }
+.fav { color: var(--faint); }
+.fav.is-on { color: #c27a12; }
+.check-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+.doc-signature { display: block; max-height: 64px; max-width: 220px; margin: 0 auto 4px; object-fit: contain; }
+.rx-sheet__sign { align-items: flex-end; gap: 24px; }
+.doc-stamp { max-height: 96px; max-width: 150px; object-fit: contain; opacity: 0.92; }
+@media (max-width: 860px) {
+  .myconf { grid-template-columns: 1fr; }
+  .myconf__nav { position: static; grid-auto-flow: column; overflow-x: auto; scrollbar-width: none; }
+  .myconf__tab { white-space: nowrap; }
+}

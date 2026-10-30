@@ -13,6 +13,7 @@ import { hasBlank, medHasBlank } from '../../src/lib/orderSets.js'
 import { createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrders.js'
 import { authorizationBase, ensureHospitalAuthorization, refreshPendingHospitalAuthorization } from '../authorizations.js'
 import { rxValidityOf, validityInput } from '../prefs.js'
+import { currentMarks } from './me.js'
 
 const dx = z.array(diagnosisInput)
 const when = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'La fecha u hora no es válida.')
@@ -749,8 +750,9 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     await sql.tx(async (q) => {
       if (rxId) {
         folio = await nextFolio(q, cid, now)
-        await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, hospitalization_id, issued_at, items, clinic_id, validity_days) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-          [rxId, folio, patientId, user.id, noteId, id, now.toISOString(), JSON.stringify(b.items), cid, await rxValidityOf(q, user.id, b.validityDays)])
+        const marks = await currentMarks(q, user.id)
+        await q.run(`INSERT INTO prescriptions (id, folio, patient_id, doctor_id, consultation_id, hospitalization_id, issued_at, items, clinic_id, validity_days, signature_id, stamp_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [rxId, folio, patientId, user.id, noteId, id, now.toISOString(), JSON.stringify(b.items), cid, await rxValidityOf(q, user.id, b.validityDays), marks.signatureId, marks.stampId])
       }
       const data = { diagnoses: b.diagnoses, summary: b.summary, condition: b.condition, instructions: b.instructions, followUp: b.followUp }
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, plan, data) VALUES (?,?,?,'discharge',?,?,?,?)`,

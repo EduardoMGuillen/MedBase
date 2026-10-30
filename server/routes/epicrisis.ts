@@ -2,6 +2,7 @@ import type { Express } from 'express'
 import { z } from 'zod'
 import { type Ctx, fail, parse } from '../http.js'
 import { toEpicrisis } from '../mappers.js'
+import { docName } from './me.js'
 import { createEpicrisisDraft, missingForIssue } from '../epicrisis.js'
 import type { EpicrisisData } from '../../src/lib/types.js'
 
@@ -72,7 +73,7 @@ export function registerEpicrisis(app: Express, { sql, auth, need, userOf, clini
     const missing = missingForIssue(data)
     if (missing.length) fail(400, `Antes de emitir, escribe ${missing.join(', ')}.`)
     const me = (await staffRow(user.id))!
-    data.doctor = { name: String(me.name), license: me.license ? String(me.license) : undefined, signature: me.signature ? String(me.signature) : undefined }
+    data.doctor = { name: docName(me), license: me.license ? String(me.license) : undefined, signature: me.signature ? String(me.signature) : undefined, stamp: me.stamp ? String(me.stamp) : undefined }
     const now = new Date().toISOString()
     await sql.run(`UPDATE epicrises SET status = 'issued', data = ?, issued_by = ?, issued_at = ? WHERE id = ?`, [JSON.stringify(data), user.id, now, String(r.id)])
     await audit(user, `Emitió la epicrisis${Number(r.version) > 1 ? ` (versión ${r.version})` : ''} de ${await patientName(String(r.patient_id))}`)

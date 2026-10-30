@@ -42,6 +42,8 @@ export function ConsentSigning({ a, p, action, doctorOnly = false, onClose, onDo
   const [sig, setSig] = useState<string | null>(null)
   const [witnessSig, setWitnessSig] = useState<string | null>(null)
   const [password, setPassword] = useState('')
+  // MC6: si el médico configuró un PIN, confirma con el PIN (puede usar la contraseña)
+  const [usePin, setUsePin] = useState(false)
   const [saved, setSaved] = useState<string | null | undefined>(undefined)
   const [drawn, setDrawn] = useState<string | null>(null)
   const [redraw, setRedraw] = useState(false)
@@ -51,7 +53,7 @@ export function ConsentSigning({ a, p, action, doctorOnly = false, onClose, onDo
   // Firma guardada del médico: se estampa sola; si no tiene, la dibuja una vez y se guarda
   useEffect(() => {
     if (!isDoctor || !needsDoctor) return
-    api<{ signature: string | null }>('/me/signature').then((r) => setSaved(r.signature)).catch(() => setSaved(null))
+    api<{ signature: string | null; pin?: boolean }>('/me/signature').then((r) => { setSaved(r.signature); setUsePin(!!r.pin) }).catch(() => setSaved(null))
   }, [isDoctor, needsDoctor])
 
   // Evita que la página de atrás se desplace mientras está abierto
@@ -82,7 +84,7 @@ export function ConsentSigning({ a, p, action, doctorOnly = false, onClose, onDo
           witness: witnessOn ? { name: witness.name.trim(), dni: witness.dni || undefined, signature: witnessSig } : undefined, readConfirmed: true,
         }
       }
-      if (withDoctor) body.doctor = { password, signature: redraw || !saved ? drawn : undefined, save: (redraw || !saved) && save }
+      if (withDoctor) body.doctor = { ...(usePin ? { pin: password } : { password }), signature: redraw || !saved ? drawn : undefined, save: (redraw || !saved) && save }
       const r = await api<Authorization>(`/authorizations/${a.id}/sign`, { body })
       notify(r.status === 'pending' ? 'Firma del paciente guardada. Falta la firma del médico.' : r.status === 'signed' ? 'Autorización firmada en pantalla' : r.status === 'refused' ? 'Rechazo firmado en pantalla' : 'Revocación firmada en pantalla')
       onDone(r)
@@ -187,8 +189,10 @@ export function ConsentSigning({ a, p, action, doctorOnly = false, onClose, onDo
                 <SignaturePad label={saved ? 'Tu firma nueva' : 'Tu firma (se dibuja una vez y se guarda en tu perfil)'} onChange={setDrawn} height={160} />
                 <label className="check-line"><input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} /><span><b>Guardar como mi firma</b><small>Para las próximas autorizaciones.</small></span></label>
               </>)}
-              <label className="field"><span>Tu contraseña</span><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)}
+              <label className="field"><span>{usePin ? 'Tu PIN' : 'Tu contraseña'}</span><input className="input" type="password" inputMode={usePin ? 'numeric' : undefined}
+                autoComplete={usePin ? 'off' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && doctorOk && !busy) void submit(true) }} /></label>
+              {user?.hasPin && <button type="button" className="linklike" style={{ justifySelf: 'start' }} onClick={() => { setUsePin(!usePin); setPassword('') }}>{usePin ? 'Usar mi contraseña' : 'Usar mi PIN'}</button>}
             </>)}
           </section>
         )}

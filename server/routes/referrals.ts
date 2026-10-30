@@ -38,7 +38,7 @@ export async function referralDraft(q: Sql, cid: string, h: Row, doctorId: strin
   return {
     patient: { name: `${p.first_name} ${p.last_name}`, dni: p.dni ? String(p.dni) : undefined, age: ageText(String(p.birth_date ?? '')), sex: (p.sex ?? undefined) as 'F' | 'M' | undefined,
       record: cfg.recordUsesDni && p.dni ? String(p.dni) : String(p.record) },
-    doctor: { name: String(doc.name), license: doc.license ? String(doc.license) : undefined, specialty: doc.specialty ? String(doc.specialty) : undefined },
+    doctor: { name: String(doc.doc_name || doc.name), license: doc.license ? String(doc.license) : undefined, specialty: doc.specialty ? String(doc.specialty) : undefined },
     place: { name: cfg.name, address: cfg.address, phone: cfg.phone, logo: cfg.logo, office: cfg.kind === 'office' || undefined },
     admittedAt: String(h.admitted_at),
     reason: diagnoses.map((d) => d.label).join('; '),

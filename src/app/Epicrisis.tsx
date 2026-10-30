@@ -230,6 +230,7 @@ export function EpicrisisSheet({ e }: { e: Pick<Epicrisis, 'status' | 'version' 
         {d.instructions.trim() || d.followUp?.trim() ? <>{d.instructions.trim() && <p className="epi-text">{d.instructions}</p>}{d.followUp && <p className="epi-text"><b>Cita de control:</b> {d.followUp}</p>}</> : <p className="epi-missing">Faltan las indicaciones.</p>}
       </section>
       <div className="epi__sign">
+        {d.doctor?.stamp && <img src={d.doctor.stamp} alt="Sello del médico" className="doc-stamp epi__stamp" />}
         {d.doctor?.signature && <img src={d.doctor.signature} alt="" />}
         <span className="consent__line" />
         <b>{d.doctor?.name ?? 'Firma y sello del médico'}</b>

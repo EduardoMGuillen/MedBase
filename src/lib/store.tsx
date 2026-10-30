@@ -211,7 +211,7 @@ function useStoreValue() {
     discharge: (id: string, b: DischargeData & { items: PrescriptionItem[]; validityDays?: number }) =>
       run(() => api<{ hospitalization: Hospitalization; prescriptionId: string | null; folio: string | null; epicrisisId?: string }>(`/inpatient/${id}/discharge`, { body: b }), 'Paciente dado de alta'),
     // Vademécum de la clínica
-    addClinicDrug: (b: Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route'>) =>
+    addClinicDrug: (b: Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route' | 'usualDose' | 'usualUse'>) =>
       run(() => api<ClinicDrug>('/drugs', { body: b }), 'Medicamento agregado al vademécum de la clínica'),
     updateClinicDrug: (id: string, b: Partial<Pick<ClinicDrug, 'name' | 'brand' | 'presentation' | 'concentration' | 'route' | 'active'>>) =>
       run(() => api<ClinicDrug>(`/drugs/${id}`, { method: 'PATCH', body: b }), 'Vademécum actualizado'),
@@ -268,11 +268,24 @@ function useStoreValue() {
     createCertificate: (b: Omit<CertificateData, 'patient' | 'doctor' | 'clinic' | 'restTo' | 'diagnoses'> & { patientId: string; consultationId?: string; kind: Certificate['kind'] }) =>
       run(() => api<Certificate>('/certificates', { body: b }), 'Constancia emitida'),
     voidCertificate: (id: string, reason: string) => run(() => api<Certificate>(`/certificates/${id}/void`, { body: { reason } }), 'Constancia anulada'),
-    /** AD2: vigencia de mis recetas (días). Se guarda en mis preferencias y vale para las recetas que emita desde ahora. */
-    saveMyRxValidity: (rxValidityDays: number) => run(async () => {
-      await api('/me', { method: 'PATCH', body: { rxValidityDays } })
+    /** MC6: Mi configuración (datos profesionales, sello, preferencias, favoritos). Cada apartado guarda por separado. */
+    saveMyProfile: (b: Partial<{ docName: string; specialty: string; license: string; stamp: string; rxValidityDays: number; noteFormat: 'dx' | 'soap'; favDrugs: string[]; favExams: string[] }>, success?: string) =>
+      run(async () => {
+        await api('/me', { method: 'PATCH', body: b })
+        setSession(await api<Session>('/auth/me'))
+        return true
+      }, success),
+    saveMySignature: (signature: string, password: string) => run(async () => {
+      await api('/me/signature', { method: 'PUT', body: { signature, password } })
       setSession(await api<Session>('/auth/me'))
-    }, 'Vigencia de tus recetas guardada'),
+      return true
+    }, 'Firma guardada. Los documentos ya firmados conservan la anterior.'),
+    setMyPin: (password: string, pin: string) => run(async () => {
+      await api('/me/pin', { method: 'PUT', body: { password, pin } })
+      setSession(await api<Session>('/auth/me'))
+      return true
+    }, pin ? 'PIN guardado' : 'PIN quitado'),
+    closeOtherSessions: () => run(() => api('/me/sessions/close', { method: 'POST' }), 'Se cerró tu sesión en los demás equipos'),
     saveMyLicense: (license: string) => run(async () => {
       await api('/me', { method: 'PATCH', body: { license } })
       setSession(await api<Session>('/auth/me'))
