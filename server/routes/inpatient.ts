@@ -520,6 +520,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       authorizationId: z.string().optional(),
       urgent: z.boolean().default(false),
       justification: z.string().trim().max(1000).optional(),
+      // MC3: sólo un procedimiento mayor pide autorización quirúrgica. Sin el dato (versiones anteriores) se pide, como antes.
+      major: z.boolean().optional(),
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
@@ -527,15 +529,15 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const performedAt = new Date(b.performedAt)
     if (performedAt.getTime() > Date.now() + 2 * 60_000) fail(400, 'La hora del procedimiento no puede ser en el futuro.')
     if (performedAt.getTime() < new Date(String(h.admitted_at)).getTime() - 24 * 3_600_000) fail(400, 'La hora del procedimiento es anterior al ingreso. Revísala.')
-    const hasAuth = b.authorizationId ? await authorizationFor(String(h.id), b.authorizationId) : await signedAuthorization(String(h.id), performedAt)
-    if (!hasAuth && !(b.urgent && (b.justification ?? '').length >= 10)) {
+    const hasAuth = b.authorizationId ? await authorizationFor(String(h.id), b.authorizationId) : b.major === false ? false : await signedAuthorization(String(h.id), performedAt)
+    if (b.major !== false && !hasAuth && !(b.urgent && (b.justification ?? '').length >= 10)) {
       fail(409, 'No hay autorización firmada registrada para este procedimiento. Regístrala o marca "Urgencia, sin autorización previa" con la justificación.')
     }
     const noteId = randomUUID()
-    const data = { name: b.name, performedAt: performedAt.toISOString(), authorizationId: b.authorizationId, urgent: !hasAuth && b.urgent ? true : undefined, justification: !hasAuth && b.urgent ? b.justification : undefined }
+    const data = { name: b.name, performedAt: performedAt.toISOString(), major: b.major, authorizationId: b.authorizationId, urgent: !hasAuth && b.urgent ? true : undefined, justification: !hasAuth && b.urgent ? b.justification : undefined }
     await sql.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, text, data) VALUES (?,?,?,'procedure',?,?,?,?)`,
       [noteId, cid, String(h.id), user.id, new Date().toISOString(), b.text, JSON.stringify(data)])
-    await audit(user, `Escribió la nota del procedimiento "${b.name}" de ${await patientName(String(h.patient_id))} (realizado ${performedAt.toISOString()})${data.urgent ? ', urgencia sin autorización previa' : ''}`)
+    await audit(user, `Escribió la nota del procedimiento${b.major ? ' mayor' : b.major === false ? ' menor' : ''} "${b.name}" de ${await patientName(String(h.patient_id))} (realizado ${performedAt.toISOString()})${data.urgent ? ', urgencia sin autorización previa' : ''}`)
     res.status(201).json(toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [noteId]))!))
   })
 

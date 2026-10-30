@@ -202,7 +202,7 @@ function useStoreValue() {
       run(() => api<Authorization>(`/inpatient/${id}/authorizations`, { body: b }), 'Autorización lista para imprimir y firmar'),
     setAuthorizationStatus: (id: string, b: { status: 'signed' | 'refused' | 'revoked'; fileId?: string; note?: string }) =>
       run(() => api<Authorization>(`/authorizations/${id}/status`, { body: b }), b.status === 'signed' ? 'Autorización firmada' : b.status === 'refused' ? 'Rechazo registrado' : 'Revocación registrada'),
-    addProcedureNote: (id: string, b: { name: string; performedAt: string; text: string; authorizationId?: string; urgent?: boolean; justification?: string }) =>
+    addProcedureNote: (id: string, b: { name: string; performedAt: string; text: string; major?: boolean; authorizationId?: string; urgent?: boolean; justification?: string }) =>
       run(() => api<InpatientNote>(`/inpatient/${id}/procedure-notes`, { body: b }), 'Nota de procedimiento guardada'),
     addProcedure: (id: string, b: Pick<HospProcedure, 'kind' | 'name' | 'scheduledAt' | 'notes'>) =>
       run(() => api<HospProcedure>(`/inpatient/${id}/procedures`, { body: b }), 'Registrado'),

@@ -14,7 +14,7 @@ import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { DictateButton } from '../components/Dictate'
 import { appendDictation } from '../lib/dictation'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
-import { authTitle, FREQUENT_PROCEDURES, isSurgical } from '../lib/consent'
+import { isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
 import { useNow } from '../lib/hooks'
 import type { Diagnosis, Dose, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient, PrescriptionItem } from '../lib/types'
@@ -724,7 +724,7 @@ function ProcedureNote({ n, file }: { n: InpatientNote; file: File }) {
   return (
     <article className="panel consult-entry">
       <div className="panel__head">
-        <div><h2>Nota de procedimiento <span className="badge badge--ink">Procedimiento</span></h2>
+        <div><h2>Nota de procedimiento <span className="badge badge--ink">{x.major ? 'Procedimiento mayor' : x.major === false ? 'Procedimiento menor' : 'Procedimiento'}</span></h2>
           <p>Procedimiento: <b>{dm(x.performedAt)}</b> · Nota escrita: {dm(n.at)} · {staffById(n.authorId)?.name}</p></div>
       </div>
       <div className="panel__body note">
@@ -738,46 +738,49 @@ function ProcedureNote({ n, file }: { n: InpatientNote; file: File }) {
 }
 
 /**
- * Nota de procedimiento: nombre, fecha y hora (por defecto ahora; se corrige si se escribe después) y un
- * solo cuadro de texto. Si no hay autorización firmada en las últimas 24 horas se avisa antes de guardar.
+ * Nota de procedimiento (MC3): cada médico escribe qué se hizo, con la fecha y hora del procedimiento (por defecto
+ * ahora; se corrige si se escribe después) y un solo cuadro de texto. Un procedimiento menor (infiltración, sutura,
+ * lavado) se guarda sin más. Sólo si se marca «Procedimiento mayor» se pide la autorización quirúrgica firmada (o la
+ * urgencia sin autorización previa), y se puede vincular una quirúrgica firmada en las últimas 24 horas.
  */
 function ProcedureNoteForm({ file, onClose, onSaved, onAuthorize }: { file: File; onClose: () => void; onSaved: () => void; onAuthorize: (procedure: string) => void }) {
   const { addProcedureNote } = useStore()
   const now = useNow()
-  const [f, setF] = useState(() => ({ name: '', performedAt: inputDateTime(new Date()), text: '', urgent: false, justification: '' }))
+  const [f, setF] = useState(() => ({ name: '', performedAt: inputDateTime(new Date()), text: '', major: false, urgent: false, justification: '' }))
   const [busy, setBusy] = useState(false)
   const performed = new Date(f.performedAt)
   const future = performed.getTime() > now.getTime() + 60_000
-  // Autorizaciones firmadas de la estancia: primero la quirúrgica de este procedimiento; la de hospitalización
-  // cubre los procedimientos menores. También los registros anteriores marcados como autorizados.
+  // Quirúrgicas firmadas en las 24 horas antes del procedimiento (también los registros anteriores marcados como autorizados)
+  const recent = (at: string) => { const t = new Date(at).getTime(); return t <= performed.getTime() + 2 * 60_000 && t >= performed.getTime() - 24 * 3_600_000 }
   const auths = [
-    ...file.authorizations.filter((a) => a.status === 'signed' && a.statusAt && new Date(a.statusAt).getTime() <= performed.getTime() + 2 * 60_000)
-      .map((a) => ({ id: a.id, name: isSurgical(a) ? `Quirúrgica: ${a.data.procedure}` : `${authTitle(a)} (procedimientos menores)`, at: a.statusAt!, surgical: isSurgical(a), procedure: a.data.procedure ?? '' })),
-    ...file.procedures.filter((x) => x.kind === 'authorization' && x.status === 'authorized')
-      .map((x) => ({ id: x.id, name: `${x.name} (registro anterior)`, at: x.updatedAt ?? x.createdAt, surgical: true, procedure: x.name })),
+    ...file.authorizations.filter((a) => isSurgical(a) && a.status === 'signed' && a.statusAt && recent(a.statusAt))
+      .map((a) => ({ id: a.id, name: `Quirúrgica: ${a.data.procedure}${a.method === 'virtual' ? ' (virtual)' : a.method === 'paper' ? ' (papel)' : ''}`, at: a.statusAt!, procedure: a.data.procedure ?? '' })),
+    ...file.procedures.filter((x) => x.kind === 'authorization' && x.status === 'authorized' && recent(x.updatedAt ?? x.createdAt))
+      .map((x) => ({ id: x.id, name: `${x.name} (registro anterior)`, at: x.updatedAt ?? x.createdAt, procedure: x.name })),
   ]
-  const matching = auths.find((a) => a.surgical && f.name.trim().length >= 3 && normalize(a.procedure).includes(normalize(f.name.trim())))
+  const matching = auths.find((a) => f.name.trim().length >= 3 && normalize(a.procedure).includes(normalize(f.name.trim())))
   const [authId, setAuthId] = useState<string | null>(null)
-  // Sin elegir: la quirúrgica de este procedimiento, otra quirúrgica o la de hospitalización. '' es "ninguna"
-  const chosen = authId === '' ? undefined : auths.find((a) => a.id === authId) ?? matching ?? auths.find((a) => a.surgical) ?? auths[0]
+  // Sin elegir: la quirúrgica de este procedimiento o la más reciente. '' es "ninguna"
+  const chosen = !f.major || authId === '' ? undefined : auths.find((a) => a.id === authId) ?? matching ?? auths[0]
   const covered = !!chosen
-  const ready = f.name.trim().length >= 3 && f.performedAt && !future && f.text.trim().length >= 10 && (covered || (f.urgent && f.justification.trim().length >= 10))
+  const basics = f.name.trim().length >= 3 && f.performedAt && !future && f.text.trim().length >= 10
+  const ready = basics && (!f.major || covered || (f.urgent && f.justification.trim().length >= 10))
   return (
     <Modal title="Nota de procedimiento" wide onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
+        const urgent = f.major && !covered && f.urgent
         const ok = await addProcedureNote(file.hospitalization.id, {
-          name: f.name.trim(), performedAt: performed.toISOString(), text: f.text.trim(), authorizationId: chosen?.id,
-          urgent: !covered && f.urgent, justification: !covered && f.urgent ? f.justification.trim() : undefined,
+          name: f.name.trim(), performedAt: performed.toISOString(), text: f.text.trim(), major: f.major, authorizationId: chosen?.id,
+          urgent, justification: urgent ? f.justification.trim() : undefined,
         })
         setBusy(false)
         if (ok) onSaved()
       }}>Guardar nota</button>
     </>}>
       <div className="form-grid">
-        <label className="field"><span>Procedimiento</span><input className="input" autoFocus list="frequent-procedures" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Elige de la lista o escribe uno nuevo" />
-          <datalist id="frequent-procedures">{FREQUENT_PROCEDURES.map((x) => <option key={x} value={x} />)}</datalist></label>
+        <label className="field"><span>Procedimiento realizado</span><input className="input" autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Escribe qué se hizo" /></label>
         <label className="field"><span>Fecha y hora del procedimiento</span>
           <input className={`input ${future ? 'input--error' : ''}`} type="datetime-local" value={f.performedAt} max={inputDateTime(now)} onChange={(e) => setF({ ...f, performedAt: e.target.value })} />
           {future && <small className="field__msg field__msg--error">No puede ser en el futuro.</small>}
@@ -785,21 +788,19 @@ function ProcedureNoteForm({ file, onClose, onSaved, onAuthorize }: { file: File
       </div>
       <label className="field"><span>Nota</span>
         <textarea className="textarea textarea--lg" value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} placeholder="Indicación, técnica, hallazgos, complicaciones, estado del paciente al terminar." /></label>
-      {auths.length > 0 && (
-        <label className="field"><span>Autorización firmada que lo cubre</span>
+      <label className="check-line"><input type="checkbox" checked={f.major} onChange={(e) => setF({ ...f, major: e.target.checked })} />
+        <span><b>Procedimiento mayor (requiere autorización quirúrgica)</b><small>Déjalo sin marcar para los procedimientos menores: no piden autorización.</small></span></label>
+      {f.major && auths.length > 0 && (
+        <label className="field"><span>Autorización quirúrgica firmada (últimas 24 horas)</span>
           <select className="select" value={chosen?.id ?? ''} onChange={(e) => setAuthId(e.target.value)}>
             {auths.map((a) => <option key={a.id} value={a.id}>{a.name} · firmada {dm(a.at)}</option>)}
             <option value="">Ninguna de estas</option>
           </select></label>
       )}
-      {covered && <div className="alert-strip alert-strip--calm">Autorización firmada ✓ {chosen!.name}</div>}
-      {covered && !chosen!.surgical && f.name.trim().length >= 3 && (
-        <p className="muted" style={{ fontSize: 13.5 }}>La autorización de hospitalización cubre los procedimientos menores. Si es una cirugía,{' '}
-          <button type="button" className="linklike" onClick={() => onAuthorize(f.name.trim())}>genera la autorización quirúrgica</button>.</p>
-      )}
-      {!covered && (
+      {f.major && covered && <div className="alert-strip alert-strip--calm">Autorización firmada ✓ {chosen!.name}</div>}
+      {f.major && !covered && (
         <div className="alert-strip alert-strip--amber" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-          <span>No hay autorización firmada para este procedimiento.</span>
+          <span>No hay autorización quirúrgica firmada para este procedimiento.</span>
           <button type="button" className="btn btn--soft btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => onAuthorize(f.name.trim())}><FileSignature size={14} />Generar la autorización quirúrgica</button>
           <label className="check-line" style={{ background: '#fff' }}><input type="checkbox" checked={f.urgent} onChange={(e) => setF({ ...f, urgent: e.target.checked })} />
             <span><b>Urgencia, sin autorización previa</b><small>Escribe por qué no se pudo obtener antes.</small></span></label>

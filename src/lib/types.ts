@@ -437,6 +437,8 @@ export interface DischargeData {
 export interface ProcedureData {
   name: string
   performedAt: string // fecha y hora del procedimiento (la nota se escribe después: `at`)
+  /** Procedimiento mayor: requiere autorización quirúrgica (MC3). Las notas de antes no lo tienen. */
+  major?: boolean
   authorizationId?: string
   urgent?: boolean // urgencia, sin autorización previa
   justification?: string
