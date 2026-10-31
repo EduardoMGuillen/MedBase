@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Mic, Square } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Modal } from './ui'
-import { DICTATION_MESSAGE, DICTATION_PRIVACY, dictationEngine, insertDictation } from '../lib/dictation'
+import { DICTATION_MESSAGE, DICTATION_PRIVACY, dictationEngine, insertDictation, unsupportedMessage } from '../lib/dictation'
 
 const NOTICE = 'clinara.dictado.aviso'
 const seen = () => { try { return !!localStorage.getItem(NOTICE) } catch { return false } }
@@ -44,7 +44,7 @@ export function DictateButton({ label, onText }: { label: string; onText: (updat
   }
   const toggle = () => {
     if (listening) { session.current?.stop(); return }
-    if (!dictationEngine.supported()) { notify(DICTATION_MESSAGE.unsupported, 'error'); return }
+    if (!dictationEngine.supported()) { notify(unsupportedMessage(), 'error'); return }
     if (dictationEngine.sendsAudio && !seen()) { setAsking(true); return }
     begin()
   }
@@ -56,7 +56,7 @@ export function DictateButton({ label, onText }: { label: string; onText: (updat
       {/* El campo no pierde el foco al tocar el micrófono: así se sabe dónde estaba el cursor */}
       <button ref={btn} type="button" className={`dictate__btn${listening ? ' is-rec' : ''}${supported ? '' : ' is-off'}`} onMouseDown={(e) => e.preventDefault()} onClick={toggle}
         aria-label={listening ? `Terminar el dictado de ${label}` : `Dictar ${label}`}
-        title={!supported ? DICTATION_MESSAGE.unsupported : listening ? 'Terminar el dictado' : 'Dictar con la voz'}>
+        title={!supported ? unsupportedMessage() : listening ? 'Terminar el dictado' : 'Dictar con la voz'}>
         {listening ? <Square size={14} fill="currentColor" /> : <Mic size={16} />}
       </button>
       {asking && (

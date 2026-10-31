@@ -10,16 +10,17 @@
  */
 
 /** Por qué no se pudo dictar. */
-export type DictationError = 'unsupported' | 'offline' | 'denied' | 'no-mic' | 'no-speech' | 'network' | 'failed'
+export type DictationError = 'unsupported' | 'brave' | 'offline' | 'denied' | 'no-mic' | 'no-speech' | 'network' | 'failed'
 
 /** Mensajes visibles (en español) de cada falla. */
 export const DICTATION_MESSAGE: Record<DictationError, string> = {
   unsupported: 'Tu navegador no admite dictado; usa Chrome o Edge.',
+  brave: 'Brave no trae el servicio de voz que usa el dictado; abre Clinara en Google Chrome o Edge para dictar.',
   offline: 'El dictado necesita internet.',
   denied: 'Permite el micrófono en el navegador: toca el candado junto a la dirección y activa el micrófono.',
   'no-mic': 'No se encontró un micrófono. Conéctalo y vuelve a intentar.',
   'no-speech': 'No se escuchó nada. Intenta de nuevo, más cerca del micrófono.',
-  network: 'El dictado necesita internet: se perdió la conexión con el servicio de voz.',
+  network: 'No se pudo conectar con el servicio de voz. Revisa el internet; si usas Chromium, Opera u otro navegador, dicta desde Google Chrome o Edge.',
   failed: 'No se pudo dictar. Intenta de nuevo.',
 }
 
@@ -60,6 +61,11 @@ const recognitionCtor = (): RecognitionCtor | undefined => {
   const w = window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor }
   return w.SpeechRecognition ?? w.webkitSpeechRecognition
 }
+/** Brave expone la API pero no tiene el servicio de voz de Google: siempre falla con `network`. */
+const isBrave = () => typeof navigator !== 'undefined' && !!(navigator as unknown as { brave?: unknown }).brave
+
+/** Por qué no se ofrece el dictado en este navegador. */
+export const unsupportedMessage = () => DICTATION_MESSAGE[isBrave() ? 'brave' : 'unsupported']
 
 /** Traduce los errores de la Web Speech API. `language-not-supported` no llega aquí: se prueba la siguiente variante. */
 export function dictationError(code: string): DictationError {
@@ -74,9 +80,10 @@ export function dictationError(code: string): DictationError {
 export const browserEngine: DictationEngine = {
   id: 'navegador',
   sendsAudio: true,
-  supported: () => !!recognitionCtor(),
+  supported: () => !!recognitionCtor() && !isBrave(),
   start(h) {
     const Ctor = recognitionCtor()
+    if (Ctor && isBrave()) { h.onError('brave'); h.onEnd(); return { stop: () => {} } }
     if (!Ctor) { h.onError('unsupported'); h.onEnd(); return { stop: () => {} } }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) { h.onError('offline'); h.onEnd(); return { stop: () => {} } }
     let current: Recognition | null = null

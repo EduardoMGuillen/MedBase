@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { browserEngine, DICTATION_LANGS, DICTATION_MESSAGE, dictationError, insertDictation } from '../src/lib/dictation.js'
+import { browserEngine, DICTATION_LANGS, DICTATION_MESSAGE, dictationError, insertDictation, unsupportedMessage } from '../src/lib/dictation.js'
 
 describe('dictado de voz (MC4, ronda 5)', () => {
   test('lo dictado va en el lugar del cursor, sin borrar lo escrito y con los espacios justos', () => {
@@ -37,5 +37,28 @@ describe('dictado de voz (MC4, ronda 5)', () => {
     const seen: string[] = []
     browserEngine.start({ onPartial: () => {}, onFinal: () => {}, onError: (e) => seen.push(e), onEnd: () => seen.push('fin') })
     assert.deepEqual(seen, ['unsupported', 'fin'])
+    assert.equal(unsupportedMessage(), DICTATION_MESSAGE.unsupported)
+  })
+
+  test('Brave tiene la API pero no el servicio de voz: no se ofrece el dictado y se pide Chrome o Edge', () => {
+    const g = globalThis as unknown as Record<string, unknown>
+    const before = { window: g.window, navigator: Object.getOwnPropertyDescriptor(globalThis, 'navigator') }
+    g.window = { webkitSpeechRecognition: class {} }
+    Object.defineProperty(globalThis, 'navigator', { value: { onLine: true, brave: {} }, configurable: true })
+    try {
+      assert.equal(browserEngine.supported(), false)
+      assert.match(unsupportedMessage(), /Brave/)
+      assert.match(unsupportedMessage(), /Chrome o Edge/)
+      const seen: string[] = []
+      browserEngine.start({ onPartial: () => {}, onFinal: () => {}, onError: (e) => seen.push(e), onEnd: () => seen.push('fin') })
+      assert.deepEqual(seen, ['brave', 'fin'])
+    } finally {
+      g.window = before.window
+      if (before.navigator) Object.defineProperty(globalThis, 'navigator', before.navigator)
+    }
+  })
+
+  test('la falla de red no culpa sólo al internet: también sugiere Chrome o Edge', () => {
+    assert.match(DICTATION_MESSAGE.network, /Chrome o Edge/)
   })
 })
