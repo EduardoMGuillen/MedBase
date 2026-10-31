@@ -173,6 +173,24 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     await audit(user, `Creó el perfil de exámenes «${b.name}»${clinicWide ? ' de la clínica' : ''}`)
     res.status(201).json({ id, name: b.name, ownerId: clinicWide ? undefined : user.id, items: b.items })
   })
+  // CF6 (ronda 6): perfiles de laboratorio de la clínica. Administración los ve todos (también los archivados), los edita, los
+  // archiva y los restaura. El médico no los edita (403): los copia a «Mis sets».
+  const profileItems = z.array(z.object({ group: z.enum(['lab', 'imaging']), name: z.string().trim().min(2).max(160) })).min(2, 'Un perfil tiene al menos dos exámenes.').max(40)
+  app.get('/api/exams/profiles/clinic', auth, need('settings.manage'), async (req, res) => {
+    const rows = await sql.query('SELECT * FROM exam_profiles WHERE clinic_id = ? AND owner_id IS NULL ORDER BY name', [clinicOf(req)])
+    res.json(rows.map((r) => ({ id: String(r.id), name: String(r.name), items: j(r.items, []), archivedAt: r.archived_at ? String(r.archived_at) : undefined })))
+  })
+  app.patch('/api/exams/profiles/:id', auth, need('settings.manage'), async (req, res) => {
+    const b = parse(z.object({ name: z.string().trim().min(3, 'Ponle un nombre al perfil.').max(100).optional(), items: profileItems.optional(), archived: z.boolean().optional() }), req.body)
+    const user = userOf(req)
+    const r = (await sql.one('SELECT * FROM exam_profiles WHERE id = ? AND clinic_id = ? AND owner_id IS NULL', [String(req.params.id), clinicOf(req)])) ?? fail(404, 'El perfil no existe.')
+    const archivedAt = b.archived === undefined ? r!.archived_at ?? null : b.archived ? r!.archived_at ?? new Date().toISOString() : null
+    await sql.run('UPDATE exam_profiles SET name = ?, items = ?, archived_at = ? WHERE id = ?', [b.name ?? r!.name, b.items ? JSON.stringify(b.items) : r!.items, archivedAt, String(r!.id)])
+    const what = [b.name && b.name !== r!.name && `nombre «${r!.name}» → «${b.name}»`, b.items && `${b.items.length} exámenes`,
+      b.archived === true && !r!.archived_at && 'archivado', b.archived === false && r!.archived_at && 'restaurado'].filter(Boolean)
+    await audit(user, `Editó el perfil de laboratorio de la clínica «${b.name ?? r!.name}»${what.length ? `: ${what.join('; ')}` : ''}`)
+    res.json({ ok: true })
+  })
   app.delete('/api/exams/profiles/:id', auth, need('exams.order', 'settings.manage'), async (req, res) => {
     const user = userOf(req)
     const r = (await sql.one('SELECT * FROM exam_profiles WHERE id = ? AND clinic_id = ? AND archived_at IS NULL', [String(req.params.id), clinicOf(req)])) ?? fail(404, 'El perfil no existe.')

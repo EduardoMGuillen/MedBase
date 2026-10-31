@@ -555,3 +555,12 @@ tr.clickable { cursor: pointer; }
   .exam-fold__body { padding-left: 4px; }
   .exam-picker__menus .fold-tools { margin-left: 0 !important; }
 }
+
+/* ---------- CF1/CF5 (ronda 6): encabezado de Configuración con el botón azul de alta arriba ---------- */
+.section-head { flex-wrap: wrap; gap: 10px; }
+.section-head > div:first-child { flex: 1 1 280px; min-width: 0; }
+.section-head__action { flex: none; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+@media (max-width: 600px) {
+  .section-head__action { flex: 1 1 100%; order: -1; }
+  .section-head__action .btn--primary { width: 100%; justify-content: center; min-height: 44px; }
+}

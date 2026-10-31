@@ -7,7 +7,7 @@ import { drugProvider } from '../lib/drugProvider'
 import { normalize } from '../lib/patients'
 import { download, parseCsv, toCsv } from '../lib/csv'
 import { CriticalThresholds } from './CriticalThresholds'
-import { ExamCatalogAdmin } from './ExamCatalogAdmin'
+import { ExamCatalogAdmin, LabProfilesAdmin } from './ExamCatalogAdmin'
 import { clinicWhatsapp, contactLine, date, fillTemplate, fullName, METHOD_LABEL, money } from '../lib/format'
 import { ContactsEditor } from '../components/Contacts'
 import type { Bed, ClinicDrug, ClinicSettings, PaymentMethod, Service, Staff } from '../lib/types'
@@ -41,7 +41,7 @@ export default function Settings() {
       {tab === 'services' && <Services />}
       {tab === 'payments' && <PaymentMethods />}
       {tab === 'areas' && <ServiceAreas />}
-      {tab === 'exams' && <ExamCatalogAdmin />}
+      {tab === 'exams' && <><ExamCatalogAdmin /><LabProfilesAdmin /></>}
       {tab === 'schedules' && <Schedules />}
       {tab === 'roster' && !f.office && <Roster />}
       {tab === 'beds' && f.hospital && <Beds />}

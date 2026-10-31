@@ -54,6 +54,19 @@ export function FoldHead({ open, onToggle, title, count, marked, sub, level = 1,
   )
 }
 
+/**
+ * CF1/CF5 (ronda 6): encabezado de una pestaña de Configuración con lista: título, una línea de descripción y, a la derecha,
+ * el botón azul de alta («Agregar …»), como en el Catálogo de exámenes. A 390 px el botón va arriba, a todo lo ancho.
+ */
+export function SectionHead({ title, sub, action }: { title: ReactNode; sub?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="panel__head section-head">
+      <div><h2>{title}</h2>{sub && <p>{sub}</p>}</div>
+      {action && <div className="section-head__action">{action}</div>}
+    </div>
+  )
+}
+
 /** Aviso global: confirma acciones y muestra errores del servidor. */
 export function Toaster() {
   const { toast, clearToast } = useStore()

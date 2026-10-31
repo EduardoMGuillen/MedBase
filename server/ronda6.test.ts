@@ -144,3 +144,26 @@ describe('MC3 estudio no catalogado', () => {
     assert.equal((await nurse.post(`/api/exams/${rx.id}/status`, { status: 'done' })).status, 200)
   })
 })
+
+describe('CF6 perfiles de laboratorio de la clínica', () => {
+  test('administración agrega, edita y archiva; el médico los ve, no los edita y los copia a Mis sets', async () => {
+    const admin = await as('admin@demo.clinara')
+    const doc = await as('apaz@demo.clinara')
+    const items = [{ group: 'lab', name: 'Hemograma' }, { group: 'lab', name: 'Examen general de orina (EGO)' }, { group: 'lab', name: 'Proteína C reactiva' }]
+    const r = await admin.post('/api/exams/profiles', { name: 'Febril de prueba', items, clinic: true })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    const seen = (await doc.get('/api/exams/catalog')).body.profiles.find((p: any) => p.id === r.body.id)
+    assert.ok(seen && !seen.ownerId, 'el médico ve el perfil de la clínica')
+    assert.equal((await doc.patch(`/api/exams/profiles/${r.body.id}`, { name: 'Lo cambio yo' })).status, 403)
+    assert.equal((await doc.get('/api/exams/profiles/clinic')).status, 403)
+    const copy = await doc.post('/api/order-sets', { name: 'Febril de prueba', kind: 'exams', items: items.map((e) => ({ exam: { ...e, priority: 'routine', place: 'clinic' } })) })
+    assert.equal(copy.status, 201, JSON.stringify(copy.body))
+    assert.equal((await admin.patch(`/api/exams/profiles/${r.body.id}`, { name: 'Febril', items: items.slice(0, 2) })).status, 200)
+    const after = (await admin.get('/api/exams/profiles/clinic')).body.find((p: any) => p.id === r.body.id)
+    assert.equal(after.items.length, 2)
+    const mine = (await doc.get('/api/order-sets?kind=exams')).body.find((s: any) => s.id === copy.body.id)
+    assert.equal(mine.items.length, 3, 'la copia del médico no cambia al editar el perfil')
+    assert.equal((await admin.patch(`/api/exams/profiles/${r.body.id}`, { archived: true })).status, 200)
+    assert.ok(!(await doc.get('/api/exams/catalog')).body.profiles.some((p: any) => p.id === r.body.id), 'archivado ya no se ofrece')
+  })
+})

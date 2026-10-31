@@ -1,8 +1,9 @@
-import { useState } from 'react'
-import { Archive, FlaskConical, Pencil, Plus, RotateCcw, ScanLine } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Archive, FlaskConical, Pencil, Plus, RotateCcw, ScanLine, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
-import { FoldHead, Modal } from '../components/ui'
+import { FoldHead, Modal, SectionHead } from '../components/ui'
+import { ExamPicker } from '../components/Exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { bySubgroup, EXAMS, examKey, GROUP_LABEL, SUBGROUPS, subgroupOf } from '../lib/exams'
 import { normalize } from '../lib/patients'
@@ -123,6 +124,86 @@ function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () =
       <label className="field"><span>Subgrupo</span>
         <select className="select" value={subgroup} onChange={(e) => setSubgroup(e.target.value)}>{options.map((o) => <option key={o}>{o}</option>)}</select>
         <small className="muted">Así se agrupa al ordenar exámenes y en este catálogo.</small></label>
+    </Modal>
+  )
+}
+
+type ClinicProfile = { id: string; name: string; items: { group: ExamGroup; name: string }[]; archivedAt?: string }
+
+/**
+ * CF6 (ronda 6): perfiles de laboratorio de la clínica (aparecen como «Perfiles (N)» al ordenar exámenes). Administración
+ * agrega, edita, archiva y restaura; el médico sólo los usa o los copia a «Mis sets». Un examen archivado en el catálogo
+ * sale «no disponible» y no se ordena.
+ */
+export function LabProfilesAdmin() {
+  const { notify } = useStore()
+  const { exams, reload: reloadCatalog } = useExamCatalog()
+  const [list, setList] = useState<ClinicProfile[] | null>(null)
+  const [archived, setArchived] = useState(false)
+  const [editing, setEditing] = useState<ClinicProfile | 'new' | null>(null)
+  const load = () => api<ClinicProfile[]>('/exams/profiles/clinic').then(setList).catch((e: Error) => notify(e.message, 'error'))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void load() }, [])
+  const active = new Set(exams.filter((e) => e.active).map((e) => examKey(e.name)))
+  const shown = (list ?? []).filter((p) => archived || !p.archivedAt)
+  const nArchived = (list ?? []).filter((p) => p.archivedAt).length
+  const setArchivedFlag = async (p: ClinicProfile, value: boolean) => {
+    try { await api(`/exams/profiles/${p.id}`, { method: 'PATCH', body: { archived: value } }); notify(value ? `«${p.name}» archivado` : `«${p.name}» restaurado`); void load(); reloadCatalog() } catch (e) { notify((e as Error).message, 'error') }
+  }
+  return (
+    <section className="panel">
+      <SectionHead title="Perfiles de laboratorio" sub="Paquetes de exámenes de la clínica. Los médicos los eligen en «Ordenar exámenes» y pueden copiarlos a Mis sets para cambiarlos."
+        action={<button className="btn btn--primary btn--sm" onClick={() => setEditing('new')}><Plus size={15} />Agregar perfil</button>} />
+      <div className="panel__body excat">
+        {nArchived > 0 && <label className="check-inline"><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />Ver archivados ({nArchived})</label>}
+        {list === null ? <p className="muted">Cargando…</p> : !shown.length ? <p className="muted">La clínica todavía no tiene perfiles de laboratorio.</p> : (
+          <ul className="excat__list">{shown.map((p) => (
+            <li key={p.id} className={p.archivedAt ? 'is-archived' : ''}>
+              <span><b>{p.name}</b>{p.archivedAt && <span className="badge">Archivado</span>}
+                <small className="muted">{p.items.map((e) => (active.has(examKey(e.name)) ? e.name : `${e.name} (no disponible)`)).join(', ')}</small></span>
+              <span className="excat__acts">
+                {!p.archivedAt && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(p)}><Pencil size={13} />Editar</button>}
+                {p.archivedAt ? <button className="btn btn--ghost btn--sm" onClick={() => setArchivedFlag(p, false)}><RotateCcw size={13} />Restaurar</button>
+                  : <button className="btn btn--ghost btn--sm" onClick={() => setArchivedFlag(p, true)}><Archive size={13} />Archivar</button>}
+              </span>
+            </li>
+          ))}</ul>
+        )}
+      </div>
+      {editing && <ProfileForm profile={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void load(); reloadCatalog() }} />}
+    </section>
+  )
+}
+
+function ProfileForm({ profile, onClose, onSaved }: { profile?: ClinicProfile; onClose: () => void; onSaved: () => void }) {
+  const { notify } = useStore()
+  const [name, setName] = useState(profile?.name ?? '')
+  const [items, setItems] = useState<{ group: ExamGroup; name: string }[]>(profile?.items ?? [])
+  const [picking, setPicking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const save = async () => {
+    setBusy(true)
+    try {
+      if (profile) await api(`/exams/profiles/${profile.id}`, { method: 'PATCH', body: { name: name.trim(), items } })
+      else await api('/exams/profiles', { body: { name: name.trim(), items, clinic: true } })
+      notify(profile ? 'Perfil guardado' : `Perfil «${name.trim()}» agregado`)
+      onSaved()
+    } catch (e) { notify((e as Error).message, 'error') } finally { setBusy(false) }
+  }
+  return (
+    <Modal title={profile ? 'Editar perfil' : 'Agregar perfil'} onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={busy || name.trim().length < 3 || items.length < 2} onClick={save}>Guardar perfil</button>
+    </>}>
+      <label className="field"><span>Nombre del perfil</span><input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Febril" /></label>
+      <div className="field"><span>Exámenes ({items.length})</span>
+        <div className="chips">{items.map((e) => (
+          <span key={e.name} className="chip">{e.name}<button type="button" className="icon-btn" aria-label={`Quitar ${e.name}`} onClick={() => setItems(items.filter((x) => x !== e))}><X size={12} /></button></span>
+        ))}</div>
+        {items.length < 2 && <small className="muted">Un perfil lleva al menos dos exámenes.</small>}</div>
+      <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setPicking(true)}><Plus size={15} />Agregar exámenes</button>
+      {picking && <ExamPicker current={items.map((e) => ({ ...e, priority: 'routine', place: 'clinic' }))} catalogOnly title="Exámenes del perfil" onClose={() => setPicking(false)}
+        onAdd={(list) => { setItems([...items, ...list.map((e) => ({ group: e.group, name: e.name }))]); setPicking(false) }} />}
     </Modal>
   )
 }
