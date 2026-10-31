@@ -137,16 +137,30 @@ function Beds() {
   const { beds, bedStays = [], patient, createBed, updateBed } = useStore()
   const [room, setRoom] = useState('')
   const [label, setLabel] = useState('')
+  // CF5 (ronda 6): «Agregar cama» arriba, en el encabezado; abre la misma fila de alta, al principio
+  const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const sorted = [...beds].sort((a, b) => a.room.localeCompare(b.room, 'es', { numeric: true }) || a.label.localeCompare(b.label))
   const stayIn = (id: string) => bedStays.find((h) => h.bedId === id)
   const counts = { free: sorted.filter((b) => b.active && !stayIn(b.id)).length, busy: sorted.filter((b) => stayIn(b.id)).length, off: sorted.filter((b) => !b.active).length }
   return (
     <section className="panel table-wrap">
-      <div className="panel__head"><div><h2>Camas</h2><p>{counts.free} libres · {counts.busy} ocupadas{counts.off ? ` · ${counts.off} fuera de servicio` : ''}. Se ocupan al ingresar a un paciente y se liberan al darle de alta o trasladarlo.</p></div></div>
+      <SectionHead title="Camas" sub={`${counts.free} libres · ${counts.busy} ocupadas${counts.off ? ` · ${counts.off} fuera de servicio` : ''}. Se ocupan al ingresar a un paciente y se liberan al darle de alta o trasladarlo.`}
+        action={<button className="btn btn--primary btn--sm" onClick={() => setAdding(true)}><Plus size={15} />Agregar cama</button>} />
       <table className="table table--sticky">
         <thead><tr><th>Cuarto</th><th>Cama</th><th>Estado</th><th /></tr></thead>
         <tbody>
+          {adding && (
+            <tr className="row-new">
+              <td><input className="input" autoFocus placeholder="Ej. 106" value={room} onChange={(e) => setRoom(e.target.value)} aria-label="Cuarto" /></td>
+              <td><input className="input" placeholder="Opcional, ej. A" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Cama" /></td>
+              <td />
+              <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}><button className="btn btn--primary btn--sm" disabled={!room.trim()} onClick={async () => {
+                if (await createBed({ room: room.trim(), label: label.trim(), active: true })) { setRoom(''); setLabel(''); setAdding(false) }
+              }}><Plus size={14} />Agregar cama</button>{' '}
+                <button className="btn btn--ghost btn--sm" onClick={() => { setAdding(false); setRoom(''); setLabel('') }}>Cancelar</button></td>
+            </tr>
+          )}
           {sorted.map((b) => {
             const h = stayIn(b.id)
             const p = h && patient(h.patientId)
@@ -168,17 +182,9 @@ function Beds() {
               </tr>
             )
           })}
-          <tr>
-            <td><input className="input" placeholder="Ej. 106" value={room} onChange={(e) => setRoom(e.target.value)} aria-label="Cuarto" /></td>
-            <td><input className="input" placeholder="Opcional, ej. A" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Cama" /></td>
-            <td />
-            <td style={{ textAlign: 'right' }}><button className="btn btn--soft btn--sm" disabled={!room.trim()} onClick={async () => {
-              if (await createBed({ room: room.trim(), label: label.trim(), active: true })) { setRoom(''); setLabel('') }
-            }}><Plus size={14} />Agregar cama</button></td>
-          </tr>
         </tbody>
       </table>
-      {!beds.length && <div className="empty">Agrega las camas de la clínica con su número de cuarto.</div>}
+      {!beds.length && !adding && <div className="empty">Agrega las camas de la clínica con su número de cuarto: «Agregar cama», arriba.</div>}
     </section>
   )
 }
