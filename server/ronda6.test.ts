@@ -267,3 +267,51 @@ describe('MC7 indicaciones y medicamentos de nota en nota', () => {
     await sql.run(`UPDATE clinics SET obs_order_checklist = FALSE WHERE id = 'c-sb'`)
   })
 })
+
+describe('MC6 frecuencia de signos vitales desde la nota', () => {
+  test('ingreso por turno; cada 4 h desde la siguiente hora; cambio a 2 h sin tocar lo pasado; sin control no deja pendientes', async () => {
+    const { plannedTakes, currentVitalsMode, missedTakes } = await import('../src/lib/vitalsSheet.js')
+    const { chainNote } = await import('../src/lib/inpatient.js')
+    const doc = await as('lherrera@demo.clinara')
+    const reception = await as('smejia@demo.clinara')
+    const boot = (await doc.get('/api/bootstrap')).body
+    const busy = new Set(boot.inpatients.filter((h: any) => h.status === 'active').map((h: any) => h.patientId))
+    const p = boot.patients.find((x: any) => !busy.has(x.id) && !x.pending)
+    const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-herrera', reason: 'MC6' })
+    const r = await doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'MC6', symptoms: [], history: 'HEA', exam: 'EF', observations: '',
+      diagnoses: [{ code: 'S/C', label: 'Prueba' }], orders: ['Reposo.'], indications: ['Reposo.'], plan: '', observe: true, vitalsPlan: { mode: 'shift' } })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    const stay = r.body.hospitalizationId
+    let file = (await doc.get(`/api/inpatient/${stay}`)).body
+    assert.deepEqual(currentVitalsMode(file), { mode: 'shift' }, 'el ingreso queda por turno')
+    // Nota: cada 4 horas
+    const n1 = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'x', orders: [], vitals: { mode: 'hours', hours: 4 }, chain: { basedOn: null, decisions: [] } })
+    assert.equal(n1.status, 201, JSON.stringify(n1.body))
+    assert.deepEqual(n1.body.vitals, { mode: 'hours', hours: 4, tag: 'modified' })
+    file = (await doc.get(`/api/inpatient/${stay}`)).body
+    const changed = new Date(file.hospitalization.vitalsPlan.at(-1).from).getTime()
+    const next = plannedTakes(file, new Date(changed), new Date(changed + 13 * 3_600_000)).map((d) => d.getTime())
+    const firstHour = Math.ceil(changed / 3_600_000) * 3_600_000
+    assert.deepEqual(next.slice(0, 3), [firstHour, firstHour + 4 * 3_600_000, firstHour + 8 * 3_600_000], 'cada 4 h desde la siguiente hora en punto')
+    const before = plannedTakes(file, new Date(changed - 48 * 3_600_000), new Date(changed - 1)).map((d) => d.getTime())
+    // Siguiente nota: cada 2 horas. Lo de antes del cambio queda igual
+    const n2 = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'y', orders: [], vitals: { mode: 'hours', hours: 2 }, chain: { basedOn: n1.body.id, decisions: [] } })
+    assert.equal(n2.status, 201, JSON.stringify(n2.body))
+    file = (await doc.get(`/api/inpatient/${stay}`)).body
+    assert.deepEqual(plannedTakes(file, new Date(changed - 48 * 3_600_000), new Date(changed - 1)).map((d) => d.getTime()), before, 'las tomas pasadas no se tocan')
+    assert.deepEqual(currentVitalsMode(file), { mode: 'hours', hours: 2 })
+    // La misma frecuencia en la nota siguiente: Continúa, sin tramo nuevo
+    const n3 = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'z', orders: [], vitals: { mode: 'hours', hours: 2 }, chain: { basedOn: chainNote(file)!.id, decisions: [] } })
+    assert.equal(n3.body.vitals.tag, 'continue')
+    file = (await doc.get(`/api/inpatient/${stay}`)).body
+    const segs = file.hospitalization.vitalsPlan.length
+    // Sin control programado: no hay tomas futuras ni pendientes
+    const n4 = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'w', orders: [], vitals: { mode: 'none' }, chain: { basedOn: n3.body.id, decisions: [] } })
+    assert.equal(n4.status, 201)
+    file = (await doc.get(`/api/inpatient/${stay}`)).body
+    assert.equal(file.hospitalization.vitalsPlan.length, segs + 1)
+    const now = Date.now()
+    assert.deepEqual(plannedTakes(file, new Date(now), new Date(now + 48 * 3_600_000)), [])
+    assert.ok(missedTakes(file, new Date(now + 48 * 3_600_000)).every((d) => d.getTime() < now), 'no genera pendientes nuevos')
+  })
+})

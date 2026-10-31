@@ -65,6 +65,16 @@ export const PEDIATRIC_RANGES: { upTo: number; ranges: Partial<Record<VitalKey, 
 /** VALIDAR POR EMIL. Banda normal de la curva térmica: desde `high` es fiebre, por debajo de `low` hipotermia. */
 export const DEFAULT_TEMP_BAND = { low: 36, high: 38 }
 
+/**
+ * MC6 (ronda 6). VALIDAR: Emil. Signos vitales «Por turno»: las horas de cada toma (una por turno). Es el valor por defecto
+ * de un ingreso nuevo a observación u hospitalización.
+ */
+export const VITALS_SHIFT_TIMES = ['07:00', '15:00', '23:00']
+/** MC6 (ronda 6). VALIDAR: Emil. Frecuencias de signos vitales que se eligen de la lista (en horas); «Otra frecuencia…» pide el número. */
+export const VITALS_EVERY_OPTIONS = [1, 2, 4, 6, 8, 12, 24]
+/** MC6 (ronda 6). VALIDAR: Emil. Límites de «Otra frecuencia…» (horas). */
+export const VITALS_OTHER_RANGE = { min: 1, max: 72 }
+
 /** Un analito con su umbral crítico. Un límite vacío es «No aplica». */
 export interface CriticalAnalyte { id: string; name: string; unit?: string; low?: number; high?: number; archivedAt?: string }
 /** Grupo de analitos («Hemograma», «Química sanguínea»…), como vienen los resultados del laboratorio. */

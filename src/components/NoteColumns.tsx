@@ -29,6 +29,7 @@ export function NoteColumns({ left, indicationsTitle = 'Indicaciones', indicatio
 
 /** Indicaciones numeradas (texto simple). */
 export function IndicationList({ items, empty = 'Sin indicaciones.' }: { items: string[]; empty?: string }) {
+  if (!items.length && !empty) return null
   return items.length ? <ol className="note__list">{items.map((o, i) => <li key={i}>{o}</li>)}</ol> : <p className="muted">{empty}</p>
 }
 

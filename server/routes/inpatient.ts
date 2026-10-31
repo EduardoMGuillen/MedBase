@@ -4,12 +4,13 @@ import { z } from 'zod'
 import { type Ctx, diagnosisInput, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
 import { toAttachment, toAuthorization, toBed, toDose, toEpicrisis, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral, toVitals } from '../mappers.js'
-import { VITALS_FREQUENCIES } from '../../src/lib/vitalsSheet.js'
+import { currentVitalsMode, frequencyFromOrders, sameVitalsMode, VITALS_FREQUENCIES, vitalsModeShort } from '../../src/lib/vitalsSheet.js'
 import { buildEpicrisis, createEpicrisisDraft, missingForIssue } from '../epicrisis.js'
 import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
 import { activeIndications, chainNote, courseDone, indicationLines, isScheduled, LATE_AFTER_MIN, lineOrder, medLabel } from '../../src/lib/inpatient.js'
-import type { OrderLine } from '../../src/lib/types.js'
+import type { InpatientNote, OrderLine, VitalsSegment } from '../../src/lib/types.js'
+import { VITALS_OTHER_RANGE } from '../../src/lib/clinicalConfig.js'
 import { examLine, isPending } from '../../src/lib/exams.js'
 import { hasBlank, medHasBlank } from '../../src/lib/orderSets.js'
 import { createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrders.js'
@@ -22,6 +23,28 @@ import { examInput, examsWhere, insertExams } from './exams.js'
 const dx = z.array(diagnosisInput)
 const when = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'La fecha u hora no es válida.')
 const ATTACH_META = 'id, patient_id, name, mime, size, category, uploaded_by, uploaded_at, title, taken_at, hospitalization_id'
+
+/** MC6 (ronda 6): frecuencia de signos vitales que indica el médico. */
+export const vitalsModeInput = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('shift') }),
+  z.object({ mode: z.literal('hours'), hours: z.number().int().min(VITALS_OTHER_RANGE.min, 'Revisa las horas de los signos vitales.').max(VITALS_OTHER_RANGE.max, 'Revisa las horas de los signos vitales.') }),
+  z.object({ mode: z.literal('none') }),
+])
+
+/**
+ * MC6 (ronda 6): si la frecuencia cambia, se agrega un tramo desde ahora (las tomas futuras se recalculan desde la siguiente
+ * hora aplicable; las pasadas no se tocan). Devuelve la etiqueta para la nota: Continúa, Nueva o Modificada.
+ */
+export async function applyVitalsPlan(q: Sql, h: Row, mode: z.infer<typeof vitalsModeInput>, by: string, at: string, noteId?: string, ctx: { notes: InpatientNote[]; consultOrders: string[] } = { notes: [], consultOrders: [] }) {
+  const plan = (h.vitals_plan ? JSON.parse(String(h.vitals_plan)) : []) as VitalsSegment[]
+  const hosp = toHospitalization(h)
+  // La vigente: el plan; si la estancia es de antes, lo que ya ve enfermería (lo elegido en la hoja o lo escrito en las órdenes)
+  const legacy = !plan.length && (hosp.vitalsEveryHours ?? frequencyFromOrders(ctx))
+  const current = plan.length || legacy ? currentVitalsMode({ hospitalization: hosp, ...ctx }) : undefined
+  if (current && sameVitalsMode(current, mode)) return 'continue' as const
+  await q.run('UPDATE hospitalizations SET vitals_plan = ? WHERE id = ?', [JSON.stringify([...plan, { ...mode, from: at, by, noteId }]), String(h.id)])
+  return current ? 'modified' as const : 'new' as const
+}
 
 const medInput = z.object({
   drug: z.string().trim().min(1, 'Escribe el medicamento.').max(120),
@@ -398,6 +421,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       exams: z.array(examInput).max(40).default([]),
       // MC7 (ronda 6): la cadena. `basedOn` es la última nota firmada que vio el médico al abrir; `decisions`, qué hizo con
       // cada indicación que bajó. Con `chain`, `orders` trae sólo las indicaciones nuevas.
+      // MC6 (ronda 6): frecuencia de signos vitales indicada en la nota
+      vitals: vitalsModeInput.optional(),
       chain: z.object({ basedOn: z.string().nullable(), decisions: z.array(z.object({ id: z.string(), action: z.enum(['continue', 'omit', 'change']), text: z.string().trim().max(500).optional() })).max(60) }).optional(),
       // Identificador que genera el formulario al abrirse: si la misma nota llega dos veces (doble clic, reintento),
       // se devuelve la que ya se guardó y no se duplican ni la nota ni sus órdenes de medicamento
@@ -452,13 +477,19 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       orders = lines.map(lineOrder)
       indicationCount = ind.length
     }
+    let vitalsTag: 'continue' | 'new' | 'modified' | undefined
+    // Fuera de la transacción: notas y órdenes de la consulta para saber la frecuencia vigente de una estancia de antes
+    const vitalsCtx = b.vitals ? { notes: (await sql.query('SELECT * FROM hosp_notes WHERE hospitalization_id = ?', [id])).map(toInpatientNote),
+      consultOrders: h.consultation_id ? JSON.parse(String((await sql.one('SELECT orders FROM consultations WHERE id = ?', [String(h.consultation_id)]))?.orders ?? '[]')) as string[] : [] } : undefined
     await sql.tx(async (q) => {
+      if (b.vitals) vitalsTag = await applyVitalsPlan(q, h, b.vitals, user.id, at, noteId, vitalsCtx)
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan, data) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [noteId, cid, id, b.kind, user.id, at, b.format === 'soap' ? b.subjective : '', b.format === 'soap' ? b.objective : '', b.format === 'soap' ? b.assessment : '', b.format === 'soap' ? b.plan : '',
-          JSON.stringify({ orders, checklist, indications: indicationCount === undefined ? undefined : Math.min(indicationCount, orders.length), lines, basedOn: b.chain ? b.chain.basedOn ?? undefined : undefined,
+          JSON.stringify({ orders, checklist, indications: indicationCount === undefined ? undefined : Math.min(indicationCount, orders.length), lines, basedOn: b.chain ? b.chain.basedOn ?? undefined : undefined, vitals: b.vitals && vitalsTag ? { ...b.vitals, tag: vitalsTag } : undefined,
             ...(b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, exam: b.exam, observations: b.observations } : {}) })])
       await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
       await insertExams(q, { clinicId: cid, patientId: String(h.patient_id), hospitalizationId: id, noteId, by: user.id, at }, b.exams)
+      if (vitalsTag && b.vitals && vitalsTag !== 'continue') await audit(user, `Indicó ${vitalsModeShort(b.vitals) === 'sin control programado' ? 'sin control programado de signos vitales' : `signos vitales ${vitalsModeShort(b.vitals)}`} a ${name} en su nota`, q)
       const what = b.kind === 'admission' ? 'nota de ingreso' : 'nota de evolución'
       const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`, b.exams.length && `${b.exams.length} examen(es)`].filter(Boolean).join(', ')
       await audit(user, `Escribió ${what} de ${name}${changes ? `: ${changes}` : ''}`, q)
@@ -839,6 +870,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const cid = clinicOf(req)
     const h = await activeHosp(cid, String(req.params.id))
     await sql.run('UPDATE hospitalizations SET vitals_every_hours = ? WHERE id = ?', [everyHours, String(h.id)])
+    // MC6 (ronda 6): si la estancia ya tiene plan, el cambio es un tramo nuevo desde ahora (lo pasado no se recalcula)
+    if (h.vitals_plan) await applyVitalsPlan(sql, h, { mode: 'hours', hours: everyHours }, user.id, new Date().toISOString())
     await audit(user, `Indicó signos vitales cada ${everyHours} h a ${await patientName(String(h.patient_id))}`)
     res.json(toHospitalization((await hospRow(cid, String(h.id)))!))
   })

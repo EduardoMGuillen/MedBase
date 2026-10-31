@@ -8,7 +8,7 @@ import { inputDateTime, shortStaff } from '../lib/format'
 import { yearsOld } from '../lib/inpatient'
 import { clinicalRange, parseDecimal, VITALS, vitalLevel, type VitalKey, type VitalLevel } from '../lib/vitals'
 import { EMPTY_VITALS, FIELDS, fieldIssue, vitalNumber, type VitalsForm } from '../lib/vitalsForm'
-import { activeVitals, antipyreticDoses, bandOf, expectedTakes, frequencyFromOrders, missedTakes, tempClass, VITALS_FREQUENCIES, vitalsAnchor, vitalsEvery, type TempBand } from '../lib/vitalsSheet'
+import { activeVitals, antipyreticDoses, bandOf, currentVitalsMode, expectedTakes, frequencyFromOrders, missedTakes, nextTake, vitalsModeText, tempClass, VITALS_FREQUENCIES, vitalsAnchor, vitalsEvery, type TempBand } from '../lib/vitalsSheet'
 import { useNow } from '../lib/hooks'
 import type { InpatientFile, Patient, Vitals } from '../lib/types'
 
@@ -85,11 +85,16 @@ export function VitalsSheet({ file, p, reload, autoRecord, onFocused }: { file: 
             <div><h2>Curva térmica</h2><p>Toca o pasa el cursor sobre un punto para ver el valor. El rango elegido cambia la curva y la tabla.</p></div>
           </div>
           <div className="panel__body vs__bar">
-            <label className="vs__every"><span>Toma cada</span>
+            {h.vitalsPlan?.length ? (
+              // MC6 (ronda 6): la frecuencia la indica el médico en su nota; aquí se ve y se ve la siguiente toma
+              <div className="vs__every"><span>{vitalsModeText(currentVitalsMode(file))}</span>
+                {open && (() => { const nx = nextTake(file, now); return nx ? <small className="muted">Siguiente toma: {nx.toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })}{nx.toDateString() !== now.toDateString() ? ` del ${nx.toLocaleDateString('es-HN', { day: '2-digit', month: '2-digit' })}` : ''}</small> : null })()}
+                <small className="muted">Indicado en la nota médica</small></div>
+            ) : <label className="vs__every"><span>Toma cada</span>
               {can('inpatient.orders') && open
                 ? <select className="select" value={every} onChange={(e) => setEvery(Number(e.target.value))} aria-label="Frecuencia de toma">{VITALS_FREQUENCIES.map((n) => <option key={n} value={n}>{n} h</option>)}</select>
                 : <b>{every} h</b>}
-              <small className="muted">{source}</small></label>
+              <small className="muted">{source}</small></label>}
             <div className="segmented" role="radiogroup" aria-label="Rango de la curva y la tabla">
               {RANGES.map(([k, label]) => <button key={k} role="radio" aria-checked={range === k} onClick={() => setRange(k)}>{label}</button>)}
             </div>

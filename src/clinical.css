@@ -912,3 +912,8 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .order-check li.is-closed .order-check__txt { text-decoration: line-through; color: var(--muted); }
 .omit-row__new { display: block; font-size: 13.5px; color: var(--ink-deep); font-weight: 600; }
 @media print { .line-tag { border-color: #999; background: none; color: #333; } }
+
+/* MC6 (ronda 6): frecuencia de signos vitales en la nota */
+.vitals-freq { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--ward); }
+.vitals-freq .field { flex: 1 1 200px; margin: 0; }
+.note-vitals-line { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 14px; margin: 0 0 6px; }

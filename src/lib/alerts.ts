@@ -1,5 +1,5 @@
 import { doseTimes, medLabel, pendingOrdersOf, slotState } from './inpatient'
-import { activeVitals, missedTakes, tempClass, vitalsEvery, type TempBand } from './vitalsSheet'
+import { activeVitals, currentVitalsMode, missedTakes, tempClass, vitalsModeShort, type TempBand } from './vitalsSheet'
 import { examLine, GROUP_LABEL, isPending } from './exams'
 import type { ExamGroup, InpatientFile } from './types'
 
@@ -63,7 +63,7 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
   // Tomas de signos esperadas sin registrar, desde el ingreso: no caducan, se resuelven registrando la toma (con su hora)
   const missed = missedTakes(file, now)
   if (missed.length) {
-    out.push({ key: 'vitals-missed', level: 'pending', tab: 'vitals', text: `Signos vitales: ${plural(missed.length, 'toma pendiente', 'tomas pendientes')} (${list(missed.map((s) => when(s.getTime(), now)))}) · cada ${vitalsEvery(file)} h`, count: missed.length, since: missed[0].getTime(), action: { label: 'Registrar signos', go: { tab: 'vitals', record: true } } })
+    out.push({ key: 'vitals-missed', level: 'pending', tab: 'vitals', text: `Signos vitales: ${plural(missed.length, 'toma pendiente', 'tomas pendientes')} (${list(missed.map((s) => when(s.getTime(), now)))}) · ${vitalsModeShort(currentVitalsMode(file))}`, count: missed.length, since: missed[0].getTime(), action: { label: 'Registrar signos', go: { tab: 'vitals', record: true } } })
   }
 
   // Dosis atrasadas desde que empezó la orden, agrupadas por medicamento: no caducan; se registran o se marcan «No aplicada»

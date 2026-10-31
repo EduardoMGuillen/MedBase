@@ -16,7 +16,8 @@ import { BackgroundView, useChart, VitalsGrid } from './PatientChart'
 import { BackgroundForm, IdentityPrompt } from './PatientForms'
 import { VitalsModal } from './WaitingRoom'
 import { emptyFollowup, FollowupFields } from './Followups'
-import type { Diagnosis, ExamInput, PrescriptionItem } from '../lib/types'
+import type { Diagnosis, ExamInput, PrescriptionItem, VitalsMode } from '../lib/types'
+import { VitalsFrequency } from '../components/VitalsFrequency'
 import { ExamsBlock } from '../components/Exams'
 import { examCatalog, typedExam } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
@@ -37,6 +38,8 @@ interface Draft {
   reason: string; history: string; exam: string; observations: string; dx: Diagnosis[]
   indications: string[]; meds: PrescriptionItem[]; exams?: ExamInput[]
   followups: FollowupInput[]; admit: boolean; observe?: boolean
+  /** MC6 (ronda 6): frecuencia de signos vitales del ingreso. */
+  vitalsPlan?: VitalsMode
   orders?: { text: string; rx?: PrescriptionItem }[]
 }
 
@@ -80,6 +83,8 @@ export default function Consultation() {
   const [newFollowup, setNewFollowup] = useState<FollowupInput | null>(null)
   const [admit, setAdmit] = useState(saved.admit ?? false)
   const [observe, setObserve] = useState(saved.observe ?? false)
+  // MC6 (ronda 6): con ingreso, el médico indica cada cuánto se toman los signos (por turno por defecto)
+  const [vitalsPlan, setVitalsPlan] = useState<VitalsMode>(saved.vitalsPlan ?? { mode: 'shift' })
   const [dx, setDx] = useState<Diagnosis[]>(saved.dx ?? [])
   const [indications, setIndications] = useState<string[]>(saved.indications ?? [])
   const [meds, setMeds] = useState<PrescriptionItem[]>(saved.meds ?? [])
@@ -114,11 +119,11 @@ export default function Consultation() {
   }, [todayVitals?.id])
 
   // AN1: borrador que se guarda solo, en este navegador y en el servidor; sobrevive a recargar y a cerrar el navegador
-  const snapshot: Draft = { reason, history, exam, observations, dx, indications, meds, exams, followups, admit, observe }
+  const snapshot: Draft = { reason, history, exam, observations, dx, indications, meds, exams, followups, admit, observe, vitalsPlan }
   const blankDraft = !history && !exam && !observations && !dx.length && !indications.length && !meds.length && !exams.length && !followups.length
   const draft = useDraftSync<Draft>('consulta', apptId, snapshot, (d) => {
     setReason(d.reason ?? ''); setHistory(d.history ?? ''); setExam(d.exam ?? ''); setObservations(d.observations ?? ''); setDx(d.dx ?? [])
-    setIndications(d.indications ?? []); setMeds(d.meds ?? []); setExams(d.exams ?? []); setFollowups(d.followups ?? []); setAdmit(!!d.admit); setObserve(!!d.observe)
+    setIndications(d.indications ?? []); setMeds(d.meds ?? []); setExams(d.exams ?? []); setFollowups(d.followups ?? []); setAdmit(!!d.admit); setObserve(!!d.observe); if (d.vitalsPlan) setVitalsPlan(d.vitalsPlan)
   }, blankDraft, draftKey(apptId))
 
   if (!appt || !p || !user) return <div className="page"><div className="empty">No se encontró la cita. Vuelve a la <Link to="/app/agenda">agenda</Link>.</div></div>
@@ -186,6 +191,7 @@ export default function Consultation() {
       // En el expediente el manejo se lee completo: primero las indicaciones y luego los medicamentos
       orders: [...indications, ...meds.map(medicationOrder)], indications,
       plan: '', vitalsId: todayVitals?.id, followups, validityDays: validity, exams, observe: observe && !hospitalized && place.observation, admit: admit && !hospitalized && place.hospital,
+      vitalsPlan: admitting ? vitalsPlan : undefined,
     }, meds)
     setSigning(false)
     if (r) {
@@ -284,6 +290,7 @@ export default function Consultation() {
               </div>
               <div className="plan-block" data-tour="indicaciones">
                 <h3 className="plan-block__title">Indicaciones y plan</h3>
+                {admitting && <VitalsFrequency value={vitalsPlan} onChange={setVitalsPlan} />}
                 {indications.length ? (
                   <ol className="orders">
                     {indications.map((o, i) => (

@@ -122,6 +122,7 @@ export const toHospitalization = (r: Row): Hospitalization => ({
   authPending: r.auth_pending == null ? undefined : Boolean(r.auth_pending),
   outcome: (s(r.outcome) as Hospitalization['outcome']) ?? undefined, outcomeNote: s(r.outcome_note),
   vitalsEveryHours: r.vitals_every_hours == null ? undefined : Number(r.vitals_every_hours),
+  vitalsPlan: r.vitals_plan ? j(r.vitals_plan, undefined) : undefined,
   specialty: s(r.specialty),
 })
 
@@ -139,7 +140,7 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
     : {}),
   procedure: r.kind === 'procedure' ? j(r.data, undefined) : undefined,
   // MC7 (ronda 6): el cuadro completo con sus etiquetas
-  ...(r.kind === 'admission' || r.kind === 'evolution' ? { lines: j<{ lines?: InpatientNote['lines'] }>(r.data, {}).lines, basedOn: j<{ basedOn?: string }>(r.data, {}).basedOn } : {}),
+  ...(r.kind === 'admission' || r.kind === 'evolution' ? { lines: j<{ lines?: InpatientNote['lines'] }>(r.data, {}).lines, basedOn: j<{ basedOn?: string }>(r.data, {}).basedOn, vitals: j<{ vitals?: InpatientNote['vitals'] }>(r.data, {}).vitals } : {}),
 })
 
 export const toInpatientMed = (r: Row): InpatientMed => ({

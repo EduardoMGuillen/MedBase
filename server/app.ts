@@ -26,7 +26,7 @@ import { registerBilling } from './routes/billing.js'
 import { registerReports } from './routes/reports.js'
 import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
-import { pendingOrders, registerInpatient } from './routes/inpatient.js'
+import { pendingOrders, registerInpatient, vitalsModeInput } from './routes/inpatient.js'
 import { syncStayOrders } from './medOrders.js'
 import { ensureHospitalAuthorization, refreshPendingAuthorizationsForPatient } from './authorizations.js'
 import { createIcdClient, icdConfigFromEnv, type IcdClient } from './icd.js'
@@ -835,6 +835,8 @@ export function createApp(opts: AppOptions) {
       validityDays: validityInput,
       // EX1: exámenes de laboratorio e imagen y gabinete; se imprimen en una orden por grupo, aparte de la receta
       exams: z.array(examInput).max(40).default([]),
+      // MC6 (ronda 6): frecuencia de signos vitales del ingreso (por turno por defecto)
+      vitalsPlan: vitalsModeInput.optional(),
     }), req.body)
     // Basta una indicación, un medicamento o un examen; no se exigen todos
     if (!c.orders.length && !c.items.length && !c.exams.length) fail(400, 'Agrega al menos una indicación, un medicamento o un examen en el plan y manejo.')
@@ -898,9 +900,10 @@ export function createApp(opts: AppOptions) {
       await audit(user, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
       if (stayId) {
         // La hospitalización se crea sin cama: el médico la elige al terminar de firmar (o la corrige después)
-        await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, patient_phone, status, kind, specialty)
-          VALUES (?,?,?,NULL,?,?,?,?,?,?,'active',?,?)`,
-          [stayId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null, stayKind, specialtyOf(user)])
+        await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, patient_phone, status, kind, specialty, vitals_plan)
+          VALUES (?,?,?,NULL,?,?,?,?,?,?,'active',?,?,?)`,
+          [stayId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null, stayKind, specialtyOf(user),
+            c.vitalsPlan ? JSON.stringify([{ ...c.vitalsPlan, from: now.toISOString(), by: user.id, noteId: consultId }]) : null])
         medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: stayId })
         // La autorización de hospitalización queda generada, pendiente de firma, desde el ingreso. La observación
         // no lleva autorización (ronda 3, P6): se genera si después pasa a hospitalización.

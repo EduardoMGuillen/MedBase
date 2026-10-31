@@ -16,7 +16,7 @@ import { loadLabCatalog, migrateSubgroups } from './catalogLoader.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '52'
+const SCHEMA_VERSION = '53'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -878,6 +878,10 @@ ALTER TABLE exam_catalog ADD COLUMN IF NOT EXISTS subgroup TEXT;
 -- v52 (ronda 6, MC3): un estudio que no está en el catálogo se pide con su tipo (Laboratorio o Imagen y gabinete) y
 -- queda marcado «No catalogado». Las órdenes de antes no se tocan (no se sabe qué eran).
 ALTER TABLE exam_orders ADD COLUMN IF NOT EXISTS uncatalogued BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- v53 (ronda 6, MC6): frecuencia de signos vitales por tramos (JSON), la que indica el médico en la nota. Cambiarla agrega un
+-- tramo desde la siguiente hora: las tomas pasadas no se recalculan. Sin tramos, la regla de antes (vitals_every_hours).
+ALTER TABLE hospitalizations ADD COLUMN IF NOT EXISTS vitals_plan TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

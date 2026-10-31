@@ -9,7 +9,7 @@ import type { OrderLineTag } from '../lib/types'
 import { authStatus, authTitle } from '../lib/consent'
 import { PdfPages } from '../components/PdfPages'
 import { ThermalCurve, VitalsTable } from './VitalsSheet'
-import { antipyreticDoses, bandOf, missedTakes, vitalsAnchor, vitalsEvery } from '../lib/vitalsSheet'
+import { antipyreticDoses, bandOf, missedTakes, vitalsAnchor, vitalsEvery, vitalsModeText } from '../lib/vitalsSheet'
 import { useNow } from '../lib/hooks'
 import { EpicrisisSheet } from './Epicrisis'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
@@ -265,7 +265,7 @@ function NoteBody({ n, file }: { n: InpatientNote; file: InpatientFile }) {
       <span className="order-check__text"><span className="order-check__order"><span className="order-check__txt">{text}</span>{tag && <span className={`line-tag line-tag--${tag}`}>{LINE_TAG[tag]}</span>}</span>
         {mark?.action === 'check' && <small className="order-check__mark">✓ {shortStaff(staffById(mark.by)?.name)} {dm(mark.at)}</small>}</span></li>
   })}</ol> : <p className="muted">{empty}</p>
-  return <NoteColumns left={<NoteText n={n} />} indications={list(indications, 'Sin indicaciones.')} exams={<NoteExams list={(file.exams ?? []).filter((x) => x.noteId === n.id)} />} meds={list(meds, 'Sin medicamentos.', true)} />
+  return <NoteColumns left={<NoteText n={n} />} indications={<>{n.vitals && <p className="note-vitals-line">{vitalsModeText(n.vitals)}<span className={`line-tag line-tag--${n.vitals.tag}`}>{LINE_TAG[n.vitals.tag]}</span></p>}{indications.length || !n.vitals ? list(indications, 'Sin indicaciones.') : null}</>} exams={<NoteExams list={(file.exams ?? []).filter((x) => x.noteId === n.id)} />} meds={list(meds, 'Sin medicamentos.', true)} />
 }
 
 /** AN1: las adendas de una nota, debajo de ella en la misma página impresa. */

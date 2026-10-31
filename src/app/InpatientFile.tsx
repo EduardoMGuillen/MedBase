@@ -17,7 +17,7 @@ import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
 import { useFileAlerts, useNow } from '../lib/hooks'
-import type { Addendum, Diagnosis, Dose, ExamInput, OrderLineTag, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient } from '../lib/types'
+import type { Addendum, Diagnosis, Dose, ExamInput, OrderLineTag, VitalsMode, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient } from '../lib/types'
 import { bedLabel } from './Inpatients'
 import { GeneralDataModal } from './GeneralData'
 import { AdmitBedStep, ConsentChoice } from './ConsentFlow'
@@ -34,6 +34,8 @@ import { features } from '../lib/permissions'
 import { ConsultationBody, Identification } from './PatientChart'
 import { DischargeDocuments } from './Epicrisis'
 import { VitalsSheet } from './VitalsSheet'
+import { VitalsFrequency } from '../components/VitalsFrequency'
+import { currentVitalsMode, vitalsModeText } from '../lib/vitalsSheet'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
 import { hasBlank, medHasBlank, orderKey } from '../lib/orderSets'
 import { useVademecum } from '../lib/vademecum'
@@ -215,7 +217,7 @@ export default function InpatientFile() {
 }
 
 /** La nota de consulta externa que originó la estancia es la primera nota de evolución. */
-function ConsultEntry({ consultationId }: { consultationId: string }) {
+function ConsultEntry({ consultationId, file }: { consultationId: string; file: File }) {
   const { fetchConsultation, staffById, can, user } = useStore()
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchConsultation>> | null>(null)
   const load = useCallback(() => { fetchConsultation(consultationId).then(setData).catch(() => null) }, [consultationId, fetchConsultation])
@@ -230,7 +232,7 @@ function ConsultEntry({ consultationId }: { consultationId: string }) {
           <p>{author?.name}{author ? `, ${ROLE_LABEL[mainRole(author)].toLowerCase()}` : ''} · {date(c.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(c.date)}</p></div>
         <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}>Ver nota completa</Link>
       </div>
-      <div className="panel__body"><ConsultationBody c={c} vitals={data.vitals} exams={data.exams ?? []} />
+      <div className="panel__body"><ConsultationBody c={c} vitals={data.vitals} exams={data.exams ?? []} vitalsLine={(() => { const s = file.hospitalization.vitalsPlan?.find((x) => x.noteId === c.id); return s ? vitalsModeText(s) : undefined })()} />
         <SignedBadge by={author?.name} at={c.date} addenda={(data.addenda ?? []).length} />
         <Addenda list={data.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={load} /></div>
     </article>
@@ -663,7 +665,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
       {writing === 'discharge' && <DischargeWriter file={file} p={p} onDone={() => { setWriting(null); reload() }} />}
       {referring && <ReferralModal stayId={h.id} onClose={() => setReferring(false)} />}
       {converting && <ConvertModal file={file} p={p} onClose={() => setConverting(false)} onDone={() => nav(`/app/hospitalizados/${h.id}?firmar=1`)} />}
-      {h.consultationId && <ConsultEntry consultationId={h.consultationId} />}
+      {h.consultationId && <ConsultEntry consultationId={h.consultationId} file={file} />}
       {timeline.length ? timeline.map((item) => {
         if (item.legacy) {
           const x = item.legacy
@@ -737,7 +739,8 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
       </div>
       <div className="panel__body">
         <NoteColumns left={<NoteText n={n} />}
-          indications={indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : <p className="muted">Sin indicaciones.</p>}
+          indications={<>{n.vitals && <p className="note-vitals-line">{vitalsModeText(n.vitals)}<LineTag tag={n.vitals.tag} /></p>}
+            {indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : !n.vitals && <p className="muted">Sin indicaciones.</p>}</>}
           exams={<NoteExams list={(file.exams ?? []).filter((e) => e.noteId === n.id)} />}
           meds={meds.length ? <OrderChecklist n={n} orders={meds} file={file} reload={reload} pill /> : <p className="muted">Sin medicamentos.</p>} />
         <SignedBadge by={author?.name} at={n.at} addenda={(file.addenda ?? []).filter((a) => a.targetId === n.id).length} />
@@ -963,6 +966,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
   const lastId = chainNote(file)?.id ?? null
   const [basedOn, setBasedOn] = useState<string | null>(lastId)
   const stale = basedOn !== lastId
+  // MC6 (ronda 6): frecuencia de signos vitales: la vigente (no empieza vacía); un ingreso nuevo, por turno
+  const [vitalsMode, setVitalsMode] = useState<VitalsMode>(() => currentVitalsMode(file))
   // EX1: exámenes pedidos en la nota
   const [exams, setExams] = useState<ExamInput[]>([])
   const [extraText, setExtraText] = useState('')
@@ -973,8 +978,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
   const active = file.meds.filter((m) => !m.stoppedAt && !courseDone(m))
   // AN1: la nota se guarda sola como borrador (aquí y en el servidor) mientras se escribe
   const noteBlank = !Object.values(n).some((v) => v.trim()) && !d.diagnoses.length && !d.exam.trim() && !d.observations.trim() && !meds.length && !stop.length && !exams.length && !extra.length && !Object.keys(decisions).length
-  const draft = useDraftSync('evolucion', `${file.hospitalization.id}:${kind}`, { n, format, d, meds, stop, extra, exams, decisions }, (x) => {
-    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD(x.d); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams); if (x.decisions) setDecisions(x.decisions)
+  const draft = useDraftSync('evolucion', `${file.hospitalization.id}:${kind}`, { n, format, d, meds, stop, extra, exams, decisions, vitalsMode }, (x) => {
+    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD(x.d); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams); if (x.decisions) setDecisions(x.decisions); if (x.vitalsMode) setVitalsMode(x.vitalsMode)
   }, noteBlank)
   const inVademecum = (drug: string) => vademecum.some((x) => normalize(x.name) === normalize(drug))
   // Huecos "___" de un set aplicado: la nota no se firma hasta llenarlos
@@ -1024,7 +1029,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
         setBusy(true)
         // MC7 (ronda 6): el servidor arma el cuadro completo (Continúa, Nueva, Modificada, Omitida) sobre la última nota firmada
         const chain = { basedOn, decisions: Object.entries(decisions).filter(([id]) => activeInd.some((a) => a.id === id)).map(([id, x]) => ({ id, ...x })) }
-        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, clientId })
+        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId })
         setBusy(false)
         if (ok) { draft.clear(); onSaved() } else onStale?.()
       }}>Firmar nota</button>
@@ -1059,6 +1064,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
         <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions }) => ({ med: { drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions: instructions || undefined } })), ...exams.map((e) => ({ exam: e }))]} />
       </div>
       <fieldset className="fs"><legend>Indicaciones</legend>
+        <VitalsFrequency value={vitalsMode} onChange={setVitalsMode} />
         {stale && <div className="alert-strip alert-strip--amber" role="alert" style={{ flexWrap: 'wrap' }}>
           <span>Otra nota se firmó mientras escribías. Las indicaciones y los medicamentos activos ya se actualizaron con ella: revísalos antes de firmar.</span>
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => setBasedOn(lastId)}>Entendido</button></div>}

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
-import type { ExamOrder,
+import type { ExamOrder, VitalsMode,
   Addendum, Appointment, ExamInput, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Referral, ReferralData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
@@ -195,7 +195,7 @@ function useStoreValue() {
     /** Editar datos generales de la estancia: cama, acompañante y teléfonos. El ingreso en sí no se edita. */
     updateAdmission: (id: string, b: Partial<Pick<Hospitalization, 'bedId' | 'specialty' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'>>) =>
       run(() => api<Hospitalization>(`/inpatient/${id}`, { method: 'PATCH', body: b }), 'Datos generales guardados'),
-    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string; exams?: ExamInput[]; chain?: { basedOn: string | null; decisions: { id: string; action: 'omit' | 'change'; text?: string }[] } }) =>
+    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string; exams?: ExamInput[]; chain?: { basedOn: string | null; decisions: { id: string; action: 'omit' | 'change'; text?: string }[] }; vitals?: VitalsMode }) =>
       run(() => api<InpatientNote>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
     stopMed: (medId: string, reason: string) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/stop`, { body: { reason } }), 'Orden suspendida'),
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),
@@ -258,7 +258,7 @@ function useStoreValue() {
       run(() => api<Patient>(`/patients/${id}`, { method: 'PATCH', body: p }), 'Ficha actualizada'),
     addVitals: (v: Omit<Vitals, 'id' | 'takenAt' | 'takenBy'>) =>
       run(() => api<Vitals>('/vitals', { body: v }), 'Preclínica guardada'),
-    finishConsult: async (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[]; observe?: boolean; admit?: boolean; validityDays?: number; exams?: ExamInput[] }, items: PrescriptionItem[]) => {
+    finishConsult: async (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[]; observe?: boolean; admit?: boolean; validityDays?: number; exams?: ExamInput[]; vitalsPlan?: VitalsMode }, items: PrescriptionItem[]) => {
       const r = await run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null; observationId: string | null; examBatch: string | null
         hospitalizationId: string | null; stayKind: Hospitalization['kind'] | null; medOrders: number }>('/consultations', { body: { ...c, items } }))
       // Se dice en voz alta qué pasó con los medicamentos: a la receta, a la hoja de medicamentos o a las dos

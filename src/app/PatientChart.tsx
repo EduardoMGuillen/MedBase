@@ -125,7 +125,7 @@ export function BackgroundView({ p, compact = false, only }: { p: Patient; compa
  * texto clínico; a la derecha las indicaciones y debajo los medicamentos.
  */
 /** MC5 (ronda 6): con `exams` (los de esta consulta) la columna de órdenes lleva Indicaciones y plan → Exámenes → Medicamentos. */
-export function ConsultationBody({ c, vitals, exams }: { c: Consultation; vitals?: Vitals | null; exams?: ExamOrder[] }) {
+export function ConsultationBody({ c, vitals, exams, vitalsLine }: { c: Consultation; vitals?: Vitals | null; exams?: ExamOrder[]; vitalsLine?: string }) {
   const examBlock = exams ? <NoteExams list={exams.filter((e) => !e.noteId)} /> : undefined
   const exam = examText(c.exam)
   const left = (<>
@@ -153,7 +153,8 @@ export function ConsultationBody({ c, vitals, exams }: { c: Consultation; vitals
     return <NoteColumns left={left} indicationsTitle="Plan y manejo" exams={examBlock}
       indications={c.orders.length ? <IndicationList items={c.orders} /> : <p>{c.plan || <span className="muted">Sin registro.</span>}</p>} />
   }
-  return <NoteColumns left={left} indicationsTitle="Indicaciones y plan" indications={<IndicationList items={c.indications} />} exams={examBlock}
+  // MC6 (ronda 6): con ingreso, la frecuencia de signos vitales que indicó la consulta va como primera indicación
+  return <NoteColumns left={left} indicationsTitle="Indicaciones y plan" indications={<>{vitalsLine && <p className="note-vitals-line">{vitalsLine}</p>}<IndicationList items={c.indications} empty={vitalsLine ? '' : undefined} /></>} exams={examBlock}
     meds={<MedLines items={c.orders.slice(c.indications.length)} />} />
 }
 

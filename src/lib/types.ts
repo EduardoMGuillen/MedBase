@@ -493,6 +493,8 @@ export interface Hospitalization {
   authPending?: boolean
   /** Hoja de signos vitales: cada cuántas horas se toman (lo cambia el médico). Vacío: lo que diga la orden, o 8. */
   vitalsEveryHours?: number
+  /** MC6 (ronda 6): frecuencia de signos vitales que indica el médico en sus notas, por tramos (lo pasado no se recalcula). */
+  vitalsPlan?: VitalsSegment[]
   /** AD3: especialidad del ingreso (la del médico que ingresa, editable). La cama no tiene especialidad. */
   specialty?: string
   /** Cómo terminó: 'referred' si se refirió a otro centro (con el destino en outcomeNote). */
@@ -553,9 +555,16 @@ export interface InpatientNote {
    * también una orden del checklist (misma posición en `orders`). Las notas de antes no lo tienen.
    */
   lines?: OrderLine[]
+  /** MC6 (ronda 6): la frecuencia de signos vitales vigente al firmar, con su etiqueta. */
+  vitals?: VitalsMode & { tag: OrderLineTag }
   /** MC7: la nota firmada sobre la que se armó (para avisar si otra se firmó mientras se escribía). */
   basedOn?: string
 }
+
+/** MC6 (ronda 6): cada cuánto se toman los signos vitales: por turno, cada N horas o sin control programado. */
+export type VitalsMode = { mode: 'shift'; hours?: undefined } | { mode: 'hours'; hours: number } | { mode: 'none'; hours?: undefined }
+/** Un tramo del plan: desde cuándo rige esa frecuencia, quién la indicó y en qué nota. */
+export type VitalsSegment = VitalsMode & { from: string; by?: string; noteId?: string }
 
 /** MC7 (ronda 6): Continúa, Nueva, Modificada (la anterior, cerrada) u Omitida. */
 export type OrderLineTag = 'continue' | 'new' | 'modified' | 'omitted'
