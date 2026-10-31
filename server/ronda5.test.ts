@@ -314,7 +314,8 @@ describe('MC2 mis sets de exámenes', () => {
 })
 
 describe('MC5 ordenar exámenes del catálogo o externos', () => {
-  test('un examen que no está en el catálogo (o que se archivó) queda como externo: sale en la orden impresa y no llega a ninguna bandeja', async () => {
+  // Ronda 6 (MC3): lo no catalogado (o archivado) ya no se vuelve externo: va «No catalogado» a la bandeja de su tipo; lo externo sigue sin bandeja
+  test('un examen externo no llega a ninguna bandeja; uno que se archivó queda «No catalogado» y va a la bandeja de su tipo', async () => {
     const admin = await as('admin@demo.clinara')
     const doc = await as('lherrera@demo.clinara')
     const nurse = await as('crios@demo.clinara')
@@ -332,12 +333,13 @@ describe('MC5 ordenar exámenes del catálogo o externos', () => {
     const panel = exams.find((e: any) => e.name === 'Panel de alergias')
     const ves2 = exams.filter((e: any) => e.name === 'Velocidad de eritrosedimentación').at(-1)
     assert.deepEqual([panel.place, panel.area], ['external', 'none'])
-    assert.deepEqual([ves2.place, ves2.area], ['external', 'none'], 'lo archivado ya no se pide a la clínica')
+    assert.deepEqual([ves2.place, ves2.uncatalogued], ['clinic', true], 'lo archivado queda «No catalogado»')
     const tray = (await nurse.get('/api/exams/tray')).body
     const ids = JSON.stringify(tray)
-    assert.ok(!ids.includes(panel.id) && !ids.includes(ves2.id), 'no llegan a la bandeja de enfermería')
+    assert.ok(!ids.includes(panel.id), 'lo externo no llega a la bandeja de enfermería')
+    assert.ok(ids.includes(ves2.id), 'lo no catalogado sí llega, a la bandeja de su tipo')
     const batch = (await doc.get(`/api/exams/batch/${panel.batchId}`)).body
-    assert.deepEqual(batch.exams.map((e: any) => [e.name, e.place]).sort(), [['Hemograma', 'clinic'], ['Panel de alergias', 'external'], ['Velocidad de eritrosedimentación', 'external']])
+    assert.deepEqual(batch.exams.map((e: any) => [e.name, e.place]).sort(), [['Hemograma', 'clinic'], ['Panel de alergias', 'external'], ['Velocidad de eritrosedimentación', 'clinic']])
     assert.equal((await admin.patch(`/api/exams/catalog/${ves.id}`, { active: true })).status, 200)
   })
 })
