@@ -9,7 +9,7 @@ import { ROLE_LABEL } from '../lib/permissions'
 import type { Staff } from '../lib/types'
 
 /** Cuentas de demo con botón de acceso rápido: un rol de cada tipo, la segunda clínica y el consultorio. */
-const DEMO_SHORTCUTS = ['s-super', 's-herrera', 's-rios', 's-mejia', 's-admin', 's2-rosales', 's3-lopez', 's3-asistente']
+const DEMO_SHORTCUTS = ['s-super', 's-herrera', 's-funez', 's-rios', 's-mejia', 's-admin', 's2-rosales', 's3-lopez', 's3-asistente']
 
 export default function Login() {
   const { user, signIn } = useStore()
