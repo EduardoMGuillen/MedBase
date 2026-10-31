@@ -192,10 +192,15 @@ export const defaultRoute = (presentation = '') =>
   /inhalador/i.test(presentation) ? 'Inhalada' : /crema|ungüento|gel/i.test(presentation) ? 'Tópica' : /gotas oft/i.test(presentation) ? 'Oftálmica' : 'Oral'
 
 /** Texto de una orden médica de medicamento, p. ej. "Azitromicina 500 mg tableta: 1 tableta vía oral cada 24 horas por 3 días." */
+/** MC2 (ronda 6): la frecuencia como se lee: «PRN: si dolor» para un PRN con condición; si no, la frecuencia escrita. */
+export function frequencyText(i: Pick<PrescriptionItem, 'frequency' | 'prnCondition'>) {
+  return i.prnCondition?.trim() && /necesidad|necesario|\bprn\b/i.test(i.frequency) ? `PRN: ${i.prnCondition.trim()}` : i.frequency
+}
+
 export function medicationOrder(i: PrescriptionItem) {
   const route = i.route ? ` vía ${i.route.toLowerCase()}` : ''
   const how = /única/i.test(i.frequency) ? '' : i.duration ? ` por ${i.duration}` : ', hasta nueva orden'
-  return `${i.drug}${i.presentation ? ` (${i.presentation.toLowerCase()})` : ''}: ${i.dose}${route} ${i.frequency.toLowerCase()}${how}.${i.instructions ? ` ${i.instructions}` : ''}`
+  return `${i.drug}${i.presentation ? ` (${i.presentation.toLowerCase()})` : ''}: ${i.dose}${route} ${i.prnCondition ? frequencyText(i) : i.frequency.toLowerCase()}${how}.${i.instructions ? ` ${i.instructions}` : ''}`
 }
 
 /** Medicamento de la receta (se va a casa) sin el total de días. */
@@ -236,7 +241,7 @@ const ROUTE_SHORT: Record<string, string> = {
 
 /** Forma legible de un medicamento: "Acetaminofén 500 mg tableta — 1 g VO cada 8 h por 3 días". */
 export function medicationLine(i: PrescriptionItem) {
-  const freq = i.frequency.replace(/^Cada (\d+) horas?$/i, 'cada $1 h').replace(/^Dosis única$/i, 'dosis única').replace(/^Según necesidad$/i, 'según necesidad')
+  const freq = i.prnCondition?.trim() ? frequencyText(i) : i.frequency.replace(/^Cada (\d+) horas?$/i, 'cada $1 h').replace(/^Dosis única$/i, 'dosis única').replace(/^Según necesidad$/i, 'según necesidad')
   const once = /dosis única/i.test(i.frequency)
   const route = i.route ? ROUTE_SHORT[i.route] ?? i.route.toLowerCase() : ''
   const how = [i.dose, route, freq, !once ? (i.duration ? `por ${i.duration}` : 'hasta nueva orden') : ''].filter(Boolean).join(' ')

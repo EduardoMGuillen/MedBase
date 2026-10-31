@@ -145,7 +145,7 @@ export const toInpatientMed = (r: Row): InpatientMed => ({
   route: String(r.route), everyHours: r.every_hours == null ? undefined : Number(r.every_hours), prn: Boolean(r.prn), firstAt: String(r.first_at),
   instructions: s(r.instructions), orderedBy: String(r.ordered_by), orderedAt: String(r.ordered_at), stoppedAt: s(r.stopped_at), stoppedBy: s(r.stopped_by),
   stopReason: s(r.stop_reason), days: r.days == null ? undefined : Number(r.days), source: (s(r.source) as InpatientMed['source']) ?? undefined, sourceId: s(r.source_id),
-  replacesId: s(r.replaces_id),
+  replacesId: s(r.replaces_id), prnCondition: s(r.prn_condition),
 })
 
 export const toOrderMark = (r: Row) => ({

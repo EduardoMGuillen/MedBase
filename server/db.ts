@@ -15,7 +15,7 @@ import { ensureHospitalAuthorization } from './authorizations.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '49'
+const SCHEMA_VERSION = '50'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -866,6 +866,9 @@ ALTER TABLE exam_catalog ALTER COLUMN created_by DROP NOT NULL;
 -- v49 (ronda 5, MC2): un solo sistema de sets. Los «sets de exámenes» son sets del médico con sólo exámenes
 -- (kind = 'exams'): nunca se comparten. Los perfiles fijos se entregan a cada médico como sets iniciales editables.
 ALTER TABLE order_sets ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'orders';
+
+-- v50 (ronda 6, MC2): el PRN guarda su condición («si dolor»). Las órdenes de antes quedan sin ella.
+ALTER TABLE hosp_meds ADD COLUMN IF NOT EXISTS prn_condition TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

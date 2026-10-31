@@ -1156,7 +1156,9 @@ const rxItem = z.object({
   route: z.string().max(40).optional(), frequency: z.string().min(1).max(80), duration: z.string().trim().max(80).default(''),
   instructions: z.string().max(300).optional(), quantity: z.string().trim().max(80).optional(),
   applyInClinic: z.boolean().optional(),
-})
+  // MC2 (ronda 6): un PRN lleva su condición («si dolor»)
+  prnCondition: z.string().trim().max(120).optional(),
+}).refine((it) => !/^PRN\b/i.test(it.frequency) || !!it.prnCondition, 'Escribe la condición del medicamento PRN (ej. si dolor).')
 
 const hhmm = z.string().regex(/^\d{2}:\d{2}$/, 'Escribe la hora como 08:00.')
 /** Horario de un médico: el formato anterior (una franja para todos los días) o franjas por día. */

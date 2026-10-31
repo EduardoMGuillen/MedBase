@@ -27,9 +27,11 @@ export const courseEnd = (m: Pick<Schedulable, 'firstAt' | 'days'>) => (m.days ?
 export const courseDone = (m: Pick<Schedulable, 'firstAt' | 'days'>, now = new Date()) => courseEnd(m) <= now.getTime()
 
 /** Cómo se escribe en la nota: "Ondansetrón 8 mg IV c/8h", "Tramadol 50 mg SC c/12h PRN". */
-export function medLabel(m: Pick<InpatientMed, 'drug' | 'dose' | 'route' | 'everyHours' | 'prn'>) {
+export function medLabel(m: Pick<InpatientMed, 'drug' | 'dose' | 'route' | 'everyHours' | 'prn'> & { prnCondition?: string }) {
   const freq = m.everyHours ? `c/${m.everyHours}h` : m.prn ? '' : 'dosis única'
-  return [m.drug, m.dose, ROUTE_ABBR[m.route] ?? m.route.toLowerCase(), freq, m.prn ? 'PRN' : ''].filter(Boolean).join(' ')
+  // MC2 (ronda 6): «PRN · si dolor»
+  const prn = m.prn ? (m.prnCondition?.trim() ? `PRN · ${m.prnCondition.trim()}` : 'PRN') : ''
+  return [m.drug, m.dose, ROUTE_ABBR[m.route] ?? m.route.toLowerCase(), freq, prn].filter(Boolean).join(' ')
 }
 
 /**

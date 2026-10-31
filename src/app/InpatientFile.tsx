@@ -397,6 +397,9 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                     )
                   })}
                   {m.prn && (<>
+                    {/* MC2 (ronda 6): fila PRN, sin horas programadas: nunca pendiente ni atrasada. Muestra la última vez que se dio */}
+                    {(() => { const lastGiven = doses.filter((d) => d.status === 'given').sort((x, y) => y.givenAt.localeCompare(x.givenAt))[0]
+                      return <span className="prn-last">{lastGiven ? <>Última dosis: <b>{dm(lastGiven.givenAt)}</b> · {by(lastGiven.givenBy)}</> : 'Todavía sin dosis.'}</span> })()}
                     {prnToday.map((d) => (
                       <button key={d.id} className={`slot2 slot2--given${d.correctionReason ? ' slot2--fixed' : ''}`} disabled={!(care && fixing)} onClick={() => setCorrecting({ med: m, dose: d })}
                         title={doseTitle(d)}><b>{time(d.givenAt)}</b><small>✓ {by(d.givenBy)}</small></button>
@@ -522,7 +525,7 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
       }}>{given ? 'Registrar administración' : status === 'omitted' ? 'Registrar como omitida' : 'Registrar como no aplicada'}</button>
     </>}>
       <p>{at ? <>Dosis de las <b>{time(at.toISOString())}</b>{at.toDateString() !== new Date().toDateString() ? ` del ${date(at.toISOString())}` : ''}.
-        {at.getTime() < opened - LATE_AFTER_MIN * 60_000 && <> <span className="badge badge--amber">Atrasada</span></>}</> : 'Dosis según necesidad (PRN).'}</p>
+        {at.getTime() < opened - LATE_AFTER_MIN * 60_000 && <> <span className="badge badge--amber">Atrasada</span></>}</> : <>Dosis según necesidad (PRN){med.prnCondition ? `: ${med.prnCondition}` : ''}. Queda con tu nombre, tu rol y la hora real.</>}</p>
       {tooSoon && <div className="alert-strip"><TriangleAlert size={16} />La última dosis fue a las {time(last!.givenAt)}; la indicación es cada {med.everyHours} horas.</div>}
       {at && (
         <DoseStatus value={status} onChange={(s) => { setStatus(s); setNote('') }} />
@@ -961,7 +964,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   }, noteBlank)
   const inVademecum = (drug: string) => vademecum.some((x) => normalize(x.name) === normalize(drug))
   // Huecos "___" de un set aplicado: la nota no se firma hasta llenarlos
-  const blanks = [...extra.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : []))]
+  const blanks = [...extra.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : [])),
+    // MC2 (ronda 6): un PRN que vino de un set sin condición
+    ...meds.flatMap((m) => (m.prn && !m.prnCondition?.trim() ? [`la condición PRN de ${m.drug}`] : []))]
   // SOAP: los cuatro campos, como siempre. Estándar: algo escrito, una indicación o un medicamento.
   const ready = !blanks.length && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
     : d.diagnoses.length > 0 || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0 || exams.length > 0)
@@ -1039,7 +1044,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
       <div className="note-editor__orders">
       <div className="set-bar">
         <OrderSetPicker where={file.hospitalization.kind === 'observation' ? 'observation' : 'hospital'} patientId={p.id} onApply={applySet} />
-        <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, days, instructions }) => ({ med: { drug, presentation, dose, route, everyHours, prn, days, instructions: instructions || undefined } })), ...exams.map((e) => ({ exam: e }))]} />
+        <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions }) => ({ med: { drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions: instructions || undefined } })), ...exams.map((e) => ({ exam: e }))]} />
       </div>
       <fieldset className="fs"><legend>Indicaciones</legend>
         <p className="muted" style={{ fontSize: 13.5 }}>Lo que no es medicamento ni examen, una por línea: dieta, cuidados, signos vitales. Puedes pegar una lista completa.</p>
@@ -1130,7 +1135,7 @@ function editInitial(m: NewMed): NewMed {
 }
 
 function medToNew(m: InpatientMed): NewMed {
-  return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, instructions: m.instructions ?? '', firstAt: inputDateTime(new Date()), days: m.days }
+  return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, prnCondition: m.prnCondition, instructions: m.instructions ?? '', firstAt: inputDateTime(new Date()), days: m.days }
 }
 
 /**
@@ -1148,9 +1153,9 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
   const q = normalize(m.drug)
   const matches = q ? vademecum.filter((d) => normalize(`${d.name} ${d.brand ?? ''}`).includes(q)).slice(0, 6) : vademecum.slice(0, 6)
   const built = (): NewMed | null => {
-    if (!m.drug.trim() || !m.dose.trim() || (conflict && !override)) return null
+    if (!m.drug.trim() || !m.dose.trim() || (conflict && !override) || (m.prn && !m.prnCondition?.trim())) return null
     const everyHours = freq === 'once' ? undefined : Number(freq)
-    return { ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours, instructions: m.instructions?.trim() || undefined,
+    return { ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours, instructions: m.instructions?.trim() || undefined, prnCondition: m.prn ? m.prnCondition?.trim() : undefined,
       firstAt: m.prn ? undefined : new Date(m.firstAt!).toISOString() }
   }
   const another = () => { const x = built(); if (x && onAddAnother) onAddAnother(x) }
@@ -1181,7 +1186,10 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
           </select></label>
         <label className="field" style={{ alignContent: 'end' }}><span>Según necesidad</span>
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', height: 42 }}>
-            <input type="checkbox" checked={m.prn} onChange={(e) => { setM({ ...m, prn: e.target.checked }); if (e.target.checked && freq === 'once') setFreq('8') }} />PRN, sin horario fijo</label></label>
+            <input type="checkbox" checked={m.prn} onChange={(e) => { setM({ ...m, prn: e.target.checked }); if (e.target.checked && freq === 'once') setFreq('8') }} />PRN (si es necesario)</label></label>
+        {m.prn && <label className="field"><span>Condición</span>
+          <input className={`input ${!m.prnCondition?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.prnCondition ?? ''} onChange={(e) => setM({ ...m, prnCondition: e.target.value })} placeholder="Ej. si dolor, si fiebre" aria-required="true" />
+          {!m.prnCondition?.trim() && <small className="field__msg field__msg--warn">Obligatoria en un PRN: cuándo se da.</small>}</label>}
         {!m.prn && <label className="field"><span>{freq === 'once' ? 'Hora de la dosis' : 'Primera dosis'}</span><input className="input" type="datetime-local" value={m.firstAt} onChange={(e) => setM({ ...m, firstAt: e.target.value })} /></label>}
         <label className="field"><span>Total de días (opcional)</span>
           <input className="input num" type="number" min={1} max={365} inputMode="numeric" value={m.days ?? ''} placeholder="Hasta nueva orden"
@@ -1196,8 +1204,8 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
         </div>
       )}
       <div style={{ display: 'flex', gap: 8 }}>
-        <button className="btn btn--primary" disabled={!m.drug.trim() || !m.dose.trim() || (!!conflict && !override)}><Plus size={16} />Agregar a la nota</button>
-        {onAddAnother && <button type="button" className="btn btn--soft" disabled={!m.drug.trim() || !m.dose.trim() || (!!conflict && !override)} onClick={another}>Guardar y agregar otro</button>}
+        <button className="btn btn--primary" disabled={!built()}><Plus size={16} />Agregar a la nota</button>
+        {onAddAnother && <button type="button" className="btn btn--soft" disabled={!built()} onClick={another}>Guardar y agregar otro</button>}
         <button type="button" className="btn btn--ghost" onClick={onCancel}>Cancelar</button>
       </div>
     </form>

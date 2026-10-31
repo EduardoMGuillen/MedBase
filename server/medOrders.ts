@@ -21,6 +21,7 @@ export interface OrderInput {
   route: string
   everyHours?: number
   prn: boolean
+  prnCondition?: string
   firstAt: string
   instructions?: string
   /** Vacío: hasta nueva orden. */
@@ -32,7 +33,7 @@ export interface OrderInput {
 export function orderFromItem(it: PrescriptionItem, firstAt: string): OrderInput {
   return {
     drug: it.drug, presentation: it.presentation || undefined, dose: it.dose, route: it.route || 'Oral',
-    everyHours: frequencyHours(it.frequency), prn: /necesidad|prn/i.test(it.frequency), firstAt,
+    everyHours: frequencyHours(it.frequency), prn: /necesidad|necesario|\bprn\b/i.test(it.frequency), prnCondition: it.prnCondition || undefined, firstAt,
     instructions: it.instructions || undefined, days: durationDays(it.duration),
   }
 }
@@ -53,11 +54,11 @@ export async function createMedOrders(q: Sql, o: {
   for (const [index, m] of o.items.entries()) {
     if (!m || active.has(normalize(m.drug))) continue
     const row = await q.one(`INSERT INTO hosp_meds (id, clinic_id, hospitalization_id, patient_id, note_id, source, source_id, source_index, drug, presentation, dose, route,
-        every_hours, prn, first_at, instructions, days, replaces_id, ordered_by, ordered_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        every_hours, prn, first_at, instructions, days, replaces_id, ordered_by, ordered_at, prn_condition)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT (hospitalization_id, source_id, source_index) WHERE source_id IS NOT NULL AND source_index IS NOT NULL DO NOTHING RETURNING id`,
       [randomUUID(), o.clinicId, o.hospitalizationId, o.patientId, o.source === 'note' ? o.sourceId : null, o.source, o.sourceId, index, m.drug, m.presentation || null,
-        m.dose, m.route, m.everyHours ?? null, m.prn, new Date(m.firstAt).toISOString(), m.instructions || null, m.days ?? null, m.replacesId ?? null, o.orderedBy, o.orderedAt])
+        m.dose, m.route, m.everyHours ?? null, m.prn, new Date(m.firstAt).toISOString(), m.instructions || null, m.days ?? null, m.replacesId ?? null, o.orderedBy, o.orderedAt, m.prn ? m.prnCondition || null : null])
     if (row) created++
   }
   return created

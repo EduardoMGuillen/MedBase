@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useStore } from '../lib/store'
 import { Modal } from './ui'
 import { Pencil, Pill, Plus, TriangleAlert, X } from 'lucide-react'
-import { allergyConflict, EMPTY_MED, FREQUENCIES, type Drug } from '../lib/catalogs'
+import { allergyConflict, EMPTY_MED, FREQUENCIES, isPrnFrequency, type Drug } from '../lib/catalogs'
 import { autoQuantity, defaultRoute, medicationLine, missingDays, ROUTES } from '../lib/format'
 import { normalize } from '../lib/patients'
 import { useVademecum } from '../lib/vademecum'
@@ -83,14 +83,16 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
   }
   // Ambulatorio: la receta necesita los días (salvo dosis única o si se aplica aquí en la clínica)
   const needsDays = requireDuration && !m.applyInClinic && !/única/i.test(m.frequency)
-  const ready = m.drug.trim() && m.dose.trim() && m.frequency && (m.duration.trim() || !needsDays) && (!conflict || overrideAllergy) && (!duplicate || overrideDup)
+  // MC2 (ronda 6): un PRN no se agrega sin su condición
+  const prn = isPrnFrequency(m.frequency)
+  const ready = m.drug.trim() && m.dose.trim() && m.frequency && (!prn || m.prnCondition?.trim()) && (m.duration.trim() || !needsDays) && (!conflict || overrideAllergy) && (!duplicate || overrideDup)
   const computed = needsDays ? autoQuantity(m) : undefined
   const submit = (e?: FormEvent) => {
     e?.preventDefault()
     if (!ready) return
     onSave({ ...m, drug: m.drug.trim(), presentation: m.presentation.trim(), dose: m.dose.trim(), duration: m.duration.trim(),
       instructions: m.instructions?.trim() || undefined, quantity: m.quantity?.trim() || computed || undefined,
-      applyInClinic: clinicOption && m.applyInClinic ? true : undefined })
+      applyInClinic: clinicOption && m.applyInClinic ? true : undefined, prnCondition: prn ? m.prnCondition?.trim() : undefined })
   }
   const freqs = FREQUENCIES.includes(m.frequency) ? FREQUENCIES : [m.frequency, ...FREQUENCIES]
   return (<>
@@ -119,6 +121,9 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
         <label className="field"><span>Dosis</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g, 1 tableta, 5 ml" /></label>
         <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => setM({ ...m, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
         <label className="field"><span>Frecuencia</span><select className="select" value={m.frequency} onChange={(e) => setM({ ...m, frequency: e.target.value })}>{freqs.map((f) => <option key={f}>{f}</option>)}</select></label>
+        {prn && <label className="field"><span>Condición</span>
+          <input className={`input ${!m.prnCondition?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.prnCondition ?? ''} onChange={(e) => setM({ ...m, prnCondition: e.target.value })} placeholder="Ej. si dolor, si fiebre" aria-required="true" />
+          {!m.prnCondition?.trim() && <small className="field__msg field__msg--warn">Obligatoria en un PRN: cuándo se da.</small>}</label>}
         <label className="field"><span>{needsDays ? 'Total de días' : 'Total de días (opcional)'}</span>
           <input className={`input ${needsDays && !m.duration.trim() && m.drug.trim() && m.dose.trim() ? 'input--warn' : ''}`} value={m.duration} onChange={(e) => setM({ ...m, duration: e.target.value })}
             placeholder={/única/i.test(m.frequency) ? 'No aplica' : needsDays ? 'Ej. 3 días' : 'Hasta nueva orden'} />

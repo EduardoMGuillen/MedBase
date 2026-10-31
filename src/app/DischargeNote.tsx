@@ -27,7 +27,8 @@ type Draft = { hea: string; summary: string; dx: Diagnosis[]; condition: string;
 /** Una orden abierta de la hoja, como renglón de receta (los días los pone el médico). */
 const toRx = (m: InpatientMed): PrescriptionItem => ({
   drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route,
-  frequency: m.prn ? 'Según necesidad' : m.everyHours ? `Cada ${m.everyHours} horas` : 'Dosis única', duration: '', instructions: m.instructions ?? '',
+  frequency: m.prn ? 'PRN (si es necesario)' : m.everyHours ? `Cada ${m.everyHours} horas` : 'Dosis única', duration: '', instructions: m.instructions ?? '',
+  prnCondition: m.prn ? m.prnCondition : undefined,
 })
 
 /**

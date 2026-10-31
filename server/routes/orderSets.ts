@@ -13,6 +13,7 @@ const med = z.object({
   route: z.string().trim().min(1).max(40),
   everyHours: z.number().int().min(1).max(72).optional(),
   prn: z.boolean().default(false),
+  prnCondition: z.string().trim().max(120).optional(),
   days: z.number().int().min(1).max(365).optional(),
   instructions: z.string().trim().max(300).optional(),
 })

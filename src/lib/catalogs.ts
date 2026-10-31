@@ -128,4 +128,8 @@ export function allergyConflict(allergies: string[], drugName: string): string |
 /** Medicamento en blanco para el formulario. */
 export const EMPTY_MED: PrescriptionItem = { drug: '', presentation: '', dose: '', route: 'Oral', frequency: 'Cada 8 horas', duration: '', instructions: '', quantity: '' }
 
-export const FREQUENCIES = ['Cada 4 horas', 'Cada 6 horas', 'Cada 8 horas', 'Cada 12 horas', 'Cada 24 horas', 'Dosis única', 'Según necesidad']
+/** MC2 (ronda 6): la frecuencia PRN de la receta. Las recetas de antes decían «Según necesidad». */
+export const PRN_FREQUENCY = 'PRN (si es necesario)'
+export const FREQUENCIES = ['Cada 4 horas', 'Cada 6 horas', 'Cada 8 horas', 'Cada 12 horas', 'Cada 24 horas', 'Dosis única', PRN_FREQUENCY]
+/** ¿La frecuencia escrita es PRN? («PRN (si es necesario)», «Según necesidad», «Cada 8 horas si es necesario»). */
+export const isPrnFrequency = (f: string) => /necesidad|necesario|\bprn\b/i.test(f)

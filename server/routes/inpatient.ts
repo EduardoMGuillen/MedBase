@@ -29,6 +29,8 @@ const medInput = z.object({
   route: z.string().trim().min(1, 'Elige la vía.').max(40),
   everyHours: z.number().int().min(1).max(72).optional(),
   prn: z.boolean().default(false),
+  // MC2 (ronda 6): un PRN lleva su condición
+  prnCondition: z.string().trim().max(120).optional(),
   firstAt: when.optional(),
   instructions: z.string().trim().max(300).optional(),
   // Sin días: hasta nueva orden
@@ -818,7 +820,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       followUp: z.string().trim().max(300).optional(),
       items: z.array(z.object({
         drug: z.string().trim().min(1), presentation: z.string().default(''), dose: z.string().trim().min(1, 'Escribe la dosis.'), route: z.string().optional(),
-        frequency: z.string().min(1), duration: z.string().trim().min(1, 'Escribe la duración.'), instructions: z.string().optional(), quantity: z.string().max(60).optional(),
+        frequency: z.string().min(1), duration: z.string().trim().min(1, 'Escribe la duración.'), instructions: z.string().optional(), quantity: z.string().max(60).optional(), prnCondition: z.string().trim().max(120).optional(),
       })).default([]),
       validityDays: validityInput,
       // MC5: HEA corregida, exámenes que se piden al alta y emitir la epicrisis con el mismo contenido

@@ -33,7 +33,7 @@ interface Session { user: Staff; permissions: Permission[]; demo: boolean }
 export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescriptions: Prescription[]; hospitalizations: Hospitalization[]; addenda?: Addendum[] }
 
 /** Medicamento que el médico indica en una nota de hospitalización. */
-export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'instructions' | 'days' | 'replacesId'> & { firstAt?: string }
+export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'prnCondition' | 'instructions' | 'days' | 'replacesId'> & { firstAt?: string }
 export type FollowupInput = Pick<Followup, 'kind' | 'title' | 'dueDate' | 'everyDays' | 'notes'>
 
 export interface Report {

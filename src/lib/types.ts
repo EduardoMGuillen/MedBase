@@ -319,6 +319,8 @@ export interface PrescriptionItem {
   quantity?: string // cantidad total a dispensar (opcional), p. ej. "20 tabletas"
   /** Ambulatorio: se aplica en la clínica (va a la hoja de medicamentos, no a la receta). */
   applyInClinic?: boolean
+  /** MC2 (ronda 6): PRN («si es necesario»): cuándo se da ("si dolor", "si fiebre"). */
+  prnCondition?: string
 }
 
 export interface Prescription {
@@ -624,6 +626,8 @@ export interface SetMed {
   route: string
   everyHours?: number
   prn: boolean
+  /** MC2 (ronda 6): condición del PRN. */
+  prnCondition?: string
   days?: number
   instructions?: string
 }
@@ -798,6 +802,8 @@ export interface InpatientMed {
   route: string
   everyHours?: number // vacío: dosis única (o PRN sin intervalo mínimo)
   prn: boolean // según necesidad: sin horario fijo
+  /** MC2 (ronda 6): cuándo se da el PRN ("si dolor"). Las órdenes de antes no lo tienen. */
+  prnCondition?: string
   firstAt: string
   instructions?: string
   orderedBy: string

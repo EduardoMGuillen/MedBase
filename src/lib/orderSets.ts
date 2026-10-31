@@ -26,7 +26,8 @@ export const itemText = (it: OrderSetItem) => (it.med ? setMedText(it.med) : it.
 export function setMedToRx(m: SetMed): PrescriptionItem {
   return {
     drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route,
-    frequency: m.prn ? (m.everyHours ? `Cada ${m.everyHours} horas si es necesario` : 'Según necesidad') : m.everyHours ? `Cada ${m.everyHours} horas` : 'Dosis única',
+    frequency: m.prn ? (m.everyHours ? `Cada ${m.everyHours} horas si es necesario` : 'PRN (si es necesario)') : m.everyHours ? `Cada ${m.everyHours} horas` : 'Dosis única',
+    prnCondition: m.prn ? m.prnCondition : undefined,
     duration: m.days ? `${m.days} día${m.days === 1 ? '' : 's'}` : '', instructions: m.instructions ?? '',
   }
 }
@@ -36,7 +37,7 @@ export function rxToSetMed(it: PrescriptionItem): SetMed {
   return {
     drug: it.drug, presentation: it.presentation || undefined, dose: it.dose, route: it.route ?? 'Oral',
     everyHours: frequencyHours(it.frequency), prn: /necesidad|necesario|prn/i.test(it.frequency), days: durationDays(it.duration),
-    instructions: it.instructions || undefined,
+    instructions: it.instructions || undefined, prnCondition: it.prnCondition || undefined,
   }
 }
 

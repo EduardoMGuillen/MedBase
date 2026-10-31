@@ -23,6 +23,7 @@ import { useExamCatalog } from '../lib/useExamCatalog'
 import type { OrderSet } from '../lib/types'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
 import { RxValidityField } from '../components/RxValidity'
+import { isPrnFrequency } from '../lib/catalogs'
 import { useDraftSync } from '../lib/drafts'
 import { DraftBadge } from '../components/Addenda'
 import { useRxValidity } from '../lib/hooks'
@@ -96,6 +97,8 @@ export default function Consultation() {
   const orderInput = useRef<HTMLInputElement>(null)
   const mine = !!appt && appt.doctorId === user?.id
   const { chart, reload } = useChart(p?.id, mine)
+  // Los hooks van antes de los return tempranos
+  const { exams: clinicExams } = useExamCatalog()
 
   useEffect(() => {
     if (appt && mine && ['arrived', 'triaged', 'confirmed', 'scheduled'].includes(appt.status)) setStatus(appt.id, 'in_consult')
@@ -134,7 +137,9 @@ export default function Consultation() {
   const inClinic = ambulatory ? meds.filter((m) => m.applyInClinic) : admitting ? meds : []
   const noDays = ambulatory ? meds.filter(missingDays) : []
   // Huecos "___" que trajo un set: no se firma hasta llenarlos
-  const blanks = [...indications.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : []))]
+  const blanks = [...indications.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : [])),
+    // MC2 (ronda 6): un PRN que vino de un set sin condición
+    ...meds.flatMap((m) => (isPrnFrequency(m.frequency) && !m.prnCondition?.trim() ? [`la condición PRN de ${m.drug}`] : []))]
   // La receta lleva la identidad del paciente; en adultos es obligatoria
   const needsDni = rxCount > 0 && !p.dni && yearsOld(p.birthDate) >= 18
   const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !indications.length && !meds.length && !exams.length && 'al menos una indicación, un medicamento o un examen',
@@ -172,7 +177,6 @@ export default function Consultation() {
   // Si lo que se escribe en indicaciones empieza con un medicamento del vademécum, se sugiere pasarlo a Medicamentos
   const typedDrug = orderText.trim().length >= 4 ? vademecum.find((d) => normalize(orderText).startsWith(normalize(d.name))) : undefined
   // EX1: si lo que se escribe es un examen («hemograma», o uno que agregó la clínica), se sugiere pasarlo a Exámenes
-  const { exams: clinicExams } = useExamCatalog()
   const typedExamHit = typedExam(orderText, examCatalog(clinicExams))
 
   const sign = async () => {

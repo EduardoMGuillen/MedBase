@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { Ban, ChevronLeft, Copy, FileText, MessageCircle, Plus, Printer, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading, Modal, PageHead } from '../components/ui'
-import { age, date, formatPhone, fullName, identityLine, localISODate, medicationLine, recordNumber, time, whatsappUrl } from '../lib/format'
+import { age, date, formatPhone, fullName, identityLine, localISODate, medicationLine, frequencyText, recordNumber, time, whatsappUrl } from '../lib/format'
 import { stayPath, yearsOld } from '../lib/inpatient'
 import { useNow } from '../lib/hooks'
 import { features } from '../lib/permissions'
@@ -269,7 +269,7 @@ export function PrescriptionSheet() {
           {rx.items.map((it, i) => (
             <li key={i}>
               <strong>{it.drug}</strong> <span style={{ color: 'var(--muted)' }}>{it.presentation}</span>
-              <p>{it.dose}{it.route ? ` vía ${it.route.toLowerCase()}` : ''}, {it.frequency.toLowerCase()}{it.duration ? `, durante ${it.duration}` : ''}.{it.instructions ? ` ${it.instructions}` : ''}{it.quantity ? ` Cantidad: ${it.quantity}.` : ''}</p>
+              <p>{it.dose}{it.route ? ` vía ${it.route.toLowerCase()}` : ''}, {it.prnCondition ? frequencyText(it) : it.frequency.toLowerCase()}{it.duration ? `, durante ${it.duration}` : ''}.{it.instructions ? ` ${it.instructions}` : ''}{it.quantity ? ` Cantidad: ${it.quantity}.` : ''}</p>
             </li>
           ))}
         </ol>

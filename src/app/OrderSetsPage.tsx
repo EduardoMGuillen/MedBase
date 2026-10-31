@@ -176,10 +176,11 @@ function SetMedForm({ initial, onSave, onCancel }: { initial: SetMed; onSave: (m
         <label className="field" style={{ alignContent: 'end' }}><span>Según necesidad</span>
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', height: 42 }}>
             <input type="checkbox" checked={m.prn} onChange={(e) => { setM({ ...m, prn: e.target.checked }); if (e.target.checked && freq === 'once') setFreq('8') }} />PRN</label></label>
+        {m.prn && <label className="field"><span>Condición (opcional en el set)</span><input className="input" value={m.prnCondition ?? ''} onChange={(e) => setM({ ...m, prnCondition: e.target.value })} placeholder="Ej. si dolor" /></label>}
         <label className="field"><span>Indicaciones</span><input className="input" value={m.instructions ?? ''} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder="Ej. Diluir en 100 ml" /></label>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
-        <button type="button" className="btn btn--primary" disabled={!ok} onClick={() => onSave({ ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours: freq === 'once' ? undefined : Number(freq), instructions: m.instructions?.trim() || undefined, presentation: m.presentation || undefined })}>
+        <button type="button" className="btn btn--primary" disabled={!ok} onClick={() => onSave({ ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours: freq === 'once' ? undefined : Number(freq), instructions: m.instructions?.trim() || undefined, prnCondition: m.prn ? m.prnCondition?.trim() || undefined : undefined, presentation: m.presentation || undefined })}>
           <Plus size={16} />{initial.drug ? 'Guardar medicamento' : 'Agregar al set'}</button>
         <button type="button" className="btn btn--ghost" onClick={onCancel}>Cancelar</button>
       </div>
