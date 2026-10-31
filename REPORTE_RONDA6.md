@@ -128,7 +128,7 @@ porque no hay datos. Cuando se cargue, el resultado de `loadLabCatalog` da las t
 - `npm test`: 225 de 227. Las dos que fallan («fetch failed» en `api.test.ts` y `demoData.test.ts`) **ya fallaban antes
   de esta ronda** y pasan al correrlas solas (29/29 y 6/6). Es inestabilidad del servidor de prueba bajo carga en
   paralelo.
-- Pruebas nuevas en `server/ronda6.test.ts` (21). Se actualizaron pruebas de rondas anteriores que describían el
+- Pruebas nuevas en `server/ronda6.test.ts` (19). Se actualizaron pruebas de rondas anteriores que describían el
   comportamiento que esta ronda cambia a propósito:
   - lo no catalogado ya no se vuelve externo (MC3);
   - una toma posterior cubre las anteriores (EN2);
