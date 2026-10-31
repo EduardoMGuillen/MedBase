@@ -21,7 +21,7 @@ export const STAFF: Staff[] = [
   { id: 's-admin', clinicId: 'c-sb', name: 'Roberto Aguilar', role: 'admin', email: 'admin@demo.clinara', color: '#5B6472', active: true },
   { id: 's-herrera', clinicId: 'c-sb', name: 'Dra. Lucía Herrera', role: 'doctor', specialty: 'Medicina interna', email: 'lherrera@demo.clinara', license: 'CMH-08812', color: '#2335C9', active: true },
   { id: 's-paz', clinicId: 'c-sb', name: 'Dr. Andrés Paz', role: 'doctor', specialty: 'Pediatría', email: 'apaz@demo.clinara', license: 'CMH-11420', color: '#0F8A6E', active: true },
-  { id: 's-zuniga', clinicId: 'c-sb', name: 'Dra. Mariela Zúniga', role: 'doctor', specialty: 'Ginecología y obstetricia', email: 'mzuniga@demo.clinara', license: 'CMH-09931', color: '#B4407A', active: true },
+  { id: 's-zuniga', clinicId: 'c-sb', name: 'Dra. Mariela Zúñiga', role: 'doctor', specialty: 'Ginecología y obstetricia', email: 'mzuniga@demo.clinara', license: 'CMH-09931', color: '#B4407A', active: true },
   { id: 's-rios', clinicId: 'c-sb', name: 'Lic. Carmen Ríos', role: 'nurse', email: 'crios@demo.clinara', color: '#C27A12', active: true },
   { id: 's-mejia', clinicId: 'c-sb', name: 'Sofía Mejía', role: 'reception', email: 'smejia@demo.clinara', color: '#6A4BC4', active: true },
   // Segunda clínica de demostración, para comprobar que los datos no se mezclan

@@ -18,7 +18,7 @@ El Word con las capturas no llegó con el pedido: trabajé con lo que describe e
 |---|---|---|---|
 | **AD1** Umbrales por grupos | Hecho | `src/lib/clinicalConfig.ts` (valores por omisión, «VALIDAR POR EMIL»), `src/app/CriticalThresholds.tsx`, `server/routes/exams.ts` (`PUT /api/settings/critical-groups`), migración v47 | Roberto → Configuración → Áreas de servicio → grupo «Hemograma» → «Agregar analito»: Hematocrito, %, 20 y 60 → «Guardar umbrales» y recarga. Un límite vacío dice «No aplica». Archivar y «Ver archivados». En la bitácora: «Hematocrito (%) a «Hemograma»: menor de 20, mayor de 60». |
 | **AD2** Un médico a la vez | Hecho | `src/app/Settings.tsx` (`Schedules`), `src/app/ScheduleEditor.tsx` | Configuración → Horarios de médicos: lista con buscador («Pa» encuentra al Dr. Paz) y un solo formulario. Cambia un horario sin guardar y toca otro médico: pregunta Guardar / Descartar / Cancelar. En el consultorio no hay lista. |
-| **AD3** Rol de turnos | Hecho | `src/app/Roster.tsx`, `server/routes/roster.ts`, migración v46 | Configuración → «Rol de turnos» (después de Horarios). Toca el día 3 y marca a la Dra. Herrera; el 4, al Dr. Paz; el 5, a la Dra. Zúniga y a otro médico; desmarca uno. Cambia de mes y vuelve. A 390 px es una lista de días. No aparece en el consultorio. |
+| **AD3** Rol de turnos | Hecho | `src/app/Roster.tsx`, `server/routes/roster.ts`, migración v46 | Configuración → «Rol de turnos» (después de Horarios). Toca el día 3 y marca a la Dra. Herrera; el 4, al Dr. Paz; el 5, a la Dra. Zúñiga y a otro médico; desmarca uno. Cambia de mes y vuelve. A 390 px es una lista de días. No aparece en el consultorio. |
 | **AD4** Catálogo de exámenes | Hecho | `src/app/ExamCatalogAdmin.tsx`, `server/routes/exams.ts`, `server/db.ts` (`ensureExamCatalog`), migración v48 | Configuración → «Catálogo de exámenes»: «Agregar examen» → Dímero D (Laboratorio) → «Editar» a «Dímero D cuantitativo» → «Archivar». Cada paso queda en la bitácora. Ya no se ofrece al ordenar. |
 | **AD5** Crónicos para administración | Hecho | `src/lib/permissions.ts` | Roberto ve «Crónicos y seguimientos» en Pacientes, avisa y marca hechos (con su nombre en la bitácora). Programar uno nuevo sigue siendo del médico. |
 | **RE1** Mi configuración de recepción | Hecho | `src/app/MyConfig.tsx`, `src/app/AppShell.tsx`, `server/routes/me.ts` | Sofía Mejía → «Mi configuración»: Datos personales, Preferencias («La agenda se abre en»), Seguridad y Mi actividad. Por URL no llega a Mi horario ni a la configuración de la clínica. |
@@ -115,7 +115,7 @@ Corrida en una base local de verificación el 30/10/2026. La base del sitio no l
 |---|---|---|---|
 | Dr. Daniel Fúnez Castillo | 18 | 4 | 120 (medicina general, todas las edades) |
 | Dra. Lucía Herrera | 14 | 3 | 89 |
-| Dra. Mariela Zúniga | 14 | 4 | 51 |
+| Dra. Mariela Zúñiga | 14 | 4 | 51 |
 | Dr. Andrés Paz | 12 | 3 | 31 |
 
 - Citas: 58 hoy y 14 personas en sala de espera. Los estados de hoy son atendida, no llegó, en consulta, en preclínica, en sala, confirmada y agendada.

@@ -200,7 +200,7 @@ describe('M1 atender al paciente de otro médico', () => {
     assert.equal(before.status, 'triaged')
     assert.equal((await paz.post('/api/appointments/a3/take', { fromDoctorId: 's-zuniga' })).status, 409, 'el médico que vio no coincide')
     assert.equal((await her.post('/api/appointments/a3/take', { fromDoctorId: 's-herrera' })).status, 409, 'no se toma la propia cita')
-    // El Dr. Paz y la Dra. Zúniga la toman al mismo tiempo: sólo uno la obtiene (el orden no está garantizado)
+    // El Dr. Paz y la Dra. Zúñiga la toman al mismo tiempo: sólo uno la obtiene (el orden no está garantizado)
     const zun = await as('mzuniga@demo.clinara')
     const [r1, r2] = await Promise.all([paz.post('/api/appointments/a3/take', { fromDoctorId: 's-herrera' }), zun.post('/api/appointments/a3/take', { fromDoctorId: 's-herrera' })])
     assert.deepEqual([r1.status, r2.status].sort(), [200, 409], 'sólo uno de los dos la obtiene')
