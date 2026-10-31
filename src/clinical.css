@@ -78,7 +78,12 @@
 .order-add .btn { width: 44px; padding: 0; height: 42px; }
 .order-quick { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .rx-form { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--ward); }
-.sign-box { position: sticky; bottom: 0; }
+/* MC1 (ronda 6): la tarjeta de firmar va al final, sin pegarse abajo: pegada tapaba el bloque de arriba al desplazarse */
+.sign-box { position: static; }
+/* Un solo contenedor para «Ingreso a observación / hospitalización»: las opciones no llevan borde propio */
+.admit-choice { display: grid; gap: 2px; }
+.admit-choice .check-line { border: 0; border-radius: 0; padding: 8px 0; }
+.admit-choice .check-line + .check-line { border-top: 1px solid var(--line); }
 
 /* Signos vitales: cada celda con su propio borde, sin huecos grises cuando la fila queda incompleta */
 .vitals { background: transparent; gap: 0; border: 1px solid var(--line-soft); }
@@ -584,14 +589,14 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .dx-picker__warn { color: var(--amber-ink); text-transform: none; letter-spacing: 0; font-weight: 600; }
 
 /* ---------- Columna derecha de las notas: indicaciones y, debajo, medicamentos ---------- */
-.note-meds { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.note-meds, .note-exams { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
 .med-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
 .med-lines li { display: flex; gap: 6px; align-items: baseline; }
 .med-lines li::before { content: '–'; color: var(--muted); }
 .med-lines .orders__pill { flex: none; transform: translateY(1px); }
 @media print {
   /* El bloque de medicamentos no se parte a la mitad si cabe entero en la siguiente hoja */
-  .note-meds { break-inside: avoid; page-break-inside: avoid; }
+  .note-meds, .note-exams { break-inside: avoid; page-break-inside: avoid; }
 }
 
 /* ---------- Ronda 2 (A1, A2): firma en pantalla y escaneo ---------- */

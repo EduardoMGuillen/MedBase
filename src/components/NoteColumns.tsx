@@ -5,12 +5,12 @@ import { dxCode, examText } from '../lib/format'
 
 /**
  * Una nota como en papel: a la izquierda el texto clínico; a la derecha las indicaciones (órdenes que no son
- * medicamento) numeradas y, debajo, el bloque «Medicamentos» con un guion por línea. En el celular se apilan en
+ * medicamento) numeradas, el bloque «Exámenes» y, debajo, el bloque «Medicamentos» con un guion por línea. En el celular se apilan en
  * ese orden: texto, indicaciones, medicamentos. Lo usan la nota de evolución, la de observación, la nota de
  * consulta que hace de nota de ingreso, «Ver nota completa» y el expediente impreso.
  */
-export function NoteColumns({ left, indicationsTitle = 'Indicaciones', indications, meds }: {
-  left: ReactNode; indicationsTitle?: string; indications: ReactNode; meds?: ReactNode
+export function NoteColumns({ left, indicationsTitle = 'Indicaciones', indications, exams, meds }: {
+  left: ReactNode; indicationsTitle?: string; indications: ReactNode; exams?: ReactNode; meds?: ReactNode
 }) {
   return (
     <div className="note-2col">
@@ -18,6 +18,8 @@ export function NoteColumns({ left, indicationsTitle = 'Indicaciones', indicatio
       <aside className="note-orders" aria-label={indicationsTitle}>
         <h4>{indicationsTitle}</h4>
         {indications}
+        {/* MC1 (ronda 6): Indicaciones y plan → Exámenes → Medicamentos, en todas las vistas */}
+        {exams !== undefined && <div className="note-exams"><h4>Exámenes</h4>{exams}</div>}
         {meds !== undefined && <div className="note-meds"><h4>Medicamentos</h4>{meds}</div>}
       </aside>
     </div>

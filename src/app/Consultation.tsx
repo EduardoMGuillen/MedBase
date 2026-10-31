@@ -272,7 +272,7 @@ export default function Consultation() {
 
         <aside className="consult2__right">
           <section className="panel orders-panel">
-            <div className="panel__head"><div><h2>Plan y manejo</h2><p>Arriba las indicaciones; abajo los medicamentos, que van a la receta.</p></div></div>
+            <div className="panel__head"><div><h2>Plan y manejo</h2><p>Indicaciones, exámenes y medicamentos, en ese orden. Los medicamentos van a la receta.</p></div></div>
             <div className="panel__body csec__body">
               <div className="set-bar">
                 <OrderSetPicker where="consultation" patientId={p.id} onApply={applySet} />
@@ -319,6 +319,10 @@ export default function Consultation() {
                 )}
               </div>
 
+              <div className="plan-block">
+                <h3 className="plan-block__title">Exámenes <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'enfermería los recibe en su bandeja' : 'se imprimen aparte de la receta'}</span></h3>
+                <ExamsBlock value={exams} onChange={setExams} inStay={admitting} />
+              </div>
               <div className="plan-block" data-tour="medicamentos">
                 <h3 className="plan-block__title">Medicamentos <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'van a la hoja de medicamentos' : 'van a la receta'}</span></h3>
                 {admitting && <p className="muted" style={{ fontSize: 13.5 }}>Con ingreso, los días son opcionales: sin días el medicamento queda «hasta nueva orden».</p>}
@@ -335,10 +339,6 @@ export default function Consultation() {
                 )}
               </div>
 
-              <div className="plan-block">
-                <h3 className="plan-block__title">Exámenes <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'enfermería los recibe en su bandeja' : 'se imprimen aparte de la receta'}</span></h3>
-                <ExamsBlock value={exams} onChange={setExams} inStay={admitting} />
-              </div>
             </div>
           </section>
 
@@ -372,14 +372,14 @@ export default function Consultation() {
               {store.can('inpatient.orders') && (
                 hospitalized
                   ? <p style={{ fontSize: 14 }}><BedDouble size={15} style={{ verticalAlign: '-3px' }} /> {p.firstName} ya está {hospitalized.kind === 'observation' ? 'en observación' : 'hospitalizado'}. <Link to={`/app/${hospitalized.kind === 'observation' ? 'observacion' : 'hospitalizados'}/${hospitalized.id}`}>Abrir su expediente</Link>.</p>
-                  : <>
+                  : (place.observation || place.hospital) && <div className="admit-choice" role="group" aria-label="Ingreso">
                     {/* Son excluyentes: marcar una desmarca la otra */}
                     {/* Un consultorio no hospitaliza y puede no usar observación */}
                     {place.observation && <label className="check-line"><input type="checkbox" checked={observe} onChange={(e) => { setObserve(e.target.checked); if (e.target.checked) setAdmit(false) }} />
                       <span><b>Ingreso a observación</b><small>Observación corta (hidratar, nebulizar, vigilar). Esta nota es la primera nota y sus medicamentos pasan a la hoja.</small></span></label>}
                     {place.hospital && <label className="check-line"><input type="checkbox" checked={admit} onChange={(e) => { setAdmit(e.target.checked); if (e.target.checked) setObserve(false) }} />
                       <span><b>Ingreso a hospitalización</b><small>Esta nota queda como nota de ingreso y sus medicamentos pasan a la hoja. Al firmar eliges la cama.</small></span></label>}
-                  </>
+                  </div>
               )}
               {rxCount > 0 && <RxValidityField value={validity} onChange={setValidity} />}
               <p style={{ fontSize: 14, color: 'var(--muted)' }}>
