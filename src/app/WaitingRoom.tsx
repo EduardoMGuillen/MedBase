@@ -91,8 +91,7 @@ export default function WaitingRoom() {
                       <button className="btn btn--soft btn--sm" onClick={() => p.pending ? setCompleting(a) : setStatus(a.id, 'arrived', `Llegada de ${p.firstName} registrada`)}><LogIn size={15} />Llegó</button>}
                     {a.status === 'arrived' && can('vitals.record') &&
                       <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Preclínica</button>}
-                    {a.status === 'done' && a.paid === false && can('billing.manage') &&
-                      <Link className="btn btn--ghost btn--sm" to={`/app/caja?cobrar=${a.id}`}>Cobrar</Link>}
+                    {/* CE1 (ronda 6): el cobro no va en Atendidos: se registra en Caja (o «Cobrar» del médico y del consultorio) */}
                     {['arrived', 'triaged', 'in_consult'].includes(a.status) && own && can('consult.write') &&
                       <button className="btn btn--primary btn--sm" onClick={() => nav(`/app/consulta/${a.id}`)}><Stethoscope size={15} />{a.status === 'in_consult' ? 'Continuar' : 'Atender'}</button>}
                     {a.status === 'triaged' && !own && multiDoctor && user?.role === 'doctor' && can('consult.write') &&

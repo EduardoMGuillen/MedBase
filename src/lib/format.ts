@@ -54,7 +54,8 @@ export const STATUS: Record<ApptStatus, { label: string; tone: string }> = {
   arrived: { label: 'En sala', tone: 'amber' },
   triaged: { label: 'Lista para consulta', tone: 'mint' },
   in_consult: { label: 'En consulta', tone: 'ink-solid' },
-  done: { label: 'Atendida', tone: 'done' },
+  // CE1 (ronda 6): forma neutra (no «Atendida» en pacientes hombres)
+  done: { label: 'Consulta atendida', tone: 'done' },
   no_show: { label: 'No asistió', tone: 'red' },
   cancelled: { label: 'Cancelada', tone: 'red' },
 }
