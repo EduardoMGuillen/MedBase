@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
-import { Modal } from '../components/ui'
 import { cap, localISODate, shortStaff } from '../lib/format'
 import { hasRole } from '../lib/permissions'
 import { useNow } from '../lib/hooks'
@@ -51,6 +50,7 @@ export function Roster() {
   const shift = (n: number) => setMonth(new Date(month.getFullYear(), month.getMonth() + n, 1))
   const title = cap(month.toLocaleDateString('es-HN', { month: 'long', year: 'numeric' }))
   const openDate = open ? new Date(`${open}T00:00:00`) : null
+  const moveDay = (n: number) => { if (!openDate) return; const d = new Date(openDate); d.setDate(d.getDate() + n); setOpen(localISODate(d)); if (d.getMonth() !== month.getMonth()) setMonth(new Date(d.getFullYear(), d.getMonth(), 1)) }
 
   return (
     <section className="panel" data-tour="rol-turnos">
@@ -63,7 +63,7 @@ export function Roster() {
           <button className="btn btn--soft btn--sm" onClick={() => { const d = new Date(); setMonth(new Date(d.getFullYear(), d.getMonth(), 1)) }}>Hoy</button>
         </div>
       </div>
-      <div className="panel__body">
+      <div className={`panel__body${open ? ' roster__body--open' : ''}`}>
         {!doctors.length ? <div className="empty">No hay médicos activos en la clínica.</div> : (
           <div className="roster__grid" aria-busy={!shifts}>
             {DOW.map((d) => <div key={d} className="roster__dow">{d}</div>)}
@@ -72,7 +72,7 @@ export function Roster() {
               const list = of(iso)
               const out = d.getMonth() !== month.getMonth()
               return (
-                <button key={iso} type="button" className={`roster__day${out ? ' is-out' : ''}${iso === today ? ' is-today' : ''}`} onClick={() => setOpen(iso)}
+                <button key={iso} type="button" aria-pressed={open === iso} className={`roster__day${out ? ' is-out' : ''}${iso === today ? ' is-today' : ''}${open === iso ? ' is-open' : ''}`} onClick={() => setOpen(iso)}
                   aria-label={`${d.toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })}: ${list.length ? list.map((s) => name(s.staffId)).join(', ') : 'sin médicos asignados'}`}>
                   <span className="roster__wd">{d.toLocaleDateString('es-HN', { weekday: 'long' })}</span>
                   <span className="roster__n">{d.getDate()}</span>
@@ -83,20 +83,28 @@ export function Roster() {
             })}
           </div>
         )}
-      </div>
+      {/* TU1 (ronda 6), «Panel del día»: panel lateral (en celular, hoja inferior) con la fecha y el personal con casillas.
+          No tapa el calendario: se pasa al día anterior o al siguiente sin cerrarlo */}
       {open && openDate && (
-        <Modal title={`Turno del ${openDate.toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })}`} onClose={() => setOpen(null)}
-          footer={<button className="btn btn--primary" onClick={() => setOpen(null)}>Listo</button>}>
+        <aside className="roster__panel" role="dialog" aria-modal="false" aria-label={`Turno del ${openDate.toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })}`}>
+          <div className="roster__panel-head">
+            <button className="icon-btn" aria-label="Día anterior" onClick={() => moveDay(-1)}><ChevronLeft size={18} /></button>
+            <div><b>{cap(openDate.toLocaleDateString('es-HN', { weekday: 'long' }))}</b><span>{openDate.toLocaleDateString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span></div>
+            <button className="icon-btn" aria-label="Día siguiente" onClick={() => moveDay(1)}><ChevronRight size={18} /></button>
+            <button className="icon-btn roster__panel-close" aria-label="Cerrar" onClick={() => setOpen(null)}><X size={18} /></button>
+          </div>
           {open < today && <p className="alert-strip alert-strip--amber">Es un día que ya pasó: el cambio queda en la bitácora.</p>}
-          <p className="muted" style={{ fontSize: 14 }}>Marca los médicos que trabajan este día. Cada cambio se guarda al momento.</p>
+          <p className="muted" style={{ fontSize: 13.5 }}>Marca quién trabaja este día ({of(open).length} asignado{of(open).length === 1 ? '' : 's'}). Cada cambio se guarda al momento.</p>
           <div className="roster__pick">
             {doctors.map((d) => (
               <label key={d.id} className="check-line"><input type="checkbox" disabled={busy} checked={of(open).some((s) => s.staffId === d.id)} onChange={() => toggle(open, d.id)} />
                 <span><b>{d.name}</b><small>{d.specialty ?? 'Médico'}</small></span></label>
             ))}
           </div>
-        </Modal>
+          <button className="btn btn--primary" onClick={() => setOpen(null)}>Listo</button>
+        </aside>
       )}
+      </div>
     </section>
   )
 }

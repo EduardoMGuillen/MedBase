@@ -594,3 +594,16 @@ tr.clickable { cursor: pointer; }
 }
 .crit__lim .input { min-width: 0; text-overflow: clip; }
 .crit__lim .input::placeholder { font-size: 13px; }
+
+/* TU1 (ronda 6): panel del día del rol de turnos (lateral; en celular, hoja inferior) */
+.roster__body--open { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.roster__panel { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); position: sticky; top: 90px;
+  box-shadow: 0 12px 30px -18px rgba(14, 34, 51, .35); max-height: calc(100vh - 110px); overflow: auto; }
+.roster__panel-head { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 6px; }
+.roster__panel-head > div { display: grid; text-align: center; }
+.roster__panel-head span { font-size: 13px; color: var(--muted); }
+.roster__day.is-open { outline: 2px solid var(--ink); outline-offset: -2px; }
+@media (max-width: 900px) {
+  .roster__body--open { display: block; }
+  .roster__panel { position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 40; border-radius: 18px 18px 0 0; max-height: 70vh; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+}
