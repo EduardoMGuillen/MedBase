@@ -16,7 +16,7 @@ import { loadLabCatalog, migrateSubgroups } from './catalogLoader.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '53'
+const SCHEMA_VERSION = '54'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -882,6 +882,9 @@ ALTER TABLE exam_orders ADD COLUMN IF NOT EXISTS uncatalogued BOOLEAN NOT NULL D
 -- v53 (ronda 6, MC6): frecuencia de signos vitales por tramos (JSON), la que indica el médico en la nota. Cambiarla agrega un
 -- tramo desde la siguiente hora: las tomas pasadas no se recalculan. Sin tramos, la regla de antes (vitals_every_hours).
 ALTER TABLE hospitalizations ADD COLUMN IF NOT EXISTS vitals_plan TEXT;
+
+-- v54 (ronda 6, MC8): una toma de signos vitales anotada dentro de una nota del médico guarda de qué nota viene
+ALTER TABLE vitals ADD COLUMN IF NOT EXISTS source_note_id TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

@@ -7,7 +7,7 @@ import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict } from '../lib/catalogs'
-import { activeIndications, chainNote, LINE_TAG, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
+import { activeIndications, chainNote, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
 import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
 import { NoteColumns, NoteExams, NoteText } from '../components/NoteColumns'
@@ -35,6 +35,9 @@ import { ConsultationBody, Identification } from './PatientChart'
 import { DischargeDocuments } from './Epicrisis'
 import { VitalsSheet } from './VitalsSheet'
 import { VitalsFrequency } from '../components/VitalsFrequency'
+import { VitalsFields } from '../components/VitalsFields'
+import { EMPTY_VITALS, FIELDS, fieldIssue, vitalNumber, type VitalsForm } from '../lib/vitalsForm'
+import { VITALS, type VitalKey } from '../lib/vitals'
 import { currentVitalsMode, vitalsModeText } from '../lib/vitalsSheet'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
 import { hasBlank, medHasBlank, orderKey } from '../lib/orderSets'
@@ -738,7 +741,7 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
           <p>{author?.name}{author ? `, ${ROLE_LABEL[mainRole(author)].toLowerCase()}` : ''} · {date(n.at, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(n.at)}</p></div>
       </div>
       <div className="panel__body">
-        <NoteColumns left={<NoteText n={n} />}
+        <NoteColumns left={<NoteText n={n} vitals={n.vitalsId ? file.vitals.find((v) => v.id === n.vitalsId) : undefined} />}
           indications={<>{n.vitals && <p className="note-vitals-line">{vitalsModeText(n.vitals)}<LineTag tag={n.vitals.tag} /></p>}
             {indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : !n.vitals && <p className="muted">Sin indicaciones.</p>}</>}
           exams={<NoteExams list={(file.exams ?? []).filter((e) => e.noteId === n.id)} />}
@@ -968,6 +971,14 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
   const stale = basedOn !== lastId
   // MC6 (ronda 6): frecuencia de signos vitales: la vigente (no empieza vacía); un ingreso nuevo, por turno
   const [vitalsMode, setVitalsMode] = useState<VitalsMode>(() => currentVitalsMode(file))
+  // MC8 (ronda 6): signos vitales opcionales tomados por el médico (null: no se agregaron)
+  const [nv, setNv] = useState<VitalsForm | null>(null)
+  const [nvAt, setNvAt] = useState(() => inputDateTime(new Date()))
+  const [nvChecked, setNvChecked] = useState<Set<VitalKey>>(new Set())
+  const ageYears = p.birthDate ? yearsOld(p.birthDate) : undefined
+  const nvFilled = !!nv && FIELDS.some((k) => nv[k].trim())
+  const nvErrors = nv ? FIELDS.filter((k) => fieldIssue(k, nv, ageYears)?.level === 'error') : []
+  const nvFuture = !!nv && new Date(nvAt).getTime() > Date.now() + 60_000
   // EX1: exámenes pedidos en la nota
   const [exams, setExams] = useState<ExamInput[]>([])
   const [extraText, setExtraText] = useState('')
@@ -977,9 +988,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
   const vademecum = useVademecum()
   const active = file.meds.filter((m) => !m.stoppedAt && !courseDone(m))
   // AN1: la nota se guarda sola como borrador (aquí y en el servidor) mientras se escribe
-  const noteBlank = !Object.values(n).some((v) => v.trim()) && !d.diagnoses.length && !d.exam.trim() && !d.observations.trim() && !meds.length && !stop.length && !exams.length && !extra.length && !Object.keys(decisions).length
-  const draft = useDraftSync('evolucion', `${file.hospitalization.id}:${kind}`, { n, format, d, meds, stop, extra, exams, decisions, vitalsMode }, (x) => {
-    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD(x.d); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams); if (x.decisions) setDecisions(x.decisions); if (x.vitalsMode) setVitalsMode(x.vitalsMode)
+  const noteBlank = !Object.values(n).some((v) => v.trim()) && !d.diagnoses.length && !d.exam.trim() && !d.observations.trim() && !meds.length && !stop.length && !exams.length && !extra.length && !Object.keys(decisions).length && !nvFilled
+  const draft = useDraftSync('evolucion', `${file.hospitalization.id}:${kind}`, { n, format, d, meds, stop, extra, exams, decisions, vitalsMode, nv, nvAt }, (x) => {
+    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD(x.d); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams); if (x.decisions) setDecisions(x.decisions); if (x.vitalsMode) setVitalsMode(x.vitalsMode); if (x.nv) { setNv(x.nv); if (x.nvAt) setNvAt(x.nvAt) }
   }, noteBlank)
   const inVademecum = (drug: string) => vademecum.some((x) => normalize(x.name) === normalize(drug))
   // Huecos "___" de un set aplicado: la nota no se firma hasta llenarlos
@@ -987,7 +998,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
     // MC2 (ronda 6): un PRN que vino de un set sin condición
     ...meds.flatMap((m) => (m.prn && !m.prnCondition?.trim() ? [`la condición PRN de ${m.drug}`] : []))]
   // SOAP: los cuatro campos, como siempre. Estándar: algo escrito, una indicación o un medicamento.
-  const ready = !blanks.length && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
+  // MC8: un valor imposible (temperatura 90) no se acepta, como en el formulario de enfermería
+  const ready = !blanks.length && !nvErrors.length && !nvFuture && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
     : d.diagnoses.length > 0 || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0 || exams.length > 0 || Object.keys(decisions).length > 0)
   /** Un set se agrega al final: indicaciones y medicamentos (que pasan a la hoja al guardar), todo editable. */
   const applySet = (set: OrderSet) => {
@@ -1020,6 +1032,21 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
   const typedExamHit = typedExam(extraText, examList)
   const toExam = (hit: { group: ExamInput['group']; name: string }) =>
     setExams((x) => (x.some((y) => examKey(y.name) === examKey(hit.name)) ? x : [...x, { group: hit.group, name: hit.name, priority: 'routine', place: 'clinic' }]))
+  const vitalsBlock = (
+            <fieldset className="fs note-vitals" key="nv"><legend>Signos vitales (opcional)</legend>
+              {!nv ? <button type="button" className="btn btn--soft btn--sm" style={{ justifySelf: 'start' }} onClick={() => { setNv({ ...EMPTY_VITALS }); setNvAt(inputDateTime(new Date())) }}><Plus size={15} />Agregar signos vitales</button> : (<>
+                <VitalsFields v={nv} setV={setNv} checked={nvChecked} setChecked={setNvChecked} ageYears={ageYears} />
+                <div className="form-grid">
+                  <label className="field"><span>Hora de la toma</span>
+                    <input className={`input ${nvFuture ? 'input--error' : ''}`} type="datetime-local" value={nvAt} max={inputDateTime(new Date())} onChange={(e) => setNvAt(e.target.value)} />
+                    {nvFuture && <small className="field__msg field__msg--error">No puede ser en el futuro.</small>}</label>
+                  <span style={{ alignSelf: 'end' }}><button type="button" className="btn btn--ghost btn--sm" onClick={() => { setNv(null); setNvChecked(new Set()) }}>Quitar signos vitales</button></span>
+                </div>
+                {nvErrors.length > 0 && <small className="field__msg field__msg--error">Revisa {nvErrors.map((k) => VITALS[k].label.toLowerCase()).join(', ')}: el valor no es posible.</small>}
+                <small className="muted">Quedan en la pestaña Signos vitales y en la curva térmica con tu nombre y origen «Nota de evolución», y cuentan como toma para enfermería.</small>
+              </>)}
+            </fieldset>
+  )
   return (
     <Modal title={kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'} wide onClose={onClose} footer={<>
       {blanks.length ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="status">Completa los espacios ___ de {blanks.join(', ')}.</span>
@@ -1029,7 +1056,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
         setBusy(true)
         // MC7 (ronda 6): el servidor arma el cuadro completo (Continúa, Nueva, Modificada, Omitida) sobre la última nota firmada
         const chain = { basedOn, decisions: Object.entries(decisions).filter(([id]) => activeInd.some((a) => a.id === id)).map(([id, x]) => ({ id, ...x })) }
-        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId })
+        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId,
+          vitalsTaken: nvFilled ? { takenAt: new Date(nvAt).toISOString(), ...Object.fromEntries(FIELDS.map((k) => [k, vitalNumber(nv!, k)]).filter(([, x]) => x !== undefined)) } : undefined })
         setBusy(false)
         if (ok) { draft.clear(); onSaved() } else onStale?.()
       }}>Firmar nota</button>
@@ -1044,12 +1072,15 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
       )}
       <div className="note-editor">
       <div className="soap-stack">
-        {format === 'soap' ? SOAP.map((s) => (
-          <label key={s.key} className="field dictate-field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
+        {/* MC8 (ronda 6): opcional; si no se toca, no se guarda nada. Va antes del examen físico (en SOAP, al principio) */}
+        {format === 'soap' ? SOAP.map((s) => (<div key={s.key} style={{ display: 'contents' }}>
+          {s.key === 'objective' && vitalsBlock}
+          <label className="field dictate-field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
             <textarea className="textarea" rows={4} value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} />
-            <DictateButton label={s.label} onText={(f) => setN((x) => ({ ...x, [s.key]: f(x[s.key]) }))} /></label>
+            <DictateButton label={s.label} onText={(f) => setN((x) => ({ ...x, [s.key]: f(x[s.key]) }))} /></label></div>
         )) : (<>
           <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label="Diagnósticos (CIE-11)" />
+          {vitalsBlock}
           <label className="field dictate-field"><span>Examen físico</span>
             <textarea className="textarea" rows={6} value={d.exam} onChange={(e) => setD({ ...d, exam: e.target.value })} />
             <DictateButton label="Examen físico" onText={(f) => setD((x) => ({ ...x, exam: f(x.exam) }))} /></label>

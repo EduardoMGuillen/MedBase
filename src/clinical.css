@@ -917,3 +917,6 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .vitals-freq { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--ward); }
 .vitals-freq .field { flex: 1 1 200px; margin: 0; }
 .note-vitals-line { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 14px; margin: 0 0 6px; }
+
+/* MC8 (ronda 6): un signo fuera de rango en la franja de la nota */
+.note__vitals .vital-out { color: #9b4a00; font-weight: 700; }

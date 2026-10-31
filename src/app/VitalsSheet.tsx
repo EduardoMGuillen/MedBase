@@ -342,9 +342,9 @@ export function VitalsTable({ vitals, pending = [], ageYears, band, who, onVoid,
         <tbody>{rows.map((r) => r.v ? (
           <tr key={r.v.id} className={r.v.voidedAt ? 'is-void' : ''}>
             <th scope="row">{dmy(r.at)} <b>{hm(r.at)}</b>
-              {onVoid && !r.v.voidedAt && r.v.source !== 'preclinic' && <button className="icon-btn vs-void" aria-label={`Anular la toma de las ${hm(r.at)} del ${dmy(r.at)}`} onClick={() => onVoid(r.v!)}><X size={12} /></button>}</th>
+              {onVoid && !r.v.voidedAt && r.v.source !== 'preclinic' && r.v.source !== 'note' && <button className="icon-btn vs-void" aria-label={`Anular la toma de las ${hm(r.at)} del ${dmy(r.at)}`} onClick={() => onVoid(r.v!)}><X size={12} /></button>}</th>
             {cols.map((c) => <td key={c.key}>{value(r.v!, c.key)}{c.second && <>/{value(r.v!, c.second)}</>}</td>)}
-            <td className="vs-log__who">{r.v.source === 'preclinic' ? 'Preclínica' : who(r.v.takenBy)}</td>
+            <td className="vs-log__who">{r.v.source === 'preclinic' ? 'Preclínica' : r.v.source === 'note' ? <>{who(r.v.takenBy)}<small className="muted"> · Nota de evolución</small></> : who(r.v.takenBy)}</td>
             <td className="vs-log__notes">{r.v.voidedAt ? <span className="vs-voided">Anulada{r.v.voidReason ? `: ${r.v.voidReason}` : ''}</span> : r.v.notes || <span className="muted">—</span>}</td>
           </tr>
         ) : (

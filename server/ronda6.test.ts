@@ -315,3 +315,28 @@ describe('MC6 frecuencia de signos vitales desde la nota', () => {
     assert.ok(missedTakes(file, new Date(now + 48 * 3_600_000)).every((d) => d.getTime() < now), 'no genera pendientes nuevos')
   })
 })
+
+describe('MC8 signos vitales opcionales en la nota de evolución', () => {
+  test('sin tocarlos no se crea nada; con ellos queda una toma del médico con origen nota; un valor imposible no se acepta', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const stay = await admitToObservation(doc, { indications: ['Reposo.'], items: [] })
+    const count = async () => (await doc.get(`/api/inpatient/${stay}`)).body.vitals.length
+    const n0 = await count()
+    const { chainNote } = await import('../src/lib/inpatient.js')
+    let file = (await doc.get(`/api/inpatient/${stay}`)).body
+    const a = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'soap', subjective: 's', objective: 'o', assessment: 'a', plan: 'p', orders: [], chain: { basedOn: chainNote(file)?.id ?? null, decisions: [] } })
+    assert.equal(a.status, 201, JSON.stringify(a.body))
+    assert.equal(await count(), n0, 'sin registro vacío')
+    file = (await doc.get(`/api/inpatient/${stay}`)).body
+    const bad = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'x', orders: [], vitalsTaken: { temperature: 90 }, chain: { basedOn: a.body.id, decisions: [] } })
+    assert.equal(bad.status, 400)
+    const ok = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'x', orders: [],
+      vitalsTaken: { systolic: 120, diastolic: 80, heartRate: 88, respRate: 18, temperature: 37.2, spo2: 97 }, chain: { basedOn: a.body.id, decisions: [] } })
+    assert.equal(ok.status, 201, JSON.stringify(ok.body))
+    file = (await doc.get(`/api/inpatient/${stay}`)).body
+    const v = file.vitals.find((x: any) => x.id === ok.body.vitalsId)
+    assert.ok(v, 'la nota apunta a su toma')
+    assert.deepEqual([v.takenBy, v.source, v.sourceNoteId, v.temperature], ['s-herrera', 'note', ok.body.id, 37.2])
+    assert.equal(file.vitals.length, n0 + 1)
+  })
+})

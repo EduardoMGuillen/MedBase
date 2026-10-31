@@ -297,7 +297,9 @@ export interface Vitals {
   voidedBy?: string
   voidReason?: string
   /** En la hoja de la estancia: 'preclinic' es la preclínica de la consulta que lo ingresó (primera toma). */
-  source?: 'preclinic' | 'stay'
+  source?: 'preclinic' | 'stay' | 'note'
+  /** MC8 (ronda 6): anotada en una nota de evolución (origen «Nota de evolución»). */
+  sourceNoteId?: string
 }
 
 /** Diagnóstico: CIE-11 de la OMS (system 'icd11', con su URI) o escrito sin código ("S/C"). Sin system: CIE-10, de antes. */
@@ -557,6 +559,8 @@ export interface InpatientNote {
   lines?: OrderLine[]
   /** MC6 (ronda 6): la frecuencia de signos vitales vigente al firmar, con su etiqueta. */
   vitals?: VitalsMode & { tag: OrderLineTag }
+  /** MC8 (ronda 6): la toma de signos vitales anotada en esta nota (opcional). */
+  vitalsId?: string
   /** MC7: la nota firmada sobre la que se armó (para avisar si otra se firmó mientras se escribía). */
   basedOn?: string
 }

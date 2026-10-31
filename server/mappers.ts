@@ -140,7 +140,7 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
     : {}),
   procedure: r.kind === 'procedure' ? j(r.data, undefined) : undefined,
   // MC7 (ronda 6): el cuadro completo con sus etiquetas
-  ...(r.kind === 'admission' || r.kind === 'evolution' ? { lines: j<{ lines?: InpatientNote['lines'] }>(r.data, {}).lines, basedOn: j<{ basedOn?: string }>(r.data, {}).basedOn, vitals: j<{ vitals?: InpatientNote['vitals'] }>(r.data, {}).vitals } : {}),
+  ...(r.kind === 'admission' || r.kind === 'evolution' ? { lines: j<{ lines?: InpatientNote['lines'] }>(r.data, {}).lines, basedOn: j<{ basedOn?: string }>(r.data, {}).basedOn, vitals: j<{ vitals?: InpatientNote['vitals'] }>(r.data, {}).vitals, vitalsId: j<{ vitalsId?: string }>(r.data, {}).vitalsId } : {}),
 })
 
 export const toInpatientMed = (r: Row): InpatientMed => ({

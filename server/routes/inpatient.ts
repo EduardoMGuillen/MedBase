@@ -46,6 +46,28 @@ export async function applyVitalsPlan(q: Sql, h: Row, mode: z.infer<typeof vital
   return current ? 'modified' as const : 'new' as const
 }
 
+/** Una toma de signos vitales (hoja de la estancia y, MC8 ronda 6, dentro de la nota del médico). */
+const int = (max: number, label: string) => z.number({ error: `Revisa ${label}.` }).min(0, `Revisa ${label}.`).max(max, `Revisa ${label}.`).transform(Math.round).optional()
+const dec = (max: number, label: string) => z.number({ error: `Revisa ${label}.` }).min(0, `Revisa ${label}.`).max(max, `Revisa ${label}.`).optional()
+export const vitalsBody = z.object({
+  takenAt: when.optional(),
+  systolic: int(400, 'la presión sistólica'), diastolic: int(300, 'la presión diastólica'), heartRate: int(400, 'la frecuencia cardíaca'),
+  // La temperatura se guarda con un decimal
+  temperature: dec(50, 'la temperatura').transform((x) => (x == null ? x : Math.round(x * 10) / 10)), spo2: int(100, 'la saturación'),
+  weightKg: dec(500, 'el peso'), heightCm: dec(300, 'la talla'), painScale: z.number().int().min(0).max(10).optional(),
+  respRate: int(150, 'la frecuencia respiratoria'), glucose: dec(3000, 'la glucometría'), notes: z.string().trim().max(1000).optional(),
+})
+
+export const VITAL_FIELDS = ['systolic', 'diastolic', 'heartRate', 'temperature', 'spo2', 'weightKg', 'heightCm', 'painScale', 'respRate', 'glucose'] as const
+
+/** Guarda una toma en la hoja de la estancia. `noteId`: la nota del médico donde se anotó (MC8). */
+export async function insertVitals(q: Sql, h: Row, v: z.infer<typeof vitalsBody>, by: string, takenAt: string, recordedAt: string, id: string, noteId?: string) {
+  await q.run(`INSERT INTO vitals (id, patient_id, taken_by, taken_at, systolic, diastolic, heart_rate, temperature, spo2, weight_kg, height_cm, pain_scale, notes, resp_rate, glucose,
+      clinic_id, hospitalization_id, recorded_at, source_note_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, String(h.patient_id), by, takenAt, v.systolic ?? null, v.diastolic ?? null, v.heartRate ?? null, v.temperature ?? null, v.spo2 ?? null,
+      v.weightKg ?? null, v.heightCm ?? null, v.painScale ?? null, v.notes || null, v.respRate ?? null, v.glucose ?? null, String(h.clinic_id), String(h.id), recordedAt, noteId ?? null])
+}
+
 const medInput = z.object({
   drug: z.string().trim().min(1, 'Escribe el medicamento.').max(120),
   presentation: z.string().trim().max(120).optional(),
@@ -359,14 +381,14 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       sql.query('SELECT * FROM referrals WHERE hospitalization_id = ? ORDER BY issued_at', [id]),
       sql.query('SELECT * FROM epicrises WHERE hospitalization_id = ? ORDER BY version', [id]),
       // Hoja de signos vitales: la preclínica de la consulta que lo ingresó es la primera toma; luego las de la estancia
-      sql.query(`SELECT v.*, CASE WHEN v.hospitalization_id IS NULL THEN 'preclinic' ELSE 'stay' END AS source FROM vitals v
+      sql.query(`SELECT v.*, CASE WHEN v.hospitalization_id IS NULL THEN 'preclinic' WHEN v.source_note_id IS NOT NULL THEN 'note' ELSE 'stay' END AS source FROM vitals v
         WHERE v.hospitalization_id = ? OR v.id = (SELECT c.vitals_id FROM consultations c WHERE c.id = ?) ORDER BY v.taken_at, v.id`, [id, String(h.consultation_id ?? '')]),
     ])
     return {
       hospitalization: toHospitalization(h), notes: notes.map(toInpatientNote), meds: meds.map(toInpatientMed), doses: doses.map(toDose),
       procedures: procedures.map(toProcedure), labs: labs.map(toAttachment), marks: marks.map(toOrderMark), authorizations: auths.map(toAuthorization),
       referrals: referrals.map(toReferral), epicrises: epicrises.map(toEpicrisis),
-      vitals: vitals.map((v) => ({ ...toVitals(v), source: v.source as 'preclinic' | 'stay' })),
+      vitals: vitals.map((v) => ({ ...toVitals(v), source: v.source as 'preclinic' | 'stay' | 'note', sourceNoteId: v.source_note_id ? String(v.source_note_id) : undefined })),
       consultOrders: h.consultation_id ? JSON.parse(String((await sql.one('SELECT orders FROM consultations WHERE id = ?', [String(h.consultation_id)]))?.orders ?? '[]')) as string[] : [],
       // MC7 (ronda 6): las indicaciones de la consulta de ingreso empiezan la cadena
       consultIndications: await consultIndications(h),
@@ -423,6 +445,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       // cada indicación que bajó. Con `chain`, `orders` trae sólo las indicaciones nuevas.
       // MC6 (ronda 6): frecuencia de signos vitales indicada en la nota
       vitals: vitalsModeInput.optional(),
+      // MC8 (ronda 6): signos vitales tomados por el médico (opcional): quedan como una toma de la hoja
+      vitalsTaken: vitalsBody.optional(),
       chain: z.object({ basedOn: z.string().nullable(), decisions: z.array(z.object({ id: z.string(), action: z.enum(['continue', 'omit', 'change']), text: z.string().trim().max(500).optional() })).max(60) }).optional(),
       // Identificador que genera el formulario al abrirse: si la misma nota llega dos veces (doble clic, reintento),
       // se devuelve la que ya se guardó y no se duplican ni la nota ni sus órdenes de medicamento
@@ -478,20 +502,30 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       indicationCount = ind.length
     }
     let vitalsTag: 'continue' | 'new' | 'modified' | undefined
+    // MC8 (ronda 6): la toma anotada en la nota, con la misma validación que la hoja de signos
+    const taken = b.vitalsTaken && VITAL_FIELDS.some((k) => b.vitalsTaken![k] != null) ? b.vitalsTaken : undefined
+    const vitalsId = taken ? randomUUID() : undefined
+    if (taken) {
+      if ((taken.systolic == null) !== (taken.diastolic == null)) fail(400, 'La presión arterial lleva la sistólica y la diastólica.')
+      const t = new Date(taken.takenAt ?? at)
+      if (t.getTime() > Date.now() + 60_000) fail(400, 'La hora de la toma no puede ser en el futuro.')
+      if (t.getTime() < new Date(String(h.observation_at ?? h.admitted_at)).getTime() - 3_600_000) fail(400, 'La hora de la toma es anterior al ingreso. Revísala.')
+    }
     // Fuera de la transacción: notas y órdenes de la consulta para saber la frecuencia vigente de una estancia de antes
     const vitalsCtx = b.vitals ? { notes: (await sql.query('SELECT * FROM hosp_notes WHERE hospitalization_id = ?', [id])).map(toInpatientNote),
       consultOrders: h.consultation_id ? JSON.parse(String((await sql.one('SELECT orders FROM consultations WHERE id = ?', [String(h.consultation_id)]))?.orders ?? '[]')) as string[] : [] } : undefined
     await sql.tx(async (q) => {
+      if (taken) await insertVitals(q, h, taken, user.id, new Date(taken.takenAt ?? at).toISOString(), at, vitalsId!, noteId)
       if (b.vitals) vitalsTag = await applyVitalsPlan(q, h, b.vitals, user.id, at, noteId, vitalsCtx)
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan, data) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [noteId, cid, id, b.kind, user.id, at, b.format === 'soap' ? b.subjective : '', b.format === 'soap' ? b.objective : '', b.format === 'soap' ? b.assessment : '', b.format === 'soap' ? b.plan : '',
-          JSON.stringify({ orders, checklist, indications: indicationCount === undefined ? undefined : Math.min(indicationCount, orders.length), lines, basedOn: b.chain ? b.chain.basedOn ?? undefined : undefined, vitals: b.vitals && vitalsTag ? { ...b.vitals, tag: vitalsTag } : undefined,
+          JSON.stringify({ orders, checklist, indications: indicationCount === undefined ? undefined : Math.min(indicationCount, orders.length), lines, basedOn: b.chain ? b.chain.basedOn ?? undefined : undefined, vitals: b.vitals && vitalsTag ? { ...b.vitals, tag: vitalsTag } : undefined, vitalsId,
             ...(b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, exam: b.exam, observations: b.observations } : {}) })])
       await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
       await insertExams(q, { clinicId: cid, patientId: String(h.patient_id), hospitalizationId: id, noteId, by: user.id, at }, b.exams)
       if (vitalsTag && b.vitals && vitalsTag !== 'continue') await audit(user, `Indicó ${vitalsModeShort(b.vitals) === 'sin control programado' ? 'sin control programado de signos vitales' : `signos vitales ${vitalsModeShort(b.vitals)}`} a ${name} en su nota`, q)
       const what = b.kind === 'admission' ? 'nota de ingreso' : 'nota de evolución'
-      const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`, b.exams.length && `${b.exams.length} examen(es)`].filter(Boolean).join(', ')
+      const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`, b.exams.length && `${b.exams.length} examen(es)`, taken && 'signos vitales (origen: nota de evolución)'].filter(Boolean).join(', ')
       await audit(user, `Escribió ${what} de ${name}${changes ? `: ${changes}` : ''}`, q)
     })
     res.status(201).json(toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [noteId]))!))
@@ -819,18 +853,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
    * nunca en el futuro) y la hora en que se anota. No se edita: se anula con motivo y se registra otra.
    */
   app.post('/api/inpatient/:id/vitals', auth, need('vitals.record'), async (req, res) => {
-    const int = (max: number, label: string) => z.number({ error: `Revisa ${label}.` }).min(0, `Revisa ${label}.`).max(max, `Revisa ${label}.`).transform(Math.round).optional()
-    const dec = (max: number, label: string) => z.number({ error: `Revisa ${label}.` }).min(0, `Revisa ${label}.`).max(max, `Revisa ${label}.`).optional()
-    const v = parse(z.object({
-      takenAt: when.optional(),
-      systolic: int(400, 'la presión sistólica'), diastolic: int(300, 'la presión diastólica'), heartRate: int(400, 'la frecuencia cardíaca'),
-      // La temperatura se guarda con un decimal
-      temperature: dec(50, 'la temperatura').transform((x) => (x == null ? x : Math.round(x * 10) / 10)), spo2: int(100, 'la saturación'),
-      weightKg: dec(500, 'el peso'), heightCm: dec(300, 'la talla'), painScale: z.number().int().min(0).max(10).optional(),
-      respRate: int(150, 'la frecuencia respiratoria'), glucose: dec(3000, 'la glucometría'), notes: z.string().trim().max(1000).optional(),
-    }), req.body)
-    const fields = ['systolic', 'diastolic', 'heartRate', 'temperature', 'spo2', 'weightKg', 'heightCm', 'painScale', 'respRate', 'glucose'] as const
-    if (!fields.some((k) => v[k] != null)) fail(400, 'Anota al menos un signo vital.')
+    const v = parse(vitalsBody, req.body)
+    if (!VITAL_FIELDS.some((k) => v[k] != null)) fail(400, 'Anota al menos un signo vital.')
     if ((v.systolic == null) !== (v.diastolic == null)) fail(400, 'La presión arterial lleva la sistólica y la diastólica.')
     const user = userOf(req)
     const cid = clinicOf(req)
@@ -840,10 +864,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     if (takenAt.getTime() > now.getTime() + 60_000) fail(400, 'La hora de la toma no puede ser en el futuro.')
     if (takenAt.getTime() < new Date(String(h.observation_at ?? h.admitted_at)).getTime() - 3_600_000) fail(400, 'La hora de la toma es anterior al ingreso. Revísala.')
     const id = randomUUID()
-    await sql.run(`INSERT INTO vitals (id, patient_id, taken_by, taken_at, systolic, diastolic, heart_rate, temperature, spo2, weight_kg, height_cm, pain_scale, notes, resp_rate, glucose,
-        clinic_id, hospitalization_id, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, String(h.patient_id), user.id, takenAt.toISOString(), v.systolic ?? null, v.diastolic ?? null, v.heartRate ?? null, v.temperature ?? null, v.spo2 ?? null,
-        v.weightKg ?? null, v.heightCm ?? null, v.painScale ?? null, v.notes || null, v.respRate ?? null, v.glucose ?? null, cid, String(h.id), now.toISOString()])
+    await insertVitals(sql, h, v, user.id, takenAt.toISOString(), now.toISOString(), id)
     const what = [v.temperature != null && `T ${v.temperature.toFixed(1)} °C`, v.systolic != null && `PA ${v.systolic}/${v.diastolic}`, v.heartRate != null && `FC ${v.heartRate}`,
       v.spo2 != null && `SatO2 ${v.spo2} %`].filter(Boolean).join(', ')
     await audit(user, `Registró signos vitales de ${await patientName(String(h.patient_id))}${what ? ` (${what})` : ''}, tomados ${takenAt.toISOString()}`)

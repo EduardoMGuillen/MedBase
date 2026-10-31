@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Pill } from 'lucide-react'
-import type { ExamOrder, InpatientNote } from '../lib/types'
+import type { ExamOrder, InpatientNote, Vitals } from '../lib/types'
+import { vitalLevel, type VitalKey } from '../lib/vitals'
 import { examLine, GROUP_LABEL } from '../lib/exams'
 import { dxCode, examText } from '../lib/format'
 
@@ -65,21 +66,44 @@ export function NoteExams({ list, empty = 'Sin exámenes.' }: { list: ExamOrder[
   )
 }
 
+/**
+ * MC8 (ronda 6): la franja de signos vitales de una nota («PA 120/80 mmHg, FC 88 lpm…»), la misma de la nota de ingreso. Lo
+ * fuera de rango se marca como en la preclínica.
+ */
+export function VitalsStrip({ v, ageYears, empty }: { v: Vitals; ageYears?: number; empty?: string }) {
+  const off = (k: VitalKey) => v[k] != null && vitalLevel(k, v[k]!, ageYears) !== 'ok'
+  const parts: [string, boolean][] = ([
+    [v.systolic != null && v.diastolic != null && `PA ${v.systolic}/${v.diastolic} mmHg`, off('systolic') || off('diastolic')],
+    [v.heartRate != null && `FC ${v.heartRate} lpm`, off('heartRate')],
+    [v.respRate != null && `FR ${v.respRate} rpm`, off('respRate')],
+    [v.temperature != null && `T ${v.temperature.toFixed(1)} °C`, off('temperature')],
+    [v.spo2 != null && `SpO₂ ${v.spo2}%`, off('spo2')],
+    [v.weightKg != null && `Peso ${v.weightKg} kg`, false],
+    [v.glucose != null && `Glucometría ${v.glucose} mg/dL`, off('glucose')],
+    [v.painScale != null && `Dolor ${v.painScale}/10`, off('painScale')],
+  ] as [string | false, boolean][]).filter((x): x is [string, boolean] => !!x[0])
+  if (!parts.length) return <p className="note__vitals">{empty ?? 'Sin signos.'}</p>
+  return <p className="note__vitals">{parts.map(([t, out], i) => <span key={t}>{i > 0 && ', '}<span className={out ? 'vital-out' : undefined}>{t}</span></span>)}</p>
+}
+
 const SOAP_TEXT = [['subjective', 'S. Subjetivo'], ['objective', 'O. Objetivo'], ['assessment', 'A. Análisis'], ['plan', 'P. Plan']] as const
 
 /**
  * Texto clínico de una nota de evolución u observación (columna izquierda), según su formato: S, O, A y P, o
  * Diagnósticos, Examen físico y Observaciones.
  */
-export function NoteText({ n }: { n: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> }) {
+export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'>; vitals?: Vitals; ageYears?: number }) {
   const empty = <span className="muted">Sin datos.</span>
+  // MC8 (ronda 6): los signos vitales anotados en la nota, en la franja de siempre, encima del examen físico (o del objetivo)
+  const strip = vitals && <div className="note__sec"><h4>Signos vitales</h4><VitalsStrip v={vitals} ageYears={ageYears} />{vitals.takenAt && <small className="muted">Tomados a las {new Date(vitals.takenAt).toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })}</small>}</div>
   if (n.format === 'dx') {
     return <>
       <div className="note__sec"><h4>Diagnósticos</h4>
         {n.diagnoses?.length ? <ol className="note__list">{n.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol> : <p>{empty}</p>}</div>
+      {strip}
       <div className="note__sec"><h4>Examen físico</h4><p>{examText(n.exam) || empty}</p></div>
       <div className="note__sec"><h4>Observaciones</h4><p>{n.observations || empty}</p></div>
     </>
   }
-  return <>{SOAP_TEXT.map(([k, label]) => <div key={k} className="note__sec"><h4>{label}</h4><p>{n[k] || empty}</p></div>)}</>
+  return <>{SOAP_TEXT.map(([k, label]) => <div key={k}>{k === 'objective' && strip}<div className="note__sec"><h4>{label}</h4><p>{n[k] || empty}</p></div></div>)}</>
 }
