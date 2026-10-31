@@ -363,8 +363,9 @@ function ServiceAreas() {
   const { settings, saveExamAreas } = useStore()
   const [lab, setLab] = useState(!!settings.hasLab)
   const [img, setImg] = useState(!!settings.hasImaging)
+  // CF2 (ronda 6): la tarjeta de áreas (dos casillas) ocupa ~1/3; los umbrales, con sus tablas, ~2/3. A 390 px se apilan
   return (
-    <div className="grid-2">
+    <div className="areas-grid">
       <section className="panel">
         <div className="panel__head"><div><h2>Áreas de servicio</h2><p>¿Quién realiza los exámenes en {features(settings).office ? 'el consultorio' : 'la clínica'}?</p></div></div>
         <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
