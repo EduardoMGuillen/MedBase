@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Download, Plus, Upload } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { Avatar, Modal, PageHead } from '../components/ui'
+import { Avatar, Modal, PageHead, SectionHead } from '../components/ui'
 import { DrugForm } from '../components/DrugForm'
 import { drugProvider } from '../lib/drugProvider'
 import { normalize } from '../lib/patients'
@@ -402,27 +402,34 @@ function PaymentMethods() {
   )
 }
 
+/** CF1 (ronda 6): encabezado con el botón azul «Agregar servicio» arriba; abre la misma fila de alta de antes, al principio. */
 function Services() {
   const { services, settings, createService } = useStore()
+  const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [price, setPrice] = useState('')
   return (
     <section className="panel table-wrap">
+      <SectionHead title="Servicios y precios" sub="Lo que se cobra en caja, con su precio. Ocultar un servicio lo quita de la caja; los cobros anteriores no cambian."
+        action={<button className="btn btn--primary btn--sm" onClick={() => setAdding(true)}><Plus size={15} />Agregar servicio</button>} />
       <table className="table table--sticky">
         <thead><tr><th>Servicio</th><th style={{ width: 160 }}>Precio ({settings.currency})</th><th style={{ width: 130 }}>Estado</th><th>Origen</th><th style={{ width: 120 }} /></tr></thead>
         <tbody>
+          {adding && (
+            <tr className="row-new">
+              <td><input className="input" autoFocus placeholder="Nuevo servicio, p. ej. Retiro de puntos" aria-label="Nombre del servicio" value={name} onChange={(e) => setName(e.target.value)} /></td>
+              <td><input className="input num" type="number" min={0} step="0.01" placeholder="0.00" aria-label="Precio" value={price} onChange={(e) => setPrice(e.target.value)} /></td>
+              <td />
+              <td />
+              <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <button className="btn btn--primary btn--sm" disabled={name.trim().length < 2 || price === ''} onClick={async () => {
+                  if (await createService({ name: name.trim(), price: Number(price), active: true })) { setName(''); setPrice(''); setAdding(false) }
+                }}><Plus size={15} />Agregar</button>{' '}
+                <button className="btn btn--ghost btn--sm" onClick={() => { setAdding(false); setName(''); setPrice('') }}>Cancelar</button>
+              </td>
+            </tr>
+          )}
           {services.map((s) => <ServiceRow key={s.id} s={s} />)}
-          <tr>
-            <td><input className="input" placeholder="Nuevo servicio, p. ej. Retiro de puntos" value={name} onChange={(e) => setName(e.target.value)} /></td>
-            <td><input className="input num" type="number" min={0} step="0.01" placeholder="0.00" value={price} onChange={(e) => setPrice(e.target.value)} /></td>
-            <td />
-            <td />
-            <td style={{ textAlign: 'right' }}>
-              <button className="btn btn--soft btn--sm" disabled={name.trim().length < 2 || price === ''} onClick={async () => {
-                if (await createService({ name: name.trim(), price: Number(price), active: true })) { setName(''); setPrice('') }
-              }}><Plus size={15} />Agregar</button>
-            </td>
-          </tr>
         </tbody>
       </table>
     </section>

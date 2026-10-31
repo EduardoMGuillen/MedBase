@@ -580,3 +580,6 @@ tr.clickable { cursor: pointer; }
 .fu-notice { font-size: 13px; }
 .fu-notice__auto { color: var(--muted); }
 .fu-notice__sent { margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--line); font-weight: 600; color: var(--ink-deep); }
+
+/* CF1/CF5 (ronda 6): la fila de alta abre arriba de la lista */
+.row-new td { background: var(--ink-soft); }
