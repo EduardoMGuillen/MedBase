@@ -53,12 +53,16 @@ export function registerMe(app: Express, { sql, auth, userOf, audit }: Ctx) {
       favExams: z.array(z.string().trim().min(1).max(160)).max(200).optional(),
       // RE1 (ronda 5): preferencia de cualquier rol
       agendaView: z.enum(['day', 'week', 'month']).optional(),
+      // AD1/RE1 (ronda 6): cómo se agrupa «Por llegar hoy»
+      arrivalsView: z.enum(['hour', 'doctor']).optional(),
     }), req.body)
     // RE1: el nombre en documentos y las preferencias son del médico y de recepción (sus apartados de Mi configuración); lo
     // profesional (colegiación, sello, recetas, notas) sólo del médico
     const clinical = [b.license, b.specialty, b.stamp, b.rxValidityDays, b.noteFormat, b.favDrugs, b.favExams].some((x) => x !== undefined)
     if (clinical && user.role !== 'doctor') fail(403, 'Sólo los médicos registran número de colegiación, sello y vigencia de recetas.')
-    if (user.role !== 'doctor' && user.role !== 'reception') fail(403, 'Tu vista no tiene datos personales ni preferencias que guardar.')
+    // AD1/RE1 (ronda 6): la vista de «Por llegar hoy» la guarda cualquier rol (administración también)
+    const viewOnly = b.arrivalsView !== undefined && Object.entries(b).every(([k, v]) => k === 'arrivalsView' || v === undefined)
+    if (!viewOnly && user.role !== 'doctor' && user.role !== 'reception') fail(403, 'Tu vista no tiene datos personales ni preferencias que guardar.')
     const done: string[] = []
     if (b.license) { await sql.run('UPDATE staff SET license = ? WHERE id = ?', [b.license, user.id]); done.push('su número de colegiación') }
     if (b.docName !== undefined) { await sql.run('UPDATE staff SET doc_name = ? WHERE id = ?', [b.docName || null, user.id]); done.push('su nombre en documentos') }
@@ -68,6 +72,7 @@ export function registerMe(app: Express, { sql, auth, userOf, audit }: Ctx) {
     if (b.noteFormat) { await setPref('noteFormat', b.noteFormat, user.id); done.push(`su formato de nota por defecto (${b.noteFormat === 'soap' ? 'SOAP' : 'Estándar'})`) }
     if (b.favDrugs) { await setPref('favDrugs', b.favDrugs, user.id); done.push('sus medicamentos favoritos') }
     if (b.favExams) { await setPref('favExams', b.favExams, user.id); done.push('sus exámenes frecuentes') }
+    if (b.arrivalsView) { await setPref('arrivalsView', b.arrivalsView, user.id); done.push(`la vista de «Por llegar hoy» (${b.arrivalsView === 'hour' ? 'Por hora' : 'Por médico'})`) }
     if (b.agendaView) { await setPref('agendaView', b.agendaView, user.id); done.push(`la vista de la agenda al abrirla (${{ day: 'Día', week: 'Semana', month: 'Mes' }[b.agendaView]})`) }
     if (done.length) await audit(user, b.license && done.length === 1 ? 'Registró su número de colegiación' : `Mi configuración: actualizó ${done.join(', ')}`)
     res.json({ ok: true })

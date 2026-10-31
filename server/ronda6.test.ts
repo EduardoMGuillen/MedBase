@@ -420,3 +420,16 @@ describe('EN1 «Urgente» al agregar un paciente sin cita', () => {
     assert.ok((log.rows ?? log).some((e: any) => e.userId === 's-rios' && /sin cita .*marcado como urgente/.test(e.action)))
   })
 })
+
+describe('AD1/RE1 vista de «Por llegar hoy»', () => {
+  test('administración y recepción guardan su vista; se conserva al volver a entrar', async () => {
+    for (const email of ['admin@demo.clinara', 'smejia@demo.clinara']) {
+      const u = await as(email)
+      assert.equal((await u.patch('/api/me', { arrivalsView: 'doctor' })).status, 200)
+      const again = await as(email)
+      assert.equal((await again.get('/api/auth/me')).body.user.prefs.arrivalsView, 'doctor')
+    }
+    // Administración sigue sin poder guardar datos clínicos de médico
+    assert.equal((await (await as('admin@demo.clinara')).patch('/api/me', { arrivalsView: 'hour', noteFormat: 'soap' })).status, 403)
+  })
+})
