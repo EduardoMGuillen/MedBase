@@ -3,8 +3,8 @@ import { FlaskConical, ListChecks, Plus, ScanLine, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { useExamCatalog } from '../lib/useExamCatalog'
-import { Modal } from './ui'
-import { examCatalog, examKey, examLine, findExam, GROUP_LABEL } from '../lib/exams'
+import { FoldHead, Modal } from './ui'
+import { bySubgroup, examCatalog, examKey, examLine, findExam, GROUP_LABEL } from '../lib/exams'
 import { useOrderSets } from '../lib/useOrderSets'
 import { normalize } from '../lib/patients'
 import type { ExamGroup, ExamInput, OrderSet } from '../lib/types'
@@ -31,13 +31,13 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
             <h4>{g === 'lab' ? <FlaskConical size={15} /> : <ScanLine size={15} />}{GROUP_LABEL[g]} <span className="muted">({list.length})</span></h4>
             <ol className="exam-items">{list.map(({ e, i }) => {
               const cat = findExam(e.name, catalog)
-              // MC5 (ronda 5): lo que no está en el catálogo de la clínica sólo puede ser externo
+              // MC3 (ronda 6): lo que no está en el catálogo va con su tipo y la etiqueta «No catalogado»; se hace aquí o fuera
               const outside = !catalog.some((c) => examKey(c.name) === examKey(e.name))
               const needsRegion = cat?.region || (g === 'imaging' && !cat)
               return (
                 <li key={i} className={`exam-item${e.priority === 'urgent' ? ' exam-item--urgent' : ''}`}>
                   <div className="exam-item__head">
-                    <b>{examLine(e)}</b>{e.place === 'external' && <span className="badge badge--amber">Externo</span>}
+                    <b>{examLine(e)}</b>{e.place === 'external' && <span className="badge badge--amber">Externo</span>}{outside && <span className="badge badge--neutral">No catalogado</span>}
                     <button type="button" className="icon-btn" aria-label={`Quitar ${e.name}`} onClick={() => onChange(value.filter((_, j) => j !== i))}><X size={15} /></button>
                   </div>
                   <div className="exam-item__fields">
@@ -53,7 +53,7 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
                       <button type="button" role="radio" aria-checked={e.priority === 'routine'} onClick={() => set(i, { priority: 'routine' })}>Rutina</button>
                       <button type="button" role="radio" aria-checked={e.priority === 'urgent'} onClick={() => set(i, { priority: 'urgent' })}>Urgente</button>
                     </div>
-                    {outside ? <small className="muted">No está en el catálogo de la clínica: se hace fuera y sólo va en la orden impresa.</small> : (
+                    {(
                       <div className="segmented segmented--sm" role="radiogroup" aria-label={`Dónde se realiza ${e.name}`}>
                         <button type="button" role="radio" aria-checked={e.place === 'clinic'} onClick={() => set(i, { place: 'clinic' })}>En la clínica</button>
                         <button type="button" role="radio" aria-checked={e.place === 'external'} onClick={() => set(i, { place: 'external' })}>Externo</button>
@@ -74,94 +74,180 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
   )
 }
 
+/** MC4 (ronda 6): lo marcado y no agregado todavía sobrevive a cerrar la pestaña o a un apagón (se borra al agregar o cancelar). */
+const PICKED_KEY = 'clinara.ordenar-examenes'
+const readPicked = (): ExamInput[] => { try { return JSON.parse(localStorage.getItem(PICKED_KEY) ?? '[]') as ExamInput[] } catch { return [] } }
+const writePicked = (list: ExamInput[]) => { try { if (list.length) localStorage.setItem(PICKED_KEY, JSON.stringify(list)); else localStorage.removeItem(PICKED_KEY) } catch { /* sin almacenamiento */ } }
+
 /**
- * Buscador único de exámenes: resultados agrupados en Laboratorio e Imagen y gabinete (con filtro por grupo) y, MC2
- * (ronda 5), los sets de exámenes del médico de un toque. Lo que no está se escribe y se puede guardar en el catálogo,
- * eligiendo su grupo. `catalogOnly`: sólo exámenes del catálogo (al armar un set).
+ * MC4 (ronda 6): «Ordenar exámenes». Buscador (con el foco) y Todos / Laboratorio / Imagen y gabinete; «Mis sets (N)» y
+ * «Perfiles (N)» como dos botones que despliegan su lista; los exámenes en grupos plegables por tipo y subgrupo, cada uno
+ * con su conteo y cuántos van marcados, y cada examen como fila con casilla. Los grupos empiezan cerrados y se abren solos
+ * al buscar (sólo quedan los que coinciden) o si tienen algo marcado. Abajo, la barra «Seleccionados (N)» y «Agregar (N)».
+ * Lo que no está en el catálogo se agrega como «No catalogado» eligiendo su tipo (MC3). `catalogOnly`: sólo el catálogo
+ * (al armar un set).
  */
 export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes', catalogOnly = false }: {
   current: ExamInput[]; onClose: () => void; onAdd: (list: ExamInput[]) => void; title?: string; catalogOnly?: boolean
 }) {
   const { notify, can } = useStore()
-  const { exams: clinicExams } = useExamCatalog()
+  const { exams: clinicExams, profiles: allProfiles } = useExamCatalog()
   const { sets, reload: reloadSets } = useOrderSets(!catalogOnly && can('exams.order'), 'exams')
   const [savingSet, setSavingSet] = useState(false)
   const [q, setQ] = useState('')
   const [group, setGroup] = useState<'' | ExamGroup>('')
-  const [picked, setPicked] = useState<ExamInput[]>([])
-  const [newGroup, setNewGroup] = useState<ExamGroup>('lab')
+  const [picked, setPickedState] = useState<ExamInput[]>(() => (catalogOnly ? [] : readPicked().filter((e) => !current.some((c) => examKey(c.name) === examKey(e.name)))))
+  const setPicked = (list: ExamInput[]) => { setPickedState(list); if (!catalogOnly) writePicked(list) }
+  // MC3 (ronda 6): el tipo de lo no catalogado se elige siempre; no hay valor por defecto
+  const [newGroup, setNewGroup] = useState<ExamGroup | null>(null)
+  const [askType, setAskType] = useState(false)
+  const [menu, setMenu] = useState<'sets' | 'profiles' | null>(null)
+  const [fold, setFold] = useState<Record<string, boolean>>({})
+  const [showAll, setShowAll] = useState(false)
   const catalog = useMemo(() => examCatalog(clinicExams), [clinicExams])
-  const n = normalize(q)
-  const have = new Set([...current, ...picked].map((e) => examKey(e.name)))
+  // CF6 (ronda 6): perfiles de la clínica (los de administración, sin dueño)
+  const profiles = (allProfiles ?? []).filter((p) => !p.ownerId)
+  const n = normalize(q.trim())
+  const keyOf = (name: string) => examKey(name)
+  const have = new Set([...current, ...picked].map((e) => keyOf(e.name)))
+  const pickedKeys = new Set(picked.map((e) => keyOf(e.name)))
   const hits = catalog.filter((e) => (!group || e.group === group) && (!n || normalize(e.name).includes(n)))
-  const exact = catalog.some((e) => examKey(e.name) === examKey(q))
-  const toggle = (g: ExamGroup, name: string) => setPicked(have.has(examKey(name)) ? picked.filter((p) => examKey(p.name) !== examKey(name)) : [...picked, newExam(g, name)])
-  // Un set elige todos sus exámenes; los que la clínica archivó se omiten con aviso
-  const applySet = (s: { name: string; items: { exam?: ExamInput }[] }) => {
-    const list = s.items.flatMap((it) => (it.exam ? [it.exam] : []))
-    const known = list.filter((e) => catalog.some((c) => examKey(c.name) === examKey(e.name)))
-    const gone = list.filter((e) => !known.includes(e))
-    setPicked([...picked, ...known.filter((x) => !have.has(examKey(x.name))).map((x) => newExam(x.group, catalog.find((c) => examKey(c.name) === examKey(x.name))!.name))])
-    if (gone.length) notify(`${gone.map((e) => e.name).join(', ')} ya no ${gone.length === 1 ? 'está' : 'están'} en el catálogo de la clínica: no se ${gone.length === 1 ? 'agregó' : 'agregaron'}.`, 'error')
+  const exact = catalog.some((e) => keyOf(e.name) === keyOf(q.trim()))
+  const inCatalog = (name: string) => catalog.some((c) => keyOf(c.name) === keyOf(name))
+  const toggle = (g: ExamGroup, name: string) => {
+    if (current.some((c) => keyOf(c.name) === keyOf(name))) return
+    setPicked(pickedKeys.has(keyOf(name)) ? picked.filter((p) => keyOf(p.name) !== keyOf(name)) : [...picked, newExam(g, name)])
   }
-  // MC5 (ronda 5): lo que no está en el catálogo se pide como externo (texto libre); no entra al catálogo de la clínica
-  const addExternal = () => {
-    setPicked([...picked, { ...newExam(newGroup, q.trim()), place: 'external' }])
-    setQ('')
+  // Un set o un perfil marca todos sus exámenes; los que la clínica archivó se omiten con aviso
+  const applyList = (label: string, list: { group: ExamGroup; name: string }[]) => {
+    const known = list.filter((e) => inCatalog(e.name))
+    const gone = list.filter((e) => !inCatalog(e.name))
+    const add = known.filter((x) => !have.has(keyOf(x.name))).map((x) => newExam(x.group, catalog.find((c) => keyOf(c.name) === keyOf(x.name))!.name))
+    setPicked([...picked, ...add])
+    setMenu(null)
+    if (gone.length) notify(`${gone.map((e) => e.name).join(', ')} ya no ${gone.length === 1 ? 'está' : 'están'} en el catálogo de la clínica: no se ${gone.length === 1 ? 'marcó' : 'marcaron'}.`, 'error')
+    else notify(`«${label}»: ${add.length} examen${add.length === 1 ? '' : 'es'} marcado${add.length === 1 ? '' : 's'}.`)
   }
-  const inCatalog = (name: string) => catalog.some((c) => examKey(c.name) === examKey(name))
+  const copyToMine = async (p: { name: string; items: { group: ExamGroup; name: string }[] }) => {
+    try {
+      await api<OrderSet>('/order-sets', { body: { name: p.name, items: p.items.filter((e) => inCatalog(e.name)).map((e) => ({ exam: newExam(e.group, e.name) })), kind: 'exams' } })
+      notify(`«${p.name}» copiado a Mis sets: ahí lo puedes cambiar.`)
+      reloadSets()
+    } catch (e) { notify((e as Error).message, 'error') }
+  }
+  // MC3 (ronda 6): lo que no está en el catálogo se pide con su tipo y la etiqueta «No catalogado»; no entra al catálogo
+  const addUncatalogued = () => {
+    if (!newGroup || !q.trim()) return
+    setPicked([...picked, { ...newExam(newGroup, q.trim()), uncatalogued: true }])
+    setQ(''); setNewGroup(null); setAskType(false)
+  }
+  const groups = (['lab', 'imaging'] as ExamGroup[]).filter((g) => !group || g === group)
+  const isOpen = (key: string, marked: number) => fold[key] ?? (!!n || marked > 0)
+  const flip = (key: string, marked: number) => setFold({ ...fold, [key]: !isOpen(key, marked) })
+  const allKeys = groups.flatMap((g) => [g, ...bySubgroup(hits, g).map((s) => `${g}:${s.subgroup}`)])
+  const close = () => { if (!catalogOnly) writePicked([]); onClose() }
+  const shown = showAll ? picked : picked.slice(0, 6)
   return (
-    <Modal title={title} wide onClose={onClose} footer={<>
-      <span className="muted" style={{ marginRight: 'auto', fontSize: 13.5 }}>{picked.length ? `${picked.length} elegido${picked.length > 1 ? 's' : ''}` : 'Toca los exámenes para elegirlos'}</span>
+    <Modal title={title} wide className="exam-picker-modal" onClose={close} footer={<>
+      {picked.length > 0 && (
+        <div className="exam-picker__picked" aria-live="polite">
+          <b>Seleccionados ({picked.length})</b>
+          <div className="chips">
+            {shown.map((e) => <span key={e.name} className="chip">{e.name}{e.uncatalogued && <small className="muted"> · no catalogado</small>}
+              <button type="button" className="icon-btn" aria-label={`Quitar ${e.name}`} onClick={() => setPicked(picked.filter((x) => x !== e))}><X size={12} /></button></span>)}
+            {picked.length > 6 && <button type="button" className="linklike" onClick={() => setShowAll(!showAll)}>{showAll ? 'Ver menos' : `y ${picked.length - 6} más`}</button>}
+          </div>
+        </div>
+      )}
       {!catalogOnly && can('exams.order') && picked.some((e) => inCatalog(e.name)) && (
-        <button className="btn btn--ghost" onClick={() => setSavingSet(true)}><ListChecks size={15} />Guardar selección como set</button>)}
-      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={!picked.length} onClick={() => onAdd(picked)}>Agregar {picked.length || ''}</button>
+        <button className="btn btn--ghost" style={{ marginRight: 'auto' }} onClick={() => setSavingSet(true)}><ListChecks size={15} />Guardar selección como set</button>)}
+      <button className="btn btn--ghost" onClick={close}>Cancelar</button>
+      <button className="btn btn--primary" disabled={!picked.length} onClick={() => { if (!catalogOnly) writePicked([]); onAdd(picked) }}>Agregar ({picked.length})</button>
     </>}>
       <div className="exam-picker__bar">
-        <input className="input" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar: hemograma, ultrasonido, EKG…" aria-label="Buscar examen" />
+        <input className="input" autoFocus value={q} onChange={(e) => { setQ(e.target.value); setAskType(false); setNewGroup(null) }} placeholder="Buscar: hemograma, ultrasonido, EKG…" aria-label="Buscar examen"
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (hits.length === 1) { toggle(hits[0].group, hits[0].name); setQ('') } else if (n && !exact && !catalogOnly) setAskType(true) } }} />
         <div className="segmented" role="radiogroup" aria-label="Grupo">
           <button type="button" role="radio" aria-checked={group === ''} onClick={() => setGroup('')}>Todos</button>
           <button type="button" role="radio" aria-checked={group === 'lab'} onClick={() => setGroup('lab')}>Laboratorio</button>
           <button type="button" role="radio" aria-checked={group === 'imaging'} onClick={() => setGroup('imaging')}>Imagen y gabinete</button>
         </div>
       </div>
-      {!q && !catalogOnly && !!sets?.length && (
-        <div className="exam-picker__profiles">
-          <small className="muted"><ListChecks size={13} /> Mis sets</small>
-          <div className="chips">{sets.map((s) => (
-            <button key={s.id} type="button" className="chip chip--toggle" title={s.items.flatMap((it) => (it.exam ? [it.exam.name] : [])).join(', ')} onClick={() => applySet(s)}>{s.name}</button>
-          ))}</div>
+      {!catalogOnly && (
+        <div className="exam-picker__menus">
+          <button type="button" className="btn btn--soft btn--sm" aria-expanded={menu === 'sets'} onClick={() => setMenu(menu === 'sets' ? null : 'sets')}><ListChecks size={15} />Mis sets ({sets?.length ?? 0})</button>
+          <button type="button" className="btn btn--soft btn--sm" aria-expanded={menu === 'profiles'} onClick={() => setMenu(menu === 'profiles' ? null : 'profiles')}><FlaskConical size={15} />Perfiles ({profiles.length})</button>
+          <span className="fold-tools" style={{ marginLeft: 'auto' }}>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setFold(Object.fromEntries(allKeys.map((k) => [k, true])))}>Expandir todo</button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setFold(Object.fromEntries(allKeys.map((k) => [k, false])))}>Contraer todo</button>
+          </span>
+        </div>
+      )}
+      {menu === 'sets' && (
+        <div className="exam-picker__menu" role="list" aria-label="Mis sets">
+          {sets?.length ? sets.map((st) => { const items = st.items.flatMap((it) => (it.exam ? [it.exam] : []))
+            return <div key={st.id} role="listitem" className="exam-picker__menu-row">
+              <button type="button" className="exam-picker__menu-pick" onClick={() => applyList(st.name, items)}><b>{st.name}</b><small className="muted">{items.map((e) => e.name).join(', ')}</small></button>
+            </div> }) : <p className="muted">Todavía no tienes sets de exámenes. Marca exámenes y usa «Guardar selección como set».</p>}
+        </div>
+      )}
+      {menu === 'profiles' && (
+        <div className="exam-picker__menu" role="list" aria-label="Perfiles de laboratorio">
+          {profiles.length ? profiles.map((pr) => {
+            const off = pr.items.filter((e) => !inCatalog(e.name))
+            return <div key={pr.id} role="listitem" className="exam-picker__menu-row">
+              <button type="button" className="exam-picker__menu-pick" onClick={() => applyList(pr.name, pr.items)}><b>{pr.name}</b>
+                <small className="muted">{pr.items.map((e) => (off.includes(e) ? `${e.name} (no disponible)` : e.name)).join(', ')}</small></button>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => copyToMine(pr)}>Copiar a Mis sets</button>
+            </div> }) : <p className="muted">La clínica todavía no tiene perfiles de laboratorio (Configuración › Catálogo de exámenes).</p>}
         </div>
       )}
       <div className="exam-picker__results">
-        {(['lab', 'imaging'] as ExamGroup[]).filter((g) => !group || g === group).map((g) => {
-          const list = hits.filter((e) => e.group === g)
-          if (!list.length) return null
+        {groups.map((g) => {
+          const subs = bySubgroup(hits, g)
+          if (!subs.length) return null
+          const count = subs.reduce((a, x) => a + x.items.length, 0)
+          const marked = subs.reduce((a, x) => a + x.items.filter((e) => pickedKeys.has(keyOf(e.name))).length, 0)
+          const open = isOpen(g, marked)
           return (
-            <div key={g}>
-              <h4>{GROUP_LABEL[g]}</h4>
-              <div className="exam-picker__list">{list.slice(0, q ? 40 : 60).map((e) => (
-                <button key={e.name} type="button" className={`exam-pick${have.has(examKey(e.name)) ? ' is-on' : ''}`} aria-pressed={have.has(examKey(e.name))} onClick={() => toggle(e.group, e.name)}>
-                  {e.name}
-                </button>
-              ))}</div>
-            </div>
+            <section key={g} className="exam-fold">
+              <FoldHead id={`fold-${g}`} open={open} onToggle={() => flip(g, marked)} title={<>{g === 'lab' ? <FlaskConical size={15} /> : <ScanLine size={15} />}{GROUP_LABEL[g]}</>} count={count} marked={marked} />
+              {open && <div id={`fold-${g}`} className="exam-fold__body">{subs.map(({ subgroup, items }) => {
+                const k = `${g}:${subgroup}`
+                const m = items.filter((e) => pickedKeys.has(keyOf(e.name))).length
+                const o = isOpen(k, m)
+                return (
+                  <div key={k} className="exam-fold__sub">
+                    <FoldHead id={`fold-${k}`} level={2} open={o} onToggle={() => flip(k, m)} title={subgroup} count={items.length} marked={m} />
+                    {o && <div id={`fold-${k}`} className="exam-rows">{items.map((e) => {
+                      const on = have.has(keyOf(e.name))
+                      const already = current.some((c) => keyOf(c.name) === keyOf(e.name))
+                      return <label key={e.name} className={`exam-row-pick${on ? ' is-on' : ''}${already ? ' is-already' : ''}`}>
+                        <input type="checkbox" checked={on} disabled={already} onChange={() => toggle(e.group, e.name)} />
+                        <span>{e.name}{already && <small className="muted"> · ya está en la nota</small>}</span>
+                      </label>
+                    })}</div>}
+                  </div>
+                )
+              })}</div>}
+            </section>
           )
         })}
-        {q.trim().length >= 3 && !exact && !catalogOnly && (
+        {n && !hits.length && <p className="muted">Ningún examen del catálogo coincide con «{q.trim()}».</p>}
+        {q.trim().length >= 2 && !exact && !catalogOnly && (
           <div className="exam-picker__new">
-            <span>No está en el catálogo de la clínica.</span>
-            <div className="segmented segmented--sm" role="radiogroup" aria-label="Grupo del examen externo">
-              <button type="button" role="radio" aria-checked={newGroup === 'lab'} onClick={() => setNewGroup('lab')}>Laboratorio</button>
-              <button type="button" role="radio" aria-checked={newGroup === 'imaging'} onClick={() => setNewGroup('imaging')}>Imagen y gabinete</button>
-            </div>
-            <button type="button" className="btn btn--soft btn--sm" onClick={addExternal}><Plus size={14} />Agregar «{q.trim()}» como examen externo</button>
-            <small className="muted">Se hace fuera de la clínica: va en la orden impresa con la etiqueta «Externo» y no llega a ninguna bandeja.</small>
+            {!askType ? (
+              <button type="button" className="exam-picker__new-row" onClick={() => setAskType(true)}><Plus size={15} />Agregar «{q.trim()}» como estudio no catalogado</button>
+            ) : (<>
+              <span><b>«{q.trim()}»</b> no está en el catálogo. ¿Qué tipo de estudio es?</span>
+              <div className="segmented" role="radiogroup" aria-label="Tipo del estudio no catalogado">
+                <button type="button" role="radio" aria-checked={newGroup === 'lab'} onClick={() => setNewGroup('lab')}>Laboratorio</button>
+                <button type="button" role="radio" aria-checked={newGroup === 'imaging'} onClick={() => setNewGroup('imaging')}>Imagen y gabinete</button>
+              </div>
+              <button type="button" className="btn btn--primary btn--sm" disabled={!newGroup} onClick={addUncatalogued}><Plus size={14} />Agregar como no catalogado</button>
+              <small className="muted">Va a su sección y a la bandeja que le corresponde, con la etiqueta «No catalogado».</small>
+            </>)}
           </div>
-        )}
-        {picked.some((e) => e.place === 'external' && !inCatalog(e.name)) && (
-          <p className="muted" style={{ fontSize: 13.5 }}>Externos: {picked.filter((e) => e.place === 'external' && !inCatalog(e.name)).map((e) => e.name).join(', ')}.</p>
         )}
       </div>
       {savingSet && <ExamSetForm initial={picked.filter((e) => inCatalog(e.name))} onClose={() => setSavingSet(false)} onSaved={() => { setSavingSet(false); reloadSets() }} />}

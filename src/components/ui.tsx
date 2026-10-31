@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { ChevronRight, X } from 'lucide-react'
 import { initials, STATUS } from '../lib/format'
 import type { ApptStatus } from '../lib/types'
 import { useStore } from '../lib/store'
@@ -17,7 +17,7 @@ export function StatusBadge({ status }: { status: ApptStatus }) {
   return <span className={`badge badge--${s.tone}`}>{s.label}</span>
 }
 
-export function Modal({ title, onClose, children, footer, wide = false }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
+export function Modal({ title, onClose, children, footer, wide = false, className = '' }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; className?: string }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
@@ -25,7 +25,7 @@ export function Modal({ title, onClose, children, footer, wide = false }: { titl
   }, [onClose])
   return (
     <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${wide ? 'modal--wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`modal ${wide ? 'modal--wide' : ''} ${className}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal__head">
           <h2>{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Cerrar"><X size={18} /></button>
@@ -34,6 +34,23 @@ export function Modal({ title, onClose, children, footer, wide = false }: { titl
         {footer && <div className="modal__foot">{footer}</div>}
       </div>
     </div>
+  )
+}
+
+/**
+ * Encabezado de un grupo plegable (MC4, CF4, AD1/RE1 de la ronda 6): flecha, nombre, cuántos tiene y, si aplica, cuántos
+ * van marcados. Es un botón: se abre y se cierra con el dedo, con Enter o con Espacio.
+ */
+export function FoldHead({ open, onToggle, title, count, marked, sub, level = 1, id }: {
+  open: boolean; onToggle: () => void; title: ReactNode; count: number; marked?: number; sub?: ReactNode; level?: 1 | 2; id?: string
+}) {
+  return (
+    <button type="button" className={`fold-head fold-head--l${level}${open ? ' is-open' : ''}`} aria-expanded={open} aria-controls={id} onClick={onToggle}>
+      <ChevronRight size={16} className="fold-head__chev" aria-hidden="true" />
+      <span className="fold-head__title">{title}{sub && <small className="fold-head__sub">{sub}</small>}</span>
+      <span className="fold-head__count num">{count}</span>
+      {!!marked && <span className="fold-head__marked">{marked} marcado{marked === 1 ? '' : 's'}</span>}
+    </button>
   )
 }
 

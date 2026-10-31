@@ -506,3 +506,52 @@ tr.clickable { cursor: pointer; }
 .exam-order__ext { margin-left: 8px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; color: var(--amber-ink); }
 @media print { .exam-order__ext { color: #000; } }
 .exam-picker__profiles > small { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ---------- Grupo plegable (ronda 6: MC4, CF4, AD1/RE1) ---------- */
+.fold-head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent;
+  font: inherit; color: var(--ink-deep); text-align: left; cursor: pointer; }
+.fold-head:hover { background: var(--ward, #f4f7f9); }
+.fold-head:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.fold-head--l1 { font-weight: 700; font-size: 15px; }
+.fold-head--l2 { font-weight: 600; font-size: 14px; }
+.fold-head__chev { flex: none; color: var(--muted); transition: transform .15s; }
+.fold-head.is-open .fold-head__chev { transform: rotate(90deg); }
+.fold-head__title { flex: 1 1 auto; min-width: 0; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.fold-head__sub { color: var(--muted); font-weight: 500; font-size: 12.5px; }
+.fold-head__count { flex: none; color: var(--muted); font-weight: 500; font-size: 13px; }
+.fold-head__marked { flex: none; font-size: 12px; font-weight: 600; color: var(--ink-deep); background: var(--ink-soft); border-radius: 999px; padding: 2px 8px; }
+.fold-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ---------- MC4 (ronda 6): Ordenar exámenes ---------- */
+.exam-picker-modal { width: min(880px, 100%); }
+.exam-picker-modal .modal__body { gap: 12px; }
+.exam-picker__menus { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.exam-picker__menu { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--ward); max-height: 40vh; overflow: auto; }
+.exam-picker__menu-row { display: flex; gap: 8px; align-items: center; }
+.exam-picker__menu-pick { flex: 1 1 auto; min-width: 0; min-height: 44px; display: grid; gap: 2px; text-align: left; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px;
+  background: var(--paper); font: inherit; cursor: pointer; color: var(--ink-deep); }
+.exam-picker__menu-pick:hover, .exam-picker__menu-pick:focus-visible { border-color: var(--ink); }
+.exam-picker__menu-pick small { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exam-picker-modal .exam-picker__results { max-height: none; overflow: visible; gap: 6px; }
+.exam-fold { border: 1px solid var(--line-soft, var(--line)); border-radius: 12px; padding: 4px; }
+.exam-fold__body { display: grid; gap: 2px; padding: 0 4px 6px 18px; }
+.exam-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; padding: 0 4px 8px 22px; }
+.exam-row-pick { display: flex; gap: 10px; align-items: center; min-height: 44px; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.exam-row-pick:hover { background: var(--ward); }
+.exam-row-pick input { width: 18px; height: 18px; flex: none; }
+.exam-row-pick.is-on { background: var(--ink-soft); font-weight: 600; }
+.exam-row-pick.is-already { opacity: .65; cursor: default; }
+.exam-picker__new-row { display: flex; gap: 6px; align-items: center; min-height: 44px; width: 100%; border: 0; background: transparent; font: inherit; color: var(--ink-deep);
+  font-weight: 600; cursor: pointer; text-align: left; }
+.exam-picker-modal { display: flex; flex-direction: column; overflow: hidden !important; }
+.exam-picker-modal .modal__body { flex: 1 1 auto; overflow: auto; min-height: 0; }
+.exam-picker-modal .modal__foot { flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line); }
+.exam-picker__picked { flex: 1 0 100%; display: grid; gap: 6px; max-height: 22vh; overflow: auto; }
+.exam-picker__picked .chip { display: inline-flex; gap: 4px; align-items: center; }
+@media (max-width: 600px) {
+  .exam-picker-modal { max-height: 100vh !important; height: 100vh; border-radius: 0 !important; }
+  .modal-bg:has(.exam-picker-modal) { place-items: stretch; }
+  .exam-rows { grid-template-columns: 1fr; padding-left: 8px; }
+  .exam-fold__body { padding-left: 4px; }
+  .exam-picker__menus .fold-tools { margin-left: 0 !important; }
+}
