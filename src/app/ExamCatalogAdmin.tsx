@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { Archive, FlaskConical, Pencil, Plus, RotateCcw, ScanLine } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
-import { Modal } from '../components/ui'
+import { FoldHead, Modal } from '../components/ui'
 import { useExamCatalog } from '../lib/useExamCatalog'
-import { EXAMS, examKey, GROUP_LABEL, SUBGROUPS, subgroupOf } from '../lib/exams'
+import { bySubgroup, EXAMS, examKey, GROUP_LABEL, SUBGROUPS, subgroupOf } from '../lib/exams'
 import { normalize } from '../lib/patients'
 import type { ClinicExam, ExamGroup } from '../lib/types'
 
@@ -22,6 +22,11 @@ export function ExamCatalogAdmin() {
   const n = normalize(q)
   const list = exams.filter((e) => (archived || e.active) && (!n || normalize(e.name).includes(n))).sort((a, b) => a.name.localeCompare(b.name, 'es'))
   const nArchived = exams.filter((e) => !e.active).length
+  // CF4 (ronda 6): qué grupos están abiertos. Sin tocarlos, cerrados; al buscar se abren los que coinciden
+  const [fold, setFold] = useState<Record<string, boolean>>({})
+  const isOpen = (k: string) => fold[k] ?? !!n
+  const flip = (k: string) => setFold({ ...fold, [k]: !isOpen(k) })
+  const allKeys = (['lab', 'imaging'] as ExamGroup[]).flatMap((g) => [g, ...bySubgroup(list, g).map((x) => `${g}:${x.subgroup}`)])
   const analytes = (e: ClinicExam) => (e.baseKey ? EXAMS.find((b) => examKey(b.name) === e.baseKey)?.analytes?.length ?? 0 : 0)
   const setActive = async (e: ClinicExam, active: boolean) => {
     try { await api(`/exams/catalog/${e.id}`, { method: 'PATCH', body: { active } }); reload(); notify(active ? `${e.name} vuelve al catálogo` : `${e.name} archivado: ya no se ofrece al ordenar`) } catch (x) { notify((x as Error).message, 'error') }
@@ -37,30 +42,49 @@ export function ExamCatalogAdmin() {
         {nArchived > 0 && <label className="check-inline"><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />Ver archivados ({nArchived})</label>}
       </div>
       <div className="panel__body excat">
+        {/* CF4 (ronda 6): Laboratorio e Imagen y gabinete plegables, cerrados al entrar; dentro, sus subgrupos (CF3) */}
+        <div className="fold-tools">
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setFold(Object.fromEntries(allKeys.map((k) => [k, true])))}>Expandir todo</button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setFold(Object.fromEntries(allKeys.map((k) => [k, false])))}>Contraer todo</button>
+        </div>
         {(['lab', 'imaging'] as ExamGroup[]).map((g) => {
-          const rows = list.filter((e) => e.group === g)
+          const subs = bySubgroup(list, g)
+          const count = subs.reduce((a, x) => a + x.items.length, 0)
+          if (n && !count) return null
+          const open = isOpen(g)
           return (
-            <div key={g}>
-              <h3 className="excat__h">{g === 'lab' ? <FlaskConical size={16} /> : <ScanLine size={16} />}{GROUP_LABEL[g]} <span className="muted">({rows.length})</span></h3>
-              {!rows.length ? <p className="muted">{q ? 'Ningún examen coincide.' : 'Sin exámenes.'}</p> : (
-                <ul className="excat__list">
-                  {rows.map((e) => (
-                    <li key={e.id} className={e.active ? '' : 'is-archived'}>
-                      <span><b>{e.name}</b>{!e.active && <span className="badge">Archivado</span>}
-                        {analytes(e) > 0 && <small className="muted">{analytes(e)} valores con rango de referencia</small>}</span>
-                      <span className="excat__acts">
-                        {e.active && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(e)}><Pencil size={13} />Editar</button>}
-                        {e.active
-                          ? <button className="btn btn--ghost btn--sm" onClick={() => setActive(e, false)}><Archive size={13} />Archivar</button>
-                          : <button className="btn btn--ghost btn--sm" onClick={() => setActive(e, true)}><RotateCcw size={13} />Restaurar</button>}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+            <div key={g} className="exam-fold">
+              <FoldHead id={`cat-${g}`} open={open} onToggle={() => flip(g)} title={<>{g === 'lab' ? <FlaskConical size={16} /> : <ScanLine size={16} />}{GROUP_LABEL[g]}</>} count={count} />
+              {open && <div id={`cat-${g}`} className="exam-fold__body">
+                {!subs.length && <p className="muted">Sin exámenes.</p>}
+                {subs.map(({ subgroup, items }) => {
+                  const k = `${g}:${subgroup}`
+                  const o = isOpen(k)
+                  return (
+                    <div key={k}>
+                      <FoldHead id={`cat-${k}`} level={2} open={o} onToggle={() => flip(k)} title={subgroup} count={items.length} />
+                      {o && <ul id={`cat-${k}`} className="excat__list">
+                        {items.map((e) => (
+                          <li key={e.id} className={e.active ? '' : 'is-archived'}>
+                            <span><b>{e.name}</b>{!e.active && <span className="badge">Archivado</span>}
+                              {analytes(e) > 0 && <small className="muted">{analytes(e)} {analytes(e) === 1 ? 'valor' : 'valores'} con rango de referencia</small>}</span>
+                            <span className="excat__acts">
+                              {e.active && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(e)}><Pencil size={13} />Editar</button>}
+                              {e.active
+                                ? <button className="btn btn--ghost btn--sm" onClick={() => setActive(e, false)}><Archive size={13} />Archivar</button>
+                                : <button className="btn btn--ghost btn--sm" onClick={() => setActive(e, true)}><RotateCcw size={13} />Restaurar</button>}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>}
+                    </div>
+                  )
+                })}
+              </div>}
             </div>
           )
         })}
+        {n && !list.length && <p className="muted">Ningún examen coincide.</p>}
       </div>
       {editing && <ExamForm exam={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}
     </section>
