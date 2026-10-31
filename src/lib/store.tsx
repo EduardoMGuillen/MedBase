@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
-import type {
+import type { ExamOrder,
   Addendum, Appointment, ExamInput, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Referral, ReferralData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
@@ -145,7 +145,7 @@ function useStoreValue() {
     api<{ prescription: Prescription; consultation: Consultation | null; hospitalization: Hospitalization | null; patient: Patient | null }>(`/prescriptions/${id}`), [])
   const fetchInpatient = useCallback((id: string) => api<InpatientFile>(`/inpatient/${id}`), [])
   const fetchConsultation = useCallback((id: string, purpose: 'note' | 'certificate' = 'note') =>
-    api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null; addenda?: Addendum[] }>(`/consultations/${id}?purpose=${purpose}`), [])
+    api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null; addenda?: Addendum[]; exams?: ExamOrder[] }>(`/consultations/${id}?purpose=${purpose}`), [])
   const fetchAppointments = useCallback((from: string, to: string) => api<Appointment[]>(`/appointments?from=${from}&to=${to}`), [])
   const fetchPayments = useCallback((from: string, to: string) => api<Payment[]>(`/payments?from=${from}&to=${to}`), [])
   const fetchBalances = useCallback((patientId?: string) => api<Payment[]>(`/payments/balances${patientId ? `?patientId=${patientId}` : ''}`), [])

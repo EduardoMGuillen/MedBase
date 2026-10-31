@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Pill } from 'lucide-react'
-import type { InpatientNote } from '../lib/types'
+import type { ExamOrder, InpatientNote } from '../lib/types'
+import { examLine, GROUP_LABEL } from '../lib/exams'
 import { dxCode, examText } from '../lib/format'
 
 /**
@@ -36,6 +37,31 @@ export function MedLines({ items, empty = 'Sin medicamentos.' }: { items: string
   return items.length
     ? <ul className="med-lines">{items.map((m, i) => <li key={i}><Pill size={12} className="orders__pill" aria-hidden="true" />{m}</li>)}</ul>
     : <p className="muted">{empty}</p>
+}
+
+/** MC5 (ronda 6): estado de un examen como se lee en la nota (es el de ahora: cambia sin tocar la nota firmada). */
+export function noteExamStatus(e: Pick<ExamOrder, 'group' | 'status'>) {
+  if (e.status === 'cancelled') return 'Cancelado'
+  if (e.status === 'result' || e.status === 'reviewed') return 'Con resultado'
+  if (e.status === 'sample') return 'Muestra tomada'
+  if (e.status === 'done') return e.group === 'imaging' ? 'Realizado' : 'Muestra tomada'
+  return 'Ordenado'
+}
+
+/**
+ * MC5 (ronda 6): los exámenes que pidió una nota, con su tipo, «Externo» o «No catalogado» si aplica y su estado actual.
+ * Pertenecen a la nota donde se pidieron: no bajan a la siguiente.
+ */
+export function NoteExams({ list, empty = 'Sin exámenes.' }: { list: ExamOrder[]; empty?: string }) {
+  if (!list.length) return <p className="muted">{empty}</p>
+  return (
+    <ul className="note-exam-list">{list.map((e) => (
+      <li key={e.id} className={e.status === 'cancelled' ? 'is-cancelled' : ''}>
+        <span>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red">Urgente</span>}</span>
+        <small>{GROUP_LABEL[e.group]}{e.place === 'external' ? ' · Externo' : ''}{e.uncatalogued ? ' · No catalogado' : ''} · <b>{noteExamStatus(e)}</b></small>
+      </li>
+    ))}</ul>
+  )
 }
 
 const SOAP_TEXT = [['subjective', 'S. Subjetivo'], ['objective', 'O. Objetivo'], ['assessment', 'A. Análisis'], ['plan', 'P. Plan']] as const

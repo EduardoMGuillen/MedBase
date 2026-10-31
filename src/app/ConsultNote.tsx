@@ -45,7 +45,7 @@ export default function ConsultNote() {
         <h3 className="cn__h">III. Antecedentes</h3>
         <BackgroundView p={p} compact />
         <h3 className="cn__h">IV. Consulta</h3>
-        <ConsultationBody c={c} vitals={vitals} />
+        <ConsultationBody c={c} vitals={vitals} exams={data.exams ?? []} />
         <SignedBadge by={doc.name} at={c.date} addenda={(data.addenda ?? []).length} />
         <Addenda list={data.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={load} />
 

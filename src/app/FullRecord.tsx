@@ -17,7 +17,7 @@ import { ADDENDUM_KIND } from '../lib/drafts'
 import { examLine, GROUP_LABEL, STATUS_LABEL } from '../lib/exams'
 import { ResultView } from './ExamsTab'
 import { ConsultationBody, Identification } from './PatientChart'
-import { NoteColumns, NoteText } from '../components/NoteColumns'
+import { NoteColumns, NoteExams, NoteText } from '../components/NoteColumns'
 import { ReferralSheet } from './Referral'
 import { bedLabel } from './Inpatients'
 import { ClinicLogo } from './Prescriptions'
@@ -151,7 +151,7 @@ export default function FullRecord() {
         {entries.length ? entries.map((e, i) => page(i === 0 ? 'fr-notas' : `fr-nota-${i}`, `Notas de evolución · ${i + 1} de ${entries.length}`, <>
           <div className="fr-note-head"><h2 className="fr-h">{e.title}</h2>
             <span>{e.kind === 'consult' && consult ? `${staffById(consult.consultation.doctorId)?.name} · ${dm(consult.consultation.date)}` : e.note ? `${who(e.note.authorId)} · ${dm(e.note.at)}` : e.legacy ? `${staffById(e.legacy.createdBy)?.name} · ${dm(e.legacy.createdAt)}` : ''}</span></div>
-          {e.kind === 'consult' && consult && <ConsultationBody c={consult.consultation} vitals={consult.vitals} />}
+          {e.kind === 'consult' && consult && <ConsultationBody c={consult.consultation} vitals={consult.vitals} exams={(file.exams ?? []).filter((x) => x.consultationId === consult.consultation.id)} />}
           {e.kind === 'consult' && consult && <PrintedAddenda list={file.addenda ?? []} id={consult.consultation.id} />}
           {e.legacy && <div className="note"><p><b>{e.legacy.name}</b></p>{e.legacy.notes && <p>{e.legacy.notes}</p>}</div>}
           {e.note && <NoteBody n={e.note} file={file} />}
@@ -264,7 +264,7 @@ function NoteBody({ n, file }: { n: InpatientNote; file: InpatientFile }) {
       <span className="order-check__text"><span className="order-check__order">{text}</span>
         {mark?.action === 'check' && <small className="order-check__mark">✓ {shortStaff(staffById(mark.by)?.name)} {dm(mark.at)}</small>}</span></li>
   })}</ol> : <p className="muted">{empty}</p>
-  return <NoteColumns left={<NoteText n={n} />} indications={list(indications, 'Sin indicaciones.')} meds={list(meds, 'Sin medicamentos.', true)} />
+  return <NoteColumns left={<NoteText n={n} />} indications={list(indications, 'Sin indicaciones.')} exams={<NoteExams list={(file.exams ?? []).filter((x) => x.noteId === n.id)} />} meds={list(meds, 'Sin medicamentos.', true)} />
 }
 
 /** AN1: las adendas de una nota, debajo de ella en la misma página impresa. */

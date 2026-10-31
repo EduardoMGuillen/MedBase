@@ -10,7 +10,7 @@ import { allergyConflict } from '../lib/catalogs'
 import { defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
 import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
-import { NoteColumns, NoteText } from '../components/NoteColumns'
+import { NoteColumns, NoteExams, NoteText } from '../components/NoteColumns'
 import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { DictateButton, DictateField } from '../components/Dictate'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
@@ -230,7 +230,7 @@ function ConsultEntry({ consultationId }: { consultationId: string }) {
           <p>{author?.name}{author ? `, ${ROLE_LABEL[mainRole(author)].toLowerCase()}` : ''} · {date(c.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(c.date)}</p></div>
         <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}>Ver nota completa</Link>
       </div>
-      <div className="panel__body"><ConsultationBody c={c} vitals={data.vitals} />
+      <div className="panel__body"><ConsultationBody c={c} vitals={data.vitals} exams={data.exams ?? []} />
         <SignedBadge by={author?.name} at={c.date} addenda={(data.addenda ?? []).length} />
         <Addenda list={data.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={load} /></div>
     </article>
@@ -738,6 +738,7 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
       <div className="panel__body">
         <NoteColumns left={<NoteText n={n} />}
           indications={indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : <p className="muted">Sin indicaciones.</p>}
+          exams={<NoteExams list={(file.exams ?? []).filter((e) => e.noteId === n.id)} />}
           meds={meds.length ? <OrderChecklist n={n} orders={meds} file={file} reload={reload} pill /> : <p className="muted">Sin medicamentos.</p>} />
         <SignedBadge by={author?.name} at={n.at} addenda={(file.addenda ?? []).filter((a) => a.targetId === n.id).length} />
         <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={can('inpatient.orders') && user?.role === 'doctor'} onAdded={reload} />

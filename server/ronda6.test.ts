@@ -167,3 +167,26 @@ describe('CF6 perfiles de laboratorio de la clínica', () => {
     assert.ok(!(await doc.get('/api/exams/catalog')).body.profiles.some((p: any) => p.id === r.body.id), 'archivado ya no se ofrece')
   })
 })
+
+describe('MC5 exámenes en las órdenes de la nota', () => {
+  test('2 exámenes en la consulta con ingreso a observación: la nota de ingreso los trae y su estado cambia sin tocar la nota', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const appt = (await doc.get('/api/bootstrap')).body.appointments.find((a: any) => a.doctorId === 's-herrera' && a.status === 'arrived')
+    assert.ok(appt, 'hay un paciente en sala')
+    const r = await doc.post('/api/consultations', { appointmentId: appt.id, reason: 'Dolor lumbar', symptoms: [], history: 'Caída', exam: 'Dolor a la palpación', observations: '',
+      diagnoses: [{ code: 'S/C', label: 'Lumbalgia' }], orders: ['Reposo.'], indications: ['Reposo.'], plan: '', observe: true,
+      exams: [{ group: 'imaging', name: 'Radiografía', region: 'columna lumbar', priority: 'routine', place: 'clinic' }, { group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' }] })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    const note = (await doc.get(`/api/consultations/${r.body.consultationId}`)).body
+    assert.deepEqual(note.exams.map((e: any) => e.name).sort(), ['Hemograma', 'Radiografía'])
+    const hemo = note.exams.find((e: any) => e.name === 'Hemograma')
+    assert.equal((await nurse.post(`/api/exams/${hemo.id}/status`, { status: 'sample' })).status, 200)
+    const again = (await doc.get(`/api/consultations/${r.body.consultationId}`)).body
+    assert.equal(again.exams.find((e: any) => e.name === 'Hemograma').status, 'sample')
+    assert.equal(again.consultation.date, note.consultation.date, 'la nota firmada no cambia')
+    // En el expediente de la observación están vinculados a la consulta (nota de ingreso), no a otra nota
+    const file = (await doc.get(`/api/inpatient/${r.body.hospitalizationId}`)).body
+    assert.equal(file.exams.filter((e: any) => e.consultationId === r.body.consultationId && !e.noteId).length, 2)
+  })
+})

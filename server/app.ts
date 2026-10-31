@@ -20,7 +20,7 @@ import { rxValidityOf, specialtyOf, validityInput } from './prefs.js'
 import { registerSettings } from './routes/settings.js'
 import { currentMarks, registerMe } from './routes/me.js'
 import { addendaFor, registerNotes } from './routes/notes.js'
-import { examInput, insertExams, registerExams } from './routes/exams.js'
+import { examInput, examsWhere, insertExams, registerExams } from './routes/exams.js'
 import { registerPublic } from './routes/public.js'
 import { registerBilling } from './routes/billing.js'
 import { registerReports } from './routes/reports.js'
@@ -919,7 +919,9 @@ export function createApp(opts: AppOptions) {
     const vitals = c.vitalsId ? await sql.one('SELECT * FROM vitals WHERE id = ? AND clinic_id = ?', [c.vitalsId, cid]) : undefined
     const what = req.query.purpose === 'certificate' ? 'Emitió constancia médica de' : 'Abrió la nota de consulta de'
     await audit(userOf(req), `${what} ${await patientName(c.patientId)}`)
-    res.json({ consultation: c, patient: toPatient((await patientRow(cid, c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null, addenda: await addendaFor(sql, cid, [c.id]) })
+    // MC5 (ronda 6): los exámenes que pidió la consulta, con su estado de ahora
+    const exams = await examsWhere(sql, 'clinic_id = ? AND consultation_id = ? AND note_id IS NULL', [cid, c.id])
+    res.json({ consultation: c, patient: toPatient((await patientRow(cid, c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null, addenda: await addendaFor(sql, cid, [c.id]), exams })
   })
 
   /**

@@ -12,7 +12,7 @@ import { ExamList } from './ExamsTab'
 import { api } from '../lib/api'
 import { useStore, type Chart } from '../lib/store'
 import { Loading, StatusBadge } from '../components/ui'
-import { IndicationList, MedLines, NoteColumns } from '../components/NoteColumns'
+import { IndicationList, MedLines, NoteColumns, NoteExams } from '../components/NoteColumns'
 import { PatientHeader } from '../components/PatientHeader'
 import { age, BACKGROUND_GROUPS, bmi, date, dxCode, examText, time, money } from '../lib/format'
 import { Attachments } from './Attachments'
@@ -124,7 +124,9 @@ export function BackgroundView({ p, compact = false, only }: { p: Patient; compa
  * Nota de consulta externa (también es la nota de ingreso de una estancia) en dos columnas: a la izquierda el
  * texto clínico; a la derecha las indicaciones y debajo los medicamentos.
  */
-export function ConsultationBody({ c, vitals }: { c: Consultation; vitals?: Vitals | null }) {
+/** MC5 (ronda 6): con `exams` (los de esta consulta) la columna de órdenes lleva Indicaciones y plan → Exámenes → Medicamentos. */
+export function ConsultationBody({ c, vitals, exams }: { c: Consultation; vitals?: Vitals | null; exams?: ExamOrder[] }) {
+  const examBlock = exams ? <NoteExams list={exams.filter((e) => !e.noteId)} /> : undefined
   const exam = examText(c.exam)
   const left = (<>
     <div className="note__sec"><h4>Motivo de consulta</h4><p>{c.reason}</p></div>
@@ -148,10 +150,10 @@ export function ConsultationBody({ c, vitals }: { c: Consultation; vitals?: Vita
   </>)
   // Consultas de antes (sin indicaciones aparte): el plan y manejo completo va a la derecha, sin separar medicamentos
   if (!c.indications) {
-    return <NoteColumns left={left} indicationsTitle="Plan y manejo"
+    return <NoteColumns left={left} indicationsTitle="Plan y manejo" exams={examBlock}
       indications={c.orders.length ? <IndicationList items={c.orders} /> : <p>{c.plan || <span className="muted">Sin registro.</span>}</p>} />
   }
-  return <NoteColumns left={left} indicationsTitle="Indicaciones y plan" indications={<IndicationList items={c.indications} />}
+  return <NoteColumns left={left} indicationsTitle="Indicaciones y plan" indications={<IndicationList items={c.indications} />} exams={examBlock}
     meds={<MedLines items={c.orders.slice(c.indications.length)} />} />
 }
 
