@@ -16,6 +16,8 @@ export interface CatalogExam {
   analytes?: Analyte[]
   /** Agregado por la clínica (no es del catálogo base). */
   clinicId?: string
+  /** CF3 (ronda 6): subgrupo (Hematología, Rayos X…). */
+  subgroup?: string
 }
 
 const a = (name: string, unit: string, low?: number, high?: number): Analyte => ({ name, unit, low, high })
@@ -77,6 +79,62 @@ export const EXAMS: CatalogExam[] = [
   { group: 'imaging', name: 'Holter de 24 horas' },
 ]
 
+/**
+ * CF3 (ronda 6): subgrupos del catálogo, en el orden en que se muestran al ordenar y en Configuración. Lo que no se sabe
+ * ubicar va a «Otros». VALIDAR: Emil (A6, la asignación de los exámenes que ya existían, está en BASE_SUBGROUP).
+ */
+export const LAB_SUBGROUPS = ['Hematología', 'Coagulación', 'Química en sangre', 'Química en orina', 'Hormonas', 'Inmunología', 'Enfermedades infecciosas',
+  'Microbiología', 'Orina', 'Heces', 'Biología molecular', 'Otros']
+export const IMAGING_SUBGROUPS = ['Rayos X', 'Ultrasonido', 'Tomografía', 'Resonancia', 'Cardiología', 'Endoscopia', 'Otros']
+export const SUBGROUPS: Record<ExamGroup, string[]> = { lab: LAB_SUBGROUPS, imaging: IMAGING_SUBGROUPS }
+export const OTHER_SUBGROUP = 'Otros'
+
+/** A6 propuesto (ronda 6): subgrupo de cada examen de la lista fija. VALIDAR: Emil. */
+export const BASE_SUBGROUP: Record<string, string> = {
+  // Laboratorio
+  'Hemograma': 'Hematología', 'Velocidad de eritrosedimentación': 'Hematología', 'Frotis de sangre periférica': 'Hematología', 'Tipo y Rh': 'Hematología',
+  'Tiempos de coagulación (TP, TPT, INR)': 'Coagulación',
+  'Química sanguínea': 'Química en sangre', 'Glucosa en ayunas': 'Química en sangre', 'Glucosa posprandial': 'Química en sangre',
+  'Hemoglobina glicosilada (HbA1c)': 'Química en sangre', 'Perfil lipídico': 'Química en sangre', 'Creatinina': 'Química en sangre', 'Perfil renal': 'Química en sangre',
+  'Perfil hepático': 'Química en sangre', 'Electrolitos': 'Química en sangre', 'Gases arteriales': 'Química en sangre', 'Troponina I': 'Química en sangre',
+  'Amilasa y lipasa': 'Química en sangre', 'Proteína C reactiva': 'Química en sangre',
+  'TSH': 'Hormonas', 'T4 libre': 'Hormonas', 'Prueba de embarazo en sangre (β-hCG)': 'Hormonas',
+  'VDRL': 'Enfermedades infecciosas', 'VIH (prueba rápida)': 'Enfermedades infecciosas', 'Antígeno de superficie de hepatitis B': 'Enfermedades infecciosas',
+  'Serología para dengue (NS1, IgM, IgG)': 'Enfermedades infecciosas', 'Gota gruesa': 'Enfermedades infecciosas',
+  'Urocultivo': 'Microbiología', 'Hemocultivo': 'Microbiología', 'Coprocultivo': 'Microbiología',
+  'Examen general de orina (EGO)': 'Orina', 'Prueba de embarazo en orina': 'Orina',
+  'Examen general de heces': 'Heces',
+  // Imagen y gabinete
+  'Radiografía de tórax': 'Rayos X', 'Radiografía': 'Rayos X', 'Radiografía de abdomen': 'Rayos X',
+  'Ultrasonido abdominal': 'Ultrasonido', 'Ultrasonido pélvico': 'Ultrasonido', 'Ultrasonido obstétrico': 'Ultrasonido', 'Ultrasonido renal': 'Ultrasonido',
+  'Ultrasonido de tiroides': 'Ultrasonido', 'Ultrasonido de partes blandas': 'Ultrasonido', 'Ultrasonido Doppler': 'Ultrasonido',
+  'Tomografía (TAC)': 'Tomografía', 'Resonancia magnética': 'Resonancia',
+  'Electrocardiograma (EKG)': 'Cardiología', 'Ecocardiograma': 'Cardiología', 'Holter de 24 horas': 'Cardiología',
+  'Endoscopia digestiva alta': 'Endoscopia', 'Colonoscopia': 'Endoscopia',
+  'Mamografía': 'Otros', 'Espirometría': 'Otros',
+}
+
+/** Subgrupo de un examen: el guardado; si no, el de la lista fija; si no, «Otros». */
+export function subgroupOf(e: { name: string; subgroup?: string; baseKey?: string }) {
+  if (e.subgroup?.trim()) return e.subgroup.trim()
+  const key = e.baseKey ?? examKey(e.name)
+  const base = Object.entries(BASE_SUBGROUP).find(([n]) => examKey(n) === key)
+  return base?.[1] ?? OTHER_SUBGROUP
+}
+
+/** Los exámenes de una lista agrupados por subgrupo, en el orden de SUBGROUPS (los subgrupos propios, antes de «Otros»). */
+export function bySubgroup<T extends { group: ExamGroup; name: string; subgroup?: string; baseKey?: string }>(list: T[], group: ExamGroup) {
+  const map = new Map<string, T[]>()
+  for (const e of list.filter((x) => x.group === group)) {
+    const sg = subgroupOf(e)
+    map.set(sg, [...(map.get(sg) ?? []), e])
+  }
+  const order = SUBGROUPS[group]
+  const rank = (s: string) => (s === OTHER_SUBGROUP ? 1000 : order.includes(s) ? order.indexOf(s) : 500)
+  return [...map.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0], 'es'))
+    .map(([subgroup, items]) => ({ subgroup, items: items.sort((x, y) => x.name.localeCompare(y.name, 'es')) }))
+}
+
 /** Perfiles o paquetes base: varios exámenes de un toque. La clínica y cada médico agregan los suyos. */
 export const BASE_PROFILES: { id: string; name: string; items: { group: ExamGroup; name: string }[] }[] = [
   { id: 'base-dm', name: 'Control de diabetes', items: ['Glucosa en ayunas', 'Hemoglobina glicosilada (HbA1c)', 'Creatinina', 'Perfil lipídico', 'Examen general de orina (EGO)'].map((name) => ({ group: 'lab' as const, name })) },
@@ -135,10 +193,10 @@ export const examKey = (name: string) => norm(name)
  * lado del examen de la lista fija del que vienen (aunque se haya renombrado). Mientras el catálogo no ha llegado del
  * servidor, la lista fija. Favoritos primero.
  */
-export function examCatalog(clinicExams: { group: ExamGroup; name: string; id: string; active: boolean; baseKey?: string }[], favs: string[] = []): CatalogExam[] {
-  const all: CatalogExam[] = !clinicExams.length ? EXAMS : clinicExams.filter((e) => e.active).map((e) => {
+export function examCatalog(clinicExams: { group: ExamGroup; name: string; id: string; active: boolean; baseKey?: string; subgroup?: string }[], favs: string[] = []): CatalogExam[] {
+  const all: CatalogExam[] = !clinicExams.length ? EXAMS.map((e) => ({ ...e, subgroup: subgroupOf(e) })) : clinicExams.filter((e) => e.active).map((e) => {
     const base = e.baseKey ? EXAMS.find((b) => examKey(b.name) === e.baseKey) : undefined
-    return { ...(base ?? {}), group: e.group, name: e.name, clinicId: base ? undefined : e.id }
+    return { ...(base ?? {}), group: e.group, name: e.name, clinicId: base ? undefined : e.id, subgroup: subgroupOf(e) }
   }).sort((a, b) => a.name.localeCompare(b.name, 'es'))
   const f = new Set(favs.map(examKey))
   return [...all.filter((e) => f.has(examKey(e.name))), ...all.filter((e) => !f.has(examKey(e.name)))]

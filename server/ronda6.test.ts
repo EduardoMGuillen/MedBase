@@ -9,6 +9,8 @@ import { fileAlerts } from '../src/lib/alerts.js'
 import { bandOf } from '../src/lib/vitalsSheet.js'
 import { medicationLine } from '../src/lib/format.js'
 import { medLabel } from '../src/lib/inpatient.js'
+import { loadLabCatalog } from './catalogLoader.js'
+import { EXAMS, subgroupOf } from '../src/lib/exams.js'
 
 let server: Server
 let sql: Sql
@@ -78,5 +80,41 @@ describe('MC2 PRN', () => {
     const doc = await as('lherrera@demo.clinara')
     const r = await doc.post('/api/prescriptions', { patientId: 'p1', items: [{ drug: 'Ibuprofeno', presentation: 'Tableta 400 mg', dose: '1 tableta', frequency: 'PRN (si es necesario)', duration: '3 días' }] })
     assert.equal(r.status, 400, JSON.stringify(r.body))
+  })
+})
+
+describe('CF3 subgrupos y carga del catálogo', () => {
+  test('los exámenes de la lista fija tienen su subgrupo (A6) y todos los del catálogo tienen uno', async () => {
+    const admin = await as('admin@demo.clinara')
+    const { exams } = (await admin.get('/api/exams/catalog')).body
+    const hemo = exams.find((e: any) => e.name === 'Hemograma')
+    assert.equal(hemo.subgroup, 'Hematología')
+    assert.ok(exams.every((e: any) => subgroupOf(e)), 'nadie sin subgrupo')
+  })
+
+  test('la carga es idempotente, respeta equivalencias y no toca los originales', async () => {
+    const before = await sql.query(`SELECT name, active, subgroup FROM exam_catalog WHERE clinic_id = 'c-sb' AND base_key IS NOT NULL ORDER BY name`)
+    const data = {
+      catalog: [{ name: 'Dímero D', subgroup: 'Coagulación' }, { name: 'HEMOGRAMA', subgroup: 'Hematología' }, { name: 'Hemograma completo', subgroup: 'Hematología' }, { name: 'Ferritina', subgroup: 'Química en sangre' }],
+      equivalences: { 'Hemograma completo': 'Hemograma', 'Orina general': 'Examen general de orina (EGO)' },
+      profiles: [{ name: 'Perfil de prueba', items: ['Hemograma completo', 'Orina general', 'Ferritina', 'Examen raro de prueba'] }],
+    }
+    const first = await loadLabCatalog(sql, 'c-sb', data)
+    assert.deepEqual(first.added.sort(), ['Dímero D', 'Ferritina'])
+    assert.equal(first.skipped.length, 2)
+    assert.deepEqual(first.profilesAdded, ['Perfil de prueba'])
+    assert.deepEqual(first.profileExamsAdded, ['Examen raro de prueba'])
+    const second = await loadLabCatalog(sql, 'c-sb', data)
+    assert.deepEqual([second.added.length, second.profilesAdded.length, second.profileExamsAdded.length], [0, 0, 0])
+    const profile = await sql.one<{ items: string }>(`SELECT items FROM exam_profiles WHERE clinic_id = 'c-sb' AND name = 'Perfil de prueba' AND owner_id IS NULL`)
+    assert.deepEqual(JSON.parse(profile!.items).map((i: any) => i.name), ['Hemograma', 'Examen general de orina (EGO)', 'Ferritina', 'Examen raro de prueba'])
+    const after = await sql.query(`SELECT name, active, subgroup FROM exam_catalog WHERE clinic_id = 'c-sb' AND base_key IS NOT NULL ORDER BY name`)
+    assert.deepEqual(after, before, 'los originales no cambian')
+    assert.equal(before.length, EXAMS.length)
+    const dup = await sql.query(`SELECT norm_key FROM exam_catalog WHERE clinic_id = 'c-sb' GROUP BY norm_key HAVING COUNT(*) > 1`)
+    assert.equal(dup.length, 0)
+    // Limpieza: lo de prueba se archiva para no afectar a las otras pruebas
+    await sql.run(`UPDATE exam_catalog SET active = FALSE, archived_at = 'prueba' WHERE clinic_id = 'c-sb' AND base_key IS NULL AND name IN ('Dímero D','Ferritina','Examen raro de prueba')`)
+    await sql.run(`UPDATE exam_profiles SET archived_at = 'prueba' WHERE clinic_id = 'c-sb' AND name = 'Perfil de prueba'`)
   })
 })

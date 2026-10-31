@@ -25,6 +25,7 @@ const j = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(Strin
 const toClinicExam = (r: Row): ClinicExam => ({
   id: String(r.id), group: r.grp as ClinicExam['group'], name: String(r.name), active: Boolean(r.active), baseKey: r.base_key ? String(r.base_key) : undefined,
   createdBy: r.created_by ? String(r.created_by) : undefined, createdAt: String(r.created_at), archivedAt: r.archived_at ? String(r.archived_at) : undefined,
+  subgroup: r.subgroup ? String(r.subgroup) : undefined,
 })
 
 export const toExamOrder = (r: Row, events: Row[] = []): ExamOrder => ({
@@ -112,7 +113,9 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
 
   // AD4 (ronda 5): sólo administración (en el consultorio, el titular en su vista de administrador) arma el catálogo.
   // Quitar es archivar: lo ya ordenado en notas anteriores no cambia.
-  const catalogBody = z.object({ group: z.enum(['lab', 'imaging']), name: z.string().trim().min(2, 'Escribe el nombre del examen.').max(160) })
+  const catalogBody = z.object({ group: z.enum(['lab', 'imaging']), name: z.string().trim().min(2, 'Escribe el nombre del examen.').max(160),
+    // CF3 (ronda 6): subgrupo; vacío se lee como «Otros»
+    subgroup: z.string().trim().max(60).optional() })
   const catalogRow = async (cid: string, id: string) => (await sql.one('SELECT * FROM exam_catalog WHERE id = ? AND clinic_id = ?', [id, cid])) ?? fail(404, 'El examen no está en el catálogo.')
   app.post('/api/exams/catalog', auth, need('settings.manage'), async (req, res) => {
     const b = parse(catalogBody, req.body)
@@ -123,13 +126,13 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     if (existing?.active) fail(409, `${existing.name} ya está en el catálogo (${GROUP_LABEL[existing.grp as 'lab']}).`)
     const now = new Date().toISOString()
     if (existing) {
-      await sql.run('UPDATE exam_catalog SET active = TRUE, archived_at = NULL, archived_by = NULL, grp = ?, updated_at = ?, updated_by = ? WHERE id = ?', [b.group, now, userOf(req).id, String(existing.id)])
+      await sql.run('UPDATE exam_catalog SET active = TRUE, archived_at = NULL, archived_by = NULL, grp = ?, subgroup = COALESCE(?, subgroup), updated_at = ?, updated_by = ? WHERE id = ?', [b.group, b.subgroup || null, now, userOf(req).id, String(existing.id)])
       await audit(userOf(req), `Volvió a agregar al catálogo de exámenes (${GROUP_LABEL[b.group]}): ${existing.name}`)
       return res.json(toClinicExam((await catalogRow(cid, String(existing.id)))!))
     }
     const id = randomUUID()
-    await sql.run('INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, created_by, created_at) VALUES (?,?,?,?,?,?,?)', [id, cid, b.group, b.name, key, userOf(req).id, now])
-    await audit(userOf(req), `Agregó al catálogo de exámenes (${GROUP_LABEL[b.group]}): ${b.name}`)
+    await sql.run('INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, subgroup, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)', [id, cid, b.group, b.name, key, b.subgroup || null, userOf(req).id, now])
+    await audit(userOf(req), `Agregó al catálogo de exámenes (${GROUP_LABEL[b.group]}${b.subgroup ? ` · ${b.subgroup}` : ''}): ${b.name}`)
     res.status(201).json(toClinicExam((await catalogRow(cid, id))!))
   })
   app.patch('/api/exams/catalog/:id', auth, need('settings.manage'), async (req, res) => {
@@ -142,11 +145,12 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     if (key !== r.norm_key && await sql.one('SELECT 1 FROM exam_catalog WHERE clinic_id = ? AND norm_key = ? AND id <> ?', [cid, key, String(r.id)])) fail(409, `Ya hay un examen «${name}» en el catálogo.`)
     const now = new Date().toISOString()
     const active = b.active ?? Boolean(r.active)
-    await sql.run(`UPDATE exam_catalog SET name = ?, norm_key = ?, grp = ?, active = ?, archived_at = ?, archived_by = ?, updated_at = ?, updated_by = ? WHERE id = ?`,
-      [name, key, b.group ?? r.grp, active, active ? null : r.archived_at ?? now, active ? null : r.archived_by ?? user.id, now, user.id, String(r.id)])
+    await sql.run(`UPDATE exam_catalog SET name = ?, norm_key = ?, grp = ?, subgroup = ?, active = ?, archived_at = ?, archived_by = ?, updated_at = ?, updated_by = ? WHERE id = ?`,
+      [name, key, b.group ?? r.grp, b.subgroup === undefined ? r.subgroup ?? null : b.subgroup || null, active, active ? null : r.archived_at ?? now, active ? null : r.archived_by ?? user.id, now, user.id, String(r.id)])
     const what = [
       b.name && b.name !== r.name && `«${r.name}» → «${b.name}»`,
       b.group && b.group !== r.grp && `${GROUP_LABEL[r.grp as 'lab']} → ${GROUP_LABEL[b.group]}`,
+      b.subgroup !== undefined && (b.subgroup || null) !== (r.subgroup ?? null) && `subgrupo de ${name}: ${r.subgroup ?? 'sin subgrupo'} → ${b.subgroup || 'sin subgrupo'}`,
     ].filter(Boolean)
     if (what.length) await audit(user, `Editó en el catálogo de exámenes: ${what.join('; ')}`)
     if (b.active === false && r.active) await audit(user, `Archivó del catálogo de exámenes: ${name}`)

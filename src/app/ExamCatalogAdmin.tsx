@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
 import { useExamCatalog } from '../lib/useExamCatalog'
-import { EXAMS, examKey, GROUP_LABEL } from '../lib/exams'
+import { EXAMS, examKey, GROUP_LABEL, SUBGROUPS, subgroupOf } from '../lib/exams'
 import { normalize } from '../lib/patients'
 import type { ClinicExam, ExamGroup } from '../lib/types'
 
@@ -71,12 +71,15 @@ function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () =
   const { notify } = useStore()
   const [name, setName] = useState(exam?.name ?? '')
   const [group, setGroup] = useState<ExamGroup>(exam?.group ?? 'lab')
+  // CF3 (ronda 6): subgrupo (el del examen, el de la lista fija u «Otros»)
+  const [subgroup, setSubgroup] = useState(exam ? subgroupOf(exam) : 'Otros')
+  const options = [...new Set([...SUBGROUPS[group], subgroup])]
   const [busy, setBusy] = useState(false)
   const save = async () => {
     setBusy(true)
     try {
-      if (exam) await api(`/exams/catalog/${exam.id}`, { method: 'PATCH', body: { name: name.trim(), group } })
-      else await api('/exams/catalog', { body: { name: name.trim(), group } })
+      if (exam) await api(`/exams/catalog/${exam.id}`, { method: 'PATCH', body: { name: name.trim(), group, subgroup } })
+      else await api('/exams/catalog', { body: { name: name.trim(), group, subgroup } })
       notify(exam ? 'Examen actualizado' : 'Examen agregado al catálogo')
       onSaved()
     } catch (e) { notify((e as Error).message, 'error') } finally { setBusy(false) }
@@ -84,15 +87,18 @@ function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () =
   return (
     <Modal title={exam ? 'Editar examen' : 'Agregar examen'} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={busy || name.trim().length < 2 || (!!exam && name.trim() === exam.name && group === exam.group)} onClick={save}>{exam ? 'Guardar' : 'Agregar'}</button>
+      <button className="btn btn--primary" disabled={busy || name.trim().length < 2 || (!!exam && name.trim() === exam.name && group === exam.group && subgroup === subgroupOf(exam))} onClick={save}>{exam ? 'Guardar' : 'Agregar'}</button>
     </>}>
       <label className="field"><span>Nombre del examen</span><input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Dímero D" /></label>
       <div className="field"><span>Categoría</span>
         <div className="segmented" role="radiogroup" aria-label="Categoría">
-          {(['lab', 'imaging'] as ExamGroup[]).map((g) => <button key={g} type="button" role="radio" aria-checked={group === g} onClick={() => setGroup(g)}>{GROUP_LABEL[g]}</button>)}
+          {(['lab', 'imaging'] as ExamGroup[]).map((g) => <button key={g} type="button" role="radio" aria-checked={group === g} onClick={() => { setGroup(g); if (!SUBGROUPS[g].includes(subgroup)) setSubgroup('Otros') }}>{GROUP_LABEL[g]}</button>)}
         </div>
         <small className="muted">La categoría decide a quién le llega el pendiente: al laboratorio o a imágenes propios, o a enfermería (Áreas de servicio).</small>
       </div>
+      <label className="field"><span>Subgrupo</span>
+        <select className="select" value={subgroup} onChange={(e) => setSubgroup(e.target.value)}>{options.map((o) => <option key={o}>{o}</option>)}</select>
+        <small className="muted">Así se agrupa al ordenar exámenes y en este catálogo.</small></label>
     </Modal>
   )
 }
