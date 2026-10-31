@@ -9,6 +9,7 @@ import { fileAlerts } from '../src/lib/alerts.js'
 import { bandOf } from '../src/lib/vitalsSheet.js'
 import { groupsFromLimits } from '../src/lib/clinicalConfig.js'
 import { BASE_PROFILES, EXAMS } from '../src/lib/exams.js'
+import { shortStaff } from '../src/lib/format.js'
 
 let server: Server
 let sql: Sql
@@ -338,5 +339,16 @@ describe('MC5 ordenar exámenes del catálogo o externos', () => {
     const batch = (await doc.get(`/api/exams/batch/${panel.batchId}`)).body
     assert.deepEqual(batch.exams.map((e: any) => [e.name, e.place]).sort(), [['Hemograma', 'clinic'], ['Panel de alergias', 'external'], ['Velocidad de eritrosedimentación', 'external']])
     assert.equal((await admin.patch(`/api/exams/catalog/${ves.id}`, { active: true })).status, 200)
+  })
+})
+
+describe('nombre corto del personal', () => {
+  test('usa el primer apellido, como en Honduras', () => {
+    assert.equal(shortStaff('Dr. Daniel Fúnez Castillo'), 'Dr. Fúnez')
+    assert.equal(shortStaff('Dra. Lucía Herrera'), 'Dra. Herrera')
+    assert.equal(shortStaff('Lic. Carmen Ríos'), 'Lic. Ríos')
+    assert.equal(shortStaff('Sofía Mejía'), 'Sofía Mejía')
+    assert.equal(shortStaff('Roberto Aguilar Mejía'), 'Roberto Mejía')
+    assert.equal(shortStaff('José Luis Aguilar Mejía'), 'José Aguilar')
   })
 })

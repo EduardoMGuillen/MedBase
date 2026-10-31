@@ -30,10 +30,19 @@ export const sameDay = (iso: string, d: Date) => {
   return x.getFullYear() === d.getFullYear() && x.getMonth() === d.getMonth() && x.getDate() === d.getDate()
 }
 
-/** "Dra. Lucía Herrera" → "Dra. Herrera"; sin título, el primer nombre y el último apellido. */
+/**
+ * «Dra. Lucía Herrera» → «Dra. Herrera», «Dr. Daniel Fúnez Castillo» → «Dr. Fúnez»: el título y el primer apellido
+ * (en Honduras se usa el primero). Sin título, el primer nombre y el primer apellido si hay dos nombres y dos apellidos.
+ */
 export function shortStaff(name = '') {
+  const m = name.trim().match(/^((?:Dra?|Lic)\.)\s+(.*)$/)
+  if (m) {
+    const rest = m[2].split(/\s+/)
+    return `${m[1]} ${rest.length >= 3 ? rest[rest.length - 2] : rest.at(-1)}`
+  }
   const parts = name.trim().split(/\s+/)
-  return parts.length < 3 ? name : `${parts[0]} ${parts.at(-1)}`
+  if (parts.length < 3) return name
+  return `${parts[0]} ${parts.length >= 4 ? parts[parts.length - 2] : parts.at(-1)}`
 }
 
 export const initials = (name: string) =>

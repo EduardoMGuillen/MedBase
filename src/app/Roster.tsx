@@ -3,19 +3,12 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
-import { cap, localISODate } from '../lib/format'
+import { cap, localISODate, shortStaff } from '../lib/format'
 import { hasRole } from '../lib/permissions'
 import { useNow } from '../lib/hooks'
 
 interface Shift { id: string; day: string; staffId: string }
 const DOW = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-/** «Dr. Paz», «Dr. Fúnez»: el título y el primer apellido (con dos apellidos, el penúltimo nombre). */
-function rosterName(name: string) {
-  const m = name.trim().match(/^((?:Dra?|Lic)\.)\s+(.*)$/)
-  const rest = (m ? m[2] : name).split(/\s+/)
-  const surname = rest.length >= 3 ? rest[rest.length - 2] : rest.at(-1)
-  return m ? `${m[1]} ${surname}` : rest.length > 1 ? `${rest[0]} ${surname}` : name
-}
 
 /**
  * AD3 (ronda 5): rol de turnos. Un mes en cuadrícula; al tocar un día se marcan los médicos que trabajan ese día (uno o
@@ -83,7 +76,7 @@ export function Roster() {
                   aria-label={`${d.toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })}: ${list.length ? list.map((s) => name(s.staffId)).join(', ') : 'sin médicos asignados'}`}>
                   <span className="roster__wd">{d.toLocaleDateString('es-HN', { weekday: 'long' })}</span>
                   <span className="roster__n">{d.getDate()}</span>
-                  {list.map((s) => <span key={s.id} className="roster__doc" title={name(s.staffId)}>{rosterName(name(s.staffId))}</span>)}
+                  {list.map((s) => <span key={s.id} className="roster__doc" title={name(s.staffId)}>{shortStaff(name(s.staffId))}</span>)}
                   {!list.length && !out && <span className="roster__empty">Sin asignar</span>}
                 </button>
               )
