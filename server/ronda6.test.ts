@@ -190,3 +190,80 @@ describe('MC5 exámenes en las órdenes de la nota', () => {
     assert.equal(file.exams.filter((e: any) => e.consultationId === r.body.consultationId && !e.noteId).length, 2)
   })
 })
+
+/** Un paciente sin estancia activa, con consulta sin cita de la Dra. Herrera e ingreso a observación. */
+async function admitToObservation(doc: Awaited<ReturnType<typeof as>>, opts: { indications: string[]; items: any[]; exams?: any[] }) {
+  const reception = await as('smejia@demo.clinara')
+  const boot = (await doc.get('/api/bootstrap')).body
+  const busy = new Set(boot.inpatients.filter((h: any) => h.status === 'active').map((h: any) => h.patientId))
+  const p = boot.patients.find((x: any) => !busy.has(x.id) && !x.pending && x.dni)
+  const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-herrera', reason: 'Prueba ronda 6' })
+  assert.equal(w.status, 201, JSON.stringify(w.body))
+  const r = await doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Prueba', symptoms: [], history: 'HEA', exam: 'EF', observations: '',
+    diagnoses: [{ code: 'S/C', label: 'Prueba' }], orders: [...opts.indications], indications: opts.indications, plan: '', observe: true, items: opts.items, exams: opts.exams ?? [] })
+  assert.equal(r.status, 201, JSON.stringify(r.body))
+  return r.body.hospitalizationId as string
+}
+
+const tags = (n: any, kind: 'ind' | 'med') => n.lines.filter((l: any) => l.kind === kind).map((l: any) => `${l.tag}:${l.text}`)
+
+describe('MC7 indicaciones y medicamentos de nota en nota', () => {
+  test('cadena completa: Continúa, Nueva, Modificada y Omitida; sin cambios sigue el cuadro completo; procedimiento no la corta; la nota vieja avisa', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const items = [
+      { drug: 'Ondansetrón', presentation: 'Ampolla 8 mg', dose: '8 mg', route: 'Intravenosa', frequency: 'Cada 8 horas', duration: '' },
+      { drug: 'Omeprazol', presentation: 'Vial 40 mg', dose: '40 mg', route: 'Intravenosa', frequency: 'Cada 24 horas', duration: '' },
+    ]
+    // En observación el checklist es opcional: se activa para probarlo
+    await sql.run(`UPDATE clinics SET obs_order_checklist = TRUE WHERE id = 'c-sb'`)
+    const stay = await admitToObservation(doc, { indications: ['Dieta blanda.', 'Control de ingesta y excreta.', 'Cabecera a 30 grados.'], items })
+    let file = (await doc.get(`/api/inpatient/${stay}`)).body
+    const { activeIndications, chainNote } = await import('../src/lib/inpatient.js')
+    const act = activeIndications(file)
+    assert.deepEqual(act.map((a) => a.text), ['Dieta blanda.', 'Control de ingesta y excreta.', 'Cabecera a 30 grados.'])
+    const meds = file.meds.filter((m: any) => !m.stoppedAt)
+    assert.equal(meds.length, 2)
+    const ondan = meds.find((m: any) => m.drug === 'Ondansetrón')
+    // Nota 1: omite «Cabecera» y el ondansetrón; agrega una indicación y un medicamento
+    const n1 = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'Mejor', orders: ['Deambulación asistida.'], stopMedIds: [ondan.id],
+      meds: [{ drug: 'Metoclopramida', dose: '10 mg', route: 'Intravenosa', everyHours: 8, prn: false }], chain: { basedOn: null, decisions: [{ id: act[2].id, action: 'omit' }] } })
+    assert.equal(n1.status, 201, JSON.stringify(n1.body))
+    assert.deepEqual(tags(n1.body, 'ind'), ['continue:Dieta blanda.', 'continue:Control de ingesta y excreta.', 'omitted:Cabecera a 30 grados.', 'new:Deambulación asistida.'])
+    assert.deepEqual(tags(n1.body, 'med').map((t: string) => t.split(':')[0]).sort(), ['continue', 'new', 'omitted'])
+    assert.equal(n1.body.orders.length, n1.body.lines.length, 'cada línea es una orden del checklist')
+    // Enfermería marca una orden de la nota 1
+    assert.equal((await nurse.post(`/api/inpatient/notes/${n1.body.id}/orders/0/review`, { checked: true })).status, 201)
+    // Una nota de procedimiento en medio no corta la cadena
+    const proc = await doc.post(`/api/inpatient/${stay}/procedure-notes`, { name: 'Colocación de sonda', performedAt: new Date().toISOString(), text: 'Sin complicaciones, bien tolerado.', major: false })
+    assert.equal(proc.status, 201, JSON.stringify(proc.body))
+    file = (await doc.get(`/api/inpatient/${stay}`)).body
+    const act2 = activeIndications(file)
+    assert.deepEqual(act2.map((a) => a.text), ['Dieta blanda.', 'Control de ingesta y excreta.', 'Deambulación asistida.'], 'sólo las no omitidas más la nueva')
+    // Nota 2 sin ningún cambio: el cuadro completo, no «Sin indicaciones»
+    const n2 = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'Igual', orders: [], chain: { basedOn: chainNote(file)!.id, decisions: [] } })
+    assert.equal(n2.status, 201, JSON.stringify(n2.body))
+    assert.deepEqual(tags(n2.body, 'ind'), ['continue:Dieta blanda.', 'continue:Control de ingesta y excreta.', 'continue:Deambulación asistida.'])
+    assert.ok(tags(n2.body, 'med').every((t: string) => t.startsWith('continue:')) && tags(n2.body, 'med').length === 2)
+    // El checklist de la nota nueva empieza sin marcar; el de la anterior conserva su marca
+    file = (await doc.get(`/api/inpatient/${stay}`)).body
+    assert.ok(file.marks.some((m: any) => m.noteId === n1.body.id && m.index === 0 && m.action === 'check'))
+    assert.ok(!file.marks.some((m: any) => m.noteId === n2.body.id))
+    // Una nota abierta antes de la nota 2 ya no se firma: avisa
+    const old = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'Tarde', orders: [], chain: { basedOn: n1.body.id, decisions: [] } })
+    assert.equal(old.status, 409)
+    assert.match(old.body.error, /Otra nota se firmó/)
+    // Cambiar una indicación: la anterior queda Modificada y la nueva, Nueva
+    const act3 = activeIndications(file)
+    const n3 = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'Cambio', orders: [], chain: { basedOn: n2.body.id, decisions: [{ id: act3[0].id, action: 'change', text: 'Dieta líquida.' }] } })
+    assert.equal(n3.status, 201, JSON.stringify(n3.body))
+    assert.deepEqual(tags(n3.body, 'ind').slice(0, 2), ['modified:Dieta blanda.', 'new:Dieta líquida.'])
+    file = (await doc.get(`/api/inpatient/${stay}`)).body
+    assert.ok(!activeIndications(file).some((a) => a.text === 'Dieta blanda.'))
+    // Tras el egreso no se precarga nada
+    assert.equal((await doc.post(`/api/inpatient/${stay}/discharge`, { diagnoses: [{ code: 'S/C', label: 'Prueba' }], summary: 'Evolución favorable en observación.', condition: 'Mejorado' })).status, 201)
+    file = (await doc.get(`/api/inpatient/${stay}`)).body
+    assert.deepEqual(activeIndications(file), [])
+    await sql.run(`UPDATE clinics SET obs_order_checklist = FALSE WHERE id = 'c-sb'`)
+  })
+})

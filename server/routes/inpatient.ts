@@ -8,7 +8,8 @@ import { VITALS_FREQUENCIES } from '../../src/lib/vitalsSheet.js'
 import { buildEpicrisis, createEpicrisisDraft, missingForIssue } from '../epicrisis.js'
 import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
-import { isScheduled, LATE_AFTER_MIN, medLabel } from '../../src/lib/inpatient.js'
+import { activeIndications, chainNote, courseDone, indicationLines, isScheduled, LATE_AFTER_MIN, lineOrder, medLabel } from '../../src/lib/inpatient.js'
+import type { OrderLine } from '../../src/lib/types.js'
 import { examLine, isPending } from '../../src/lib/exams.js'
 import { hasBlank, medHasBlank } from '../../src/lib/orderSets.js'
 import { createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrders.js'
@@ -298,6 +299,27 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   })
 
   // ---------- Expediente de hospitalización ----------
+  /** MC7 (ronda 6): las indicaciones (no medicamentos) de la consulta que ingresó al paciente. */
+  async function consultIndications(h: Row): Promise<string[]> {
+    if (!h.consultation_id) return []
+    const c = await sql.one('SELECT indications, orders FROM consultations WHERE id = ?', [String(h.consultation_id)])
+    if (!c) return []
+    if (c.indications != null) return JSON.parse(String(c.indications)) as string[]
+    // Consultas de antes: las órdenes que no son medicamento de la hoja
+    const drugs = (await sql.query('SELECT drug FROM hosp_meds WHERE hospitalization_id = ?', [String(h.id)])).map((r) => String(r.drug).toLowerCase())
+    return (JSON.parse(String(c.orders ?? '[]')) as string[]).filter((o) => !drugs.some((d) => o.toLowerCase().startsWith(d)))
+  }
+
+  /** MC7: lo que la nota nueva necesita de la estancia para armar la cadena (notas, medicamentos, consulta de ingreso). */
+  async function chainOf(h: Row) {
+    const [notes, meds] = await Promise.all([
+      sql.query('SELECT * FROM hosp_notes WHERE hospitalization_id = ? ORDER BY at, id', [String(h.id)]),
+      sql.query('SELECT * FROM hosp_meds WHERE hospitalization_id = ? ORDER BY ordered_at, id', [String(h.id)]),
+    ])
+    const file = { hospitalization: toHospitalization(h), notes: notes.map(toInpatientNote), meds: meds.map(toInpatientMed), consultIndications: await consultIndications(h) }
+    return { file, last: chainNote(file), active: activeIndications(file) }
+  }
+
   /** Expediente completo de una estancia (lo que ve la pantalla). */
   async function fileOf(cid: string, h: Row) {
     const id = String(h.id)
@@ -323,6 +345,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       referrals: referrals.map(toReferral), epicrises: epicrises.map(toEpicrisis),
       vitals: vitals.map((v) => ({ ...toVitals(v), source: v.source as 'preclinic' | 'stay' })),
       consultOrders: h.consultation_id ? JSON.parse(String((await sql.one('SELECT orders FROM consultations WHERE id = ?', [String(h.consultation_id)]))?.orders ?? '[]')) as string[] : [],
+      // MC7 (ronda 6): las indicaciones de la consulta de ingreso empiezan la cadena
+      consultIndications: await consultIndications(h),
       // AN1: adendas de las notas y de la consulta que lo ingresó
       addenda: await addendaFor(sql, cid, [...notes.map((n) => String(n.id)), ...(h.consultation_id ? [String(h.consultation_id)] : [])]),
       // EX1: exámenes de la estancia (y los que pidió la consulta que lo ingresó)
@@ -372,6 +396,9 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       indicationCount: z.number().int().min(0).max(40).optional(),
       // EX1: exámenes pedidos en la nota (van a la sección Exámenes, no como texto en las órdenes)
       exams: z.array(examInput).max(40).default([]),
+      // MC7 (ronda 6): la cadena. `basedOn` es la última nota firmada que vio el médico al abrir; `decisions`, qué hizo con
+      // cada indicación que bajó. Con `chain`, `orders` trae sólo las indicaciones nuevas.
+      chain: z.object({ basedOn: z.string().nullable(), decisions: z.array(z.object({ id: z.string(), action: z.enum(['continue', 'omit', 'change']), text: z.string().trim().max(500).optional() })).max(60) }).optional(),
       // Identificador que genera el formulario al abrirse: si la misma nota llega dos veces (doble clic, reintento),
       // se devuelve la que ya se guardó y no se duplican ni la nota ni sus órdenes de medicamento
       clientId: z.string().uuid().optional(),
@@ -406,10 +433,29 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const name = await patientName(String(h.patient_id))
     // Fuera de la transacción: con una sola conexión, consultar por fuera de ella la bloquearía
     const checklist = await checklistFor(h)
+    // MC7 (ronda 6): el cuadro completo. Si otra nota se firmó mientras se escribía, se recalcula sobre ella: se avisa
+    let lines: OrderLine[] | undefined
+    let orders = b.orders
+    let indicationCount = b.indicationCount
+    if (b.chain) {
+      const { file, last, active } = await chainOf(h)
+      if ((last?.id ?? null) !== b.chain.basedOn) {
+        const who = last ? (await sql.one('SELECT name FROM staff WHERE id = ?', [last.authorId]))?.name : undefined
+        fail(409, `Otra nota se firmó mientras escribías${who ? ` (${who})` : ''}. Revisa las indicaciones y los medicamentos activos, que ya se actualizaron, y vuelve a firmar.`)
+      }
+      const ind = indicationLines(active, b.chain.decisions, b.orders, () => randomUUID())
+      const ended = (id: string) => b.stopMedIds.includes(id) || b.meds.some((m) => m.replacesId === id)
+      const meds: OrderLine[] = file.meds.filter((m) => !m.stoppedAt && !courseDone(m, new Date(at))).map((m) => ({ id: m.id, kind: 'med' as const, text: medLabel(m), medId: m.id,
+        tag: b.meds.some((x) => x.replacesId === m.id) ? 'modified' as const : ended(m.id) ? 'omitted' as const : 'continue' as const }))
+      for (const m of b.meds) meds.push({ id: randomUUID(), kind: 'med', text: medLabel(m), tag: 'new', replaces: m.replacesId })
+      lines = [...ind, ...meds]
+      orders = lines.map(lineOrder)
+      indicationCount = ind.length
+    }
     await sql.tx(async (q) => {
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan, data) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [noteId, cid, id, b.kind, user.id, at, b.format === 'soap' ? b.subjective : '', b.format === 'soap' ? b.objective : '', b.format === 'soap' ? b.assessment : '', b.format === 'soap' ? b.plan : '',
-          JSON.stringify({ orders: b.orders, checklist, indications: b.indicationCount === undefined ? undefined : Math.min(b.indicationCount, b.orders.length),
+          JSON.stringify({ orders, checklist, indications: indicationCount === undefined ? undefined : Math.min(indicationCount, orders.length), lines, basedOn: b.chain ? b.chain.basedOn ?? undefined : undefined,
             ...(b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, exam: b.exam, observations: b.observations } : {}) })])
       await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
       await insertExams(q, { clinicId: cid, patientId: String(h.patient_id), hospitalizationId: id, noteId, by: user.id, at }, b.exams)

@@ -4,7 +4,8 @@ import { ChevronLeft, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
 import { contactLine, date, fullName, recordNumber, shortStaff, time, dxCode } from '../lib/format'
-import { currentEpicrisis, medLabel, orderMark, splitOrders, stayPath, yearsOld } from '../lib/inpatient'
+import { currentEpicrisis, LINE_TAG, medLabel, orderMark, splitOrders, stayPath, yearsOld } from '../lib/inpatient'
+import type { OrderLineTag } from '../lib/types'
 import { authStatus, authTitle } from '../lib/consent'
 import { PdfPages } from '../components/PdfPages'
 import { ThermalCurve, VitalsTable } from './VitalsSheet'
@@ -258,10 +259,10 @@ function NoteBody({ n, file }: { n: InpatientNote; file: InpatientFile }) {
   }
   // Como en pantalla: los medicamentos con la nota y las indicaciones a la derecha
   const { meds, indications } = splitOrders(n, file)
-  const list = (orders: { text: string; index: number }[], empty: string, dash = false) => orders.length ? <ol className="order-check">{orders.map(({ text, index }, pos) => {
+  const list = (orders: { text: string; index: number; tag?: OrderLineTag }[], empty: string, dash = false) => orders.length ? <ol className="order-check">{orders.map(({ text, index, tag }, pos) => {
     const mark = n.checklist ? orderMark(file.marks, n.id, index) : undefined
-    return <li key={index} className={mark?.action === 'check' ? 'is-checked' : ''}><span className="orders__n">{dash ? '–' : `${pos + 1}.`}</span>
-      <span className="order-check__text"><span className="order-check__order">{text}</span>
+    return <li key={index} className={`${mark?.action === 'check' ? 'is-checked' : ''}${tag === 'omitted' || tag === 'modified' ? ' is-closed' : ''}`}><span className="orders__n">{dash ? '–' : `${pos + 1}.`}</span>
+      <span className="order-check__text"><span className="order-check__order"><span className="order-check__txt">{text}</span>{tag && <span className={`line-tag line-tag--${tag}`}>{LINE_TAG[tag]}</span>}</span>
         {mark?.action === 'check' && <small className="order-check__mark">✓ {shortStaff(staffById(mark.by)?.name)} {dm(mark.at)}</small>}</span></li>
   })}</ol> : <p className="muted">{empty}</p>
   return <NoteColumns left={<NoteText n={n} />} indications={list(indications, 'Sin indicaciones.')} exams={<NoteExams list={(file.exams ?? []).filter((x) => x.noteId === n.id)} />} meds={list(meds, 'Sin medicamentos.', true)} />

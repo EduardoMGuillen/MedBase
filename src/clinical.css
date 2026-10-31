@@ -902,3 +902,13 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .note-exam-list li > span { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .note-exam-list small { color: var(--muted); font-size: 12.5px; }
 .note-exam-list .is-cancelled > span { text-decoration: line-through; color: var(--muted); }
+
+/* MC7 (ronda 6): etiquetas de la cadena de indicaciones y medicamentos */
+.line-tag { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 600; letter-spacing: .02em; padding: 0 6px; border-radius: 999px; vertical-align: 1px;
+  border: 1px solid var(--line); color: var(--muted); background: var(--paper); text-decoration: none; }
+.line-tag--new { color: var(--ink-deep); border-color: var(--ink); background: var(--ink-soft); }
+.line-tag--modified { color: #8a5a00; border-color: #e3c27a; background: #fff6e0; }
+.line-tag--omitted { color: #9b2c2c; border-color: #e7b4b4; background: #fdeeee; }
+.order-check li.is-closed .order-check__txt { text-decoration: line-through; color: var(--muted); }
+.omit-row__new { display: block; font-size: 13.5px; color: var(--ink-deep); font-weight: 600; }
+@media print { .line-tag { border-color: #999; background: none; color: #333; } }

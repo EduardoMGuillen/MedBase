@@ -195,7 +195,7 @@ function useStoreValue() {
     /** Editar datos generales de la estancia: cama, acompañante y teléfonos. El ingreso en sí no se edita. */
     updateAdmission: (id: string, b: Partial<Pick<Hospitalization, 'bedId' | 'specialty' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'>>) =>
       run(() => api<Hospitalization>(`/inpatient/${id}`, { method: 'PATCH', body: b }), 'Datos generales guardados'),
-    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string; exams?: ExamInput[] }) =>
+    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string; exams?: ExamInput[]; chain?: { basedOn: string | null; decisions: { id: string; action: 'omit' | 'change'; text?: string }[] } }) =>
       run(() => api<InpatientNote>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
     stopMed: (medId: string, reason: string) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/stop`, { body: { reason } }), 'Orden suspendida'),
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),

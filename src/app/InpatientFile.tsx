@@ -7,7 +7,7 @@ import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict } from '../lib/catalogs'
-import { defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
+import { activeIndications, chainNote, LINE_TAG, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
 import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
 import { NoteColumns, NoteExams, NoteText } from '../components/NoteColumns'
@@ -17,7 +17,7 @@ import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
 import { useFileAlerts, useNow } from '../lib/hooks'
-import type { Addendum, Diagnosis, Dose, ExamInput, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient } from '../lib/types'
+import type { Addendum, Diagnosis, Dose, ExamInput, OrderLineTag, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient } from '../lib/types'
 import { bedLabel } from './Inpatients'
 import { GeneralDataModal } from './GeneralData'
 import { AdmitBedStep, ConsentChoice } from './ConsentFlow'
@@ -686,7 +686,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         if (n.kind === 'procedure') return <ProcedureNote key={n.id} n={n} file={file} reload={reload} />
         return <SoapNote key={n.id} n={n} file={file} reload={reload} />
       }) : !h.consultationId && <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
-      {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }} />}
+      {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }} onStale={reload} />}
     </div>
   )
 }
@@ -751,7 +751,7 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
  * Órdenes numeradas; en las notas con checklist, cada una con su casilla y la marca de enfermería. `index` es
  * la posición de la orden en la nota (la que guarda la marca); el número que se ve es el de su columna.
  */
-function OrderChecklist({ n, orders, file, reload, pill = false }: { n: InpatientNote; orders: { text: string; index: number }[]; file: File; reload: () => void; pill?: boolean }) {
+function OrderChecklist({ n, orders, file, reload, pill = false }: { n: InpatientNote; orders: { text: string; index: number; tag?: OrderLineTag }[]; file: File; reload: () => void; pill?: boolean }) {
   const { can, staffById, reviewOrder } = useStore()
   const [undo, setUndo] = useState<number | null>(null)
   const [reason, setReason] = useState('')
@@ -761,14 +761,14 @@ function OrderChecklist({ n, orders, file, reload, pill = false }: { n: Inpatien
   return (
     <>
       <ol className="order-check">
-        {orders.map(({ text: o, index: i }, pos) => {
+        {orders.map(({ text: o, index: i, tag }, pos) => {
           const mark = n.checklist ? orderMark(file.marks, n.id, i) : undefined
           const checked = mark?.action === 'check'
           const who = mark && staffById(mark.by)
           return (
-            <li key={i} className={checked ? 'is-checked' : n.checklist ? 'is-pending' : ''}>
+            <li key={i} className={`${checked ? 'is-checked' : n.checklist ? 'is-pending' : ''}${tag === 'omitted' || tag === 'modified' ? ' is-closed' : ''}`}>
               <span className="orders__n">{pill ? '–' : `${pos + 1}.`}</span>
-              <span className="order-check__text"><span className="order-check__order">{pill && <Pill size={12} className="orders__pill" aria-hidden="true" />}{o}</span>
+              <span className="order-check__text"><span className="order-check__order">{pill && <Pill size={12} className="orders__pill" aria-hidden="true" />}<span className="order-check__txt">{o}</span>{tag && <LineTag tag={tag} />}</span>
                 {checked && <small className="order-check__mark">✓ {shortStaff(who?.name)} {time(mark.at)}</small>}
                 {mark?.action === 'uncheck' && <small className="order-check__mark order-check__mark--undo">Desmarcada por {shortStaff(who?.name)} {time(mark.at)}: {mark.reason}</small>}
               </span>
@@ -796,6 +796,11 @@ function OrderChecklist({ n, orders, file, reload, pill = false }: { n: Inpatien
       )}
     </>
   )
+}
+
+/** MC7 (ronda 6): etiqueta discreta de una línea de la nota. */
+export function LineTag({ tag }: { tag: OrderLineTag }) {
+  return <span className={`line-tag line-tag--${tag}`}>{LINE_TAG[tag]}</span>
 }
 
 /** Para enfermería: todas las órdenes sin revisar de todas las notas, en orden de hora. */
@@ -934,7 +939,7 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize }: { f
 
 const EMPTY_MED: NewMed = { drug: '', presentation: '', dose: '', route: 'Intravenosa', everyHours: 8, prn: false, instructions: '' }
 
-function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: () => void }) {
+function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: () => void; onStale?: () => void }) {
   const { addInpatientNote } = useStore()
   // Una nota, un identificador: si se guarda dos veces no se duplica (ni sus medicamentos en la hoja)
   const [clientId] = useState(() => crypto.randomUUID())
@@ -948,7 +953,16 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   const [stop, setStop] = useState<string[]>([])
   const [adding, setAdding] = useState(kind === 'admission')
   const [replacing, setReplacing] = useState<string | null>(null)
-  const [extra, setExtra] = useState<string[]>(() => carriedOrders(file))
+  // MC7 (ronda 6): las indicaciones nuevas de esta nota; las vigentes bajan solas en «Indicaciones activas»
+  const [extra, setExtra] = useState<string[]>([])
+  const activeInd = activeIndications(file)
+  // Qué hace el médico con cada indicación que bajó (por su identificador): sigue, se omite o se cambia
+  const [decisions, setDecisions] = useState<Record<string, { action: 'omit' | 'change'; text?: string }>>({})
+  const [changingInd, setChangingInd] = useState<string | null>(null)
+  // La última nota firmada al abrir: si otra se firma mientras se escribe, se avisa y se recalcula sobre ella
+  const lastId = chainNote(file)?.id ?? null
+  const [basedOn, setBasedOn] = useState<string | null>(lastId)
+  const stale = basedOn !== lastId
   // EX1: exámenes pedidos en la nota
   const [exams, setExams] = useState<ExamInput[]>([])
   const [extraText, setExtraText] = useState('')
@@ -956,12 +970,11 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
   const [editingMed, setEditingMed] = useState<number | null>(null)
   const { notify } = useStore()
   const vademecum = useVademecum()
-  const active = file.meds.filter((m) => !m.stoppedAt)
+  const active = file.meds.filter((m) => !m.stoppedAt && !courseDone(m))
   // AN1: la nota se guarda sola como borrador (aquí y en el servidor) mientras se escribe
-  const [carried] = useState(() => JSON.stringify(carriedOrders(file)))
-  const noteBlank = !Object.values(n).some((v) => v.trim()) && !d.diagnoses.length && !d.exam.trim() && !d.observations.trim() && !meds.length && !stop.length && !exams.length && JSON.stringify(extra) === carried
-  const draft = useDraftSync('evolucion', `${file.hospitalization.id}:${kind}`, { n, format, d, meds, stop, extra, exams }, (x) => {
-    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD(x.d); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams)
+  const noteBlank = !Object.values(n).some((v) => v.trim()) && !d.diagnoses.length && !d.exam.trim() && !d.observations.trim() && !meds.length && !stop.length && !exams.length && !extra.length && !Object.keys(decisions).length
+  const draft = useDraftSync('evolucion', `${file.hospitalization.id}:${kind}`, { n, format, d, meds, stop, extra, exams, decisions }, (x) => {
+    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD(x.d); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams); if (x.decisions) setDecisions(x.decisions)
   }, noteBlank)
   const inVademecum = (drug: string) => vademecum.some((x) => normalize(x.name) === normalize(drug))
   // Huecos "___" de un set aplicado: la nota no se firma hasta llenarlos
@@ -970,7 +983,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
     ...meds.flatMap((m) => (m.prn && !m.prnCondition?.trim() ? [`la condición PRN de ${m.drug}`] : []))]
   // SOAP: los cuatro campos, como siempre. Estándar: algo escrito, una indicación o un medicamento.
   const ready = !blanks.length && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
-    : d.diagnoses.length > 0 || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0 || exams.length > 0)
+    : d.diagnoses.length > 0 || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0 || exams.length > 0 || Object.keys(decisions).length > 0)
   /** Un set se agrega al final: indicaciones y medicamentos (que pasan a la hoja al guardar), todo editable. */
   const applySet = (set: OrderSet) => {
     const texts = set.items.flatMap((it) => (it.text ? [it.text] : []))
@@ -1007,15 +1020,13 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
       {blanks.length ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="status">Completa los espacios ___ de {blanks.join(', ')}.</span>
         : <span className="muted" style={{ marginRight: 'auto', fontSize: 13.5 }}>{meds.length ? `${meds.length} medicamento(s) nuevo(s)` : ''}{stop.length ? `${meds.length ? ', ' : ''}${stop.length} omitido(s)` : ''}</span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
+      <button className="btn btn--primary" disabled={!ready || busy || stale} onClick={async () => {
         setBusy(true)
-        const ended = (id: string) => stop.includes(id) || meds.some((x) => x.replacesId === id)
-        const kept = active.filter((m) => !ended(m.id)).map((m) => medLabel(m))
-        const added = meds.map((m) => medLabel(m))
-        const omitted = active.filter((m) => ended(m.id)).map((m) => `OMITIR ${m.drug}`)
-        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: [...extra, ...kept, ...added, ...omitted], indicationCount: extra.length, clientId })
+        // MC7 (ronda 6): el servidor arma el cuadro completo (Continúa, Nueva, Modificada, Omitida) sobre la última nota firmada
+        const chain = { basedOn, decisions: Object.entries(decisions).filter(([id]) => activeInd.some((a) => a.id === id)).map(([id, x]) => ({ id, ...x })) }
+        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, clientId })
         setBusy(false)
-        if (ok) { draft.clear(); onSaved() }
+        if (ok) { draft.clear(); onSaved() } else onStale?.()
       }}>Firmar nota</button>
     </>}>
       {!noteBlank && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}
@@ -1048,7 +1059,38 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
         <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions }) => ({ med: { drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions: instructions || undefined } })), ...exams.map((e) => ({ exam: e }))]} />
       </div>
       <fieldset className="fs"><legend>Indicaciones</legend>
-        <p className="muted" style={{ fontSize: 13.5 }}>Lo que no es medicamento ni examen, una por línea: dieta, cuidados, signos vitales. Puedes pegar una lista completa.</p>
+        {stale && <div className="alert-strip alert-strip--amber" role="alert" style={{ flexWrap: 'wrap' }}>
+          <span>Otra nota se firmó mientras escribías. Las indicaciones y los medicamentos activos ya se actualizaron con ella: revísalos antes de firmar.</span>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setBasedOn(lastId)}>Entendido</button></div>}
+        {activeInd.length > 0 && (
+          <div className="note-editor__active">
+            <h4>Indicaciones activas</h4>
+            <p className="muted" style={{ fontSize: 13.5 }}>Vienen de la nota anterior y siguen vigentes. Marca OMITIR para suspender una; Cambiar la cierra y deja la nueva.</p>
+            <div className="rows">
+              {activeInd.map((a) => {
+                const dec = decisions[a.id]
+                const set = (x?: { action: 'omit' | 'change'; text?: string }) => { const next = { ...decisions }; if (x) next[a.id] = x; else delete next[a.id]; setDecisions(next) }
+                return (
+                  <div key={a.id} className="omit-row">
+                    <span>
+                      <span className={dec ? 'struck' : ''}>{a.text}</span>
+                      {dec?.action === 'change' && changingInd !== a.id && <span className="omit-row__new">→ {dec.text}</span>}
+                      {changingInd === a.id && <input className="input" autoFocus defaultValue={dec?.text ?? a.text} aria-label={`Cambiar «${a.text}»`}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() } if (e.key === 'Escape') setChangingInd(null) }}
+                        onBlur={(e) => { const t = e.target.value.trim(); set(t && t !== a.text ? { action: 'change', text: /[.!?]$/.test(t) ? t : `${t}.` } : undefined); setChangingInd(null) }} />}
+                    </span>
+                    <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      {dec?.action === 'change' ? <button type="button" className="btn btn--ghost btn--sm" onClick={() => set(undefined)}>Deshacer</button>
+                        : <button type="button" className="btn btn--ghost btn--sm" disabled={dec?.action === 'omit'} onClick={() => setChangingInd(a.id)}>Cambiar</button>}
+                      <label><input type="checkbox" checked={dec?.action === 'omit'} onChange={(e) => set(e.target.checked ? { action: 'omit' } : undefined)} /> OMITIR</label>
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+        <p className="muted" style={{ fontSize: 13.5 }}>{activeInd.length ? 'Indicaciones nuevas' : 'Lo que no es medicamento ni examen'}, una por línea: dieta, cuidados, signos vitales. Puedes pegar una lista completa.</p>
         {extra.length > 0 && <ol className="orders">{extra.map((o, i) => (
           <li key={i}><span className="orders__n">{i + 1}.</span>
             <input className={`input${hasBlank(o) ? ' input--blank' : ''}`} value={o} aria-label={`Indicación ${i + 1}`} aria-invalid={hasBlank(o)} onChange={(e) => setExtra(extra.map((x, j) => j === i ? e.target.value : x))} />
@@ -1120,13 +1162,6 @@ function NoteEditor({ file, p, kind, onClose, onSaved }: { file: File; p: Patien
       </div>
     </Modal>
   )
-}
-
-function carriedOrders(file: File) {
-  const last = [...file.notes].reverse().find((n) => (n.kind === 'admission' || n.kind === 'evolution') && n.orders?.length)
-  if (!last?.orders?.length) return []
-  const drugs = file.meds.map((m) => m.drug)
-  return last.orders.filter((o) => !o.startsWith('OMITIR ') && !drugs.some((d) => o.startsWith(d)))
 }
 
 /** Un medicamento de la nota (p. ej. de un set) para editarlo en el formulario; sin hora, el formulario pone la actual. */

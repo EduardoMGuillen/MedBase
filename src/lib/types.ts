@@ -548,7 +548,19 @@ export interface InpatientNote {
   exam?: string
   observations?: string
   procedure?: ProcedureData
+  /**
+   * MC7 (ronda 6): el cuadro completo al firmar: cada indicación y cada medicamento vigentes, con su etiqueta. Cada línea es
+   * también una orden del checklist (misma posición en `orders`). Las notas de antes no lo tienen.
+   */
+  lines?: OrderLine[]
+  /** MC7: la nota firmada sobre la que se armó (para avisar si otra se firmó mientras se escribía). */
+  basedOn?: string
 }
+
+/** MC7 (ronda 6): Continúa, Nueva, Modificada (la anterior, cerrada) u Omitida. */
+export type OrderLineTag = 'continue' | 'new' | 'modified' | 'omitted'
+/** Una indicación o un medicamento de la nota, con un identificador estable para seguirlo de nota en nota. */
+export interface OrderLine { id: string; kind: 'ind' | 'med'; text: string; tag: OrderLineTag; medId?: string; replaces?: string }
 
 // ---------- Exámenes (EX1) ----------
 
@@ -927,6 +939,8 @@ export interface InpatientFile {
   vitals: Vitals[]
   /** Órdenes de la consulta externa que ingresó al paciente (p. ej. "Signos vitales cada 4 horas"). */
   consultOrders?: string[]
+  /** MC7 (ronda 6): las indicaciones (no medicamentos) de esa consulta: empiezan la cadena de indicaciones. */
+  consultIndications?: string[]
   /** AN1: adendas de las notas de la estancia y de la consulta de ingreso. */
   addenda?: Addendum[]
   /** EX1: exámenes de la estancia (y de la consulta que lo ingresó). */

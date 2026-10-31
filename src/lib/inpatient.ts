@@ -1,4 +1,4 @@
-import type { Dose, InpatientFile, InpatientMed, InpatientNote, OrderMark } from './types.js'
+import type { Dose, InpatientFile, InpatientMed, InpatientNote, OrderLine, OrderLineTag, OrderMark } from './types.js'
 import { normalize } from './patients.js'
 
 /**
@@ -165,7 +165,12 @@ export function noteOrders(n: InpatientNote, file: Pick<InpatientFile, 'meds'>):
  * usa el checklist de enfermería. Las notas nuevas guardan cuántas indicaciones van primero; en las
  * anteriores se reconoce el medicamento por su nombre.
  */
-export function splitOrders(n: InpatientNote, file: Pick<InpatientFile, 'meds'>) {
+export function splitOrders(n: InpatientNote, file: Pick<InpatientFile, 'meds'>): { meds: { text: string; index: number; tag?: OrderLineTag }[]; indications: { text: string; index: number; tag?: OrderLineTag }[] } {
+  // MC7 (ronda 6): con el cuadro completo, cada línea lleva su etiqueta (Continúa, Nueva, Modificada u Omitida)
+  if (n.lines?.length) {
+    const all = n.lines.map((l, index) => ({ text: l.text, index, tag: l.tag, kind: l.kind }))
+    return { indications: all.filter((l) => l.kind === 'ind'), meds: all.filter((l) => l.kind === 'med') }
+  }
   const all = noteOrders(n, file).map((text, index) => ({ text, index }))
   if (n.indicationCount != null) return { meds: all.slice(n.indicationCount), indications: all.slice(0, n.indicationCount) }
   const drugs = file.meds.map((m) => normalize(m.drug))
@@ -184,3 +189,49 @@ export function currentDiagnoses(file: Pick<InpatientFile, 'notes' | 'hospitaliz
 
 /** AD3: especialidad que se propone para un ingreso: la del médico que ingresa; si no tiene, "Medicina general". */
 export const defaultSpecialty = (u?: { specialty?: string } | null) => u?.specialty?.trim() || 'Medicina general'
+
+// ---------- MC7 (ronda 6): la cadena de indicaciones y medicamentos de nota en nota ----------
+
+export const LINE_TAG: Record<OrderLineTag, string> = { continue: 'Continúa', new: 'Nueva', modified: 'Modificada', omitted: 'Omitida' }
+
+/** La última nota de la cadena: ingreso o evolución. Las de procedimiento no llevan órdenes y no la cortan. */
+export function chainNote(file: Pick<InpatientFile, 'notes'>) {
+  return [...file.notes].filter((n) => n.kind === 'admission' || n.kind === 'evolution').sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id)).at(-1)
+}
+
+/**
+ * Indicaciones vigentes (las que no son medicamento) que bajan a la nota siguiente, cada una con su identificador estable:
+ * las de la última nota de la cadena que no se omitieron ni se cerraron al cambiarlas; si todavía no hay notas, las de la
+ * consulta externa que ingresó al paciente. Las notas de antes de esta ronda se leen por su texto. El egreso cierra la estancia.
+ */
+export function activeIndications(file: Pick<InpatientFile, 'notes' | 'meds' | 'hospitalization'> & Partial<Pick<InpatientFile, 'consultIndications'>>): { id: string; text: string }[] {
+  if (file.hospitalization.status !== 'active') return []
+  const last = chainNote(file)
+  if (!last) return (file.consultIndications ?? []).map((text, i) => ({ id: `${file.hospitalization.consultationId ?? 'consulta'}:${i}`, text }))
+  if (last.lines) return last.lines.filter((l) => l.kind === 'ind' && (l.tag === 'continue' || l.tag === 'new')).map((l) => ({ id: l.id, text: l.text }))
+  return splitOrders(last, file).indications.filter((o) => !o.text.startsWith('OMITIR ')).map((o) => ({ id: `${last.id}:${o.index}`, text: o.text }))
+}
+
+/** Decisión del médico sobre una indicación que bajó: sigue, se omite o se cambia por otro texto. */
+export type IndicationDecision = { id: string; action: 'continue' | 'omit' | 'change'; text?: string }
+
+/**
+ * Las líneas de indicaciones de una nota nueva: todas las vigentes (Continúa, Omitida o Modificada + la Nueva que la
+ * reemplaza) y, al final, las nuevas. `newId` da el identificador de cada línea nueva.
+ */
+export function indicationLines(active: { id: string; text: string }[], decisions: IndicationDecision[], added: string[], newId: () => string): OrderLine[] {
+  const out: OrderLine[] = []
+  for (const a of active) {
+    const d = decisions.find((x) => x.id === a.id)
+    if (d?.action === 'omit') out.push({ id: a.id, kind: 'ind', text: a.text, tag: 'omitted' })
+    else if (d?.action === 'change' && d.text?.trim() && d.text.trim() !== a.text) {
+      out.push({ id: a.id, kind: 'ind', text: a.text, tag: 'modified' })
+      out.push({ id: newId(), kind: 'ind', text: d.text.trim(), tag: 'new', replaces: a.id })
+    } else out.push({ id: a.id, kind: 'ind', text: a.text, tag: 'continue' })
+  }
+  for (const t of added) out.push({ id: newId(), kind: 'ind', text: t, tag: 'new' })
+  return out
+}
+
+/** Texto de una línea como orden del checklist: la omitida se lee «OMITIR …», como los medicamentos de antes. */
+export const lineOrder = (l: OrderLine) => (l.tag === 'omitted' ? `OMITIR ${l.text}` : l.text)
