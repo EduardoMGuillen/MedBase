@@ -4,7 +4,7 @@ import { CheckCheck, MessageCircle, Plus, Smartphone, Trash2 } from 'lucide-reac
 import { useStore, type FollowupInput } from '../lib/store'
 import { Modal, PageHead } from '../components/ui'
 import { clinicWhatsapp, date, dateTime, fullName, localISODate } from '../lib/format'
-import { addDays, CHRONIC_PRESETS, FOLLOWUP_KIND, followupMessage, REMINDER_TYPE } from '../lib/followups'
+import { addDays, CHRONIC_PRESETS, clinicToday, daysLabel, daysUntil, FOLLOWUP_KIND, followupMessage, REMINDER_TYPE } from '../lib/followups'
 import type { Followup } from '../lib/types'
 import { PatientPicker } from './Inpatients'
 
@@ -22,7 +22,8 @@ export default function Followups() {
   const setKind = (k: Kind) => setParams(k === 'reminder' ? { tab: 'recordatorios' } : {}, { replace: true })
   const [sending, setSending] = useState<Followup | null>(null)
   const [adding, setAdding] = useState(false)
-  const today = localISODate(new Date())
+  // CR2 (ronda 6): «hoy» es el de la clínica (Tegucigalpa), no el del navegador
+  const today = clinicToday()
   // Los procedimientos de antes (si alguno no se migró) también son recordatorios
   const list = followups.filter((f) => (kind === 'reminder' ? f.kind !== 'chronic' : f.kind === kind)).sort((a, b) => a.dueDate.localeCompare(b.dueDate))
   const count = (k: Kind) => followups.filter((f) => (k === 'reminder' ? f.kind !== 'chronic' : f.kind === k)).length
@@ -57,16 +58,16 @@ export default function Followups() {
                   <td><Link to={`/app/pacientes/${p.id}`}>{fullName(p)}</Link><small style={{ display: 'block', color: 'var(--muted)' }}>{p.phone}</small></td>
                   <td>{f.kind !== 'chronic' && <span className="badge badge--neutral fu-type">{f.reminderType ? REMINDER_TYPE[f.reminderType] : f.kind === 'procedure' ? 'Procedimiento' : 'Recordatorio'}</span>}{f.title}{f.notes && <small style={{ display: 'block', color: 'var(--muted)' }}>{f.notes}</small>}</td>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>
-                    {date(`${f.dueDate}T12:00:00`)}
+                    {/* CR2 (ronda 6): primero cuántos días faltan y al lado la fecha; en Recordatorios la columna Fecha no cambia */}
+                    {kind === 'chronic' ? <><b>{daysLabel(daysUntil(f.dueDate, today))}</b> · {date(`${f.dueDate}T12:00:00`)}</> : date(`${f.dueDate}T12:00:00`)}
                     {overdue && <span className="badge badge--red" style={{ marginLeft: 6 }}>Vencido</span>}
                     {soon && <span className="badge badge--amber" style={{ marginLeft: 6 }}>Esta semana</span>}
                   </td>
-                  {kind === 'chronic' && <td className="num">{f.everyDays && f.everyDays % 30 === 0 ? `${f.everyDays / 30} ${f.everyDays === 30 ? 'mes' : 'meses'}` : `${f.everyDays} días`}</td>}
-                  <td>
-                    {f.remindedWeek && <div>1 semana antes</div>}
-                    {f.remindedEve && <div>Un día antes</div>}
-                    {f.remindedDay && <div>El día del control</div>}
-                    {f.notifiedAt && <div>WhatsApp {dateTime(f.notifiedAt)}</div>}
+                  {kind === 'chronic' && <td className="num" style={{ whiteSpace: 'nowrap' }}>{f.everyDays && f.everyDays % 30 === 0 ? `${f.everyDays / 30} ${f.everyDays === 30 ? 'mes' : 'meses'}` : `${f.everyDays} días`}</td>}
+                  <td className="fu-notice">
+                    {/* CR2 (ronda 6): los avisos programados en una línea y el WhatsApp enviado aparte */}
+                    {(f.remindedWeek || f.remindedEve || f.remindedDay) && <div className="fu-notice__auto">Avisos: {[f.remindedWeek && '1 semana antes', f.remindedEve && 'un día antes', f.remindedDay && 'el día del control'].filter(Boolean).join(' · ')}</div>}
+                    {f.notifiedAt && <div className="fu-notice__sent">Enviado: {dateTime(f.notifiedAt)}</div>}
                     {!f.remindedWeek && !f.remindedEve && !f.remindedDay && !f.notifiedAt && <span style={{ color: 'var(--faint)' }}>Aún no toca</span>}
                   </td>
                   <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>

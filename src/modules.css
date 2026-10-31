@@ -575,3 +575,8 @@ tr.clickable { cursor: pointer; }
 
 /* CR1 (ronda 6): tipo del recordatorio junto al motivo */
 .fu-type { margin-right: 6px; font-size: 11px; vertical-align: 1px; }
+
+/* CR2 (ronda 6): «Último aviso»: lo programado y lo enviado, separados */
+.fu-notice { font-size: 13px; }
+.fu-notice__auto { color: var(--muted); }
+.fu-notice__sent { margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--line); font-weight: 600; color: var(--ink-deep); }

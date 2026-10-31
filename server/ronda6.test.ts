@@ -464,3 +464,16 @@ describe('CR1 los procedimientos pasan a ser recordatorios', () => {
     assert.deepEqual([b.status, b.body.kind, b.body.reminderType], [201, 'reminder', 'procedure'])
   })
 })
+
+describe('CR2 «Próximo control» en días', () => {
+  test('En 12 días, Mañana, Hoy, Hace 1 día (singular y plural), con la fecha de Tegucigalpa', async () => {
+    const { daysLabel, daysUntil, clinicToday } = await import('../src/lib/followups.js')
+    assert.equal(daysLabel(daysUntil('2026-11-12', '2026-10-31')), 'En 12 días')
+    assert.equal(daysLabel(daysUntil('2026-11-01', '2026-10-31')), 'Mañana')
+    assert.equal(daysLabel(daysUntil('2026-10-31', '2026-10-31')), 'Hoy')
+    assert.equal(daysLabel(daysUntil('2026-10-30', '2026-10-31')), 'Hace 1 día')
+    assert.equal(daysLabel(daysUntil('2026-10-06', '2026-10-31')), 'Hace 25 días')
+    // 31/10 a las 23:30 en Honduras es 1/11 en UTC: cuenta el día de la clínica
+    assert.equal(clinicToday(new Date('2026-11-01T05:30:00Z')), '2026-10-31')
+  })
+})

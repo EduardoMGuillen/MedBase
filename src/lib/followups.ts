@@ -39,6 +39,22 @@ export function followupMessage(f: Pick<Followup, 'kind' | 'title' | 'dueDate' |
   return `Hola ${v.paciente}, le saluda ${v.clinica}. Le recordamos: ${f.title}. Fecha: ${when}. Para agendar su cita, responda este mensaje o llame al ${v.telefono}.`
 }
 
+/** CR2 (ronda 6): hoy (YYYY-MM-DD) en la zona de la clínica (Honduras), no la del navegador. */
+export const CLINIC_TZ = 'America/Tegucigalpa'
+export const clinicToday = (now = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: CLINIC_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+
+/** CR2 (ronda 6): días entre hoy y la fecha (negativo si ya pasó) y su texto: «En 12 días», «Mañana», «Hoy», «Hace 1 día». */
+export function daysUntil(dueDate: string, today = clinicToday()) {
+  const ms = Date.UTC(+dueDate.slice(0, 4), +dueDate.slice(5, 7) - 1, +dueDate.slice(8, 10)) - Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10))
+  return Math.round(ms / 86_400_000)
+}
+export function daysLabel(n: number) {
+  if (n === 0) return 'Hoy'
+  if (n === 1) return 'Mañana'
+  const d = Math.abs(n)
+  return `${n > 0 ? 'En' : 'Hace'} ${d} ${d === 1 ? 'día' : 'días'}`
+}
+
 /** Fecha YYYY-MM-DD dentro de `days` días a partir de `from`. */
 export function addDays(from: string, days: number) {
   const d = new Date(`${from}T12:00:00`)
