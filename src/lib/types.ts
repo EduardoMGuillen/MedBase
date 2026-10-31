@@ -568,6 +568,8 @@ export interface ExamInput {
   priority: 'routine' | 'urgent'
   /** Dónde se realiza: en la clínica o externo. */
   place: 'clinic' | 'external'
+  /** MC3 (ronda 6): no estaba en el catálogo de la clínica (escrito a mano, con su tipo elegido). */
+  uncatalogued?: boolean
 }
 
 export interface ExamResultValue { analyte: string; value: string; unit?: string; low?: number; high?: number; flag?: 'high' | 'low'; critical?: boolean }

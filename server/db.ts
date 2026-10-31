@@ -16,7 +16,7 @@ import { loadLabCatalog, migrateSubgroups } from './catalogLoader.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '51'
+const SCHEMA_VERSION = '52'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -874,6 +874,10 @@ ALTER TABLE hosp_meds ADD COLUMN IF NOT EXISTS prn_condition TEXT;
 -- v51 (ronda 6, CF3): subgrupo de cada examen del catálogo (Hematología, Rayos X…). Opcional: vacío se lee como el de la
 -- lista fija u «Otros». La lista fija recibe el suyo (A6) y se cargan los exámenes y perfiles de server/data/labCatalog.ts.
 ALTER TABLE exam_catalog ADD COLUMN IF NOT EXISTS subgroup TEXT;
+
+-- v52 (ronda 6, MC3): un estudio que no está en el catálogo se pide con su tipo (Laboratorio o Imagen y gabinete) y
+-- queda marcado «No catalogado». Las órdenes de antes no se tocan (no se sabe qué eran).
+ALTER TABLE exam_orders ADD COLUMN IF NOT EXISTS uncatalogued BOOLEAN NOT NULL DEFAULT FALSE;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

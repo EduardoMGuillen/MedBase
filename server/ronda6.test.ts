@@ -118,3 +118,29 @@ describe('CF3 subgrupos y carga del catálogo', () => {
     await sql.run(`UPDATE exam_profiles SET archived_at = 'prueba' WHERE clinic_id = 'c-sb' AND name = 'Perfil de prueba'`)
   })
 })
+
+describe('MC3 estudio no catalogado', () => {
+  test('una radiografía escrita a mano va a Imagen y gabinete, no catalogada y a la bandeja de imágenes (o enfermería); el de laboratorio, a Laboratorio', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const stay = await stayOf(doc, 'observation')
+    const r = await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', observations: 'Control', orders: [], exams: [
+      { group: 'imaging', name: 'Rayos X lateral de columna lumbar', priority: 'routine', place: 'clinic' },
+      { group: 'lab', name: 'Cortisol sérico matutino', priority: 'routine', place: 'clinic' },
+      { group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' },
+    ] })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    const file = (await doc.get(`/api/inpatient/${stay.id}`)).body
+    const rx = file.exams.find((e: any) => e.name === 'Rayos X lateral de columna lumbar')
+    const cort = file.exams.find((e: any) => e.name === 'Cortisol sérico matutino')
+    const hemo = file.exams.find((e: any) => e.name === 'Hemograma' && e.noteId === r.body.id)
+    assert.deepEqual([rx.group, rx.uncatalogued, rx.place], ['imaging', true, 'clinic'])
+    assert.deepEqual([cort.group, cort.uncatalogued], ['lab', true])
+    assert.equal(hemo.uncatalogued, undefined)
+    const tray = (await nurse.get('/api/exams/tray')).body
+    const ids = JSON.stringify(tray)
+    assert.ok(ids.includes(rx.id) && ids.includes(cort.id), 'enfermería los recibe en su bandeja')
+    // Imagen no usa «Muestra tomada»: su paso es «Realizado» (done)
+    assert.equal((await nurse.post(`/api/exams/${rx.id}/status`, { status: 'done' })).status, 200)
+  })
+})

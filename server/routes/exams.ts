@@ -37,6 +37,7 @@ export const toExamOrder = (r: Row, events: Row[] = []): ExamOrder => ({
   statusBy: r.status_by ? String(r.status_by) : undefined, cancelReason: r.cancel_reason ? String(r.cancel_reason) : undefined,
   result: j<ExamOrder['result']>(r.result, undefined), critical: Boolean(r.critical) || undefined,
   reviewedBy: r.reviewed_by ? String(r.reviewed_by) : undefined, reviewedAt: r.reviewed_at ? String(r.reviewed_at) : undefined,
+  uncatalogued: Boolean(r.uncatalogued) || undefined,
   events: events.filter((e) => e.exam_id === r.id).map((e) => ({ status: e.status as ExamStatus, by: String(e.by_id), at: String(e.at), note: e.note ? String(e.note) : undefined })),
 })
 
@@ -56,18 +57,20 @@ export async function insertExams(q: Sql, c: { clinicId: string; patientId: stri
   list: ExamInput[]) {
   if (!list.length) return null
   const clinic = (await q.one('SELECT has_lab, has_imaging FROM clinics WHERE id = ?', [c.clinicId]))!
-  // MC5 (ronda 5): un examen que no está en el catálogo activo de la clínica es externo (texto libre que se hace fuera)
+  // MC3 (ronda 6): un estudio que no está en el catálogo activo de la clínica queda «No catalogado» con el tipo que eligió el
+  // médico, y va a la bandeja de su tipo como cualquier otro (antes, ronda 5, se volvía externo)
   await ensureExamCatalog(q, c.clinicId)
   const known = new Set((await q.query('SELECT norm_key FROM exam_catalog WHERE clinic_id = ? AND active', [c.clinicId])).map((r) => String(r.norm_key)))
   const batch = randomUUID()
   for (const raw of list) {
-    const e = known.has(examKey(raw.name)) ? raw : { ...raw, place: 'external' as const }
+    const e = raw
+    const uncatalogued = !known.has(examKey(raw.name))
     const id = randomUUID()
     const area = areaFor(e.group, e.place, c.inStay ?? !!c.hospitalizationId, { hasLab: Boolean(clinic.has_lab), hasImaging: Boolean(clinic.has_imaging) })
-    await q.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, consultation_id, hospitalization_id, note_id, batch_id, grp, name, region, side, indication, priority, place, area, status, ordered_by, ordered_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ordered',?,?)`,
+    await q.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, consultation_id, hospitalization_id, note_id, batch_id, grp, name, region, side, indication, priority, place, area, status, ordered_by, ordered_at, uncatalogued)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ordered',?,?,?)`,
     [id, c.clinicId, c.patientId, c.consultationId ?? null, c.hospitalizationId ?? null, c.noteId ?? null, batch, e.group, e.name, e.region || null, e.side ?? null, e.indication || null,
-      e.priority, e.place, area, c.by, c.at])
+      e.priority, e.place, area, c.by, c.at, uncatalogued])
     await q.run('INSERT INTO exam_events (id, clinic_id, exam_id, status, by_id, at) VALUES (?,?,?,?,?,?)', [randomUUID(), c.clinicId, id, 'ordered', c.by, c.at])
   }
   return batch
