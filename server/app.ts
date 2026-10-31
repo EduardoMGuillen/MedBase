@@ -553,15 +553,15 @@ export function createApp(opts: AppOptions) {
       sql.query(`SELECT DISTINCT ON (patient_id) patient_id, date, doctor_id FROM consultations WHERE clinic_id = ? ORDER BY patient_id, date DESC`, [cid]),
       sql.query(`SELECT DISTINCT ON (patient_id) patient_id, start, doctor_id FROM appointments
         WHERE clinic_id = ? AND status IN ('scheduled','confirmed') AND start >= ? ORDER BY patient_id, start`, [cid, nowLocal]),
-      sql.query(`SELECT patient_id, kind, title FROM followups WHERE clinic_id = ? AND active`, [cid]),
+      sql.query(`SELECT patient_id, kind, title, reminder_type FROM followups WHERE clinic_id = ? AND active`, [cid]),
       sql.query(`SELECT patient_id, ${STAY_KIND} AS kind FROM hospitalizations WHERE clinic_id = ? AND status = 'active'`, [cid]),
     ])
     const by = <T,>(rows: Row[], f: (r: Row) => T) => new Map(rows.map((r) => [String(r.patient_id), f(r)]))
     const lastBy = by(last, (r) => ({ at: String(r.date), doctorId: String(r.doctor_id) }))
     const nextBy = by(next, (r) => ({ at: String(r.start), doctorId: String(r.doctor_id) }))
     const stayBy = by(stays, (r) => (r.kind === 'observation' ? 'observation' : 'hospital'))
-    const followBy = new Map<string, { kind: string; title: string }[]>()
-    for (const f of follow) followBy.set(String(f.patient_id), [...(followBy.get(String(f.patient_id)) ?? []), { kind: String(f.kind), title: String(f.title) }])
+    const followBy = new Map<string, { kind: string; title: string; reminderType?: string }[]>()
+    for (const f of follow) followBy.set(String(f.patient_id), [...(followBy.get(String(f.patient_id)) ?? []), { kind: String(f.kind), title: String(f.title), reminderType: f.reminder_type ? String(f.reminder_type) : undefined }])
     const ids = new Set([...lastBy.keys(), ...nextBy.keys(), ...stayBy.keys(), ...followBy.keys()])
     res.json([...ids].map((id) => ({
       patientId: id, lastConsultAt: lastBy.get(id)?.at, lastDoctorId: lastBy.get(id)?.doctorId, nextApptAt: nextBy.get(id)?.at, nextDoctorId: nextBy.get(id)?.doctorId,

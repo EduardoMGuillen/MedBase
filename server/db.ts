@@ -16,7 +16,7 @@ import { loadLabCatalog, migrateSubgroups } from './catalogLoader.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '54'
+const SCHEMA_VERSION = '55'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -885,6 +885,14 @@ ALTER TABLE hospitalizations ADD COLUMN IF NOT EXISTS vitals_plan TEXT;
 
 -- v54 (ronda 6, MC8): una toma de signos vitales anotada dentro de una nota del médico guarda de qué nota viene
 ALTER TABLE vitals ADD COLUMN IF NOT EXISTS source_note_id TEXT;
+
+-- v55 (ronda 6, CR1): los procedimientos programados pasan a ser recordatorios de tipo Procedimiento. Un recordatorio lleva
+-- su tipo (examen, procedimiento u otro). Los procedimientos de antes se copian como recordatorios y quedan marcados como
+-- migrados (migrated_to): no se borran.
+ALTER TABLE followups
+  ADD COLUMN IF NOT EXISTS reminder_type TEXT,
+  ADD COLUMN IF NOT EXISTS migrated_to TEXT,
+  ADD COLUMN IF NOT EXISTS migrated_at TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -933,6 +941,7 @@ export function ensureDb(sql: Sql) {
       await migrateLabsToExams(q)
       await migrateOfficeOwners(q)
       await migrateCriticalGroups(q)
+      await migrateProcedureFollowups(q)
       for (const c of await q.query('SELECT id FROM clinics')) {
         await ensureExamCatalog(q, String(c.id))
         // CF3 y CF6 (ronda 6): subgrupos de la lista fija y la carga idempotente de los anexos
@@ -1332,6 +1341,23 @@ export async function ensureExamCatalog(q: Sql, clinicId: string) {
   // CF3 (ronda 6): una clínica nueva recibe también los subgrupos y los anexos
   await migrateSubgroups(q, clinicId)
   await loadLabCatalog(q, clinicId)
+}
+
+/**
+ * v55 (ronda 6, CR1): cada procedimiento programado se copia como recordatorio de tipo Procedimiento con la misma fecha,
+ * paciente, motivo, nota, autor y avisos (semana, víspera, día, WhatsApp). El original no se borra: queda inactivo y
+ * marcado como migrado, con el id de su copia. Correrla otra vez no copia nada.
+ */
+export async function migrateProcedureFollowups(q: Sql) {
+  const now = new Date().toISOString()
+  for (const f of await q.query(`SELECT * FROM followups WHERE kind = 'procedure' AND migrated_to IS NULL`)) {
+    const id = randomUUID()
+    await q.run(`INSERT INTO followups (id, clinic_id, patient_id, kind, reminder_type, title, due_date, every_days, notes, created_by, created_at, notified_at, done_at,
+        reminded_week, reminded_eve, reminded_day, active) VALUES (?,?,?,'reminder','procedure',?,?,NULL,?,?,?,?,?,?,?,?,?)`,
+      [id, f.clinic_id, f.patient_id, f.title, f.due_date, f.notes ?? null, f.created_by, f.created_at, f.notified_at ?? null, f.done_at ?? null,
+        f.reminded_week ?? null, f.reminded_eve ?? null, f.reminded_day ?? null, Boolean(f.active)])
+    await q.run('UPDATE followups SET migrated_to = ?, migrated_at = ?, active = FALSE WHERE id = ?', [id, now, String(f.id)])
+  }
 }
 
 /** v47 (AD1): cada clínica recibe sus umbrales en grupos, con los mismos números que tenía. Sólo llena lo que falta. */

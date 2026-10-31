@@ -572,3 +572,6 @@ tr.clickable { cursor: pointer; }
 .arrival-group { border-top: 1px solid var(--line-soft, var(--line)); }
 .arrival-group:first-child { border-top: 0; }
 .arrival-group__dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; align-self: center; }
+
+/* CR1 (ronda 6): tipo del recordatorio junto al motivo */
+.fu-type { margin-right: 6px; font-size: 11px; vertical-align: 1px; }

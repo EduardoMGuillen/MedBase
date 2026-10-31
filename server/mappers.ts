@@ -191,6 +191,7 @@ export const toFollowup = (r: Row): Followup => ({
   everyDays: r.every_days == null ? undefined : Number(r.every_days), notes: s(r.notes), createdBy: String(r.created_by), createdAt: String(r.created_at),
   notifiedAt: s(r.notified_at), doneAt: s(r.done_at), active: Boolean(r.active),
   remindedWeek: s(r.reminded_week), remindedEve: s(r.reminded_eve), remindedDay: s(r.reminded_day),
+  reminderType: (s(r.reminder_type) as Followup['reminderType']) ?? undefined,
 })
 
 /** Configuración que ve la clínica (encabezado de recetas, recibos y recordatorios). */

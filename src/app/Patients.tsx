@@ -102,7 +102,7 @@ export default function Patients() {
         if (f.seguimiento === 'cualquiera' && !fu.length) return false
         if (f.seguimiento === 'cronico' && !fu.some((x) => x.kind === 'chronic') && !p.conditions.length) return false
         if (f.seguimiento === 'recordatorio' && !fu.some((x) => x.kind === 'reminder')) return false
-        if (f.seguimiento === 'procedimiento' && !fu.some((x) => x.kind === 'procedure')) return false
+        if (f.seguimiento === 'procedimiento' && !fu.some((x) => x.kind === 'procedure' || x.reminderType === 'procedure')) return false
         if (f.seguimiento.startsWith('cronico:') && !fu.some((x) => x.kind === 'chronic' && x.title === f.seguimiento.slice(8))) return false
       }
       if (f.cita === 'con' && !(ix?.nextApptAt ?? nextAppt(p.id))) return false

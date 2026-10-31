@@ -389,7 +389,7 @@ export interface PatientIndex {
   lastDoctorId?: string
   nextApptAt?: string
   nextDoctorId?: string
-  followups: { kind: Followup['kind']; title: string }[]
+  followups: { kind: Followup['kind']; title: string; reminderType?: Followup['reminderType'] }[]
   status: 'active' | 'hospital' | 'observation'
 }
 
@@ -965,7 +965,10 @@ export interface InpatientFile {
 export interface Followup {
   id: string
   patientId: string
+  /** 'procedure' es de antes de la ronda 6 (CR1): ahora un procedimiento es un recordatorio de tipo Procedimiento. */
   kind: 'chronic' | 'reminder' | 'procedure'
+  /** CR1 (ronda 6): tipo del recordatorio, visible junto al motivo. Los de antes no lo tienen («Recordatorio»). */
+  reminderType?: 'exam' | 'procedure' | 'other'
   title: string // padecimiento crónico, motivo del recordatorio o procedimiento
   dueDate: string // YYYY-MM-DD: próximo control, recordatorio o procedimiento
   everyDays?: number // crónicos: cada cuánto se repite el control

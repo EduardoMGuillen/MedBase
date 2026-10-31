@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { type Ctx, fail, localDate, parse } from '../http.js'
 import { toFollowup } from '../mappers.js'
 import type { Sql } from '../sql.js'
-import { addDays, FOLLOWUP_KIND } from '../../src/lib/followups.js'
+import { addDays } from '../../src/lib/followups.js'
 
 /** Lo que el médico programa: control de un crónico, un recordatorio o un procedimiento. */
 export const followupInput = z.object({
@@ -13,6 +13,8 @@ export const followupInput = z.object({
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Elige la fecha del seguimiento.'),
   everyDays: z.number().int().min(7, 'El control debe repetirse al menos cada 7 días.').max(730).optional(),
   notes: z.string().trim().max(500).optional(),
+  // CR1 (ronda 6): tipo del recordatorio. «procedure» como tipo de seguimiento (de antes) se guarda como recordatorio de tipo Procedimiento
+  reminderType: z.enum(['exam', 'procedure', 'other']).optional(),
 }).refine((f) => f.kind !== 'chronic' || f.everyDays, 'Indica cada cuánto se repite el control del paciente crónico.')
 
 /**
@@ -41,8 +43,10 @@ export async function sweepFollowupReminders(sql: Sql, clinicId: string) {
 
 export async function insertFollowup(q: Sql, clinicId: string, userId: string, f: z.infer<typeof followupInput> & { patientId: string }) {
   const id = randomUUID()
-  await q.run(`INSERT INTO followups (id, clinic_id, patient_id, kind, title, due_date, every_days, notes, created_by, created_at, active) VALUES (?,?,?,?,?,?,?,?,?,?,TRUE)`,
-    [id, clinicId, f.patientId, f.kind, f.title, f.dueDate, f.kind === 'chronic' ? f.everyDays ?? null : null, f.notes || null, userId, new Date().toISOString()])
+  const kind = f.kind === 'procedure' ? 'reminder' : f.kind
+  const type = f.kind === 'procedure' ? 'procedure' : kind === 'reminder' ? f.reminderType ?? 'other' : null
+  await q.run(`INSERT INTO followups (id, clinic_id, patient_id, kind, reminder_type, title, due_date, every_days, notes, created_by, created_at, active) VALUES (?,?,?,?,?,?,?,?,?,?,?,TRUE)`,
+    [id, clinicId, f.patientId, kind, type, f.title, f.dueDate, kind === 'chronic' ? f.everyDays ?? null : null, f.notes || null, userId, new Date().toISOString()])
   return id
 }
 
@@ -58,7 +62,7 @@ export function registerFollowups(app: Express, { sql, auth, need, userOf, clini
     const cid = clinicOf(req)
     ;(await patientRow(cid, f.patientId)) ?? fail(404, 'El paciente no existe.')
     const id = await insertFollowup(sql, cid, userOf(req).id, f)
-    await audit(userOf(req), `Programó ${FOLLOWUP_KIND[f.kind].label.toLowerCase()} "${f.title}" para ${await patientName(f.patientId)}`)
+    await audit(userOf(req), `Programó ${f.kind === 'chronic' ? 'paciente crónico' : `recordatorio${f.kind === 'procedure' || f.reminderType === 'procedure' ? ' de procedimiento' : f.reminderType === 'exam' ? ' de examen' : ''}`} "${f.title}" para ${await patientName(f.patientId)}`)
     res.status(201).json(toFollowup((await row(cid, id))!))
   })
 

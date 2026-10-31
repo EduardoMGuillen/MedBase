@@ -9,7 +9,7 @@ import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { normalize } from '../lib/patients'
 import { useVademecum } from '../lib/vademecum'
 import { MedicationForm, MedicationList } from '../components/Medications'
-import { FOLLOWUP_KIND } from '../lib/followups'
+import { followupLabel } from '../lib/followups'
 import { yearsOld } from '../lib/inpatient'
 import { features } from '../lib/permissions'
 import { BackgroundView, useChart, VitalsGrid } from './PatientChart'
@@ -361,7 +361,7 @@ export default function Consultation() {
               <div className="panel__body csec__body">
                 {followups.length > 0 && <ul className="note__list">{followups.map((f, i) => (
                   <li key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{ flex: 1 }}><b>{FOLLOWUP_KIND[f.kind].label}:</b> {f.title}, {date(`${f.dueDate}T12:00:00`)}</span>
+                    <span style={{ flex: 1 }}><b>{followupLabel(f)}:</b> {f.title}, {date(`${f.dueDate}T12:00:00`)}</span>
                     <button className="icon-btn" aria-label="Quitar" onClick={() => setFollowups(followups.filter((_, j) => j !== i))}><X size={14} /></button>
                   </li>
                 ))}</ul>}

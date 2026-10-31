@@ -34,7 +34,7 @@ export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescr
 
 /** Medicamento que el médico indica en una nota de hospitalización. */
 export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'prnCondition' | 'instructions' | 'days' | 'replacesId'> & { firstAt?: string }
-export type FollowupInput = Pick<Followup, 'kind' | 'title' | 'dueDate' | 'everyDays' | 'notes'>
+export type FollowupInput = Pick<Followup, 'kind' | 'title' | 'dueDate' | 'everyDays' | 'notes' | 'reminderType'>
 
 export interface Report {
   range: { from: string; to: string }

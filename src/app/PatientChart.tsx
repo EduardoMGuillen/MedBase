@@ -5,7 +5,7 @@ import { AlertBar } from './MedAlerts'
 import { alertQuery } from '../lib/alerts'
 import { useFileAlerts } from '../lib/hooks'
 import type { InpatientFile, Payment, ExamOrder } from '../lib/types'
-import { FOLLOWUP_KIND } from '../lib/followups'
+import { followupLabel } from '../lib/followups'
 import { bedLabel } from './Inpatients'
 import { Addenda } from '../components/Addenda'
 import { ExamList } from './ExamsTab'
@@ -262,7 +262,7 @@ export default function PatientChart() {
               <div className="rows">{pending.map((f) => (
                 <div key={f.id} className="row" style={{ gridTemplateColumns: '120px 1fr' }}>
                   <span className="num" style={{ fontSize: 13.5 }}>{date(`${f.dueDate}T12:00:00`)}</span>
-                  <div className="row__who"><strong>{f.title}</strong><span>{FOLLOWUP_KIND[f.kind].label}{f.everyDays ? `, control cada ${f.everyDays} días` : ''}</span></div>
+                  <div className="row__who"><strong>{f.title}</strong><span>{followupLabel(f)}{f.everyDays ? `, control cada ${f.everyDays} días` : ''}</span></div>
                 </div>
               ))}</div>
             </section>

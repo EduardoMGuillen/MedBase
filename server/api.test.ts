@@ -236,7 +236,7 @@ describe('pacientes y personal', () => {
       // Estado de una base v8: sin los casos, y con un paciente que el personal registró al probar
       await old.exec(`
         SELECT set_config('clinara.note_maintenance', 'on', false);
-        TRUNCATE exam_events, exam_orders; DELETE FROM followups WHERE id LIKE 'cfu%'; DELETE FROM attachments WHERE id LIKE 'cl%'; DELETE FROM hosp_doses WHERE id LIKE 'chd%';
+        TRUNCATE exam_events, exam_orders; DELETE FROM followups WHERE id LIKE 'cfu%' OR patient_id IN ('p15', 'p16', 'p17', 'p18', 'p19', 'p20'); DELETE FROM attachments WHERE id LIKE 'cl%'; DELETE FROM hosp_doses WHERE id LIKE 'chd%';
         DELETE FROM hosp_meds WHERE id LIKE 'chm%'; DELETE FROM hosp_procedures WHERE id LIKE 'chp%'; DELETE FROM hosp_notes WHERE id LIKE 'chn%';
         DELETE FROM hospitalizations WHERE id LIKE 'chz%'; DELETE FROM payments WHERE id LIKE 'cp%'; DELETE FROM prescriptions WHERE id LIKE 'crx%';
         DELETE FROM consultations WHERE id LIKE 'cc%'; DELETE FROM vitals WHERE id LIKE 'cv%'; DELETE FROM appointments WHERE id LIKE 'ca%';

@@ -10,6 +10,7 @@ import { bandOf } from '../src/lib/vitalsSheet.js'
 import { medicationLine } from '../src/lib/format.js'
 import { medLabel } from '../src/lib/inpatient.js'
 import { loadLabCatalog } from './catalogLoader.js'
+import { migrateProcedureFollowups } from './db.js'
 import { EXAMS, subgroupOf } from '../src/lib/exams.js'
 
 let server: Server
@@ -431,5 +432,35 @@ describe('AD1/RE1 vista de «Por llegar hoy»', () => {
     }
     // Administración sigue sin poder guardar datos clínicos de médico
     assert.equal((await (await as('admin@demo.clinara')).patch('/api/me', { arrivalsView: 'hour', noteFormat: 'soap' })).status, 403)
+  })
+})
+
+describe('CR1 los procedimientos pasan a ser recordatorios', () => {
+  test('un procedimiento de antes se copia como recordatorio de tipo Procedimiento con todos sus datos y avisos; el original queda migrado; correrlo otra vez no copia', async () => {
+    await sql.run(`INSERT INTO followups (id, clinic_id, patient_id, kind, title, due_date, notes, created_by, created_at, notified_at, reminded_week, active)
+      VALUES ('cr1-old', 'c-sb', 'p1', 'procedure', 'Hernioplastia inguinal', '2030-02-01', 'En ayunas', 's-herrera', '2026-10-01T10:00:00.000Z', '2026-10-05T06:00:00.000Z', '2026-10-25T06:00:00.000Z', TRUE)`)
+    await migrateProcedureFollowups(sql)
+    await migrateProcedureFollowups(sql)
+    const old = await sql.one<any>(`SELECT * FROM followups WHERE id = 'cr1-old'`)
+    assert.ok(old.migrated_to && old.migrated_at)
+    assert.equal(old.active, false)
+    const copies = await sql.query<any>(`SELECT * FROM followups WHERE id = ?`, [old.migrated_to])
+    assert.equal(copies.length, 1)
+    const c = copies[0]
+    assert.deepEqual([c.kind, c.reminder_type, c.patient_id, c.title, c.due_date, c.notes, c.created_by, c.notified_at, c.reminded_week, c.active],
+      ['reminder', 'procedure', 'p1', 'Hernioplastia inguinal', '2030-02-01', 'En ayunas', 's-herrera', '2026-10-05T06:00:00.000Z', '2026-10-25T06:00:00.000Z', true])
+    assert.equal((await sql.query(`SELECT 1 FROM followups WHERE migrated_to = ?`, [c.id])).length, 1)
+    const doc = await as('lherrera@demo.clinara')
+    const list = (await doc.get('/api/bootstrap')).body.followups
+    assert.ok(list.some((f: any) => f.id === c.id && f.reminderType === 'procedure'))
+    assert.ok(!list.some((f: any) => f.id === 'cr1-old'), 'el original ya no se lista')
+  })
+
+  test('programar un procedimiento (también con el tipo de antes) crea un recordatorio de tipo Procedimiento', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const a = await doc.post('/api/followups', { patientId: 'p1', kind: 'reminder', reminderType: 'procedure', title: 'Colecistectomía', dueDate: '2030-03-01' })
+    const b = await doc.post('/api/followups', { patientId: 'p1', kind: 'procedure', title: 'Biopsia', dueDate: '2030-03-02' })
+    assert.deepEqual([a.status, a.body.kind, a.body.reminderType], [201, 'reminder', 'procedure'])
+    assert.deepEqual([b.status, b.body.kind, b.body.reminderType], [201, 'reminder', 'procedure'])
   })
 })

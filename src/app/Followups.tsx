@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { CheckCheck, MessageCircle, Plus, Smartphone, Trash2 } from 'lucide-react'
 import { useStore, type FollowupInput } from '../lib/store'
 import { Modal, PageHead } from '../components/ui'
 import { clinicWhatsapp, date, dateTime, fullName, localISODate } from '../lib/format'
-import { addDays, CHRONIC_PRESETS, FOLLOWUP_KIND, followupMessage } from '../lib/followups'
+import { addDays, CHRONIC_PRESETS, FOLLOWUP_KIND, followupMessage, REMINDER_TYPE } from '../lib/followups'
 import type { Followup } from '../lib/types'
 import { PatientPicker } from './Inpatients'
 
@@ -16,30 +16,34 @@ type Kind = Followup['kind']
  */
 export default function Followups() {
   const { followups, patient, can } = useStore()
-  const [kind, setKind] = useState<Kind>('chronic')
+  // CR1 (ronda 6): dos pestañas. La dirección de la pestaña queda en la URL; la de «procedimientos» (vieja) abre Recordatorios
+  const [params, setParams] = useSearchParams()
+  const kind: Kind = ['recordatorios', 'procedimientos'].includes(params.get('tab') ?? '') ? 'reminder' : 'chronic'
+  const setKind = (k: Kind) => setParams(k === 'reminder' ? { tab: 'recordatorios' } : {}, { replace: true })
   const [sending, setSending] = useState<Followup | null>(null)
   const [adding, setAdding] = useState(false)
   const today = localISODate(new Date())
-  const list = followups.filter((f) => f.kind === kind).sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-  const count = (k: Kind) => followups.filter((f) => f.kind === k).length
+  // Los procedimientos de antes (si alguno no se migró) también son recordatorios
+  const list = followups.filter((f) => (kind === 'reminder' ? f.kind !== 'chronic' : f.kind === kind)).sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  const count = (k: Kind) => followups.filter((f) => (k === 'reminder' ? f.kind !== 'chronic' : f.kind === k)).length
 
   return (
     <div className="page">
-      <PageHead title="Crónicos y seguimientos" sub="Pacientes que deben volver: controles de crónicos, recordatorios de exámenes y procedimientos programados."
+      <PageHead title="Crónicos y seguimientos" sub="Pacientes que deben volver: controles de crónicos y recordatorios de exámenes y procedimientos."
         actions={can('followups.manage') && <button className="btn btn--primary" data-tour="programar-seguimiento" onClick={() => setAdding(true)}><Plus size={17} />Programar seguimiento</button>} />
       <div className="alert-strip alert-strip--calm" style={{ marginBottom: 16 }} data-tour="recordatorios">
         <Smartphone size={18} style={{ flex: 'none' }} />
         Los avisos se registran solos: una semana antes, un día antes y el día del control. Ese día recepción lo ve en su inicio para llamar al paciente. El WhatsApp sigue en simulación hasta conectar la línea de la clínica.
       </div>
       <div className="tabs" role="tablist">
-        {(['chronic', 'reminder', 'procedure'] as Kind[]).map((k) => (
+        {(['chronic', 'reminder'] as Kind[]).map((k) => (
           <button key={k} className="tab" role="tab" aria-selected={kind === k} onClick={() => setKind(k)}>{FOLLOWUP_KIND[k].plural} ({count(k)})</button>
         ))}
       </div>
       <section className="panel table-wrap">
         <table className="table">
           <thead><tr>
-            <th>Paciente</th><th>{kind === 'chronic' ? 'Padecimiento' : kind === 'procedure' ? 'Procedimiento' : 'Motivo'}</th>
+            <th>Paciente</th><th>{kind === 'chronic' ? 'Padecimiento' : 'Motivo'}</th>
             <th>{kind === 'chronic' ? 'Próximo control' : 'Fecha'}</th>{kind === 'chronic' && <th>Cada</th>}<th>Último aviso</th><th />
           </tr></thead>
           <tbody>
@@ -51,7 +55,7 @@ export default function Followups() {
               return (
                 <tr key={f.id}>
                   <td><Link to={`/app/pacientes/${p.id}`}>{fullName(p)}</Link><small style={{ display: 'block', color: 'var(--muted)' }}>{p.phone}</small></td>
-                  <td>{f.title}{f.notes && <small style={{ display: 'block', color: 'var(--muted)' }}>{f.notes}</small>}</td>
+                  <td>{f.kind !== 'chronic' && <span className="badge badge--neutral fu-type">{f.reminderType ? REMINDER_TYPE[f.reminderType] : f.kind === 'procedure' ? 'Procedimiento' : 'Recordatorio'}</span>}{f.title}{f.notes && <small style={{ display: 'block', color: 'var(--muted)' }}>{f.notes}</small>}</td>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>
                     {date(`${f.dueDate}T12:00:00`)}
                     {overdue && <span className="badge badge--red" style={{ marginLeft: 6 }}>Vencido</span>}
@@ -124,15 +128,24 @@ export function FollowupFields({ value, onChange }: { value: FollowupInput; onCh
     <div className="form-grid">
       <div className="field span-2"><span>Tipo</span>
         <div className="segmented" role="radiogroup">
-          {(['chronic', 'reminder', 'procedure'] as Kind[]).map((k) => (
-            <button type="button" key={k} role="radio" aria-checked={value.kind === k}
-              onClick={() => onChange({ ...value, kind: k, everyDays: k === 'chronic' ? value.everyDays ?? 90 : undefined })}>{FOLLOWUP_KIND[k].label}</button>
+          {(['chronic', 'reminder'] as Kind[]).map((k) => (
+            <button type="button" key={k} role="radio" aria-checked={value.kind === k || (k === 'reminder' && value.kind === 'procedure')}
+              onClick={() => onChange({ ...value, kind: k, everyDays: k === 'chronic' ? value.everyDays ?? 90 : undefined, reminderType: k === 'reminder' ? value.reminderType ?? 'exam' : undefined })}>{FOLLOWUP_KIND[k].label}</button>
           ))}
         </div></div>
-      <label className="field span-2"><span>{value.kind === 'chronic' ? 'Padecimiento crónico' : value.kind === 'procedure' ? 'Procedimiento' : 'Qué debe hacer el paciente'}</span>
+      {value.kind !== 'chronic' && (
+        <div className="field span-2"><span>Tipo de recordatorio</span>
+          <div className="segmented" role="radiogroup" aria-label="Tipo de recordatorio">
+            {(['exam', 'procedure', 'other'] as const).map((t) => (
+              <button type="button" key={t} role="radio" aria-checked={(value.reminderType ?? (value.kind === 'procedure' ? 'procedure' : 'exam')) === t}
+                onClick={() => onChange({ ...value, kind: 'reminder', reminderType: t })}>{REMINDER_TYPE[t]}</button>
+            ))}
+          </div></div>
+      )}
+      <label className="field span-2"><span>{value.kind === 'chronic' ? 'Padecimiento crónico' : value.reminderType === 'procedure' || value.kind === 'procedure' ? 'Procedimiento' : 'Qué debe hacer el paciente'}</span>
         <input className="input" list={value.kind === 'chronic' ? 'chronic-presets' : undefined} value={value.title}
           onChange={(e) => { const preset = CHRONIC_PRESETS.find((c) => c.title === e.target.value); onChange({ ...value, title: e.target.value, everyDays: preset?.everyDays ?? value.everyDays }) }}
-          placeholder={value.kind === 'chronic' ? 'Ej. Hipertensión arterial' : value.kind === 'procedure' ? 'Ej. Hernioplastia inguinal' : 'Ej. Hacerse química sanguínea y volver con resultados'} />
+          placeholder={value.kind === 'chronic' ? 'Ej. Hipertensión arterial' : value.reminderType === 'procedure' || value.kind === 'procedure' ? 'Ej. Hernioplastia inguinal' : 'Ej. Hacerse química sanguínea y volver con resultados'} />
         <datalist id="chronic-presets">{CHRONIC_PRESETS.map((c) => <option key={c.title} value={c.title} />)}</datalist></label>
       <label className="field"><span>{value.kind === 'chronic' ? 'Próximo control' : 'Fecha'}</span>
         <input className="input" type="date" value={value.dueDate} min={localISODate(new Date())} onChange={(e) => set('dueDate', e.target.value)} /></label>
@@ -149,7 +162,7 @@ export function FollowupFields({ value, onChange }: { value: FollowupInput; onCh
 }
 
 export const emptyFollowup = (kind: Kind = 'chronic'): FollowupInput => ({
-  kind, title: '', dueDate: addDays(localISODate(new Date()), kind === 'chronic' ? 90 : 7), everyDays: kind === 'chronic' ? 90 : undefined, notes: '',
+  kind, title: '', dueDate: addDays(localISODate(new Date()), kind === 'chronic' ? 90 : 7), everyDays: kind === 'chronic' ? 90 : undefined, notes: '', reminderType: kind === 'chronic' ? undefined : 'exam',
 })
 
 function FollowupModal({ onClose }: { onClose: () => void }) {
