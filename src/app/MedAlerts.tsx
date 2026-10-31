@@ -11,7 +11,10 @@ export function AlertLine({ a, onGo }: { a: FileAlert; onGo: (go: AlertGo) => vo
     <li className={`alert-line alert-line--${a.level}`}>
       <Icon size={15} aria-hidden />
       <span>{a.text}</span>
-      <button type="button" className="btn btn--ghost btn--sm" onClick={() => onGo(a.action.go)}>{a.action.label}</button>
+      <span className="alert-line__acts">
+        {a.secondary && <button type="button" className="linklike" onClick={() => onGo(a.secondary!.go)}>{a.secondary.label}</button>}
+        <button type="button" className="btn btn--ghost btn--sm" onClick={() => onGo(a.action.go)}>{a.action.label}</button>
+      </span>
     </li>
   )
 }

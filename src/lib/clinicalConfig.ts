@@ -74,6 +74,8 @@ export const VITALS_SHIFT_TIMES = ['07:00', '15:00', '23:00']
 export const VITALS_EVERY_OPTIONS = [1, 2, 4, 6, 8, 12, 24]
 /** MC6 (ronda 6). VALIDAR: Emil. Límites de «Otra frecuencia…» (horas). */
 export const VITALS_OTHER_RANGE = { min: 1, max: 72 }
+/** EN2 (ronda 6). VALIDAR: Emil. Una toma anotada más de estos minutos después de la hora en que se tomó es «Registro tardío». */
+export const LATE_RECORD_MINUTES = 60
 
 /** Un analito con su umbral crítico. Un límite vacío es «No aplica». */
 export interface CriticalAnalyte { id: string; name: string; unit?: string; low?: number; high?: number; archivedAt?: string }

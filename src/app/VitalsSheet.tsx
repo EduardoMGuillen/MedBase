@@ -8,7 +8,7 @@ import { inputDateTime, shortStaff } from '../lib/format'
 import { yearsOld } from '../lib/inpatient'
 import { clinicalRange, parseDecimal, VITALS, vitalLevel, type VitalKey, type VitalLevel } from '../lib/vitals'
 import { EMPTY_VITALS, FIELDS, fieldIssue, vitalNumber, type VitalsForm } from '../lib/vitalsForm'
-import { activeVitals, antipyreticDoses, bandOf, currentVitalsMode, expectedTakes, frequencyFromOrders, missedTakes, nextTake, vitalsModeText, tempClass, VITALS_FREQUENCIES, vitalsAnchor, vitalsEvery, type TempBand } from '../lib/vitalsSheet'
+import { activeVitals, antipyreticDoses, bandOf, currentVitalsMode, expectedTakes, frequencyFromOrders, missedTakes, nextTake, vitalsModeText, tempClass, VITALS_FREQUENCIES, vitalsAnchor, vitalsEvery, type TempBand, isLateRecord, takeStatuses } from '../lib/vitalsSheet'
 import { useNow } from '../lib/hooks'
 import type { InpatientFile, Patient, Vitals } from '../lib/types'
 
@@ -35,17 +35,21 @@ function rangeOf(range: Range, stayStart: number, end: number, every: number): [
  * Hoja de signos vitales (S1), en hospitalización y observación: arriba la curva térmica y abajo los demás signos
  * (tarjetas y la tabla clásica). Enfermería y el médico registran tomas; el médico cambia la frecuencia de toma.
  */
-export function VitalsSheet({ file, p, reload, autoRecord, onFocused }: { file: InpatientFile; p: Patient; reload: () => void; autoRecord?: boolean; onFocused?: () => void }) {
+export function VitalsSheet({ file, p, reload, autoRecord, autoRecordPast, onFocused }: { file: InpatientFile; p: Patient; reload: () => void; autoRecord?: boolean; autoRecordPast?: boolean; onFocused?: () => void }) {
   const { can, settings, staffById, notify } = useStore()
   const now = useNow()
   const [range, setRange] = useState<Range>(() => (activeVitals(file.vitals).length > 9 ? '7d' : 'all'))
   const [recording, setRecording] = useState(false)
+  // EN2 (ronda 6): «Registrar tomas anteriores»: una lectura de una hora pasada concreta («Registro tardío»)
+  const [recordingPast, setRecordingPast] = useState(false)
   const [voiding, setVoiding] = useState<Vitals | null>(null)
   const h = file.hospitalization
   const open = h.status === 'active'
   const record = open && can('vitals.record')
   // EN2: «Registrar signos» desde una alerta abre el registro
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (autoRecordPast && record) { setRecordingPast(true); onFocused?.(); return }
     if (!autoRecord) return
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (record) setRecording(true)
@@ -63,6 +67,11 @@ export function VitalsSheet({ file, p, reload, autoRecord, onFocused }: { file: 
   const inRange = all.filter((v) => { const t = new Date(v.takenAt).getTime(); return t >= t0 && t <= t1 })
   // OB1/OB2 (ronda 5): la misma regla que el panel de alertas (missedTakes); las pendientes son filas de la tabla
   const missed = open ? missedTakes(file, now).filter((s) => s.getTime() >= t0 && s.getTime() <= t1) : []
+  // EN2 (ronda 6): las tomas esperadas que cerró una toma posterior («Cubierta por la toma de las HH:MM»)
+  const statuses = takeStatuses(file, now)
+  const covered = statuses.filter((x) => x.status === 'covered' && x.at.getTime() >= t0 && x.at.getTime() <= t1).map((x) => ({ at: x.at, by: x.by! }))
+  const pendingAll = statuses.filter((x) => x.status === 'pending').length
+  const lastTake = activeVitals(file.vitals).at(-1)
   const setEvery = async (n: number) => {
     try { await api(`/inpatient/${h.id}/vitals-frequency`, { method: 'PATCH', body: { everyHours: n } }); notify(`Signos vitales cada ${n} h`); reload() } catch (e) { notify((e as Error).message, 'error') }
   }
@@ -73,6 +82,11 @@ export function VitalsSheet({ file, p, reload, autoRecord, onFocused }: { file: 
       <section className="panel">
         <div className="panel__head vs__head">
           <div><h2>Signos vitales</h2><p>Último registro de cada signo. Cada toma queda con su autor y no se edita: se anula con motivo.</p></div>
+          {open && <div className="vs__status">
+            {pendingAll ? <span className="badge badge--amber">{pendingAll} toma{pendingAll === 1 ? '' : 's'} pendiente{pendingAll === 1 ? '' : 's'}</span>
+              : <span className="badge badge--mint">Signos vitales al día{lastTake ? ` · última toma ${new Date(lastTake.takenAt).toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })}` : ''}</span>}
+            {record && <button type="button" className="linklike" onClick={() => setRecordingPast(true)}>Registrar tomas anteriores</button>}
+          </div>}
         </div>
         {all.length
           ? <LatestStrip vitals={all} ageYears={ageYears} band={band} who={(id) => shortStaff(staffById(id)?.name)} />
@@ -107,13 +121,14 @@ export function VitalsSheet({ file, p, reload, autoRecord, onFocused }: { file: 
         {/* OB2 (ronda 5): todos los signos en un cuadro escrito, una fila por toma, la más reciente arriba */}
         <section className="panel" data-tour="signos-tabla">
           <div className="panel__head"><div><h2>Tomas</h2><p>{inRange.length} toma{inRange.length === 1 ? '' : 's'}{missed.length ? ` y ${missed.length} pendiente${missed.length === 1 ? '' : 's'}` : ''} en el rango elegido. La más reciente arriba. Fuera de rango: ↑ alto, ↓ bajo.</p></div></div>
-          <VitalsTable vitals={inRange} pending={missed} ageYears={ageYears} band={band} who={(id) => shortStaff(staffById(id)?.name)} onVoid={record ? setVoiding : undefined}
+          <VitalsTable vitals={inRange} pending={missed} covered={covered} ageYears={ageYears} band={band} who={(id) => shortStaff(staffById(id)?.name)} onVoid={record ? setVoiding : undefined}
             onRecord={record ? () => setRecording(true) : undefined} />
         </section>
       </>)}
       {/* Fijo abajo a la derecha: siempre a mano, también en el celular */}
       {record && <button className="btn btn--primary vs-fab" data-tour="signos-registrar" onClick={() => setRecording(true)}><Plus size={18} />Registrar signos</button>}
       {recording && <RecordVitalsModal file={file} p={p} onClose={() => setRecording(false)} onSaved={() => { setRecording(false); reload() }} />}
+      {recordingPast && <RecordVitalsModal past file={file} p={p} suggested={statuses.filter((x) => x.status !== 'taken' && x.status !== 'late').at(-1)?.at} onClose={() => setRecordingPast(false)} onSaved={() => { setRecordingPast(false); reload() }} />}
       {voiding && <VoidVitalsModal v={voiding} onClose={() => setVoiding(null)} onSaved={() => { setVoiding(null); reload() }} />}
     </div>
   )
@@ -303,13 +318,13 @@ const COLUMNS: { key: VitalKey; second?: VitalKey; label: string; unit: string; 
  * Fuera de rango: color y flecha (↑ alto, ↓ bajo), que se leen también impresos en blanco y negro. Las tomas pendientes
  * son filas «Pendiente» con su botón. Encabezado y primera columna fijos; anuladas tachadas con su motivo.
  */
-export function VitalsTable({ vitals, pending = [], ageYears, band, who, onVoid, onRecord, print = false }: {
-  vitals: Vitals[]; pending?: Date[]; ageYears?: number; band: TempBand; who: (id: string) => string; onVoid?: (v: Vitals) => void; onRecord?: () => void; print?: boolean
+export function VitalsTable({ vitals, pending = [], covered = [], ageYears, band, who, onVoid, onRecord, print = false }: {
+  vitals: Vitals[]; pending?: Date[]; covered?: { at: Date; by: Vitals }[]; ageYears?: number; band: TempBand; who: (id: string) => string; onVoid?: (v: Vitals) => void; onRecord?: () => void; print?: boolean
 }) {
-  if (!vitals.length && !pending.length) return <div className="empty">Sin tomas en este rango.</div>
+  if (!vitals.length && !pending.length && !covered.length) return <div className="empty">Sin tomas en este rango.</div>
   const cols = COLUMNS.filter((c) => c.always || vitals.some((v) => v[c.key] != null))
-  const rows: ({ at: number; v: Vitals } | { at: number; v?: undefined })[] = [
-    ...vitals.map((v) => ({ at: new Date(v.takenAt).getTime(), v })), ...pending.map((d) => ({ at: d.getTime() })),
+  const rows: ({ at: number; v: Vitals; cover?: undefined } | { at: number; v?: undefined; cover?: Vitals })[] = [
+    ...vitals.map((v) => ({ at: new Date(v.takenAt).getTime(), v })), ...pending.map((d) => ({ at: d.getTime() })), ...covered.map((c) => ({ at: c.at.getTime(), cover: c.by })),
   ].sort((a, b) => b.at - a.at)
   /** Un valor con su color y su flecha, según el rango clínico (y la banda de temperatura de la clínica). */
   const value = (v: Vitals, k: VitalKey) => {
@@ -345,7 +360,14 @@ export function VitalsTable({ vitals, pending = [], ageYears, band, who, onVoid,
               {onVoid && !r.v.voidedAt && r.v.source !== 'preclinic' && r.v.source !== 'note' && <button className="icon-btn vs-void" aria-label={`Anular la toma de las ${hm(r.at)} del ${dmy(r.at)}`} onClick={() => onVoid(r.v!)}><X size={12} /></button>}</th>
             {cols.map((c) => <td key={c.key}>{value(r.v!, c.key)}{c.second && <>/{value(r.v!, c.second)}</>}</td>)}
             <td className="vs-log__who">{r.v.source === 'preclinic' ? 'Preclínica' : r.v.source === 'note' ? <>{who(r.v.takenBy)}<small className="muted"> · Nota de evolución</small></> : who(r.v.takenBy)}</td>
-            <td className="vs-log__notes">{r.v.voidedAt ? <span className="vs-voided">Anulada{r.v.voidReason ? `: ${r.v.voidReason}` : ''}</span> : r.v.notes || <span className="muted">—</span>}</td>
+            <td className="vs-log__notes">{r.v.voidedAt ? <span className="vs-voided">Anulada{r.v.voidReason ? `: ${r.v.voidReason}` : ''}</span> : <>
+              {/* EN2 (ronda 6): anotada tarde, con quién y cuándo se escribió */}
+              {isLateRecord(r.v) && <span className="badge badge--neutral">Registro tardío · anotada {dmy(r.v.recordedAt!)} {hm(r.v.recordedAt!)}</span>} {r.v.notes || (!isLateRecord(r.v) && <span className="muted">—</span>)}</>}</td>
+          </tr>
+        ) : r.cover ? (
+          <tr key={`c${r.at}`} className="vs-log__covered">
+            <th scope="row">{dmy(r.at)} <b>{hm(r.at)}</b></th>
+            <td colSpan={cols.length + 2}><span className="badge badge--mint">{print ? 'C · ' : ''}Cubierta</span> <span className="muted">Cubierta por la toma de las {hm(new Date(r.cover.takenAt).getTime())}{dmy(new Date(r.cover.takenAt).getTime()) !== dmy(r.at) ? ` del ${dmy(new Date(r.cover.takenAt).getTime())}` : ''} ({r.cover.source === 'preclinic' ? 'Preclínica' : who(r.cover.takenBy)}).</span></td>
           </tr>
         ) : (
           <tr key={`p${r.at}`} className="vs-log__pending">
@@ -360,12 +382,12 @@ export function VitalsTable({ vitals, pending = [], ageYears, band, who, onVoid,
 }
 
 /** Registrar una toma: sólo lo que se tomó, con la hora real de la toma (por defecto ahora, nunca en el futuro). */
-function RecordVitalsModal({ file, p, onClose, onSaved }: { file: InpatientFile; p: Patient; onClose: () => void; onSaved: () => void }) {
+function RecordVitalsModal({ file, p, onClose, onSaved, past = false, suggested }: { file: InpatientFile; p: Patient; onClose: () => void; onSaved: () => void; past?: boolean; suggested?: Date }) {
   const { notify } = useStore()
   const ageYears = p.birthDate ? yearsOld(p.birthDate) : undefined
   const [v, setV] = useState<VitalsForm>(EMPTY_VITALS)
   const [checked, setChecked] = useState<Set<VitalKey>>(new Set())
-  const [takenAt, setTakenAt] = useState(() => inputDateTime(new Date()))
+  const [takenAt, setTakenAt] = useState(() => inputDateTime(past && suggested ? suggested : new Date()))
   const [maxAt] = useState(() => inputDateTime(new Date(Date.now() + 60_000)))
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -394,7 +416,7 @@ function RecordVitalsModal({ file, p, onClose, onSaved }: { file: InpatientFile;
     void save()
   }
   return (
-    <Modal title="Registrar signos vitales" onClose={onClose} footer={confirming ? <>
+    <Modal title={past ? 'Registrar tomas anteriores' : 'Registrar signos vitales'} onClose={onClose} footer={confirming ? <>
       <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }}>Revise: {errors.map((k) => `${VITALS[k].label.toLowerCase()} ${v[k]}`).join(', ')}.</span>
       <button className="btn btn--ghost" onClick={() => setConfirming(false)}>Corregir</button>
       <button className="btn btn--danger" disabled={busy} onClick={save}>Guardar de todos modos</button>
@@ -402,7 +424,7 @@ function RecordVitalsModal({ file, p, onClose, onSaved }: { file: InpatientFile;
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!any || future || busy} onClick={trySave}>Guardar</button>
     </>}>
-      <p className="muted" style={{ fontSize: 13.5 }}>Anota sólo lo que tomaste (por ejemplo, sólo la temperatura). Puedes usar punto o coma para los decimales.</p>
+      <p className="muted" style={{ fontSize: 13.5 }}>{past ? 'Una lectura que se tomó a una hora que ya pasó. Queda como «Registro tardío», con tu nombre y la hora en que la anotas, y reemplaza el «Cubierta por…» de esa hora.' : 'Anota sólo lo que tomaste (por ejemplo, sólo la temperatura). Puedes usar punto o coma para los decimales.'}</p>
       <label className="field"><span>Fecha y hora de la toma</span>
         <input className={`input ${future ? 'input--error' : ''}`} type="datetime-local" value={takenAt} max={maxAt} onChange={(e) => setTakenAt(e.target.value)} />
         {future ? <small className="field__msg field__msg--error">No puede ser en el futuro.</small> : <small className="muted">Si la anotas después de tomarla, corrige la hora. La hora en que la anotas se guarda sola.</small>}</label>

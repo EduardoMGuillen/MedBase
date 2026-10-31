@@ -340,3 +340,45 @@ describe('MC8 signos vitales opcionales en la nota de evolución', () => {
     assert.equal(file.vitals.length, n0 + 1)
   })
 })
+
+describe('EN2 una toma limpia las pendientes anteriores', () => {
+  test('5 pendientes: una toma ahora las cubre; registro tardío; la futura sigue programada; el aviso lleva la fecha en cada hora', async () => {
+    const { takeStatuses, missedTakes, plannedTakes } = await import('../src/lib/vitalsSheet.js')
+    const H = 3_600_000
+    const now = new Date('2026-10-31T10:30:00')
+    const admitted = new Date(now.getTime() - 42 * H)
+    const file: any = {
+      hospitalization: { id: 'h', kind: 'observation', patientId: 'p', admittedAt: admitted.toISOString(), admittedBy: 's', reason: '', diagnoses: [], status: 'active',
+        vitalsPlan: [{ mode: 'hours', hours: 8, from: admitted.toISOString() }] },
+      notes: [], meds: [], doses: [], marks: [], authorizations: [], consultOrders: [], vitals: [],
+    }
+    const pend = missedTakes(file, now)
+    assert.equal(pend.length, 5)
+    const alerts = fileAlerts(file, bandOf({}), now)
+    const a = alerts.find((x) => x.key === 'vitals-missed')!
+    assert.ok(pend.every((d) => a.text.includes(`${String(d.getHours()).padStart(2, '0')}:00 del ${String(d.getDate()).padStart(2, '0')}/10`)), a.text)
+    assert.equal(a.secondary?.label, 'Registrar tomas anteriores')
+    // Enfermería registra ahora
+    file.vitals.push({ id: 'v1', patientId: 'p', takenBy: 's-rios', takenAt: now.toISOString(), recordedAt: now.toISOString(), temperature: 37, source: 'stay' })
+    assert.equal(missedTakes(file, now).length, 0)
+    assert.ok(!fileAlerts(file, bandOf({}), now).some((x) => x.key === 'vitals-missed'), 'el aviso desaparece')
+    const st = takeStatuses(file, now)
+    assert.equal(st.filter((x) => x.status === 'covered').length, 5)
+    assert.ok(st.every((x) => x.by?.id === 'v1'))
+    // La de las horas siguientes sigue programada
+    assert.ok(plannedTakes(file, now, new Date(now.getTime() + 9 * H)).length >= 1)
+    // Registro tardío de una hora concreta: reemplaza el «Cubierta por…» de esa hora
+    const first = st[0].at
+    file.vitals.push({ id: 'v0', patientId: 'p', takenBy: 's-rios', takenAt: first.toISOString(), recordedAt: now.toISOString(), temperature: 36.8, source: 'stay' })
+    const st2 = takeStatuses(file, now)
+    assert.equal(st2[0].status, 'late')
+    assert.equal(st2.filter((x) => x.status === 'covered').length, 4)
+  })
+
+  test('no se registra una toma con hora futura', async () => {
+    const doc = await as('crios@demo.clinara')
+    const stay = await stayOf(doc, 'observation')
+    const r = await doc.post(`/api/inpatient/${stay.id}/vitals`, { takenAt: new Date(Date.now() + 3_600_000).toISOString(), temperature: 37 })
+    assert.equal(r.status, 400)
+  })
+})

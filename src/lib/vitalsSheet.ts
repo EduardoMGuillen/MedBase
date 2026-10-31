@@ -1,5 +1,5 @@
 import type { Dose, InpatientFile, InpatientMed, Vitals, VitalsMode, VitalsSegment } from './types.js'
-import { DEFAULT_TEMP_BAND, VITALS_SHIFT_TIMES } from './clinicalConfig.js'
+import { DEFAULT_TEMP_BAND, LATE_RECORD_MINUTES, VITALS_SHIFT_TIMES } from './clinicalConfig.js'
 
 /**
  * Hoja de signos vitales (S1): frecuencia de toma, tomas esperadas, fiebre e hipotermia y antipiréticos. La usan la
@@ -137,19 +137,34 @@ export function vitalsAnchor(file: Pick<InpatientFile, 'hospitalization' | 'vita
   return Math.round(t / HOUR) * HOUR
 }
 
+/** EN2 (ronda 6): una toma anotada mucho después de tomada es «Registro tardío». */
+export const isLateRecord = (v: Pick<Vitals, 'takenAt' | 'recordedAt'>) => !!v.recordedAt && new Date(v.recordedAt).getTime() - new Date(v.takenAt).getTime() > LATE_RECORD_MINUTES * 60_000
+
 /**
- * Tomas esperadas que no se registraron: ya pasó la hora más una hora de margen y no hay ninguna toma a menos de una
- * hora. Desde el ingreso (o desde que entró a observación) hasta ahora o el egreso.
+ * EN2 (ronda 6): cada toma esperada que ya pasó, con lo que la cerró: una toma a menos de una hora de ella («taken», o
+ * «late» si se anotó tarde: Registro tardío), una toma posterior que la cubre («covered»: «Cubierta por la toma de las
+ * HH:MM»; no se inventa que se tomó en su hora) o nada todavía («pending»). Registrar signos ahora (enfermería o el médico
+ * en su nota) cierra de una vez todas las pendientes anteriores. Desde el ingreso hasta ahora o el egreso.
  */
-export function missedTakes(file: Pick<InpatientFile, 'notes' | 'hospitalization' | 'vitals' | 'consultOrders'>, now: Date) {
+export function takeStatuses(file: Pick<InpatientFile, 'notes' | 'hospitalization' | 'vitals' | 'consultOrders'>, now: Date): { at: Date; status: 'taken' | 'late' | 'covered' | 'pending'; by?: Vitals }[] {
   const h = file.hospitalization
   const start = new Date(h.observationAt ?? h.admittedAt)
   const end = new Date(Math.min(now.getTime() - TAKE_MARGIN_MS, h.dischargedAt ? new Date(h.dischargedAt).getTime() : Infinity))
   if (end <= start) return []
-  const takes = activeVitals(file.vitals ?? []).map((v) => new Date(v.takenAt).getTime())
+  const takes = activeVitals(file.vitals ?? [])
   // La primera hora esperada es la siguiente al ingreso (la toma del ingreso es la preclínica o la primera de la hoja)
-  return plannedTakes(file, new Date(start.getTime() + TAKE_MARGIN_MS), end)
-    .filter((slot) => !takes.some((t) => Math.abs(t - slot.getTime()) <= TAKE_MARGIN_MS))
+  return plannedTakes(file, new Date(start.getTime() + TAKE_MARGIN_MS), end).map((slot) => {
+    const s = slot.getTime()
+    const near = takes.find((v) => Math.abs(new Date(v.takenAt).getTime() - s) <= TAKE_MARGIN_MS)
+    if (near) return { at: slot, status: isLateRecord(near) ? 'late' as const : 'taken' as const, by: near }
+    const later = takes.find((v) => new Date(v.takenAt).getTime() > s)
+    return later ? { at: slot, status: 'covered' as const, by: later } : { at: slot, status: 'pending' as const }
+  })
+}
+
+/** Tomas esperadas pendientes: ya pasó la hora más una hora de margen y ninguna toma la cumple ni la cubre después. */
+export function missedTakes(file: Pick<InpatientFile, 'notes' | 'hospitalization' | 'vitals' | 'consultOrders'>, now: Date) {
+  return takeStatuses(file, now).filter((x) => x.status === 'pending').map((x) => x.at)
 }
 
 /** Antipiréticos aplicados (de la hoja de medicamentos), para marcarlos en la curva. */

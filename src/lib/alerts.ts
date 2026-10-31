@@ -11,7 +11,7 @@ export type AlertLevel = 'critical' | 'pending' | 'info'
 export type AlertTab = 'sheet' | 'vitals' | 'notes' | 'meds' | 'nursing' | 'labs' | 'annexes'
 /** A dónde lleva la acción: una pestaña (con lo que hay que abrir en ella) o algo del propio expediente. */
 export type AlertGo =
-  | { tab: AlertTab; dose?: { medId: string; at: string }; record?: boolean }
+  | { tab: AlertTab; dose?: { medId: string; at: string }; record?: boolean; recordPast?: boolean }
   | { action: 'sign' | 'bed' }
 export interface FileAlert {
   key: string
@@ -23,6 +23,8 @@ export interface FileAlert {
   /** Desde cuándo está pendiente (ms): ordena dentro del mismo nivel, lo más viejo primero. */
   since: number
   action: { label: string; go: AlertGo }
+  /** EN2 (ronda 6): una segunda acción, como «Registrar tomas anteriores». */
+  secondary?: { label: string; go: AlertGo }
 }
 
 /** Órdenes nuevas sin revisar por más de este tiempo pasan a críticas. */
@@ -35,6 +37,8 @@ const hm = (t: number | string | Date) => new Date(t).toLocaleTimeString('es-HN'
 /** Hora, y la fecha si no es de hoy. */
 const when = (t: number, now: Date) => new Date(t).toDateString() === now.toDateString() ? hm(t) : `${hm(t)} del ${new Date(t).toLocaleDateString('es-HN', { day: '2-digit', month: '2-digit' })}`
 const list = (xs: string[], max = 4) => xs.length > max ? `${xs.slice(0, max).join(', ')} y ${xs.length - max} más` : xs.join(', ')
+/** «a, b y c» (con «y 3 más» si son muchas). */
+const listAnd = (xs: string[], max = 4) => xs.length > max + 1 ? `${xs.slice(0, max).join(', ')} y ${xs.length - max} más` : xs.length > 1 ? `${xs.slice(0, -1).join(', ')} y ${xs.at(-1)}` : xs.join('')
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
 type AlertFile = Pick<InpatientFile, 'hospitalization' | 'notes' | 'marks' | 'meds' | 'doses' | 'vitals' | 'consultOrders' | 'authorizations'> & Partial<Pick<InpatientFile, 'exams'>>
@@ -63,7 +67,9 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
   // Tomas de signos esperadas sin registrar, desde el ingreso: no caducan, se resuelven registrando la toma (con su hora)
   const missed = missedTakes(file, now)
   if (missed.length) {
-    out.push({ key: 'vitals-missed', level: 'pending', tab: 'vitals', text: `Signos vitales: ${plural(missed.length, 'toma pendiente', 'tomas pendientes')} (${list(missed.map((s) => when(s.getTime(), now)))}) · ${vitalsModeShort(currentVitalsMode(file))}`, count: missed.length, since: missed[0].getTime(), action: { label: 'Registrar signos', go: { tab: 'vitals', record: true } } })
+    // EN2 (ronda 6): cada hora con su fecha («23:00 del 30/10 y 07:00 del 31/10»)
+    out.push({ key: 'vitals-missed', level: 'pending', tab: 'vitals', text: `Signos vitales: ${plural(missed.length, 'toma pendiente', 'tomas pendientes')} (${listAnd(missed.map((s) => `${hm(s)} del ${new Date(s).toLocaleDateString('es-HN', { day: '2-digit', month: '2-digit' })}`))}) · ${vitalsModeShort(currentVitalsMode(file))}`, count: missed.length, since: missed[0].getTime(),
+      action: { label: 'Registrar signos', go: { tab: 'vitals', record: true } }, secondary: { label: 'Registrar tomas anteriores', go: { tab: 'vitals', recordPast: true } } })
   }
 
   // Dosis atrasadas desde que empezó la orden, agrupadas por medicamento: no caducan; se registran o se marcan «No aplicada»
@@ -176,5 +182,6 @@ export function alertQuery(go: AlertGo) {
   q.set('tab', TAB_PARAM[go.tab])
   if (go.dose) { q.set('dosis', go.dose.medId); q.set('hora', go.dose.at) }
   if (go.record) q.set('registrar', '1')
+  if (go.recordPast) q.set('registrar', 'anteriores')
   return q.toString()
 }

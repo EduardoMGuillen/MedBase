@@ -9,7 +9,7 @@ import type { OrderLineTag } from '../lib/types'
 import { authStatus, authTitle } from '../lib/consent'
 import { PdfPages } from '../components/PdfPages'
 import { ThermalCurve, VitalsTable } from './VitalsSheet'
-import { antipyreticDoses, bandOf, missedTakes, vitalsAnchor, vitalsEvery, vitalsModeText } from '../lib/vitalsSheet'
+import { antipyreticDoses, bandOf, missedTakes, takeStatuses, vitalsAnchor, vitalsEvery, vitalsModeText } from '../lib/vitalsSheet'
 import { useNow } from '../lib/hooks'
 import { EpicrisisSheet } from './Epicrisis'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
@@ -144,7 +144,7 @@ export default function FullRecord() {
             <h2 className="fr-h">Hoja de signos vitales <small className="muted" style={{ fontWeight: 400, fontSize: 13 }}>{dm(new Date(a).toISOString()).slice(0, 10)} al {dm(new Date(b - 1).toISOString()).slice(0, 10)} · toma cada {vitalsEvery(file)} h</small></h2>
             <ThermalCurve print vitals={takes} t0={a} t1={b} every={vitalsEvery(file)} anchor={vitalsAnchor(file)} stayStart={stayStart} band={band}
               antipyretics={antipyreticDoses(file).filter((x) => { const t = new Date(x.at).getTime(); return t >= a && t < b })} />
-            {takes.length || pending.length ? <VitalsTable print vitals={takes} pending={pending} ageYears={p.birthDate ? yearsOld(p.birthDate) : undefined} band={band} who={(id) => shortStaff(staffById(id)?.name)} />
+            {takes.length || pending.length || takeStatuses(file, now).some((x) => x.status === 'covered' && x.at.getTime() >= a && x.at.getTime() < b) ? <VitalsTable print vitals={takes} pending={pending} covered={takeStatuses(file, now).filter((x) => x.status === 'covered' && x.at.getTime() >= a && x.at.getTime() < b).map((x) => ({ at: x.at, by: x.by! }))} ageYears={p.birthDate ? yearsOld(p.birthDate) : undefined} band={band} who={(id) => shortStaff(staffById(id)?.name)} />
               : <p className="muted">Sin tomas en estos días.</p>}
           </>, true)
         })}

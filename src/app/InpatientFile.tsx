@@ -63,8 +63,8 @@ export default function InpatientFile() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (tabParam) setTab(tabParam) }, [tabParam])
   // EN2: una alerta abre el lugar exacto: la dosis atrasada o el registro de signos
-  const [focus, setFocus] = useState<{ dose?: { medId: string; at: string }; record?: boolean }>(() => ({
-    dose: params.get('dosis') && params.get('hora') ? { medId: params.get('dosis')!, at: params.get('hora')! } : undefined, record: params.get('registrar') === '1' }))
+  const [focus, setFocus] = useState<{ dose?: { medId: string; at: string }; record?: boolean; recordPast?: boolean }>(() => ({
+    dose: params.get('dosis') && params.get('hora') ? { medId: params.get('dosis')!, at: params.get('hora')! } : undefined, record: params.get('registrar') === '1', recordPast: params.get('registrar') === 'anteriores' }))
   const [missing, setMissing] = useState(false)
   const now = useNow()
   const alerts = useFileAlerts(file)
@@ -121,7 +121,7 @@ export default function InpatientFile() {
       else setTab(g.action === 'sign' ? 'annexes' : 'sheet')
       return
     }
-    setFocus({ dose: g.dose, record: g.record })
+    setFocus({ dose: g.dose, record: g.record, recordPast: g.recordPast })
     selectTab(g.tab)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -211,7 +211,7 @@ export default function InpatientFile() {
 
       {tab === 'meds' && <MedSheet file={file} p={p} reload={load} onWriteNote={() => setTab('notes')} focusDose={focus.dose} onFocused={() => setFocus({})} />}
       {tab === 'notes' && <MedicalNotes file={file} p={p} reload={load} />}
-      {tab === 'vitals' && <VitalsSheet file={file} p={p} reload={load} autoRecord={focus.record} onFocused={() => setFocus({})} />}
+      {tab === 'vitals' && <VitalsSheet file={file} p={p} reload={load} autoRecord={focus.record} autoRecordPast={focus.recordPast} onFocused={() => setFocus({})} />}
       {tab === 'nursing' && !obs && <NursingNotes file={file} reload={load} />}
       {tab === 'labs' && <ExamList exams={exams} patientId={h.patientId} hospitalizationId={h.id} reload={load} open={open} />}
       {tab === 'annexes' && <Annexes file={file} p={p} reload={load} />}

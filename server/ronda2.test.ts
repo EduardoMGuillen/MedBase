@@ -7,7 +7,7 @@ import type { Server } from 'node:http'
 import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb, migrateObservationAuthorizations, resetDemo } from './db.js'
 import { createSql, type Sql } from './sql.js'
-import { bandOf, expectedTakes, frequencyFromOrders, missedTakes, tempClass } from '../src/lib/vitalsSheet.js'
+import { bandOf, expectedTakes, frequencyFromOrders, missedTakes, tempClass, takeStatuses } from '../src/lib/vitalsSheet.js'
 import { fileAlerts } from '../src/lib/alerts.js'
 
 let server: Server
@@ -421,6 +421,7 @@ describe('S1 hoja de signos vitales', () => {
     const file: any = { hospitalization: { admittedAt: start.toISOString(), status: 'active' }, notes: [], vitals, meds: [], doses: [], marks: [], authorizations: [] }
     const band = bandOf({})
     assert.deepEqual([tempClass(38.6, band), tempClass(35.4, band), tempClass(38.0, band), tempClass(35.9, band), tempClass(36.0, band)], ['fever', 'hypo', 'fever', 'hypo', 'normal'])
+    // EN2 (ronda 6): la que falta es la última; no hay toma después que la cubra
     const missed = missedTakes(file, now)
     assert.equal(missed.length, 1, 'una toma esperada sin registrar')
     assert.equal(missed[0].getHours() % 8, 0)
@@ -429,9 +430,9 @@ describe('S1 hoja de signos vitales', () => {
     // Con una fiebre en las últimas 24 h, aparece en las alertas
     vitals.push({ id: 'vf', takenAt: new Date(now.getTime() - 3_600_000).toISOString(), takenBy: 's-rios', temperature: 38.6, patientId: 'x' })
     assert.ok(fileAlerts(file, band, now).some((a) => a.level === 'critical' && a.text.startsWith('Fiebre: 38.6 °C')))
-    // Cada 4 h: el doble de horas esperadas, y faltan muchas más
+    // Cada 4 h: el doble de horas esperadas; las de en medio quedan cubiertas por la toma siguiente (EN2, ronda 6)
     file.hospitalization.vitalsEveryHours = 4
-    assert.ok(missedTakes(file, now).length > 5)
+    assert.ok(takeStatuses(file, now).filter((x) => x.status === 'covered').length > 5)
     assert.equal(expectedTakes(new Date(2026, 9, 25, 0, 0), new Date(2026, 9, 25, 23, 59), 8).map((d) => d.getHours()).join(','), '0,8,16')
   })
 })

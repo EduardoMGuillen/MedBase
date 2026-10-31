@@ -920,3 +920,8 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 
 /* MC8 (ronda 6): un signo fuera de rango en la franja de la nota */
 .note__vitals .vital-out { color: #9b4a00; font-weight: 700; }
+
+/* EN2 (ronda 6): estado de las tomas y tomas cubiertas */
+.vs__status { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.vs-log__covered th, .vs-log__covered td { background: var(--ward); font-size: 13px; }
+.alert-line__acts { display: inline-flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-left: auto; }
