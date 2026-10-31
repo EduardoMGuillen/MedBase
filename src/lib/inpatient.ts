@@ -67,12 +67,18 @@ export function isScheduled(m: Schedulable, at: Date) {
 /** Minutos de tolerancia antes de considerar atrasada una dosis. */
 export const LATE_AFTER_MIN = 60
 
-export type SlotState = 'given' | 'skipped' | 'omitted' | 'late' | 'due' | 'upcoming'
+/** `autoskip` (EN3, ronda 6): atrasada sin registro que se cerró sola al llegar la siguiente dosis: «No aplicada (sin registro)». */
+export type SlotState = 'given' | 'skipped' | 'omitted' | 'late' | 'due' | 'upcoming' | 'autoskip'
 
-export function slotState(at: Date, omitted: boolean, dose: Dose | undefined, now = new Date()): SlotState {
+/**
+ * Estado de una hora indicada. EN3 (ronda 6): con `everyHours`, una dosis atrasada sin registrar se cierra sola cuando llega
+ * la hora de la siguiente dosis del mismo medicamento (no se escribe nada: enfermería todavía puede registrarla).
+ */
+export function slotState(at: Date, omitted: boolean, dose: Dose | undefined, now = new Date(), everyHours?: number): SlotState {
   if (dose) return dose.status
   if (omitted) return 'omitted'
   const diff = (now.getTime() - at.getTime()) / 60_000
+  if (everyHours && now.getTime() >= at.getTime() + everyHours * HOUR) return 'autoskip'
   if (diff > LATE_AFTER_MIN) return 'late'
   if (diff >= -30) return 'due'
   return 'upcoming'

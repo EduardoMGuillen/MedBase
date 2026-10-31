@@ -35,6 +35,8 @@ export const LEVEL_LABEL: Record<AlertLevel, [string, string]> = { critical: ['c
 const HOUR = 3_600_000
 const hm = (t: number | string | Date) => new Date(t).toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })
 /** Hora, y la fecha si no es de hoy. */
+/** «31/10», siempre con dos cifras. */
+const ddmm = (t: number | Date) => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` }
 const when = (t: number, now: Date) => new Date(t).toDateString() === now.toDateString() ? hm(t) : `${hm(t)} del ${new Date(t).toLocaleDateString('es-HN', { day: '2-digit', month: '2-digit' })}`
 const list = (xs: string[], max = 4) => xs.length > max ? `${xs.slice(0, max).join(', ')} y ${xs.length - max} más` : xs.join(', ')
 /** «a, b y c» (con «y 3 más» si son muchas). */
@@ -68,7 +70,7 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
   const missed = missedTakes(file, now)
   if (missed.length) {
     // EN2 (ronda 6): cada hora con su fecha («23:00 del 30/10 y 07:00 del 31/10»)
-    out.push({ key: 'vitals-missed', level: 'pending', tab: 'vitals', text: `Signos vitales: ${plural(missed.length, 'toma pendiente', 'tomas pendientes')} (${listAnd(missed.map((s) => `${hm(s)} del ${new Date(s).toLocaleDateString('es-HN', { day: '2-digit', month: '2-digit' })}`))}) · ${vitalsModeShort(currentVitalsMode(file))}`, count: missed.length, since: missed[0].getTime(),
+    out.push({ key: 'vitals-missed', level: 'pending', tab: 'vitals', text: `Signos vitales: ${plural(missed.length, 'toma pendiente', 'tomas pendientes')} (${listAnd(missed.map((s) => `${hm(s)} del ${ddmm(s)}`))}) · ${vitalsModeShort(currentVitalsMode(file))}`, count: missed.length, since: missed[0].getTime(),
       action: { label: 'Registrar signos', go: { tab: 'vitals', record: true } }, secondary: { label: 'Registrar tomas anteriores', go: { tab: 'vitals', recordPast: true } } })
   }
 
@@ -76,28 +78,15 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
   for (const m of file.meds.filter((x) => !x.prn)) {
     const late = doseTimes(m, new Date(m.firstAt), new Date(t + HOUR)).filter((s) => {
       const dose = file.doses.find((d) => d.medId === m.id && d.scheduledAt && new Date(d.scheduledAt).getTime() === s.at.getTime())
-      return slotState(s.at, s.omitted, dose, now) === 'late'
+      return slotState(s.at, s.omitted, dose, now, m.everyHours) === 'late'
     })
     if (!late.length) continue
     out.push({ key: `late-${m.id}`, level: 'pending', tab: 'meds', text: `${medLabel(m)}: ${plural(late.length, 'dosis atrasada', 'dosis atrasadas')} (${list(late.map((s) => when(s.at.getTime(), now)))})`,
       count: late.length, since: late[0].at.getTime(), action: { label: 'Registrar dosis', go: { tab: 'meds', dose: { medId: m.id, at: late[0].at.toISOString() } } } })
   }
 
-  // Dosis no aplicadas u omitidas con su motivo: ya no alertan. Quedan como aviso para el médico hasta su siguiente nota
-  // (OB1, ronda 5): ahí ya lo revisó
-  const reviewed = Math.max(0, ...file.notes.filter((n) => n.kind === 'evolution' || n.kind === 'admission' || n.kind === 'procedure').map((n) => new Date(n.at).getTime()))
-  const skipped = new Map<string, typeof file.doses>()
-  for (const d of file.doses) if (d.status !== 'given' && new Date(d.givenAt).getTime() > reviewed) skipped.set(d.medId, [...(skipped.get(d.medId) ?? []), d])
-  for (const [medId, ds] of skipped) {
-    const m = file.meds.find((x) => x.id === medId)
-    const why = [...new Set(ds.map((d) => d.note).filter(Boolean))]
-    const parts = (['skipped', 'omitted'] as const).map((st) => {
-      const xs = ds.filter((d) => d.status === st)
-      return xs.length ? `${plural(xs.length, st === 'skipped' ? 'dosis no aplicada' : 'dosis omitida', st === 'skipped' ? 'dosis no aplicadas' : 'dosis omitidas')} (${list(xs.map((d) => when(new Date(d.scheduledAt ?? d.givenAt).getTime(), now)))})` : ''
-    }).filter(Boolean)
-    out.push({ key: `skip-${medId}`, level: 'info', tab: 'meds', text: `${m ? medLabel(m) : 'Medicamento'}: ${parts.join(' y ')}${why.length ? `. ${why.join('; ')}` : ''}`,
-      count: ds.length, since: new Date(ds[0].givenAt).getTime(), action: { label: 'Ver hoja', go: { tab: 'meds' } } })
-  }
+  // EN3 (ronda 6): una dosis en estado final (No aplicada u Omitida, con su motivo) no genera aviso: queda sólo en la hoja,
+  // con su color y su motivo, y en la bitácora. Tampoco la atrasada que se cerró sola al llegar la siguiente dosis.
 
   // Órdenes médicas sin revisar por enfermería, por nota: críticas si llevan más de ORDERS_CRITICAL_MIN
   const byNote = new Map<string, { at: string; author: string; n: number }>()

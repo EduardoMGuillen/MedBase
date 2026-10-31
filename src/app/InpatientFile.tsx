@@ -246,6 +246,7 @@ function ConsultEntry({ consultationId, file }: { consultationId: string; file: 
 
 const STATE_LABEL: Record<SlotState, string> = {
   given: 'Administrado', skipped: 'No aplicada', omitted: 'Omitido', late: 'Atrasado', due: 'Toca ahora', upcoming: 'Programado',
+  autoskip: 'No aplicada (sin registro)',
 }
 /** OB1 (ronda 5): resultado de una dosis registrada. */
 const DOSE_LABEL: Record<Dose['status'], string> = { given: 'Administrada', skipped: 'No aplicada', omitted: 'Omitida' }
@@ -379,7 +380,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                 <div className="slots">
                   {/* OB1 (ronda 5): las dosis atrasadas de días anteriores se ven (y se registran) desde el día de hoy */}
                   {isToday(ref) && doseTimes(m, new Date(m.firstAt), start)
-                    .filter((s) => slotState(s.at, s.omitted, doses.find((d) => d.scheduledAt && new Date(d.scheduledAt).getTime() === s.at.getTime())) === 'late')
+                    .filter((s) => slotState(s.at, s.omitted, doses.find((d) => d.scheduledAt && new Date(d.scheduledAt).getTime() === s.at.getTime()), undefined, m.everyHours) === 'late')
                     .map((s) => (
                       <button key={s.at.toISOString()} className="slot2 slot2--late slot2--prev" disabled={!care} onClick={() => setMarking({ med: m, at: s.at, late: true })}
                         title={`Dosis atrasada del ${date(s.at.toISOString())} a las ${time(s.at.toISOString())}`}>
@@ -389,13 +390,13 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                     ))}
                   {slots.map((s) => {
                     const dose = doses.find((d) => d.scheduledAt && new Date(d.scheduledAt).getTime() === s.at.getTime())
-                    const st = slotState(s.at, s.omitted, dose)
+                    const st = slotState(s.at, s.omitted, dose, undefined, m.everyHours)
                     // Hoy se registra directo; en un día pasado sólo en "Corregir registros"; lo futuro no se toca
                     const clickable = care && !s.omitted && s.at.getTime() <= Date.now() + 30 * 60_000 && (dose ? fixing : !past || fixing)
                     return (
                       <button key={s.at.toISOString()} className={`slot2 slot2--${st}${dose?.correctionReason ? ' slot2--fixed' : ''}`} disabled={!clickable}
                         onClick={() => (dose ? setCorrecting({ med: m, dose }) : setMarking({ med: m, at: s.at, late: past }))}
-                        title={dose ? doseTitle(dose) : STATE_LABEL[st]}>
+                        title={dose ? doseTitle(dose) : st === 'autoskip' ? 'No aplicada (sin registro). Cerrada automáticamente por el sistema al llegar la siguiente dosis. Todavía se puede registrar.' : STATE_LABEL[st]}>
                         <b>{time(s.at.toISOString())}</b>
                         <small>{dose ? `${dose.status === 'given' ? '✓' : '✗'} ${time(dose.givenAt)}${givenLate(dose) ? ' con retraso' : ''} ${by(dose.givenBy)}` : STATE_LABEL[st]}</small>
                       </button>
@@ -422,7 +423,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
         </div>
       )}
       <div className="legend">
-        {(['given', 'due', 'late', 'upcoming', 'skipped', 'omitted'] as SlotState[]).map((s) => <span key={s}><i className={`slot2--${s}`} />{STATE_LABEL[s]}</span>)}
+        {(['given', 'due', 'late', 'upcoming', 'skipped', 'omitted', 'autoskip'] as SlotState[]).map((s) => <span key={s}><i className={`slot2--${s}`} />{STATE_LABEL[s]}{s === 'autoskip' ? ': cerrada automáticamente por el sistema al llegar la siguiente dosis' : ''}</span>)}
       </div>
       {marking && <DoseModal med={marking.med} at={marking.at} late={marking.late} doses={dosesOf(marking.med)} onClose={() => setMarking(null)} onSaved={() => { setMarking(null); reload() }} />}
       {correcting && <CorrectDoseModal med={correcting.med} dose={correcting.dose} onClose={() => setCorrecting(null)} onSaved={() => { setCorrecting(null); reload() }} />}
@@ -458,7 +459,7 @@ function WeekGrid({ meds, start, today, admitted, dosesOf, by, doseTitle, onDay 
                 <td key={d.toISOString()} className={d.getTime() === today.getTime() ? 'is-today' : ''}>
                   {slots.map((s) => {
                     const dose = doses.find((x) => x.scheduledAt && new Date(x.scheduledAt).getTime() === s.at.getTime())
-                    const st = slotState(s.at, s.omitted, dose)
+                    const st = slotState(s.at, s.omitted, dose, undefined, m.everyHours)
                     return <span key={s.at.toISOString()} className={`wk wk--${st}`} title={dose ? doseTitle(dose) : STATE_LABEL[st]}>
                       <b>{time(s.at.toISOString())}</b>{dose ? ` ${dose.status === 'given' ? '✓' : '✗'} ${time(dose.givenAt)} ${by(dose.givenBy)}` : ''}</span>
                   })}

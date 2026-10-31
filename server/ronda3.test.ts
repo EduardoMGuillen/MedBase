@@ -7,7 +7,7 @@ import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb, migrateLabsToExams, migrateRxValidity } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { filterSummary, periodRange, type Filters } from '../src/lib/patientFilters.js'
-import { alertQuery, alertSummary, fileAlerts, tabCounts } from '../src/lib/alerts.js'
+import { alertQuery, fileAlerts, tabCounts } from '../src/lib/alerts.js'
 import { bandOf } from '../src/lib/vitalsSheet.js'
 import { typedExam } from '../src/lib/exams.js'
 
@@ -569,9 +569,11 @@ describe('EX1 (ronda 4) exámenes: Laboratorio e Imagen y gabinete', () => {
 })
 
 describe('EN2 alertas agrupadas por nivel', () => {
-  test('las dosis atrasadas de un medicamento van en una línea con conteo; «No aplicada» con motivo deja de alertar', async () => {
+  // EN3 (ronda 6): una atrasada se cierra sola al llegar la siguiente dosis y «No aplicada» con motivo no deja aviso
+  test('la dosis atrasada va en una línea por medicamento; la anterior se cerró sola; «No aplicada» con motivo deja de alertar y no deja aviso', async () => {
     const { doc, nurse, stayId } = await admitted('Alertas')
-    const firstAt = new Date(Date.now() - 9 * 3_600_000).toISOString()
+    const firstAt = new Date(Date.now() - 5.5 * 3_600_000).toISOString()
+    const second = new Date(Date.now() - 1.5 * 3_600_000).toISOString()
     const n = await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', exam: 'Estable.',
       meds: [{ drug: 'Acetaminofén', dose: '1 g', route: 'VO', everyHours: 4, firstAt }] })
     assert.equal(n.status, 201, JSON.stringify(n.body))
@@ -580,23 +582,19 @@ describe('EN2 alertas agrupadas por nivel', () => {
     const late = fileAlerts(file, band, new Date()).filter((a) => a.key.startsWith('late-'))
     assert.equal(late.length, 1, 'una sola línea por medicamento')
     assert.equal(late[0].level, 'pending')
-    assert.ok(late[0].count >= 2 && /2 dosis atrasadas|3 dosis atrasadas/.test(late[0].text), late[0].text)
+    assert.equal(late[0].count, 1, 'la de hace 5.5 h ya se cerró sola: llegó la siguiente')
     assert.equal(late[0].action.label, 'Registrar dosis')
     // La acción lleva a la dosis exacta
     assert.match(alertQuery(late[0].action.go), /tab=medicamentos&dosis=.+&hora=/)
     const med = file.meds[0]
-    assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: firstAt, givenAt: new Date().toISOString(), status: 'skipped' })).status, 400)
-    const skip = await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: firstAt, givenAt: new Date().toISOString(), status: 'skipped', note: 'Paciente en ayuno' })
+    assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: second, givenAt: new Date().toISOString(), status: 'skipped' })).status, 400)
+    const skip = await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: second, givenAt: new Date().toISOString(), status: 'skipped', note: 'Paciente en ayuno' })
     assert.equal(skip.status, 201, JSON.stringify(skip.body))
     file = (await nurse.get(`/api/inpatient/${stayId}`)).body
     const after = fileAlerts(file, band, new Date())
-    assert.equal(after.find((a) => a.key.startsWith('late-'))!.count, late[0].count - 1)
-    const info = after.find((a) => a.key.startsWith('skip-'))!
-    assert.equal(info.level, 'info')
-    assert.match(info.text, /1 dosis no aplicada .*Paciente en ayuno/)
-    // Contador de la pestaña: sólo lo crítico y lo pendiente
-    assert.equal(tabCounts(after).meds?.n, late[0].count - 1)
-    assert.match(alertSummary(after), /pendiente/)
+    assert.ok(!after.some((a) => a.key.startsWith('late-')))
+    assert.ok(!after.some((a) => a.key.startsWith('skip-')), 'la no aplicada queda sólo en la hoja')
+    assert.equal(tabCounts(after).meds, undefined)
   })
 
   test('el inicio de enfermería recibe los pendientes de todos los internados; recepción no', async () => {
@@ -665,19 +663,22 @@ describe('Correcciones de la revisión contra el pedido', () => {
     assert.equal((await sa.patch(`/api/platform/staff/${admin.id}`, { active: false })).status, 200)
   })
 
-  test('EN2: las dosis atrasadas y las tomas de signos sin registrar no caducan a las 24 horas', async () => {
+  test('EN2: las tomas de signos sin registrar y la dosis única atrasada no caducan a las 24 horas; una dosis repetida se cierra con la siguiente (EN3, ronda 6)', async () => {
     const { doc, nurse, stayId } = await admitted('Sin caducar')
     const firstAt = new Date().toISOString()
     const n = await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', exam: 'Estable.',
-      meds: [{ drug: 'Ceftriaxona', dose: '1 g', route: 'IV', everyHours: 8, firstAt }] })
+      meds: [{ drug: 'Ceftriaxona', dose: '1 g', route: 'IV', everyHours: 8, firstAt }, { drug: 'Dexametasona', dose: '8 mg', route: 'IV', firstAt }] })
     assert.equal(n.status, 201, JSON.stringify(n.body))
     const file = (await nurse.get(`/api/inpatient/${stayId}`)).body
-    // 40 horas después sin registrar nada: dosis de las 0, 8, 16, 24 y 32 h atrasadas (la de las 40 h apenas toca)
-    const later = new Date(Date.now() + 40 * 3_600_000)
+    // 38 horas después sin registrar nada. EN3 (ronda 6): cada dosis atrasada se cierra sola al llegar la siguiente, así que
+    // de la ceftriaxona sólo alerta la de las 32 h (la de las 40 h todavía no llega); la dosis única (sin siguiente) sigue alertando aunque pasen 24 h
+    const later = new Date(Date.now() + 38 * 3_600_000)
     const alerts = fileAlerts(file, bandOf({}), later)
-    const late = alerts.find((a) => a.key.startsWith('late-'))!
-    assert.equal(late.count, 5, late.text)
-    assert.ok(late.since <= later.getTime() - 24 * 3_600_000, 'la dosis de hace más de 24 h sigue alertando')
+    const ceftri = alerts.find((a) => a.key.startsWith('late-') && a.text.startsWith('Ceftriaxona'))!
+    assert.ok(ceftri, alerts.map((a) => a.text).join(' | '))
+    assert.equal(ceftri.count, 1, ceftri.text)
+    const once = alerts.find((a) => a.key.startsWith('late-') && a.text.startsWith('Dexametasona'))!
+    assert.ok(once.since <= later.getTime() - 24 * 3_600_000, 'la dosis única de hace más de 24 h sigue alertando')
     const missed = alerts.find((a) => a.key === 'vitals-missed')!
     assert.ok(missed.since <= later.getTime() - 24 * 3_600_000, 'la toma de hace más de 24 h sigue alertando')
   })

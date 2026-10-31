@@ -137,9 +137,12 @@ describe('DM1 ronda 5: los mínimos del pedido', () => {
     const startToday = new Date(now); startToday.setHours(0, 0, 0, 0)
     const obsFiles = await Promise.all((await sql.query(`SELECT id FROM hospitalizations WHERE kind = 'observation' AND status = 'active' AND clinic_id = 'c-sb'`)).map((r) => file(String(r.id))))
     const alertsOf = (f: any) => fileAlerts(f, bandOf({}), now)
-    const ob1 = obsFiles.find((f) => alertsOf(f).some((a) => a.key.startsWith('late-') && a.since < startToday.getTime()))
-    assert.ok(ob1, 'una dosis atrasada de ayer')
-    assert.ok(alertsOf(ob1).some((a) => a.key.startsWith('skip-') && /no aplicada/.test(a.text)), 'una no aplicada con aviso')
+    // EN3 (ronda 6): la dosis de ayer sin registro ya se cerró sola (llegó la siguiente) y la no aplicada no genera aviso:
+    // las dos quedan en la hoja
+    const ob1 = obsFiles.find((f) => f.doses.some((d: any) => d.status === 'skipped'))
+    assert.ok(ob1, 'una observación con una dosis no aplicada')
+    assert.ok(!alertsOf(ob1).some((a) => a.key.startsWith('skip-')), 'la no aplicada no ocupa el aviso')
+    assert.ok(ob1.meds.some((m: any) => m.everyHours && new Date(m.firstAt).getTime() < startToday.getTime()), 'con un medicamento que viene de ayer')
     assert.ok(alertsOf(ob1).some((a) => a.key === 'vitals-missed'), 'tomas pendientes')
     const upToDate = obsFiles.find((f) => f !== ob1 && !alertsOf(f).some((a) => a.key.startsWith('late-')) && alertsOf(f).some((a) => a.key === 'vitals-missed'))
     assert.ok(upToDate, 'otra con las dosis al día y una toma pendiente')

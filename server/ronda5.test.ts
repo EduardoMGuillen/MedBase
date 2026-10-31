@@ -112,11 +112,12 @@ describe('RE1 Mi configuración de recepción', () => {
 })
 
 describe('OB1 pendientes que se resuelven al registrar la dosis', () => {
-  test('la dosis atrasada de ayer se registra desde su alerta (administrada con retraso u omitida con motivo), sale del panel y el aviso se va con la siguiente nota', async () => {
+  test('la dosis de ayer se registra tarde (administrada con retraso u omitida con motivo) y queda en la hoja; sólo la última atrasada está en el aviso (EN3, ronda 6)', async () => {
     const doc = await as('lherrera@demo.clinara')
     const nurse = await as('crios@demo.clinara')
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
-    // Solución c/8h que empezó hace 30 h: sus dosis de hace 30, 22, 14 y 6 h están atrasadas
+    // Solución c/8h que empezó hace 30 h: dosis de hace 30, 22, 14 y 6 h. EN3 (ronda 6): las tres primeras ya se cerraron solas
+    // (llegó la siguiente); sólo la de hace 6 h sigue atrasada. Las cerradas solas todavía se pueden registrar
     const first = new Date(Date.now() - 30 * 3_600_000)
     first.setSeconds(0, 0)
     const n = await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', exam: 'Estable.',
@@ -127,20 +128,21 @@ describe('OB1 pendientes que se resuelven al registrar la dosis', () => {
     let f = await file()
     const med = f.meds.find((m: any) => m.drug === 'Solución Hartmann')
     const late = () => fileAlerts(f, band, new Date()).find((a) => a.key === `late-${med.id}`)
-    assert.equal(late()?.count, 4)
+    assert.equal(late()?.count, 1)
     // La de ayer (hace 30 h), administrada tarde: pide el motivo del registro tardío y queda «con retraso» en la bitácora
     const slot = (h: number) => new Date(first.getTime() + h * 3_600_000).toISOString()
     assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: slot(0), givenAt: slot(1.5), status: 'given' })).status, 400)
     const given = await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: slot(0), givenAt: slot(1.5), status: 'given', reason: 'Se aplicó en el turno de noche' })
     assert.equal(given.status, 201, JSON.stringify(given.body))
     f = await file()
-    assert.equal(late()?.count, 3, 'sale del panel')
+    assert.equal(late()?.count, 1, 'la de ayer ya no estaba en el panel; registrarla no cambia el aviso')
     // Omitida: pide motivo
     assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: slot(8), status: 'omitted' })).status, 400)
     assert.equal((await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: slot(8), status: 'omitted', note: 'Suspendida por el médico' })).status, 201)
     f = await file()
-    assert.equal(late()?.count, 2)
-    assert.match(fileAlerts(f, band, new Date()).find((a) => a.key === `skip-${med.id}`)!.text, /1 dosis omitida .*Suspendida por el médico/)
+    assert.equal(late()?.count, 1)
+    // EN3 (ronda 6): una dosis omitida o no aplicada con motivo no genera aviso
+    assert.equal(fileAlerts(f, band, new Date()).find((a) => a.key === `skip-${med.id}`), undefined)
     // Nada se borra: queda en la hoja con autor y hora
     const recorded = f.doses.filter((d: any) => d.medId === med.id)
     assert.deepEqual(recorded.map((d: any) => d.status).sort(), ['given', 'omitted'])

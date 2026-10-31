@@ -382,3 +382,25 @@ describe('EN2 una toma limpia las pendientes anteriores', () => {
     assert.equal(r.status, 400)
   })
 })
+
+describe('EN3 una dosis ya no aplicada no ocupa el aviso', () => {
+  test('No aplicada con motivo: sin aviso; atrasada: en el aviso hasta la siguiente dosis, luego «No aplicada (sin registro)»; PRN nunca', async () => {
+    const { slotState } = await import('../src/lib/inpatient.js')
+    const H = 3_600_000
+    const now = new Date('2026-10-31T10:30:00')
+    const first = new Date('2026-10-30T23:00:00')
+    const med = { id: 'm1', hospitalizationId: 'h', drug: 'Solución Hartmann', dose: '1000 mL', route: 'Intravenosa', everyHours: 8, prn: false, firstAt: first.toISOString(), orderedBy: 's', orderedAt: first.toISOString() }
+    const prn = { ...med, id: 'm2', drug: 'Ketorolaco', everyHours: undefined, prn: true }
+    const file: any = { hospitalization: { id: 'h', kind: 'observation', patientId: 'p', admittedAt: new Date(first.getTime() - H).toISOString(), status: 'active', vitalsPlan: [{ mode: 'none', from: first.toISOString() }] },
+      notes: [], meds: [med, prn], doses: [], marks: [], authorizations: [], consultOrders: [], vitals: [] }
+    // 23:00 sin registrar a las 10:30 del día siguiente: ya llegó la de las 07:00 → cerrada sola; la de las 07:00 sigue atrasada
+    assert.equal(slotState(first, false, undefined, now, 8), 'autoskip')
+    const lines = fileAlerts(file, bandOf({}), now).filter((a) => a.tab === 'meds')
+    assert.equal(lines.length, 1)
+    assert.match(lines[0].text, /1 dosis atrasada \(07:00\)/)
+    // Se marca «No aplicada» con motivo: sale del aviso
+    file.doses.push({ id: 'd1', medId: 'm1', scheduledAt: new Date('2026-10-31T07:00:00').toISOString(), givenAt: now.toISOString(), givenBy: 's-rios', status: 'skipped', note: 'Paciente fuera del servicio (estudio o quirófano)' })
+    assert.equal(fileAlerts(file, bandOf({}), now).filter((a) => a.tab === 'meds').length, 0, 'ni la no aplicada ni la cerrada sola generan aviso')
+    assert.ok(!fileAlerts(file, bandOf({}), new Date(now.getTime() + 72 * H)).some((a) => a.text.includes('Ketorolaco')), 'un PRN nunca')
+  })
+})
