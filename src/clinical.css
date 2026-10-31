@@ -925,3 +925,13 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .vs__status { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .vs-log__covered th, .vs-log__covered td { background: var(--ward); font-size: 13px; }
 .alert-line__acts { display: inline-flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-left: auto; }
+
+/* EN1 (ronda 6): interruptor «Urgente» en «Paciente sin cita» */
+.switch-line { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; padding: 6px 0; min-height: 44px; }
+.switch-line input { appearance: none; flex: none; width: 42px; height: 24px; border-radius: 999px; background: var(--line); position: relative; cursor: pointer; transition: background .15s; margin-top: 2px; }
+.switch-line input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.switch-line input:checked { background: var(--red-ink, #b42318); }
+.switch-line input:checked::after { transform: translateX(18px); }
+.switch-line input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.switch-line small { display: block; color: var(--muted); font-size: 12.5px; }
+.queue-card .wait { white-space: nowrap; }

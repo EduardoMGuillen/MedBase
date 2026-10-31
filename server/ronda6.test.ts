@@ -404,3 +404,19 @@ describe('EN3 una dosis ya no aplicada no ocupa el aviso', () => {
     assert.ok(!fileAlerts(file, bandOf({}), new Date(now.getTime() + 72 * H)).some((a) => a.text.includes('Ketorolaco')), 'un PRN nunca')
   })
 })
+
+describe('EN1 «Urgente» al agregar un paciente sin cita', () => {
+  test('sin marcar no sale «Urgente»; marcado sí, y queda en la bitácora con quién lo marcó', async () => {
+    const nurse = await as('crios@demo.clinara')
+    const boot = (await nurse.get('/api/bootstrap')).body
+    const ps = boot.patients.filter((x: any) => !x.pending).slice(-2)
+    const a = await nurse.post('/api/appointments/walk-in', { patientId: ps[0].id, doctorId: 's-paz', reason: 'Tos' })
+    const b = await nurse.post('/api/appointments/walk-in', { patientId: ps[1].id, doctorId: 's-paz', reason: 'Dificultad respiratoria', urgent: true })
+    assert.deepEqual([a.status, b.status], [201, 201])
+    assert.notEqual(a.body.type, 'urgent')
+    assert.equal(b.body.type, 'urgent')
+    assert.equal(b.body.source, 'walkin')
+    const log = (await nurse.get('/api/audit/mine')).body
+    assert.ok((log.rows ?? log).some((e: any) => e.userId === 's-rios' && /sin cita .*marcado como urgente/.test(e.action)))
+  })
+})

@@ -136,6 +136,8 @@ function WalkInModal({ onClose }: { onClose: () => void }) {
   const [patientId, setPatientId] = useState('')
   const [doctorId, setDoctorId] = useState(user?.role === 'doctor' ? user.id : doctors[0]?.id ?? '')
   const [reason, setReason] = useState('')
+  // EN1 (ronda 6): apagado por defecto
+  const [urgent, setUrgent] = useState(false)
   const [registering, setRegistering] = useState(false)
   const [busy, setBusy] = useState(false)
   if (registering) {
@@ -149,7 +151,7 @@ function WalkInModal({ onClose }: { onClose: () => void }) {
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!patientId || !doctorId || !reason.trim() || busy} onClick={async () => {
         setBusy(true)
-        const ok = await walkIn({ patientId, doctorId, reason: reason.trim() })
+        const ok = await walkIn({ patientId, doctorId, reason: reason.trim(), urgent })
         setBusy(false)
         if (ok) onClose()
       }}>Pasar a sala de espera</button>
@@ -162,6 +164,8 @@ function WalkInModal({ onClose }: { onClose: () => void }) {
         </select></label>}
       <label className="field"><span>Motivo de consulta</span>
         <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Fiebre y dolor de garganta" /></label>
+      <label className="switch-line"><input type="checkbox" role="switch" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} aria-checked={urgent} />
+        <span><b>Urgente</b><small>La tarjeta sale con la etiqueta «Urgente». Queda en la bitácora con tu nombre.</small></span></label>
     </Modal>
   )
 }

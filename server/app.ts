@@ -720,6 +720,8 @@ export function createApp(opts: AppOptions) {
       patientId: z.string().min(1, 'Elige un paciente.'),
       doctorId: z.string().min(1, 'Elige un médico.'),
       reason: z.string().trim().min(1, 'Escribe el motivo de consulta.').max(300),
+      // EN1 (ronda 6): «Urgente», apagado por defecto: la etiqueta «Urgente» sale sólo si se marca
+      urgent: z.boolean().default(false),
     }), req.body)
     const cid = clinicOf(req)
     ;(await patientRow(cid, b.patientId)) ?? fail(400, 'El paciente no existe.')
@@ -730,8 +732,8 @@ export function createApp(opts: AppOptions) {
     const start = `${localDate(now)}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:00`
     const seen = await sql.one('SELECT 1 FROM consultations WHERE patient_id = ? AND clinic_id = ? LIMIT 1', [b.patientId, cid])
     await sql.run(`INSERT INTO appointments (id,patient_id,doctor_id,start,minutes,reason,type,status,arrived_at,source,clinic_id) VALUES (?,?,?,?,30,?,?,'arrived',?,'walkin',?)`,
-      [id, b.patientId, b.doctorId, start, b.reason, seen ? 'followup' : 'first', now.toISOString(), cid])
-    await audit(userOf(req), `Registró a ${await patientName(b.patientId)} sin cita para consulta externa con ${doc!.name}`)
+      [id, b.patientId, b.doctorId, start, b.reason, b.urgent ? 'urgent' : seen ? 'followup' : 'first', now.toISOString(), cid])
+    await audit(userOf(req), `Registró a ${await patientName(b.patientId)} sin cita para consulta externa con ${doc!.name}${b.urgent ? ', marcado como urgente' : ''}`)
     res.status(201).json(toAppointment((await apptRow(cid, id))!))
   })
 

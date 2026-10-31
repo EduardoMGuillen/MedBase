@@ -183,7 +183,7 @@ function useStoreValue() {
     /** Hospitalizado o en observación ahora mismo; lo ven también recepción y caja. */
     stayOf: (patientId: string) => data.stays?.find((x) => x.patientId === patientId)?.kind,
 
-    walkIn: (b: { patientId: string; doctorId: string; reason: string }) =>
+    walkIn: (b: { patientId: string; doctorId: string; reason: string; urgent?: boolean }) =>
       run(() => api<Appointment>('/appointments/walk-in', { body: b }), 'Paciente agregado a la consulta externa de hoy'),
 
     // Hospitalización
