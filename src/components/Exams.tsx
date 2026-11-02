@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { FoldHead, Modal } from './ui'
-import { bySubgroup, examCatalog, examKey, examLine, findExam, GROUP_LABEL } from '../lib/exams'
+import { byArea, examCatalog, examKey, examLine, findExam, GROUP_LABEL, type CatalogExam } from '../lib/exams'
 import { useOrderSets } from '../lib/useOrderSets'
 import { normalize } from '../lib/patients'
 import type { ExamGroup, ExamInput, OrderSet } from '../lib/types'
@@ -144,7 +144,9 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
   const groups = (['lab', 'imaging'] as ExamGroup[]).filter((g) => !group || g === group)
   const isOpen = (key: string, marked: number) => fold[key] ?? (!!n || marked > 0)
   const flip = (key: string, marked: number) => setFold({ ...fold, [key]: !isOpen(key, marked) })
-  const allKeys = groups.flatMap((g) => [g, ...bySubgroup(hits, g).map((s) => `${g}:${s.subgroup}`)])
+  // CA4 (ronda 7): Laboratorio › área › sección (las áreas con secciones llevan un nivel más)
+  const trees = Object.fromEntries(groups.map((g) => [g, byArea(hits, g)])) as Record<ExamGroup, ReturnType<typeof byArea<CatalogExam>>>
+  const allKeys = groups.flatMap((g) => [g, ...trees[g].flatMap((a) => [`${g}:${a.key}`, ...a.sections.map((x) => `${g}:${x.key}`)])])
   const close = () => { if (!catalogOnly) writePicked([]); onClose() }
   const shown = showAll ? picked : picked.slice(0, 6)
   return (
@@ -197,36 +199,50 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
             const off = pr.items.filter((e) => !inCatalog(e.name))
             return <div key={pr.id} role="listitem" className="exam-picker__menu-row">
               <button type="button" className="exam-picker__menu-pick" onClick={() => applyList(pr.name, pr.items)}><b>{pr.name}</b>
-                <small className="muted">{pr.items.map((e) => (off.includes(e) ? `${e.name} (no disponible)` : e.name)).join(', ')}</small></button>
+                <small className="muted">{pr.items.map((e) => (off.includes(e) ? `${e.name} (no disponible)` : e.name)).join(', ')}</small>
+                {pr.note && <small className="exam-picker__note">{pr.note}</small>}</button>
               <button type="button" className="btn btn--ghost btn--sm" onClick={() => copyToMine(pr)}>Copiar a Mis sets</button>
             </div> }) : <p className="muted">La clínica todavía no tiene perfiles de laboratorio (Configuración › Catálogo de exámenes).</p>}
         </div>
       )}
       <div className="exam-picker__results">
         {groups.map((g) => {
-          const subs = bySubgroup(hits, g)
-          if (!subs.length) return null
-          const count = subs.reduce((a, x) => a + x.items.length, 0)
-          const marked = subs.reduce((a, x) => a + x.items.filter((e) => pickedKeys.has(keyOf(e.name))).length, 0)
+          const areas = trees[g]
+          if (!areas.length) return null
+          const markedIn = (list: CatalogExam[]) => list.filter((e) => pickedKeys.has(keyOf(e.name))).length
+          const count = areas.reduce((a, x) => a + x.count, 0)
+          const marked = areas.reduce((a, x) => a + markedIn(x.items) + x.sections.reduce((b, y) => b + markedIn(y.items), 0), 0)
           const open = isOpen(g, marked)
+          const rows = (items: CatalogExam[], id: string) => <div id={id} className="exam-rows">{items.map((e) => {
+            const on = have.has(keyOf(e.name))
+            const already = current.some((c) => keyOf(c.name) === keyOf(e.name))
+            return <label key={e.name} className={`exam-row-pick${on ? ' is-on' : ''}${already ? ' is-already' : ''}`}>
+              <input type="checkbox" checked={on} disabled={already} onChange={() => toggle(e.group, e.name)} />
+              <span>{e.name}{already && <small className="muted"> · ya está en la nota</small>}</span>
+            </label>
+          })}</div>
           return (
             <section key={g} className="exam-fold">
               <FoldHead id={`fold-${g}`} open={open} onToggle={() => flip(g, marked)} title={<>{g === 'lab' ? <FlaskConical size={15} /> : <ScanLine size={15} />}{GROUP_LABEL[g]}</>} count={count} marked={marked} />
-              {open && <div id={`fold-${g}`} className="exam-fold__body">{subs.map(({ subgroup, items }) => {
-                const k = `${g}:${subgroup}`
-                const m = items.filter((e) => pickedKeys.has(keyOf(e.name))).length
+              {open && <div id={`fold-${g}`} className="exam-fold__body">{areas.map((a) => {
+                const k = `${g}:${a.key}`
+                const m = markedIn(a.items) + a.sections.reduce((b, y) => b + markedIn(y.items), 0)
                 const o = isOpen(k, m)
                 return (
                   <div key={k} className="exam-fold__sub">
-                    <FoldHead id={`fold-${k}`} level={2} open={o} onToggle={() => flip(k, m)} title={subgroup} count={items.length} marked={m} />
-                    {o && <div id={`fold-${k}`} className="exam-rows">{items.map((e) => {
-                      const on = have.has(keyOf(e.name))
-                      const already = current.some((c) => keyOf(c.name) === keyOf(e.name))
-                      return <label key={e.name} className={`exam-row-pick${on ? ' is-on' : ''}${already ? ' is-already' : ''}`}>
-                        <input type="checkbox" checked={on} disabled={already} onChange={() => toggle(e.group, e.name)} />
-                        <span>{e.name}{already && <small className="muted"> · ya está en la nota</small>}</span>
-                      </label>
-                    })}</div>}
+                    <FoldHead id={`fold-${k}`} level={2} open={o} onToggle={() => flip(k, m)} title={a.title} count={a.count} marked={m} />
+                    {o && <>
+                      {a.items.length > 0 && rows(a.items, `fold-${k}`)}
+                      {a.sections.length > 0 && <div id={a.items.length ? undefined : `fold-${k}`} className="exam-fold__secs">{a.sections.map((x) => {
+                        const sk = `${g}:${x.key}`
+                        const sm = markedIn(x.items)
+                        const so = isOpen(sk, sm)
+                        return <div key={sk} className="exam-fold__sec">
+                          <FoldHead id={`fold-${sk}`} level={3} open={so} onToggle={() => flip(sk, sm)} title={x.title} count={x.items.length} marked={sm} />
+                          {so && rows(x.items, `fold-${sk}`)}
+                        </div>
+                      })}</div>}
+                    </>}
                   </div>
                 )
               })}</div>}

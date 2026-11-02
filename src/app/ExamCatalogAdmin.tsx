@@ -5,7 +5,7 @@ import { api } from '../lib/api'
 import { FoldHead, Modal, SectionHead } from '../components/ui'
 import { ExamPicker } from '../components/Exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
-import { bySubgroup, EXAMS, examKey, GROUP_LABEL, SUBGROUPS, subgroupOf } from '../lib/exams'
+import { byArea, EXAMS, examKey, GROUP_LABEL, SUBGROUPS, subgroupOf } from '../lib/exams'
 import { normalize } from '../lib/patients'
 import type { ClinicExam, ExamGroup } from '../lib/types'
 
@@ -27,7 +27,9 @@ export function ExamCatalogAdmin() {
   const [fold, setFold] = useState<Record<string, boolean>>({})
   const isOpen = (k: string) => fold[k] ?? !!n
   const flip = (k: string) => setFold({ ...fold, [k]: !isOpen(k) })
-  const allKeys = (['lab', 'imaging'] as ExamGroup[]).flatMap((g) => [g, ...bySubgroup(list, g).map((x) => `${g}:${x.subgroup}`)])
+  // CA4 (ronda 7): Laboratorio › área › sección, en el orden del formulario
+  const trees = { lab: byArea(list, 'lab'), imaging: byArea(list, 'imaging') }
+  const allKeys = (['lab', 'imaging'] as ExamGroup[]).flatMap((g) => [g, ...trees[g].flatMap((a) => [`${g}:${a.key}`, ...a.sections.map((x) => `${g}:${x.key}`)])])
   const analytes = (e: ClinicExam) => (e.baseKey ? EXAMS.find((b) => examKey(b.name) === e.baseKey)?.analytes?.length ?? 0 : 0)
   const setActive = async (e: ClinicExam, active: boolean) => {
     try { await api(`/exams/catalog/${e.id}`, { method: 'PATCH', body: { active } }); reload(); notify(active ? `${e.name} vuelve al catálogo` : `${e.name} archivado: ya no se ofrece al ordenar`) } catch (x) { notify((x as Error).message, 'error') }
@@ -49,35 +51,46 @@ export function ExamCatalogAdmin() {
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => setFold(Object.fromEntries(allKeys.map((k) => [k, false])))}>Contraer todo</button>
         </div>
         {(['lab', 'imaging'] as ExamGroup[]).map((g) => {
-          const subs = bySubgroup(list, g)
-          const count = subs.reduce((a, x) => a + x.items.length, 0)
+          const areas = trees[g]
+          const count = areas.reduce((a, x) => a + x.count, 0)
           if (n && !count) return null
           const open = isOpen(g)
+          const rows = (items: ClinicExam[], id: string) => <ul id={id} className="excat__list">
+            {items.map((e) => (
+              <li key={e.id} className={e.active ? '' : 'is-archived'}>
+                <span><b>{e.name}</b>{!e.active && <span className="badge">Archivado</span>}
+                  {analytes(e) > 0 && <small className="muted">{analytes(e)} {analytes(e) === 1 ? 'valor' : 'valores'} con rango de referencia</small>}</span>
+                <span className="excat__acts">
+                  {e.active && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(e)}><Pencil size={13} />Editar</button>}
+                  {e.active
+                    ? <button className="btn btn--ghost btn--sm" onClick={() => setActive(e, false)}><Archive size={13} />Archivar</button>
+                    : <button className="btn btn--ghost btn--sm" onClick={() => setActive(e, true)}><RotateCcw size={13} />Restaurar</button>}
+                </span>
+              </li>
+            ))}
+          </ul>
           return (
             <div key={g} className="exam-fold">
               <FoldHead id={`cat-${g}`} open={open} onToggle={() => flip(g)} title={<>{g === 'lab' ? <FlaskConical size={16} /> : <ScanLine size={16} />}{GROUP_LABEL[g]}</>} count={count} />
               {open && <div id={`cat-${g}`} className="exam-fold__body">
-                {!subs.length && <p className="muted">Sin exámenes.</p>}
-                {subs.map(({ subgroup, items }) => {
-                  const k = `${g}:${subgroup}`
+                {!areas.length && <p className="muted">Sin exámenes.</p>}
+                {areas.map((a) => {
+                  const k = `${g}:${a.key}`
                   const o = isOpen(k)
                   return (
                     <div key={k}>
-                      <FoldHead id={`cat-${k}`} level={2} open={o} onToggle={() => flip(k)} title={subgroup} count={items.length} />
-                      {o && <ul id={`cat-${k}`} className="excat__list">
-                        {items.map((e) => (
-                          <li key={e.id} className={e.active ? '' : 'is-archived'}>
-                            <span><b>{e.name}</b>{!e.active && <span className="badge">Archivado</span>}
-                              {analytes(e) > 0 && <small className="muted">{analytes(e)} {analytes(e) === 1 ? 'valor' : 'valores'} con rango de referencia</small>}</span>
-                            <span className="excat__acts">
-                              {e.active && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(e)}><Pencil size={13} />Editar</button>}
-                              {e.active
-                                ? <button className="btn btn--ghost btn--sm" onClick={() => setActive(e, false)}><Archive size={13} />Archivar</button>
-                                : <button className="btn btn--ghost btn--sm" onClick={() => setActive(e, true)}><RotateCcw size={13} />Restaurar</button>}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>}
+                      <FoldHead id={`cat-${k}`} level={2} open={o} onToggle={() => flip(k)} title={a.title} count={a.count} />
+                      {o && <>
+                        {a.items.length > 0 && rows(a.items, `cat-${k}`)}
+                        {a.sections.length > 0 && <div className="exam-fold__secs">{a.sections.map((x) => {
+                          const sk = `${g}:${x.key}`
+                          const so = isOpen(sk)
+                          return <div key={sk}>
+                            <FoldHead id={`cat-${sk}`} level={3} open={so} onToggle={() => flip(sk)} title={x.title} count={x.items.length} />
+                            {so && rows(x.items, `cat-${sk}`)}
+                          </div>
+                        })}</div>}
+                      </>}
                     </div>
                   )
                 })}
@@ -128,7 +141,7 @@ function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () =
   )
 }
 
-type ClinicProfile = { id: string; name: string; items: { group: ExamGroup; name: string }[]; archivedAt?: string }
+type ClinicProfile = { id: string; name: string; items: { group: ExamGroup; name: string }[]; note?: string; archivedAt?: string }
 
 /**
  * CF6 (ronda 6): perfiles de laboratorio de la clínica (aparecen como «Perfiles (N)» al ordenar exámenes). Administración
@@ -160,7 +173,8 @@ export function LabProfilesAdmin() {
           <ul className="excat__list">{shown.map((p) => (
             <li key={p.id} className={p.archivedAt ? 'is-archived' : ''}>
               <span><b>{p.name}</b>{p.archivedAt && <span className="badge">Archivado</span>}
-                <small className="muted">{p.items.map((e) => (active.has(examKey(e.name)) ? e.name : `${e.name} (no disponible)`)).join(', ')}</small></span>
+                <small className="muted">{p.items.map((e) => (active.has(examKey(e.name)) ? e.name : `${e.name} (no disponible)`)).join(', ')}</small>
+                {p.note && <small className="exam-picker__note">{p.note}</small>}</span>
               <span className="excat__acts">
                 {!p.archivedAt && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(p)}><Pencil size={13} />Editar</button>}
                 {p.archivedAt ? <button className="btn btn--ghost btn--sm" onClick={() => setArchivedFlag(p, false)}><RotateCcw size={13} />Restaurar</button>

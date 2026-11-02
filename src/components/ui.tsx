@@ -44,7 +44,7 @@ export function Modal({ title, onClose, children, footer, top, wide = false, cla
  * van marcados. Es un botón: se abre y se cierra con el dedo, con Enter o con Espacio.
  */
 export function FoldHead({ open, onToggle, title, count, marked, sub, level = 1, id }: {
-  open: boolean; onToggle: () => void; title: ReactNode; count: number; marked?: number; sub?: ReactNode; level?: 1 | 2; id?: string
+  open: boolean; onToggle: () => void; title: ReactNode; count: number; marked?: number; sub?: ReactNode; level?: 1 | 2 | 3; id?: string
 }) {
   return (
     <button type="button" className={`fold-head fold-head--l${level}${open ? ' is-open' : ''}`} aria-expanded={open} aria-controls={id} onClick={onToggle}>

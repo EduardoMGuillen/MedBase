@@ -515,6 +515,10 @@ tr.clickable { cursor: pointer; }
 .fold-head:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 .fold-head--l1 { font-weight: 700; font-size: 15px; }
 .fold-head--l2 { font-weight: 600; font-size: 14px; }
+/* CA4 (ronda 7): tercer nivel (Laboratorio › Hormonas › Tiroides) */
+.fold-head--l3 { font-weight: 600; font-size: 13.5px; color: var(--ink-deep); min-height: 44px; }
+.exam-fold__secs { display: grid; gap: 2px; padding: 0 0 4px 16px; }
+.exam-picker__note { color: var(--amber-ink, #8a5a00); font-weight: 600; }
 .fold-head__chev { flex: none; color: var(--muted); transition: transform .15s; }
 .fold-head.is-open .fold-head__chev { transform: rotate(90deg); }
 .fold-head__title { flex: 1 1 auto; min-width: 0; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
@@ -554,6 +558,7 @@ tr.clickable { cursor: pointer; }
   .modal-bg:has(.exam-picker-modal) { place-items: stretch; }
   .exam-rows { grid-template-columns: 1fr; padding-left: 8px; }
   .exam-fold__body { padding-left: 4px; }
+  .exam-fold__secs { padding-left: 6px; }
   .exam-picker__menus .fold-tools { margin-left: 0 !important; }
 }
 
