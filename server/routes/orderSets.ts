@@ -5,6 +5,7 @@ import { type Ctx, fail, parse, type Row } from '../http.js'
 import type { OrderSet, OrderSetItem } from '../../src/lib/types.js'
 import { examInput } from './exams.js'
 import { BASE_PROFILES } from '../../src/lib/exams.js'
+import { expandPackages } from '../catalogLoader.js'
 
 const med = z.object({
   drug: z.string().trim().min(1, 'Escribe el medicamento.').max(120),
@@ -61,7 +62,8 @@ export function registerOrderSets(app: Express, { sql, auth, need, userOf, clini
     for (const p of [...BASE_PROFILES.map((x) => ({ name: x.name, items: x.items })), ...own.map((r) => ({ name: String(r.name), items: JSON.parse(String(r.items)) as { group: 'lab' | 'imaging'; name: string }[] }))]) {
       if (taken.has(p.name.toLowerCase())) continue
       taken.add(p.name.toLowerCase())
-      const items = p.items.map((e) => ({ exam: { group: e.group, name: e.name, priority: 'routine', place: 'clinic' } }))
+      // CA2 (ronda 7): un paquete (Perfil lipídico, Electrolitos…) llega como sus exámenes individuales
+      const { items } = expandPackages(p.items.map((e) => ({ exam: { group: e.group, name: e.name, priority: 'routine', place: 'clinic' } })))
       await sql.run(`INSERT INTO order_sets (id, clinic_id, owner_id, name, items, shared, created_at, kind) VALUES (?,?,?,?,?,FALSE,?,'exams')`, [randomUUID(), cid, userId, p.name, JSON.stringify(items), now])
     }
     await sql.run(`UPDATE staff SET prefs = jsonb_set(COALESCE(NULLIF(prefs, ''), '{}')::jsonb, '{examSetsSeeded}', to_jsonb(?::text))::text WHERE id = ?`, [now, userId])

@@ -110,7 +110,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     ])
     res.json({
       exams: catalog.map(toClinicExam),
-      profiles: profiles.map((r): ExamProfile => ({ id: String(r.id), name: String(r.name), ownerId: r.owner_id ? String(r.owner_id) : undefined, items: j(r.items, []) })),
+      profiles: profiles.map((r): ExamProfile => ({ id: String(r.id), name: String(r.name), ownerId: r.owner_id ? String(r.owner_id) : undefined, items: j(r.items, []), note: r.note ? String(r.note) : undefined })),
     })
   })
 
@@ -178,7 +178,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
   const profileItems = z.array(z.object({ group: z.enum(['lab', 'imaging']), name: z.string().trim().min(2).max(160) })).min(2, 'Un perfil tiene al menos dos exámenes.').max(40)
   app.get('/api/exams/profiles/clinic', auth, need('settings.manage'), async (req, res) => {
     const rows = await sql.query('SELECT * FROM exam_profiles WHERE clinic_id = ? AND owner_id IS NULL ORDER BY name', [clinicOf(req)])
-    res.json(rows.map((r) => ({ id: String(r.id), name: String(r.name), items: j(r.items, []), archivedAt: r.archived_at ? String(r.archived_at) : undefined })))
+    res.json(rows.map((r) => ({ id: String(r.id), name: String(r.name), items: j(r.items, []), note: r.note ? String(r.note) : undefined, archivedAt: r.archived_at ? String(r.archived_at) : undefined })))
   })
   app.patch('/api/exams/profiles/:id', auth, need('settings.manage'), async (req, res) => {
     const b = parse(z.object({ name: z.string().trim().min(3, 'Ponle un nombre al perfil.').max(100).optional(), items: profileItems.optional(), archived: z.boolean().optional() }), req.body)

@@ -625,7 +625,7 @@ export interface ExamOrder extends ExamInput {
 }
 
 /** Perfil o paquete de exámenes (de la clínica o de un médico). */
-export interface ExamProfile { id: string; name: string; ownerId?: string; items: { group: ExamGroup; name: string }[] }
+export interface ExamProfile { id: string; name: string; ownerId?: string; items: { group: ExamGroup; name: string }[]; note?: string }
 
 /** Examen agregado al catálogo por la clínica. */
 /** AD4 (ronda 5): examen del catálogo de la clínica (la lista fija se copió a cada clínica; `baseKey` la enlaza). */

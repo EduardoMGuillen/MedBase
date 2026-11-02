@@ -1,4 +1,8 @@
 import type { ExamGroup, ExamOrder, ExamStatus } from './types'
+import { EXISTING_SUBGROUP, LAB_AREAS, LAB_ORDER, SECTION_SEP } from './labCatalog'
+
+const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
+export const examKey = (name: string) => norm(name)
 
 /** EX1: nombre de los dos grupos de la sección «Exámenes». Un hemograma y un ultrasonido los hace gente distinta. */
 export const GROUP_LABEL: Record<ExamGroup, string> = { lab: 'Laboratorio', imaging: 'Imagen y gabinete' }
@@ -80,30 +84,17 @@ export const EXAMS: CatalogExam[] = [
 ]
 
 /**
- * CF3 (ronda 6): subgrupos del catálogo, en el orden en que se muestran al ordenar y en Configuración. Lo que no se sabe
- * ubicar va a «Otros». VALIDAR: Emil (A6, la asignación de los exámenes que ya existían, está en BASE_SUBGROUP).
+ * CF3 (ronda 6) y CA1 (ronda 7): subgrupos del catálogo. En Laboratorio son las áreas del formulario (Anexo A) y, en las
+ * que tienen secciones, «Área › Sección» (un solo campo de texto). Lo que no se sabe ubicar va a «Otros». VALIDAR: Emil.
  */
-export const LAB_SUBGROUPS = ['Hematología', 'Coagulación', 'Química en sangre', 'Química en orina', 'Hormonas', 'Inmunología', 'Enfermedades infecciosas',
-  'Microbiología', 'Orina', 'Heces', 'Biología molecular', 'Otros']
+export const LAB_SUBGROUPS = LAB_AREAS.flatMap((a) => (a.sections ? a.sections.map((s) => `${a.area}${SECTION_SEP}${s}`) : [a.area]))
 export const IMAGING_SUBGROUPS = ['Rayos X', 'Ultrasonido', 'Tomografía', 'Resonancia', 'Cardiología', 'Endoscopia', 'Otros']
 export const SUBGROUPS: Record<ExamGroup, string[]> = { lab: LAB_SUBGROUPS, imaging: IMAGING_SUBGROUPS }
 export const OTHER_SUBGROUP = 'Otros'
 
-/** A6 propuesto (ronda 6): subgrupo de cada examen de la lista fija. VALIDAR: Emil. */
+/** Subgrupo de cada examen de la lista fija: Laboratorio según B3 (ronda 7), Imagen y gabinete según A6 (ronda 6). VALIDAR: Emil. */
 export const BASE_SUBGROUP: Record<string, string> = {
-  // Laboratorio
-  'Hemograma': 'Hematología', 'Velocidad de eritrosedimentación': 'Hematología', 'Frotis de sangre periférica': 'Hematología', 'Tipo y Rh': 'Hematología',
-  'Tiempos de coagulación (TP, TPT, INR)': 'Coagulación',
-  'Química sanguínea': 'Química en sangre', 'Glucosa en ayunas': 'Química en sangre', 'Glucosa posprandial': 'Química en sangre',
-  'Hemoglobina glicosilada (HbA1c)': 'Química en sangre', 'Perfil lipídico': 'Química en sangre', 'Creatinina': 'Química en sangre', 'Perfil renal': 'Química en sangre',
-  'Perfil hepático': 'Química en sangre', 'Electrolitos': 'Química en sangre', 'Gases arteriales': 'Química en sangre', 'Troponina I': 'Química en sangre',
-  'Amilasa y lipasa': 'Química en sangre', 'Proteína C reactiva': 'Química en sangre',
-  'TSH': 'Hormonas', 'T4 libre': 'Hormonas', 'Prueba de embarazo en sangre (β-hCG)': 'Hormonas',
-  'VDRL': 'Enfermedades infecciosas', 'VIH (prueba rápida)': 'Enfermedades infecciosas', 'Antígeno de superficie de hepatitis B': 'Enfermedades infecciosas',
-  'Serología para dengue (NS1, IgM, IgG)': 'Enfermedades infecciosas', 'Gota gruesa': 'Enfermedades infecciosas',
-  'Urocultivo': 'Microbiología', 'Hemocultivo': 'Microbiología', 'Coprocultivo': 'Microbiología',
-  'Examen general de orina (EGO)': 'Orina', 'Prueba de embarazo en orina': 'Orina',
-  'Examen general de heces': 'Heces',
+  ...EXISTING_SUBGROUP,
   // Imagen y gabinete
   'Radiografía de tórax': 'Rayos X', 'Radiografía': 'Rayos X', 'Radiografía de abdomen': 'Rayos X',
   'Ultrasonido abdominal': 'Ultrasonido', 'Ultrasonido pélvico': 'Ultrasonido', 'Ultrasonido obstétrico': 'Ultrasonido', 'Ultrasonido renal': 'Ultrasonido',
@@ -113,14 +104,21 @@ export const BASE_SUBGROUP: Record<string, string> = {
   'Endoscopia digestiva alta': 'Endoscopia', 'Colonoscopia': 'Endoscopia',
   'Mamografía': 'Otros', 'Espirometría': 'Otros',
 }
+const BASE_SUBGROUP_BY_KEY = new Map(Object.entries(BASE_SUBGROUP).map(([n, sg]) => [examKey(n), sg]))
+/** Nombres de la ronda 6 que cambiaron (un examen que la clínica agregó con ellos se ve en el área nueva). */
+const LEGACY_AREA: Record<string, string> = { 'Microbiología': 'Microbiología / Bacteriología' }
 
 /** Subgrupo de un examen: el guardado; si no, el de la lista fija; si no, «Otros». */
 export function subgroupOf(e: { name: string; subgroup?: string; baseKey?: string }) {
-  if (e.subgroup?.trim()) return e.subgroup.trim()
-  const key = e.baseKey ?? examKey(e.name)
-  const base = Object.entries(BASE_SUBGROUP).find(([n]) => examKey(n) === key)
-  return base?.[1] ?? OTHER_SUBGROUP
+  const saved = e.subgroup?.trim()
+  if (saved) return LEGACY_AREA[saved] ?? saved
+  return BASE_SUBGROUP_BY_KEY.get(e.baseKey ?? examKey(e.name)) ?? OTHER_SUBGROUP
 }
+
+/** CA4 (ronda 7): orden dentro de un área o sección, el del formulario; lo que no está en él, por nombre al final. */
+const ORDER = new Map(LAB_ORDER.map((n, i) => [examKey(n), i]))
+const byFormOrder = (x: { name: string }, y: { name: string }) =>
+  (ORDER.get(examKey(x.name)) ?? 1e6) - (ORDER.get(examKey(y.name)) ?? 1e6) || x.name.localeCompare(y.name, 'es')
 
 /** Los exámenes de una lista agrupados por subgrupo, en el orden de SUBGROUPS (los subgrupos propios, antes de «Otros»). */
 export function bySubgroup<T extends { group: ExamGroup; name: string; subgroup?: string; baseKey?: string }>(list: T[], group: ExamGroup) {
@@ -132,7 +130,37 @@ export function bySubgroup<T extends { group: ExamGroup; name: string; subgroup?
   const order = SUBGROUPS[group]
   const rank = (s: string) => (s === OTHER_SUBGROUP ? 1000 : order.includes(s) ? order.indexOf(s) : 500)
   return [...map.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0], 'es'))
-    .map(([subgroup, items]) => ({ subgroup, items: items.sort((x, y) => x.name.localeCompare(y.name, 'es')) }))
+    .map(([subgroup, items]) => ({ subgroup, items: items.sort(byFormOrder) }))
+}
+
+export interface ExamArea<T> { key: string; title: string; items: T[]; sections: { key: string; title: string; items: T[] }[]; count: number }
+
+/**
+ * CA4 (ronda 7): árbol de un grupo para los menús plegables: área y, si el área tiene secciones, sección (Laboratorio ›
+ * Hormonas › Tiroides). Áreas en el orden del Anexo A (Imagen y gabinete: el de siempre), secciones en el suyo y los
+ * exámenes en el orden del formulario. Un examen con sólo el área (o una sección que no es del área) queda en el área.
+ */
+export function byArea<T extends { group: ExamGroup; name: string; subgroup?: string; baseKey?: string }>(list: T[], group: ExamGroup): ExamArea<T>[] {
+  const areas = new Map<string, ExamArea<T>>()
+  for (const e of list) {
+    if (e.group !== group) continue
+    const sg = subgroupOf(e)
+    const [area, section] = sg.includes(SECTION_SEP) ? [sg.slice(0, sg.indexOf(SECTION_SEP)), sg.slice(sg.indexOf(SECTION_SEP) + SECTION_SEP.length)] : [sg, '']
+    const a = areas.get(area) ?? { key: area, title: area, items: [], sections: [], count: 0 }
+    areas.set(area, a)
+    a.count++
+    const known = group === 'lab' && LAB_AREAS.find((x) => x.area === area)?.sections?.includes(section)
+    if (!known) { a.items.push(e); continue }
+    let s = a.sections.find((x) => x.title === section)
+    if (!s) { s = { key: `${area}${SECTION_SEP}${section}`, title: section, items: [] }; a.sections.push(s) }
+    s.items.push(e)
+  }
+  const areaOrder = group === 'lab' ? LAB_AREAS.map((x) => x.area) : IMAGING_SUBGROUPS
+  const rank = (s: string) => (s === OTHER_SUBGROUP ? 1000 : areaOrder.includes(s) ? areaOrder.indexOf(s) : 500)
+  return [...areas.values()].sort((a, b) => rank(a.key) - rank(b.key) || a.key.localeCompare(b.key, 'es')).map((a) => {
+    const secs = LAB_AREAS.find((x) => x.area === a.key)?.sections ?? []
+    return { ...a, items: a.items.sort(byFormOrder), sections: a.sections.sort((x, y) => secs.indexOf(x.title) - secs.indexOf(y.title)).map((x) => ({ ...x, items: x.items.sort(byFormOrder) })) }
+  })
 }
 
 /** Perfiles o paquetes base: varios exámenes de un toque. La clínica y cada médico agregan los suyos. */
@@ -185,8 +213,6 @@ export function flagOf(value: number, low?: number, high?: number): 'high' | 'lo
 }
 
 
-const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
-export const examKey = (name: string) => norm(name)
 
 /**
  * AD4 (ronda 5): catálogo que se ofrece al ordenar: los exámenes activos de la clínica, con los analitos, la región y el

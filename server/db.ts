@@ -11,12 +11,12 @@ import type { Row, Sql } from './sql.js'
 import { backfillMissingOrders, syncStayOrders } from './medOrders.js'
 import { SCENARIO_PATIENT_IDS, insertClinicScenarios, insertOfficeScenarios } from './demoScenarios.js'
 import { ensureHospitalAuthorization } from './authorizations.js'
-import { loadLabCatalog, migrateSubgroups } from './catalogLoader.js'
+import { loadRonda7 } from './catalogLoader.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '55'
+const SCHEMA_VERSION = '56'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -893,6 +893,12 @@ ALTER TABLE followups
   ADD COLUMN IF NOT EXISTS reminder_type TEXT,
   ADD COLUMN IF NOT EXISTS migrated_to TEXT,
   ADD COLUMN IF NOT EXISTS migrated_at TEXT;
+
+-- v56 (ronda 7, CA1–CA3): el catálogo de laboratorio se carga de verdad (server/catalogLoader.ts, datos en
+-- src/lib/labCatalog.ts): 289 exámenes con su «Área › Sección» en exam_catalog.subgroup, 27 perfiles de la clínica y los
+-- paquetes que eran casillas (Perfil lipídico, Electrolitos…) archivados y reemplazados en los sets. Un perfil puede llevar
+-- una nota («PSA total: solo en pacientes masculinos»).
+ALTER TABLE exam_profiles ADD COLUMN IF NOT EXISTS note TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -944,9 +950,8 @@ export function ensureDb(sql: Sql) {
       await migrateProcedureFollowups(q)
       for (const c of await q.query('SELECT id FROM clinics')) {
         await ensureExamCatalog(q, String(c.id))
-        // CF3 y CF6 (ronda 6): subgrupos de la lista fija y la carga idempotente de los anexos
-        await migrateSubgroups(q, String(c.id))
-        await loadLabCatalog(q, String(c.id))
+        // CA1–CA3 (ronda 7): subgrupos, carga idempotente del catálogo y de los perfiles, y paquetes a perfiles
+        await loadRonda7(q, String(c.id))
       }
       await markDemoClinics(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
@@ -1338,9 +1343,8 @@ export async function ensureExamCatalog(q: Sql, clinicId: string) {
     if (have.has(key)) await q.run('UPDATE exam_catalog SET base_key = ? WHERE clinic_id = ? AND norm_key = ? AND base_key IS NULL', [key, clinicId, key])
     else await q.run('INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, base_key, active, created_by, created_at) VALUES (?,?,?,?,?,?,TRUE,NULL,?)', [randomUUID(), clinicId, e.group, e.name, key, key, now])
   }
-  // CF3 (ronda 6): una clínica nueva recibe también los subgrupos y los anexos
-  await migrateSubgroups(q, clinicId)
-  await loadLabCatalog(q, clinicId)
+  // CF3 (ronda 6) y ronda 7: una clínica nueva recibe también los subgrupos, el catálogo completo y los perfiles
+  await loadRonda7(q, clinicId)
 }
 
 /**

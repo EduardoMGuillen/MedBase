@@ -9,6 +9,7 @@ import { fileAlerts } from '../src/lib/alerts.js'
 import { bandOf } from '../src/lib/vitalsSheet.js'
 import { groupsFromLimits } from '../src/lib/clinicalConfig.js'
 import { BASE_PROFILES, EXAMS } from '../src/lib/exams.js'
+import { PACKAGE_REPLACEMENTS } from '../src/lib/labCatalog.js'
 import { shortStaff } from '../src/lib/format.js'
 
 let server: Server
@@ -248,21 +249,22 @@ describe('AD4 catálogo de exámenes de la clínica', () => {
   test('empieza con la lista de antes; Roberto agrega, edita y archiva (en la bitácora); el médico no lo edita; en el consultorio el titular sí', async () => {
     const admin = await as('admin@demo.clinara')
     let cat = (await admin.get('/api/exams/catalog')).body.exams
-    for (const e of EXAMS) assert.ok(cat.some((c: any) => c.name === e.name && c.group === e.group && c.active), `falta ${e.name}`)
-    const add = await admin.post('/api/exams/catalog', { group: 'lab', name: 'Dímero D' })
+    // CA2 (ronda 7): los paquetes de la lista fija siguen en el catálogo, pero archivados (pasaron a perfiles)
+    for (const e of EXAMS) assert.ok(cat.some((c: any) => c.name === e.name && c.group === e.group && (c.active || e.name in PACKAGE_REPLACEMENTS)), `falta ${e.name}`)
+    const add = await admin.post('/api/exams/catalog', { group: 'lab', name: 'Examen de prueba AD4' })
     assert.equal(add.status, 201, JSON.stringify(add.body))
-    assert.equal((await admin.post('/api/exams/catalog', { group: 'lab', name: 'dimero d' })).status, 409, 'sin duplicados')
-    assert.equal((await admin.patch(`/api/exams/catalog/${add.body.id}`, { name: 'Dímero D cuantitativo' })).status, 200)
+    assert.equal((await admin.post('/api/exams/catalog', { group: 'lab', name: 'examen de prueba ad4' })).status, 409, 'sin duplicados')
+    assert.equal((await admin.patch(`/api/exams/catalog/${add.body.id}`, { name: 'Examen de prueba AD4 cuantitativo' })).status, 200)
     assert.equal((await admin.patch(`/api/exams/catalog/${add.body.id}`, { active: false })).status, 200)
     cat = (await admin.get('/api/exams/catalog')).body.exams
     const d = cat.find((c: any) => c.id === add.body.id)
-    assert.equal(d.name, 'Dímero D cuantitativo')
+    assert.equal(d.name, 'Examen de prueba AD4 cuantitativo')
     assert.equal(d.active, false, 'archivado, no borrado')
     assert.ok(d.archivedAt)
     const log = ((await admin.get('/api/audit/mine')).body.rows ?? (await admin.get('/api/audit/mine')).body) as any[]
-    assert.ok(log.some((e) => /Agregó al catálogo de exámenes \(Laboratorio\): Dímero D$/.test(e.action)))
-    assert.ok(log.some((e) => /«Dímero D» → «Dímero D cuantitativo»/.test(e.action)))
-    assert.ok(log.some((e) => /Archivó del catálogo de exámenes: Dímero D cuantitativo/.test(e.action)))
+    assert.ok(log.some((e) => /Agregó al catálogo de exámenes \(Laboratorio\): Examen de prueba AD4$/.test(e.action)))
+    assert.ok(log.some((e) => /«Examen de prueba AD4» → «Examen de prueba AD4 cuantitativo»/.test(e.action)))
+    assert.ok(log.some((e) => /Archivó del catálogo de exámenes: Examen de prueba AD4 cuantitativo/.test(e.action)))
     // Archivar el hemograma no cambia los ya ordenados; un examen renombrado conserva sus valores de referencia
     const hemo = cat.find((c: any) => c.name === 'Hemograma')
     assert.equal((await admin.patch(`/api/exams/catalog/${hemo.id}`, { name: 'Hemograma completo' })).status, 200)
@@ -276,11 +278,11 @@ describe('AD4 catálogo de exámenes de la clínica', () => {
     assert.equal((await admin.patch(`/api/exams/catalog/${hemo.id}`, { name: 'Hemograma' })).status, 200)
     // El médico usa el catálogo pero no lo edita, ni por la API
     assert.equal((await doc.get('/api/exams/catalog')).status, 200)
-    assert.equal((await doc.post('/api/exams/catalog', { group: 'lab', name: 'Ferritina' })).status, 403)
+    assert.equal((await doc.post('/api/exams/catalog', { group: 'lab', name: 'Examen de prueba del titular' })).status, 403)
     assert.equal((await doc.patch(`/api/exams/catalog/${hemo.id}`, { active: false })).status, 403)
     const owner = await as('alopez@demo.clinara')
     await owner.post('/api/me/view', { role: 'admin' })
-    assert.equal((await owner.post('/api/exams/catalog', { group: 'lab', name: 'Ferritina' })).status, 201)
+    assert.equal((await owner.post('/api/exams/catalog', { group: 'lab', name: 'Examen de prueba del titular' })).status, 201)
   })
 })
 
