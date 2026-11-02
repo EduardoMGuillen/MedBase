@@ -898,7 +898,7 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize }: { f
   const basics = f.name.trim().length >= 3 && f.performedAt && !future && f.text.trim().length >= 10
   const ready = basics && (!f.major || covered || (f.urgent && f.justification.trim().length >= 10))
   return (
-    <Modal title="Nota de procedimiento" wide onClose={onClose} footer={<>
+    <Modal title="Nota de procedimiento" wide className="note-modal" onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
@@ -1049,7 +1049,11 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
             </fieldset>
   )
   return (
-    <Modal title={kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'} wide onClose={onClose} footer={<>
+    <Modal title={kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'} wide className="note-modal" onClose={onClose}
+      top={(!noteBlank || p.allergies.length > 0) && <>
+        {!noteBlank && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}
+        {p.allergies.length > 0 && <div className="alert-strip"><TriangleAlert size={16} />Alergias: {p.allergies.join(', ')}</div>}
+      </>} footer={<>
       {blanks.length ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="status">Completa los espacios ___ de {blanks.join(', ')}.</span>
         : <span className="muted" style={{ marginRight: 'auto', fontSize: 13.5 }}>{meds.length ? `${meds.length} medicamento(s) nuevo(s)` : ''}{stop.length ? `${meds.length ? ', ' : ''}${stop.length} omitido(s)` : ''}</span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
@@ -1063,8 +1067,6 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
         if (ok) { draft.clear(); onSaved() } else onStale?.()
       }}>Firmar nota</button>
     </>}>
-      {!noteBlank && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}
-      {p.allergies.length > 0 && <div className="alert-strip"><TriangleAlert size={16} />Alergias: {p.allergies.join(', ')}</div>}
       {kind === 'evolution' && (
         <div className="segmented" role="radiogroup" aria-label="Formato de la nota">
           <button type="button" role="radio" aria-checked={format === 'dx'} onClick={() => setFormat('dx')} title="Diagnóstico, examen físico y observaciones">Estándar</button>

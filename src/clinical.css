@@ -41,7 +41,8 @@
 .note__list { margin: 0; padding-left: 22px; display: grid; gap: 4px; font-size: 14.5px; }
 .consult-entry .panel__head h2::first-letter { text-transform: uppercase; }
 
-.fs { border: 0; padding: 0; margin: 0; display: grid; gap: 12px; }
+.fs { border: 0; padding: 0; margin: 0; display: grid; gap: 12px; min-width: 0; min-inline-size: 0; }
+/* NE1 (ronda 7): un <fieldset> por defecto no se encoge por debajo de su contenido (min-inline-size: min-content) */
 .fs legend { font-family: var(--display); font-weight: 650; font-size: 15px; color: var(--ink-deep); margin-bottom: 8px; padding: 0; }
 .modal--wide { width: min(760px, 100%); }
 .textarea--sm { min-height: 64px; }
@@ -66,7 +67,7 @@
 .dx-list li button { display: inline-grid; vertical-align: middle; width: 28px; height: 28px; margin-left: 4px; }
 
 .orders { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.orders li { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: start; padding: 8px 6px 8px 10px; border: 1px solid var(--line-soft); border-radius: 10px; background: #fcfdff; }
+.orders li { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 6px; align-items: start; padding: 8px 6px 8px 10px; border: 1px solid var(--line-soft); border-radius: 10px; background: #fcfdff; }
 .orders li.is-warn { border-color: var(--red-ink); background: var(--red); }
 .orders__n { font-family: var(--display); font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; padding-top: 1px; }
 .orders__text { border: 0; background: transparent; text-align: left; padding: 0; font-size: 14.5px; line-height: 1.45; cursor: text; color: var(--petrol); }
@@ -74,7 +75,7 @@
 .orders__tools { display: flex; gap: 0; }
 .orders__tools .icon-btn { width: 28px; height: 28px; }
 .orders__tools .icon-btn:disabled { opacity: .3; cursor: default; }
-.order-add { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.order-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .order-add .btn { width: 44px; padding: 0; height: 42px; }
 .order-quick { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .rx-form { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--ward); }
@@ -182,6 +183,7 @@
   .modal { width: 100% !important; max-height: 92vh; border-radius: 20px 20px 0 0; padding-bottom: env(safe-area-inset-bottom); }
   .modal__head { padding: 16px 16px 0; }
   .modal__body { padding: 16px; }
+  .note-modal .modal__top { padding: 10px 16px 0; }
   .modal__foot { position: sticky; bottom: 0; background: var(--paper); padding: 12px 16px 16px; flex-wrap: wrap; border-top: 1px solid var(--line-soft); }
   .modal__foot .btn { flex: 1 1 auto; }
 
@@ -282,8 +284,10 @@ button.slot2:not(:disabled):hover { border-color: var(--ink); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 12px 22px 16px; border-top: 1px solid var(--line-soft); font-size: 12.5px; color: var(--muted); }
 .legend span { display: inline-flex; gap: 6px; align-items: center; }
 .legend i { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--line); display: inline-block; }
-.omit-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 2px; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
-.omit-row span:last-child { white-space: nowrap; display: inline-flex; gap: 8px; align-items: center; }
+.omit-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 8px 2px; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+/* NE1 (ronda 7): el texto se parte (también una palabra larga) y los botones bajan de línea si no caben */
+.omit-row > span:first-child { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.omit-row > span:last-child { white-space: nowrap; display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
 .omit-row label { font-weight: 700; color: var(--red-ink); display: inline-flex; gap: 6px; align-items: center; }
 /* MC3 (ronda 5): los medicamentos activos van dentro del bloque de Medicamentos, antes de agregar uno nuevo */
 .note-editor__active { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ward); }
@@ -450,7 +454,17 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .pending-orders__row input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--mint-ink); }
 .modal--wide:has(.note-editor) { width: min(1120px, 100%); }
 .note-editor { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 4fr); gap: 20px; align-items: start; }
-.note-editor__orders { display: grid; gap: 16px; padding-left: 16px; border-left: 2px solid var(--line); }
+.note-editor__orders { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding-left: 16px; border-left: 2px solid var(--line); }
+/* NE1 (ronda 7): ninguna columna crece hacia los lados; los textos largos se parten */
+.note-editor > *, .note-editor__orders > *, .note-editor .soap-stack > * { min-width: 0; }
+.note-editor .soap-stack { grid-template-columns: minmax(0, 1fr); }
+.note-editor p, .note-editor small, .note-editor .orders__text, .note-editor .omit-row__new { overflow-wrap: anywhere; }
+.note-editor .vitals-freq .field { flex: 1 1 12rem; min-width: 0; }
+/* NE1 (ronda 7): encabezado (título y alergias) y pie siempre visibles; sólo el cuerpo se desplaza, y sólo hacia abajo */
+.note-modal { display: flex; flex-direction: column; overflow: hidden !important; }
+.note-modal .modal__top { padding: 12px 24px 0; display: grid; gap: 8px; }
+.note-modal .modal__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.note-modal .modal__foot { flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line-soft); }
 .note-editor .order-add { align-items: start; }
 @media (max-width: 860px) {
   .note-2col, .note-editor { grid-template-columns: 1fr; }

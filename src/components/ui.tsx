@@ -17,7 +17,8 @@ export function StatusBadge({ status }: { status: ApptStatus }) {
   return <span className={`badge badge--${s.tone}`}>{s.label}</span>
 }
 
-export function Modal({ title, onClose, children, footer, wide = false, className = '' }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; className?: string }) {
+/** `top` (NE1, ronda 7): lo que queda fijo bajo el título (p. ej. «Alergias») mientras el cuerpo se desplaza. */
+export function Modal({ title, onClose, children, footer, top, wide = false, className = '' }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; top?: ReactNode; wide?: boolean; className?: string }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
@@ -30,6 +31,7 @@ export function Modal({ title, onClose, children, footer, wide = false, classNam
           <h2>{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Cerrar"><X size={18} /></button>
         </div>
+        {top && <div className="modal__top">{top}</div>}
         <div className="modal__body">{children}</div>
         {footer && <div className="modal__foot">{footer}</div>}
       </div>
@@ -94,3 +96,4 @@ export function PageHead({ title, sub, actions, tour }: { title: string; sub?: R
     </div>
   )
 }
+
