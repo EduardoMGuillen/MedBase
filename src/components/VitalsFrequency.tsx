@@ -3,7 +3,7 @@ import { VITALS_EVERY_OPTIONS, VITALS_OTHER_RANGE, VITALS_SHIFT_TIMES } from '..
 import type { VitalsMode } from '../lib/types'
 
 /**
- * MC6 (ronda 6): «Signos vitales» dentro de Indicaciones: por turno, cada N horas, otra frecuencia (pide las horas) o sin
+ * MC6 (ronda 6), NE2 (ronda 7): «Frecuencia de signos vitales» dentro de Indicaciones: por turno, cada N horas, otra frecuencia (pide las horas) o sin
  * control programado. Siempre muestra el valor vigente. No es una casilla para enfermería: se cumple registrando signos.
  */
 export function VitalsFrequency({ value, onChange }: { value: VitalsMode; onChange: (v: VitalsMode) => void }) {
@@ -12,7 +12,7 @@ export function VitalsFrequency({ value, onChange }: { value: VitalsMode; onChan
   const sel = other ? 'other' : preset
   return (
     <div className="vitals-freq">
-      <label className="field"><span>Signos vitales</span>
+      <label className="field"><span>Frecuencia de signos vitales</span>
         <select className="select" value={sel} aria-label="Frecuencia de signos vitales" onChange={(e) => {
           const v = e.target.value
           setOther(v === 'other')

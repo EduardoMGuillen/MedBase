@@ -47,6 +47,9 @@
 .modal--wide { width: min(760px, 100%); }
 .textarea--sm { min-height: 64px; }
 .textarea--lg { min-height: 170px; }
+/* NE2 (ronda 7): empieza con unas 4 líneas y crece al escribir hasta un máximo; después se desplaza por dentro */
+.textarea--auto { min-height: calc(4 * 1.55em + 20px); max-height: 16rem; resize: none; overflow-y: auto; }
+.dictate-field .textarea--auto { min-height: calc(4 * 1.55em + 44px); }
 
 /* ---------- Consulta: historia a la izquierda, manejo a la derecha ---------- */
 .page--consult, .page--chart { gap: 18px; }

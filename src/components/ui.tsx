@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type TextareaHTMLAttributes } from 'react'
 import { ChevronRight, X } from 'lucide-react'
 import { initials, STATUS } from '../lib/format'
 import type { ApptStatus } from '../lib/types'
@@ -97,3 +97,17 @@ export function PageHead({ title, sub, actions, tour }: { title: string; sub?: R
   )
 }
 
+/**
+ * NE2 (ronda 7): área de texto que empieza con unas 4 líneas y crece sola al escribir (también al dictar o restaurar un
+ * borrador) hasta un máximo (CSS `.textarea--auto`); pasado el máximo se desplaza por dentro.
+ */
+export function AutoTextarea({ className = '', ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight + 2}px`
+  }, [props.value])
+  return <textarea ref={ref} rows={4} className={`textarea textarea--auto ${className}`} {...props} />
+}

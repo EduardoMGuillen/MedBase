@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { BedDouble, ChevronLeft, ChevronRight, FileSignature, FileText, FlaskConical, LogOut, NotebookPen, Pencil, Pill, Plus, Send, Syringe, TriangleAlert, X } from 'lucide-react'
 import { useStore, type NewMed } from '../lib/store'
-import { Loading, Modal } from '../components/ui'
+import { AutoTextarea, Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
@@ -1079,16 +1079,16 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
         {format === 'soap' ? SOAP.map((s) => (<div key={s.key} style={{ display: 'contents' }}>
           {s.key === 'objective' && vitalsBlock}
           <label className="field dictate-field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
-            <textarea className="textarea" rows={4} value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} />
+            <AutoTextarea value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} />
             <DictateButton label={s.label} onText={(f) => setN((x) => ({ ...x, [s.key]: f(x[s.key]) }))} /></label></div>
         )) : (<>
           <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label="Diagnósticos (CIE-11)" />
           {vitalsBlock}
           <label className="field dictate-field"><span>Examen físico</span>
-            <textarea className="textarea" rows={6} value={d.exam} onChange={(e) => setD({ ...d, exam: e.target.value })} />
+            <AutoTextarea value={d.exam} onChange={(e) => setD({ ...d, exam: e.target.value })} />
             <DictateButton label="Examen físico" onText={(f) => setD((x) => ({ ...x, exam: f(x.exam) }))} /></label>
           <label className="field dictate-field"><span>Observaciones</span>
-            <textarea className="textarea" rows={4} value={d.observations} onChange={(e) => setD({ ...d, observations: e.target.value })} />
+            <AutoTextarea value={d.observations} onChange={(e) => setD({ ...d, observations: e.target.value })} />
             <DictateButton label="Observaciones" onText={(f) => setD((x) => ({ ...x, observations: f(x.observations) }))} /></label>
         </>)}
       </div>
