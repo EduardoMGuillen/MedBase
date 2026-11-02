@@ -36,10 +36,8 @@ export function ExamCatalogAdmin() {
   }
   return (
     <section className="panel">
-      <div className="panel__head" style={{ flexWrap: 'wrap', gap: 10 }}>
-        <div><h2>Catálogo de exámenes</h2><p>Los exámenes que los médicos pueden ordenar. Quitar uno lo archiva: deja de ofrecerse, pero las notas que ya lo tienen no cambian.</p></div>
-        <button className="btn btn--primary btn--sm" onClick={() => setEditing('new')}><Plus size={15} />Agregar examen</button>
-      </div>
+      <SectionHead title="Catálogo de exámenes" sub="Los exámenes que los médicos pueden ordenar. Quitar uno lo archiva: deja de ofrecerse, pero las notas que ya lo tienen no cambian."
+        action={<button className="btn btn--primary btn--sm" onClick={() => setEditing('new')}><Plus size={15} />Agregar examen</button>} />
       <div className="panel__body" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', paddingBottom: 0 }}>
         <input className="input" style={{ maxWidth: 360 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar examen" aria-label="Buscar examen" />
         {nArchived > 0 && <label className="check-inline"><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />Ver archivados ({nArchived})</label>}
@@ -61,10 +59,10 @@ export function ExamCatalogAdmin() {
                 <span><b>{e.name}</b>{!e.active && <span className="badge">Archivado</span>}
                   {analytes(e) > 0 && <small className="muted">{analytes(e)} {analytes(e) === 1 ? 'valor' : 'valores'} con rango de referencia</small>}</span>
                 <span className="excat__acts">
-                  {e.active && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(e)}><Pencil size={13} />Editar</button>}
+                  {e.active && <button className="btn btn--ghost btn--sm" aria-label={`Editar ${e.name}`} title="Editar" onClick={() => setEditing(e)}><Pencil size={13} /><span>Editar</span></button>}
                   {e.active
-                    ? <button className="btn btn--ghost btn--sm" onClick={() => setActive(e, false)}><Archive size={13} />Archivar</button>
-                    : <button className="btn btn--ghost btn--sm" onClick={() => setActive(e, true)}><RotateCcw size={13} />Restaurar</button>}
+                    ? <button className="btn btn--ghost btn--sm" aria-label={`Archivar ${e.name}`} title="Archivar" onClick={() => setActive(e, false)}><Archive size={13} /><span>Archivar</span></button>
+                    : <button className="btn btn--ghost btn--sm" aria-label={`Restaurar ${e.name}`} title="Restaurar" onClick={() => setActive(e, true)}><RotateCcw size={13} /><span>Restaurar</span></button>}
                 </span>
               </li>
             ))}
@@ -176,9 +174,9 @@ export function LabProfilesAdmin() {
                 <small className="muted">{p.items.map((e) => (active.has(examKey(e.name)) ? e.name : `${e.name} (no disponible)`)).join(', ')}</small>
                 {p.note && <small className="exam-picker__note">{p.note}</small>}</span>
               <span className="excat__acts">
-                {!p.archivedAt && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(p)}><Pencil size={13} />Editar</button>}
-                {p.archivedAt ? <button className="btn btn--ghost btn--sm" onClick={() => setArchivedFlag(p, false)}><RotateCcw size={13} />Restaurar</button>
-                  : <button className="btn btn--ghost btn--sm" onClick={() => setArchivedFlag(p, true)}><Archive size={13} />Archivar</button>}
+                {!p.archivedAt && <button className="btn btn--ghost btn--sm" aria-label={`Editar ${p.name}`} title="Editar" onClick={() => setEditing(p)}><Pencil size={13} /><span>Editar</span></button>}
+                {p.archivedAt ? <button className="btn btn--ghost btn--sm" aria-label={`Restaurar ${p.name}`} title="Restaurar" onClick={() => setArchivedFlag(p, false)}><RotateCcw size={13} /><span>Restaurar</span></button>
+                  : <button className="btn btn--ghost btn--sm" aria-label={`Archivar ${p.name}`} title="Archivar" onClick={() => setArchivedFlag(p, true)}><Archive size={13} /><span>Archivar</span></button>}
               </span>
             </li>
           ))}</ul>

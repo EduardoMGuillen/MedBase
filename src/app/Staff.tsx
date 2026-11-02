@@ -33,22 +33,22 @@ export default function StaffPage() {
 
       {tab === 'people' && (
         <section className="panel table-wrap">
-          <table className="table table--sticky">
+          <table className="table table--sticky table--cards">
             <thead><tr><th>Nombre</th><th>Rol</th><th>Correo</th><th>Estado</th><th /></tr></thead>
             <tbody>{staff.map((s) => (
               <tr key={s.id}>
-                <td><div className="cell-person"><Avatar name={s.name} color={s.color} /><span style={{ fontWeight: 600 }}>{s.name}<small>{[s.specialty, s.license].filter(Boolean).join(', ')}</small></span></div></td>
-                <td>
+                <td className="tc-full"><div className="cell-person"><Avatar name={s.name} color={s.color} /><span style={{ fontWeight: 600 }}>{s.name}<small>{[s.specialty, s.license].filter(Boolean).join(', ')}</small></span></div></td>
+                <td data-label="Rol" className="tc-full">
                   <div className="role-picks">
                     {s.id === settings.ownerId && <span className="badge badge--ink">Médico titular</span>}
                     {(s.roles ?? [s.role]).filter((r) => s.id !== settings.ownerId || r !== 'doctor').map((r) => <span key={r} className="badge">{ROLE_LABEL[r]}</span>)}
                     {(!office || s.id !== settings.ownerId) && <button className="btn btn--ghost btn--sm" aria-label={`Cambiar los roles de ${s.name}`} onClick={() => setRolesOf(s)}>Roles</button>}
                   </div>
                 </td>
-                <td>{s.email}</td>
-                <td><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Desactivado</span>}
+                <td data-label="Correo">{s.email}</td>
+                <td data-label="Estado"><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Desactivado</span>}
                   {s.twoFactor && <span className="badge badge--ink">Dos pasos</span>}</div></td>
-                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <td className="tc-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {s.id !== user?.id && <>
                     <button className="btn btn--ghost btn--sm" onClick={async () => {
                       if (!confirm(`Se generará una contraseña temporal para ${s.name} y se cerrarán sus sesiones abiertas.`)) return

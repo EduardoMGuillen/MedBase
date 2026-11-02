@@ -84,14 +84,13 @@ function ClinicDrugs() {
   }
   return (
     <section className="panel table-wrap">
-      <div className="panel__head"><div><h2>Vademécum</h2><p>{DRUGS.length} del catálogo base y {clinicDrugs.filter((d) => d.active).length} agregados por la clínica. Un medicamento desactivado ya no se ofrece al recetar.</p></div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <SectionHead title="Vademécum" sub={`${DRUGS.length} del catálogo base y ${clinicDrugs.filter((d) => d.active).length} agregados por la clínica. Un medicamento desactivado ya no se ofrece al recetar.`} action={<>
           <button className="btn btn--ghost btn--sm" onClick={() => download('plantilla-vademecum.csv', toCsv([[...IMPORT_COLUMNS], ['Ademetionina', 'Heptral', 'Tabletas', '400 mg', 'Oral', '1 tableta cada 12 horas', 'Colestasis intrahepática']]))}>
             <Download size={15} />Plantilla</button>
           <label className="btn btn--ghost btn--sm"><Upload size={15} />Importar CSV
             <input type="file" accept=".csv,text/csv" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importFile(f) }} /></label>
           <button className="btn btn--primary btn--sm" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>
-        </div></div>
+        </>} />
       <div className="panel__body" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', paddingBottom: 0 }}>
         <input className="input" style={{ maxWidth: 360 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre genérico, comercial o presentación" aria-label="Buscar medicamento" />
         <label className="check-inline"><input type="checkbox" checked={onlyClinic} onChange={(e) => setOnlyClinic(e.target.checked)} />Sólo agregados por la clínica</label>
@@ -103,20 +102,20 @@ function ClinicDrugs() {
           <button className="linklike" style={{ alignSelf: 'flex-start' }} onClick={() => setResult(null)}>Cerrar</button>
         </div>
       )}
-      <table className="table table--sticky">
+      <table className="table table--sticky table--cards">
         <thead><tr><th>Nombre genérico</th><th>Comercial</th><th>Presentación</th><th>Vía</th><th>Origen</th><th /></tr></thead>
         <tbody>
           {added.map((d) => (
             <tr key={d.id} style={d.active ? undefined : { opacity: 0.55 }}>
-              <td><b>{d.name}</b>{d.usualUse && <small className="muted" style={{ display: 'block' }}>{d.usualUse}</small>}</td><td>{d.brand ?? '—'}</td>
-              <td>{[d.presentation, d.concentration].filter(Boolean).join(' ') || '—'}</td><td>{d.route ?? '—'}</td>
-              <td>Agregado por {staffById(d.createdBy)?.name ?? 'la clínica'}<br /><small className="muted">{date(d.createdAt)}{d.active ? '' : ' · desactivado'}</small></td>
-              <td style={{ textAlign: 'right' }}>{canEdit(d) && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(d)}>Editar</button>}</td>
+              <td className="tc-full"><b>{d.name}</b>{d.usualUse && <small className="muted" style={{ display: 'block' }}>{d.usualUse}</small>}</td><td data-label="Comercial">{d.brand ?? '—'}</td>
+              <td data-label="Presentación">{[d.presentation, d.concentration].filter(Boolean).join(' ') || '—'}</td><td data-label="Vía">{d.route ?? '—'}</td>
+              <td data-label="Origen">Agregado por {staffById(d.createdBy)?.name ?? 'la clínica'}<br /><small className="muted">{date(d.createdAt)}{d.active ? '' : ' · desactivado'}</small></td>
+              <td className="tc-actions" style={{ textAlign: 'right' }}>{canEdit(d) && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(d)}>Editar</button>}</td>
             </tr>
           ))}
           {base.slice(0, n ? 200 : 60).map((d) => (
             <tr key={`${d.name}|${d.presentation}`}>
-              <td><b>{d.name}</b></td><td>{d.brand ?? '—'}</td><td>{d.presentation}</td><td>{d.usual?.route ?? '—'}</td><td className="muted">Catálogo base</td><td />
+              <td className="tc-full"><b>{d.name}</b></td><td data-label="Comercial">{d.brand ?? '—'}</td><td data-label="Presentación">{d.presentation}</td><td data-label="Vía">{d.usual?.route ?? '—'}</td><td data-label="Origen" className="muted">Catálogo base</td><td />
             </tr>
           ))}
         </tbody>
@@ -147,15 +146,15 @@ function Beds() {
     <section className="panel table-wrap">
       <SectionHead title="Camas" sub={`${counts.free} libres · ${counts.busy} ocupadas${counts.off ? ` · ${counts.off} fuera de servicio` : ''}. Se ocupan al ingresar a un paciente y se liberan al darle de alta o trasladarlo.`}
         action={<button className="btn btn--primary btn--sm" onClick={() => setAdding(true)}><Plus size={15} />Agregar cama</button>} />
-      <table className="table table--sticky">
+      <table className="table table--sticky table--cards">
         <thead><tr><th>Cuarto</th><th>Cama</th><th>Estado</th><th /></tr></thead>
         <tbody>
           {adding && (
             <tr className="row-new">
-              <td><input className="input" autoFocus placeholder="Ej. 106" value={room} onChange={(e) => setRoom(e.target.value)} aria-label="Cuarto" /></td>
-              <td><input className="input" placeholder="Opcional, ej. A" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Cama" /></td>
+              <td data-label="Cuarto"><input className="input" autoFocus placeholder="Ej. 106" value={room} onChange={(e) => setRoom(e.target.value)} aria-label="Cuarto" /></td>
+              <td data-label="Cama"><input className="input" placeholder="Opcional, ej. A" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Cama" /></td>
               <td />
-              <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}><button className="btn btn--primary btn--sm" disabled={!room.trim()} onClick={async () => {
+              <td className="tc-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}><button className="btn btn--primary btn--sm" disabled={!room.trim()} onClick={async () => {
                 if (await createBed({ room: room.trim(), label: label.trim(), active: true })) { setRoom(''); setLabel(''); setAdding(false) }
               }}><Plus size={14} />Agregar cama</button>{' '}
                 <button className="btn btn--ghost btn--sm" onClick={() => { setAdding(false); setRoom(''); setLabel('') }}>Cancelar</button></td>
@@ -166,11 +165,11 @@ function Beds() {
             const p = h && patient(h.patientId)
             return (
               <tr key={b.id} style={b.active ? undefined : { opacity: 0.7 }}>
-                {editing === b.id ? <BedRename b={b} onDone={() => setEditing(null)} /> : <><td className="num">{b.room}</td><td>{b.label || '—'}</td></>}
-                <td>{!b.active ? <><span className="badge badge--amber">Fuera de servicio</span>{b.outOfServiceNote && <small className="muted" style={{ display: 'block' }}>{b.outOfServiceNote}</small>}</>
+                {editing === b.id ? <BedRename b={b} onDone={() => setEditing(null)} /> : <><td data-label="Cuarto" className="num">{b.room}</td><td data-label="Cama">{b.label || '—'}</td></>}
+                <td data-label="Estado" className="tc-full">{!b.active ? <><span className="badge badge--amber">Fuera de servicio</span>{b.outOfServiceNote && <small className="muted" style={{ display: 'block' }}>{b.outOfServiceNote}</small>}</>
                   : h ? <><span className="badge badge--ink">Ocupada</span> <span style={{ fontSize: 14 }}>{p ? fullName(p) : 'Paciente'}{h.specialty ? ` · ${h.specialty}` : ''}</span></>
                     : <span className="badge badge--mint">Libre</span>}</td>
-                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <td className="tc-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {editing !== b.id && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(b.id)}>Renombrar</button>}{' '}
                   {b.active
                     ? <button className="btn btn--ghost btn--sm" disabled={!!h} title={h ? 'Tiene un paciente: dale de alta o trasládalo primero' : undefined} onClick={() => {
@@ -195,8 +194,8 @@ function BedRename({ b, onDone }: { b: Bed; onDone: () => void }) {
   const [label, setLabel] = useState(b.label)
   const save = async () => { if (room.trim() && (room !== b.room || label !== b.label)) { if (!(await updateBed(b.id, { room: room.trim(), label: label.trim() }, 'Cama renombrada'))) return } onDone() }
   return (<>
-    <td><input className="input" value={room} autoFocus onChange={(e) => setRoom(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') onDone() }} aria-label="Cuarto" /></td>
-    <td><div style={{ display: 'flex', gap: 6 }}><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') onDone() }} aria-label="Cama" />
+    <td data-label="Cuarto"><input className="input" value={room} autoFocus onChange={(e) => setRoom(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') onDone() }} aria-label="Cuarto" /></td>
+    <td data-label="Cama"><div style={{ display: 'flex', gap: 6 }}><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') onDone() }} aria-label="Cama" />
       <button className="btn btn--primary btn--sm" onClick={save}>Guardar</button></div></td>
   </>)
 }
@@ -419,16 +418,16 @@ function Services() {
     <section className="panel table-wrap">
       <SectionHead title="Servicios y precios" sub="Lo que se cobra en caja, con su precio. Ocultar un servicio lo quita de la caja; los cobros anteriores no cambian."
         action={<button className="btn btn--primary btn--sm" onClick={() => setAdding(true)}><Plus size={15} />Agregar servicio</button>} />
-      <table className="table table--sticky">
+      <table className="table table--sticky table--cards">
         <thead><tr><th>Servicio</th><th style={{ width: 160 }}>Precio ({settings.currency})</th><th style={{ width: 130 }}>Estado</th><th>Origen</th><th style={{ width: 120 }} /></tr></thead>
         <tbody>
           {adding && (
             <tr className="row-new">
-              <td><input className="input" autoFocus placeholder="Nuevo servicio, p. ej. Retiro de puntos" aria-label="Nombre del servicio" value={name} onChange={(e) => setName(e.target.value)} /></td>
-              <td><input className="input num" type="number" min={0} step="0.01" placeholder="0.00" aria-label="Precio" value={price} onChange={(e) => setPrice(e.target.value)} /></td>
+              <td data-label="Servicio" className="tc-full"><input className="input" autoFocus placeholder="Nuevo servicio, p. ej. Retiro de puntos" aria-label="Nombre del servicio" value={name} onChange={(e) => setName(e.target.value)} /></td>
+              <td data-label={`Precio (${settings.currency})`}><input className="input num" type="number" min={0} step="0.01" placeholder="0.00" aria-label="Precio" value={price} onChange={(e) => setPrice(e.target.value)} /></td>
               <td />
               <td />
-              <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+              <td className="tc-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                 <button className="btn btn--primary btn--sm" disabled={name.trim().length < 2 || price === ''} onClick={async () => {
                   if (await createService({ name: name.trim(), price: Number(price), active: true })) { setName(''); setPrice(''); setAdding(false) }
                 }}><Plus size={15} />Agregar</button>{' '}
@@ -450,11 +449,11 @@ function ServiceRow({ s }: { s: Service }) {
   const dirty = name !== s.name || Number(price) !== s.price
   return (
     <tr style={s.active ? undefined : { opacity: 0.55 }}>
-      <td><input className="input" value={name} onChange={(e) => setName(e.target.value)} aria-label="Nombre del servicio" /></td>
-      <td><input className="input num" type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} aria-label={`Precio de ${s.name}`} title={money(s.price, settings.currency)} /></td>
-      <td>{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Oculto en caja</span>}</td>
-      <td style={{ fontSize: 13.5 }}>{s.createdBy ? <>Agregado al cobrar por {staffById(s.createdBy)?.name ?? '—'}<br /><small className="muted">{s.createdAt ? date(s.createdAt) : ''}</small></> : <span className="muted">Configuración</span>}</td>
-      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+      <td data-label="Servicio" className="tc-full"><input className="input" value={name} onChange={(e) => setName(e.target.value)} aria-label="Nombre del servicio" /></td>
+      <td data-label={`Precio (${settings.currency})`}><input className="input num" type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} aria-label={`Precio de ${s.name}`} title={money(s.price, settings.currency)} /></td>
+      <td data-label="Estado">{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Oculto en caja</span>}</td>
+      <td data-label="Origen" className="tc-full" style={{ fontSize: 13.5 }}>{s.createdBy ? <>Agregado al cobrar por {staffById(s.createdBy)?.name ?? '—'}<br /><small className="muted">{s.createdAt ? date(s.createdAt) : ''}</small></> : <span className="muted">Configuración</span>}</td>
+      <td className="tc-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
         {dirty
           ? <button className="btn btn--primary btn--sm" onClick={() => updateService(s.id, { name: name.trim(), price: Number(price) })}>Guardar</button>
           : <button className="btn btn--ghost btn--sm" onClick={() => updateService(s.id, { active: !s.active })}>{s.active ? 'Ocultar' : 'Activar'}</button>}

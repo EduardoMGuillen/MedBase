@@ -612,3 +612,33 @@ tr.clickable { cursor: pointer; }
   .roster__body--open { display: block; }
   .roster__panel { position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 40; border-radius: 18px 18px 0 0; max-height: 70vh; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
 }
+
+/* Configuración en el teléfono: las tablas editables (Servicios y precios, Camas, Vademécum) se vuelven tarjetas,
+   una por fila, con la etiqueta de cada dato arriba; nada se corta ni se desplaza a lo ancho. También Personal y los
+   recibos de Caja. Sólo en pantalla: al imprimir (el cierre de caja) la tabla sigue siendo tabla */
+@media screen and (max-width: 720px) {
+  .table-wrap:has(> .table--cards) { max-height: none; overflow: visible; }
+  .table--cards, .table--cards tbody { display: block; }
+  .table--cards thead { display: none; }
+  .table--cards tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; padding: 14px 16px; border-bottom: 1px solid var(--line-soft); }
+  .table.table--cards td { display: block; padding: 0; border: 0; min-width: 0; overflow-wrap: anywhere; }
+  .table--cards td:empty { display: none; }
+  .table--cards td[data-label]::before { content: attr(data-label); display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  .table--cards td.tc-full { grid-column: 1 / -1; }
+  .table--cards td.tc-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; text-align: left !important; white-space: normal !important; }
+  .table--cards td.tc-actions:not(:has(*)) { display: none; }
+  .table--cards td.tc-actions .btn { flex: 1 1 auto; justify-content: center; min-height: 40px; }
+  /* Recibo a la izquierda y total a la derecha, en la primera línea de la tarjeta */
+  .table--cards td.tc-lead { grid-column: 1; grid-row: 1; font-weight: 600; }
+  .table--cards td.tc-trail { grid-column: 2; grid-row: 1; }
+  .table--cards .input { width: 100%; }
+  .table--cards tr.row-new { background: var(--ink-soft); }
+  .table--cards tr.row-new td { background: none; }
+  /* El botón azul de alta va primero, a todo lo ancho, aunque el encabezado tenga otros botones */
+  .section-head__action .btn--primary { order: -1; }
+  .section-head__action .btn--ghost { flex: 1 1 0; justify-content: center; }
+  /* Catálogo de exámenes y perfiles: el nombre a la izquierda y los botones (sólo el ícono) a la derecha, en todas las filas igual */
+  .excat__list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; flex-wrap: nowrap; align-items: start; gap: 10px; }
+  .excat__acts .btn { width: 36px; height: 36px; padding: 0; justify-content: center; }
+  .excat__acts .btn > span { display: none; }
+}

@@ -120,19 +120,19 @@ export default function Billing() {
         {noInvoice > 0 && <div className="alert-strip alert-strip--amber no-print"><FileText size={16} />{noInvoice} {noInvoice === 1 ? 'cobro no tiene' : 'cobros no tienen'} anotado el número de factura del talonario. Ábrelos para anotarlo.</div>}
         {tab === 'today' && <CashCount expected={byMethod('cash')} currency={cur} />}
         <section className="panel table-wrap">
-          <table className="table table--sticky">
+          <table className="table table--sticky table--cards">
             <thead><tr><th>Recibo</th><th>Factura</th><th>Fecha</th><th>Paciente</th><th>Forma de pago</th><th>Cobró</th><th style={{ textAlign: 'right' }}>Total</th></tr></thead>
             <tbody>{shown.map((p) => {
               const pt = patient(p.patientId)
               return (
                 <tr key={p.id} style={p.voided ? { opacity: 0.5 } : undefined} onClick={() => nav(`/app/recibos/${p.id}`)} className="clickable">
-                  <td className="num"><Link to={`/app/recibos/${p.id}`}>{p.receiptNo}</Link>{p.voided && <span className="badge badge--red" style={{ marginLeft: 8 }}>Anulado</span>}</td>
-                  <td className="num">{p.invoiceNo ?? (p.voided ? '—' : <span style={{ color: 'var(--faint)' }}>Sin anotar</span>)}</td>
-                  <td className="num">{date(p.paidAt, { day: 'numeric', month: 'short' })} {time(p.paidAt)}</td>
-                  <td>{pt ? fullName(pt) : '—'}</td>
-                  <td>{METHOD_LABEL[p.method]}{p.bank ? `, ${p.bank}` : ''}{p.reference ? `, ${p.reference}` : ''}</td>
-                  <td>{staffById(p.receivedBy)?.name ?? '—'}</td>
-                  <td className="num" style={{ textAlign: 'right', fontWeight: 600, textDecoration: p.voided ? 'line-through' : undefined }}>{money(p.total, cur)}
+                  <td className="num tc-lead"><Link to={`/app/recibos/${p.id}`}>{p.receiptNo}</Link>{p.voided && <span className="badge badge--red" style={{ marginLeft: 8 }}>Anulado</span>}</td>
+                  <td data-label="Factura" className="num">{p.invoiceNo ?? (p.voided ? '—' : <span style={{ color: 'var(--faint)' }}>Sin anotar</span>)}</td>
+                  <td data-label="Fecha" className="num">{date(p.paidAt, { day: 'numeric', month: 'short' })} {time(p.paidAt)}</td>
+                  <td data-label="Paciente" className="tc-full">{pt ? fullName(pt) : '—'}</td>
+                  <td data-label="Forma de pago">{METHOD_LABEL[p.method]}{p.bank ? `, ${p.bank}` : ''}{p.reference ? `, ${p.reference}` : ''}</td>
+                  <td data-label="Cobró">{staffById(p.receivedBy)?.name ?? '—'}</td>
+                  <td className="num tc-trail" style={{ textAlign: 'right', fontWeight: 600, textDecoration: p.voided ? 'line-through' : undefined }}>{money(p.total, cur)}
                     {!p.voided && (p.balance ?? 0) > 0 && <small style={{ display: 'block', color: 'var(--amber-ink)', fontWeight: 600 }}>Saldo {money(p.balance ?? 0, cur)}</small>}</td>
                 </tr>
               )
