@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { FileText, LogOut, Plus } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
-import { Loading } from '../components/ui'
+import { Loading, Modal } from '../components/ui'
 import { date, dateTime, dxCode, fullName, legacyTag, time } from '../lib/format'
 import { shortDate } from '../lib/consent'
 import { medLabel } from '../lib/inpatient'
@@ -37,6 +37,8 @@ const toRx = (m: InpatientMed): PrescriptionItem => ({
  * automático), evolución, diagnósticos de egreso, condición, medicamentos al alta, exámenes pendientes, indicaciones y
  * seguimiento. Al guardar se cierra el expediente, se libera la cama, sale la receta y la epicrisis con lo mismo.
  */
+const DEFAULT_FOLLOWUP = 'Cita de control en consulta externa en 1 semana.'
+
 export function DischargeWriter({ file, p, onDone, initialCondition }: { file: InpatientFile; p: Patient; onDone: () => void; initialCondition?: string }) {
   const { discharge } = useStore()
   const nav = useNavigate()
@@ -53,7 +55,7 @@ export function DischargeWriter({ file, p, onDone, initialCondition }: { file: I
   const [medForm, setMedForm] = useState<{ index: number; initial?: PrescriptionItem } | null>(null)
   const [exams, setExams] = useState<ExamInput[]>([])
   const [instructions, setInstructions] = useState('')
-  const [followUp, setFollowUp] = useState('Cita de control en consulta externa en 1 semana.')
+  const [followUp, setFollowUp] = useState(DEFAULT_FOLLOWUP)
   const [validity, setValidity] = useRxValidity()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -66,10 +68,12 @@ export function DischargeWriter({ file, p, onDone, initialCondition }: { file: I
   const draft = useDraftSync<Draft>('egreso', h.id, snapshot, (d) => {
     setHea(d.hea ?? ''); setSummary(d.summary ?? ''); if (d.dx?.length) setDx(d.dx); setCondition(d.condition || initialCondition || 'Mejorado'); setItems(d.items ?? [])
     setExams(d.exams ?? []); setInstructions(d.instructions ?? ''); setFollowUp(d.followUp ?? ''); if (d.validity) setValidity(d.validity)
-  }, !summary.trim() && !items.length && !exams.length && !instructions.trim())
+  // EG1 (ronda 9): cualquier cambio sobre lo precargado cuenta (antes, escribir sólo la HEA no guardaba el borrador)
+  }, !summary.trim() && !items.length && !exams.length && !instructions.trim() && (!hea.trim() || hea === pre?.hea)
+    && condition === (initialCondition ?? 'Mejorado') && followUp === DEFAULT_FOLLOWUP)
 
   if (error) return <section className="panel"><div className="empty">{error}</div></section>
-  if (!pre) return <Loading label="Armando la nota de egreso" />
+  if (!pre) return <Modal title="Nota de egreso" wide className="note-modal" onClose={onDone}><Loading label="Armando la nota de egreso" /></Modal>
   const open = file.meds.filter((m) => !m.stoppedAt && !items.some((it) => normalize(it.drug) === normalize(m.drug)))
   const hospital = h.kind === 'hospital'
   const missing = [!hea.trim() && hospital && 'la historia de la enfermedad actual', summary.trim().length < 10 && 'la evolución (al menos una línea)', !dx.length && 'el diagnóstico de egreso',
@@ -86,13 +90,19 @@ export function DischargeWriter({ file, p, onDone, initialCondition }: { file: I
     else onDone()
   }
 
+  // EG1 (ronda 9): la nota de egreso se abre en una ventana encima (como la de evolución): ✕, cuerpo que se desplaza y pie
+  // fijo. Cerrar no pierde nada: el borrador se guarda solo y se reabre al volver a pulsar «Egreso».
   return (
-    <section className="panel discharge-write">
-      <div className="panel__head">
-        <div><h2>Nota de egreso</h2><p>{hospital ? 'Lo que escribes aquí es lo que sale en la epicrisis. Al guardar se cierra el expediente, se libera la cama' : 'Al guardarla se cierra la observación y el paciente sale de la lista'} y, si hay medicamentos al alta, se emite la receta de salida.</p></div>
+    <Modal title="Nota de egreso" wide className="note-modal discharge-write" onClose={onDone}
+      top={<>
+        <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>{hospital ? 'Lo que escribes aquí es lo que sale en la epicrisis. Al guardar se cierra el expediente, se libera la cama' : 'Al guardarla se cierra la observación y el paciente sale de la lista'} y, si hay medicamentos al alta, se emite la receta de salida.</p>
         <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />
-      </div>
-      <div className="panel__body">
+      </>}
+      footer={<>
+        {missing.length > 0 && <span className="field__msg field__msg--warn" role="status" style={{ marginRight: 'auto' }}>Falta: {missing.join(', ')}.</span>}
+        <button className="btn btn--ghost" onClick={onDone}>Seguir después</button>
+        <button className="btn btn--primary" disabled={missing.length > 0 || busy} onClick={save}><LogOut size={17} />Dar de alta a {fullName(p).split(' ')[0]}{hospital ? ' y emitir la epicrisis' : ''}</button>
+      </>}>
         <article className="epi epi--write">
           <section className="epi__sec"><h3>1. Datos del ingreso</h3>
             <dl className="epi__facts">
@@ -160,13 +170,7 @@ export function DischargeWriter({ file, p, onDone, initialCondition }: { file: I
             <label className="field" style={{ marginTop: 10 }}><span>Cita de control</span><input className="input" value={followUp} onChange={(e) => setFollowUp(e.target.value)} /></label>
           </section>
         </article>
-        {missing.length > 0 && <div className="alert-strip alert-strip--amber" role="status" style={{ marginTop: 12 }}>Falta: {missing.join(', ')}.</div>}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
-          <button className="btn btn--primary btn--lg" disabled={missing.length > 0 || busy} onClick={save}><LogOut size={17} />Dar de alta a {fullName(p).split(' ')[0]}{hospital ? ' y emitir la epicrisis' : ''}</button>
-          <button className="btn btn--ghost" onClick={onDone}>Seguir después</button>
-        </div>
-      </div>
-    </section>
+    </Modal>
   )
 }
 
