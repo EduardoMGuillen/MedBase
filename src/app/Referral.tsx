@@ -7,7 +7,7 @@ import { date, dmy, dmyTime, time } from '../lib/format'
 import { REFERRAL_CONSENT, REFERRAL_FOOTER } from '../lib/clinicalConfig'
 import { stayPath } from '../lib/inpatient'
 import { useDraftSync } from '../lib/drafts'
-import { DraftBadge } from '../components/Addenda'
+import { Addenda, DraftBadge } from '../components/Addenda'
 import type { Referral, ReferralData } from '../lib/types'
 import { DocHeader } from '../components/DocHeader'
 
@@ -243,6 +243,11 @@ export default function ReferralPage() {
       </div>
       <p className="muted no-print" style={{ fontSize: 13.5 }}>No se envía por WhatsApp ni por ningún canal automático: se imprime o se descarga y se entrega al paciente o a su familia.</p>
       <ReferralSheet r={r} />
+      {/* RF1: firmada no se edita; se corrige con adenda (también sale en la impresión) */}
+      <div className="referral-addenda">
+        <Addenda list={r.addenda ?? []} targetKind="referral" targetId={r.id} canAdd={doctor && !r.voidedAt} kinds={['correction', 'info']}
+          onAdded={() => { if (id) fetchReferral(id).then(setR).catch(() => null) }} />
+      </div>
       {voiding && (
         <Modal title={`Anular ${r.number}`} onClose={() => setVoiding(false)} footer={<>
           <button className="btn btn--ghost" onClick={() => setVoiding(false)}>Cancelar</button>

@@ -226,6 +226,13 @@ describe('Ronda 8: referencia a otro centro', () => {
     assert.ok(Array.isArray(r.body.data.patient.allergies), 'la hoja lleva las alergias')
     const note = (await doc.get(`/api/consultations/${consultationId}`)).body
     assert.equal(note.referrals.length, 1)
+    // RF1: firmada se corrige con adenda (sólo el médico); recepción no la ve, ni por URL directa
+    const ad = await doc.post('/api/addenda', { targetKind: 'referral', targetId: r.body.id, kind: 'correction', corrects: 'Servicio', text: 'El servicio es infectología pediátrica.' })
+    assert.equal(ad.status, 201, JSON.stringify(ad.body))
+    assert.equal((await doc.get(`/api/referrals/${r.body.id}`)).body.addenda.length, 1)
+    assert.equal((await (await as('crios@demo.clinara')).post('/api/addenda', { targetKind: 'referral', targetId: r.body.id, kind: 'info', text: 'Nota de enfermería' })).status, 403)
+    assert.equal((await (await as('crios@demo.clinara')).get(`/api/referrals/${r.body.id}`)).status, 200, 'enfermería la ve e imprime')
+    assert.equal((await (await as('smejia@demo.clinara')).get(`/api/referrals/${r.body.id}`)).status, 403, 'recepción no la ve')
     // RF1: la impresión queda en la bitácora; la lista del paciente la trae
     assert.equal((await doc.post(`/api/referrals/${r.body.id}/printed`, { how: 'print' })).status, 200)
     assert.ok((await doc.get(`/api/patients/${draft.body.patient ? r.body.patientId : ''}/referrals`)).body.some((x: any) => x.id === r.body.id))

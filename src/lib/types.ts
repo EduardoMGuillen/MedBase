@@ -651,7 +651,7 @@ export interface ClinicExam { id: string; group: ExamGroup; name: string; active
 /** AN1: adenda (addendum) de una nota firmada: corrección, información adicional o resultado posterior. Inmutable. */
 export interface Addendum {
   id: string
-  targetKind: 'consultation' | 'note'
+  targetKind: 'consultation' | 'note' | 'referral'
   targetId: string
   kind: 'correction' | 'info' | 'result'
   /** Si es corrección: qué se corrige ("Dosis de amoxicilina mal escrita"). */
@@ -831,6 +831,8 @@ export type ReferralSource = 'observation' | 'hospital' | 'consultation'
 
 export interface Referral {
   id: string
+  /** RF1 (ronda 8): adendas de la referencia firmada. */
+  addenda?: Addendum[]
   hospitalizationId?: string
   consultationId?: string
   /** RF1 (ronda 8): emitida desde una consulta en borrador (se enlaza a la consulta al firmarla). */

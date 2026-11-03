@@ -8,6 +8,7 @@ import { currentDiagnoses, medLabel, splitOrders } from '../../src/lib/inpatient
 import { examLine, STATUS_LABEL } from '../../src/lib/exams.js'
 import type { PrescriptionItem, ReferralData } from '../../src/lib/types.js'
 import { examsWhere } from './exams.js'
+import { addendaFor } from './notes.js'
 import type { Sql } from '../sql.js'
 
 /** "26/10 15:11" en la hora de la clínica. */
@@ -278,7 +279,8 @@ export function registerReferrals(app: Express, { sql, auth, need, userOf, clini
   app.get('/api/referrals/:rid', auth, need('chart.view'), async (req, res) => {
     const row = (await sql.one('SELECT * FROM referrals WHERE id = ? AND clinic_id = ?', [String(req.params.rid), clinicOf(req)])) ?? fail(404, 'La referencia no existe.')
     await audit(userOf(req), `Abrió la referencia ${row!.number}`)
-    res.json(toReferral(row!))
+    // RF1: con sus adendas (la firmada no se edita)
+    res.json({ ...toReferral(row!), addenda: await addendaFor(sql, clinicOf(req), [String(row!.id)]) })
   })
 
   // RF1: cada impresión o descarga en PDF queda en la bitácora

@@ -74,7 +74,7 @@ export function registerNotes(app: Express, { sql, auth, need, userOf, clinicOf,
    */
   app.post('/api/addenda', auth, need('consult.write', 'inpatient.orders', 'inpatient.care'), async (req, res) => {
     const b = parse(z.object({
-      targetKind: z.enum(['consultation', 'note']),
+      targetKind: z.enum(['consultation', 'note', 'referral']),
       targetId: z.string().min(1),
       kind: z.enum(['correction', 'info', 'result'], { error: 'Elige el tipo de adenda.' }),
       corrects: z.string().trim().max(200).optional(),
@@ -85,7 +85,13 @@ export function registerNotes(app: Express, { sql, auth, need, userOf, clinicOf,
     const cid = clinicOf(req)
     let patientId = ''
     let what = ''
-    if (b.targetKind === 'consultation') {
+    if (b.targetKind === 'referral') {
+      // RF1 (ronda 8): sólo el médico
+      const r = (await sql.one('SELECT patient_id, number, voided_at FROM referrals WHERE id = ? AND clinic_id = ?', [b.targetId, cid])) ?? fail(404, 'La referencia no existe.')
+      if (user.role !== 'doctor') fail(403, 'Sólo un médico agrega adendas a una referencia.')
+      if (r!.voided_at) fail(409, 'La referencia está anulada.')
+      patientId = String(r!.patient_id); what = `la referencia ${r!.number}`
+    } else if (b.targetKind === 'consultation') {
       const c = (await sql.one('SELECT patient_id FROM consultations WHERE id = ? AND clinic_id = ?', [b.targetId, cid])) ?? fail(404, 'La consulta no existe.')
       if (user.role !== 'doctor' || !can(user, 'consult.write')) fail(403, 'Sólo un médico agrega adendas a una consulta.')
       patientId = String(c!.patient_id); what = 'la consulta'
