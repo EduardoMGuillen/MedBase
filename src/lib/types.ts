@@ -606,7 +606,9 @@ export interface ExamInput {
   uncatalogued?: boolean
 }
 
-export interface ExamResultValue { analyte: string; value: string; unit?: string; low?: number; high?: number; flag?: 'high' | 'low'; critical?: boolean }
+export interface ExamResultValue { analyte: string; value: string; unit?: string; low?: number; high?: number; flag?: 'high' | 'low'; critical?: boolean
+  /** UM1 (ronda 8): «<X» (el máximo queda fuera) y el texto de referencia del documento. */
+  highOpen?: boolean; reference?: string }
 
 export interface ExamOrder extends ExamInput {
   id: string

@@ -1,6 +1,7 @@
 import type { ExamGroup, ExamOrder, ExamStatus } from './types'
 import { EXISTING_SUBGROUP, LAB_AREAS, LAB_ORDER, SECTION_SEP } from './labCatalog.js'
 import { XRAY_PREFIXES, XRAY_SUBGROUPS } from './clinicalConfig.js'
+import { referenceOf, type LabReference, type RefAnalyte } from './labReference.js'
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 export const examKey = (name: string) => norm(name)
@@ -8,8 +9,11 @@ export const examKey = (name: string) => norm(name)
 /** EX1: nombre de los dos grupos de la sección «Exámenes». Un hemograma y un ultrasonido los hace gente distinta. */
 export const GROUP_LABEL: Record<ExamGroup, string> = { lab: 'Laboratorio', imaging: 'Imagen y gabinete' }
 
-/** Analito de un examen de laboratorio con su unidad y su rango de referencia (adulto). */
-export interface Analyte { name: string; unit: string; low?: number; high?: number }
+/**
+ * Analito de un examen de laboratorio con su unidad y su rango de referencia (adulto). UM1 (ronda 8): también por sexo
+ * (`f`, `m`), «<X» (`highOpen`) y el texto del documento de valores de referencia (src/lib/labReference.ts).
+ */
+export type Analyte = RefAnalyte
 
 export interface CatalogExam {
   group: ExamGroup
@@ -23,6 +27,15 @@ export interface CatalogExam {
   clinicId?: string
   /** CF3 (ronda 6): subgrupo (Hematología, Rayos X…). */
   subgroup?: string
+  /** UM1 (ronda 8): valores de referencia con su fuente (resultado esperado, notas). */
+  reference?: LabReference
+}
+
+/** UM1 (ronda 8): los valores de referencia del documento de Emil reemplazan los analitos que el examen ya tuviera. */
+export function withReference<T extends CatalogExam>(e: T): T {
+  if (e.group !== 'lab') return e
+  const ref = referenceOf(e.name)
+  return ref ? { ...e, reference: ref, analytes: ref.analytes ?? e.analytes } : e
 }
 
 const a = (name: string, unit: string, low?: number, high?: number): Analyte => ({ name, unit, low, high })
@@ -237,9 +250,10 @@ export function areaFor(group: ExamGroup, place: 'clinic' | 'external', _inStay:
 }
 
 /** Alto, bajo o normal según el rango de referencia. */
-export function flagOf(value: number, low?: number, high?: number): 'high' | 'low' | undefined {
+export function flagOf(value: number, low?: number, high?: number, highOpen?: boolean): 'high' | 'low' | undefined {
   if (low != null && value < low) return 'low'
-  if (high != null && value > high) return 'high'
+  // UM1: «<200» deja fuera el 200
+  if (high != null && (highOpen ? value >= high : value > high)) return 'high'
   return undefined
 }
 
@@ -251,16 +265,24 @@ export function flagOf(value: number, low?: number, high?: number): 'high' | 'lo
  * servidor, la lista fija. Favoritos primero.
  */
 export function examCatalog(clinicExams: { group: ExamGroup; name: string; id: string; active: boolean; baseKey?: string; subgroup?: string }[], favs: string[] = []): CatalogExam[] {
-  const all: CatalogExam[] = !clinicExams.length ? EXAMS.map((e) => ({ ...e, subgroup: subgroupOf(e) })) : clinicExams.filter((e) => e.active).map((e) => {
+  const all: CatalogExam[] = !clinicExams.length ? EXAMS.map((e) => withReference({ ...e, subgroup: subgroupOf(e) })) : clinicExams.filter((e) => e.active).map((e) => {
     const base = e.baseKey ? EXAMS.find((b) => examKey(b.name) === e.baseKey) : undefined
-    return { ...(base ?? {}), group: e.group, name: e.name, clinicId: base ? undefined : e.id, subgroup: subgroupOf(e) }
+    // UM1: por su nombre o, si la clínica lo renombró, por el de la lista fija
+    const own = withReference({ ...(base ?? {}), group: e.group, name: e.name, clinicId: base ? undefined : e.id, subgroup: subgroupOf(e) })
+    return own.reference || !base ? own : { ...withReference({ ...base }), group: e.group, name: e.name, clinicId: undefined, subgroup: subgroupOf(e) }
   }).sort((a, b) => a.name.localeCompare(b.name, 'es'))
   const f = new Set(favs.map(examKey))
   return [...all.filter((e) => f.has(examKey(e.name))), ...all.filter((e) => !f.has(examKey(e.name)))]
 }
 
 /** Un examen por su nombre: en el catálogo dado (con lo de la lista fija) o en la lista fija. */
-export const findExam = (name: string, catalog: CatalogExam[] = EXAMS) => catalog.find((e) => examKey(e.name) === examKey(name)) ?? EXAMS.find((e) => examKey(e.name) === examKey(name))
+export const findExam = (name: string, catalog: CatalogExam[] = EXAMS): CatalogExam | undefined => {
+  const hit = catalog.find((e) => examKey(e.name) === examKey(name)) ?? EXAMS.find((e) => examKey(e.name) === examKey(name))
+  if (hit) return withReference(hit)
+  // UM1: un examen del catálogo cargado (Anexo A) que la clínica todavía no tiene en su lista
+  const ref = referenceOf(name)
+  return ref ? { group: 'lab', name, reference: ref, analytes: ref.analytes } : undefined
+}
 
 /** Texto de un examen en una orden: «Radiografía de rodilla, derecha» con su indicación. */
 export function examLine(e: Pick<ExamOrder, 'name' | 'region' | 'side'>) {

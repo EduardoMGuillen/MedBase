@@ -7,6 +7,8 @@ import { Modal } from '../components/ui'
 import { cap, date, dateTime, inputDateTime, shortStaff } from '../lib/format'
 import { canReview, examCatalog, examLine, examStatusLabel, findExam, GROUP_LABEL, isPending, NEXT_ACTION, reportOptional, STATUS_LABEL } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
+import { rangeFor, rangeText, type LabReference } from '../lib/labReference'
+import { LAB_SOURCES, NO_SOURCE } from '../lib/labSources'
 import { openFile, uploadLarge } from '../lib/files'
 import type { ExamGroup, ExamOrder } from '../lib/types'
 
@@ -152,6 +154,25 @@ function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload
   )
 }
 
+/**
+ * UM1 (ronda 8): lo que dice el documento de valores de referencia sobre el examen (resultado esperado, notas ⚠️) y sus
+ * fuentes. Recuerda que el rango oficial es el del laboratorio que emite el resultado.
+ */
+export function ReferenceNote({ r }: { r: LabReference }) {
+  const cites = r.src.filter((x) => x !== NO_SOURCE)
+  return (
+    <div className="ref-note">
+      {r.text && <p><b>Valor de referencia:</b> {r.text}</p>}
+      {r.note && <p>{r.note}</p>}
+      <p className="muted">Fuente: {cites.length ? cites.map((k, i) => {
+        const s = LAB_SOURCES[k]
+        return <span key={k}>{i > 0 && ' · '}{s?.urls[0] ? <a href={s.urls[0]} target="_blank" rel="noreferrer" title={s.title}>{k}</a> : k}</span>
+      }) : null}{r.src.includes(NO_SOURCE) ? `${cites.length ? ' · ' : ''}‡ resultado esperado por principio, sin una fuente específica verificada` : ''}{!r.src.length ? 'el documento no da una' : ''}.
+        {' '}El rango oficial es el del laboratorio que emite el resultado.</p>
+    </div>
+  )
+}
+
 /** Resultado: valores con unidad y rango (alto o bajo marcado), informe y archivos. */
 export function ResultView({ e }: { e: ExamOrder }) {
   const { notify } = useStore()
@@ -163,7 +184,7 @@ export function ResultView({ e }: { e: ExamOrder }) {
         <table className="exam-values"><tbody>{r.values.map((v) => (
           <tr key={v.analyte} className={v.flag ? `is-${v.flag}` : undefined}>
             <th>{v.analyte}</th><td className="num"><b>{v.value}</b> {v.unit}</td>
-            <td className="muted num">{v.low != null || v.high != null ? `${v.low ?? ''}–${v.high ?? ''}` : ''}</td>
+            <td className="muted">{[rangeText(v), v.reference].filter(Boolean).join(' · ')}</td>
             <td>{v.flag && <span className={`badge ${v.critical ? 'badge--red' : 'badge--amber'}`}>{v.flag === 'high' ? 'Alto' : 'Bajo'}{v.critical ? ' · crítico' : ''}</span>}</td>
           </tr>
         ))}</tbody></table>
@@ -175,17 +196,21 @@ export function ResultView({ e }: { e: ExamOrder }) {
 }
 
 function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => void; onDone: () => void }) {
-  const { notify } = useStore()
+  const { notify, patient } = useStore()
   // AD4: también si la clínica renombró el examen, sus valores con rango vienen del de la lista fija
   const { exams: clinicExams } = useExamCatalog()
-  const analytes = findExam(e.name, examCatalog(clinicExams))?.analytes ?? []
+  const found = findExam(e.name, examCatalog(clinicExams))
+  const analytes = found?.analytes ?? []
+  // UM1 (ronda 8): el rango que corresponde al sexo del paciente; el servidor marca Alto/Bajo con el mismo
+  const sex = patient(e.patientId)?.sex
+  const ref = (a: (typeof analytes)[number]) => { const r = rangeFor(a, sex); return [rangeText(r), a.text].filter(Boolean).join(' · ') }
   const [values, setValues] = useState<Record<string, string>>({})
   const [extra, setExtra] = useState<{ analyte: string; value: string; unit: string }[]>([])
   const [report, setReport] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const input = useRef<HTMLInputElement>(null)
-  const filled = [...analytes.filter((a) => values[a.name]?.trim()).map((a) => ({ analyte: a.name, value: values[a.name].trim(), unit: a.unit, low: a.low, high: a.high })),
+  const filled = [...analytes.filter((a) => values[a.name]?.trim()).map((a) => ({ analyte: a.name, value: values[a.name].trim(), unit: a.unit || undefined })),
     ...extra.filter((x) => x.analyte.trim() && x.value.trim()).map((x) => ({ analyte: x.analyte.trim(), value: x.value.trim(), unit: x.unit.trim() || undefined }))]
   const ready = filled.length > 0 || report.trim().length > 0 || !!file
   return (
@@ -205,8 +230,9 @@ function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => void
         {analytes.length > 0 && <table className="exam-values exam-values--input"><thead><tr><th>Analito</th><th>Valor</th><th>Referencia</th></tr></thead><tbody>
           {analytes.map((a) => (
             <tr key={a.name}><th>{a.name}</th><td><input className="input num" inputMode="decimal" value={values[a.name] ?? ''} onChange={(x) => setValues({ ...values, [a.name]: x.target.value })} aria-label={a.name} /> <span className="muted">{a.unit}</span></td>
-              <td className="muted num">{a.low != null || a.high != null ? `${a.low ?? ''}–${a.high ?? ''} ${a.unit}` : ''}</td></tr>
+              <td className="muted">{ref(a)}</td></tr>
           ))}</tbody></table>}
+        {found?.reference && <ReferenceNote r={found.reference} />}
         {extra.map((x, i) => (
           <div key={i} className="form-grid form-grid--3">
             <input className="input" value={x.analyte} onChange={(ev) => setExtra(extra.map((y, j) => (j === i ? { ...y, analyte: ev.target.value } : y)))} placeholder="Analito" />

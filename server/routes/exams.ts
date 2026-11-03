@@ -7,6 +7,7 @@ import { can } from '../../src/lib/permissions.js'
 import { areaFor, canReview, EXAMS, examKey, findExam, flagOf, FLOW, GROUP_LABEL, isPending, STATUS_LABEL } from '../../src/lib/exams.js'
 import { ensureExamCatalog } from '../db.js'
 import { criticalLimitsOf, isCritical, mergeCriticalGroups, type CriticalGroup } from '../../src/lib/clinicalConfig.js'
+import { rangeFor } from '../../src/lib/labReference.js'
 import type { ClinicExam, ExamInput, ExamOrder, ExamProfile, ExamResultValue, ExamStatus } from '../../src/lib/types.js'
 
 /** Un examen que se ordena (en la consulta, en una nota o en un set). */
@@ -343,7 +344,8 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
   /** Resultado: valores por analito (con rango y alto/bajo), informe de texto y archivos (foto o PDF). */
   app.post('/api/exams/:id/result', auth, need('exams.process'), async (req, res) => {
     const b = parse(z.object({
-      values: z.array(z.object({ analyte: z.string().trim().min(1).max(80), value: z.string().trim().min(1).max(40), unit: z.string().trim().max(20).optional(), low: z.number().optional(), high: z.number().optional() })).max(40).optional(),
+      values: z.array(z.object({ analyte: z.string().trim().min(1).max(80), value: z.string().trim().min(1).max(40), unit: z.string().trim().max(30).optional(), low: z.number().optional(), high: z.number().optional(),
+        highOpen: z.boolean().optional() })).max(60).optional(),
       report: z.string().trim().max(6000).optional(),
       fileIds: z.array(z.string()).max(10).optional(),
     }), req.body)
@@ -357,14 +359,20 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     const limits = criticalLimitsOf((await settings(cid)).criticalGroups)
     // AD4: si la clínica renombró un examen de la lista fija, sus analitos siguen viniendo de él
     const linked = await sql.one('SELECT base_key FROM exam_catalog WHERE clinic_id = ? AND norm_key = ?', [cid, examKey(String(r!.name))])
-    const base = findExam(String(r!.name)) ?? (linked?.base_key ? EXAMS.find((e) => examKey(e.name) === linked.base_key) : undefined)
+    const base = findExam(String(r!.name)) ?? (linked?.base_key ? findExam(EXAMS.find((e) => examKey(e.name) === linked.base_key)?.name ?? '') : undefined)
+    // UM1 (ronda 8): el rango del documento de valores de referencia, por el sexo del paciente cuando los separa
+    const sex = (await sql.one('SELECT sex FROM patients WHERE id = ?', [String(r!.patient_id)]))?.sex as 'F' | 'M' | undefined
     const values: ExamResultValue[] = (b.values ?? []).map((v) => {
       const num = Number(v.value.replace(',', '.'))
       const ref = base?.analytes?.find((x) => x.name === v.analyte)
-      const low = v.low ?? ref?.low
-      const high = v.high ?? ref?.high
+      const range = ref ? rangeFor(ref, sex) : {}
+      // El rango que trae el resultado (el del laboratorio que lo emite) manda sobre el de la app
+      const own = v.low != null || v.high != null
+      const low = own ? v.low : range.low
+      const high = own ? v.high : range.high
+      const highOpen = own ? v.highOpen : range.highOpen
       const critical = isCritical(limits, v.analyte, num)
-      return { ...v, unit: v.unit ?? ref?.unit, low, high, flag: Number.isFinite(num) ? flagOf(num, low, high) : undefined, critical: critical || undefined }
+      return { ...v, unit: v.unit ?? ref?.unit, low, high, highOpen: highOpen || undefined, reference: ref?.text, flag: Number.isFinite(num) ? flagOf(num, low, high, highOpen) : undefined, critical: critical || undefined }
     })
     const at = new Date().toISOString()
     const critical = values.some((v) => v.critical)

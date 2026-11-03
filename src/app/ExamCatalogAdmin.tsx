@@ -7,6 +7,8 @@ import { ExamPicker } from '../components/Exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { byArea, EXAMS, examKey, GROUP_LABEL, SUBGROUPS, subgroupOf } from '../lib/exams'
 import { normalize } from '../lib/patients'
+import { rangeText, referenceOf, type LabReference } from '../lib/labReference'
+import { ReferenceNote } from './ExamsTab'
 import type { ClinicExam, ExamGroup } from '../lib/types'
 
 /**
@@ -30,7 +32,10 @@ export function ExamCatalogAdmin() {
   // CA4 (ronda 7): Laboratorio › área › sección, en el orden del formulario
   const trees = { lab: byArea(list, 'lab'), imaging: byArea(list, 'imaging') }
   const allKeys = (['lab', 'imaging'] as ExamGroup[]).flatMap((g) => [g, ...trees[g].flatMap((a) => [`${g}:${a.key}`, ...a.sections.map((x) => `${g}:${x.key}`)])])
-  const analytes = (e: ClinicExam) => (e.baseKey ? EXAMS.find((b) => examKey(b.name) === e.baseKey)?.analytes?.length ?? 0 : 0)
+  // UM1 (ronda 8): los valores de referencia del documento de Emil (por nombre o por el de la lista fija si se renombró)
+  const refOf = (e: ClinicExam) => e.group === 'lab' ? referenceOf(e.name) ?? (e.baseKey ? referenceOf(EXAMS.find((b) => examKey(b.name) === e.baseKey)?.name ?? '') : undefined) : undefined
+  const analytes = (e: ClinicExam) => refOf(e)?.analytes?.length ?? (e.baseKey ? EXAMS.find((b) => examKey(b.name) === e.baseKey)?.analytes?.length ?? 0 : 0)
+  const [refOpen, setRefOpen] = useState<string | null>(null)
   const setActive = async (e: ClinicExam, active: boolean) => {
     try { await api(`/exams/catalog/${e.id}`, { method: 'PATCH', body: { active } }); reload(); notify(active ? `${e.name} vuelve al catálogo` : `${e.name} archivado: ya no se ofrece al ordenar`) } catch (x) { notify((x as Error).message, 'error') }
   }
@@ -57,7 +62,10 @@ export function ExamCatalogAdmin() {
             {items.map((e) => (
               <li key={e.id} className={e.active ? '' : 'is-archived'}>
                 <span><b>{e.name}</b>{!e.active && <span className="badge">Archivado</span>}
-                  {analytes(e) > 0 && <small className="muted">{analytes(e)} {analytes(e) === 1 ? 'valor' : 'valores'} con rango de referencia</small>}</span>
+                  {refOf(e) ? <button type="button" className="linklike" style={{ fontSize: 13 }} aria-expanded={refOpen === e.id} onClick={() => setRefOpen(refOpen === e.id ? null : e.id)}>
+                    {refOpen === e.id ? 'Ocultar valores de referencia' : `Valores de referencia${analytes(e) ? ` (${analytes(e)})` : ''}`}</button>
+                    : e.group === 'lab' && <small className="muted">{analytes(e) > 0 ? `${analytes(e)} ${analytes(e) === 1 ? 'valor' : 'valores'} con rango de referencia` : 'Sin valores de referencia en la lista de Emil'}</small>}
+                  {refOpen === e.id && refOf(e) && <RefDetails r={refOf(e)!} />}</span>
                 <span className="excat__acts">
                   {e.active && <button className="btn btn--ghost btn--sm" aria-label={`Editar ${e.name}`} title="Editar" onClick={() => setEditing(e)}><Pencil size={13} /><span>Editar</span></button>}
                   {e.active
@@ -217,5 +225,17 @@ function ProfileForm({ profile, onClose, onSaved }: { profile?: ClinicProfile; o
       {picking && <ExamPicker current={items.map((e) => ({ ...e, priority: 'routine', place: 'clinic' }))} catalogOnly title="Exámenes del perfil" onClose={() => setPicking(false)}
         onAdd={(list) => { setItems([...items, ...list.map((e) => ({ group: e.group, name: e.name }))]); setPicking(false) }} />}
     </Modal>
+  )
+}
+
+/** UM1 (ronda 8): tabla de valores de referencia de un examen (con su unidad y su texto) y sus fuentes. */
+function RefDetails({ r }: { r: LabReference }) {
+  return (
+    <span style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+      {!!r.analytes?.length && <table className="ref-table"><tbody>{r.analytes.map((a) => (
+        <tr key={a.name}><th>{a.name}</th><td>{[rangeText(a), a.unit].filter(Boolean).join(' ')}{a.text ? `${rangeText(a) ? ' · ' : ''}${a.text}` : ''}</td></tr>
+      ))}</tbody></table>}
+      <ReferenceNote r={r} />
+    </span>
   )
 }

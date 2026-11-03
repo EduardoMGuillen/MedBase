@@ -327,3 +327,45 @@ describe('NE5: fecha y hora dd/mm/aaaa HH:mm', () => {
     assert.equal(fromDisplay('02/11/2026 24:00'), null)
   })
 })
+
+describe('UM1: valores de referencia del documento de Emil', () => {
+  test('por sexo, «<X» y texto; el rango viaja con el resultado y se marca por el sexo del paciente', async () => {
+    const { referenceOf, rangeFor, rangeText } = await import('../src/lib/labReference.js')
+    const { flagOf, findExam } = await import('../src/lib/exams.js')
+    const hb = referenceOf('Hemograma')!.analytes!.find((a) => a.name === 'Hemoglobina')!
+    assert.deepEqual(rangeFor(hb, 'F'), { low: 12, high: 16, highOpen: undefined })
+    assert.deepEqual(rangeFor(hb, 'M'), { low: 14, high: 18, highOpen: undefined })
+    assert.equal(rangeText(hb), 'Mujeres 12–16 · Hombres 14–18')
+    const ct = referenceOf('Colesterol total')!.analytes![0]
+    assert.equal(flagOf(200, ct.low, ct.high, ct.highOpen), 'high', '«<200»: 200 ya es alto')
+    assert.equal(flagOf(199, ct.low, ct.high, ct.highOpen), undefined)
+    assert.deepEqual(referenceOf('Coombs directo')!.src, ['MLP-Coombs'])
+    // Reemplaza el rango que el examen ya tenía (TSH 0.4–4 → 0.5–4.0)
+    assert.equal(findExam('TSH')!.analytes![0].low, 0.5)
+    // Un examen del Anexo A sin analitos en la lista fija ahora los trae
+    assert.equal(findExam('Fibrinógeno')!.analytes![0].high, 400)
+
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const pid = (await freePatient(doc)).id
+    await sql.run(`UPDATE patients SET sex = 'M' WHERE id = ?`, [pid])
+    const stay = (await consult(doc, pid, true)).hospitalizationId!
+    const note = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'Control', exams: [{ group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' }] })
+    assert.equal(note.status, 201, JSON.stringify(note.body))
+    const e = (await doc.get(`/api/inpatient/${stay}`)).body.exams.find((x: any) => x.name === 'Hemograma')
+    const r = await nurse.post(`/api/exams/${e.id}/result`, { values: [{ analyte: 'Hemoglobina', value: '13' }] })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.result.values[0].flag, 'low', 'hombre con 13 g/dL: bajo')
+  })
+})
+
+describe('UM2: umbrales críticos con fuente', () => {
+  test('los de los fármacos llegan solos a la clínica, con su fuente', async () => {
+    const groups = mergeCriticalGroups([{ id: 'g-hemograma', name: 'Hemograma', analytes: [{ id: 'a-hb', name: 'Hemoglobina', low: 6 }] }])
+    const drugs = groups.find((g) => g.id === 'g-farmacos')!
+    assert.ok(drugs.analytes.every((a) => a.source))
+    assert.ok(isCritical(criticalLimitsOf(groups), 'Ácido valproico', 100))
+    assert.ok(!isCritical(criticalLimitsOf(groups), 'Ácido valproico', 99))
+    assert.ok(isCritical(criticalLimitsOf(groups), 'Litio', 2.1))
+  })
+})
