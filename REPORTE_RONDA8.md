@@ -5,25 +5,32 @@
 - `valores_referencia_laboratorio.md`: copia en `docs/ronda8/`;
 - el Word con las 12 capturas.
 
-**Rama** `ronda8-pedido`. Esquema **v61**. **No desplegado todavía** (ver «Lo que falta»).
+**Rama** `ronda8-pedido`. Esquema **v61**. Desplegado el 02/11/2026.
 
 Una primera versión, hecha solo con el Word, se desplegó el 02/11 (`1fa018c`, v57). Esta ronda la ajustó al pedido detallado.
 
-## Lo que falta: llegó cortado
+## UM1 y UM2 (con el `.md` completo)
 
-- **El pedido se corta en el RF1**, en «… ni sin marcar la ca… (Tiempo restante: 31 KB)». Faltan:
-  - el resto de los criterios del RF1;
-  - **UM1, UM2 y DM1**;
-  - las secciones 4 (permisos), 5 y 6 (valores por defecto A1 a A12).
-
-  Lo que el texto cita de la sección 6 se aplicó tal como está citado.
-- **El `.md` de valores de referencia se corta** en «Anticuerpos hepatitis A IgM». Faltan:
-  - el resto de Enfermedades infecciosas;
-  - Marcadores tumorales, COVID-19, Microbiología, Orina, Heces, Biología molecular y PCR;
-  - las Notas ⚠️;
-  - **la lista de fuentes**: qué es [ABIM-2026], [MSD-TDM], etc., con su enlace.
-- **UM1, UM2 y DM1 no se tocaron.** No se completó ningún valor de memoria. Para seguir hace falta el resto de los dos
-  textos; lo mejor es mandarlos como archivo, porque pegados se cortan.
+- **UM1:** los valores van en un solo archivo, `src/lib/labReference.ts`. Llevan VALIDAR: Emil y salen tal cual del `.md`.
+  - 315 de los 321 exámenes de laboratorio tienen sus valores. Cada uno lleva su fuente, y la lista de las 59 fuentes con
+    su enlace está en `src/lib/labSources.ts`.
+  - Reemplazan los rangos que ya tenía el examen.
+  - Separan por sexo donde el `.md` lo hace, con los «<X» exclusivos y las categorías como texto.
+  - Llevan las notas ⚠️ (aldolasa, colinesterasa, digoxina) y las demás notas.
+  - Al cargar el resultado, el Alto/Bajo se calcula con el sexo del paciente. Si el laboratorio escribe su propio rango, manda el suyo.
+  - Se ven al cargar el resultado y en Configuración › Catálogo › «Valores de referencia».
+  - Están en el código, así que llegan a todas las clínicas y a producción sin carga en la base.
+  - **Adaptación de unidades:** leucocitos y plaquetas se escriben en ×10³/µL (4.0–11.0 y 150–450). Son las mismas cifras;
+    así no chocan con los umbrales críticos que ya usan las clínicas.
+  - **Sin valores en el `.md`:** Microalbuminuria (sin «24 h»), Herpes II IgM/IgG, Toxo avidez, Hemocultivo, VIH (prueba
+    rápida) y Gases arteriales. Gases arteriales conserva los rangos que tenía.
+- **UM2:** la lista solo trae valores críticos para los niveles de fármacos y para el litio. Van como grupo nuevo de la app,
+  «Fármacos (niveles)», con su fuente, y llegan solos a cada clínica.
+  - Como la pantalla dice «Crítico si es mayor de», «≥100» se escribió 99.9. Lo mismo con los demás: carbamazepina 14.9,
+    digoxina 2.0, fenitoína 24.9 y fenobarbital 49.9; el litio queda en 2.0.
+  - Los umbrales anteriores de la app (Hb, plaquetas, K…) quedan igual. En pantalla dicen que la lista no trae un valor crítico para ellos.
+- **DM1:** no se hizo, porque su texto nunca llegó (el pedido se cortó en el RF1). Los datos demo ya no dejan pacientes
+  internados en la cola: eso es parte de CX2.
 
 ## Commits
 
