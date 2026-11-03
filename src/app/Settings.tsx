@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Download, Plus, Upload } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead, SectionHead } from '../components/ui'
 import { DrugForm } from '../components/DrugForm'
-import { drugProvider } from '../lib/drugProvider'
+import { DRUG_ORIGIN, drugProvider } from '../lib/drugProvider'
+import { routeWords } from '../lib/lnme/route'
+import { Pagination, paginate, usePage } from '../components/Pagination'
 import { normalize } from '../lib/patients'
 import { download, parseCsv, toCsv } from '../lib/csv'
 import { CriticalThresholds } from './CriticalThresholds'
@@ -60,44 +62,74 @@ const IMPORT_FIELDS: Record<(typeof IMPORT_COLUMNS)[number], string> = {
  * edita (quien lo agregó o administración) y se desactiva; el catálogo base no se edita. Se puede importar una lista.
  */
 function ClinicDrugs() {
-  const { clinicDrugs = [], staffById, user, can, importClinicDrugs } = useStore()
+  const { clinicDrugs = [], user, can, importClinicDrugs } = useStore()
   const [editing, setEditing] = useState<ClinicDrug | null>(null)
   const [adding, setAdding] = useState(false)
   const [q, setQ] = useState('')
-  const [onlyClinic, setOnlyClinic] = useState(false)
+  const [via, setVia] = useState('')
+  const [sort, setSort] = useState<{ key: 'name' | 'route'; dir: 1 | -1 }>({ key: 'name', dir: 1 })
   const [result, setResult] = useState<{ added: number; skipped: { row: number; name: string; reason: string }[] } | null>(null)
-  const n = normalize(q)
-  // El catálogo base viene del proveedor (AD4), sin los de la clínica: esos se listan aparte, con sus acciones
-  const DRUGS = drugProvider.catalog([])
-  // ME5: los que cargó el LNME (sin tocar o editados) son del listado, no «agregados por la clínica»; se buscan también por alias y número
-  const fromList = (d: ClinicDrug) => d.lnme?.match === 'created'
-  const added = clinicDrugs.filter((d) => (!onlyClinic || !fromList(d)) && (!n || normalize(`${d.name} ${d.brand ?? ''} ${d.presentation ?? ''} ${(d.lnme?.aliases ?? []).join(' ')} ${d.lnme ? `lnme #${d.lnme.no}` : ''}`).includes(n)))
-  const listed = added.filter(fromList)
-  const shownAdded = [...added.filter((d) => !fromList(d)), ...listed.slice(0, n ? 200 : 60)]
-  const base = onlyClinic ? [] : DRUGS.filter((d) => !n || normalize(`${d.name} ${d.presentation} ${(d.aliases ?? []).join(' ')}`).includes(n))
   const canEdit = (d: ClinicDrug) => can('drugs.manage') || d.createdBy === user?.id
+  // ME7 (ronda 10): una sola lista con todo el vademécum (el catálogo base que no es una fila del listado y lo de la clínica:
+  // las 530 del .md y lo agregado a mano). Los archivados no salen. Todos dicen «Catálogo base Clinara» (A11).
+  const rows = useMemo(() => {
+    const listed = new Set(clinicDrugs.flatMap((d) => (d.lnme ? [d.lnme.no] : [])))
+    const base = drugProvider.catalog([]).filter((d) => !(d.lnme && listed.has(d.lnme.no))).map((d) => ({
+      key: `base|${d.name}|${d.presentation}`, name: d.name, brand: d.brand, presentation: d.presentation, route: d.usual?.route ?? '', aliases: d.aliases ?? [], use: undefined as string | undefined, drug: undefined as ClinicDrug | undefined,
+    }))
+    const own = clinicDrugs.filter((d) => d.active).map((d) => ({
+      key: d.id, name: d.name, brand: d.brand, presentation: [d.presentation, d.concentration].filter(Boolean).join(' '),
+      route: d.lnme ? routeWords(d.lnme.routes) : d.route ?? '', aliases: d.lnme?.aliases ?? [], use: d.usualUse, drug: d as ClinicDrug | undefined,
+    }))
+    return [...base, ...own]
+  }, [clinicDrugs])
+  // Filtro por vía: cada vía que aparece (una fila con «Intravenosa, intramuscular» sale en las dos)
+  const routesOf = (r: string) => r.split(',').map((x) => x.trim()).filter(Boolean).map((x) => x.charAt(0).toLocaleUpperCase('es') + x.slice(1))
+  const routeOptions = useMemo(() => [...new Set(rows.flatMap((r) => routesOf(r.route)))].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })), [rows])
+  const n = normalize(q)
+  const coll = (a: string, b: string) => a.localeCompare(b, 'es', { sensitivity: 'base' })
+  const shown = rows
+    .filter((r) => !n || normalize(`${r.name} ${r.brand ?? ''} ${r.aliases.join(' ')}`).includes(n))
+    .filter((r) => !via || routesOf(r.route).includes(via))
+    .sort((a, b) => {
+      if (sort.key === 'route') {
+        // Por la primera vía; los que no tienen vía van al final en los dos sentidos
+        if (!a.route !== !b.route) return a.route ? -1 : 1
+        return sort.dir * coll(routesOf(a.route)[0] ?? '', routesOf(b.route)[0] ?? '') || coll(a.name, b.name)
+      }
+      return sort.dir * (coll(a.name, b.name) || coll(a.presentation, b.presentation))
+    })
+  // GE5: por páginas sobre la lista completa; buscar, filtrar u ordenar vuelve a la página 1
+  const [pageNo, setPage] = usePage(JSON.stringify([q, via, sort]))
+  const pg = paginate(shown, pageNo)
+  const toggle = (key: 'name' | 'route') => setSort((s) => (s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: 1 }))
+  const arrow = (key: 'name' | 'route') => (sort.key === key ? (sort.dir === 1 ? ' ↑' : ' ↓') : '')
+  const aria = (key: 'name' | 'route') => (sort.key === key ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none')
   const importFile = async (file: File) => {
-    const rows = parseCsv(await file.text())
-    if (rows.length < 2) return setResult({ added: 0, skipped: [{ row: 1, name: '', reason: 'El archivo no tiene filas debajo del encabezado.' }] })
-    const head = rows[0].map((h) => normalize(h).replace(/\s+/g, '_'))
+    const parsed = parseCsv(await file.text())
+    if (parsed.length < 2) return setResult({ added: 0, skipped: [{ row: 1, name: '', reason: 'El archivo no tiene filas debajo del encabezado.' }] })
+    const head = parsed[0].map((h) => normalize(h).replace(/\s+/g, '_'))
     const idx = (c: string) => head.indexOf(c)
     if (idx('nombre_generico') < 0) return setResult({ added: 0, skipped: [{ row: 1, name: '', reason: 'Falta la columna nombre_generico. Usa la plantilla.' }] })
-    const list = rows.slice(1).map((r) => Object.fromEntries(IMPORT_COLUMNS.filter((c) => idx(c) >= 0 && r[idx(c)]?.trim()).map((c) => [IMPORT_FIELDS[c], r[idx(c)].trim()])))
+    const list = parsed.slice(1).map((r) => Object.fromEntries(IMPORT_COLUMNS.filter((c) => idx(c) >= 0 && r[idx(c)]?.trim()).map((c) => [IMPORT_FIELDS[c], r[idx(c)].trim()])))
     const r = await importClinicDrugs(list)
     if (r) setResult(r)
   }
   return (
     <section className="panel table-wrap">
-      <SectionHead title="Vademécum" sub={`${DRUGS.length} del catálogo base, ${clinicDrugs.filter((d) => d.active && fromList(d)).length} del LNME Honduras 2023 y ${clinicDrugs.filter((d) => d.active && !fromList(d)).length} agregados por la clínica. Un medicamento desactivado o archivado ya no se ofrece al recetar.`} action={<>
+      <SectionHead title="Vademécum" sub={`${rows.length} medicamentos. Un medicamento archivado ya no se ofrece al recetar.`} action={<>
           <button className="btn btn--ghost btn--sm" onClick={() => download('plantilla-vademecum.csv', toCsv([[...IMPORT_COLUMNS], ['Ademetionina', 'Heptral', 'Tabletas', '400 mg', 'Oral', '1 tableta cada 12 horas', 'Colestasis intrahepática']]))}>
             <Download size={15} />Plantilla</button>
           <label className="btn btn--ghost btn--sm"><Upload size={15} />Importar CSV
             <input type="file" accept=".csv,text/csv" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importFile(f) }} /></label>
           <button className="btn btn--primary btn--sm" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>
         </>} />
-      <div className="panel__body" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', paddingBottom: 0 }}>
-        <input className="input" style={{ maxWidth: 360 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre genérico, comercial o presentación" aria-label="Buscar medicamento" />
-        <label className="check-inline"><input type="checkbox" checked={onlyClinic} onChange={(e) => setOnlyClinic(e.target.checked)} />Sólo agregados por la clínica</label>
+      <div className="panel__body vdm-tools">
+        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre genérico, comercial o alias" aria-label="Buscar medicamento" />
+        <label className="field field--inline"><span>Vía</span>
+          <select className="select" value={via} onChange={(e) => setVia(e.target.value)} aria-label="Filtrar por vía">
+            <option value="">Todas</option>{routeOptions.map((r) => <option key={r}>{r}</option>)}
+          </select></label>
       </div>
       {result && (
         <div className={`alert-strip ${result.added ? 'alert-strip--calm' : 'alert-strip--amber'}`} style={{ margin: '12px 22px 0', flexDirection: 'column', alignItems: 'stretch' }}>
@@ -106,29 +138,28 @@ function ClinicDrugs() {
           <button className="linklike" style={{ alignSelf: 'flex-start' }} onClick={() => setResult(null)}>Cerrar</button>
         </div>
       )}
-      <table className="table table--sticky table--cards">
-        <thead><tr><th>Nombre genérico</th><th>Comercial</th><th>Presentación</th><th>Vía</th><th>Origen</th><th /></tr></thead>
+      <table className="table table--sticky table--cards vdm-table">
+        <thead><tr>
+          <th aria-sort={aria('name')}><button className="th-sort" onClick={() => toggle('name')}>Nombre genérico{arrow('name')}</button></th>
+          <th>Comercial</th><th>Presentación</th>
+          <th aria-sort={aria('route')}><button className="th-sort" onClick={() => toggle('route')}>Vía{arrow('route')}</button></th>
+          <th>Origen</th><th />
+        </tr></thead>
         <tbody>
-          {shownAdded.map((d) => (
-            <tr key={d.id} style={d.active ? undefined : { opacity: 0.55 }}>
-              <td className="tc-full"><b>{d.name}</b>{d.usualUse && <small className="muted" style={{ display: 'block' }}>{d.usualUse}</small>}</td><td data-label="Comercial">{d.brand ?? '—'}</td>
-              <td data-label="Presentación">{[d.presentation, d.concentration].filter(Boolean).join(' ') || '—'}</td><td data-label="Vía">{d.route ?? '—'}</td>
-              <td data-label="Origen">{fromList(d) ? (d.origin === 'lnme' ? d.originLabel ?? 'LNME Honduras 2023' : 'Editado por la clínica') : <>Agregado por {staffById(d.createdBy)?.name ?? 'la clínica'}</>}
-                {d.lnme && <small className="muted"> · LNME #{d.lnme.no}{d.lnme.complementary ? ' · Lista complementaria' : ''}</small>}
-                <br /><small className="muted">{date(d.createdAt)}{d.active ? '' : fromList(d) ? ' · archivado' : ' · desactivado'}</small></td>
-              <td className="tc-actions" style={{ textAlign: 'right' }}>{canEdit(d) && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(d)}>Editar</button>}</td>
-            </tr>
-          ))}
-          {base.slice(0, n ? 200 : 60).map((d) => (
-            <tr key={`${d.name}|${d.presentation}`}>
-              <td className="tc-full"><b>{d.name}</b></td><td data-label="Comercial">{d.brand ?? '—'}</td><td data-label="Presentación">{d.presentation}</td><td data-label="Vía">{d.usual?.route ?? '—'}</td><td data-label="Origen" className="muted">Catálogo base{d.lnme ? ` · LNME #${d.lnme.no}` : ''}</td><td />
+          {pg.rows.map((r) => (
+            <tr key={r.key}>
+              <td className="tc-full"><b>{r.name}</b>{r.use && <small className="muted" style={{ display: 'block' }}>{r.use}</small>}</td>
+              <td data-label="Comercial">{r.brand ?? '—'}</td>
+              <td data-label="Presentación">{r.presentation || '—'}</td>
+              <td data-label="Vía">{r.route || '—'}</td>
+              <td data-label="Origen" className="muted">{DRUG_ORIGIN}</td>
+              <td className="tc-actions" style={{ textAlign: 'right' }}>{r.drug && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(r.drug!)}>{canEdit(r.drug) ? 'Editar' : 'Ver'}</button>}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      {listed.length > shownAdded.length - (added.length - listed.length) && <p className="muted" style={{ padding: '10px 22px', fontSize: 13.5 }}>Mostrando {shownAdded.length - (added.length - listed.length)} de {listed.length} del LNME. Escribe para buscar.</p>}
-      {!n && !onlyClinic && base.length > 60 && <p className="muted" style={{ padding: '10px 22px', fontSize: 13.5 }}>Mostrando 60 del catálogo base. Escribe para buscar.</p>}
-      {!added.length && !base.length && <div className="empty">{onlyClinic ? 'La clínica todavía no ha agregado medicamentos.' : 'Ningún medicamento coincide.'}</div>}
+      <Pagination {...pg} onPage={setPage} label="Páginas del vademécum" />
+      {!shown.length && <div className="empty">Ningún medicamento coincide.</div>}
       {editing && <DrugForm drug={editing} onClose={() => setEditing(null)} />}
       {adding && <DrugForm onClose={() => setAdding(false)} />}
     </section>

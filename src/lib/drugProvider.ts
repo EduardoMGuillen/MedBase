@@ -104,6 +104,12 @@ export const localDrugProvider: DrugProvider = {
   },
 }
 
+/**
+ * ME7 (ronda 10): el origen que se muestra de TODO medicamento del vademécum (lo que trae la app, las filas del listado
+ * nacional y lo que la clínica agregó o editó). Decisión de Emil (A11). La bitácora sigue diciendo quién agregó o editó.
+ */
+export const DRUG_ORIGIN = 'Catálogo base Clinara'
+
 /** El proveedor con que trabaja la app. Cambiarlo aquí cambia todas las pantallas. */
 export const drugProvider: DrugProvider = localDrugProvider
 

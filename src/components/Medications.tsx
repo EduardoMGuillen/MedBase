@@ -196,7 +196,7 @@ export function NewDrugModal({ name, onClose, onCreated }: { name: string; onClo
           usual: { dose: '', route: d.route ?? 'Oral', frequency: 'Cada 8 horas', duration: '' } })
       }}><Plus size={16} />Agregar al vademécum</button>
     </>}>
-      <p className="muted" style={{ fontSize: 13.5 }}>No está en el vademécum. Al guardarlo queda disponible para todos los médicos de la clínica, marcado como agregado por la clínica.</p>
+      <p className="muted" style={{ fontSize: 13.5 }}>No está en el vademécum. Al guardarlo queda disponible para todos los médicos de la clínica.</p>
       <div className="form-grid">
         <label className="field span-2"><span>Nombre genérico</span><input className="input" autoFocus value={f.name} onChange={set('name')} /></label>
         <label className="field span-2"><span>Nombre comercial (opcional)</span><input className="input" value={f.brand} onChange={set('brand')} placeholder="Ej. Tylenol" /></label>

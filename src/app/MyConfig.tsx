@@ -214,7 +214,6 @@ function VademecumPanel() {
   const drugs = useVademecum()
   const [q, setQ] = useState('')
   const [onlyFav, setOnlyFav] = useState(false)
-  const [onlyClinic, setOnlyClinic] = useState(false)
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<ClinicDrug | null>(null)
   const favs = useMemo(() => new Set(user?.prefs?.favDrugs ?? []), [user?.prefs?.favDrugs])
@@ -223,9 +222,9 @@ function VademecumPanel() {
   // Los desactivados ya no se ofrecen al recetar; quien puede editarlos los sigue viendo aquí para reactivarlos
   const inactive = clinicDrugs.filter((d) => !d.active && canEdit(d)).map(fromClinicDrug)
   const n = normalize(q)
-  const list = [...drugs, ...inactive].filter((d) => (!onlyFav || favs.has(drugKey(d))) && (!onlyClinic || d.clinicId) && (!n || normalize(`${d.name} ${d.brand ?? ''} ${d.presentation}`).includes(n)))
+  const list = [...drugs, ...inactive].filter((d) => (!onlyFav || favs.has(drugKey(d))) && (!n || normalize(`${d.name} ${d.brand ?? ''} ${d.presentation} ${(d.aliases ?? []).join(' ')}`).includes(n)))
   // GE5 (ronda 10): por páginas (antes cortaba en 60 y pedía escribir para ver el resto)
-  const [pageNo, setPage] = usePage(JSON.stringify([q, onlyFav, onlyClinic]))
+  const [pageNo, setPage] = usePage(JSON.stringify([q, onlyFav]))
   const pg = paginate(list, pageNo)
   const toggle = (key: string) => saveMyProfile({ favDrugs: favs.has(key) ? [...favs].filter((x) => x !== key) : [...favs, key] })
   return (
@@ -236,7 +235,7 @@ function VademecumPanel() {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <input className="input" style={{ maxWidth: 360 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar medicamento" aria-label="Buscar medicamento" />
           <label className="check-inline"><input type="checkbox" checked={onlyFav} onChange={(e) => setOnlyFav(e.target.checked)} />Sólo mis favoritos ({favs.size})</label>
-          <label className="check-inline"><input type="checkbox" checked={onlyClinic} onChange={(e) => setOnlyClinic(e.target.checked)} />Sólo agregados por la clínica</label>
+          
         </div>
         <ul className="fav-list">
           {pg.rows.map((d) => {
@@ -247,14 +246,15 @@ function VademecumPanel() {
                 <button type="button" className={`icon-btn fav${favs.has(key) ? ' is-on' : ''}`} aria-pressed={favs.has(key)} aria-label={`${favs.has(key) ? 'Quitar de' : 'Agregar a'} favoritos ${d.name}`} onClick={() => toggle(key)}>
                   <Star size={17} fill={favs.has(key) ? 'currentColor' : 'none'} /></button>
                 <span><b>{d.name}</b> <span className="muted">{d.presentation}{d.brand ? ` · ${d.brand}` : ''}</span></span>
-                {cd && <span className="badge">{cd.active ? 'De la clínica' : 'Desactivado'}</span>}
+                {/* ME7 (ronda 10): todo el vademécum es «Catálogo base Clinara»; solo se marca lo archivado */}
+                {cd && !cd.active && <span className="badge">Archivado</span>}
                 {cd && canEdit(cd) && <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditing(cd)}>Editar</button>}
               </li>
             )
           })}
         </ul>
         <Pagination {...pg} onPage={setPage} label="Páginas de mi vademécum" />
-        {!list.length && <div className="empty">{onlyFav ? 'Todavía no marcas favoritos.' : onlyClinic && !n ? 'La clínica todavía no agrega medicamentos.' : 'Ningún medicamento coincide.'}</div>}
+        {!list.length && <div className="empty">{onlyFav ? 'Todavía no marcas favoritos.' : 'Ningún medicamento coincide.'}</div>}
       </div>
       {adding && <DrugForm onClose={() => setAdding(false)} />}
       {editing && <DrugForm drug={editing} onClose={() => setEditing(null)} />}

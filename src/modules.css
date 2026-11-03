@@ -818,3 +818,8 @@ button.src-tag--none { cursor: pointer; }
 .drug-listing dt { font-size: 12px; font-weight: 600; color: var(--muted); }
 .drug-listing dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .drug-listing { grid-template-columns: minmax(0, 1fr); } }
+
+/* ME7 (ronda 10): Vademécum: buscador y filtro por vía */
+.vdm-tools { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding-bottom: 0; }
+.vdm-tools > .input { flex: 1 1 260px; max-width: 420px; }
+.vdm-tools .field--inline { min-width: 200px; }
