@@ -27,6 +27,10 @@ export interface OrderInput {
   /** Vacío: hasta nueva orden. */
   days?: number
   replacesId?: string
+  /** Ronda 8: infusión continua (velocidad del goteo) y primera dosis distinta (de carga). */
+  infusionRate?: number
+  infusionUnit?: string
+  loadingDose?: string
 }
 
 /** Un medicamento de la consulta externa como orden de la hoja: "Cada 8 horas" → cada 8 h; "3 días" → 3. */
@@ -54,11 +58,12 @@ export async function createMedOrders(q: Sql, o: {
   for (const [index, m] of o.items.entries()) {
     if (!m || active.has(normalize(m.drug))) continue
     const row = await q.one(`INSERT INTO hosp_meds (id, clinic_id, hospitalization_id, patient_id, note_id, source, source_id, source_index, drug, presentation, dose, route,
-        every_hours, prn, first_at, instructions, days, replaces_id, ordered_by, ordered_at, prn_condition)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        every_hours, prn, first_at, instructions, days, replaces_id, ordered_by, ordered_at, prn_condition, infusion_rate, infusion_unit, loading_dose)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT (hospitalization_id, source_id, source_index) WHERE source_id IS NOT NULL AND source_index IS NOT NULL DO NOTHING RETURNING id`,
       [randomUUID(), o.clinicId, o.hospitalizationId, o.patientId, o.source === 'note' ? o.sourceId : null, o.source, o.sourceId, index, m.drug, m.presentation || null,
-        m.dose, m.route, m.everyHours ?? null, m.prn, new Date(m.firstAt).toISOString(), m.instructions || null, m.days ?? null, m.replacesId ?? null, o.orderedBy, o.orderedAt, m.prn ? m.prnCondition || null : null])
+        m.dose, m.route, m.everyHours ?? null, m.prn, new Date(m.firstAt).toISOString(), m.instructions || null, m.days ?? null, m.replacesId ?? null, o.orderedBy, o.orderedAt, m.prn ? m.prnCondition || null : null,
+        m.infusionRate ?? null, m.infusionRate ? m.infusionUnit || 'ml/h' : null, m.loadingDose && m.everyHours && !m.prn && !m.infusionRate ? m.loadingDose : null])
     if (row) created++
   }
   return created

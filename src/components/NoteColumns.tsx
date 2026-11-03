@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { Pill } from 'lucide-react'
+import { Pill, Printer } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import type { ExamOrder, InpatientNote, Vitals } from '../lib/types'
 import { vitalLevel, type VitalKey } from '../lib/vitals'
 import { examLine, GROUP_LABEL } from '../lib/exams'
@@ -56,14 +57,21 @@ export function noteExamStatus(e: Pick<ExamOrder, 'group' | 'status'>) {
  */
 export function NoteExams({ list, empty = 'Sin exámenes.' }: { list: ExamOrder[]; empty?: string }) {
   if (!list.length) return <p className="muted">{empty}</p>
-  return (
+  // Ronda 8: la orden de los exámenes de la nota se imprime desde aquí (sobre todo los externos: el paciente la lleva)
+  const batches = [...new Set(list.filter((e) => e.status !== 'cancelled').map((e) => e.batchId))]
+  const external = list.some((e) => e.place === 'external' && e.status !== 'cancelled')
+  return (<>
     <ul className="note-exam-list">{list.map((e) => (
       <li key={e.id} className={e.status === 'cancelled' ? 'is-cancelled' : ''}>
         <span>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red">Urgente</span>}</span>
         <small>{GROUP_LABEL[e.group]}{e.place === 'external' ? ' · Externo' : ''}{e.uncatalogued ? ' · No catalogado' : ''} · <b>{noteExamStatus(e)}</b></small>
       </li>
     ))}</ul>
-  )
+    {batches.map((b) => (
+      <Link key={b} to={`/app/examenes/orden/${b}`} className={`btn ${external ? 'btn--soft' : 'btn--ghost'} btn--sm no-print`} style={{ justifySelf: 'start', marginTop: 6 }}>
+        <Printer size={14} />{external ? 'Imprimir orden (externos)' : 'Imprimir orden'}</Link>
+    ))}
+  </>)
 }
 
 /**
@@ -92,7 +100,7 @@ const SOAP_TEXT = [['subjective', 'S. Subjetivo'], ['objective', 'O. Objetivo'],
  * Texto clínico de una nota de evolución u observación (columna izquierda), según su formato: S, O, A y P, o
  * Diagnósticos, Examen físico y Observaciones.
  */
-export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'>; vitals?: Vitals; ageYears?: number }) {
+export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { evolution?: string }; vitals?: Vitals; ageYears?: number }) {
   const empty = <span className="muted">Sin datos.</span>
   // MC8 (ronda 6): los signos vitales anotados en la nota, en la franja de siempre, encima del examen físico (o del objetivo)
   const strip = vitals && <div className="note__sec"><h4>Signos vitales</h4><VitalsStrip v={vitals} ageYears={ageYears} />{vitals.takenAt && <small className="muted">Tomados a las {new Date(vitals.takenAt).toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })}</small>}</div>
@@ -100,6 +108,8 @@ export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subj
     return <>
       <div className="note__sec"><h4>Diagnósticos</h4>
         {n.diagnoses?.length ? <ol className="note__list">{n.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol> : <p>{empty}</p>}</div>
+      {/* Ronda 8: las notas de antes no lo tienen */}
+      {n.evolution && <div className="note__sec"><h4>Evolución</h4><p>{n.evolution}</p></div>}
       {strip}
       <div className="note__sec"><h4>Examen físico</h4><p>{examText(n.exam) || empty}</p></div>
       <div className="note__sec"><h4>Observaciones</h4><p>{n.observations || empty}</p></div>

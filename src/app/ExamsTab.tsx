@@ -1,11 +1,11 @@
-import { useRef, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Camera, CheckCheck, FileText, FlaskConical, Printer, ScanLine, TriangleAlert, Upload, X } from 'lucide-react'
+import { Camera, CheckCheck, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileText, FlaskConical, Printer, ScanLine, TriangleAlert, Upload, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
-import { dateTime, inputDateTime, shortStaff } from '../lib/format'
-import { examCatalog, examLine, findExam, GROUP_LABEL, isPending, NEXT_ACTION, STATUS_LABEL } from '../lib/exams'
+import { cap, date, dateTime, inputDateTime, shortStaff } from '../lib/format'
+import { canReview, examCatalog, examLine, findExam, GROUP_LABEL, isPending, NEXT_ACTION, reportOptional, STATUS_LABEL } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { openFile, uploadLarge } from '../lib/files'
 import type { ExamGroup, ExamOrder } from '../lib/types'
@@ -17,30 +17,77 @@ const TONE: Record<string, string> = { ordered: 'amber', sample: 'ink', done: 'i
  * cada uno con lo pedido, su estado y su resultado. Quien los procesa marca muestra tomada o realizado y carga el
  * resultado; el médico lo marca como revisado; cualquiera de los dos lo cancela con motivo.
  */
+type ExamSort = 'recent' | 'oldest' | 'pending'
+const EXAM_SORTS: { key: ExamSort; label: string }[] = [
+  { key: 'recent', label: 'Más recientes primero' }, { key: 'oldest', label: 'Más antiguos primero' }, { key: 'pending', label: 'Pendientes primero' },
+]
+const fold = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+const dayKey = (iso: string) => new Date(iso).toDateString()
+
+/**
+ * EX1: exámenes de un paciente (en una estancia o en su historial) en dos subsecciones, Laboratorio e Imagen y gabinete,
+ * cada uno con lo pedido, su estado y su resultado. Quien los procesa marca muestra tomada o realizado y carga el
+ * resultado; el médico lo marca como revisado; cualquiera de los dos lo cancela con motivo.
+ * Ronda 8: cada examen es desplegable (abiertos, sólo los pendientes y los críticos sin revisar), se busca por nombre y
+ * se ordena por fecha (con el día como encabezado) o con los pendientes primero.
+ */
 export function ExamList({ exams, patientId, hospitalizationId, reload, open = true }: { exams: ExamOrder[]; patientId: string; hospitalizationId?: string; reload: () => void; open?: boolean }) {
   const { can } = useStore()
   const [uploading, setUploading] = useState<ExamGroup | null>(null)
+  const [q, setQ] = useState('')
+  const [sort, setSort] = useState<ExamSort>('recent')
+  // Abiertos a mano (true) o cerrados a mano (false); lo que no está aquí sigue la regla
+  const [shown, setShown] = useState<Record<string, boolean>>({})
   const groups: ExamGroup[] = ['lab', 'imaging']
-  const batches = [...new Set(exams.map((e) => e.batchId))]
+  const batches = [...new Set(exams.filter((e) => e.status !== 'cancelled').map((e) => e.batchId))]
+  const startsOpen = (e: ExamOrder) => isPending(e) || (!!e.critical && e.status === 'result')
+  const isOpen = (e: ExamOrder) => shown[e.id] ?? startsOpen(e)
+  const match = (e: ExamOrder) => !q.trim() || fold(`${examLine(e)} ${e.indication ?? ''}`).includes(fold(q.trim()))
+  const order = (a: ExamOrder, b: ExamOrder) => (sort === 'pending' ? Number(isPending(b)) - Number(isPending(a)) || (a.priority === 'urgent' ? -1 : 0) - (b.priority === 'urgent' ? -1 : 0) : 0)
+    || (sort === 'oldest' ? a.orderedAt.localeCompare(b.orderedAt) : b.orderedAt.localeCompare(a.orderedAt))
+  const setAll = (list: ExamOrder[], v: boolean) => setShown((x) => ({ ...x, ...Object.fromEntries(list.map((e) => [e.id, v])) }))
   return (
     <div className="hc" data-tour="examenes-tab">
+      {exams.length > 3 && (
+        <div className="exam-tools" role="search">
+          <label className="field field--inline exam-tools__q"><span>Buscar</span>
+            <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre del examen, ej. hemograma" /></label>
+          <label className="field field--inline"><span>Ordenar</span>
+            <select className="select" value={sort} onChange={(e) => setSort(e.target.value as ExamSort)}>{EXAM_SORTS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}</select></label>
+        </div>
+      )}
       {groups.map((g) => {
-        const list = exams.filter((e) => e.group === g)
-          .sort((a, b) => Number(isPending(b)) - Number(isPending(a)) || (a.priority === 'urgent' ? -1 : 0) - (b.priority === 'urgent' ? -1 : 0) || b.orderedAt.localeCompare(a.orderedAt))
+        const all = exams.filter((e) => e.group === g)
+        const list = all.filter(match).sort(order)
+        const anyOpen = list.some(isOpen)
         return (
           <section key={g} className="panel">
             <div className="panel__head"><div><h2>{g === 'lab' ? <FlaskConical size={17} style={{ verticalAlign: '-3px' }} /> : <ScanLine size={17} style={{ verticalAlign: '-3px' }} />} {GROUP_LABEL[g]}</h2>
-              <p>{list.filter(isPending).length} pendiente{list.filter(isPending).length === 1 ? '' : 's'} · {list.filter((e) => e.status === 'result' || e.status === 'reviewed').length} con resultado</p></div>
-              {open && can('exams.process') && <button className="btn btn--ghost btn--sm" onClick={() => setUploading(g)}><Upload size={14} />Subir resultado externo</button>}</div>
-            {list.length ? <div className="rows">{list.map((e) => <ExamRow key={e.id} e={e} reload={reload} open={open} />)}</div>
-              : <div className="empty">Sin exámenes de {GROUP_LABEL[g].toLowerCase()}.</div>}
+              <p>{all.filter(isPending).length} pendiente{all.filter(isPending).length === 1 ? '' : 's'} · {all.filter((e) => e.status === 'result' || e.status === 'reviewed').length} con resultado</p></div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {list.length > 1 && <button className="btn btn--ghost btn--sm" onClick={() => setAll(list, !anyOpen)}>{anyOpen ? <><ChevronsDownUp size={14} />Contraer todo</> : <><ChevronsUpDown size={14} />Expandir todo</>}</button>}
+                {open && can('exams.process') && <button className="btn btn--ghost btn--sm" onClick={() => setUploading(g)}><Upload size={14} />Subir resultado externo</button>}
+              </div></div>
+            {list.length ? <div className="rows">{list.map((e, i) => (
+              <Fragment key={e.id}>
+                {sort !== 'pending' && (i === 0 || dayKey(list[i - 1].orderedAt) !== dayKey(e.orderedAt)) && <div className="exam-day">{cap(date(e.orderedAt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>}
+                <ExamRow e={e} reload={reload} open={open} expanded={isOpen(e)} onToggle={() => setShown((x) => ({ ...x, [e.id]: !isOpen(e) }))} />
+              </Fragment>
+            ))}</div>
+              : <div className="empty">{all.length ? `Ningún examen de ${GROUP_LABEL[g].toLowerCase()} coincide con «${q.trim()}».` : `Sin exámenes de ${GROUP_LABEL[g].toLowerCase()}.`}</div>}
           </section>
         )
       })}
       {batches.length > 0 && (
         <section className="panel"><div className="panel__body" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span className="muted" style={{ fontSize: 14 }}>Órdenes impresas:</span>
-          {batches.map((b) => { const f = exams.find((e) => e.batchId === b)!; return <Link key={b} className="btn btn--ghost btn--sm" to={`/app/examenes/orden/${b}`}><Printer size={14} />{dateTime(f.orderedAt)}</Link> })}
+          {/* Ronda 8: cada orden se imprime (los externos los lleva el paciente, como la receta) */}
+          <span className="muted" style={{ fontSize: 14 }}>Órdenes para imprimir:</span>
+          {batches.map((b) => {
+            const list = exams.filter((e) => e.batchId === b && e.status !== 'cancelled')
+            const f = list[0]
+            return <Link key={b} className={`btn ${list.some((e) => e.place === 'external') ? 'btn--soft' : 'btn--ghost'} btn--sm`} to={`/app/examenes/orden/${b}`}>
+              <Printer size={14} />{dateTime(f.orderedAt)}{list.some((e) => e.place === 'external') ? ' · externos' : ''}</Link>
+          })}
         </div></section>
       )}
       {uploading && <ExternalResult group={uploading} patientId={patientId} hospitalizationId={hospitalizationId} onClose={() => setUploading(null)} onDone={() => { setUploading(null); reload() }} />}
@@ -48,7 +95,7 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
   )
 }
 
-function ExamRow({ e, reload, open }: { e: ExamOrder; reload: () => void; open: boolean }) {
+function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload: () => void; open: boolean; expanded: boolean; onToggle: () => void }) {
   const { can, staffById, notify, user } = useStore()
   const [result, setResult] = useState(false)
   const [cancelling, setCancelling] = useState(false)
@@ -56,22 +103,33 @@ function ExamRow({ e, reload, open }: { e: ExamOrder; reload: () => void; open: 
     try { await api(`/exams/${e.id}/${path}`, { body: body ?? {} }); reload() } catch (x) { notify((x as Error).message, 'error') }
   }
   const next = NEXT_ACTION[e.group][e.status]
-  const process = open && can('exams.process') && isPending(e)
+  const optional = reportOptional(e)
+  // Ronda 8: una radiografía realizada todavía acepta su informe (opcional)
+  const canResult = open && can('exams.process') && (isPending(e) || (optional && e.status === 'done'))
+  const id = `exam-${e.id}`
   return (
-    <div className={`exam-row${e.priority === 'urgent' && isPending(e) ? ' exam-row--urgent' : ''}${e.critical ? ' exam-row--critical' : ''}`}>
+    <div className={`exam-row${e.priority === 'urgent' && isPending(e) ? ' exam-row--urgent' : ''}${e.critical ? ' exam-row--critical' : ''}${expanded ? '' : ' is-folded'}`}>
       <div className="exam-row__main">
-        <strong>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red" style={{ marginLeft: 6 }}>Urgente</span>}{e.place === 'external' && <span className="badge" style={{ marginLeft: 6 }}>Externo</span>}{e.uncatalogued && <span className="badge badge--neutral" style={{ marginLeft: 6 }}>No catalogado</span>}</strong>
+        <button type="button" className="exam-row__toggle" aria-expanded={expanded} aria-controls={id} onClick={onToggle}>
+          <ChevronRight size={16} className="exam-row__chev" aria-hidden />
+          <strong>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red" style={{ marginLeft: 6 }}>Urgente</span>}{e.place === 'external' && <span className="badge" style={{ marginLeft: 6 }}>Externo</span>}{e.uncatalogued && <span className="badge badge--neutral" style={{ marginLeft: 6 }}>No catalogado</span>}{!expanded && e.critical && <span className="badge badge--red" style={{ marginLeft: 6 }}>Valor crítico</span>}</strong>
+        </button>
         <span className="muted" style={{ fontSize: 13 }}>Pedido {dateTime(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)}{e.indication ? ` · ${e.indication}` : ''}</span>
-        <span className="exam-row__trail">{(e.events ?? []).filter((x) => x.status !== 'ordered').map((x) => `${STATUS_LABEL[e.group][x.status]} ${dateTime(x.at)} (${shortStaff(staffById(x.by)?.name)})`).join(' · ')}</span>
-        {e.status === 'cancelled' && <span className="muted" style={{ fontSize: 13 }}>Cancelado: {e.cancelReason}</span>}
-        {e.result && <ResultView e={e} />}
+        {expanded && <div id={id} className="exam-row__body">
+          <span className="exam-row__trail">{(e.events ?? []).filter((x) => x.status !== 'ordered').map((x) => `${STATUS_LABEL[e.group][x.status]} ${dateTime(x.at)} (${shortStaff(staffById(x.by)?.name)})`).join(' · ')}</span>
+          {e.status === 'cancelled' && <span className="muted" style={{ fontSize: 13 }}>Cancelado: {e.cancelReason}</span>}
+          {optional && e.status === 'done' && <span className="muted" style={{ fontSize: 13 }}>Realizada. El informe (lectura) es opcional en los rayos X.</span>}
+          {e.result && <ResultView e={e} />}
+        </div>}
       </div>
       <div className="exam-row__side">
         <span className={`badge ${TONE[e.status] ? `badge--${TONE[e.status]}` : ''}`}>{STATUS_LABEL[e.group][e.status]}</span>
-        {process && e.status === 'ordered' && <button className="btn btn--soft btn--sm" onClick={() => act('status', { status: e.group === 'lab' ? 'sample' : 'done' })}>{next}</button>}
-        {process && <button className="btn btn--primary btn--sm" onClick={() => setResult(true)}>{e.group === 'lab' ? 'Cargar resultado' : 'Cargar informe'}</button>}
-        {e.status === 'result' && can('exams.order') && user?.role === 'doctor' && <button className="btn btn--primary btn--sm" onClick={() => act('review')}><CheckCheck size={14} />Marcar revisado</button>}
-        {open && isPending(e) && (can('exams.process') || can('exams.order')) && <button className="btn btn--ghost btn--sm" onClick={() => setCancelling(true)}>Cancelar</button>}
+        {expanded && <>
+          {open && can('exams.process') && isPending(e) && e.status === 'ordered' && <button className="btn btn--soft btn--sm" onClick={() => act('status', { status: e.group === 'lab' ? 'sample' : 'done' })}>{next}</button>}
+          {canResult && <button className={`btn ${optional ? 'btn--ghost' : 'btn--primary'} btn--sm`} onClick={() => setResult(true)}>{e.group === 'lab' ? 'Cargar resultado' : optional ? 'Agregar informe (opcional)' : 'Cargar informe'}</button>}
+          {canReview(e) && can('exams.order') && user?.role === 'doctor' && <button className="btn btn--primary btn--sm" onClick={() => act('review')}><CheckCheck size={14} />Marcar revisado</button>}
+          {open && isPending(e) && (can('exams.process') || can('exams.order')) && <button className="btn btn--ghost btn--sm" onClick={() => setCancelling(true)}>Cancelar</button>}
+        </>}
       </div>
       {result && <ResultModal e={e} onClose={() => setResult(false)} onDone={() => { setResult(false); reload() }} />}
       {cancelling && <CancelExam e={e} onClose={() => setCancelling(false)} onDone={() => { setCancelling(false); reload() }} />}

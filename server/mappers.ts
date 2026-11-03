@@ -136,7 +136,7 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
   // Formato Estándar (diagnóstico, examen físico y observaciones); las notas sin formato son SOAP
   ...(r.kind === 'evolution' && j<{ format?: string }>(r.data, {}).format === 'dx'
     ? { format: 'dx' as const, diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses ?? [], exam: j<{ exam?: string }>(r.data, {}).exam ?? '',
-      observations: j<{ observations?: string }>(r.data, {}).observations ?? '' }
+      observations: j<{ observations?: string }>(r.data, {}).observations ?? '', evolution: j<{ evolution?: string }>(r.data, {}).evolution || undefined }
     : {}),
   procedure: r.kind === 'procedure' ? j(r.data, undefined) : undefined,
   // MC7 (ronda 6): el cuadro completo con sus etiquetas
@@ -149,6 +149,8 @@ export const toInpatientMed = (r: Row): InpatientMed => ({
   instructions: s(r.instructions), orderedBy: String(r.ordered_by), orderedAt: String(r.ordered_at), stoppedAt: s(r.stopped_at), stoppedBy: s(r.stopped_by),
   stopReason: s(r.stop_reason), days: r.days == null ? undefined : Number(r.days), source: (s(r.source) as InpatientMed['source']) ?? undefined, sourceId: s(r.source_id),
   replacesId: s(r.replaces_id), prnCondition: s(r.prn_condition),
+  infusionRate: r.infusion_rate == null ? undefined : Number(r.infusion_rate), infusionUnit: (s(r.infusion_unit) as InpatientMed['infusionUnit']) ?? undefined,
+  loadingDose: s(r.loading_dose),
 })
 
 export const toOrderMark = (r: Row) => ({
@@ -220,7 +222,7 @@ export const toClinic = (r: Row): Clinic => ({
 })
 
 export const toReferral = (r: Row): Referral => ({
-  id: String(r.id), hospitalizationId: String(r.hospitalization_id), patientId: String(r.patient_id), number: String(r.number), data: j<ReferralData>(r.data, {} as ReferralData),
+  id: String(r.id), hospitalizationId: s(r.hospitalization_id), consultationId: s(r.consultation_id), patientId: String(r.patient_id), number: String(r.number), data: j<ReferralData>(r.data, {} as ReferralData),
   destination: s(r.destination), issuedBy: String(r.issued_by), issuedAt: String(r.issued_at), voidedAt: s(r.voided_at), voidedBy: s(r.voided_by), voidReason: s(r.void_reason),
 })
 

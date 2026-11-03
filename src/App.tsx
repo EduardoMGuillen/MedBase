@@ -77,7 +77,7 @@ export default function App() {
             <Route path="hospitalizados" element={<Guard perm="inpatient.view" feature="hospital"><Inpatients /></Guard>} />
             <Route path="hospitalizados/:id/expediente" element={<Guard perm="inpatient.view"><FullRecord /></Guard>} />
             <Route path="hospitalizados/:id" element={<Guard perm="inpatient.view"><InpatientFile key="hospitalizacion" /></Guard>} />
-            <Route path="referencias/:id" element={<Guard perm="inpatient.view"><ReferralPage /></Guard>} />
+            <Route path="referencias/:id" element={<Guard perm="chart.view"><ReferralPage /></Guard>} />
             <Route path="autorizaciones/:id" element={<Guard perm="inpatient.view"><AuthorizationPage /></Guard>} />
             <Route path="epicrisis/:id" element={<Guard perm="inpatient.view"><EpicrisisPage /></Guard>} />
             <Route path="seguimientos" element={<Guard perm="followups.view"><Followups /></Guard>} />

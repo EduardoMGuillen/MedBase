@@ -13,7 +13,7 @@ export const medico: TourStep[] = [
   { route: '/app/hospitalizados', target: 'ingresar', perm: 'inpatient.orders', feature: 'hospital', title: 'Ingresar a un paciente', body: 'Desde la consulta marcas observación u hospitalización. Eliges la cama y el paciente firma la autorización en pantalla en ese momento.' },
   { route: stay('notas'), target: 'nueva-evolucion', perm: 'inpatient.orders', title: 'Notas de evolución', body: 'En formato Estándar o SOAP. Las órdenes y medicamentos pasan a enfermería y a la hoja de medicamentos.' },
   { route: stay('notas'), target: 'egreso', perm: 'inpatient.orders', title: 'Egreso y epicrisis', body: 'La nota de egreso se escribe en el orden de la epicrisis, empezando por la HEA. Al guardarla se libera la cama, sale la receta y la epicrisis.' },
-  { route: '/app/mi-configuracion', target: 'mi-config', perm: 'consult.write', title: 'Mi configuración', body: 'Tu firma y sello, tu horario, tus medicamentos y exámenes frecuentes, tus sets de órdenes y el formato de tus notas.' },
+  { route: '/app/mi-configuracion', target: 'mi-config', perm: 'consult.write', title: 'Configuración', body: 'Tu firma y sello, tu horario, tus medicamentos y exámenes frecuentes, tus sets de órdenes y el formato de tus notas.' },
   { target: 'nav:/app/seguimientos', perm: 'followups.view', title: 'Crónicos y seguimientos', body: 'Programa cuándo debe volver cada paciente; el número avisa a quién toca.' },
   HELP,
 ]

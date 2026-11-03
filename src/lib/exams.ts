@@ -191,8 +191,22 @@ export const NEXT_ACTION: Record<ExamGroup, Partial<Record<ExamStatus, string>>>
   imaging: { ordered: 'Realizado', done: 'Cargar informe' },
 }
 
-/** ¿Sigue pendiente para el área que lo realiza (todavía sin resultado)? */
-export const isPending = (e: Pick<ExamOrder, 'status'>) => ['ordered', 'sample', 'done'].includes(e.status)
+/**
+ * Ronda 8: a una radiografía no siempre se le hace lectura. En los de Rayos X el informe es opcional: «Realizado» ya lo
+ * cierra para el área (sale de pendientes y de la bandeja) y el médico la puede marcar revisada; si llega la lectura, se
+ * agrega igual. Se reconoce por el subgrupo del catálogo o por el nombre (radiografía, rayos X, RX).
+ */
+export function reportOptional(e: { group: ExamGroup; name: string; subgroup?: string }) {
+  if (e.group !== 'imaging') return false
+  return subgroupOf(e) === 'Rayos X' || /\b(radiograf[ií]a|rayos\s*x|rx)\b/i.test(e.name.normalize('NFC'))
+}
+
+/** ¿Sigue pendiente para el área que lo realiza (todavía sin resultado)? Una radiografía realizada ya no lo está. */
+export const isPending = (e: Pick<ExamOrder, 'status'> & Partial<Pick<ExamOrder, 'group' | 'name'>>) =>
+  ['ordered', 'sample'].includes(e.status) || (e.status === 'done' && !(e.group && e.name && reportOptional({ group: e.group, name: e.name })))
+
+/** ¿Lo puede marcar revisado el médico? Con resultado o, si el informe es opcional (Rayos X), ya realizado. */
+export const canReview = (e: Pick<ExamOrder, 'status' | 'group' | 'name'>) => e.status === 'result' || (e.status === 'done' && reportOptional(e))
 
 /**
  * Área que recibe el examen. Laboratorio va al laboratorio de la clínica y, si no tiene, a enfermería (toma de muestra);

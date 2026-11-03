@@ -1,3 +1,4 @@
+import { closeVisitsOfInpatients } from './stayVisits.js'
 import { randomUUID } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import type { Row, Sql } from './sql.js'
@@ -340,6 +341,8 @@ export async function seedDemo(sql: Sql, opts: { now?: Date; by?: string; onBack
       summary.patients += s.patients; summary.appointments += s.appointments; summary.consultations += s.consultations
       summary.observation += s.observation; summary.hospital += s.hospital; summary.discharged += s.discharged; summary.followups += s.followups
     }
+    // Ronda 8: nadie internado queda a la vez en la consulta externa de hoy
+    await closeVisitsOfInpatients(q, now)
     await q.run(`INSERT INTO meta (key, value) VALUES ('demo_seeded_on', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [isoDate(now)])
     summary.after = await demoCounts(q, ids)
     await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?,?,?,?)', [new Date().toISOString(), opts.by ?? 'sistema',

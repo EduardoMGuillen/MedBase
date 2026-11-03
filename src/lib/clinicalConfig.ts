@@ -78,7 +78,9 @@ export const VITALS_OTHER_RANGE = { min: 1, max: 72 }
 export const LATE_RECORD_MINUTES = 60
 
 /** Un analito con su umbral crítico. Un límite vacío es «No aplica». */
-export interface CriticalAnalyte { id: string; name: string; unit?: string; low?: number; high?: number; archivedAt?: string }
+export interface CriticalAnalyte { id: string; name: string; unit?: string; low?: number; high?: number; archivedAt?: string
+  /** Ronda 8: la fuente del umbral que trae la app (referencia bibliográfica). Los que agrega la clínica no la tienen. */
+  source?: string }
 /** Grupo de analitos («Hemograma», «Química sanguínea»…), como vienen los resultados del laboratorio. */
 export interface CriticalGroup { id: string; name: string; archivedAt?: string; analytes: CriticalAnalyte[] }
 
@@ -86,7 +88,9 @@ const an = (id: string, name: string, unit: string, low?: number, high?: number)
 
 /**
  * VALIDAR POR EMIL. Umbrales críticos de laboratorio por grupo. Son los mismos números que había antes de la ronda 5
- * (la lista plana `DEFAULT_CRITICAL`), sólo repartidos en grupos y con su unidad.
+ * (la lista plana `DEFAULT_CRITICAL`), sólo repartidos en grupos y con su unidad. Ronda 8: aquí va la lista completa del
+ * catálogo con la fuente de cada umbral (`source`), cuando llegue el .md de Emil; las clínicas la reciben sola
+ * (`mergeCriticalGroups`) sin perder lo que cambiaron.
  */
 export const DEFAULT_CRITICAL_GROUPS: CriticalGroup[] = [
   { id: 'g-hemograma', name: 'Hemograma', analytes: [an('a-hb', 'Hemoglobina', 'g/dL', 7, 20), an('a-plaq', 'Plaquetas', '×10³/µL', 50, 1000), an('a-leu', 'Leucocitos', '×10³/µL', 2, 30)] },
@@ -99,13 +103,45 @@ export const DEFAULT_CRITICAL_GROUPS: CriticalGroup[] = [
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 
+/** El umbral que trae la app para un analito (por su identificador), si es uno de los suyos. */
+export function defaultAnalyte(id: string) {
+  for (const g of DEFAULT_CRITICAL_GROUPS) { const a = g.analytes.find((x) => x.id === id); if (a) return a }
+  return undefined
+}
+
+/** ¿La clínica cambió el umbral que trae la app? */
+export const customized = (a: CriticalAnalyte) => {
+  const d = defaultAnalyte(a.id)
+  return !!d && (d.low !== a.low || d.high !== a.high || (d.unit ?? '') !== (a.unit ?? ''))
+}
+
+/**
+ * Ronda 8: los umbrales vigentes de una clínica. La app ya trae los suyos (con su fuente) y la clínica cambia los que quiera:
+ * lo guardado por la clínica manda; los umbrales nuevos que traiga la app (un grupo o un analito que la clínica todavía no
+ * tiene, ni activo ni archivado) se agregan solos. La fuente siempre es la de la app.
+ */
+export function mergeCriticalGroups(saved?: CriticalGroup[] | null): CriticalGroup[] {
+  if (!saved?.length) return structuredClone(DEFAULT_CRITICAL_GROUPS)
+  const out: CriticalGroup[] = saved.map((g) => ({ ...g, analytes: g.analytes.map((a) => { const d = defaultAnalyte(a.id); return d?.source ? { ...a, source: d.source } : a }) }))
+  const ids = new Set(out.flatMap((g) => g.analytes.map((a) => a.id)))
+  const names = new Set(out.flatMap((g) => g.analytes.map((a) => norm(a.name))))
+  for (const dg of DEFAULT_CRITICAL_GROUPS) {
+    const missing = dg.analytes.filter((a) => !ids.has(a.id) && !names.has(norm(a.name)))
+    if (!missing.length) continue
+    const target = out.find((g) => g.id === dg.id) ?? out.find((g) => !g.archivedAt && norm(g.name) === norm(dg.name))
+    if (target) target.analytes.push(...missing.map((a) => ({ ...a })))
+    else out.push({ ...dg, analytes: missing.map((a) => ({ ...a })) })
+  }
+  return out
+}
+
 /**
  * Umbrales vigentes, por nombre de analito (sin distinguir mayúsculas ni tildes): los analitos activos de los grupos
  * activos de la clínica o, si la clínica todavía no tiene los suyos, los de este archivo.
  */
 export function criticalLimitsOf(groups?: CriticalGroup[] | null): Map<string, { low?: number; high?: number }> {
   const out = new Map<string, { low?: number; high?: number }>()
-  for (const g of groups?.length ? groups : DEFAULT_CRITICAL_GROUPS) {
+  for (const g of mergeCriticalGroups(groups)) {
     if (g.archivedAt) continue
     for (const a of g.analytes) if (!a.archivedAt && (a.low != null || a.high != null)) out.set(norm(a.name), { low: a.low, high: a.high })
   }

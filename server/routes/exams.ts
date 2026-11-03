@@ -4,9 +4,9 @@ import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import type { Sql } from '../sql.js'
 import { can } from '../../src/lib/permissions.js'
-import { areaFor, EXAMS, examKey, findExam, flagOf, FLOW, GROUP_LABEL, STATUS_LABEL } from '../../src/lib/exams.js'
+import { areaFor, canReview, EXAMS, examKey, findExam, flagOf, FLOW, GROUP_LABEL, isPending, STATUS_LABEL } from '../../src/lib/exams.js'
 import { ensureExamCatalog } from '../db.js'
-import { criticalLimitsOf, DEFAULT_CRITICAL_GROUPS, isCritical, type CriticalGroup } from '../../src/lib/clinicalConfig.js'
+import { criticalLimitsOf, isCritical, mergeCriticalGroups, type CriticalGroup } from '../../src/lib/clinicalConfig.js'
 import type { ClinicExam, ExamInput, ExamOrder, ExamProfile, ExamResultValue, ExamStatus } from '../../src/lib/types.js'
 
 /** Un examen que se ordena (en la consulta, en una nota o en un set). */
@@ -205,12 +205,12 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
    * queda en la bitácora con el valor anterior y el nuevo.
    */
   const analyteInput = z.object({ id: z.string().min(1).max(60), name: z.string().trim().min(1, 'Escribe el nombre del analito.').max(60), unit: z.string().trim().max(20).optional(),
-    low: z.number().finite().optional(), high: z.number().finite().optional(), archivedAt: z.string().optional() })
+    low: z.number().finite().optional(), high: z.number().finite().optional(), archivedAt: z.string().optional(), source: z.string().max(400).optional() })
   const groupInput = z.object({ id: z.string().min(1).max(60), name: z.string().trim().min(2, 'Escribe el nombre del grupo.').max(60), archivedAt: z.string().optional(), analytes: z.array(analyteInput).max(80) })
   app.put('/api/settings/critical-groups', auth, need('settings.manage'), async (req, res) => {
     const { groups } = parse(z.object({ groups: z.array(groupInput).max(40) }), req.body)
     const cid = clinicOf(req)
-    const before: CriticalGroup[] = (await settings(cid)).criticalGroups ?? DEFAULT_CRITICAL_GROUPS
+    const before: CriticalGroup[] = mergeCriticalGroups((await settings(cid)).criticalGroups)
     for (const g of groups) for (const a of g.analytes) {
       if (a.low != null && a.high != null && a.low >= a.high) fail(400, `${a.name}: el límite inferior debe ser menor que el superior.`)
     }
@@ -294,7 +294,8 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     const areas = await trayAreas(sql, cid, userOf(req).role)
     const list = await examsWhere(sql, `clinic_id = ? AND status IN ('ordered','sample','done') AND area IN (${areas.map(() => '?').join(',')})
       AND (hospitalization_id IS NULL OR hospitalization_id IN (SELECT id FROM hospitalizations WHERE status = 'active'))`, [cid, ...areas])
-    res.json(list.sort((a, b) => (a.priority === 'urgent' ? 0 : 1) - (b.priority === 'urgent' ? 0 : 1) || a.orderedAt.localeCompare(b.orderedAt)))
+    // Ronda 8: una radiografía realizada ya salió de la bandeja (su informe es opcional)
+    res.json(list.filter(isPending).sort((a, b) => (a.priority === 'urgent' ? 0 : 1) - (b.priority === 'urgent' ? 0 : 1) || a.orderedAt.localeCompare(b.orderedAt)))
   })
 
   // Resultados nuevos sin revisar del médico que los pidió
@@ -366,7 +367,8 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     const cid = clinicOf(req)
     const user = userOf(req)
     const r = await examRow(cid, String(req.params.id))
-    if (r!.status !== 'result') fail(409, 'Sólo se revisa un examen con resultado.')
+    // Ronda 8: una radiografía (informe opcional) se revisa ya realizada
+    if (!canReview({ status: r!.status as ExamOrder['status'], group: r!.grp as ExamOrder['group'], name: String(r!.name) })) fail(409, 'Sólo se revisa un examen con resultado.')
     const at = new Date().toISOString()
     // Fuera de la transacción: con una sola conexión, consultar por fuera de ella la bloquearía
     const who = await patientName(String(r!.patient_id))

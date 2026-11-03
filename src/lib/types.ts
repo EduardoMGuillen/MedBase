@@ -549,6 +549,8 @@ export interface InpatientNote {
   /** 'dx': formato Estándar (diagnóstico, examen físico y observaciones). Sin dato: SOAP. */
   format?: 'soap' | 'dx'
   diagnoses?: Diagnosis[]
+  /** Ronda 8: Estándar: evolución (cómo sigue desde la nota anterior, lo que refiere). Va entre diagnósticos y examen físico. */
+  evolution?: string
   exam?: string
   observations?: string
   procedure?: ProcedureData
@@ -782,11 +784,34 @@ export interface ReferralData {
   labs: string
   condition: string
   destination: string
+  /**
+   * Ronda 8: la referencia también sale de una hospitalización y de la consulta externa, con los datos del Sistema Nacional
+   * de Referencia y Respuesta. Las referencias de antes no los tienen (se imprimen como entonces).
+   */
+  source?: ReferralSource
+  /** Servicio o especialidad que recibe. */
+  service?: string
+  urgency?: 'emergency' | 'urgent' | 'scheduled'
+  admissionDiagnosis?: string
+  /** Diagnóstico de egreso: el vigente al referir. */
+  dischargeDiagnosis?: string
+  /** Tratamiento recibido: medicamentos (con lo aplicado) e indicaciones. */
+  treatment?: string
+  vitals?: string
+  /** Con quién se coordinó en el establecimiento que recibe (nombre, hora, medio). */
+  contact?: string
+  companion?: string
+  transport?: string
+  /** Se informó al paciente o a su responsable del motivo y el destino. */
+  informed?: boolean
 }
+
+export type ReferralSource = 'observation' | 'hospital' | 'consultation'
 
 export interface Referral {
   id: string
-  hospitalizationId: string
+  hospitalizationId?: string
+  consultationId?: string
   patientId: string
   number: string
   data: ReferralData
@@ -847,7 +872,14 @@ export interface InpatientMed {
   sourceId?: string
   /** La orden que esta reemplaza ("Cambiar" en la nota). */
   replacesId?: string
+  /** Ronda 8: infusión continua (sin horario de dosis): velocidad del goteo. */
+  infusionRate?: number
+  infusionUnit?: InfusionUnit
+  /** Ronda 8: primera dosis distinta (de carga, STAT) y luego `dose` con su frecuencia: «2 g IM STAT y luego 1 g c/12h». */
+  loadingDose?: string
 }
+
+export type InfusionUnit = 'ml/h' | 'ml/min'
 
 export interface Dose {
   id: string

@@ -952,3 +952,17 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .switch-line input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .switch-line small { display: block; color: var(--muted); font-size: 12.5px; }
 .queue-card .wait { white-space: nowrap; }
+
+/* Ronda 8 (MED): el formulario de medicamentos no se corta en la columna angosta de la nota */
+.rx-form { min-width: 0; }
+.rx-form .form-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); }
+.rx-form .form-grid > * { min-width: 0; }
+.rx-form .input, .rx-form .select { min-width: 0; width: 100%; max-width: 100%; }
+.rx-form .span-2 { grid-column: 1 / -1; }
+.rate-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 96px); gap: 6px; }
+
+/* Ronda 8: hoja de referencia con la respuesta (contrarreferencia) y el pie legal */
+.referral__reply { margin-top: 18px; padding-top: 12px; border-top: 2px dashed var(--line); display: grid; gap: 8px; font-size: 13.5px; }
+.referral__reply h2 { font-size: 15px; }
+.referral__reply p { margin: 0; overflow-wrap: anywhere; }
+.referral__legal span:first-child { max-width: 75%; }

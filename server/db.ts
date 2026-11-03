@@ -12,11 +12,12 @@ import { backfillMissingOrders, syncStayOrders } from './medOrders.js'
 import { SCENARIO_PATIENT_IDS, insertClinicScenarios, insertOfficeScenarios } from './demoScenarios.js'
 import { ensureHospitalAuthorization } from './authorizations.js'
 import { loadRonda7 } from './catalogLoader.js'
+import { closeVisitsOfInpatients } from './stayVisits.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '56'
+const SCHEMA_VERSION = '57'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -899,6 +900,17 @@ ALTER TABLE followups
 -- paquetes que eran casillas (Perfil lipídico, Electrolitos…) archivados y reemplazados en los sets. Un perfil puede llevar
 -- una nota («PSA total: solo en pacientes masculinos»).
 ALTER TABLE exam_profiles ADD COLUMN IF NOT EXISTS note TEXT;
+
+-- v57 (ronda 8): infusión continua con su velocidad (ml/h o ml/min) y primera dosis distinta (de carga, STAT) en la hoja de
+-- medicamentos. La referencia también sale de la hospitalización y de la consulta externa (consultation_id; sin estancia).
+-- Al subir la versión se cancelan las citas abiertas de los pacientes internados (closeVisitsOfInpatients).
+ALTER TABLE hosp_meds
+  ADD COLUMN IF NOT EXISTS infusion_rate DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS infusion_unit TEXT,
+  ADD COLUMN IF NOT EXISTS loading_dose TEXT;
+ALTER TABLE referrals ADD COLUMN IF NOT EXISTS consultation_id TEXT REFERENCES consultations(id);
+ALTER TABLE referrals ALTER COLUMN hospitalization_id DROP NOT NULL;
+CREATE INDEX IF NOT EXISTS referrals_consult ON referrals (consultation_id);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -954,6 +966,8 @@ export function ensureDb(sql: Sql) {
         await loadRonda7(q, String(c.id))
       }
       await markDemoClinics(q)
+      // v57 (ronda 8): nadie internado sigue a la vez en la consulta externa
+      await closeVisitsOfInpatients(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })

@@ -11,9 +11,11 @@ import { z } from 'zod'
 import { seedDemo } from './demoData.js'
 import { attempts, completePendingPatient, createPatient, createPendingPatient, DEMO_PASSWORD, ensureDb, hit, nextFolio } from './db.js'
 import type { Sql } from './sql.js'
+import { activeStayOf, closeOpenVisits, stayConflictMessage } from './stayVisits.js'
 import { type Ctx, fail, hasRoleSql, HttpError, localDate, parse, type Row } from './http.js'
 import {
   clinicSettings, rolesOf, toAppointment, toAudit, toBed, toClinicDrug, toConsultation, toFollowup, toHospitalization, toPatient, toPrescription, toService, toStaff, toVitals,
+  toReferral,
 } from './mappers.js'
 import { newSecret, otpauthUrl, verifyTotp } from './totp.js'
 import { rxValidityOf, specialtyOf, validityInput } from './prefs.js'
@@ -684,6 +686,11 @@ export function createApp(opts: AppOptions) {
     if (!t.from.includes(row!.status as ApptStatus)) fail(409, 'La cita ya avanzó a otra etapa. Actualiza la página.')
     if (status === 'in_consult' && row!.doctor_id !== user.id) fail(403, 'Sólo el médico asignado puede atender esta cita.')
     if (status === 'arrived' && (await patientRow(cid, String(row!.patient_id)))?.pending) fail(409, 'Completa el registro del paciente nuevo antes de marcar su llegada.')
+    // Ronda 8: un paciente internado no pasa a la consulta externa
+    if (status === 'arrived' || status === 'in_consult') {
+      const stay = await activeStayOf(sql, cid, String(row!.patient_id))
+      if (stay) fail(409, stayConflictMessage(await patientName(String(row!.patient_id)), stay.kind))
+    }
     await sql.run('UPDATE appointments SET status = ?, arrived_at = COALESCE(?, arrived_at) WHERE id = ?',
       [status, status === 'arrived' ? new Date().toISOString() : null, String(row!.id)])
     await audit(user, `${t.label} la cita de ${await patientName(String(row!.patient_id))}`)
@@ -725,6 +732,8 @@ export function createApp(opts: AppOptions) {
     }), req.body)
     const cid = clinicOf(req)
     ;(await patientRow(cid, b.patientId)) ?? fail(400, 'El paciente no existe.')
+    const stay = await activeStayOf(sql, cid, b.patientId)
+    if (stay) fail(409, stayConflictMessage(await patientName(b.patientId), stay.kind))
     const doc = await clinicStaffRow(cid, b.doctorId)
     if (!doc || !rolesOf(doc).includes('doctor') || !doc.active) fail(400, 'El médico elegido no está disponible.')
     const now = new Date()
@@ -907,6 +916,8 @@ export function createApp(opts: AppOptions) {
           [stayId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null, stayKind, specialtyOf(user),
             c.vitalsPlan ? JSON.stringify([{ ...c.vitalsPlan, from: now.toISOString(), by: user.id, noteId: consultId }]) : null])
         medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: stayId })
+        // Ronda 8: las otras citas abiertas de hoy (por ejemplo, otra en sala con otro médico) se cancelan
+        await closeOpenVisits(q, cid, patientId, now, now)
         // La autorización de hospitalización queda generada, pendiente de firma, desde el ingreso. La observación
         // no lleva autorización (ronda 3, P6): se genera si después pasa a hospitalización.
         if (stayKind === 'hospital') await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [stayId]))!, user)
@@ -926,7 +937,9 @@ export function createApp(opts: AppOptions) {
     await audit(userOf(req), `${what} ${await patientName(c.patientId)}`)
     // MC5 (ronda 6): los exámenes que pidió la consulta, con su estado de ahora
     const exams = await examsWhere(sql, 'clinic_id = ? AND consultation_id = ? AND note_id IS NULL', [cid, c.id])
-    res.json({ consultation: c, patient: toPatient((await patientRow(cid, c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null, addenda: await addendaFor(sql, cid, [c.id]), exams })
+    // Ronda 8: las referencias emitidas desde esta consulta
+    const referrals = (await sql.query('SELECT * FROM referrals WHERE clinic_id = ? AND consultation_id = ? ORDER BY issued_at', [cid, c.id])).map(toReferral)
+    res.json({ consultation: c, patient: toPatient((await patientRow(cid, c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null, addenda: await addendaFor(sql, cid, [c.id]), exams, referrals })
   })
 
   /**

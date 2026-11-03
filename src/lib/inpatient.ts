@@ -27,11 +27,24 @@ export const courseEnd = (m: Pick<Schedulable, 'firstAt' | 'days'>) => (m.days ?
 export const courseDone = (m: Pick<Schedulable, 'firstAt' | 'days'>, now = new Date()) => courseEnd(m) <= now.getTime()
 
 /** Cómo se escribe en la nota: "Ondansetrón 8 mg IV c/8h", "Tramadol 50 mg SC c/12h PRN". */
-export function medLabel(m: Pick<InpatientMed, 'drug' | 'dose' | 'route' | 'everyHours' | 'prn'> & { prnCondition?: string }) {
+export function medLabel(m: Pick<InpatientMed, 'drug' | 'dose' | 'route' | 'everyHours' | 'prn'> & { prnCondition?: string; infusionRate?: number; infusionUnit?: string; loadingDose?: string }) {
+  const route = ROUTE_ABBR[m.route] ?? m.route.toLowerCase()
+  // Ronda 8: infusión continua a su velocidad: «Midazolam 50 mg IV infusión continua a 5 ml/h»
+  if (m.infusionRate) return [m.drug, m.dose, route, `infusión continua a ${formatRate(m.infusionRate)} ${m.infusionUnit ?? 'ml/h'}`].filter(Boolean).join(' ')
   const freq = m.everyHours ? `c/${m.everyHours}h` : m.prn ? '' : 'dosis única'
+  // Ronda 8: primera dosis distinta: «Ceftriaxona 2 g IM STAT y luego 1 g IM c/12h»
+  if (m.loadingDose?.trim() && m.everyHours && !m.prn) return `${m.drug} ${m.loadingDose.trim()} ${route} STAT y luego ${m.dose} ${route} ${freq}`
   // MC2 (ronda 6): «PRN · si dolor»
   const prn = m.prn ? (m.prnCondition?.trim() ? `PRN · ${m.prnCondition.trim()}` : 'PRN') : ''
-  return [m.drug, m.dose, ROUTE_ABBR[m.route] ?? m.route.toLowerCase(), freq, prn].filter(Boolean).join(' ')
+  return [m.drug, m.dose, route, freq, prn].filter(Boolean).join(' ')
+}
+
+/** «5», «2.5» (sin ceros de más). */
+export const formatRate = (n: number) => String(Math.round(n * 100) / 100)
+
+/** Ronda 8: la dosis que toca en una hora indicada: la de carga en la primera, la de mantenimiento en las demás. */
+export function doseAt(m: Pick<InpatientMed, 'dose' | 'firstAt'> & { loadingDose?: string }, at?: Date) {
+  return m.loadingDose?.trim() && at && at.getTime() === new Date(m.firstAt).getTime() ? m.loadingDose.trim() : m.dose
 }
 
 /**

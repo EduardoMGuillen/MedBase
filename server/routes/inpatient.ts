@@ -1,3 +1,4 @@
+import { closeOpenVisits } from '../stayVisits.js'
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -83,6 +84,13 @@ const medInput = z.object({
   days: z.number().int().min(1).max(365).optional(),
   // "Cambiar" en la nota: la orden nueva reemplaza a esta, que queda suspendida
   replacesId: z.string().optional(),
+  // Ronda 8: infusión continua con su velocidad (ml/h o ml/min) y primera dosis distinta (de carga, STAT)
+  infusionRate: z.number().positive('La velocidad de la infusión debe ser mayor que cero.').max(5000).optional(),
+  infusionUnit: z.enum(['ml/h', 'ml/min']).optional(),
+  loadingDose: z.string().trim().max(60).optional(),
+}).superRefine((m, ctx) => {
+  if (m.infusionRate && (m.everyHours || m.prn)) ctx.addIssue({ code: 'custom', message: `${m.drug}: una infusión continua no lleva frecuencia ni PRN.` })
+  if (m.loadingDose && (!m.everyHours || m.prn)) ctx.addIssue({ code: 'custom', message: `${m.drug}: la primera dosis distinta va con una frecuencia (cada tantas horas).` })
 })
 
 /**
@@ -246,6 +254,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
         [id, cid, b.patientId, b.bedId, consultationId ?? null, admittedAt.toISOString(), user.id, b.reason, JSON.stringify(b.diagnoses),
           b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null, specialty])
       medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: id })
+      // Ronda 8: internado, deja la consulta externa (sus citas abiertas de hoy se cancelan)
+      await closeOpenVisits(q, cid, b.patientId, admittedAt)
       await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [id]))!, user)
       await audit(user, `Ingresó a ${name} en la ${bedName(bed!)} (${specialty})${consultationId && !b.consultationId ? ', vinculado a su consulta externa' : ''}${medOrders ? ` con ${medOrders} medicamento(s) de la consulta` : ''}`, q)
     })
@@ -434,6 +444,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       subjective: text, objective: text, assessment: text, plan: text,
       diagnoses: z.array(diagnosisInput).max(20).default([]),
       exam: text, observations: text,
+      // Ronda 8: Estándar: el cuadro de evolución, entre los diagnósticos y el examen físico
+      evolution: text,
       meds: z.array(medInput).max(20).default([]),
       stopMedIds: z.array(z.string()).max(30).default([]),
       orders: z.array(z.string().trim().min(1).max(500)).max(40).default([]),
@@ -458,7 +470,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       if (empty) fail(400, `Escribe ${empty[1]}.`)
     } else if (b.kind === 'admission') {
       fail(400, 'La nota de ingreso se escribe en formato SOAP.')
-    } else if (!b.diagnoses.length && !b.exam && !b.observations && !b.orders.length && !b.meds.length && !b.exams.length) {
+    } else if (!b.diagnoses.length && !b.evolution && !b.exam && !b.observations && !b.orders.length && !b.meds.length && !b.exams.length) {
       fail(400, 'Escribe al menos un diagnóstico, el examen físico, una observación, una indicación o un medicamento.')
     }
     // Un set de órdenes puede traer espacios "___": se llenan antes de guardar la nota
@@ -502,6 +514,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       indicationCount = ind.length
     }
     let vitalsTag: 'continue' | 'new' | 'modified' | undefined
+    let examBatch: string | null = null
     // MC8 (ronda 6): la toma anotada en la nota, con la misma validación que la hoja de signos
     const taken = b.vitalsTaken && VITAL_FIELDS.some((k) => b.vitalsTaken![k] != null) ? b.vitalsTaken : undefined
     const vitalsId = taken ? randomUUID() : undefined
@@ -520,15 +533,16 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan, data) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [noteId, cid, id, b.kind, user.id, at, b.format === 'soap' ? b.subjective : '', b.format === 'soap' ? b.objective : '', b.format === 'soap' ? b.assessment : '', b.format === 'soap' ? b.plan : '',
           JSON.stringify({ orders, checklist, indications: indicationCount === undefined ? undefined : Math.min(indicationCount, orders.length), lines, basedOn: b.chain ? b.chain.basedOn ?? undefined : undefined, vitals: b.vitals && vitalsTag ? { ...b.vitals, tag: vitalsTag } : undefined, vitalsId,
-            ...(b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, exam: b.exam, observations: b.observations } : {}) })])
+            ...(b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, evolution: b.evolution || undefined, exam: b.exam, observations: b.observations } : {}) })])
       await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
-      await insertExams(q, { clinicId: cid, patientId: String(h.patient_id), hospitalizationId: id, noteId, by: user.id, at }, b.exams)
+      examBatch = await insertExams(q, { clinicId: cid, patientId: String(h.patient_id), hospitalizationId: id, noteId, by: user.id, at }, b.exams)
       if (vitalsTag && b.vitals && vitalsTag !== 'continue') await audit(user, `Indicó ${vitalsModeShort(b.vitals) === 'sin control programado' ? 'sin control programado de signos vitales' : `signos vitales ${vitalsModeShort(b.vitals)}`} a ${name} en su nota`, q)
       const what = b.kind === 'admission' ? 'nota de ingreso' : 'nota de evolución'
       const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`, b.exams.length && `${b.exams.length} examen(es)`, taken && 'signos vitales (origen: nota de evolución)'].filter(Boolean).join(', ')
       await audit(user, `Escribió ${what} de ${name}${changes ? `: ${changes}` : ''}`, q)
     })
-    res.status(201).json(toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [noteId]))!))
+    // Ronda 8: con exámenes externos, la orden se imprime al firmar (el paciente la lleva, como la receta)
+    res.status(201).json({ ...toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [noteId]))!), examBatch: b.exams.some((e) => e.place === 'external') ? examBatch ?? undefined : undefined })
   })
 
   app.post('/api/inpatient/:id/nursing', auth, need('inpatient.care'), async (req, res) => {

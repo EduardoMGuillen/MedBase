@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Addenda, SignedBadge } from '../components/Addenda'
 import { Link, useParams } from 'react-router-dom'
-import { ChevronLeft, FileBadge, Printer } from 'lucide-react'
+import { ChevronLeft, FileBadge, Printer, Send } from 'lucide-react'
+import { ReferralModal } from './Referral'
 import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
 import { LogoMark } from '../components/Logo'
@@ -12,6 +13,7 @@ import { BackgroundView, ConsultationBody, Identification } from './PatientChart
 export default function ConsultNote() {
   const { id } = useParams()
   const { fetchConsultation, staffById, settings, notify, can, user } = useStore()
+  const [referring, setReferring] = useState(false)
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchConsultation>> | null>(null)
   const load = useCallback(() => { if (id) fetchConsultation(id).then(setData).catch((e: Error) => notify(e.message, 'error')) }, [id, fetchConsultation, notify])
   useEffect(load, [load])
@@ -25,6 +27,9 @@ export default function ConsultNote() {
         <Link className="btn btn--ghost" to={`/app/pacientes/${p.id}`}><ChevronLeft size={16} />Expediente de {p.firstName}</Link>
         <div className="page-head__actions">
           {can('consult.write') && <Link className="btn btn--ghost" data-tour="constancia" to={`/app/constancia/${c.id}`}><FileBadge size={16} />Generar constancia</Link>}
+          {/* Ronda 8: referencia a otro centro desde la consulta externa */}
+          {can('consult.write') && user?.role === 'doctor' && <button className="btn btn--ghost" onClick={() => setReferring(true)}><Send size={16} />Referencia</button>}
+          {(data.referrals ?? []).map((r) => <Link key={r.id} className="btn btn--soft" to={`/app/referencias/${r.id}`}><Send size={16} />{r.number}{r.voidedAt ? ' (anulada)' : ''}</Link>)}
           <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir nota</button>
         </div>
       </div>
@@ -52,6 +57,7 @@ export default function ConsultNote() {
         <div className="rx-sheet__sign"><div><em>{doc.name.replace(/^Dra?\.\s*/, '')}</em>{doc.name}<br /><span style={{ color: 'var(--muted)' }}>{doc.license}</span></div></div>
         <footer className="rx-sheet__foot"><span>Documento del expediente clínico. Confidencial.</span><span>Emitido con Clinara</span></footer>
       </article>
+      {referring && <ReferralModal from={{ kind: 'consultation', id: c.id }} onClose={() => setReferring(false)} />}
     </div>
   )
 }

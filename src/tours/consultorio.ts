@@ -11,7 +11,7 @@ export const consultorio: TourStep[] = [
   { route: (c) => c.consultNote, target: 'nota-consulta', perm: 'consult.write', title: 'La nota de consulta', body: 'Firmada no se edita: para corregir algo se agrega una adenda. La receta y la orden de exámenes salen aparte.' },
   { route: '/app/caja', target: 'nuevo-cobro', perm: 'billing.manage', title: 'Cobrar', body: 'Cobras tú o tu asistente: servicios, forma de pago y abonos. El recibo se imprime o se envía por WhatsApp.' },
   { target: 'nav:/app/observacion', perm: 'inpatient.view', feature: 'observation', title: 'Observación', body: 'Pacientes en observación corta: medicamentos, signos y notas. Si no la usas, la apagas en la configuración del consultorio.' },
-  { route: '/app/mi-configuracion', target: 'mi-config', perm: 'consult.write', title: 'Mi configuración', body: 'Tu firma y sello, tu horario, tus medicamentos y exámenes frecuentes y tus sets de órdenes.' },
+  { route: '/app/mi-configuracion', target: 'mi-config', perm: 'consult.write', title: 'Configuración', body: 'Tu firma y sello, tu horario, tus medicamentos y exámenes frecuentes y tus sets de órdenes.' },
   { route: '/app/configuracion', target: 'contactos', perm: 'settings.manage', title: 'Datos del consultorio', body: 'Dirección, logo y los contactos que salen en recetas y recibos.' },
   { route: '/app/configuracion', target: 'tab:pagos', perm: 'settings.manage', title: 'Precios y formas de pago', body: 'Tus servicios con su precio y las formas de pago que aceptas.' },
   { route: '/app/personal', target: 'tab:personal', perm: 'staff.manage', title: 'Tu personal', body: 'Agrega asistentes y enfermería. Cada quien ve sólo lo que necesita.' },
@@ -34,5 +34,5 @@ export const asistente: TourStep[] = [
 export const plataforma: TourStep[] = [
   { route: '/app', title: 'Te damos la bienvenida', body: 'Administras la plataforma: creas clínicas y consultorios y sus usuarios. No ves expedientes de pacientes.' },
   { target: 'nav:/app', title: 'Clínicas y consultorios', body: 'Crea una cuenta nueva y entra a su detalle para agregar usuarios o desactivarla.' },
-  { target: 'me', title: 'Tu cuenta', body: 'Tu contraseña y la verificación en dos pasos.' },
+  { target: 'nav:/app/mi-configuracion', title: 'Configuración', body: 'Tu contraseña y la verificación en dos pasos.' },
 ]

@@ -33,7 +33,9 @@ interface Session { user: Staff; permissions: Permission[]; demo: boolean }
 export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescriptions: Prescription[]; hospitalizations: Hospitalization[]; addenda?: Addendum[] }
 
 /** Medicamento que el médico indica en una nota de hospitalización. */
-export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'prnCondition' | 'instructions' | 'days' | 'replacesId'> & { firstAt?: string }
+/** Ronda 8: de dónde sale una referencia. */
+export type ReferralFrom = { kind: 'stay' | 'consultation'; id: string }
+export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'prnCondition' | 'instructions' | 'days' | 'replacesId' | 'infusionRate' | 'infusionUnit' | 'loadingDose'> & { firstAt?: string }
 export type FollowupInput = Pick<Followup, 'kind' | 'title' | 'dueDate' | 'everyDays' | 'notes' | 'reminderType'>
 
 export interface Report {
@@ -145,7 +147,7 @@ function useStoreValue() {
     api<{ prescription: Prescription; consultation: Consultation | null; hospitalization: Hospitalization | null; patient: Patient | null }>(`/prescriptions/${id}`), [])
   const fetchInpatient = useCallback((id: string) => api<InpatientFile>(`/inpatient/${id}`), [])
   const fetchConsultation = useCallback((id: string, purpose: 'note' | 'certificate' = 'note') =>
-    api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null; addenda?: Addendum[]; exams?: ExamOrder[] }>(`/consultations/${id}?purpose=${purpose}`), [])
+    api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null; addenda?: Addendum[]; exams?: ExamOrder[]; referrals?: Referral[] }>(`/consultations/${id}?purpose=${purpose}`), [])
   const fetchAppointments = useCallback((from: string, to: string) => api<Appointment[]>(`/appointments?from=${from}&to=${to}`), [])
   const fetchPayments = useCallback((from: string, to: string) => api<Payment[]>(`/payments?from=${from}&to=${to}`), [])
   const fetchBalances = useCallback((patientId?: string) => api<Payment[]>(`/payments/balances${patientId ? `?patientId=${patientId}` : ''}`), [])
@@ -154,7 +156,8 @@ function useStoreValue() {
   const searchIcd = useCallback((q: string) =>
     api<{ source: 'api' | 'file'; release: string; results: Diagnosis[]; error?: string }>(`/icd/search?q=${encodeURIComponent(q)}`), [])
   const fetchIcdFrequent = useCallback(() => api<(Diagnosis & { code: string; label: string })[]>('/icd/frequent'), [])
-  const fetchReferralDraft = useCallback((stayId: string) => api<ReferralData>(`/inpatient/${stayId}/referral-draft`), [])
+  // Ronda 8: la referencia sale de una estancia (observación u hospitalización) o de una consulta externa
+  const fetchReferralDraft = useCallback((src: ReferralFrom) => api<ReferralData>(`/${src.kind === 'stay' ? 'inpatient' : 'consultations'}/${src.id}/referral-draft`), [])
   const fetchReferral = useCallback((id: string) => api<Referral>(`/referrals/${id}`), [])
   const fetchAuthorization = useCallback((id: string) => api<Authorization>(`/authorizations/${id}`), [])
   const fetchCertificate = useCallback((id: string) => api<Certificate>(`/certificates/${id}`), [])
@@ -175,7 +178,8 @@ function useStoreValue() {
     staffById: (id: string) => data.staff.find((s) => s.id === id),
     fetchBalances, fetchAttachmentMeta, fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
     fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient, searchIcd, fetchIcdFrequent, fetchReferralDraft, fetchReferral,
-    emitReferral: (stayId: string, b: Partial<ReferralData>) => run(() => api<Referral>(`/inpatient/${stayId}/referral`, { body: b }), 'Referencia emitida; la observación quedó cerrada como «Referido»'),
+    emitReferral: (src: ReferralFrom, b: Partial<ReferralData> & { closeStay?: boolean }) => run(() => api<Referral>(`/${src.kind === 'stay' ? 'inpatient' : 'consultations'}/${src.id}/referral`, { body: b }),
+      src.kind === 'stay' && b.closeStay !== false ? 'Referencia emitida; la estancia quedó cerrada como «Referido»' : 'Referencia emitida'),
     voidReferral: (id: string, reason: string) => run(() => api<Referral>(`/referrals/${id}/void`, { body: { reason } }), 'Referencia anulada'),
     bed: (id?: string) => (id ? data.beds.find((b) => b.id === id) : undefined),
     /** Hospitalización abierta del paciente, si la tiene. */
@@ -195,8 +199,8 @@ function useStoreValue() {
     /** Editar datos generales de la estancia: cama, acompañante y teléfonos. El ingreso en sí no se edita. */
     updateAdmission: (id: string, b: Partial<Pick<Hospitalization, 'bedId' | 'specialty' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'>>) =>
       run(() => api<Hospitalization>(`/inpatient/${id}`, { method: 'PATCH', body: b }), 'Datos generales guardados'),
-    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string; exams?: ExamInput[]; chain?: { basedOn: string | null; decisions: { id: string; action: 'omit' | 'change'; text?: string }[] }; vitals?: VitalsMode; vitalsTaken?: Partial<Record<string, number>> & { takenAt?: string } }) =>
-      run(() => api<InpatientNote>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
+    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations' | 'evolution'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string; exams?: ExamInput[]; chain?: { basedOn: string | null; decisions: { id: string; action: 'omit' | 'change'; text?: string }[] }; vitals?: VitalsMode; vitalsTaken?: Partial<Record<string, number>> & { takenAt?: string } }) =>
+      run(() => api<InpatientNote & { examBatch?: string }>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
     stopMed: (medId: string, reason: string) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/stop`, { body: { reason } }), 'Orden suspendida'),
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),
     correctDose: (doseId: string, b: { status?: Dose['status']; givenAt?: string; note?: string; reason: string }) =>

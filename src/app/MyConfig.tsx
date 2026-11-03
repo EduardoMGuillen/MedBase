@@ -50,7 +50,7 @@ export default function MyConfig() {
   const go = (k: Section) => setParams({ seccion: k }, { replace: true })
   return (
     <div className="page">
-      <PageHead tour="mi-config" title={mine ? 'Mi configuración' : 'Mi cuenta'} sub={doctor ? 'Lo que preparas una vez y usas al atender: tu firma, tu horario, tus medicamentos y tus preferencias.'
+      <PageHead tour="mi-config" title="Configuración" sub={doctor ? 'Lo que preparas una vez y usas al atender: tu firma, tu horario, tus medicamentos y tus preferencias.'
         : mine ? 'Tu nombre, cómo se abre tu agenda, tu contraseña y lo que has hecho en el sistema.' : 'Tu contraseña, la verificación en dos pasos y lo que has hecho en el sistema.'}
         actions={<button className="btn btn--ghost" onClick={() => window.dispatchEvent(new Event('start-tour'))}><Compass size={16} />Ver el recorrido</button>} />
       <div className="chart-head" style={{ gridTemplateColumns: 'auto 1fr' }}>

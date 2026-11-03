@@ -16,7 +16,10 @@
 .side__grp-body > div { overflow: hidden; display: grid; gap: 2px; min-height: 0; }
 @media (prefers-reduced-motion: reduce) { .side__chev, .side__grp-body { transition: none; } }
 .side__me { display: flex; gap: 10px; align-items: center; min-width: 0; flex: 1; text-decoration: none; border-radius: 10px; padding: 4px; margin: -4px; }
-.side__me:hover { background: var(--ward); }
+.side__me { cursor: default; }
+/* Ronda 8: «Configuración» de cada persona queda pegada encima del perfil, al fondo del menú */
+.side__config { margin-top: auto; margin-bottom: 6px; }
+.side__config + .side__user { margin-top: 0; }
 .side__me div { min-width: 0; }
 .side__scrim { display: none; }
 .topbar { flex-wrap: wrap; }
@@ -642,3 +645,30 @@ tr.clickable { cursor: pointer; }
   .excat__acts .btn { width: 36px; height: 36px; padding: 0; justify-content: center; }
   .excat__acts .btn > span { display: none; }
 }
+
+/* Ronda 8 (CE): la consulta externa se ordena por hora, por espera o por médico, y se filtra por médico */
+.ce-arrange { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-top: -8px; }
+.field--inline { display: grid; gap: 4px; min-width: 0; }
+.field--inline > span { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.field--inline .select { min-width: 0; max-width: 100%; }
+.queue-group { padding: 10px 22px 6px; font-size: 12.5px; font-weight: 700; color: var(--petrol); text-transform: uppercase; letter-spacing: .04em; background: var(--ward); border-top: 1px solid var(--line-soft); }
+
+/* Ronda 8 (EX): exámenes desplegables, con búsqueda y orden por fecha */
+.exam-tools { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+.exam-tools__q { flex: 1 1 260px; }
+.exam-row__toggle { display: flex; gap: 6px; align-items: flex-start; background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.exam-row__toggle strong { min-width: 0; overflow-wrap: anywhere; }
+.exam-row__chev { flex: none; margin-top: 2px; color: var(--muted); transition: transform .15s; transform: rotate(90deg); }
+.exam-row.is-folded .exam-row__chev { transform: none; }
+.exam-row.is-folded { padding-top: 10px; padding-bottom: 10px; }
+.exam-row__body { display: grid; gap: 4px; padding-left: 22px; }
+.exam-row__main > .muted { padding-left: 22px; }
+.exam-day { padding: 8px 22px; font-size: 12.5px; font-weight: 700; color: var(--muted); background: var(--ward); border-bottom: 1px solid var(--line-soft); }
+@media (max-width: 640px) {
+  .exam-row { grid-template-columns: 1fr; }
+  .exam-row__side { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; padding-left: 22px; }
+}
+
+/* Ronda 8: fuente de cada umbral crítico y «Volver al de la app» */
+.crit__src { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-top: -2px; }
+.link-btn { background: none; border: 0; padding: 0; font: inherit; color: var(--petrol); text-decoration: underline; cursor: pointer; }

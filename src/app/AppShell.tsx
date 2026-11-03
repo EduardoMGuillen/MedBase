@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, BedDouble, BellRing, Building2, CalendarDays, ChevronDown, CircleHelp, Compass, Eye, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, SlidersHorizontal, Stethoscope, UserCog,
+  BarChart3, BedDouble, BellRing, Building2, CalendarDays, ChevronDown, CircleHelp, Compass, Eye, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, Stethoscope, UserCog,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
@@ -28,10 +28,8 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
   { to: '/app/seguimientos', label: 'Crónicos y seguimientos', icon: BellRing, perm: 'followups.view', group: 'Pacientes' },
   { to: '/app/reportes', label: 'Reportes', icon: BarChart3, perm: 'reports.view', group: 'Administración' },
   { to: '/app/personal', label: 'Personal y roles', icon: UserCog, perm: 'staff.manage', group: 'Administración' },
-  { to: '/app/configuracion', label: 'Configuración', icon: SettingsIcon, perm: 'settings.manage', group: 'Administración' },
-  // MC6: la configuración propia del médico (firma, horario, vademécum, sets, preferencias). RE1 (ronda 5): también
-  // recepción. Se llama «Mi configuración» para no confundirla con la Configuración de la clínica (administración).
-  { to: '/app/mi-configuracion', label: 'Mi configuración', icon: SlidersHorizontal, roles: ['doctor', 'reception'] },
+  // Ronda 8: «Configuración» (la de cada persona) va abajo, sobre el perfil; la de la clínica se nombra completa para no repetirla
+  { to: '/app/configuracion', label: 'Configuración de la clínica', icon: Building2, perm: 'settings.manage', group: 'Administración' },
 ]
 
 export default function AppShell() {
@@ -165,15 +163,20 @@ export default function AppShell() {
             <NavLink to="/app/caja" className="side__link side__link--quiet" data-tour="nav:/app/caja"><Receipt size={16} strokeWidth={1.9} />Cobrar</NavLink>
           )}
         </nav>
+        {/* Ronda 8: la configuración de cada persona (firma, horario, preferencias, seguridad), con su tuerca, justo encima del
+            perfil. El perfil ya no es un botón: sólo dice quién entró y con qué vista. */}
+        <NavLink to="/app/mi-configuracion" className="side__link side__config" data-tour="nav:/app/mi-configuracion">
+          <SettingsIcon size={18} strokeWidth={1.9} />Configuración
+        </NavLink>
         <div className="side__user">
-          <Link to="/app/cuenta" className="side__me" title="Mi cuenta" data-tour="me">
+          <div className="side__me" data-tour="me">
             <Avatar name={user.name} color={user.color} />
             <div>
               <strong>{user.name}</strong>
               {/* MC1 (ronda 5): la vista activa es sólo información; se cambia en Inicio */}
               <small>{viewsOf(user).length > 1 ? VIEW_LABEL[user.role] : ROLE_LABEL[user.role]}</small>
             </div>
-          </Link>
+          </div>
           <button className="icon-btn" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={async () => { await signOut(); nav('/login') }}>
             <LogOut size={17} />
           </button>
@@ -213,7 +216,6 @@ export default function AppShell() {
 
 /** Orden del menú: lo suelto de arriba, los grupos y al final la configuración del médico y la administración. */
 function navRank(n: { to: string; group?: string }) {
-  if (n.to === '/app/mi-configuracion') return 30
   if (n.group === 'Pacientes') return 20
   if (n.group) return 40
   return 10

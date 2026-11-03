@@ -2,11 +2,12 @@ import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
-import { clinicSettings, toAttachment, toConsultation, toDose, toInpatientMed, toInpatientNote, toReferral, toVitals } from '../mappers.js'
-import { age as ageText, contactLine, dxCode, examText } from '../../src/lib/format.js'
-import { medLabel } from '../../src/lib/inpatient.js'
-import { splitOrders } from '../../src/lib/inpatient.js'
-import type { ReferralData } from '../../src/lib/types.js'
+import { clinicSettings, toAttachment, toConsultation, toDose, toHospitalization, toInpatientMed, toInpatientNote, toReferral, toVitals } from '../mappers.js'
+import { age as ageText, contactLine, dxCode, examText, medicationLine } from '../../src/lib/format.js'
+import { currentDiagnoses, medLabel, splitOrders } from '../../src/lib/inpatient.js'
+import { examLine, STATUS_LABEL } from '../../src/lib/exams.js'
+import type { PrescriptionItem, ReferralData } from '../../src/lib/types.js'
+import { examsWhere } from './exams.js'
 import type { Sql } from '../sql.js'
 
 /** "26/10 15:11" en la hora de la clínica. */
@@ -47,74 +48,198 @@ export async function referralDraft(q: Sql, cid: string, h: Row, doctorId: strin
     diagnosis: diagnoses.map((d) => `${d.label} (${dxCode(d)})`).join('; '),
     indications: indications.join('\n'),
     medications: doses.map((d) => { const m = meds.find((x) => x.id === d.medId); return m ? `${medLabel(m)} — aplicado ${dm(d.givenAt)}` : '' }).filter(Boolean).join('\n'),
-    evolution: evolution.map((n) => `${dm(n.at)}: ${n.format === 'dx' ? [n.observations, examText(n.exam)].filter(Boolean).join(' ') : [n.assessment, n.plan].filter(Boolean).join(' ')}`).join('\n'),
+    evolution: evolution.map((n) => `${dm(n.at)}: ${n.format === 'dx' ? [n.evolution, n.observations, examText(n.exam)].filter(Boolean).join(' ') : [n.assessment, n.plan].filter(Boolean).join(' ')}`).join('\n'),
     labs: labs.map((l) => `${l.title ?? l.name} (${dm(l.takenAt ?? l.uploadedAt)})`).join('\n'),
     condition: '', destination: '',
   }
 }
 
+/** Las líneas de los signos de una toma: «PA 120/80 mmHg, FC 88 lpm…». */
+function vitalsText(v?: ReturnType<typeof toVitals>) {
+  if (!v) return ''
+  return [v.systolic != null && v.diastolic != null && `PA ${v.systolic}/${v.diastolic} mmHg`, v.heartRate != null && `FC ${v.heartRate} lpm`,
+    v.respRate != null && `FR ${v.respRate} rpm`, v.temperature != null && `T ${v.temperature.toFixed(1)} °C`, v.spo2 != null && `SpO₂ ${v.spo2}%`,
+    v.weightKg != null && `Peso ${v.weightKg} kg`, v.glucose != null && `Glucometría ${v.glucose} mg/dL`].filter(Boolean).join(', ')
+}
+
+const dxLine = (list: { code: string; label: string; system?: 'icd11' }[]) => list.map((d) => `${d.label} (${dxCode(d)})`).join('; ')
+
+/** Los exámenes de la estancia o de la consulta con su estado o su resultado resumido. */
+async function examLines(q: Sql, cid: string, where: string, args: unknown[]) {
+  const list = (await examsWhere(q, `clinic_id = ? AND ${where} AND status <> 'cancelled'`, [cid, ...args])).sort((a, b) => a.orderedAt.localeCompare(b.orderedAt))
+  return list.map((e) => {
+    const vals = e.result?.values?.map((v) => `${v.analyte} ${v.value}${v.unit ? ` ${v.unit}` : ''}${v.flag ? (v.flag === 'high' ? ' (alto)' : ' (bajo)') : ''}`).join(', ')
+    const res = vals || e.result?.report || (e.result?.fileIds?.length ? 'resultado adjunto' : '')
+    return `${examLine(e)} (${dm(e.orderedAt)})${res ? `: ${res}` : ` — ${STATUS_LABEL[e.group][e.status].toLowerCase()}`}`
+  })
+}
+
 /**
- * Referencia del consultorio de un médico independiente: refiere al paciente en observación a un hospital u otro
- * centro. El borrador se arma sólo con lo que hay en el expediente (nada se inventa; lo que falta queda en blanco
- * para llenarlo a mano): datos del paciente y del médico, motivo, HEA, examen físico con los signos de la
- * preclínica, impresión diagnóstica y manejo (indicaciones, medicamentos aplicados con dosis y hora, evolución y
- * laboratorios). El médico lo revisa y lo emite: queda en Anexos y la observación se cierra como "Referido". No
- * se edita después; si hay un error, se anula y se emite otra.
+ * Ronda 8: borrador de la referencia de una estancia (observación u hospitalización), con lo que pide el Sistema Nacional
+ * de Referencia y Respuesta: diagnóstico de ingreso y de egreso (el vigente), HEA, examen físico y signos al referir,
+ * evolución, tratamiento recibido (cada medicamento con lo aplicado, y las indicaciones) y exámenes. El motivo, el destino
+ * y los datos del traslado los escribe el médico. Nada se inventa: lo que falta sale con líneas para llenarlo a mano.
+ */
+export async function stayReferralDraft(q: Sql, cid: string, h: Row, doctorId: string): Promise<ReferralData> {
+  const base = await referralDraft(q, cid, h, doctorId)
+  const notes = (await q.query(`SELECT * FROM hosp_notes WHERE hospitalization_id = ? ORDER BY at`, [String(h.id)])).map(toInpatientNote)
+  const meds = (await q.query('SELECT * FROM hosp_meds WHERE hospitalization_id = ? ORDER BY ordered_at', [String(h.id)])).map(toInpatientMed)
+  const doses = (await q.query(`SELECT d.* FROM hosp_doses d JOIN hosp_meds m ON m.id = d.med_id WHERE m.hospitalization_id = ? AND d.status = 'given' ORDER BY d.given_at`, [String(h.id)])).map(toDose)
+  const lastVitals = await q.one('SELECT * FROM vitals WHERE hospitalization_id = ? ORDER BY taken_at DESC LIMIT 1', [String(h.id)])
+  const admission = JSON.parse(String(h.diagnoses ?? '[]')) as { code: string; label: string; system?: 'icd11' }[]
+  const current = currentDiagnoses({ notes, hospitalization: toHospitalization(h) })
+  const treatment = [
+    ...meds.map((m) => {
+      const given = doses.filter((d) => d.medId === m.id)
+      const span = `desde ${dm(m.firstAt)}${m.stoppedAt ? ` hasta ${dm(m.stoppedAt)}` : ''}`
+      return `${medLabel(m)}, ${span}${given.length ? `; ${given.length} dosis aplicada${given.length === 1 ? '' : 's'}, la última ${dm(given.at(-1)!.givenAt)}` : '; sin dosis aplicadas'}`
+    }),
+    ...(base.indications ? [`Indicaciones: ${base.indications.split('\n').filter(Boolean).join('; ')}`] : []),
+  ].join('\n')
+  const exams = await examLines(q, cid, 'hospitalization_id = ?', [String(h.id)])
+  return {
+    ...base,
+    source: h.kind === 'observation' ? 'observation' : 'hospital',
+    reason: '',
+    admissionDiagnosis: dxLine(admission),
+    dischargeDiagnosis: dxLine(current),
+    diagnosis: dxLine(current),
+    vitals: lastVitals ? `${vitalsText(toVitals(lastVitals))} (${dm(String(lastVitals.taken_at))})` : '',
+    treatment,
+    labs: [...exams, ...base.labs.split('\n').filter(Boolean)].join('\n'),
+    service: '', urgency: h.kind === 'observation' ? 'emergency' : 'urgent', contact: '', companion: [h.companion_name, h.companion_relation].filter(Boolean).join(', '), transport: '', informed: false,
+  }
+}
+
+/** Ronda 8: borrador de la referencia de una consulta externa (a un especialista, a otro centro o a emergencia). */
+export async function consultReferralDraft(q: Sql, cid: string, row: Row, doctorId: string): Promise<ReferralData> {
+  const c = toConsultation(row)
+  const p = (await q.one('SELECT * FROM patients WHERE id = ?', [c.patientId]))!
+  const v = c.vitalsId ? await q.one('SELECT * FROM vitals WHERE id = ?', [c.vitalsId]) : undefined
+  const doc = (await q.one('SELECT name, doc_name, license, specialty FROM staff WHERE id = ?', [doctorId]))!
+  const cfg = clinicSettings((await q.one('SELECT * FROM clinics WHERE id = ?', [cid]))!)
+  const rx = c.prescriptionId ? await q.one('SELECT items FROM prescriptions WHERE id = ?', [c.prescriptionId]) : undefined
+  const items = (row.meds ? JSON.parse(String(row.meds)) : rx ? JSON.parse(String(rx.items)) : []) as PrescriptionItem[]
+  const exams = await examLines(q, cid, 'consultation_id = ?', [c.id])
+  const vit = vitalsText(v ? toVitals(v) : undefined)
+  return {
+    patient: { name: `${p.first_name} ${p.last_name}`, dni: p.dni ? String(p.dni) : undefined, age: ageText(String(p.birth_date ?? '')), sex: (p.sex ?? undefined) as 'F' | 'M' | undefined,
+      record: cfg.recordUsesDni && p.dni ? String(p.dni) : String(p.record) },
+    doctor: { name: String(doc.doc_name || doc.name), license: doc.license ? String(doc.license) : undefined, specialty: doc.specialty ? String(doc.specialty) : undefined },
+    place: { name: cfg.name, address: cfg.address, phone: contactLine(cfg), logo: cfg.logo, office: cfg.kind === 'office' || undefined },
+    admittedAt: c.date,
+    source: 'consultation',
+    reason: '',
+    history: c.history ?? '',
+    exam: examText(c.exam),
+    vitals: vit,
+    admissionDiagnosis: dxLine(c.diagnoses),
+    dischargeDiagnosis: dxLine(c.diagnoses),
+    diagnosis: dxLine(c.diagnoses),
+    treatment: [...items.map((it) => `${medicationLine(it)}${it.applyInClinic ? ' (aplicado en la clínica)' : ''}`), ...(c.indications?.length ? [`Indicaciones: ${c.indications.join('; ')}`] : [])].join('\n'),
+    indications: '', medications: '', evolution: '',
+    labs: exams.join('\n'),
+    condition: '', destination: '', service: '', urgency: 'scheduled', contact: '', companion: '', transport: '', informed: false,
+  }
+}
+
+const text = (max: number) => z.string().trim().max(max).default('')
+const referralBody = z.object({
+  // El formulario lo pide; la API lo acepta vacío (sale con líneas para llenarlo a mano)
+  reason: text(1000),
+  history: text(6000), exam: text(6000), diagnosis: text(1000), indications: text(4000), medications: text(4000),
+  evolution: text(6000), labs: text(4000), condition: text(300), destination: text(200),
+  service: text(160), urgency: z.enum(['emergency', 'urgent', 'scheduled']).default('urgent'), admissionDiagnosis: text(1000), dischargeDiagnosis: text(1000),
+  treatment: text(6000), vitals: text(400), contact: text(300), companion: text(200), transport: text(160), informed: z.boolean().default(false),
+  // Estancias: ¿el paciente sale de la clínica con esta referencia? Entonces la estancia se cierra como «Referido»
+  closeStay: z.boolean().default(true),
+})
+
+/** Número correlativo de la clínica por año: REF-2026-0001. */
+async function nextNumber(q: Sql, cid: string, now: Date) {
+  await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`ref:${cid}`])
+  const lastNo = await q.one<{ n: number | null }>(`SELECT MAX(CAST(split_part(number, '-', 3) AS INTEGER))::int AS n FROM referrals WHERE clinic_id = ? AND number LIKE ?`, [cid, `REF-${now.getFullYear()}-%`])
+  return `REF-${now.getFullYear()}-${String((lastNo?.n ?? 0) + 1).padStart(4, '0')}`
+}
+
+/**
+ * Referencia a otro centro. Ronda 8: sale de una observación, de una hospitalización o de la consulta externa (antes, sólo
+ * de la observación de un consultorio). El borrador se arma con el expediente; el médico lo revisa y lo emite. Emitida, queda
+ * en Anexos (o en la nota de la consulta) y no se edita: si hay un error, se anula y se emite otra. De una estancia, si el
+ * paciente sale con ella, la estancia se cierra como «Referido» (se libera la cama y las órdenes dejan de generar dosis).
  */
 export function registerReferrals(app: Express, { sql, auth, need, userOf, clinicOf, audit, patientName }: Ctx) {
-  const stayRow = async (cid: string, id: string) => (await sql.one('SELECT * FROM hospitalizations WHERE id = ? AND clinic_id = ?', [id, cid])) ?? fail(404, 'La observación no existe.')
+  const stayRow = async (cid: string, id: string) => (await sql.one('SELECT * FROM hospitalizations WHERE id = ? AND clinic_id = ?', [id, cid])) ?? fail(404, 'La estancia no existe.')
+  const consultRow = async (cid: string, id: string) => (await sql.one('SELECT * FROM consultations WHERE id = ? AND clinic_id = ?', [id, cid])) ?? fail(404, 'La consulta no existe.')
 
   app.get('/api/inpatient/:id/referral-draft', auth, need('inpatient.orders'), async (req, res) => {
     const cid = clinicOf(req)
     const h = (await stayRow(cid, String(req.params.id)))!
-    if (h.kind !== 'observation') fail(409, 'La referencia es para pacientes en observación.')
-    res.json(await referralDraft(sql, cid, h, userOf(req).id))
+    res.json(await stayReferralDraft(sql, cid, h, userOf(req).id))
   })
 
-  const text = (max: number) => z.string().trim().max(max).default('')
+  app.get('/api/consultations/:id/referral-draft', auth, need('consult.write'), async (req, res) => {
+    const cid = clinicOf(req)
+    const c = (await consultRow(cid, String(req.params.id)))!
+    res.json(await consultReferralDraft(sql, cid, c, userOf(req).id))
+  })
+
   app.post('/api/inpatient/:id/referral', auth, need('inpatient.orders'), async (req, res) => {
-    const b = parse(z.object({
-      reason: text(1000), history: text(6000), exam: text(6000), diagnosis: text(1000), indications: text(4000), medications: text(4000),
-      evolution: text(6000), labs: text(2000), condition: text(300), destination: text(200),
-    }), req.body)
+    const b = parse(referralBody, req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
     const h = (await stayRow(cid, String(req.params.id)))!
-    if (h.kind !== 'observation') fail(409, 'La referencia es para pacientes en observación.')
-    // Se emite con la observación abierta, o otra vez si la anterior se anuló
+    // Se emite con la estancia abierta, o otra vez si la anterior se anuló
     const active = await sql.one('SELECT 1 FROM referrals WHERE hospitalization_id = ? AND voided_at IS NULL', [String(h.id)])
     if (active) fail(409, 'Este paciente ya tiene una referencia emitida. Si hay un error, anúlala y emite otra.')
-    if (h.status !== 'active' && h.outcome !== 'referred') fail(409, 'La observación ya se cerró con el egreso.')
-    const base = await referralDraft(sql, cid, h, user.id)
-    const data: ReferralData = { ...base, ...b }
+    if (h.status !== 'active' && h.outcome !== 'referred') fail(409, 'La estancia ya se cerró con el egreso.')
+    const { closeStay, ...fields } = b
+    const data: ReferralData = { ...(await stayReferralDraft(sql, cid, h, user.id)), ...fields }
     const id = randomUUID()
     const now = new Date()
-    let number = ''
     const name = await patientName(String(h.patient_id))
+    const where = h.kind === 'observation' ? 'la observación' : 'la hospitalización'
     await sql.tx(async (q) => {
-      await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`ref:${cid}`])
-      const lastNo = await q.one<{ n: number | null }>(`SELECT MAX(CAST(split_part(number, '-', 3) AS INTEGER))::int AS n FROM referrals WHERE clinic_id = ? AND number LIKE ?`, [cid, `REF-${now.getFullYear()}-%`])
-      number = `REF-${now.getFullYear()}-${String((lastNo?.n ?? 0) + 1).padStart(4, '0')}`
+      const number = await nextNumber(q, cid, now)
       await q.run(`INSERT INTO referrals (id, clinic_id, hospitalization_id, patient_id, number, data, destination, issued_by, issued_at) VALUES (?,?,?,?,?,?,?,?,?)`,
         [id, cid, String(h.id), String(h.patient_id), number, JSON.stringify(data), b.destination || null, user.id, now.toISOString()])
-      if (h.status === 'active') {
-        // La observación se cierra como "Referido": sale de la lista y sus órdenes dejan de generar dosis
+      if (h.status === 'active' && closeStay) {
         await q.run(`UPDATE hospitalizations SET status = 'discharged', discharged_at = ?, discharged_by = ?, outcome = 'referred', outcome_note = ? WHERE id = ?`,
           [now.toISOString(), user.id, b.destination || null, String(h.id)])
         await q.run(`UPDATE hosp_meds SET stopped_at = ?, stopped_by = ?, stop_reason = 'Referido' WHERE hospitalization_id = ? AND stopped_at IS NULL`, [now.toISOString(), user.id, String(h.id)])
       }
-      await audit(user, `Emitió la referencia ${number} de ${name}${b.destination ? ` a ${b.destination}` : ''}`, q)
+      await audit(user, `Emitió la referencia ${number} de ${name}${b.destination ? ` a ${b.destination}` : ''}${h.status === 'active' && closeStay ? `; ${where} se cerró como «Referido»` : ''}`, q)
     })
     res.status(201).json(toReferral((await sql.one('SELECT * FROM referrals WHERE id = ?', [id]))!))
   })
 
-  app.get('/api/referrals/:rid', auth, need('inpatient.view'), async (req, res) => {
+  app.post('/api/consultations/:id/referral', auth, need('consult.write'), async (req, res) => {
+    const b = parse(referralBody, req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const c = (await consultRow(cid, String(req.params.id)))!
+    const { closeStay: _ignored, ...fields } = b
+    void _ignored
+    const data: ReferralData = { ...(await consultReferralDraft(sql, cid, c, user.id)), ...fields }
+    const id = randomUUID()
+    const now = new Date()
+    const name = await patientName(String(c.patient_id))
+    await sql.tx(async (q) => {
+      const number = await nextNumber(q, cid, now)
+      await q.run(`INSERT INTO referrals (id, clinic_id, consultation_id, patient_id, number, data, destination, issued_by, issued_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+        [id, cid, String(c.id), String(c.patient_id), number, JSON.stringify(data), b.destination || null, user.id, now.toISOString()])
+      await audit(user, `Emitió la referencia ${number} de ${name} desde la consulta externa${b.destination ? ` a ${b.destination}` : ''}`, q)
+    })
+    res.status(201).json(toReferral((await sql.one('SELECT * FROM referrals WHERE id = ?', [id]))!))
+  })
+
+  app.get('/api/referrals/:rid', auth, need('chart.view'), async (req, res) => {
     const row = (await sql.one('SELECT * FROM referrals WHERE id = ? AND clinic_id = ?', [String(req.params.rid), clinicOf(req)])) ?? fail(404, 'La referencia no existe.')
     await audit(userOf(req), `Abrió la referencia ${row!.number}`)
     res.json(toReferral(row!))
   })
 
-  app.post('/api/referrals/:rid/void', auth, need('inpatient.orders'), async (req, res) => {
+  app.post('/api/referrals/:rid/void', auth, need('inpatient.orders', 'consult.write'), async (req, res) => {
     const { reason } = parse(z.object({ reason: z.string().trim().min(5, 'Escribe por qué se anula.').max(300) }), req.body)
     const user = userOf(req)
     const row = (await sql.one('SELECT * FROM referrals WHERE id = ? AND clinic_id = ?', [String(req.params.rid), clinicOf(req)])) ?? fail(404, 'La referencia no existe.')

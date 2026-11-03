@@ -7,7 +7,7 @@ import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict } from '../lib/catalogs'
-import { activeIndications, chainNote, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
+import { activeIndications, chainNote, doseAt, formatRate, currentDiagnoses, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
 import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
 import { NoteColumns, NoteExams, NoteText } from '../components/NoteColumns'
@@ -17,7 +17,7 @@ import { AuthorizationEntry, AuthorizationForm } from './Authorization'
 import { isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
 import { useFileAlerts, useNow } from '../lib/hooks'
-import type { Addendum, Diagnosis, Dose, ExamInput, OrderLineTag, VitalsMode, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient } from '../lib/types'
+import type { Addendum, Diagnosis, Dose, InfusionUnit, ExamInput, OrderLineTag, VitalsMode, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient } from '../lib/types'
 import { bedLabel } from './Inpatients'
 import { GeneralDataModal } from './GeneralData'
 import { AdmitBedStep, ConsentChoice } from './ConsentFlow'
@@ -37,7 +37,7 @@ import { VitalsSheet } from './VitalsSheet'
 import { VitalsFrequency } from '../components/VitalsFrequency'
 import { VitalsFields } from '../components/VitalsFields'
 import { EMPTY_VITALS, FIELDS, fieldIssue, vitalNumber, type VitalsForm } from '../lib/vitalsForm'
-import { VITALS, type VitalKey } from '../lib/vitals'
+import { parseDecimal, VITALS, type VitalKey } from '../lib/vitals'
 import { currentVitalsMode, vitalsModeText } from '../lib/vitalsSheet'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
 import { hasBlank, medHasBlank, orderKey } from '../lib/orderSets'
@@ -532,6 +532,9 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
     </>}>
       <p>{at ? <>Dosis de las <b>{time(at.toISOString())}</b>{at.toDateString() !== new Date().toDateString() ? ` del ${date(at.toISOString())}` : ''}.
         {at.getTime() < opened - LATE_AFTER_MIN * 60_000 && <> <span className="badge badge--amber">Atrasada</span></>}</> : <>Dosis según necesidad (PRN){med.prnCondition ? `: ${med.prnCondition}` : ''}. Queda con tu nombre, tu rol y la hora real.</>}</p>
+      {/* Ronda 8: con primera dosis distinta, enfermería ve cuál toca en esta hora */}
+      {med.loadingDose && at && <p className="alert-strip alert-strip--amber" style={{ margin: 0 }}>Dosis a aplicar: <b>{doseAt(med, at)}</b>{doseAt(med, at) === med.loadingDose ? ' (primera dosis, STAT)' : ' (mantenimiento)'}</p>}
+      {med.infusionRate && <p className="muted" style={{ margin: 0 }}>Infusión continua a {formatRate(med.infusionRate)} {med.infusionUnit ?? 'ml/h'}: registra el inicio de la infusión.</p>}
       {tooSoon && <div className="alert-strip"><TriangleAlert size={16} />La última dosis fue a las {time(last!.givenAt)}; la indicación es cada {med.everyHours} horas.</div>}
       {at && (
         <DoseStatus value={status} onChange={(s) => { setStatus(s); setNote('') }} />
@@ -651,10 +654,9 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
               {doctor && <button className="btn btn--primary" onClick={() => setWriting('procedure')}><Syringe size={16} />Procedimiento</button>}
               <button className={`btn ${doctor ? 'btn--primary' : 'btn--soft'}`} onClick={() => { setAuthFor(undefined); setWriting('authorization') }}><FileSignature size={16} />Autorización quirúrgica</button>
               {doctor && hasAdmission && !discharged && <button className="btn btn--primary" data-tour="egreso" onClick={() => setWriting('discharge')}><LogOut size={16} />Egreso</button>}
-              {/* El consultorio no hospitaliza: refiere al paciente a otro centro */}
-              {doctor && obs && (features(settings).hospital
-                ? <button className="btn btn--soft" onClick={() => setConverting(true)}><BedDouble size={16} />Pasar a hospitalización</button>
-                : <button className="btn btn--soft" onClick={() => setReferring(true)}><Send size={16} />Referencia</button>)}
+              {doctor && obs && features(settings).hospital && <button className="btn btn--soft" onClick={() => setConverting(true)}><BedDouble size={16} />Pasar a hospitalización</button>}
+              {/* Ronda 8: referencia a otro centro desde la observación y la hospitalización (antes, sólo el consultorio) */}
+              {doctor && <button className="btn btn--soft" onClick={() => setReferring(true)}><Send size={16} />Referencia</button>}
             </div>
           </div>
         </section>
@@ -667,7 +669,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
       {surgicalFor && <ConsentChoice authorizationId={surgicalFor} p={p} onDone={() => { setSurgicalFor(null); reload(); if (procDraft) setWriting('procedure') }} />}
       {/* MC5: la nota de egreso se escribe en la misma hoja que la epicrisis */}
       {writing === 'discharge' && <DischargeWriter file={file} p={p} onDone={() => { setWriting(null); reload() }} />}
-      {referring && <ReferralModal stayId={h.id} onClose={() => setReferring(false)} />}
+      {referring && <ReferralModal from={{ kind: 'stay', id: h.id }} stayKind={h.kind === 'observation' ? 'observation' : 'hospital'} onClose={() => { setReferring(false); reload() }} />}
       {converting && <ConvertModal file={file} p={p} onClose={() => setConverting(false)} onDone={() => nav(`/app/hospitalizados/${h.id}?firmar=1`)} />}
       {h.consultationId && <ConsultEntry consultationId={h.consultationId} file={file} />}
       {timeline.length ? timeline.map((item) => {
@@ -948,6 +950,7 @@ const EMPTY_MED: NewMed = { drug: '', presentation: '', dose: '', route: 'Intrav
 
 function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: () => void; onStale?: () => void }) {
   const { addInpatientNote } = useStore()
+  const nav = useNavigate()
   // Una nota, un identificador: si se guarda dos veces no se duplica (ni sus medicamentos en la hoja)
   const [clientId] = useState(() => crypto.randomUUID())
   const [n, setN] = useState({ subjective: '', objective: '', assessment: kind === 'admission' ? file.hospitalization.diagnoses.map((d) => d.label).join('. ') : '', plan: '' })
@@ -955,7 +958,10 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
   // eligió en Mi configuración (Estándar si no eligió); cada formato guarda su borrador mientras el modal está abierto
   const { user } = useStore()
   const [format, setFormat] = useState<'soap' | 'dx'>(() => (kind === 'admission' ? 'soap' : user?.prefs?.noteFormat ?? 'dx'))
-  const [d, setD] = useState<{ diagnoses: Diagnosis[]; exam: string; observations: string }>({ diagnoses: [], exam: '', observations: '' })
+  // Ronda 8: los diagnósticos bajan de la nota anterior (o del ingreso), como las órdenes; se cambian si hace falta
+  const [carried] = useState<Diagnosis[]>(() => (kind === 'evolution' ? currentDiagnoses(file) : []))
+  const [d, setD] = useState<{ diagnoses: Diagnosis[]; evolution: string; exam: string; observations: string }>(() => ({ diagnoses: carried, evolution: '', exam: '', observations: '' }))
+  const dxChanged = JSON.stringify(d.diagnoses) !== JSON.stringify(carried)
   const [meds, setMeds] = useState<NewMed[]>([])
   const [stop, setStop] = useState<string[]>([])
   const [adding, setAdding] = useState(kind === 'admission')
@@ -989,9 +995,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
   const vademecum = useVademecum()
   const active = file.meds.filter((m) => !m.stoppedAt && !courseDone(m))
   // AN1: la nota se guarda sola como borrador (aquí y en el servidor) mientras se escribe
-  const noteBlank = !Object.values(n).some((v) => v.trim()) && !d.diagnoses.length && !d.exam.trim() && !d.observations.trim() && !meds.length && !stop.length && !exams.length && !extra.length && !Object.keys(decisions).length && !nvFilled
+  const noteBlank = !Object.values(n).some((v) => v.trim()) && !dxChanged && !d.evolution.trim() && !d.exam.trim() && !d.observations.trim() && !meds.length && !stop.length && !exams.length && !extra.length && !Object.keys(decisions).length && !nvFilled
   const draft = useDraftSync('evolucion', `${file.hospitalization.id}:${kind}`, { n, format, d, meds, stop, extra, exams, decisions, vitalsMode, nv, nvAt }, (x) => {
-    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD(x.d); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams); if (x.decisions) setDecisions(x.decisions); if (x.vitalsMode) setVitalsMode(x.vitalsMode); if (x.nv) { setNv(x.nv); if (x.nvAt) setNvAt(x.nvAt) }
+    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD({ ...x.d, evolution: x.d.evolution ?? '' }); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams); if (x.decisions) setDecisions(x.decisions); if (x.vitalsMode) setVitalsMode(x.vitalsMode); if (x.nv) { setNv(x.nv); if (x.nvAt) setNvAt(x.nvAt) }
   }, noteBlank)
   const inVademecum = (drug: string) => vademecum.some((x) => normalize(x.name) === normalize(drug))
   // Huecos "___" de un set aplicado: la nota no se firma hasta llenarlos
@@ -1001,7 +1007,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
   // SOAP: los cuatro campos, como siempre. Estándar: algo escrito, una indicación o un medicamento.
   // MC8: un valor imposible (temperatura 90) no se acepta, como en el formulario de enfermería
   const ready = !blanks.length && !nvErrors.length && !nvFuture && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
-    : d.diagnoses.length > 0 || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0 || exams.length > 0 || Object.keys(decisions).length > 0)
+    : (dxChanged && d.diagnoses.length > 0) || !!d.evolution.trim() || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0 || exams.length > 0 || Object.keys(decisions).length > 0)
   /** Un set se agrega al final: indicaciones y medicamentos (que pasan a la hoja al guardar), todo editable. */
   const applySet = (set: OrderSet) => {
     const texts = set.items.flatMap((it) => (it.text ? [it.text] : []))
@@ -1061,15 +1067,15 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
         setBusy(true)
         // MC7 (ronda 6): el servidor arma el cuadro completo (Continúa, Nueva, Modificada, Omitida) sobre la última nota firmada
         const chain = { basedOn, decisions: Object.entries(decisions).filter(([id]) => activeInd.some((a) => a.id === id)).map(([id, x]) => ({ id, ...x })) }
-        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId,
+        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, evolution: d.evolution.trim(), exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId,
           vitalsTaken: nvFilled ? { takenAt: new Date(nvAt).toISOString(), ...Object.fromEntries(FIELDS.map((k) => [k, vitalNumber(nv!, k)]).filter(([, x]) => x !== undefined)) } : undefined })
         setBusy(false)
-        if (ok) { draft.clear(); onSaved() } else onStale?.()
+        if (ok) { draft.clear(); onSaved(); if (ok.examBatch) nav(`/app/examenes/orden/${ok.examBatch}`) } else onStale?.()
       }}>Firmar nota</button>
     </>}>
       {kind === 'evolution' && (
         <div className="segmented" role="radiogroup" aria-label="Formato de la nota">
-          <button type="button" role="radio" aria-checked={format === 'dx'} onClick={() => setFormat('dx')} title="Diagnóstico, examen físico y observaciones">Estándar</button>
+          <button type="button" role="radio" aria-checked={format === 'dx'} onClick={() => setFormat('dx')} title="Diagnóstico, evolución, examen físico y observaciones">Estándar</button>
           <button type="button" role="radio" aria-checked={format === 'soap'} onClick={() => setFormat('soap')} title="Subjetivo, objetivo, análisis y plan">SOAP</button>
         </div>
       )}
@@ -1083,6 +1089,11 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
             <DictateButton label={s.label} onText={(f) => setN((x) => ({ ...x, [s.key]: f(x[s.key]) }))} /></label></div>
         )) : (<>
           <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label="Diagnósticos (CIE-11)" />
+          {carried.length > 0 && <small className="muted" style={{ marginTop: -6 }}>{dxChanged ? 'Cambiaste los diagnósticos de la nota anterior.' : 'Vienen de la nota anterior. Agrega, quita o cambia lo que haga falta.'}</small>}
+          {/* Ronda 8: el cuadro entre el diagnóstico y el examen físico */}
+          <label className="field dictate-field"><span>Evolución <small style={{ fontWeight: 400 }}>Cómo ha seguido desde la nota anterior y lo que refiere el paciente.</small></span>
+            <AutoTextarea value={d.evolution} onChange={(e) => setD({ ...d, evolution: e.target.value })} />
+            <DictateButton label="Evolución" onText={(f) => setD((x) => ({ ...x, evolution: f(x.evolution) }))} /></label>
           {vitalsBlock}
           <label className="field dictate-field"><span>Examen físico</span>
             <AutoTextarea value={d.exam} onChange={(e) => setD({ ...d, exam: e.target.value })} />
@@ -1211,7 +1222,9 @@ function editInitial(m: NewMed): NewMed {
 }
 
 function medToNew(m: InpatientMed): NewMed {
-  return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, prnCondition: m.prnCondition, instructions: m.instructions ?? '', firstAt: inputDateTime(new Date()), days: m.days }
+  // Ronda 8: al cambiarla, la dosis de carga ya se dio: sigue la de mantenimiento; una infusión conserva su velocidad
+  return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, prnCondition: m.prnCondition, instructions: m.instructions ?? '', firstAt: inputDateTime(new Date()), days: m.days,
+    infusionRate: m.infusionRate, infusionUnit: m.infusionUnit }
 }
 
 /**
@@ -1220,7 +1233,11 @@ function medToNew(m: InpatientMed): NewMed {
  */
 function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; initial?: NewMed; onAdd: (m: NewMed) => void; onAddAnother?: (m: NewMed) => void; onCancel: () => void }) {
   const [m, setM] = useState<NewMed>({ ...EMPTY_MED, firstAt: inputDateTime(new Date()), ...initial })
-  const [freq, setFreq] = useState(initial?.everyHours ? String(initial.everyHours) : 'once')
+  // Ronda 8: «Infusión continua» es una frecuencia más (sin horario de dosis: lleva la velocidad del goteo)
+  const [freq, setFreq] = useState(initial?.infusionRate ? 'infusion' : initial?.everyHours ? String(initial.everyHours) : 'once')
+  const [rate, setRate] = useState(initial?.infusionRate ? formatRate(initial.infusionRate) : '')
+  // Ronda 8: primera dosis distinta (de carga o STAT) y luego la de mantenimiento; apagado, se indica como siempre
+  const [loading, setLoading] = useState(!!initial?.loadingDose)
   const [open, setOpen] = useState(false)
   const [override, setOverride] = useState(false)
   const conflict = m.drug ? allergyConflict(p.allergies, m.drug) : null
@@ -1228,12 +1245,20 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
   const vademecum = useVademecum()
   const q = normalize(m.drug)
   const matches = q ? vademecum.filter((d) => normalize(`${d.name} ${d.brand ?? ''}`).includes(q)).slice(0, 6) : vademecum.slice(0, 6)
+  const infusion = freq === 'infusion'
+  const rateNum = parseDecimal(rate)
+  const rateOk = rateNum !== undefined && !Number.isNaN(rateNum) && rateNum > 0
+  const withLoading = loading && !infusion && !m.prn && freq !== 'once'
   const built = (): NewMed | null => {
     if (!m.drug.trim() || !m.dose.trim() || (conflict && !override) || (m.prn && !m.prnCondition?.trim())) return null
-    const everyHours = freq === 'once' ? undefined : Number(freq)
-    return { ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours, instructions: m.instructions?.trim() || undefined, prnCondition: m.prn ? m.prnCondition?.trim() : undefined,
-      firstAt: m.prn ? undefined : new Date(m.firstAt!).toISOString() }
+    if (infusion && !rateOk) return null
+    if (withLoading && !m.loadingDose?.trim()) return null
+    const everyHours = freq === 'once' || infusion ? undefined : Number(freq)
+    return { ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours, prn: infusion ? false : m.prn, instructions: m.instructions?.trim() || undefined, prnCondition: m.prn && !infusion ? m.prnCondition?.trim() : undefined,
+      firstAt: m.prn && !infusion ? undefined : new Date(m.firstAt!).toISOString(),
+      infusionRate: infusion ? rateNum : undefined, infusionUnit: infusion ? m.infusionUnit ?? 'ml/h' : undefined, loadingDose: withLoading ? m.loadingDose!.trim() : undefined }
   }
+  const preview = built()
   const another = () => { const x = built(); if (x && onAddAnother) onAddAnother(x) }
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -1254,34 +1279,53 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
         )}
       </div>
       <div className="form-grid">
-        <label className="field"><span>Dosis</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 8 mg" /></label>
+        <label className="field"><span>{withLoading ? 'Dosis de mantenimiento' : infusion ? 'Dosis (en la mezcla)' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder={infusion ? 'Ej. 50 mg en 100 ml' : 'Ej. 8 mg'} /></label>
         <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => setM({ ...m, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
         <label className="field"><span>Frecuencia</span>
-          <select className="select" value={freq} onChange={(e) => setFreq(e.target.value)}>
+          <select className="select" value={freq} onChange={(e) => { setFreq(e.target.value); if (e.target.value === 'infusion') setM({ ...m, prn: false, route: m.route === 'Oral' ? 'Intravenosa' : m.route }) }}>
             {INPATIENT_FREQUENCIES.filter((f) => !m.prn || f.hours).map((f) => <option key={f.label} value={f.hours ?? 'once'}>{m.prn ? `${f.label} como máximo` : f.label}</option>)}
+            {!m.prn && <option value="infusion">Infusión continua</option>}
           </select></label>
-        <label className="field" style={{ alignContent: 'end' }}><span>Según necesidad</span>
-          <label style={{ display: 'flex', gap: 8, alignItems: 'center', height: 42 }}>
-            <input type="checkbox" checked={m.prn} onChange={(e) => { setM({ ...m, prn: e.target.checked }); if (e.target.checked && freq === 'once') setFreq('8') }} />PRN (si es necesario)</label></label>
-        {m.prn && <label className="field"><span>Condición</span>
+        {infusion ? (
+          <div className="field"><span>Velocidad del goteo</span>
+            <div className="rate-field">
+              <input className={`input num ${rate && !rateOk ? 'input--error' : ''}`} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="Ej. 5" aria-label="Velocidad del goteo" />
+              <select className="select" value={m.infusionUnit ?? 'ml/h'} onChange={(e) => setM({ ...m, infusionUnit: e.target.value as InfusionUnit })} aria-label="Unidad de la velocidad">
+                <option value="ml/h">ml/h</option><option value="ml/min">ml/min</option>
+              </select>
+            </div>
+            {!rateOk && <small className="field__msg field__msg--warn">Escribe la velocidad: la infusión la necesita.</small>}</div>
+        ) : (
+          <label className="field" style={{ alignContent: 'end' }}><span>Según necesidad</span>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', minHeight: 42 }}>
+              <input type="checkbox" checked={m.prn} onChange={(e) => { setM({ ...m, prn: e.target.checked }); if (e.target.checked && freq === 'once') setFreq('8') }} />PRN (si es necesario)</label></label>
+        )}
+        {m.prn && !infusion && <label className="field"><span>Condición</span>
           <input className={`input ${!m.prnCondition?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.prnCondition ?? ''} onChange={(e) => setM({ ...m, prnCondition: e.target.value })} placeholder="Ej. si dolor, si fiebre" aria-required="true" />
           {!m.prnCondition?.trim() && <small className="field__msg field__msg--warn">Obligatoria en un PRN: cuándo se da.</small>}</label>}
-        {!m.prn && <label className="field"><span>{freq === 'once' ? 'Hora de la dosis' : 'Primera dosis'}</span><input className="input" type="datetime-local" value={m.firstAt} onChange={(e) => setM({ ...m, firstAt: e.target.value })} /></label>}
+        {!m.prn && !infusion && freq !== 'once' && (
+          <label className="field span-2 check-line" style={{ margin: 0 }}><input type="checkbox" checked={loading} onChange={(e) => setLoading(e.target.checked)} />
+            <span><b>La primera dosis es distinta</b><small>Dosis de carga o STAT: por ejemplo, 2 g IM STAT y luego 1 g cada 12 horas.</small></span></label>
+        )}
+        {withLoading && <label className="field"><span>Primera dosis (STAT)</span>
+          <input className={`input ${!m.loadingDose?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.loadingDose ?? ''} onChange={(e) => setM({ ...m, loadingDose: e.target.value })} placeholder="Ej. 2 g" /></label>}
+        {(!m.prn || infusion) && <label className="field"><span>{infusion ? 'Inicio de la infusión' : withLoading ? 'Hora de la primera dosis' : freq === 'once' ? 'Hora de la dosis' : 'Primera dosis'}</span><input className="input" type="datetime-local" value={m.firstAt} onChange={(e) => setM({ ...m, firstAt: e.target.value })} /></label>}
         <label className="field"><span>Total de días (opcional)</span>
           <input className="input num" type="number" min={1} max={365} inputMode="numeric" value={m.days ?? ''} placeholder="Hasta nueva orden"
             onChange={(e) => setM({ ...m, days: e.target.value ? Math.max(1, Math.min(365, Math.round(Number(e.target.value)))) : undefined })} /></label>
-        <label className="field"><span>Indicaciones</span><input className="input" value={m.instructions} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder={m.prn ? 'Ej. Si hay dolor intenso' : 'Ej. Diluir en 100 ml'}
+        <label className="field"><span>Indicaciones</span><input className="input" value={m.instructions} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder={m.prn ? 'Ej. Si hay dolor intenso' : infusion ? 'Ej. Diluir en 100 ml de SSN' : 'Ej. Diluir en 100 ml'}
           onKeyDown={(e) => { if (e.key === 'Enter' && onAddAnother) { e.preventDefault(); another() } }} /></label>
       </div>
+      {preview && (withLoading || infusion) && <p className="muted" style={{ fontSize: 13.5 }}>Se verá así: <b>{medLabel(preview)}</b></p>}
       {conflict && (
         <div className="alert-strip" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
           <span style={{ display: 'flex', gap: 8 }}><TriangleAlert size={18} style={{ flex: 'none' }} />{p.firstName} es alérgica/o a {conflict}. {m.drug} puede provocar una reacción.</span>
           {!override && <button type="button" className="btn btn--danger btn--sm" style={{ background: '#fff' }} onClick={() => setOverride(true)}>Indicar de todos modos</button>}
         </div>
       )}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button className="btn btn--primary" disabled={!built()}><Plus size={16} />Agregar a la nota</button>
-        {onAddAnother && <button type="button" className="btn btn--soft" disabled={!built()} onClick={another}>Guardar y agregar otro</button>}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button className="btn btn--primary" disabled={!preview}><Plus size={16} />Agregar a la nota</button>
+        {onAddAnother && <button type="button" className="btn btn--soft" disabled={!preview} onClick={another}>Guardar y agregar otro</button>}
         <button type="button" className="btn btn--ghost" onClick={onCancel}>Cancelar</button>
       </div>
     </form>

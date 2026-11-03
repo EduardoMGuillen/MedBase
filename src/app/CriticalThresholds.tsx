@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Archive, ChevronDown, Pencil, Plus, RotateCcw } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { DEFAULT_CRITICAL_GROUPS, type CriticalAnalyte, type CriticalGroup } from '../lib/clinicalConfig'
+import { customized, defaultAnalyte, mergeCriticalGroups, type CriticalAnalyte, type CriticalGroup } from '../lib/clinicalConfig'
 import { examCatalog, EXAMS } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { parseDecimal } from '../lib/vitals'
@@ -23,7 +23,8 @@ function restored<T extends { archivedAt?: string }>(x: T): T {
  */
 export function CriticalThresholds() {
   const { settings, saveCriticalGroups } = useStore()
-  const saved = settings.criticalGroups?.length ? settings.criticalGroups : DEFAULT_CRITICAL_GROUPS
+  // Ronda 8: los de la app con lo que la clínica cambió encima (y los nuevos de la app, solos)
+  const saved = useMemo(() => mergeCriticalGroups(settings.criticalGroups), [settings.criticalGroups])
   const [groups, setGroups] = useState<CriticalGroup[]>(() => structuredClone(saved))
   const [text, setText] = useState<Record<string, string>>({})
   const [showArchived, setShowArchived] = useState(false)
@@ -67,7 +68,7 @@ export function CriticalThresholds() {
   return (
     <section className="panel crit">
       <div className="panel__head" style={{ flexWrap: 'wrap', gap: 10 }}>
-        <div><h2>Umbrales críticos de laboratorio</h2><p>Un resultado fuera de estos valores avisa al médico como crítico. Organizados por grupo, como vienen del laboratorio.</p></div>
+        <div><h2>Umbrales críticos de laboratorio</h2><p>Un resultado fuera de estos valores avisa al médico como crítico. La app ya trae los umbrales establecidos, con su fuente; la clínica puede cambiar cualquiera y volver al de la app cuando quiera. Organizados por grupo, como vienen del laboratorio.</p></div>
         <button className="btn btn--soft btn--sm" onClick={addGroup}><Plus size={15} />Agregar grupo</button>
       </div>
       <datalist id="crit-analytes">{suggestions.map((s) => <option key={s} value={s} />)}</datalist>
@@ -110,6 +111,17 @@ export function CriticalThresholds() {
                     {a.archivedAt
                       ? <button type="button" className="icon-btn crit__btn" title="Restaurar" aria-label={`Restaurar ${a.name}`} onClick={() => setAnalyte(g.id, a.id, restored)}><RotateCcw size={15} /></button>
                       : <button type="button" className="icon-btn crit__btn" title="Archivar" aria-label={`Archivar ${a.name}`} onClick={() => setAnalyte(g.id, a.id, (x) => ({ ...x, archivedAt: now() }))}><Archive size={15} /></button>}
+                    {(() => {
+                      // Ronda 8: la fuente del umbral de la app y, si la clínica lo cambió, el valor original para volver a él
+                      const d = defaultAnalyte(a.id)
+                      if (!d) return a.name.trim() ? <small className="crit__src">Agregado por la clínica.</small> : null
+                      const lim = (x?: number) => (x == null ? 'no aplica' : String(x))
+                      return <small className="crit__src">
+                        {customized(a) && <><span className="badge badge--amber">Cambiado por la clínica</span> Valor de la app: menor de {lim(d.low)}, mayor de {lim(d.high)}{d.unit ? ` ${d.unit}` : ''}.{' '}
+                          {!a.archivedAt && <button type="button" className="link-btn" onClick={() => { setText((t) => { const n = { ...t }; delete n[`${a.id}-low`]; delete n[`${a.id}-high`]; return n }); setAnalyte(g.id, a.id, (x) => ({ ...x, low: d.low, high: d.high, unit: d.unit })) }}>Volver al de la app</button>}{' '}</>}
+                        {d.source ? `Fuente: ${d.source}` : 'Umbral de la app (fuente pendiente de la lista de Emil).'}
+                      </small>
+                    })()}
                     {a.low != null && a.high != null && a.low >= a.high && <small className="crit__err">El límite inferior debe ser menor que el superior.</small>}
                     {repeated(a) && <small className="crit__err">{a.name} ya está en la lista: un analito tiene un solo umbral.</small>}
                   </div>
