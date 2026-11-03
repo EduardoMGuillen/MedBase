@@ -167,6 +167,11 @@ describe('Ronda 8: nota de evolución y medicamentos', () => {
     const order = await doc.get(`/api/exams/batch/${n.body.examBatch}`)
     assert.equal(order.status, 200)
     assert.equal(order.body.exams[0].place, 'external')
+    // EX2: número de orden correlativo y registro de cada impresión
+    assert.match(order.body.exams[0].orderNo, /^OE-\d{4}-\d{4}$/)
+    assert.equal((await doc.post(`/api/exams/batch/${n.body.examBatch}/printed`, { group: 'imaging', how: 'pdf' })).status, 200)
+    const log = (await (await as('admin@demo.clinara')).get('/api/audit?limit=20')).body
+    assert.ok((Array.isArray(log) ? log : log.items ?? []).some((a: any) => /Descargó en PDF la orden de imagen y gabinete OE-/.test(a.action ?? a.text ?? '')))
     const file = (await doc.get(`/api/inpatient/${stay}`)).body
     const mida = file.meds.find((m: any) => m.drug === 'Midazolam')
     const cef = file.meds.find((m: any) => m.drug === 'Ceftriaxona')

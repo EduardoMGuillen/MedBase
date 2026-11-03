@@ -611,6 +611,8 @@ export interface ExamResultValue { analyte: string; value: string; unit?: string
 export interface ExamOrder extends ExamInput {
   id: string
   patientId: string
+  /** EX2 (ronda 8): número de la orden (OE-2026-0001), el mismo para los exámenes pedidos juntos. Los de antes no lo tienen. */
+  orderNo?: string
   consultationId?: string
   hospitalizationId?: string
   noteId?: string

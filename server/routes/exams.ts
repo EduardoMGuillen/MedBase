@@ -31,6 +31,7 @@ const toClinicExam = (r: Row): ClinicExam => ({
 export const toExamOrder = (r: Row, events: Row[] = []): ExamOrder => ({
   id: String(r.id), patientId: String(r.patient_id), consultationId: r.consultation_id ? String(r.consultation_id) : undefined,
   hospitalizationId: r.hospitalization_id ? String(r.hospitalization_id) : undefined, noteId: r.note_id ? String(r.note_id) : undefined, batchId: String(r.batch_id),
+  orderNo: r.order_no ? String(r.order_no) : undefined,
   group: r.grp as ExamOrder['group'], name: String(r.name), region: r.region ? String(r.region) : undefined, side: (r.side ? String(r.side) : undefined) as ExamOrder['side'],
   indication: r.indication ? String(r.indication) : undefined, priority: r.priority as ExamOrder['priority'], place: r.place as ExamOrder['place'], area: r.area as ExamOrder['area'],
   status: r.status as ExamStatus, orderedBy: String(r.ordered_by), orderedAt: String(r.ordered_at), statusAt: r.status_at ? String(r.status_at) : undefined,
@@ -62,15 +63,20 @@ export async function insertExams(q: Sql, c: { clinicId: string; patientId: stri
   await ensureExamCatalog(q, c.clinicId)
   const known = new Set((await q.query('SELECT norm_key FROM exam_catalog WHERE clinic_id = ? AND active', [c.clinicId])).map((r) => String(r.norm_key)))
   const batch = randomUUID()
+  // EX2 (ronda 8): número de orden correlativo por clínica y año (OE-2026-0001), el mismo para todo el lote
+  await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`oe:${c.clinicId}`])
+  const year = new Date(c.at).getFullYear()
+  const last = await q.one<{ n: number | null }>(`SELECT MAX(CAST(split_part(order_no, '-', 3) AS INTEGER))::int AS n FROM exam_orders WHERE clinic_id = ? AND order_no ~ ?`, [c.clinicId, `^OE-${year}-[0-9]+$`])
+  const orderNo = `OE-${year}-${String((last?.n ? Number(last.n) : 0) + 1).padStart(4, '0')}`
   for (const raw of list) {
     const e = raw
     const uncatalogued = !known.has(examKey(raw.name))
     const id = randomUUID()
     const area = areaFor(e.group, e.place, c.inStay ?? !!c.hospitalizationId, { hasLab: Boolean(clinic.has_lab), hasImaging: Boolean(clinic.has_imaging) })
-    await q.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, consultation_id, hospitalization_id, note_id, batch_id, grp, name, region, side, indication, priority, place, area, status, ordered_by, ordered_at, uncatalogued)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ordered',?,?,?)`,
+    await q.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, consultation_id, hospitalization_id, note_id, batch_id, grp, name, region, side, indication, priority, place, area, status, ordered_by, ordered_at, uncatalogued, order_no)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ordered',?,?,?,?)`,
     [id, c.clinicId, c.patientId, c.consultationId ?? null, c.hospitalizationId ?? null, c.noteId ?? null, batch, e.group, e.name, e.region || null, e.side ?? null, e.indication || null,
-      e.priority, e.place, area, c.by, c.at, uncatalogued])
+      e.priority, e.place, area, c.by, c.at, uncatalogued, orderNo])
     await q.run('INSERT INTO exam_events (id, clinic_id, exam_id, status, by_id, at) VALUES (?,?,?,?,?,?)', [randomUUID(), c.clinicId, id, 'ordered', c.by, c.at])
   }
   return batch
@@ -286,6 +292,16 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     res.json({ exams: list, diagnoses: j(consult?.diagnoses ?? stay?.diagnoses, []),
       doctor: { id: String(doc.id), name: String(doc.doc_name || doc.name), license: doc.license ? String(doc.license) : undefined, specialty: doc.specialty ? String(doc.specialty) : undefined,
         signatureId: doc.signature_id ? String(doc.signature_id) : undefined, stampId: doc.stamp_id ? String(doc.stamp_id) : undefined } })
+  })
+
+  // EX2 (ronda 8): cada impresión o descarga de una orden queda en la bitácora (quién, cuándo, qué orden)
+  app.post('/api/exams/batch/:batch/printed', auth, need('chart.view'), async (req, res) => {
+    const b = parse(z.object({ group: z.enum(['lab', 'imaging']), how: z.enum(['print', 'pdf']) }), req.body)
+    const cid = clinicOf(req)
+    const list = await examsWhere(sql, 'clinic_id = ? AND batch_id = ? AND grp = ?', [cid, String(req.params.batch), b.group])
+    if (!list.length) fail(404, 'La orden no existe.')
+    await audit(userOf(req), `${b.how === 'pdf' ? 'Descargó en PDF' : 'Imprimió'} la orden de ${GROUP_LABEL[b.group].toLowerCase()}${list[0].orderNo ? ` ${list[0].orderNo}` : ''} de ${await patientName(list[0].patientId)}`)
+    res.json({ ok: true })
   })
 
   // Bandeja de exámenes pendientes del área de quien mira (urgentes primero)

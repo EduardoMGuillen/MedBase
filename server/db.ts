@@ -17,7 +17,7 @@ import { closeVisitsOfInpatients } from './stayVisits.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '59'
+const SCHEMA_VERSION = '60'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -926,6 +926,8 @@ ALTER TABLE hosp_meds
   ADD COLUMN IF NOT EXISTS infusion_stopped_by TEXT,
   ADD COLUMN IF NOT EXISTS infusion_stop_note TEXT;
 ALTER TABLE hosp_doses ADD COLUMN IF NOT EXISTS dose TEXT;
+-- v60 (ronda 8). EX2: número de la orden de exámenes, correlativo por clínica y año
+ALTER TABLE exam_orders ADD COLUMN IF NOT EXISTS order_no TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

@@ -95,12 +95,12 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
       {batches.length > 0 && (
         <section className="panel"><div className="panel__body" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {/* Ronda 8: cada orden se imprime (los externos los lleva el paciente, como la receta) */}
-          <span className="muted" style={{ fontSize: 14 }}>Órdenes para imprimir:</span>
+          <span className="muted" style={{ fontSize: 14 }}>Órdenes impresas:</span>
           {batches.map((b) => {
             const list = exams.filter((e) => e.batchId === b && e.status !== 'cancelled')
             const f = list[0]
             return <Link key={b} className={`btn ${list.some((e) => e.place === 'external') ? 'btn--soft' : 'btn--ghost'} btn--sm`} to={`/app/examenes/orden/${b}`}>
-              <Printer size={14} />{dateTime(f.orderedAt)}{list.some((e) => e.place === 'external') ? ' · externos' : ''}</Link>
+              <Printer size={14} />{f.orderNo ? `${f.orderNo} · ` : ''}{dateTime(f.orderedAt)}{list.some((e) => e.place === 'external') ? ' · para llevar' : ''}</Link>
           })}
         </div></section>
       )}

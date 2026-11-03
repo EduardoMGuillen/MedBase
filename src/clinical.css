@@ -982,3 +982,9 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 /* ME1 y ME2 (ronda 8): hoja de medicamentos */
 .infusion-run { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13.5px; padding: 6px 10px; border-radius: 10px; background: var(--mint); color: var(--mint-ink); }
 .slot2__tag { font-style: normal; font-size: 11.5px; font-weight: 700; color: var(--ink-deep); white-space: nowrap; }
+
+/* EX2 (ronda 8): barra de la orden de exámenes (Imprimir, Descargar PDF, WhatsApp) */
+.exam-order__bar { display: grid; gap: 10px; margin-bottom: 12px; }
+.exam-order__acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.exam-order__acts > b { min-width: 13rem; }
+.exam-sign-box { justify-self: start; align-self: end; width: 120px; height: 80px; border: 1px dashed var(--line); border-radius: 8px; display: grid; place-items: center; color: var(--faint); font-size: 12px; }

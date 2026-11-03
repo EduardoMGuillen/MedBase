@@ -671,6 +671,8 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
   const { settings } = useStore()
   const discharged = notes.some((n) => n.kind === 'discharge')
   const [writing, setWriting] = useState<null | 'note' | 'procedure' | 'discharge' | 'authorization'>(null)
+  // EX2 (ronda 8): lote de exámenes con externos de la nota recién firmada
+  const [ordersFor, setOrdersFor] = useState<string | null>(null)
   const [authFor, setAuthFor] = useState<string | undefined>()
   // MC2: la quirúrgica recién generada (con sus tres salidas) y la nota de procedimiento que la pidió, para volver a ella
   const [surgicalFor, setSurgicalFor] = useState<string | null>(null)
@@ -736,7 +738,8 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         if (n.kind === 'procedure') return <ProcedureNote key={n.id} n={n} file={file} reload={reload} />
         return <SoapNote key={n.id} n={n} file={file} reload={reload} />
       }) : !h.consultationId && <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
-      {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={() => { setWriting(null); reload() }} onStale={reload} />}
+      {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={(b) => { setWriting(null); reload(); if (b) setOrdersFor(b) }} onStale={reload} />}
+      {ordersFor && <ExamOrdersOffer batch={ordersFor} onClose={() => setOrdersFor(null)} />}
     </div>
   )
 }
@@ -990,7 +993,7 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize }: { f
 
 const EMPTY_MED: NewMed = { drug: '', presentation: '', dose: '', route: 'Intravenosa', everyHours: 8, prn: false, instructions: '' }
 
-function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: () => void; onStale?: () => void }) {
+function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: (examBatch?: string) => void; onStale?: () => void }) {
   const { addInpatientNote } = useStore()
   const nav = useNavigate()
   // Una nota, un identificador: si se guarda dos veces no se duplica (ni sus medicamentos en la hoja)
@@ -1117,7 +1120,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
         const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? { ...n, diagnoses: kind === 'evolution' ? d.diagnoses : [] } : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, evolution: d.evolution.trim(), exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId,
           vitalsTaken: nvFilled ? { takenAt: new Date(nvAt).toISOString(), ...Object.fromEntries(FIELDS.map((k) => [k, vitalNumber(nv!, k)]).filter(([, x]) => x !== undefined)) } : undefined })
         setBusy(false)
-        if (ok) { draft.clear(); onSaved(); if (ok.examBatch) nav(`/app/examenes/orden/${ok.examBatch}`) } else onStale?.()
+        // EX2 (ronda 8): con estudios externos se ofrece el cuadro «Órdenes de exámenes: Imprimir / Descargar PDF»
+        if (ok) { draft.clear(); onSaved(ok.examBatch ?? undefined) } else onStale?.()
       }}>Firmar nota</button>
     </>}>
       {kind === 'evolution' && (
@@ -1413,6 +1417,20 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
         {!preview && missing && <small className="muted">Falta {missing}.</small>}
       </div>
     </form>
+  )
+}
+
+/** EX2 (ronda 8): al firmar una nota con estudios externos: «Órdenes de exámenes: Imprimir / Descargar PDF». */
+function ExamOrdersOffer({ batch, onClose }: { batch: string; onClose: () => void }) {
+  const nav = useNavigate()
+  return (
+    <Modal title="Órdenes de exámenes" onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Ahora no</button>
+      <button className="btn btn--soft" onClick={() => nav(`/app/examenes/orden/${batch}?accion=pdf`)}><FileText size={16} />Descargar PDF</button>
+      <button className="btn btn--primary" onClick={() => nav(`/app/examenes/orden/${batch}?accion=imprimir`)}>Imprimir</button>
+    </>}>
+      <p>La nota pidió estudios externos: el paciente lleva la orden en la mano (o en el teléfono). También queda en la tarjeta de la nota y en la pestaña Exámenes, en «Órdenes impresas».</p>
+    </Modal>
   )
 }
 

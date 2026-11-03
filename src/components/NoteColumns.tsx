@@ -69,7 +69,7 @@ export function NoteExams({ list, empty = 'Sin exámenes.' }: { list: ExamOrder[
     ))}</ul>
     {batches.map((b) => (
       <Link key={b} to={`/app/examenes/orden/${b}`} className={`btn ${external ? 'btn--soft' : 'btn--ghost'} btn--sm no-print`} style={{ justifySelf: 'start', marginTop: 6 }}>
-        <Printer size={14} />{external ? 'Imprimir orden (externos)' : 'Imprimir orden'}</Link>
+        <Printer size={14} />{external ? 'Órdenes de exámenes: Imprimir / Descargar PDF' : 'Imprimir orden'}</Link>
     ))}
   </>)
 }
