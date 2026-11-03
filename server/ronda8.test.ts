@@ -32,7 +32,7 @@ async function as(email: string, password = DEMO_PASSWORD) {
     try { parsed = JSON.parse(text) } catch { /* no es JSON */ }
     return { status: r.status, body: parsed }
   }
-  return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), put: (p: string, b: unknown) => call('PUT', p, b) }
+  return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), put: (p: string, b: unknown) => call('PUT', p, b), patch: (p: string, b: unknown) => call('PATCH', p, b) }
 }
 
 const today = () => { const d = new Date(); const p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` }
@@ -206,5 +206,17 @@ describe('Ronda 8: umbrales críticos de la app', () => {
     const archived = structuredClone(DEFAULT_CRITICAL_GROUPS)
     archived[0].analytes[0].archivedAt = new Date().toISOString()
     assert.equal(mergeCriticalGroups(archived)[0].analytes.filter((a) => a.id === 'a-hb').length, 1)
+  })
+})
+
+describe('CX1: Consulta externa por hora o por médico', () => {
+  test('Administración guarda su vista y la recupera al volver a entrar; no toca la de «Por llegar hoy»', async () => {
+    const admin = await as('admin@demo.clinara')
+    assert.equal((await admin.patch('/api/me', { queueView: 'doctor' })).status, 200)
+    const again = await as('admin@demo.clinara')
+    const prefs = (await again.get('/api/auth/me')).body.user.prefs
+    assert.equal(prefs.queueView, 'doctor')
+    assert.notEqual(prefs.arrivalsView, 'doctor')
+    assert.equal((await again.patch('/api/me', { queueView: 'hour' })).status, 200)
   })
 })

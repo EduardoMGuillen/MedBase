@@ -6,7 +6,7 @@ import { fullName, time, whatsappUrl } from '../lib/format'
 import { lateLabel, pendingArrivals } from '../lib/arrivals'
 import { useNow } from '../lib/hooks'
 import { features } from '../lib/permissions'
-import { FoldHead } from '../components/ui'
+import { ApptGroupList, GroupTools, groupAppointments, useFold } from '../components/ApptGroups'
 import type { Appointment } from '../lib/types'
 
 /**
@@ -24,13 +24,8 @@ export function ArrivalsPanel({ doctorId, onArrive, id }: { doctorId?: string; o
   const grouped = features(settings).multiDoctor && !doctorId
   const [view, setViewState] = useState<'hour' | 'doctor'>(user?.prefs?.arrivalsView ?? 'hour')
   const setView = (v: 'hour' | 'doctor') => { setViewState(v); if (v !== (user?.prefs?.arrivalsView ?? 'hour')) void saveMyProfile({ arrivalsView: v }) }
-  const [fold, setFold] = useState<Record<string, boolean>>({})
-  const groups = !grouped ? [] : view === 'hour'
-    ? [...new Map(list.map((a) => [time(a.start), [] as Appointment[]])).keys()].map((h) => ({ key: `h:${h}`, title: <>{h}</>, items: list.filter((a) => time(a.start) === h) }))
-    : [...new Set(list.map((a) => a.doctorId))].map((d) => ({ key: `d:${d}`, doctor: staffById(d), items: list.filter((a) => a.doctorId === d) }))
-      .sort((a, b) => (a.doctor?.name ?? '').localeCompare(b.doctor?.name ?? '', 'es'))
-      .map((g) => ({ key: g.key, title: <><i className="arrival-group__dot" style={{ background: g.doctor?.color }} aria-hidden="true" />{g.doctor?.name ?? 'Médico'}{g.doctor?.specialty && <small className="fold-head__sub">{g.doctor.specialty}</small>}</>, items: g.items }))
-  const isOpen = (k: string) => fold[k] ?? true
+  const fold = useFold()
+  const groups = grouped ? groupAppointments(list, view, staffById) : []
   const row = (a: Appointment) => {
     const p = patient(a.patientId)
     if (!p) return null
@@ -64,26 +59,12 @@ export function ArrivalsPanel({ doctorId, onArrive, id }: { doctorId?: string; o
         <div><h2>Por llegar hoy <span className="num" style={{ color: 'var(--faint)' }}>{list.length}</span></h2>
           <p>{list.length ? `${doctorId ? 'Tus pacientes' : 'Pacientes'} con cita hoy que todavía no llegan.` : 'Todos los pacientes con cita hoy ya llegaron.'}</p></div>
         {grouped && list.length > 0 && (
-          <div className="arrivals__tools">
-            <div className="segmented segmented--sm" role="radiogroup" aria-label="Agrupar por">
-              <button type="button" role="radio" aria-checked={view === 'hour'} onClick={() => setView('hour')}>Por hora</button>
-              <button type="button" role="radio" aria-checked={view === 'doctor'} onClick={() => setView('doctor')}>Por médico</button>
-            </div>
-            <span className="fold-tools">
-              <button type="button" className="btn btn--ghost btn--sm" onClick={() => setFold(Object.fromEntries(groups.map((g) => [g.key, true])))}>Expandir todo</button>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={() => setFold(Object.fromEntries(groups.map((g) => [g.key, false])))}>Contraer todo</button>
-            </span>
-          </div>
+          <GroupTools view={view} onView={setView} onExpand={() => fold.setAll(groups.map((g) => g.key), true)} onCollapse={() => fold.setAll(groups.map((g) => g.key), false)} />
         )}
       </div>
       {!list.length ? <div className="empty">Nadie pendiente de llegar.</div>
         : !grouped ? <div className="rows">{list.map(row)}</div>
-          : <div className="arrival-groups">{groups.map((g) => (
-            <div key={g.key} className="arrival-group">
-              <FoldHead id={`arr-${g.key}`} open={isOpen(g.key)} onToggle={() => setFold({ ...fold, [g.key]: !isOpen(g.key) })} title={g.title} count={g.items.length} />
-              {isOpen(g.key) && <div id={`arr-${g.key}`} className="rows">{g.items.map(row)}</div>}
-            </div>
-          ))}</div>}
+          : <ApptGroupList groups={groups} prefix="" isOpen={fold.isOpen} toggle={fold.toggle} render={row} />}
     </section>
   )
 }

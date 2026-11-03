@@ -77,6 +77,12 @@ export const VITALS_OTHER_RANGE = { min: 1, max: 72 }
 /** EN2 (ronda 6). VALIDAR: Emil. Una toma anotada más de estos minutos después de la hora en que se tomó es «Registro tardío». */
 export const LATE_RECORD_MINUTES = 60
 
+/**
+ * CX1 (ronda 8). VALIDAR: Emil. Roles que ven la Consulta externa agrupada «Por hora | Por médico» (sólo en una clínica:
+ * en un consultorio hay un solo médico). Para activarlo en otro rol, se agrega aquí ('reception', 'nurse', 'doctor').
+ */
+export const QUEUE_GROUP_ROLES: string[] = ['admin']
+
 /** Un analito con su umbral crítico. Un límite vacío es «No aplica». */
 export interface CriticalAnalyte { id: string; name: string; unit?: string; low?: number; high?: number; archivedAt?: string
   /** Ronda 8: la fuente del umbral que trae la app (referencia bibliográfica). Los que agrega la clínica no la tienen. */

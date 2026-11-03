@@ -646,12 +646,14 @@ tr.clickable { cursor: pointer; }
   .excat__acts .btn > span { display: none; }
 }
 
-/* Ronda 8 (CE): la consulta externa se ordena por hora, por espera o por médico, y se filtra por médico */
+/* CX1 (ronda 8): barra «Por hora | Por médico» de la consulta externa */
 .ce-arrange { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-top: -8px; }
 .field--inline { display: grid; gap: 4px; min-width: 0; }
 .field--inline > span { font-size: 12.5px; color: var(--muted); font-weight: 600; }
 .field--inline .select { min-width: 0; max-width: 100%; }
-.queue-group { padding: 10px 22px 6px; font-size: 12.5px; font-weight: 700; color: var(--petrol); text-transform: uppercase; letter-spacing: .04em; background: var(--ward); border-top: 1px solid var(--line-soft); }
+/* CX1 (ronda 8): tarjetas dentro de un grupo de Consulta externa (sin margen lateral extra) */
+.queue-group-body .queue-card { padding-left: 14px; padding-right: 14px; }
+.queue-group-body .queue-card:last-child { border-bottom: 0; }
 
 /* Ronda 8 (EX): exámenes desplegables, con búsqueda y orden por fecha */
 .exam-tools { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
