@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { DateField } from '../components/DateTimeField'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ban, ChevronLeft, Copy, FileText, MessageCircle, Plus, Printer, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -75,8 +76,8 @@ export default function Prescriptions() {
         </div>
         <div className="panel__body rx-filters">
           <label className="field"><span>Paciente</span><input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre o expediente" /></label>
-          <label className="field"><span>Desde</span><input className="input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
-          <label className="field"><span>Hasta</span><input className="input" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+          <div className="field"><span>Desde</span><DateField value={from} onChange={setFrom} label="Desde" /></div>
+          <div className="field"><span>Hasta</span><DateField value={to} onChange={setTo} label="Hasta" /></div>
         </div>
         {list.length ? <div className="rows">{list.map((r) => {
           const name = nameOf(r)
@@ -130,7 +131,7 @@ function GuestFields({ value, onChange, onPick, onCancel }: { value: GuestPatien
       <p className="muted" style={{ fontSize: 13.5 }}>No se le crea expediente. La receta queda en tu historial marcada como «Paciente no registrado»; si después se registra, la vinculas.</p>
       <div className="form-grid">
         <label className="field span-2"><span>Nombre completo</span><input className="input" autoFocus value={value.name} onChange={set('name')} autoComplete="off" /></label>
-        <label className="field"><span>Fecha de nacimiento (opcional)</span><input className="input" type="date" value={value.birthDate ?? ''} onChange={set('birthDate')} max={localISODate(now)} /></label>
+        <div className="field"><span>Fecha de nacimiento (opcional)</span><DateField value={value.birthDate ?? ''} onChange={(v) => onChange({ ...value, birthDate: v })} max={localISODate(now)} label="Fecha de nacimiento" /></div>
         <label className="field"><span>O la edad (opcional)</span><input className="input" value={value.age ?? ''} onChange={set('age')} placeholder="Ej. 34 años" disabled={!!value.birthDate} /></label>
         <label className="field"><span>Sexo (opcional)</span><select className="select" value={value.sex ?? ''} onChange={set('sex')}><option value="">Sin dato</option><option value="F">Femenino</option><option value="M">Masculino</option></select></label>
         <label className="field"><span>Identidad (opcional)</span><DniInput value={value.dni ?? ''} onChange={(dni) => onChange({ ...value, dni })} /></label>

@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { DateTimeField } from '../components/DateTimeField'
+import { fromLocalValue, localValueToIso } from '../lib/dateInput'
 import { Plus, Thermometer, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
 import { VitalsFields } from '../components/VitalsFields'
-import { inputDateTime, shortStaff } from '../lib/format'
+import { inputDateTime, shortStaff, time } from '../lib/format'
 import { yearsOld } from '../lib/inpatient'
 import { clinicalRange, parseDecimal, VITALS, vitalLevel, type VitalKey, type VitalLevel } from '../lib/vitals'
 import { EMPTY_VITALS, FIELDS, fieldIssue, vitalNumber, type VitalsForm } from '../lib/vitalsForm'
@@ -17,7 +19,7 @@ const DAY = 24 * HOUR
 type Range = '24h' | '3d' | '7d' | 'all'
 const RANGES: [Range, string][] = [['24h', 'Últimas 24 h'], ['3d', '3 días'], ['7d', '7 días'], ['all', 'Toda la estancia']]
 const dayStart = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime() }
-const hm = (t: number | string) => new Date(t).toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })
+const hm = (t: number | string) => time(new Date(t).toISOString())
 const dmy = (t: number | string) => new Date(t).toLocaleDateString('es-HN', { day: '2-digit', month: '2-digit' })
 const fmt = (k: VitalKey, x: number) => (k === 'temperature' ? x.toFixed(1) : VITALS[k].decimals ? String(Math.round(x * 10) / 10) : String(x))
 
@@ -394,11 +396,11 @@ function RecordVitalsModal({ file, p, onClose, onSaved, past = false, suggested 
   const errors = FIELDS.filter((k) => fieldIssue(k, v, ageYears)?.level === 'error')
   const any = FIELDS.some((k) => vitalNumber(v, k) != null)
   const now = useNow()
-  const future = !!takenAt && new Date(takenAt).getTime() > now.getTime() + 60_000
+  const future = !!takenAt && fromLocalValue(takenAt).getTime() > now.getTime() + 60_000
   const save = async () => {
     setBusy(true)
     try {
-      const body: Record<string, unknown> = { takenAt: new Date(takenAt).toISOString(), notes: v.notes.trim() || undefined }
+      const body: Record<string, unknown> = { takenAt: localValueToIso(takenAt), notes: v.notes.trim() || undefined }
       for (const k of FIELDS) body[k] = vitalNumber(v, k)
       await api(`/inpatient/${file.hospitalization.id}/vitals`, { body })
       notify('Signos vitales registrados')
@@ -426,7 +428,7 @@ function RecordVitalsModal({ file, p, onClose, onSaved, past = false, suggested 
     </>}>
       <p className="muted" style={{ fontSize: 13.5 }}>{past ? 'Una lectura que se tomó a una hora que ya pasó. Queda como «Registro tardío», con tu nombre y la hora en que la anotas, y reemplaza el «Cubierta por…» de esa hora.' : 'Anota sólo lo que tomaste (por ejemplo, sólo la temperatura). Puedes usar punto o coma para los decimales.'}</p>
       <label className="field"><span>Fecha y hora de la toma</span>
-        <input className={`input ${future ? 'input--error' : ''}`} type="datetime-local" value={takenAt} max={maxAt} onChange={(e) => setTakenAt(e.target.value)} />
+        <DateTimeField value={takenAt} max={maxAt} invalid={future} onChange={setTakenAt} label="Hora de la toma" />
         {future ? <small className="field__msg field__msg--error">No puede ser en el futuro.</small> : <small className="muted">Si la anotas después de tomarla, corrige la hora. La hora en que la anotas se guarda sola.</small>}</label>
       <VitalsFields v={v} setV={setV} checked={checked} setChecked={setChecked} ageYears={ageYears} onEdit={() => setConfirming(false)} />
       <label className="field"><span>Observaciones (opcional)</span><textarea className="textarea textarea--sm" rows={2} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></label>

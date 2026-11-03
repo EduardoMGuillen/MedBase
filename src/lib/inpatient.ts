@@ -1,4 +1,5 @@
 import type { Dose, InpatientFile, InpatientMed, InpatientNote, OrderLine, OrderLineTag, OrderMark } from './types.js'
+import { clinicParts } from './dateInput.js'
 import { normalize } from './patients.js'
 
 /**
@@ -33,9 +34,9 @@ export const infusionUnitLabel = (u?: string) => (u === 'ml/min' ? 'mL/min' : 'm
 
 /** dd/mm/aaaa HH:mm en la hora local, sin depender del idioma del navegador. */
 const dmyHm = (iso: string) => {
-  const d = new Date(iso)
+  const d = clinicParts(new Date(iso))
   const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`
+  return `${p(d.d)}/${p(d.mo)}/${d.y} ${p(d.h)}:${p(d.mi)}`
 }
 
 /**

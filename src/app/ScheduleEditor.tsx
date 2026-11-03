@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { TimeField } from '../components/DateTimeField'
 import { Plus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { DAY_NAMES } from '../lib/format'
@@ -50,11 +51,11 @@ export function ScheduleEditor({ d, extra, onSaved, onDirty }: {
               <div className="sched__ranges">
                 {on ? ranges.map((r, i) => (
                   <span key={i} className="sched__range">
-                    <input className="input" type="time" step={900} value={r.start} aria-label={`${DAY_NAMES[day]}, entrada de la franja ${i + 1}`}
-                      onChange={(e) => setDay(day, ranges.map((x, j) => (j === i ? { ...x, start: e.target.value } : x)))} />
+                    <TimeField value={r.start} label={`${DAY_NAMES[day]}, entrada de la franja ${i + 1}`}
+                      onChange={(v) => setDay(day, ranges.map((x, j) => (j === i ? { ...x, start: v } : x)))} />
                     <span className="muted">a</span>
-                    <input className="input" type="time" step={900} value={r.end} aria-label={`${DAY_NAMES[day]}, salida de la franja ${i + 1}`}
-                      onChange={(e) => setDay(day, ranges.map((x, j) => (j === i ? { ...x, end: e.target.value } : x)))} />
+                    <TimeField value={r.end} label={`${DAY_NAMES[day]}, salida de la franja ${i + 1}`}
+                      onChange={(v) => setDay(day, ranges.map((x, j) => (j === i ? { ...x, end: v } : x)))} />
                     <button type="button" className="icon-btn" aria-label={`Quitar franja ${i + 1} del ${DAY_NAMES[day].toLowerCase()}`} onClick={() => setDay(day, ranges.filter((_, j) => j !== i))}><X size={15} /></button>
                   </span>
                 )) : <span className="muted">No atiende</span>}

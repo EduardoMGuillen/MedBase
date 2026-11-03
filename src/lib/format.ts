@@ -1,3 +1,4 @@
+import { CLINIC_TZ, clinicParts, toLocalValue } from './dateInput.js'
 import type { ApptStatus, Background, ClinicContact, Diagnosis, Patient, PrescriptionItem } from './types'
 
 export const fullName = (p: Patient) => `${p.firstName} ${p.lastName}`
@@ -19,11 +20,14 @@ export function age(birthDate: string, now = new Date()) {
   return plural(days, 'día', 'días')
 }
 
-export const time = (iso: string) =>
-  new Date(iso).toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })
+/** GE3 (ronda 9): HH:mm de 24 horas en la hora de Honduras, sin depender del navegador (nunca AM/PM ni «24:05»). */
+export const time = (iso: string) => {
+  const p = clinicParts(new Date(iso))
+  return `${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}`
+}
 
 export const date = (iso: string, opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' }) =>
-  new Date(iso).toLocaleDateString('es-HN', opts)
+  new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00-06:00` : iso).toLocaleDateString('es-HN', { timeZone: CLINIC_TZ, ...opts })
 
 export const sameDay = (iso: string, d: Date) => {
   const x = new Date(iso)
@@ -252,8 +256,8 @@ export function medicationLine(i: PrescriptionItem) {
 /** Número que identifica el expediente en documentos: la identidad si la clínica así lo configuró. */
 export const recordNumber = (p: Pick<Patient, 'record' | 'dni'>, s: { recordUsesDni: boolean }) => (s.recordUsesDni && p.dni ? p.dni : p.record)
 
-/** Valor para un `<input type="datetime-local">` en hora local. */
-export const inputDateTime = (d: Date) => `${localISODate(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+/** Valor de un campo de fecha y hora (DateTimeField): «aaaa-mm-ddTHH:mm» en la hora de Honduras. */
+export const inputDateTime = (d: Date) => toLocalValue(d)
 
 export const dateTime = (iso: string) => `${date(iso, { day: 'numeric', month: 'short' })}, ${time(iso)}`
 
@@ -271,9 +275,11 @@ export const examText = (exam = '') => exam.split(/\r?\n/).filter((l) => !/^\s*[
 
 /** dd/mm/aaaa de una fecha ISO, en la hora local (ronda 8: formato de Honduras, sin depender del idioma del navegador). */
 export const dmy = (iso: string) => {
-  const d = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(`${iso}T12:00:00`) : new Date(iso)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`
+  const p = clinicParts(new Date(iso))
+  const z = (n: number) => String(n).padStart(2, '0')
+  return `${z(p.d)}/${z(p.mo)}/${p.y}`
 }
 /** dd/mm/aaaa HH:mm (24 horas). */
 export const dmyTime = (iso: string) => `${dmy(iso)} ${time(iso)}`

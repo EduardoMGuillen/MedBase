@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { DateField, TimeField } from '../components/DateTimeField'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Ban, ChevronLeft, FileBadge, MessageCircle, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -113,16 +114,16 @@ export default function Certificate() {
               {(Object.keys(CERT_KIND) as Kind[]).map((k) => <button key={k} role="radio" aria-checked={kind === k} onClick={() => setKind(k)}>{CERT_KIND[k].label}</button>)}
             </div></div>
           <label className="field span-2"><span>Dirigida a</span><input className="input" value={f.to} onChange={(e) => set('to', e.target.value)} /></label>
-          <label className="field"><span>Fecha de la atención</span><input className="input" type="date" value={f.visitDate} onChange={(e) => set('visitDate', e.target.value)} /></label>
+          <div className="field"><span>Fecha de la atención</span><DateField value={f.visitDate} onChange={(v) => set('visitDate', v)} label="Fecha de la atención" /></div>
           {kind !== 'rest' && kind !== 'free' && (<>
-            <label className="field"><span>Hora de llegada</span><input className="input" type="time" value={f.fromTime} onChange={(e) => set('fromTime', e.target.value)} /></label>
-            <label className="field"><span>Hora de salida</span><input className="input" type="time" value={f.toTime} onChange={(e) => set('toTime', e.target.value)} /></label>
+            <div className="field"><span>Hora de llegada</span><TimeField value={f.fromTime} onChange={(v) => set('fromTime', v)} label="Hora de llegada" /></div>
+            <div className="field"><span>Hora de salida</span><TimeField value={f.toTime} onChange={(v) => set('toTime', v)} label="Hora de salida" /></div>
           </>)}
           {kind === 'rest' && (<>
             <label className="field"><span>Días de reposo</span><input className="input num" type="number" min={1} max={90} value={f.restDays} onChange={(e) => set('restDays', Math.max(1, Math.min(90, Number(e.target.value) || 1)))} /></label>
             <label className="field"><span>Reposo</span><select className="select" value={f.restType} onChange={(e) => set('restType', e.target.value as 'relativo' | 'absoluto')}>
               <option value="relativo">Relativo</option><option value="absoluto">Absoluto (total)</option></select></label>
-            <label className="field"><span>Desde</span><input className="input" type="date" value={f.restFrom} onChange={(e) => set('restFrom', e.target.value)} /></label>
+            <div className="field"><span>Desde</span><DateField value={f.restFrom} onChange={(v) => set('restFrom', v)} label="Desde" /></div>
             <div className="field"><span>Hasta (se calcula)</span><div className="picked"><b>{date(`${draft.restTo}T12:00:00`)}</b></div></div>
           </>)}
           {kind === 'companion' && (<>

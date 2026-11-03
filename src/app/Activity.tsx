@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { DateField } from '../components/DateTimeField'
 import { Download } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
@@ -53,8 +54,8 @@ export function AuditLog({ mine = false }: { mine?: boolean }) {
           <option value="">Todos</option>{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></label>
         <label className="field"><span>Tipo de acción</span><select className="select" value={f.kind} onChange={(e) => set('kind')(e.target.value)}>
           <option value="">Todas</option>{(Object.keys(AUDIT_KINDS) as AuditKind[]).map((k) => <option key={k} value={k}>{AUDIT_KINDS[k]}</option>)}</select></label>
-        <label className="field"><span>Desde</span><input className="input" type="date" value={f.from} max={f.to || undefined} onChange={(e) => set('from')(e.target.value)} /></label>
-        <label className="field"><span>Hasta</span><input className="input" type="date" value={f.to} min={f.from || undefined} onChange={(e) => set('to')(e.target.value)} /></label>
+        <div className="field"><span>Desde</span><DateField value={f.from} max={f.to || undefined} onChange={(v) => set('from')(v)} label="Desde" /></div>
+        <div className="field"><span>Hasta</span><DateField value={f.to} min={f.from || undefined} onChange={(v) => set('to')(v)} label="Hasta" /></div>
         <label className="field audit-filters__q"><span>Buscar en la acción</span><input className="input" value={f.q} onChange={(e) => set('q')(e.target.value)} placeholder="Ej. receta, cobro, constancia" /></label>
         <div className="audit-filters__patient"><PatientPicker value={f.patientId} onChange={set('patientId')} autoFocus={false} /></div>
       </div>

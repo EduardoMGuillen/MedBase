@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { DateField } from '../components/DateTimeField'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Globe, Plus, Receipt, Search, UserPlus, X } from 'lucide-react'
 import { useStore, type NewAppointment } from '../lib/store'
@@ -94,8 +95,8 @@ export default function Agenda() {
           <h2 className="cal-bar__title">{title}</h2>
         </div>
         <div className="cal-bar__tools">
-          <input className="input cal-bar__date" type="date" value={localISODate(cursor)} aria-label="Ir a una fecha"
-            onChange={(e) => e.target.value && setCursor(new Date(`${e.target.value}T12:00:00`))} />
+          <DateField className="cal-bar__date" value={localISODate(cursor)} label="Ir a una fecha" required
+            onChange={(v) => v && setCursor(new Date(`${v}T12:00:00`))} />
           {/* Con un solo médico (consultorio) no hay a quién filtrar */}
           {doctors.length > 1 && <select className="select cal-bar__doc" value={doctorFilter} onChange={(e) => setDoctorFilter(e.target.value)} aria-label="Médico">
             <option value="all">Todos los médicos</option>
@@ -471,7 +472,7 @@ function AppointmentForm({ title, submitLabel, doctors, patients, initial, lockP
         </select>
       </label>}
       <div className="form-grid">
-        <label className="field"><span>Fecha</span><input className="input" type="date" value={f.date} onChange={(e) => e.target.value && set('date', e.target.value)} /></label>
+        <div className="field"><span>Fecha</span><DateField value={f.date} required onChange={(v) => v && set('date', v)} label="Fecha" /></div>
         <label className="field"><span>Hora</span>
           <select className="select" value={f.time} disabled={!options.length} onChange={(e) => set('time', e.target.value)}>
             {!options.length && <option value="">Sin horario</option>}

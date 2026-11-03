@@ -1,9 +1,10 @@
 import { useState } from 'react'
+import { DateField } from '../components/DateTimeField'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CheckCheck, MessageCircle, Plus, Smartphone, Trash2 } from 'lucide-react'
 import { useStore, type FollowupInput } from '../lib/store'
 import { Modal, PageHead } from '../components/ui'
-import { clinicWhatsapp, date, dateTime, fullName, localISODate } from '../lib/format'
+import { clinicWhatsapp, date, dateTime, fullName, localISODate, time } from '../lib/format'
 import { addDays, CHRONIC_PRESETS, clinicToday, daysLabel, daysUntil, FOLLOWUP_KIND, followupMessage, REMINDER_TYPE } from '../lib/followups'
 import type { Followup } from '../lib/types'
 import { PatientPicker } from './Inpatients'
@@ -110,7 +111,7 @@ function WhatsAppMock({ f, onClose }: { f: Followup; onClose: () => void }) {
       <div className="phone">
         <div className="phone__bar"><b>{settings.name}</b><span>{p.phone}</span></div>
         <div className="phone__chat">
-          <div className="phone__bubble">{text}<small>{new Date().toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })}{sent ? ' ✓✓' : ''}</small></div>
+          <div className="phone__bubble">{text}<small>{time(new Date().toISOString())}{sent ? ' ✓✓' : ''}</small></div>
         </div>
       </div>
       {!sent ? (
@@ -149,7 +150,7 @@ export function FollowupFields({ value, onChange }: { value: FollowupInput; onCh
           placeholder={value.kind === 'chronic' ? 'Ej. Hipertensión arterial' : value.reminderType === 'procedure' || value.kind === 'procedure' ? 'Ej. Hernioplastia inguinal' : 'Ej. Hacerse química sanguínea y volver con resultados'} />
         <datalist id="chronic-presets">{CHRONIC_PRESETS.map((c) => <option key={c.title} value={c.title} />)}</datalist></label>
       <label className="field"><span>{value.kind === 'chronic' ? 'Próximo control' : 'Fecha'}</span>
-        <input className="input" type="date" value={value.dueDate} min={localISODate(new Date())} onChange={(e) => set('dueDate', e.target.value)} /></label>
+        <DateField value={value.dueDate} min={localISODate(new Date())} onChange={(v) => set('dueDate', v)} label="Fecha" /></label>
       {value.kind === 'chronic' && (
         <label className="field"><span>Control cada</span>
           <select className="select" value={value.everyDays ?? 90} onChange={(e) => set('everyDays', Number(e.target.value))}>

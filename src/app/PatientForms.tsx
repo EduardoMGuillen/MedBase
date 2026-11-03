@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { DateField } from '../components/DateTimeField'
 import { Modal } from '../components/ui'
 import { useStore } from '../lib/store'
 import { BACKGROUND_GROUPS, CIVIL_STATUS, dniDigits, dniLength, EDUCATION, formatPhone } from '../lib/format'
@@ -155,7 +156,7 @@ export function BackgroundForm({ initial, onClose, onSave }: { initial: Patient;
             {g.fields.map((fl) => (
               <label key={fl.key} className={`field ${g.fields.length === 1 ? 'span-2' : ''}`}><span>{fl.label}</span>
                 {fl.date
-                  ? <input className="input" type="date" value={b[fl.key] ?? ''} onChange={(e) => setB({ ...b, [fl.key]: e.target.value })} />
+                  ? <DateField value={b[fl.key] ?? ''} onChange={(v) => setB({ ...b, [fl.key]: v })} label={fl.label} />
                   : <textarea className="textarea textarea--sm" rows={2} value={b[fl.key] ?? ''} onChange={(e) => setB({ ...b, [fl.key]: e.target.value })} />}
               </label>
             ))}

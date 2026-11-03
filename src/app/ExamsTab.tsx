@@ -1,4 +1,6 @@
 import { Fragment, useRef, useState } from 'react'
+import { fromLocalValue } from '../lib/dateInput'
+import { DateTimeField } from '../components/DateTimeField'
 import { Link } from 'react-router-dom'
 import { Camera, CheckCheck, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileText, FlaskConical, Printer, ScanLine, TriangleAlert, Upload, X } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -282,8 +284,8 @@ function ExternalResult({ group, patientId, hospitalizationId, onClose, onDone }
       <button className="btn btn--primary" disabled={name.trim().length < 2 || !file || busy} onClick={async () => {
         setBusy(true)
         try {
-          const att = await uploadLarge(patientId, file!, { name: file!.name, mime: file!.type || 'application/pdf', category: group, title: name.trim(), takenAt: new Date(takenAt).toISOString(), hospitalizationId })
-          await api('/exams/external-result', { body: { patientId, hospitalizationId, group, name: name.trim(), takenAt: new Date(takenAt).toISOString(), fileIds: [att.id], report: report.trim() || undefined } })
+          const att = await uploadLarge(patientId, file!, { name: file!.name, mime: file!.type || 'application/pdf', category: group, title: name.trim(), takenAt: fromLocalValue(takenAt).toISOString(), hospitalizationId })
+          await api('/exams/external-result', { body: { patientId, hospitalizationId, group, name: name.trim(), takenAt: fromLocalValue(takenAt).toISOString(), fileIds: [att.id], report: report.trim() || undefined } })
           onDone()
         } catch (x) { notify((x as Error).message, 'error') }
         setBusy(false)
@@ -291,7 +293,7 @@ function ExternalResult({ group, patientId, hospitalizationId, onClose, onDone }
     </>}>
       <p className="muted" style={{ fontSize: 14 }}>Para un resultado que el paciente trae o que llegó de otro laboratorio, sin orden en el sistema.</p>
       <label className="field"><span>Qué examen es</span><input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={group === 'lab' ? 'Ej. Hemograma' : 'Ej. Ultrasonido abdominal'} /></label>
-      <label className="field"><span>Fecha y hora</span><input className="input" type="datetime-local" value={takenAt} onChange={(e) => setTakenAt(e.target.value)} /></label>
+      <div className="field"><span>Fecha y hora</span><DateTimeField value={takenAt} max={inputDateTime(new Date())} onChange={setTakenAt} label="Fecha y hora" /></div>
       {group === 'imaging' && <label className="field"><span>Informe (opcional)</span><textarea className="textarea textarea--sm" rows={3} value={report} onChange={(e) => setReport(e.target.value)} /></label>}
       <div className="field"><span>Foto o PDF</span>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { DateField } from '../components/DateTimeField'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, Download, FileText, MessageCircle, Plus, Printer, Search, Wallet, X } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -89,8 +90,8 @@ export default function Billing() {
           <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar en caja" placeholder="Buscar paciente, recibo, factura o referencia" />
         </label>
         {tab === 'history' && (<>
-          <label className="field" style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}><span>Desde</span><input className="input" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>
-          <label className="field" style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}><span>Hasta</span><input className="input" type="date" value={to} min={from} max={todayKey} onChange={(e) => setTo(e.target.value)} /></label>
+          <label className="field" style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}><span>Desde</span><DateField value={from} max={to} onChange={setFrom} label="Desde" /></label>
+          <label className="field" style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}><span>Hasta</span><DateField value={to} min={from} max={todayKey} onChange={setTo} label="Hasta" /></label>
         </>)}
         {charged.length > 0 && <button className="btn btn--ghost no-print" style={{ marginLeft: 'auto' }} onClick={exportCsv}><Download size={16} />Exportar a Excel</button>}
       </div>}

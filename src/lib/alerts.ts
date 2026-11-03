@@ -1,4 +1,5 @@
 import { doseTimes, medLabel, pendingOrdersOf, slotState } from './inpatient'
+import { time } from './format.js'
 import { activeVitals, currentVitalsMode, missedTakes, tempClass, vitalsModeShort, type TempBand } from './vitalsSheet'
 import { examLine, GROUP_LABEL, isPending } from './exams'
 import type { ExamGroup, InpatientFile } from './types'
@@ -33,7 +34,7 @@ export const LEVEL_RANK: Record<AlertLevel, number> = { critical: 0, pending: 1,
 export const LEVEL_LABEL: Record<AlertLevel, [string, string]> = { critical: ['crítica', 'críticas'], pending: ['pendiente', 'pendientes'], info: ['aviso', 'avisos'] }
 
 const HOUR = 3_600_000
-const hm = (t: number | string | Date) => new Date(t).toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })
+const hm = (t: number | string | Date) => time(new Date(t).toISOString())
 /** Hora, y la fecha si no es de hoy. */
 /** «31/10», siempre con dos cifras. */
 const ddmm = (t: number | Date) => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` }

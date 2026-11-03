@@ -723,3 +723,27 @@ button.src-tag--none { cursor: pointer; }
 .refed__nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr)); gap: 8px; }
 .refed__hist { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 4px; }
 .ref-note__src { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+
+/* GE3 (ronda 9): campo propio de fecha y hora (dd/mm/aaaa HH:mm, 24 horas, sin AM/PM) */
+.dtf { position: relative; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; max-width: 100%; }
+.dtf__input { flex: 1 1 9rem; min-width: 0; }
+.dtf--date .dtf__input { flex-basis: 7.5rem; }
+.dtf--time .dtf__input { flex: 0 1 5.5rem; }
+.dtf__btn { flex: none; min-width: 44px; min-height: 44px; }
+.dtf__now { min-height: 44px; }
+.dtf__msg { flex-basis: 100%; }
+.dtf__pop { position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; width: min(300px, 88vw); display: grid; gap: 10px; padding: 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,.16); }
+.dtf__pop--time { width: auto; }
+.dtf__calhead { display: flex; align-items: center; justify-content: space-between; text-transform: capitalize; }
+.dtf__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.dtf__wd { font-size: 11.5px; color: var(--muted); font-weight: 650; padding: 4px 0; }
+.dtf__day { min-height: 36px; border: 0; background: none; border-radius: 8px; font: inherit; cursor: pointer; color: inherit; }
+.dtf__day:hover:not(:disabled) { background: var(--ward); }
+.dtf__day.is-today { box-shadow: inset 0 0 0 1px var(--ink); }
+.dtf__day.is-on { background: var(--ink); color: #fff; }
+.dtf__day:disabled { color: var(--faint); cursor: default; }
+.dtf__time { display: flex; align-items: end; gap: 6px; }
+.dtf__time label { display: grid; gap: 2px; }
+.dtf__time small { font-size: 11.5px; color: var(--muted); }
+.dtf__time .select { min-height: 44px; min-width: 4.5rem; }
+.dtf__popfoot { display: flex; justify-content: flex-end; gap: 6px; }

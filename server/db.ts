@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs'
+import { dmyTime } from '../src/lib/format.js'
 import { defaultAnalyte, defaultValues, groupsFromLimits, mergeCriticalGroups, type CriticalGroup } from '../src/lib/clinicalConfig.js'
 import { EXAMS, examKey } from '../src/lib/exams.js'
 import { randomUUID } from 'node:crypto'
@@ -1153,7 +1154,7 @@ async function insertInpatients(q: Sql) {
   await insertMany(q, 'hosp_procedures', ['id', 'clinic_id', 'hospitalization_id', 'kind', 'name', 'scheduled_at', 'status', 'notes', 'created_by', 'created_at', 'updated_by', 'updated_at'],
     d.procedures.map((x) => [x.id, A, x.hospitalizationId, x.kind, x.name, x.scheduledAt ?? null, x.status, x.notes ?? null, x.createdBy, x.createdAt, x.updatedBy ?? null, x.updatedAt ?? null]))
   for (const l of d.labs) {
-    const pdf = textPdf(`${l.title} - Laboratorio de demostracion`, [`Fecha de toma: ${new Date(l.takenAt).toLocaleString('es-HN')}`, '', ...l.lines])
+    const pdf = textPdf(`${l.title} - Laboratorio de demostracion`, [`Fecha de toma: ${dmyTime(l.takenAt)}`, '', ...l.lines])
     await q.run('INSERT INTO attachments (id, patient_id, name, mime, size, category, data, uploaded_by, uploaded_at, clinic_id, title, taken_at, hospitalization_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
       [l.id, l.patientId, `${l.title}.pdf`, 'application/pdf', pdf.length, 'lab', new Uint8Array(pdf), 's-rios', l.takenAt, A, l.title, l.takenAt, l.hospitalizationId])
   }
@@ -1218,7 +1219,7 @@ async function insertCases(q: Sql) {
   await insertMany(q, 'hosp_procedures', ['id', 'clinic_id', 'hospitalization_id', 'kind', 'name', 'scheduled_at', 'status', 'notes', 'created_by', 'created_at', 'updated_by', 'updated_at'],
     d.procedures.map((x) => [x.id, A, x.hospitalizationId, x.kind, x.name, x.scheduledAt ?? null, x.status, x.notes ?? null, x.createdBy, x.createdAt, x.updatedBy ?? null, x.updatedAt ?? null]))
   for (const l of d.labs) {
-    const pdf = textPdf(`${l.title} - Estudio de demostracion`, [`Fecha de toma: ${new Date(l.takenAt).toLocaleString('es-HN')}`, '', ...l.lines])
+    const pdf = textPdf(`${l.title} - Estudio de demostracion`, [`Fecha de toma: ${dmyTime(l.takenAt)}`, '', ...l.lines])
     await q.run('INSERT INTO attachments (id, patient_id, name, mime, size, category, data, uploaded_by, uploaded_at, clinic_id, title, taken_at, hospitalization_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
       [l.id, l.patientId, `${l.title}.pdf`, 'application/pdf', pdf.length, l.category, new Uint8Array(pdf), 's-rios', l.takenAt, A, l.title, l.takenAt, l.hospitalizationId ?? null])
   }

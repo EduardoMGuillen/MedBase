@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { DateTimeField } from '../components/DateTimeField'
+import { localValueToIso } from '../lib/dateInput'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { BedDouble, Plus, Search, X } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -173,7 +175,7 @@ export function AdmitModal({ initialPatientId, consultationId, bedId, onClose, o
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
         const h = await admit({
-          patientId, bedId: f.bedId, admittedAt: new Date(f.admittedAt).toISOString(), reason: f.reason.trim(), diagnoses: dx, consultationId, specialty: specialty.trim() || undefined,
+          patientId, bedId: f.bedId, admittedAt: localValueToIso(f.admittedAt), reason: f.reason.trim(), diagnoses: dx, consultationId, specialty: specialty.trim() || undefined,
           companionName: f.companionName.trim() || undefined, companionRelation: f.companionRelation.trim() || undefined,
           companionPhone: f.companionPhone.trim() || undefined, patientPhone: f.patientPhone.trim() || undefined,
         })
@@ -187,7 +189,7 @@ export function AdmitModal({ initialPatientId, consultationId, bedId, onClose, o
       {already && <div className="alert-strip">Este paciente ya está {already.kind === 'observation' ? 'en observación: desde su expediente puedes pasarlo a hospitalización' : 'hospitalizado'}. <Link to={stayPath(already)}>Abrir su expediente</Link>.</div>}
       <div className="form-grid">
         <div className="span-2"><BedFields bedId={f.bedId} specialty={specialty} onChange={(v) => { setF({ ...f, bedId: v.bedId }); setSpecialty(v.specialty) }} /></div>
-        <label className="field"><span>Fecha y hora del ingreso</span><input className="input" type="datetime-local" value={f.admittedAt} onChange={set('admittedAt')} /></label>
+        <div className="field"><span>Fecha y hora del ingreso</span><DateTimeField value={f.admittedAt} onChange={(v) => setF({ ...f, admittedAt: v })} label="Fecha y hora del ingreso" /></div>
         <label className="field span-2"><span>Motivo del ingreso</span><textarea className="textarea textarea--sm" rows={2} value={f.reason} onChange={set('reason')} /></label>
       </div>
       <DxPicker label="Diagnósticos de ingreso" value={dx} onChange={setDx} />

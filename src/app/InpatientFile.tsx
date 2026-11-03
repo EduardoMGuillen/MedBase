@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { fromLocalValue } from '../lib/dateInput'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { BedDouble, ChevronLeft, ChevronRight, FileSignature, FileText, FlaskConical, LogOut, NotebookPen, Pencil, Pill, Plus, Send, Syringe, TriangleAlert, X } from 'lucide-react'
 import { useStore, type NewMed } from '../lib/store'
@@ -512,7 +513,7 @@ function StopInfusionModal({ med, onClose, onSaved }: { med: InpatientMed; onClo
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--danger" disabled={busy} onClick={async () => {
         setBusy(true)
-        const ok = await stopInfusion(med.id, { at: new Date(when).toISOString(), note: note.trim() || undefined })
+        const ok = await stopInfusion(med.id, { at: fromLocalValue(when).toISOString(), note: note.trim() || undefined })
         setBusy(false)
         if (ok) onSaved()
       }}>Suspender infusión</button>
@@ -566,7 +567,7 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className={`btn ${given ? 'btn--primary' : 'btn--danger'}`} disabled={busy || (!given && !note.trim()) || (old && reason.trim().length < 5)} onClick={async () => {
         setBusy(true)
-        const ok = await recordDose(med.id, { scheduledAt: at?.toISOString(), givenAt: new Date(when).toISOString(), status, note: note.trim() || undefined, reason: old ? reason.trim() : undefined })
+        const ok = await recordDose(med.id, { scheduledAt: at?.toISOString(), givenAt: fromLocalValue(when).toISOString(), status, note: note.trim() || undefined, reason: old ? reason.trim() : undefined })
         setBusy(false)
         if (ok) onSaved()
       }}>{given ? (med.infusionRate ? 'Registrar inicio' : 'Registrar administración') : status === 'omitted' ? 'Registrar como omitida' : 'Registrar como no aplicada'}</button>
@@ -583,8 +584,8 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
       )}
       {!given && <p className="muted" style={{ fontSize: 13.5 }}>Con el motivo, la dosis deja de alertar y queda en la hoja como {status === 'omitted' ? 'omitida' : 'no aplicada'}.</p>}
       <div className="field"><span>{med.infusionRate && given ? 'Hora de inicio real' : 'Hora real'}</span><DateTimeField value={when} max={inputDateTime(new Date())} onChange={setWhen} label="Hora real" /></div>
-      {given && at && new Date(when).getTime() - at.getTime() > LATE_AFTER_MIN * 60_000 && (
-        <p className="muted" style={{ fontSize: 13.5 }}>Queda como administrada con retraso: {elapsed(Math.round((new Date(when).getTime() - at.getTime()) / 60_000))} después de la hora indicada.</p>)}
+      {given && at && fromLocalValue(when).getTime() - at.getTime() > LATE_AFTER_MIN * 60_000 && (
+        <p className="muted" style={{ fontSize: 13.5 }}>Queda como administrada con retraso: {elapsed(Math.round((fromLocalValue(when).getTime() - at.getTime()) / 60_000))} después de la hora indicada.</p>)}
       {!given && <SkipReasons value={note} onChange={setNote} reasons={status === 'omitted' ? OMIT_REASONS : SKIP_REASONS} />}
       <label className="field"><span>{given ? 'Observación (opcional)' : status === 'omitted' ? 'Motivo por el que se omitió' : 'Motivo por el que no se aplicó'}</span>
         <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={given ? 'Ej. Dolor 7/10' : status === 'omitted' ? 'Ej. Suspendida por el médico' : 'Ej. Paciente en ayuno para cirugía'} /></label>
@@ -629,14 +630,14 @@ function CorrectDoseModal({ med, dose, onClose, onSaved }: { med: InpatientMed; 
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={busy || reason.trim().length < 5 || (!given && !note.trim())} onClick={async () => {
         setBusy(true)
-        const ok = await correctDose(dose.id, { status, givenAt: new Date(when).toISOString(), note: note.trim() || undefined, reason: reason.trim() })
+        const ok = await correctDose(dose.id, { status, givenAt: fromLocalValue(when).toISOString(), note: note.trim() || undefined, reason: reason.trim() })
         setBusy(false)
         if (ok) onSaved()
       }}>Guardar corrección</button>
     </>}>
       <p className="muted" style={{ fontSize: 14 }}>Registrada como {DOSE_LABEL[dose.status].toLowerCase()} a las {time(dose.givenAt)} del {date(dose.givenAt)}. El registro anterior se conserva.</p>
       {dose.scheduledAt && <DoseStatus value={status} onChange={setStatus} />}
-      <label className="field"><span>Hora real</span><input className="input" type="datetime-local" value={when} max={inputDateTime(new Date())} onChange={(e) => setWhen(e.target.value)} /></label>
+      <div className="field"><span>Hora real</span><DateTimeField value={when} max={inputDateTime(new Date())} onChange={setWhen} label="Hora real" /></div>
       {!given && <SkipReasons value={note} onChange={setNote} reasons={status === 'omitted' ? OMIT_REASONS : SKIP_REASONS} />}
       <label className="field"><span>{given ? 'Observación (opcional)' : status === 'omitted' ? 'Motivo por el que se omitió' : 'Motivo por el que no se aplicó'}</span><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
       <label className="field"><span>Motivo de la corrección (queda en la bitácora)</span><input className="input" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Se anotó una hora equivocada" /></label>
@@ -935,7 +936,7 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize }: { f
   const [busy, setBusy] = useState(false)
   // AN1: borrador que se guarda solo
   const draft = useDraftSync<ProcDraft>('procedimiento', file.hospitalization.id, f, (x) => { if (!initial) setF(x) }, !f.name.trim() && !f.text.trim())
-  const performed = new Date(f.performedAt)
+  const performed = fromLocalValue(f.performedAt)
   const future = performed.getTime() > now.getTime() + 60_000
   // Quirúrgicas firmadas en las 24 horas antes del procedimiento (también los registros anteriores marcados como autorizados)
   const recent = (at: string) => { const t = new Date(at).getTime(); return t <= performed.getTime() + 2 * 60_000 && t >= performed.getTime() - 24 * 3_600_000 }
@@ -970,7 +971,7 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize }: { f
       <div className="form-grid">
         <label className="field"><span>Procedimiento realizado</span><input className="input" autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Escribe qué se hizo" /></label>
         <label className="field"><span>Fecha y hora del procedimiento</span>
-          <input className={`input ${future ? 'input--error' : ''}`} type="datetime-local" value={f.performedAt} max={inputDateTime(now)} onChange={(e) => setF({ ...f, performedAt: e.target.value })} />
+          <DateTimeField value={f.performedAt} max={inputDateTime(now)} invalid={future} onChange={(v) => setF({ ...f, performedAt: v })} label="Fecha y hora del procedimiento" />
           {future && <small className="field__msg field__msg--error">No puede ser en el futuro.</small>}
           <small className="muted">Si escribes la nota después del procedimiento, corrige la hora. La hora en que escribes la nota se guarda sola.</small></label>
       </div>
@@ -1038,7 +1039,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
   const ageYears = p.birthDate ? yearsOld(p.birthDate) : undefined
   const nvFilled = !!nv && FIELDS.some((k) => nv[k].trim())
   const nvErrors = nv ? FIELDS.filter((k) => fieldIssue(k, nv, ageYears)?.level === 'error') : []
-  const nvFuture = !!nv && new Date(nvAt).getTime() > Date.now() + 60_000
+  const nvFuture = !!nv && fromLocalValue(nvAt).getTime() > Date.now() + 60_000
   // EX1: exámenes pedidos en la nota
   const [exams, setExams] = useState<ExamInput[]>([])
   const [extraText, setExtraText] = useState('')
@@ -1125,7 +1126,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
         // MC7 (ronda 6): el servidor arma el cuadro completo (Continúa, Nueva, Modificada, Omitida) sobre la última nota firmada
         const chain = { basedOn, decisions: Object.entries(decisions).filter(([id]) => activeInd.some((a) => a.id === id)).map(([id, x]) => ({ id, ...x })) }
         const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? { ...n, diagnoses: kind === 'evolution' ? d.diagnoses : [] } : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, evolution: d.evolution.trim(), exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId,
-          vitalsTaken: nvFilled ? { takenAt: new Date(nvAt).toISOString(), ...Object.fromEntries(FIELDS.map((k) => [k, vitalNumber(nv!, k)]).filter(([, x]) => x !== undefined)) } : undefined })
+          vitalsTaken: nvFilled ? { takenAt: fromLocalValue(nvAt).toISOString(), ...Object.fromEntries(FIELDS.map((k) => [k, vitalNumber(nv!, k)]).filter(([, x]) => x !== undefined)) } : undefined })
         setBusy(false)
         // EX2 (ronda 8): con estudios externos se ofrece el cuadro «Órdenes de exámenes: Imprimir / Descargar PDF»
         if (ok) { draft.clear(); onSaved(ok.examBatch ?? undefined) } else onStale?.()
@@ -1333,7 +1334,7 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
     if (withLoading && !m.loadingDose?.trim()) return null
     const everyHours = freq === 'once' || infusion ? undefined : Number(freq)
     // Con dosis inicial «Ahora (STAT)», la primera hora de la orden es ahora; las siguientes, desde ahí más el intervalo
-    const firstAt = withLoading && loadingNow ? new Date().toISOString() : m.prn && !infusion ? undefined : new Date(m.firstAt!).toISOString()
+    const firstAt = withLoading && loadingNow ? new Date().toISOString() : m.prn && !infusion ? undefined : fromLocalValue(m.firstAt!).toISOString()
     return { ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours, prn: infusion ? false : m.prn, instructions: m.instructions?.trim() || undefined, prnCondition: m.prn && !infusion ? m.prnCondition?.trim() : undefined,
       firstAt, infusionRate: infusion ? rateNum : undefined, infusionUnit: infusion ? unit.value : undefined,
       loadingDose: withLoading ? m.loadingDose!.trim() : undefined, loadingStat: withLoading ? loadingNow : undefined }

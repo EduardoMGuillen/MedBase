@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { time } from './format'
 import { api } from './api'
 
 export type DraftScope = 'consulta' | 'evolucion' | 'procedimiento' | 'egreso' | 'enfermeria' | 'referencia'
@@ -65,7 +66,7 @@ export function savedLabel(savedAt: string | null, now = new Date()) {
   const min = Math.floor((now.getTime() - new Date(savedAt).getTime()) / 60_000)
   if (min < 1) return 'Guardado hace un momento'
   if (min < 60) return `Guardado hace ${min} min`
-  return `Guardado a las ${new Date(savedAt).toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+  return `Guardado a las ${time(savedAt)}`
 }
 
 /** Tipos de adenda (AN1). */

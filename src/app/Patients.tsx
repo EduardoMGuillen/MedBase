@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { DateField } from '../components/DateTimeField'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, SlidersHorizontal, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -161,8 +162,8 @@ export default function Patients() {
         <Seg label="Última consulta" value={f.periodo || (f.desde || f.hasta ? 'personalizado' : '')} onPick={(v) => setParam({ periodo: v, fecha: '', ...(v === 'personalizado' ? {} : { desde: '', hasta: '' }) })}
           options={[['', 'Cualquier fecha'], ...Object.entries(PERIODS)]} />
         {(f.periodo === 'personalizado' || (!f.periodo && (f.desde || f.hasta))) && (
-          <div className="filters2__phrase">entre <input className="input" type="date" aria-label="Desde la fecha" value={f.desde} onChange={(e) => setParam({ desde: e.target.value })} />
-            y <input className="input" type="date" aria-label="Hasta la fecha" value={f.hasta} onChange={(e) => setParam({ hasta: e.target.value })} /></div>
+          <div className="filters2__phrase">entre <DateField label="Desde la fecha" value={f.desde} onChange={(v) => setParam({ desde: v })} />
+            y <DateField label="Hasta la fecha" value={f.hasta} onChange={(v) => setParam({ hasta: v })} /></div>
         )}</div>
       <div className="filters2__group"><h3>Próxima cita</h3>
         <Seg label="Próxima cita" value={f.cita} onPick={(v) => setParam({ cita: v })} options={[['', 'Cualquiera'], ['con', 'Tiene'], ['sin', 'No tiene']]} /></div>

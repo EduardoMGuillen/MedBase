@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { DateField } from '../components/DateTimeField'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { Building2, CalendarCheck, ChevronLeft, ChevronRight, Phone } from 'lucide-react'
 import { Logo } from '../components/Logo'
@@ -160,7 +161,7 @@ function ClinicBooking({ slug }: { slug: string }) {
                 <form onSubmit={submit} className="form-grid" style={{ maxWidth: 720 }}>
                   <label className="field"><span>Nombres</span><input className="input" required autoComplete="given-name" value={f.firstName} onChange={set('firstName')} /></label>
                   <label className="field"><span>Apellidos</span><input className="input" required autoComplete="family-name" value={f.lastName} onChange={set('lastName')} /></label>
-                  <label className="field"><span>Fecha de nacimiento</span><input className="input" type="date" required max={localISODate(new Date())} value={f.birthDate} onChange={set('birthDate')} /></label>
+                  <div className="field"><span>Fecha de nacimiento</span><DateField required max={localISODate(new Date())} value={f.birthDate} onChange={(v) => setF({ ...f, birthDate: v })} label="Fecha de nacimiento" /></div>
                   <label className="field"><span>Sexo</span><select className="select" required value={f.sex} onChange={set('sex')}><option value="">Elige</option><option value="F">Femenino</option><option value="M">Masculino</option></select></label>
                   <label className="field"><span>Teléfono con WhatsApp</span><input className="input" required inputMode="tel" autoComplete="tel" value={f.phone} onChange={set('phone')} placeholder="9876-5432" /></label>
                   <label className="field"><span>Número de identidad (opcional)</span><DniInput value={f.dni} onChange={(dni) => setF({ ...f, dni })} /></label>
