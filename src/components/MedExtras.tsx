@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { Plus, TriangleAlert, X } from 'lucide-react'
 import { useVademecum } from '../lib/vademecum'
 import { normalize } from '../lib/patients'
-import { searchDrugs } from '../lib/drugProvider'
+import { DrugSearch } from './DrugSearch'
 import { allergyConflict } from '../lib/catalogs'
 import { NEB_MAX_COMPONENTS } from '../lib/clinicalConfig'
 import { DILUENT_OPTIONS, type NebComponent, type Nebulization } from '../lib/medExtras'
@@ -32,7 +32,6 @@ export function LoadingDoseFields({ checked, onChecked, value, onValue, givenAt,
  */
 export function NebulizerFields({ value, onChange, allergies, firstName }: { value: Nebulization; onChange: (n: Nebulization) => void; allergies: string[]; firstName: string }) {
   const vademecum = useVademecum()
-  const [openRow, setOpenRow] = useState<number | null>(null)
   const set = (i: number, patch: Partial<NebComponent>) => onChange({ ...value, components: value.components.map((c, j) => (j === i ? { ...c, ...patch } : c)) })
   const other = !!value.diluent && !DILUENT_OPTIONS.slice(0, -1).includes(value.diluent)
   return (
@@ -40,19 +39,13 @@ export function NebulizerFields({ value, onChange, allergies, firstName }: { val
       <legend>Nebulizar con:</legend>
       {value.components.map((c, i) => {
         const q = normalize(c.drug)
-        // ME5: la misma búsqueda del vademécum (nombre, marca y alias del LNME)
-        const matches = searchDrugs(vademecum, c.drug, 6)
-        const known = !c.drug.trim() || vademecum.some((d) => normalize(d.name) === q)
+        const known = !c.drug.trim() || vademecum.some((d) => normalize(d.name) === q || d.aliases?.some((a) => normalize(a) === q))
         const conflict = c.drug.trim() ? allergyConflict(allergies, c.drug) : null
         return (
           <div key={i} className="neb__row">
-            <div className="field suggest"><span>Medicamento</span>
-              <input className="input" value={c.drug} autoFocus={i > 0 && !c.drug} onFocus={() => setOpenRow(i)} onBlur={() => setTimeout(() => setOpenRow(null), 150)}
-                onChange={(e) => { set(i, { drug: e.target.value }); setOpenRow(i) }} placeholder="Busca en el vademécum o escríbelo" aria-label={`Medicamento ${i + 1} de la nebulización`} />
-              {openRow === i && matches.length > 0 && <div className="suggest__list">{matches.map((d) => (
-                <button type="button" key={`${d.name}-${d.presentation}`} onMouseDown={(e) => e.preventDefault()} onClick={() => { set(i, { drug: d.name }); setOpenRow(null) }}>
-                  <span>{d.name}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{d.presentation}</span></button>))}</div>}
-            </div>
+            {/* ME8 (ronda 10): el mismo buscador que el resto de los formularios */}
+            <DrugSearch value={c.drug} drugs={vademecum} autoFocus={i > 0 && !c.drug} placeholder="Busca en el vademécum o escríbelo" ariaLabel={`Medicamento ${i + 1} de la nebulización`}
+              onChange={(t) => set(i, { drug: t })} onPick={(d) => set(i, { drug: d.name })} />
             <label className="field neb__amount"><span>Cantidad</span><input className="input" value={c.amount} onChange={(e) => set(i, { amount: e.target.value })} placeholder="Ej. 3 mL" aria-label={`Cantidad del medicamento ${i + 1}`} /></label>
             <button type="button" className="icon-btn neb__x" aria-label={`Quitar ${c.drug || `el medicamento ${i + 1}`}`} disabled={value.components.length === 1}
               onClick={() => onChange({ ...value, components: value.components.filter((_, j) => j !== i) })}><X size={15} /></button>

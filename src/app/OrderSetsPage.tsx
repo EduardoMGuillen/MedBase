@@ -11,6 +11,7 @@ import { hasBlank, itemText, medHasBlank } from '../lib/orderSets'
 import { ExamPicker } from '../components/Exams'
 import { GROUP_LABEL } from '../lib/exams'
 import { useVademecum } from '../lib/vademecum'
+import { DrugSearch } from '../components/DrugSearch'
 import { normalize } from '../lib/patients'
 import type { OrderSet, OrderSetItem, SetMed } from '../lib/types'
 
@@ -154,15 +155,14 @@ function SetMedForm({ initial, onSave, onCancel }: { initial: SetMed; onSave: (m
   const vademecum = useVademecum()
   const [m, setM] = useState<SetMed>(initial)
   const [freq, setFreq] = useState(initial.everyHours ? String(initial.everyHours) : initial.drug ? 'once' : '8')
-  const known = vademecum.some((d) => normalize(d.name) === normalize(m.drug))
+  const known = vademecum.some((d) => normalize(d.name) === normalize(m.drug) || d.aliases?.some((a) => normalize(a) === normalize(m.drug)))
   const ok = m.drug.trim() && m.dose.trim()
   return (
     <div className="rx-form">
-      <label className="field"><span>Medicamento</span>
-        <input className="input" list="set-drugs" value={m.drug} autoFocus placeholder="Busca en el vademécum o escríbelo"
-          onChange={(e) => { const d = vademecum.find((x) => x.name === e.target.value); setM({ ...m, drug: e.target.value, presentation: d?.presentation ?? m.presentation }) }} />
-        <datalist id="set-drugs">{vademecum.map((d) => <option key={`${d.name}-${d.presentation}`} value={d.name}>{d.presentation}</option>)}</datalist>
-        {m.drug.trim() && !known && <small className="field__msg field__msg--warn">No está en el vademécum de la clínica. Se puede guardar igual.</small>}</label>
+      {/* ME8 (ronda 10): el mismo buscador de medicamentos de todos los formularios */}
+      <DrugSearch value={m.drug} drugs={vademecum} autoFocus placeholder="Busca en el vademécum o escríbelo"
+        onChange={(t) => setM({ ...m, drug: t })} onPick={(d) => setM({ ...m, drug: d.name, presentation: d.presentation })}
+        below={m.drug.trim() && !known ? <small className="field__msg field__msg--warn">No está en el vademécum de la clínica. Se puede guardar igual.</small> : null} />
       <div className="form-grid">
         <label className="field"><span>Dosis</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g o ___ mg" /></label>
         <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => setM({ ...m, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>

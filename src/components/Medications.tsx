@@ -10,7 +10,8 @@ import { autoQuantity, defaultRoute, medicationLine, missingDays, ROUTES } from 
 import { normalize } from '../lib/patients'
 import { useVademecum } from '../lib/vademecum'
 import { lnmeRoute, searchDrugs } from '../lib/drugProvider'
-import { DrugOption, DrugPickedHint } from './DrugSuggestion'
+import { DrugPickedHint } from './DrugSuggestion'
+import { DrugSearch } from './DrugSearch'
 import { medHasBlank } from '../lib/orderSets'
 import type { Patient, PrescriptionItem } from '../lib/types'
 
@@ -29,7 +30,7 @@ export function MedicationList({ items, patient, onEdit, onRemove, editing, requ
         const noDays = requireDuration && missingDays(it)
         // De un set: huecos "___" por llenar y medicamentos que ya no están en el vademécum de la clínica
         const blank = medHasBlank(it)
-        const outside = !vademecum.some((d) => normalize(d.name) === normalize(it.drug))
+        const outside = !vademecum.some((d) => normalize(d.name) === normalize(it.drug) || d.aliases?.some((a) => normalize(a) === normalize(it.drug)))
         return (
           <li key={i} className={`${allergy || noDays || blank ? 'is-warn' : ''} ${editing === i ? 'is-editing' : ''}`}>
             <span className="orders__n">{i + 1}.</span>
@@ -70,7 +71,6 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
   const canAdd = can('rx.write') || can('drugs.manage')
   const [newDrug, setNewDrug] = useState<string | null>(null)
   const [m, setM] = useState<PrescriptionItem>({ ...EMPTY_MED, ...initial })
-  const [open, setOpen] = useState(!initial)
   const [overrideAllergy, setOverrideAllergy] = useState(false)
   const [overrideDup, setOverrideDup] = useState(false)
   const q = normalize(m.drug)
@@ -84,7 +84,7 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
       route: d.usual?.route ?? lnmeRoute(d, x.route) ?? (/ampolla|vial|frasco|bolsa/i.test(d.presentation) ? 'Intravenosa' : defaultRoute(d.presentation)),
       dose: d.usual?.dose ?? x.dose, frequency: d.usual?.frequency ?? x.frequency, duration: d.usual?.duration ?? x.duration,
     }))
-    setOpen(false); setOverrideAllergy(false); setOverrideDup(false)
+    setOverrideAllergy(false); setOverrideDup(false)
   }
   // Ambulatorio: la receta necesita los días (salvo dosis única o si se aplica aquí en la clínica)
   const needsDays = requireDuration && !m.applyInClinic && !/única/i.test(m.frequency)
@@ -117,24 +117,12 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
   const freqs = FREQUENCIES.includes(m.frequency) ? FREQUENCIES : [m.frequency, ...FREQUENCIES]
   return (<>
     <form className="rx-form" onSubmit={submit}>
-      {!neb && <div className="field suggest">
-        <span>Medicamento</span>
-        <input className="input" autoFocus={!initial} value={m.drug} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} autoComplete="off"
-          onChange={(e) => { setM({ ...m, drug: e.target.value }); setOverrideAllergy(false); setOverrideDup(false); setOpen(true) }} placeholder="Busca en el vademécum por nombre genérico o comercial" />
-        {open && (matches.length > 0 || (canAdd && q.length >= 3 && !exact)) && (
-          <div className="suggest__list">
-            {matches.map((d) => (
-              <button type="button" key={`${d.name}|${d.presentation}`} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(d)}>
-                <DrugOption d={d} query={m.drug} clinicTag />
-              </button>
-            ))}
-            {canAdd && q.length >= 3 && !exact && (
-              <button type="button" className="suggest__new" onMouseDown={(e) => e.preventDefault()} onClick={() => { setOpen(false); setNewDrug(m.drug.trim()) }}>
-                <Plus size={15} />{matches.length ? 'No está en la lista: ' : ''}agregar «{m.drug.trim()}» como nuevo medicamento</button>
-            )}
-          </div>
-        )}
-      </div>}
+      {/* ME8 (ronda 10): el buscador compartido; no se abre al tocarlo, sugiere al escribir */}
+      {!neb && <DrugSearch value={m.drug} drugs={drugs} autoFocus={!initial} clinicTag placeholder="Busca en el vademécum por nombre genérico o comercial"
+        onChange={(t) => { setM({ ...m, drug: t }); setOverrideAllergy(false); setOverrideDup(false) }} onPick={pick}
+        extra={(close) => canAdd && q.length >= 3 && !exact ? (
+          <button type="button" className="suggest__new" onMouseDown={(e) => e.preventDefault()} onClick={() => { close(); setNewDrug(m.drug.trim()) }}>
+            <Plus size={15} />{matches.length ? 'No está en la lista: ' : ''}agregar «{m.drug.trim()}» como nuevo medicamento</button>) : null} />}
       <div className="form-grid">
         {!neb && <label className="field"><span>Presentación y concentración</span><input className="input" value={m.presentation} onChange={(e) => setM({ ...m, presentation: e.target.value })} placeholder="Ej. Tableta 500 mg" /><DrugPickedHint drugs={drugs} name={m.drug} presentation={m.presentation} /></label>}
         {!neb && <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g, 1 tableta, 5 ml" /></label>}

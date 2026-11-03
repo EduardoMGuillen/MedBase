@@ -291,3 +291,27 @@ export function groupsFromLimits(limits?: Record<string, { low?: number; high?: 
  * no se reinicia con cada versión). Pasado el plazo se corrige con adenda o anulación, como siempre.
  */
 export const GRACE_MINUTES = 5
+
+/* ───────────────────────────── Ronda 10 ───────────────────────────── */
+
+/**
+ * ME8 (ronda 10). VALIDAR: Emil. El buscador de medicamentos no se abre al tocar el campo: sugiere desde esta cantidad de
+ * letras, hasta DRUG_SEARCH_VISIBLE filas a la vista (con desplazamiento si hay más).
+ */
+export const DRUG_SEARCH_MIN_CHARS = 2
+export const DRUG_SEARCH_VISIBLE = 8
+
+/**
+ * ME9 (ronda 10). VALIDAR: Emil. «Primera dosis diferente (STAT)» solo se ofrece con estas vías (reemplaza ME2 y ME3, que
+ * la permitían con cualquiera). Las órdenes ya emitidas con otra vía no cambian.
+ */
+export const LOADING_DOSE_ROUTES = ['Intravenosa']
+
+/** GE5 (ronda 10). VALIDAR: Emil. Filas por página en las listas largas (vademécum, pacientes, recetas, caja, bitácora…). */
+export const PAGE_SIZE = 25
+
+/**
+ * ME10 y EX5 (ronda 10). VALIDAR: Emil. Leyenda de las recetas y órdenes que imprime la clínica (también enfermería): sin
+ * la firma y el sello del médico en papel no valen (la firma dibujada no es firma electrónica avanzada).
+ */
+export const SIGN_AND_STAMP_LEGEND = 'Válida solo con firma y sello del médico'
