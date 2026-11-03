@@ -274,7 +274,15 @@ export interface Appointment {
   cancelledAt?: string
 }
 
-export interface Vitals {
+/** GE4 (ronda 9): lo que su autor puede corregir durante el periodo de gracia. */
+export interface Correctable {
+  /** Sólo si se corrigió: la versión que se ve (2, 3…). */
+  version?: number
+  /** Hasta cuándo puede corregirlo su autor (hora del servidor). */
+  graceUntil?: string
+}
+
+export interface Vitals extends Correctable {
   id: string
   patientId: string
   appointmentId?: string
@@ -334,6 +342,8 @@ export interface PrescriptionItem {
 }
 
 export interface Prescription {
+  /** GE4 (ronda 9): primera vez que se imprimió, descargó o envió (entonces ya no se corrige). */
+  printedAt?: string
   id: string
   folio: string
   patientId: string
@@ -369,7 +379,7 @@ export interface GuestPatient {
   phone?: string
 }
 
-export interface Consultation {
+export interface Consultation extends Correctable {
   id: string
   patientId: string
   doctorId: string
@@ -583,7 +593,7 @@ export interface ProcedureData {
 }
 
 /** Nota médica (ingreso y evolución en formato SOAP), de egreso, de procedimiento o de enfermería. */
-export interface InpatientNote {
+export interface InpatientNote extends Correctable {
   id: string
   hospitalizationId: string
   kind: 'admission' | 'evolution' | 'discharge' | 'nursing' | 'procedure'
@@ -662,6 +672,9 @@ export interface ExamResultValue { analyte: string; value: string; unit?: string
 
 export interface ExamOrder extends ExamInput {
   id: string
+  /** GE4 (ronda 9): versión del resultado (sólo si se corrigió) y hasta cuándo lo puede corregir quien lo cargó. */
+  resultVersion?: number
+  resultGraceUntil?: string
   patientId: string
   /** EX2 (ronda 8): número de la orden (OE-2026-0001), el mismo para los exámenes pedidos juntos. Los de antes no lo tienen. */
   orderNo?: string
@@ -964,7 +977,7 @@ export interface InpatientMed {
 
 export type InfusionUnit = 'ml/h' | 'ml/min'
 
-export interface Dose {
+export interface Dose extends Correctable {
   id: string
   medId: string
   scheduledAt?: string // vacío en medicamentos PRN

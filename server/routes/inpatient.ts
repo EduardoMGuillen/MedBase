@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, diagnosisInput, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
+import { assertGrace, saveVersion } from '../grace.js'
 import { toAttachment, toAuthorization, toBed, toDose, toEpicrisis, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral, toVitals } from '../mappers.js'
 import { currentVitalsMode, frequencyFromOrders, sameVitalsMode, VITALS_FREQUENCIES, vitalsModeShort } from '../../src/lib/vitalsSheet.js'
 import { buildEpicrisis, createEpicrisisDraft, missingForIssue } from '../epicrisis.js'
@@ -60,6 +61,29 @@ export const vitalsBody = z.object({
   weightKg: dec(500, 'el peso'), heightCm: dec(300, 'la talla'), painScale: z.number().int().min(0).max(10).optional(),
   respRate: int(150, 'la frecuencia respiratoria'), glucose: dec(3000, 'la glucometría'), notes: z.string().trim().max(1000).optional(),
 })
+
+/** PQ1 y PQ2 (ronda 9): los datos propios de la nota postquirúrgica (al firmarla y al corregirla, GE4). */
+export const postopInput = z.object({
+  preDiagnoses: z.array(diagnosisInput).max(20).default([]),
+  startAt: when, endAt: when,
+  anesthesia: z.string().trim().min(1, 'Elige el tipo de anestesia.').max(60), anesthesiaOther: z.string().trim().max(120).optional(),
+  procedureName: z.string().trim().min(3, 'Escribe el procedimiento realizado.').max(200),
+  description: z.string().trim().min(10, 'Escribe la descripción del procedimiento.').max(10000),
+  team: z.partialRecord(z.enum(SURGICAL_TEAM.map((t) => t.key) as [string, ...string[]]), z.object({ staffId: z.string().optional(), name: z.string().trim().max(120) })).default({}),
+  authorizationId: z.string().optional(), urgent: z.boolean().default(false), justification: z.string().trim().max(1000).optional(),
+})
+
+/** Obligatorios de la nota postquirúrgica; el cierre no antes del inicio; ninguna hora en el futuro. */
+export function checkPostop(diagnoses: unknown[], x: z.infer<typeof postopInput>) {
+  if (!x.preDiagnoses.length) fail(400, 'Agrega el diagnóstico preoperatorio.')
+  if (!diagnoses.length) fail(400, 'Agrega el diagnóstico postoperatorio.')
+  if (x.anesthesia === 'Otra' && !x.anesthesiaOther) fail(400, 'Especifica el tipo de anestesia.')
+  if (!ANESTHESIA_TYPES.includes(x.anesthesia)) fail(400, 'Elige un tipo de anestesia de la lista.')
+  if (!x.team.surgeon?.name.trim()) fail(400, 'Escribe o elige al cirujano principal.')
+  const start = new Date(x.startAt).getTime(); const end = new Date(x.endAt).getTime()
+  if (start > Date.now() + 2 * 60_000 || end > Date.now() + 2 * 60_000) fail(400, 'La hora de inicio y la de cierre no pueden ser en el futuro.')
+  if (end < start) fail(400, 'La hora de cierre no puede ser anterior a la de inicio.')
+}
 
 export const VITAL_FIELDS = ['systolic', 'diastolic', 'heartRate', 'temperature', 'spo2', 'weightKg', 'heightCm', 'painScale', 'respRate', 'glucose'] as const
 
@@ -464,15 +488,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       // Dos formatos: Estándar (diagnóstico, examen físico y observaciones) o SOAP. El de cada médico se elige en Mi configuración
       format: z.enum(['soap', 'dx', 'postop']).default('soap'),
       // PQ1 y PQ2 (ronda 9): nota postquirúrgica
-      postop: z.object({
-        preDiagnoses: z.array(diagnosisInput).max(20).default([]),
-        startAt: when, endAt: when,
-        anesthesia: z.string().trim().min(1, 'Elige el tipo de anestesia.').max(60), anesthesiaOther: z.string().trim().max(120).optional(),
-        procedureName: z.string().trim().min(3, 'Escribe el procedimiento realizado.').max(200),
-        description: z.string().trim().min(10, 'Escribe la descripción del procedimiento.').max(10000),
-        team: z.partialRecord(z.enum(SURGICAL_TEAM.map((t) => t.key) as [string, ...string[]]), z.object({ staffId: z.string().optional(), name: z.string().trim().max(120) })).default({}),
-        authorizationId: z.string().optional(), urgent: z.boolean().default(false), justification: z.string().trim().max(1000).optional(),
-      }).optional(),
+      postop: postopInput.optional(),
       subjective: text, objective: text, assessment: text, plan: text,
       diagnoses: z.array(diagnosisInput).max(20).default([]),
       exam: text, observations: text,
@@ -504,15 +520,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       fail(400, 'La nota de ingreso se escribe en formato SOAP.')
     } else if (b.format === 'postop') {
       // PQ1 (ronda 9): obligatorios; el cierre no antes del inicio; ninguna hora en el futuro
-      const x = b.postop ?? fail(400, 'Faltan los datos de la nota postquirúrgica.')
-      if (!x!.preDiagnoses.length) fail(400, 'Agrega el diagnóstico preoperatorio.')
-      if (!b.diagnoses.length) fail(400, 'Agrega el diagnóstico postoperatorio.')
-      if (x!.anesthesia === 'Otra' && !x!.anesthesiaOther) fail(400, 'Especifica el tipo de anestesia.')
-      if (!ANESTHESIA_TYPES.includes(x!.anesthesia)) fail(400, 'Elige un tipo de anestesia de la lista.')
-      if (!x!.team.surgeon?.name.trim()) fail(400, 'Escribe o elige al cirujano principal.')
-      const start = new Date(x!.startAt).getTime(); const end = new Date(x!.endAt).getTime()
-      if (start > Date.now() + 2 * 60_000 || end > Date.now() + 2 * 60_000) fail(400, 'La hora de inicio y la de cierre no pueden ser en el futuro.')
-      if (end < start) fail(400, 'La hora de cierre no puede ser anterior a la de inicio.')
+      checkPostop(b.diagnoses, b.postop ?? fail(400, 'Faltan los datos de la nota postquirúrgica.'))
     } else if (!b.diagnoses.length && !b.evolution && !b.exam && !b.observations && !b.orders.length && !b.meds.length && !b.exams.length) {
       fail(400, 'Escribe al menos un diagnóstico, el examen físico, una observación, una indicación o un medicamento.')
     }
@@ -697,8 +705,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       // ME2 (ronda 8): cada registro guarda la cantidad que correspondía a esa dosis (la inicial o las siguientes)
       // ME4 (ronda 9): una sesión de nebulización guarda la composición que se aplicó
       const amount = med.nebulization ? nebulizationBody(med.nebulization) : scheduledAt ? doseAt(med, new Date(scheduledAt)) : med.dose
-      await sql.run('INSERT INTO hosp_doses (id, clinic_id, med_id, scheduled_at, given_at, given_by, status, note, corrected_at, corrected_by, correction_reason, dose) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-        [id, cid, med.id, scheduledAt, givenAt.toISOString(), user.id, b.status, b.note || null, late ? new Date().toISOString() : null, late ? user.id : null, late ? `Registro tardío: ${b.reason}` : null, amount])
+      await sql.run('INSERT INTO hosp_doses (id, clinic_id, med_id, scheduled_at, given_at, given_by, status, note, corrected_at, corrected_by, correction_reason, dose, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        [id, cid, med.id, scheduledAt, givenAt.toISOString(), user.id, b.status, b.note || null, late ? new Date().toISOString() : null, late ? user.id : null, late ? `Registro tardío: ${b.reason}` : null, amount, new Date().toISOString()])
     } catch (e) {
       if ((e as { code?: string }).code === '23505') fail(409, 'Esa dosis ya fue registrada. Actualiza la página.')
       throw e
@@ -717,20 +725,31 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       status: z.enum(['given', 'skipped', 'omitted']).optional(),
       givenAt: when.optional(),
       note: z.string().trim().max(300).optional(),
-      reason: z.string().trim().min(5, 'Escribe el motivo de la corrección.').max(300),
+      reason: z.string().trim().max(300).optional(),
+      // GE4 (ronda 9): corrección de quien la registró, en el periodo de gracia (el motivo es opcional)
+      grace: z.boolean().optional(),
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
     const d = (await sql.one('SELECT * FROM hosp_doses WHERE id = ? AND clinic_id = ?', [String(req.params.doseId), cid])) ?? fail(404, 'La dosis no existe.')
+    if (b.grace) assertGrace(user.id, d!.given_by, d!.recorded_at, 'registró la dosis')
+    else if (!b.reason || b.reason.length < 5) fail(400, 'Escribe el motivo de la corrección.')
     const m = (await sql.one('SELECT * FROM hosp_meds WHERE id = ?', [String(d!.med_id)]))!
     const h = await activeHosp(cid, String(m.hospitalization_id))
     if (b.givenAt && new Date(b.givenAt).getTime() > Date.now() + 60_000) fail(400, 'La hora de administración no puede ser en el futuro.')
     if (b.status && b.status !== 'given' && !(b.note ?? d!.note)) fail(400, 'Escribe por qué no se administró la dosis.')
     if (b.status && b.status !== 'given' && !d!.scheduled_at) fail(400, 'Una dosis PRN sólo se registra cuando se aplica.')
     const previous = { status: d!.status, givenAt: d!.given_at, givenBy: d!.given_by, note: d!.note ?? undefined, correctedAt: d!.corrected_at ?? undefined, reason: d!.correction_reason ?? undefined }
-    await sql.run('UPDATE hosp_doses SET status = ?, given_at = ?, note = ?, corrected_at = ?, corrected_by = ?, correction_reason = ?, previous = ? WHERE id = ?',
-      [b.status ?? d!.status, b.givenAt ? new Date(b.givenAt).toISOString() : d!.given_at, b.note ?? d!.note ?? null, new Date().toISOString(), user.id, b.reason, JSON.stringify(previous), String(d!.id)])
-    await audit(user, `Corrigió la dosis de ${medLabel(toInpatientMed(m))} de ${await patientName(String(h.patient_id))} (antes: ${DOSE_STATE[previous.status as keyof typeof DOSE_STATE] ?? previous.status} ${previous.givenAt}): ${b.reason}`)
+    const reason = b.reason || (b.grace ? 'Corrección en el periodo de gracia' : '')
+    const who = await patientName(String(h.patient_id))
+    await sql.tx(async (q) => {
+      // GE4: cada corrección guarda la versión anterior completa
+      const next = await saveVersion(q, { clinicId: cid, kind: 'dose', id: String(d!.id), version: Number(d!.version ?? 1), authorId: String(d!.given_by), at: String(d!.recorded_at ?? d!.given_at), by: user.id, reason: b.reason,
+        data: { status: d!.status, givenAt: d!.given_at, note: d!.note ?? undefined, dose: d!.dose ?? undefined } })
+      await q.run('UPDATE hosp_doses SET status = ?, given_at = ?, note = ?, corrected_at = ?, corrected_by = ?, correction_reason = ?, previous = ?, version = ? WHERE id = ?',
+        [b.status ?? d!.status, b.givenAt ? new Date(b.givenAt).toISOString() : d!.given_at, b.note ?? d!.note ?? null, new Date().toISOString(), user.id, reason, JSON.stringify(previous), next, String(d!.id)])
+      await audit(user, `Corrigió la dosis de ${medLabel(toInpatientMed(m))} de ${who}${b.grace ? ` en el periodo de gracia (versión ${next})` : ''} (antes: ${DOSE_STATE[previous.status as keyof typeof DOSE_STATE] ?? previous.status} ${previous.givenAt}): ${reason}`, q)
+    })
     res.json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [String(d!.id)]))!))
   })
 
@@ -984,6 +1003,73 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   })
 
   /** Anular una toma de la hoja (se ve tachada; no se borra). */
+  /**
+   * GE4 (ronda 9): «Corregir» una nota en el periodo de gracia. Sólo su autor, en los minutos de GRACE_MINUTES desde la
+   * firma (hora del servidor). Se corrige la columna izquierda (lo escrito y los diagnósticos); las órdenes quedan como se
+   * firmaron. La versión anterior se guarda completa y la nota queda con la nueva (la cadena MC7/NE4 lee esta).
+   */
+  app.post('/api/inpatient/notes/:id/correct', auth, need('inpatient.orders', 'inpatient.care'), async (req, res) => {
+    const text = z.string().trim().max(6000).default('')
+    const b = parse(z.object({
+      version: z.number().int().min(1),
+      reason: z.string().trim().max(300).optional(),
+      subjective: text, objective: text, assessment: text, plan: text,
+      diagnoses: z.array(diagnosisInput).max(20).default([]),
+      exam: text, observations: text, evolution: text,
+      postop: postopInput.optional(),
+      // Nota de procedimiento y de enfermería
+      name: z.string().trim().max(200).optional(), performedAt: when.optional(), text: z.string().trim().max(10000).optional(),
+    }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const n = (await sql.one('SELECT * FROM hosp_notes WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La nota no existe.')
+    if (n!.kind === 'discharge') fail(409, 'La nota de egreso se corrige con una adenda.')
+    assertGrace(user.id, n!.author_id, n!.at, 'firmó la nota')
+    if (Number(n!.version ?? 1) !== b.version) fail(409, 'La nota cambió mientras la corregías. Actualiza la página.')
+    const h = await activeHosp(cid, String(n!.hospitalization_id))
+    const data = JSON.parse(String(n!.data ?? '{}')) as Record<string, unknown>
+    const format = String(data.format ?? 'soap')
+    const set = { subjective: String(n!.subjective ?? ''), objective: String(n!.objective ?? ''), assessment: String(n!.assessment ?? ''), plan: String(n!.plan ?? ''), text: String(n!.text ?? ''), data }
+    const kind = String(n!.kind)
+    let what = 'nota de evolución'
+    if (kind === 'nursing') {
+      if (!b.text || b.text.length < 3) fail(400, 'Escribe la nota de enfermería.')
+      set.text = b.text!; what = 'nota de enfermería'
+    } else if (kind === 'procedure') {
+      if (!b.name || b.name.length < 3) fail(400, 'Escribe el procedimiento realizado.')
+      if (!b.text || b.text.length < 10) fail(400, 'Escribe la nota del procedimiento.')
+      const at = new Date(b.performedAt ?? String(data.performedAt))
+      if (at.getTime() > Date.now() + 60_000) fail(400, 'La fecha y hora del procedimiento no puede ser en el futuro.')
+      set.text = b.text!; set.data = { ...data, name: b.name, performedAt: at.toISOString() }; what = 'nota de procedimiento'
+    } else if (format === 'postop') {
+      const x = b.postop ?? fail(400, 'Faltan los datos de la nota postquirúrgica.')
+      checkPostop(b.diagnoses, x!)
+      const old = data.postop as Record<string, unknown>
+      // La autorización (o la urgencia) quedó resuelta al firmar: no se corrige aquí
+      set.data = { ...data, diagnoses: b.diagnoses, postop: { ...x, startAt: new Date(x!.startAt).toISOString(), endAt: new Date(x!.endAt).toISOString(), authorizationId: old.authorizationId, urgent: old.urgent, justification: old.justification } }
+      what = 'nota postquirúrgica'
+    } else if (format === 'dx') {
+      if (!b.diagnoses.length && !b.evolution && !b.exam && !b.observations) fail(400, 'Escribe al menos un diagnóstico, la evolución, el examen físico o una observación.')
+      set.data = { ...data, diagnoses: b.diagnoses, evolution: b.evolution || undefined, exam: b.exam, observations: b.observations }
+    } else {
+      const empty = ([['subjective', 'el subjetivo (S)'], ['objective', 'el objetivo (O)'], ['assessment', 'el análisis (A)'], ['plan', 'el plan (P)']] as const).find(([k]) => !b[k])
+      if (empty) fail(400, `Escribe ${empty[1]}.`)
+      Object.assign(set, { subjective: b.subjective, objective: b.objective, assessment: b.assessment, plan: b.plan })
+      if (kind === 'evolution') set.data = { ...data, diagnoses: b.diagnoses.length ? b.diagnoses : undefined }
+    }
+    if (kind === 'admission') what = 'nota de ingreso'
+    const version = Number(n!.version ?? 1)
+    const who = await patientName(String(h.patient_id))
+    await sql.tx(async (q) => {
+      const next = await saveVersion(q, { clinicId: cid, kind: 'note', id: String(n!.id), version, authorId: String(n!.author_id), at: String(n!.at), by: user.id, reason: b.reason,
+        data: { subjective: n!.subjective, objective: n!.objective, assessment: n!.assessment, plan: n!.plan, text: n!.text, data } })
+      await q.run('UPDATE hosp_notes SET subjective = ?, objective = ?, assessment = ?, plan = ?, text = ?, data = ?, version = ? WHERE id = ?',
+        [set.subjective, set.objective, set.assessment, set.plan, set.text, JSON.stringify(set.data), next, String(n!.id)])
+      await audit(user, `Corrigió su ${what} de ${who} en el periodo de gracia (versión ${next})${b.reason ? `: ${b.reason}` : ''}`, q)
+    })
+    res.json(toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [String(n!.id)]))!))
+  })
+
   app.post('/api/vitals/:vid/void', auth, need('vitals.record'), async (req, res) => {
     const { reason } = parse(z.object({ reason: z.string().trim().min(5, 'Escribe por qué se anula la toma.').max(300) }), req.body)
     const user = userOf(req)

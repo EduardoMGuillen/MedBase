@@ -210,7 +210,7 @@ function useStoreValue() {
     // ME1 (ronda 8): enfermería suspende la infusión en curso
     stopInfusion: (medId: string, b: { at?: string; note?: string }) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/infusion-stop`, { body: b }), 'Infusión suspendida'),
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),
-    correctDose: (doseId: string, b: { status?: Dose['status']; givenAt?: string; note?: string; reason: string }) =>
+    correctDose: (doseId: string, b: { status?: Dose['status']; givenAt?: string; note?: string; reason?: string; grace?: boolean }) =>
       run(() => api<Dose>(`/inpatient/doses/${doseId}`, { method: 'PATCH', body: b }), 'Dosis corregida'),
     recordDose: (medId: string, b: { scheduledAt?: string; givenAt?: string; status: Dose['status']; note?: string; reason?: string }) =>
       run(() => api<Dose>(`/inpatient/meds/${medId}/doses`, { body: b }), b.status === 'given' ? 'Dosis registrada' : b.status === 'omitted' ? 'Dosis marcada como omitida' : 'Dosis marcada como no aplicada'),

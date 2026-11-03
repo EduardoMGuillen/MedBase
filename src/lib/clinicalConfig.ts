@@ -285,3 +285,9 @@ export function groupsFromLimits(limits?: Record<string, { low?: number; high?: 
   }
   return groups
 }
+
+/**
+ * GE4 (ronda 9). VALIDAR: Emil. Minutos que tiene el autor para «Corregir» lo que firmó o registró (desde la primera firma;
+ * no se reinicia con cada versión). Pasado el plazo se corrige con adenda o anulación, como siempre.
+ */
+export const GRACE_MINUTES = 5

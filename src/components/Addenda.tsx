@@ -30,11 +30,15 @@ export function SignedBadge({ by, at, addenda = 0 }: { by?: string; at: string; 
  * quién la escribió y cuándo. `kinds` limita los tipos (un médico sólo agrega «Información adicional» a una nota de
  * enfermería). Si se corrige un medicamento y hubo receta, se sugiere anularla y emitir otra.
  */
-export function Addenda({ list, targetKind, targetId, canAdd, kinds = ['correction', 'info', 'result'], prescriptionId, onAdded }: {
+export function Addenda({ list, targetKind, targetId, canAdd, kinds = ['correction', 'info', 'result'], prescriptionId, onAdded, openWith }: {
   list: Addendum[]; targetKind: Addendum['targetKind']; targetId: string; canAdd: boolean; kinds?: Addendum['kind'][]; prescriptionId?: string; onAdded: () => void
+  /** GE4 (ronda 9): vencido el periodo de gracia, abre la adenda con lo que se había escrito en la corrección */
+  openWith?: string
 }) {
   const { staffById } = useStore()
   const [adding, setAdding] = useState(false)
+  const [seen, setSeen] = useState<string | undefined>()
+  if (openWith !== seen) { setSeen(openWith); if (openWith && canAdd) setAdding(true) }
   const mine = list.filter((a) => a.targetId === targetId)
   if (!mine.length && !canAdd) return null
   return (
@@ -47,18 +51,18 @@ export function Addenda({ list, targetKind, targetId, canAdd, kinds = ['correcti
         </section>
       ))}
       {canAdd && <button type="button" className="btn btn--ghost btn--sm no-print" data-tour="adenda" onClick={() => setAdding(true)}><FilePlus2 size={14} />Agregar adenda</button>}
-      {adding && <AddAddendum targetKind={targetKind} targetId={targetId} kinds={kinds} prescriptionId={prescriptionId} onClose={() => setAdding(false)} onDone={() => { setAdding(false); onAdded() }} />}
+      {adding && <AddAddendum targetKind={targetKind} targetId={targetId} kinds={kinds} prescriptionId={prescriptionId} initialText={openWith} onClose={() => setAdding(false)} onDone={() => { setAdding(false); onAdded() }} />}
     </div>
   )
 }
 
-function AddAddendum({ targetKind, targetId, kinds, prescriptionId, onClose, onDone }: {
-  targetKind: Addendum['targetKind']; targetId: string; kinds: Addendum['kind'][]; prescriptionId?: string; onClose: () => void; onDone: () => void
+function AddAddendum({ targetKind, targetId, kinds, prescriptionId, onClose, onDone, initialText }: {
+  targetKind: Addendum['targetKind']; targetId: string; kinds: Addendum['kind'][]; prescriptionId?: string; onClose: () => void; onDone: () => void; initialText?: string
 }) {
   const { addAddendum } = useStore()
   const [kind, setKind] = useState<Addendum['kind']>(kinds[0])
   const [corrects, setCorrects] = useState('')
-  const [text, setText] = useState('')
+  const [text, setText] = useState(initialText ?? '')
   const [busy, setBusy] = useState(false)
   const valid = text.trim().length >= 3 && (kind !== 'correction' || corrects.trim().length >= 3)
   const aboutRx = kind === 'correction' && !!prescriptionId && /dosis|medicament|receta|mg|tableta|c[aá]psula|jarabe|frecuencia|cada \d/i.test(`${corrects} ${text}`)

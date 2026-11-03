@@ -20,7 +20,7 @@ import { closeVisitsOfInpatients } from './stayVisits.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '66'
+const SCHEMA_VERSION = '68'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -995,6 +995,75 @@ ALTER TABLE clinic_drugs
   ADD COLUMN IF NOT EXISTS alternatives TEXT,
   ADD COLUMN IF NOT EXISTS aliases TEXT;
 CREATE INDEX IF NOT EXISTS clinic_drugs_lnme ON clinic_drugs (clinic_id, lnme_no);
+-- v67–v68 (ronda 9). GE4: periodo de gracia con versiones. Cada corrección guarda aquí el contenido completo de la versión
+-- anterior (nunca se borra); el registro queda con la última y su número de versión. «recorded_at» es cuándo se registró
+-- por primera vez (de ahí cuentan los minutos; los registros de antes no lo tienen y no se corrigen así).
+CREATE TABLE IF NOT EXISTS record_versions (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  target_kind TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  author_id TEXT NOT NULL,
+  at TEXT NOT NULL,
+  replaced_by TEXT NOT NULL,
+  replaced_at TEXT NOT NULL,
+  reason TEXT,
+  UNIQUE (target_kind, target_id, version)
+);
+CREATE INDEX IF NOT EXISTS record_versions_target ON record_versions (target_kind, target_id);
+-- Lo impreso o descargado (receta): bloquea su corrección
+CREATE TABLE IF NOT EXISTS print_log (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  target_kind TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  how TEXT NOT NULL,
+  by_id TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS print_log_target ON print_log (target_kind, target_id);
+ALTER TABLE hosp_notes ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE hosp_doses ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE hosp_doses ADD COLUMN IF NOT EXISTS recorded_at TEXT;
+ALTER TABLE vitals ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE vitals ADD COLUMN IF NOT EXISTS recorded_at TEXT;
+ALTER TABLE consultations ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE consultations ADD COLUMN IF NOT EXISTS recorded_at TEXT;
+ALTER TABLE exam_orders ADD COLUMN IF NOT EXISTS result_version INTEGER NOT NULL DEFAULT 1;
+-- GE4: la base sigue sin dejar editar lo firmado, salvo una corrección del periodo de gracia: la versión sube en uno, el
+-- autor y la hora de la firma no cambian y la versión anterior ya quedó guardada en record_versions.
+CREATE OR REPLACE FUNCTION note_signed_guard() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  IF current_setting('clinara.note_maintenance', true) = 'on' THEN RETURN COALESCE(NEW, OLD); END IF;
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'La nota está firmada: no se borra.'; END IF;
+  IF NEW.version = OLD.version + 1 AND NEW.author_id = OLD.author_id AND NEW.at = OLD.at AND NEW.kind = OLD.kind AND NEW.hospitalization_id = OLD.hospitalization_id
+     AND EXISTS (SELECT 1 FROM record_versions WHERE target_kind = 'note' AND target_id = OLD.id AND version = OLD.version) THEN
+    RETURN NEW;
+  END IF;
+  IF ROW(NEW.hospitalization_id, NEW.kind, NEW.author_id, NEW.at, NEW.subjective, NEW.objective, NEW.assessment, NEW.plan, NEW.text, NEW.data, NEW.version)
+     IS DISTINCT FROM ROW(OLD.hospitalization_id, OLD.kind, OLD.author_id, OLD.at, OLD.subjective, OLD.objective, OLD.assessment, OLD.plan, OLD.text, OLD.data, OLD.version) THEN
+    RAISE EXCEPTION 'La nota está firmada: no se edita. Escribe una adenda.';
+  END IF;
+  RETURN NEW;
+END
+$fn$;
+CREATE OR REPLACE FUNCTION consultation_signed_guard() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  IF current_setting('clinara.note_maintenance', true) = 'on' THEN RETURN COALESCE(NEW, OLD); END IF;
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'La consulta está firmada: no se borra.'; END IF;
+  IF NEW.version = OLD.version + 1 AND NEW.doctor_id = OLD.doctor_id AND NEW.date = OLD.date AND NEW.patient_id = OLD.patient_id
+     AND EXISTS (SELECT 1 FROM record_versions WHERE target_kind = 'consultation' AND target_id = OLD.id AND version = OLD.version) THEN
+    RETURN NEW;
+  END IF;
+  IF ROW(NEW.patient_id, NEW.doctor_id, NEW.date, NEW.reason, NEW.history, NEW.exam, NEW.observations, NEW.diagnoses, NEW.orders, NEW.indications, NEW.plan, NEW.meds, NEW.symptoms, NEW.symptom_onset, NEW.version)
+     IS DISTINCT FROM ROW(OLD.patient_id, OLD.doctor_id, OLD.date, OLD.reason, OLD.history, OLD.exam, OLD.observations, OLD.diagnoses, OLD.orders, OLD.indications, OLD.plan, OLD.meds, OLD.symptoms, OLD.symptom_onset, OLD.version) THEN
+    RAISE EXCEPTION 'La consulta está firmada: no se edita. Escribe una adenda.';
+  END IF;
+  RETURN NEW;
+END
+$fn$;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -1629,7 +1698,7 @@ export async function nextFolio(q: Sql, clinicId: string, now: Date) {
 /** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
 export async function resetDemo(sql: Sql) {
   await sql.tx(async (q) => {
-    await q.exec(`TRUNCATE exam_ref_values, exam_events, exam_orders, exam_profiles, exam_catalog, addenda, note_drafts, payment_installments, staff_marks, epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
+    await q.exec(`TRUNCATE record_versions, print_log, exam_ref_values, exam_events, exam_orders, exam_profiles, exam_catalog, addenda, note_drafts, payment_installments, staff_marks, epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
       attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
     await seed(q)

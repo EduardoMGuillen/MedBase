@@ -160,3 +160,84 @@ describe('PQ1 y PQ2: nota postquirúrgica con equipo quirúrgico', () => {
     assert.equal((await post({ preDiagnoses: [] })).status, 400)
   })
 })
+
+describe('GE4: periodo de gracia con versiones', () => {
+  test('nota de evolución: v2 y v3 del autor; otro médico 403; vencido 409 con la adenda; versiones intactas', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
+    const n = await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', diagnoses: [{ code: 'CA40', label: 'Neumonía' }], observations: 'Afebril desde ayer.' })
+    assert.equal(n.status, 201, JSON.stringify(n.body))
+    assert.ok(n.body.graceUntil)
+    const c1 = await doc.post(`/api/inpatient/notes/${n.body.id}/correct`, { version: 1, diagnoses: [{ code: 'CA40', label: 'Neumonía' }], observations: 'Afebril desde anteayer.', reason: 'Error de dedo' })
+    assert.equal(c1.status, 200, JSON.stringify(c1.body)); assert.equal(c1.body.version, 2); assert.equal(c1.body.observations, 'Afebril desde anteayer.')
+    const stale = await doc.post(`/api/inpatient/notes/${n.body.id}/correct`, { version: 1, diagnoses: [], observations: 'x' })
+    assert.equal(stale.status, 409)
+    const c2 = await doc.post(`/api/inpatient/notes/${n.body.id}/correct`, { version: 2, diagnoses: [{ code: 'CA40', label: 'Neumonía' }], observations: 'Afebril.' })
+    assert.equal(c2.body.version, 3)
+    assert.equal(c2.body.graceUntil, n.body.graceUntil, 'el plazo no se reinicia')
+    const other = await as('apaz@demo.clinara')
+    const o = await other.post(`/api/inpatient/notes/${n.body.id}/correct`, { version: 3, diagnoses: [], observations: 'x' })
+    assert.equal(o.status, 403)
+    const admin = await as('admin@demo.clinara')
+    assert.equal((await admin.post(`/api/inpatient/notes/${n.body.id}/correct`, { version: 3, diagnoses: [], observations: 'x' })).status, 403)
+    const v = await doc.get(`/api/versions/note/${n.body.id}`)
+    assert.deepEqual(v.body.map((x: any) => x.version), [1, 2])
+    assert.equal(v.body[0].data.data.observations, 'Afebril desde ayer.')
+    // Vence: el servidor manda
+    await sql.tx(async (q) => {
+      await q.run("SELECT set_config('clinara.note_maintenance', 'on', true)")
+      await q.run('UPDATE hosp_notes SET at = ? WHERE id = ?', [new Date(Date.now() - 6 * 60_000).toISOString(), n.body.id])
+    })
+    const late = await doc.post(`/api/inpatient/notes/${n.body.id}/correct`, { version: 3, diagnoses: [{ code: 'CA40', label: 'Neumonía' }], observations: 'Tarde.' })
+    assert.equal(late.status, 409); assert.match(late.body.error, /adenda/)
+    // Una nota firmada sigue sin editarse por la vía de siempre
+    assert.equal((await doc.patch(`/api/inpatient/notes/${n.body.id}`, { observations: 'x' })).status, 409)
+  })
+
+  test('administración: enfermería corrige la hora de su registro; otra persona no; la versión anterior queda', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
+    const first = new Date(Date.now() - 30 * 60_000).toISOString()
+    await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', observations: 'x', meds: [{ drug: 'Omeprazol', dose: '40 mg', route: 'Intravenosa', everyHours: 24, prn: false, firstAt: first }] })
+    const med = (await doc.get(`/api/inpatient/${stay.id}`)).body.meds.find((m: any) => m.drug === 'Omeprazol' && !m.stoppedAt)
+    const d = await nurse.post(`/api/inpatient/meds/${med.id}/doses`, { scheduledAt: med.firstAt, status: 'given' })
+    assert.equal(d.status, 201, JSON.stringify(d.body)); assert.ok(d.body.graceUntil)
+    const right = new Date(Date.now() - 25 * 60_000).toISOString()
+    const c = await nurse.patch(`/api/inpatient/doses/${d.body.id}`, { givenAt: right, grace: true })
+    assert.equal(c.status, 200, JSON.stringify(c.body)); assert.equal(c.body.version, 2); assert.equal(c.body.givenAt, right)
+    assert.equal((await doc.patch(`/api/inpatient/doses/${d.body.id}`, { givenAt: right, grace: true })).status, 403, 'sólo quien la registró')
+    assert.equal((await doc.get(`/api/versions/dose/${d.body.id}`)).body.length, 1)
+  })
+
+  test('consulta: receta sin imprimir se corrige; impresa, sus medicamentos quedan bloqueados', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const reception = await as('smejia@demo.clinara')
+    const p = await freePatient(doc)
+    const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-herrera', reason: 'Dolor' })
+    const item = { drug: 'Ibuprofeno', presentation: 'Tableta 400 mg', dose: '400 mg', route: 'Oral', frequency: 'Cada 8 horas', duration: '3 días' }
+    const r = await doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Dolor', history: 'Dolor lumbar', exam: 'Normal', diagnoses: [{ code: 'ME84', label: 'Lumbago' }], orders: ['Reposo.'], items: [item] })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    const base = { reason: 'Dolor lumbar', history: 'Dolor lumbar de 3 días', exam: 'Normal', diagnoses: [{ code: 'ME84', label: 'Lumbago' }] }
+    const c = await doc.post(`/api/consultations/${r.body.consultationId}/correct`, { ...base, version: 1, items: [{ ...item, dose: '600 mg' }] })
+    assert.equal(c.status, 200, JSON.stringify(c.body)); assert.equal(c.body.version, 2)
+    const rx = (await doc.get(`/api/prescriptions/${r.body.prescriptionId}`)).body
+    assert.equal((rx.items ?? rx.prescription.items)[0].dose, '600 mg')
+    await doc.post(`/api/prescriptions/${r.body.prescriptionId}/printed`, { how: 'print' })
+    const locked = await doc.post(`/api/consultations/${r.body.consultationId}/correct`, { ...base, version: 2, items: [{ ...item, dose: '800 mg' }] })
+    assert.equal(locked.status, 409); assert.equal(locked.body.error, 'Ya se imprimió la receta. Corrígelo con una adenda.')
+    // Lo demás de la nota sí
+    assert.equal((await doc.post(`/api/consultations/${r.body.consultationId}/correct`, { ...base, version: 2, exam: 'Dolor a la palpación' })).body.version, 3)
+  })
+
+  test('signos vitales: sólo quien los registró', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
+    const v = await nurse.post(`/api/inpatient/${stay.id}/vitals`, { systolic: 120, diastolic: 80, heartRate: 80, temperature: 37, spo2: 97 })
+    assert.equal(v.status, 201, JSON.stringify(v.body))
+    const c = await nurse.post(`/api/vitals/${v.body.id}/correct`, { version: 1, systolic: 112, diastolic: 80, heartRate: 80, temperature: 37, spo2: 97 })
+    assert.equal(c.status, 200, JSON.stringify(c.body)); assert.equal(c.body.systolic, 112); assert.equal(c.body.version, 2)
+    assert.equal((await doc.post(`/api/vitals/${v.body.id}/correct`, { version: 2, systolic: 1 })).status, 403)
+  })
+})

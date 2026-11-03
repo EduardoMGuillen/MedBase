@@ -501,3 +501,16 @@ button.chip[aria-pressed='true'] { background: var(--ink); color: #fff; border-c
   body, .page { background: #fff; padding: 0; }
   .rx-sheet { box-shadow: none; border: 0; }
 }
+
+/* GE4 (ronda 9): periodo de gracia y versiones */
+.grace { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.version-tag { font-size: 12px; }
+.version-link { min-height: 32px; padding: 2px 8px; }
+.version-item { border-top: 1px solid var(--line, #e5e7eb); padding: 10px 0; }
+.version-item h4 { margin: 0 0 2px; font-size: 14px; }
+.version-item__body { margin-top: 8px; }
+.version-item__body pre { white-space: pre-wrap; font-size: 12.5px; background: var(--soft, #f6f7f9); padding: 8px; border-radius: 8px; }
+.locked-line { color: var(--muted); font-size: 13px; }
+.signed-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.slot2__grace { display: block; font-size: 11px; color: var(--primary, #2b4acb); }
+.vs-grace { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; font-weight: 400; }

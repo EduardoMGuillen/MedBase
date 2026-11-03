@@ -6,6 +6,11 @@ import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
 import { VitalsFields } from '../components/VitalsFields'
+import { CorrectionReason, GraceButton, VersionTag } from '../components/Grace'
+import { dmyTime } from '../lib/format'
+
+/** GE4: columnas de una versión anterior guardada */
+const VITAL_COLS: [string, string][] = [['systolic', 'PAS'], ['diastolic', 'PAD'], ['heart_rate', 'FC'], ['resp_rate', 'FR'], ['temperature', 'T'], ['spo2', 'SpO₂'], ['weight_kg', 'Peso'], ['height_cm', 'Talla'], ['glucose', 'Glucometría'], ['pain_scale', 'Dolor'], ['notes', 'Notas']]
 import { inputDateTime, shortStaff, time } from '../lib/format'
 import { yearsOld } from '../lib/inpatient'
 import { clinicalRange, parseDecimal, VITALS, vitalLevel, type VitalKey, type VitalLevel } from '../lib/vitals'
@@ -45,6 +50,7 @@ export function VitalsSheet({ file, p, reload, autoRecord, autoRecordPast, onFoc
   // EN2 (ronda 6): «Registrar tomas anteriores»: una lectura de una hora pasada concreta («Registro tardío»)
   const [recordingPast, setRecordingPast] = useState(false)
   const [voiding, setVoiding] = useState<Vitals | null>(null)
+  const [correcting, setCorrecting] = useState<Vitals | null>(null)
   const h = file.hospitalization
   const open = h.status === 'active'
   const record = open && can('vitals.record')
@@ -123,7 +129,7 @@ export function VitalsSheet({ file, p, reload, autoRecord, autoRecordPast, onFoc
         {/* OB2 (ronda 5): todos los signos en un cuadro escrito, una fila por toma, la más reciente arriba */}
         <section className="panel" data-tour="signos-tabla">
           <div className="panel__head"><div><h2>Tomas</h2><p>{inRange.length} toma{inRange.length === 1 ? '' : 's'}{missed.length ? ` y ${missed.length} pendiente${missed.length === 1 ? '' : 's'}` : ''} en el rango elegido. La más reciente arriba. Fuera de rango: ↑ alto, ↓ bajo.</p></div></div>
-          <VitalsTable vitals={inRange} pending={missed} covered={covered} ageYears={ageYears} band={band} who={(id) => shortStaff(staffById(id)?.name)} onVoid={record ? setVoiding : undefined}
+          <VitalsTable vitals={inRange} pending={missed} covered={covered} ageYears={ageYears} band={band} who={(id) => shortStaff(staffById(id)?.name)} onVoid={record ? setVoiding : undefined} onCorrect={record ? setCorrecting : undefined}
             onRecord={record ? () => setRecording(true) : undefined} />
         </section>
       </>)}
@@ -131,6 +137,7 @@ export function VitalsSheet({ file, p, reload, autoRecord, autoRecordPast, onFoc
       {record && <button className="btn btn--primary vs-fab" data-tour="signos-registrar" onClick={() => setRecording(true)}><Plus size={18} />Registrar signos</button>}
       {recording && <RecordVitalsModal file={file} p={p} onClose={() => setRecording(false)} onSaved={() => { setRecording(false); reload() }} />}
       {recordingPast && <RecordVitalsModal past file={file} p={p} suggested={statuses.filter((x) => x.status !== 'taken' && x.status !== 'late').at(-1)?.at} onClose={() => setRecordingPast(false)} onSaved={() => { setRecordingPast(false); reload() }} />}
+      {correcting && <RecordVitalsModal file={file} p={p} correct={correcting} onClose={() => setCorrecting(null)} onSaved={() => { setCorrecting(null); reload() }} />}
       {voiding && <VoidVitalsModal v={voiding} onClose={() => setVoiding(null)} onSaved={() => { setVoiding(null); reload() }} />}
     </div>
   )
@@ -320,8 +327,10 @@ const COLUMNS: { key: VitalKey; second?: VitalKey; label: string; unit: string; 
  * Fuera de rango: color y flecha (↑ alto, ↓ bajo), que se leen también impresos en blanco y negro. Las tomas pendientes
  * son filas «Pendiente» con su botón. Encabezado y primera columna fijos; anuladas tachadas con su motivo.
  */
-export function VitalsTable({ vitals, pending = [], covered = [], ageYears, band, who, onVoid, onRecord, print = false }: {
+export function VitalsTable({ vitals, pending = [], covered = [], ageYears, band, who, onVoid, onRecord, onCorrect, print = false }: {
   vitals: Vitals[]; pending?: Date[]; covered?: { at: Date; by: Vitals }[]; ageYears?: number; band: TempBand; who: (id: string) => string; onVoid?: (v: Vitals) => void; onRecord?: () => void; print?: boolean
+  /** GE4 (ronda 9): «Corregir» de quien la registró, en el periodo de gracia */
+  onCorrect?: (v: Vitals) => void
 }) {
   if (!vitals.length && !pending.length && !covered.length) return <div className="empty">Sin tomas en este rango.</div>
   const cols = COLUMNS.filter((c) => c.always || vitals.some((v) => v[c.key] != null))
@@ -359,7 +368,9 @@ export function VitalsTable({ vitals, pending = [], covered = [], ageYears, band
         <tbody>{rows.map((r) => r.v ? (
           <tr key={r.v.id} className={r.v.voidedAt ? 'is-void' : ''}>
             <th scope="row">{dmy(r.at)} <b>{hm(r.at)}</b>
-              {onVoid && !r.v.voidedAt && r.v.source !== 'preclinic' && r.v.source !== 'note' && <button className="icon-btn vs-void" aria-label={`Anular la toma de las ${hm(r.at)} del ${dmy(r.at)}`} onClick={() => onVoid(r.v!)}><X size={12} /></button>}</th>
+              {onVoid && !r.v.voidedAt && r.v.source !== 'preclinic' && r.v.source !== 'note' && <button className="icon-btn vs-void" aria-label={`Anular la toma de las ${hm(r.at)} del ${dmy(r.at)}`} onClick={() => onVoid(r.v!)}><X size={12} /></button>}
+              {!print && !r.v.voidedAt && <span className="vs-grace">{onCorrect && <GraceButton record={r.v} authorId={r.v.takenBy} onCorrect={() => onCorrect(r.v!)} />}
+                <VersionTag version={r.v.version} kind="vitals" id={r.v.id} render={(x) => <span>Tomada {x.taken_at ? dmyTime(String(x.taken_at)) : ''}: {VITAL_COLS.filter(([k]) => x[k] != null).map(([k, l]) => `${l} ${String(x[k])}`).join(' · ')}</span>} /></span>}</th>
             {cols.map((c) => <td key={c.key}>{value(r.v!, c.key)}{c.second && <>/{value(r.v!, c.second)}</>}</td>)}
             <td className="vs-log__who">{r.v.source === 'preclinic' ? 'Preclínica' : r.v.source === 'note' ? <>{who(r.v.takenBy)}<small className="muted"> · Nota de evolución</small></> : who(r.v.takenBy)}</td>
             <td className="vs-log__notes">{r.v.voidedAt ? <span className="vs-voided">Anulada{r.v.voidReason ? `: ${r.v.voidReason}` : ''}</span> : <>
@@ -384,12 +395,15 @@ export function VitalsTable({ vitals, pending = [], covered = [], ageYears, band
 }
 
 /** Registrar una toma: sólo lo que se tomó, con la hora real de la toma (por defecto ahora, nunca en el futuro). */
-function RecordVitalsModal({ file, p, onClose, onSaved, past = false, suggested }: { file: InpatientFile; p: Patient; onClose: () => void; onSaved: () => void; past?: boolean; suggested?: Date }) {
+function RecordVitalsModal({ file, p, onClose, onSaved, past = false, suggested, correct }: { file: InpatientFile; p: Patient; onClose: () => void; onSaved: () => void; past?: boolean; suggested?: Date
+  /** GE4 (ronda 9): corregir esa toma en el periodo de gracia (el mismo formulario, ya llenado) */
+  correct?: Vitals }) {
   const { notify } = useStore()
   const ageYears = p.birthDate ? yearsOld(p.birthDate) : undefined
-  const [v, setV] = useState<VitalsForm>(EMPTY_VITALS)
+  const [v, setV] = useState<VitalsForm>(() => correct ? { ...EMPTY_VITALS, ...Object.fromEntries(FIELDS.map((k) => [k, correct[k] == null ? '' : String(correct[k]).replace('.', ',')])), notes: correct.notes ?? '' } : EMPTY_VITALS)
+  const [why, setWhy] = useState('')
   const [checked, setChecked] = useState<Set<VitalKey>>(new Set())
-  const [takenAt, setTakenAt] = useState(() => inputDateTime(past && suggested ? suggested : new Date()))
+  const [takenAt, setTakenAt] = useState(() => inputDateTime(correct ? new Date(correct.takenAt) : past && suggested ? suggested : new Date()))
   const [maxAt] = useState(() => inputDateTime(new Date(Date.now() + 60_000)))
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -402,8 +416,8 @@ function RecordVitalsModal({ file, p, onClose, onSaved, past = false, suggested 
     try {
       const body: Record<string, unknown> = { takenAt: localValueToIso(takenAt), notes: v.notes.trim() || undefined }
       for (const k of FIELDS) body[k] = vitalNumber(v, k)
-      await api(`/inpatient/${file.hospitalization.id}/vitals`, { body })
-      notify('Signos vitales registrados')
+      if (correct) { await api(`/vitals/${correct.id}/correct`, { body: { ...body, version: correct.version ?? 1, why: why.trim() || undefined } }); notify('Corrección guardada') }
+      else { await api(`/inpatient/${file.hospitalization.id}/vitals`, { body }); notify('Signos vitales registrados') }
       onSaved()
     } catch (e) {
       notify((e as Error).message, 'error')
@@ -418,13 +432,14 @@ function RecordVitalsModal({ file, p, onClose, onSaved, past = false, suggested 
     void save()
   }
   return (
-    <Modal title={past ? 'Registrar tomas anteriores' : 'Registrar signos vitales'} onClose={onClose} footer={confirming ? <>
+    <Modal title={correct ? 'Corregir: signos vitales' : past ? 'Registrar tomas anteriores' : 'Registrar signos vitales'} onClose={onClose} footer={confirming ? <>
       <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }}>Revise: {errors.map((k) => `${VITALS[k].label.toLowerCase()} ${v[k]}`).join(', ')}.</span>
       <button className="btn btn--ghost" onClick={() => setConfirming(false)}>Corregir</button>
       <button className="btn btn--danger" disabled={busy} onClick={save}>Guardar de todos modos</button>
     </> : <>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={!any || future || busy} onClick={trySave}>Guardar</button>
+      {correct && <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>}
+      <button className="btn btn--primary" disabled={!any || future || busy} onClick={trySave}>{correct ? 'Guardar corrección' : 'Guardar'}</button>
     </>}>
       <p className="muted" style={{ fontSize: 13.5 }}>{past ? 'Una lectura que se tomó a una hora que ya pasó. Queda como «Registro tardío», con tu nombre y la hora en que la anotas, y reemplaza el «Cubierta por…» de esa hora.' : 'Anota sólo lo que tomaste (por ejemplo, sólo la temperatura). Puedes usar punto o coma para los decimales.'}</p>
       <label className="field"><span>Fecha y hora de la toma</span>

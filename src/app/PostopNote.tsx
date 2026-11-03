@@ -7,12 +7,12 @@ import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { DictateButton } from '../components/Dictate'
 import { ANESTHESIA_TYPES, SURGICAL_TEAM, type SurgicalRole } from '../lib/clinicalConfig'
 export { anesthesiaText, teamLines } from '../lib/postop'
-import { fromLocalValue, localValueToIso } from '../lib/dateInput'
+import { fromLocalValue, localValueToIso, toLocalValue } from '../lib/dateInput'
 import { dmyTime, inputDateTime } from '../lib/format'
 import { isSurgical } from '../lib/consent'
 import { normalize } from '../lib/patients'
 import { useNow } from '../lib/hooks'
-import type { Diagnosis, InpatientFile as File, PostopData, TeamMember } from '../lib/types'
+import type { Diagnosis, InpatientFile as File, InpatientNote, PostopData, TeamMember } from '../lib/types'
 
 /** Quirúrgicas firmadas en las 24 horas antes del procedimiento (también los registros anteriores marcados como autorizados). */
 export function surgicalAuths(file: File, performed: Date) {
@@ -63,6 +63,13 @@ export function postopPayload(pq: PostopDraft, check: ReturnType<typeof postopIs
   }
 }
 
+/** GE4: la nota firmada, de vuelta en el formulario para corregirla. */
+export const postopDraftOf = (n: InpatientNote): PostopDraft => {
+  const x = n.postop!
+  return { preDiagnoses: x.preDiagnoses, postDiagnoses: n.diagnoses ?? [], startAt: toLocalValue(new Date(x.startAt)), endAt: toLocalValue(new Date(x.endAt)), anesthesia: x.anesthesia,
+    anesthesiaOther: x.anesthesiaOther ?? '', procedureName: x.procedureName, description: x.description, team: x.team, authId: x.authorizationId ?? '', urgent: !!x.urgent, justification: x.justification ?? '' }
+}
+
 export const blankPostop = (pre: Diagnosis[], user?: { id: string; name: string } | null): PostopDraft => ({
   preDiagnoses: pre, postDiagnoses: [], startAt: inputDateTime(new Date()), endAt: inputDateTime(new Date()), anesthesia: '', anesthesiaOther: '',
   procedureName: '', description: '', team: user ? { surgeon: { staffId: user.id, name: user.name } } : {}, authId: null, urgent: false, justification: '',
@@ -82,7 +89,9 @@ function TeamField({ label, value, onChange, required }: { label: string; value?
 }
 
 /** PQ1 y PQ2: la columna izquierda de la nota postquirúrgica. */
-export function PostopFields({ pq, setPq, check, onAuthorize }: { pq: PostopDraft; setPq: (f: (x: PostopDraft) => PostopDraft) => void; file: File; check: ReturnType<typeof postopIssues>; onAuthorize?: (procedure: string) => void }) {
+export function PostopFields({ pq, setPq, check, onAuthorize, noAuth }: { pq: PostopDraft; setPq: (f: (x: PostopDraft) => PostopDraft) => void; file: File; check: ReturnType<typeof postopIssues>; onAuthorize?: (procedure: string) => void
+  /** GE4: al corregir, la autorización ya quedó resuelta al firmar */
+  noAuth?: boolean }) {
   const now = useNow()
   const [same, setSame] = useState(false)
   const set = (patch: Partial<PostopDraft>) => setPq((x) => ({ ...x, ...patch }))
@@ -116,14 +125,14 @@ export function PostopFields({ pq, setPq, check, onAuthorize }: { pq: PostopDraf
         {SURGICAL_TEAM.map((t) => <TeamField key={t.key} label={t.label} required={t.key === 'surgeon'} value={pq.team[t.key]} onChange={(m) => setPq((x) => ({ ...x, team: { ...x.team, [t.key]: m } }))} />)}
       </div>
     </fieldset>
-    {auths.length > 0 && (
+    {!noAuth && auths.length > 0 && (
       <label className="field"><span>Autorización quirúrgica firmada (últimas 24 horas)</span>
         <select className="select" value={chosen?.id ?? ''} onChange={(e) => set({ authId: e.target.value })}>
           {auths.map((a) => <option key={a.id} value={a.id}>{a.name} · firmada {dmyTime(a.at)}</option>)}
           <option value="">Ninguna de estas</option>
         </select></label>
     )}
-    {chosen ? <div className="alert-strip alert-strip--calm">Autorización firmada ✓ {chosen.name}</div> : (
+    {noAuth ? null : chosen ? <div className="alert-strip alert-strip--calm">Autorización firmada ✓ {chosen.name}</div> : (
       <div className="alert-strip alert-strip--amber" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
         <span>No hay autorización quirúrgica firmada para este procedimiento.</span>
         {onAuthorize && <button type="button" className="btn btn--soft btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => onAuthorize(pq.procedureName.trim())}><FileSignature size={14} />Generar la autorización quirúrgica</button>}

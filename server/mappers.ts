@@ -1,3 +1,4 @@
+import { graceUntil } from './grace.js'
 import type {
   Appointment, Attachment, AuditEntry, ClinicContact, Authorization, AuthorizationData, Background, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
   ConsentRevocation, ConsentSigning, Epicrisis, EpicrisisData, GuestPatient, Patient, Payment, Prescription, Referral, ReferralData, Service, Staff, Vitals,
@@ -61,6 +62,8 @@ export const toVitals = (r: Row): Vitals => ({
   respRate: r.resp_rate == null ? undefined : Number(r.resp_rate), glucose: r.glucose == null ? undefined : Number(r.glucose),
   chiefComplaint: s(r.chief_complaint),
   hospitalizationId: s(r.hospitalization_id), recordedAt: s(r.recorded_at), voidedAt: s(r.voided_at), voidedBy: s(r.voided_by), voidReason: s(r.void_reason),
+  // GE4: la preclínica se registra con la hora de la toma
+  ...correctable(r.version, r.recorded_at ?? (r.hospitalization_id ? undefined : r.taken_at)),
 })
 
 export const toConsultation = (r: Row): Consultation => ({
@@ -69,6 +72,7 @@ export const toConsultation = (r: Row): Consultation => ({
   history: String(r.history ?? ''), exam: String(r.exam ?? ''), observations: s(r.observations) || undefined,
   diagnoses: j(r.diagnoses, []), plan: String(r.plan ?? ''), orders: j(r.orders, []), indications: r.indications == null ? undefined : j<string[]>(r.indications, []),
   vitalsId: s(r.vitals_id), prescriptionId: s(r.prescription_id),
+  ...correctable(r.version, r.recorded_at),
 })
 
 export const toPrescription = (r: Row): Prescription => ({
@@ -135,7 +139,12 @@ export const toHospitalization = (r: Row): Hospitalization => ({
   specialty: s(r.specialty),
 })
 
+/** GE4 (ronda 9): número de versión (sólo si se corrigió) y hasta cuándo puede corregirlo su autor. */
+export const correctable = (version: unknown, firstAt: unknown) => ({ version: Number(version ?? 1) > 1 ? Number(version) : undefined, graceUntil: graceUntil(firstAt) })
+
 export const toInpatientNote = (r: Row): InpatientNote => ({
+  // GE4: el egreso no se corrige en el periodo de gracia (toca la receta de salida y el cierre)
+  ...correctable(r.version, r.kind === 'discharge' ? undefined : r.at),
   id: String(r.id), hospitalizationId: String(r.hospitalization_id), kind: r.kind as InpatientNote['kind'], authorId: String(r.author_id), at: String(r.at),
   subjective: String(r.subjective ?? ''), objective: String(r.objective ?? ''), assessment: String(r.assessment ?? ''), plan: String(r.plan ?? ''), text: String(r.text ?? ''),
   discharge: r.kind === 'discharge' ? j(r.data, undefined) : undefined,
@@ -196,6 +205,7 @@ export const toDose = (r: Row): Dose => ({
   id: String(r.id), medId: String(r.med_id), scheduledAt: s(r.scheduled_at), givenAt: String(r.given_at), givenBy: String(r.given_by),
   status: r.status as Dose['status'], note: s(r.note), dose: s(r.dose),
   correctedAt: s(r.corrected_at), correctedBy: s(r.corrected_by), correctionReason: s(r.correction_reason),
+  ...correctable(r.version, r.recorded_at),
 })
 
 export const toProcedure = (r: Row): HospProcedure => ({

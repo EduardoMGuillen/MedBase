@@ -8,12 +8,17 @@ import { Loading } from '../components/ui'
 import { LogoMark } from '../components/Logo'
 import { contactLine, date, fullName, time } from '../lib/format'
 import { BackgroundView, ConsultationBody, Identification } from './PatientChart'
+import { ConsultCorrection } from './ConsultCorrection'
+import { GraceButton, VersionTag } from '../components/Grace'
+import type { Consultation } from '../lib/types'
 
 /** Nota de consulta imprimible con el orden de la historia clínica. */
 export default function ConsultNote() {
   const { id } = useParams()
   const { fetchConsultation, staffById, settings, notify, can, user } = useStore()
   const [referring, setReferring] = useState(false)
+  const [correcting, setCorrecting] = useState(false)
+  const [toAddendum, setToAddendum] = useState<string | undefined>()
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchConsultation>> | null>(null)
   const load = useCallback(() => { if (id) fetchConsultation(id).then(setData).catch((e: Error) => notify(e.message, 'error')) }, [id, fetchConsultation, notify])
   useEffect(load, [load])
@@ -51,12 +56,18 @@ export default function ConsultNote() {
         <BackgroundView p={p} compact />
         <h3 className="cn__h">IV. Consulta</h3>
         <ConsultationBody c={c} vitals={vitals} exams={data.exams ?? []} />
-        <SignedBadge by={doc.name} at={c.date} addenda={(data.addenda ?? []).length} />
-        <Addenda list={data.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={load} />
+        <div className="signed-row">
+          <SignedBadge by={doc.name} at={c.date} addenda={(data.addenda ?? []).length} />
+          {/* GE4 (ronda 9): periodo de gracia y versiones */}
+          <VersionTag version={c.version} kind="consultation" id={c.id} render={(x) => <ConsultationBody c={{ ...c, reason: String(x.reason ?? ''), history: String(x.history ?? ''), exam: String(x.exam ?? ''), observations: x.observations ? String(x.observations) : undefined, diagnoses: (x.diagnoses ?? []) as Consultation['diagnoses'] }} />} />
+          <span className="no-print"><GraceButton record={c} authorId={c.doctorId} onCorrect={() => setCorrecting(true)} /></span>
+        </div>
+        <Addenda list={data.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={load} openWith={toAddendum} />
 
         <div className="rx-sheet__sign"><div><em>{doc.name.replace(/^Dra?\.\s*/, '')}</em>{doc.name}<br /><span style={{ color: 'var(--muted)' }}>{doc.license}</span></div></div>
         <footer className="rx-sheet__foot"><span>Documento del expediente clínico. Confidencial.</span><span>Emitido con Clinara</span></footer>
       </article>
+      {correcting && <ConsultCorrection c={c} p={p} onClose={() => setCorrecting(false)} onSaved={() => { setCorrecting(false); load() }} onExpired={(t) => { setCorrecting(false); setToAddendum(t) }} />}
       {referring && <ReferralModal from={{ kind: 'consultation', id: c.id }} onClose={() => setReferring(false)} />}
     </div>
   )

@@ -19,7 +19,7 @@ import { NoteColumns, NoteExams, NoteText } from '../components/NoteColumns'
 import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { DictateButton, DictateField } from '../components/Dictate'
 import { AuthorizationEntry, AuthorizationForm } from './Authorization'
-import { blankPostop, postopIssues, postopPayload, PostopFields, surgicalAuths, type PostopDraft } from './PostopNote'
+import { blankPostop, postopDraftOf, postopIssues, postopPayload, PostopFields, surgicalAuths, type PostopDraft } from './PostopNote'
 import { normalize } from '../lib/patients'
 import { useFileAlerts, useNow } from '../lib/hooks'
 import type { Addendum, Diagnosis, Dose, InfusionUnit, ExamInput, OrderLineTag, VitalsMode, HospProcedure, InpatientFile as File, InpatientMed, InpatientNote, Patient } from '../lib/types'
@@ -33,6 +33,9 @@ import { examCatalog, examKey, typedExam } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { Addenda, DraftBadge, SignedBadge } from '../components/Addenda'
 import { useDraftSync } from '../lib/drafts'
+import { api, ApiError, serverNow } from '../lib/api'
+import { GRACE_EXPIRED_TEXT } from '../lib/grace'
+import { CorrectionReason, GraceButton, VersionTag } from '../components/Grace'
 import { BedFields } from '../components/BedFields'
 import { ReferralActions, ReferralModal } from './Referral'
 import { features } from '../lib/permissions'
@@ -301,6 +304,10 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
   const [stopping, setStopping] = useState<InpatientMed | null>(null)
   const [stoppingInfusion, setStoppingInfusion] = useState<InpatientMed | null>(null)
   const [fixing, setFixing] = useState(false)
+  // GE4 (ronda 9): quien registró una dosis la corrige directo en los primeros minutos (hora del servidor); se vuelve a mirar cada 5 s
+  const { user: me } = useStore()
+  useNow(5_000)
+  const inGrace = (d?: Dose) => !!d?.graceUntil && d.givenBy === me?.id && new Date(d.graceUntil).getTime() > serverNow().getTime()
   const open = file.hospitalization.status === 'active'
   // EN2: «Registrar dosis» desde una alerta abre esa dosis (si es de un día anterior, como registro tardío)
   useEffect(() => {
@@ -411,7 +418,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                     const dose = doses.find((d) => d.scheduledAt && new Date(d.scheduledAt).getTime() === s.at.getTime())
                     const st = slotState(s.at, s.omitted, dose, undefined, m.everyHours)
                     // Hoy se registra directo; en un día pasado sólo en "Corregir registros"; lo futuro no se toca
-                    const clickable = care && !s.omitted && s.at.getTime() <= Date.now() + 30 * 60_000 && (dose ? fixing : !past || fixing)
+                    const clickable = care && !s.omitted && s.at.getTime() <= Date.now() + 30 * 60_000 && (dose ? fixing || inGrace(dose) : !past || fixing)
                     return (
                       <button key={s.at.toISOString()} className={`slot2 slot2--${st}${dose?.correctionReason ? ' slot2--fixed' : ''}`} disabled={!clickable}
                         onClick={() => (dose ? setCorrecting({ med: m, dose }) : setMarking({ med: m, at: s.at, late: past }))}
@@ -421,6 +428,8 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                         {isLoadingSlot(m, s.at) && <em className="slot2__tag">Dosis inicial · {m.loadingDose}</em>}
                         {m.infusionRate && !dose && <em className="slot2__tag">Inicio de la infusión</em>}
                         <small>{dose ? `${dose.status === 'given' ? '✓' : '✗'} ${time(dose.givenAt)}${givenLate(dose) ? ' con retraso' : ''} ${by(dose.givenBy)}` : STATE_LABEL[st]}</small>
+                        {inGrace(dose) && <small className="slot2__grace">Corregir · hasta {time(dose!.graceUntil!)}</small>}
+                        {dose?.version && <small className="slot2__grace">Corregida · v{dose.version}</small>}
                       </button>
                     )
                   })}
@@ -429,8 +438,9 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                     {(() => { const lastGiven = doses.filter((d) => d.status === 'given').sort((x, y) => y.givenAt.localeCompare(x.givenAt))[0]
                       return <span className="prn-last">{lastGiven ? <>Última dosis: <b>{dm(lastGiven.givenAt)}</b> · {by(lastGiven.givenBy)}</> : 'Todavía sin dosis.'}</span> })()}
                     {prnToday.map((d) => (
-                      <button key={d.id} className={`slot2 slot2--given${d.correctionReason ? ' slot2--fixed' : ''}`} disabled={!(care && fixing)} onClick={() => setCorrecting({ med: m, dose: d })}
-                        title={doseTitle(d)}><b>{time(d.givenAt)}</b><small>✓ {by(d.givenBy)}</small></button>
+                      <button key={d.id} className={`slot2 slot2--given${d.correctionReason ? ' slot2--fixed' : ''}`} disabled={!(care && (fixing || inGrace(d)))} onClick={() => setCorrecting({ med: m, dose: d })}
+                        title={doseTitle(d)}><b>{time(d.givenAt)}</b><small>✓ {by(d.givenBy)}</small>
+                        {inGrace(d) && <small className="slot2__grace">Corregir · hasta {time(d.graceUntil!)}</small>}</button>
                     ))}
                     {care && !m.stoppedAt && (ref.getTime() === today.getTime() || fixing) && (
                       <button className="slot2 slot2--prn" onClick={() => setMarking({ med: m, late: past })}><b><Plus size={13} /> PRN</b><small>Registrar dosis</small></button>
@@ -628,7 +638,9 @@ function DoseStatus({ value, onChange }: { value: Dose['status']; onChange: (s: 
 
 /** Corregir una dosis ya registrada: pide motivo; el registro anterior se guarda y queda en la bitácora. */
 function CorrectDoseModal({ med, dose, onClose, onSaved }: { med: InpatientMed; dose: Dose; onClose: () => void; onSaved: () => void }) {
-  const { correctDose } = useStore()
+  const { correctDose, user } = useStore()
+  // GE4 (ronda 9): en el periodo de gracia, quien la registró la corrige sin motivo obligatorio (queda como versión nueva)
+  const grace = !!dose.graceUntil && dose.givenBy === user?.id && new Date(dose.graceUntil).getTime() > serverNow().getTime()
   const [status, setStatus] = useState<Dose['status']>(dose.status)
   const given = status === 'given'
   const [when, setWhen] = useState(inputDateTime(new Date(dose.givenAt)))
@@ -638,19 +650,21 @@ function CorrectDoseModal({ med, dose, onClose, onSaved }: { med: InpatientMed; 
   return (
     <Modal title={`Corregir: ${medLabel(med)}`} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={busy || reason.trim().length < 5 || (!given && !note.trim())} onClick={async () => {
+      <button className="btn btn--primary" disabled={busy || (!grace && reason.trim().length < 5) || (!given && !note.trim())} onClick={async () => {
         setBusy(true)
-        const ok = await correctDose(dose.id, { status, givenAt: fromLocalValue(when).toISOString(), note: note.trim() || undefined, reason: reason.trim() })
+        const ok = await correctDose(dose.id, { status, givenAt: fromLocalValue(when).toISOString(), note: note.trim() || undefined, reason: reason.trim() || undefined, grace: grace || undefined })
         setBusy(false)
         if (ok) onSaved()
       }}>Guardar corrección</button>
     </>}>
-      <p className="muted" style={{ fontSize: 14 }}>Registrada como {DOSE_LABEL[dose.status].toLowerCase()} a las {time(dose.givenAt)} del {date(dose.givenAt)}. El registro anterior se conserva.</p>
+      <p className="muted" style={{ fontSize: 14 }}>Registrada como {DOSE_LABEL[dose.status].toLowerCase()} a las {time(dose.givenAt)} del {date(dose.givenAt)}. El registro anterior se conserva.{grace ? ` Corregible hasta ${time(dose.graceUntil!)}.` : ''}</p>
+      <p style={{ margin: 0 }}><VersionTag version={dose.version} kind="dose" id={dose.id} render={(x) => <span>{DOSE_LABEL[x.status as Dose['status']] ?? String(x.status)} a las {dmyTime(String(x.givenAt))}{x.note ? `: ${String(x.note)}` : ''}</span>} /></p>
       {dose.scheduledAt && <DoseStatus value={status} onChange={setStatus} />}
       <div className="field"><span>Hora real</span><DateTimeField value={when} max={inputDateTime(new Date())} onChange={setWhen} label="Hora real" /></div>
       {!given && <SkipReasons value={note} onChange={setNote} reasons={status === 'omitted' ? OMIT_REASONS : SKIP_REASONS} />}
       <label className="field"><span>{given ? 'Observación (opcional)' : status === 'omitted' ? 'Motivo por el que se omitió' : 'Motivo por el que no se aplicó'}</span><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
-      <label className="field"><span>Motivo de la corrección (queda en la bitácora)</span><input className="input" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Se anotó una hora equivocada" /></label>
+      {grace ? <CorrectionReason value={reason} onChange={setReason} />
+        : <label className="field"><span>Motivo de la corrección (queda en la bitácora)</span><input className="input" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Se anotó una hora equivocada" /></label>}
     </Modal>
   )
 }
@@ -805,9 +819,13 @@ function ConvertModal({ file, p, onClose, onDone }: { file: File; p: Patient; on
  * con checklist, enfermería marca cada orden y queda su nombre y la hora junto a ella. En celular se apilan.
  */
 function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: () => void }) {
-  const { staffById, can, user } = useStore()
+  const { staffById, can, user, patient } = useStore()
   const { meds, indications } = splitOrders(n, file)
   const author = staffById(n.authorId)
+  // GE4 (ronda 9): corregir en el periodo de gracia; si vence con la ventana abierta, lo escrito pasa a una adenda
+  const [correcting, setCorrecting] = useState(false)
+  const [toAddendum, setToAddendum] = useState<string | undefined>()
+  const p = patient(file.hospitalization.patientId)
   return (
     <article className="panel consult-entry">
       <div className="panel__head">
@@ -820,11 +838,25 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
             {indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : !n.vitals && <p className="muted">Sin indicaciones.</p>}</>}
           exams={<NoteExams list={(file.exams ?? []).filter((e) => e.noteId === n.id)} />}
           meds={meds.length ? <OrderChecklist n={n} orders={meds} file={file} reload={reload} pill /> : <p className="muted">Sin medicamentos.</p>} />
-        <SignedBadge by={author?.name} at={n.at} addenda={(file.addenda ?? []).filter((a) => a.targetId === n.id).length} />
-        <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={can('inpatient.orders') && user?.role === 'doctor'} onAdded={reload} />
+        <div className="signed-row">
+          <SignedBadge by={author?.name} at={n.at} addenda={(file.addenda ?? []).filter((a) => a.targetId === n.id).length} />
+          <VersionTag version={n.version} kind="note" id={n.id} render={(x) => <NoteText n={{ ...n, ...noteFromVersion(n, x) }} />} />
+          <GraceButton record={n} authorId={n.authorId} onCorrect={() => setCorrecting(true)} />
+        </div>
+        <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={can('inpatient.orders') && user?.role === 'doctor'} onAdded={reload} openWith={toAddendum} />
       </div>
+      {correcting && p && <NoteEditor file={file} p={p} kind={n.kind === 'admission' ? 'admission' : 'evolution'} variant={n.format === 'postop' ? 'postop' : undefined} correct={n}
+        onClose={() => setCorrecting(false)} onSaved={() => { setCorrecting(false); reload() }} onExpired={(t) => { setCorrecting(false); setToAddendum(t) }} />}
     </article>
   )
+}
+
+/** GE4: una versión anterior guardada ({subjective, …, data}) vuelta a la forma de la nota, para mostrarla igual. */
+function noteFromVersion(n: InpatientNote, x: Record<string, unknown>): Partial<InpatientNote> {
+  const data = (typeof x.data === 'string' ? JSON.parse(x.data) : x.data ?? {}) as Record<string, unknown>
+  return { subjective: String(x.subjective ?? ''), objective: String(x.objective ?? ''), assessment: String(x.assessment ?? ''), plan: String(x.plan ?? ''), text: String(x.text ?? ''),
+    diagnoses: data.diagnoses as InpatientNote['diagnoses'], exam: data.exam as string | undefined, observations: data.observations as string | undefined, evolution: data.evolution as string | undefined,
+    postop: n.format === 'postop' ? data.postop as InpatientNote['postop'] : undefined, procedure: n.kind === 'procedure' ? data as unknown as InpatientNote['procedure'] : undefined }
 }
 
 /**
@@ -913,6 +945,8 @@ function PendingOrdersPanel({ file, reload }: { file: File; reload: () => void }
 /** Nota de procedimiento en la línea de tiempo: las dos horas, el texto y la autorización. */
 function ProcedureNote({ n, file, reload }: { n: InpatientNote; file: File; reload: () => void }) {
   const { staffById, can, user } = useStore()
+  const [correcting, setCorrecting] = useState(false)
+  const [toAddendum, setToAddendum] = useState<string | undefined>()
   const x = n.procedure!
   const auth = x.authorizationId ? file.authorizations.find((a) => a.id === x.authorizationId) : undefined
   const legacy = x.authorizationId && !auth ? file.procedures.find((a) => a.id === x.authorizationId) : undefined
@@ -930,10 +964,57 @@ function ProcedureNote({ n, file, reload }: { n: InpatientNote; file: File; relo
         {x.urgent && <p className="badge badge--amber" style={{ whiteSpace: 'normal' }}>Urgencia, sin autorización previa: {x.justification}</p>}
         {signedAt && <p className="badge badge--mint" style={{ whiteSpace: 'normal' }}>Autorización firmada ✓{how} {dm(signedAt)}</p>}
         {auth && auth.status !== 'signed' && <p className="badge badge--red" style={{ whiteSpace: 'normal' }}>Autorización {auth.status === 'revoked' ? 'revocada' : auth.status === 'refused' ? 'rechazada' : 'pendiente'}{auth.statusAt ? ` ${dm(auth.statusAt)}` : ''}</p>}
-        <SignedBadge by={staffById(n.authorId)?.name} at={n.at} addenda={(file.addenda ?? []).filter((a) => a.targetId === n.id).length} />
-        <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={can('inpatient.orders') && user?.role === 'doctor'} onAdded={reload} />
+        <div className="signed-row">
+          <SignedBadge by={staffById(n.authorId)?.name} at={n.at} addenda={(file.addenda ?? []).filter((a) => a.targetId === n.id).length} />
+          <VersionTag version={n.version} kind="note" id={n.id} render={(v) => { const d = (v.data ?? {}) as { name?: string; performedAt?: string }; return <div className="note__sec"><h4>{d.name}</h4><p className="muted">{d.performedAt ? dm(d.performedAt) : ''}</p><p>{String(v.text ?? '')}</p></div> }} />
+          <GraceButton record={n} authorId={n.authorId} onCorrect={() => setCorrecting(true)} />
+        </div>
+        <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={can('inpatient.orders') && user?.role === 'doctor'} onAdded={reload} openWith={toAddendum} />
       </div>
+      {correcting && <TextCorrection n={n} procedure onClose={() => setCorrecting(false)} onSaved={() => { setCorrecting(false); reload() }} onExpired={(t) => { setCorrecting(false); setToAddendum(t) }} />}
     </article>
+  )
+}
+
+/**
+ * GE4 (ronda 9): corregir una nota de procedimiento o de enfermería en el periodo de gracia: el mismo formulario, ya
+ * llenado, con «Guardar corrección». Si vence con la ventana abierta, lo escrito no se pierde y se ofrece la adenda.
+ */
+function TextCorrection({ n, procedure, onClose, onSaved, onExpired }: { n: InpatientNote; procedure?: boolean; onClose: () => void; onSaved: () => void; onExpired: (text: string) => void }) {
+  const { notify } = useStore()
+  const now = useNow()
+  const [f, setF] = useState(() => ({ name: n.procedure?.name ?? '', performedAt: n.procedure ? inputDateTime(new Date(n.procedure.performedAt)) : '', text: n.text ?? '' }))
+  const [why, setWhy] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [expired, setExpired] = useState(false)
+  const draft = useDraftSync(procedure ? 'procedimiento' : 'enfermeria', `correct:${n.id}`, f, setF, false)
+  const ok = procedure ? f.name.trim().length >= 3 && f.text.trim().length >= 10 : f.text.trim().length >= 3
+  return (
+    <Modal title={`Corregir: ${procedure ? 'Nota de procedimiento' : 'Nota de enfermería'}`} wide className="note-modal" onClose={onClose} footer={<>
+      {expired ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="alert">{GRACE_EXPIRED_TEXT}
+        <button type="button" className="btn btn--soft btn--sm" style={{ marginLeft: 8 }} onClick={() => { draft.clear(); onExpired(f.text.trim()) }}>Pasar a una adenda</button></span>
+        : <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>}
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={!ok || busy || expired} onClick={async () => {
+        setBusy(true)
+        try {
+          await api(`/inpatient/notes/${n.id}/correct`, { body: { version: n.version ?? 1, reason: why.trim() || undefined, text: f.text.trim(),
+            ...(procedure ? { name: f.name.trim(), performedAt: fromLocalValue(f.performedAt).toISOString() } : {}) } })
+          draft.clear(); notify('Corrección guardada'); onSaved()
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 409 && /minutos/.test(e.message)) setExpired(true)
+          else notify(e instanceof Error ? e.message : 'No se pudo guardar la corrección.', 'error')
+        } finally { setBusy(false) }
+      }}>Guardar corrección</button>
+    </>}>
+      {procedure && <div className="form-grid">
+        <label className="field"><span>Procedimiento realizado</span><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
+        <label className="field"><span>Fecha y hora del procedimiento</span>
+          <DateTimeField value={f.performedAt} max={inputDateTime(now)} onChange={(v) => setF({ ...f, performedAt: v })} label="Fecha y hora del procedimiento" /></label>
+      </div>}
+      <label className="field"><span>{procedure ? 'Nota' : 'Nota de enfermería'}</span>
+        <DictateField label="Nota" onText={(g) => setF((x) => ({ ...x, text: g(x.text) }))}><textarea className="textarea textarea--lg" value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} /></DictateField></label>
+    </Modal>
   )
 }
 
@@ -1017,25 +1098,57 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize, onCon
 
 const EMPTY_MED: NewMed = { drug: '', presentation: '', dose: '', route: 'Intravenosa', everyHours: 8, prn: false, instructions: '' }
 
-function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAuthorize, seed }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: (examBatch?: string) => void; onStale?: () => void
+/**
+ * GE4 (ronda 9): al corregir una nota, la columna de órdenes queda como se firmó. Lo que enfermería ya cumplió sale
+ * bloqueado con quién y a qué hora; lo demás se cambia como siempre (Cambiar u OMITIR en la siguiente nota).
+ */
+function CorrectionOrders({ n, file }: { n: InpatientNote; file: File }) {
+  const { staffById } = useStore()
+  const meds = file.meds.filter((m) => m.noteId === n.id)
+  const exams = (file.exams ?? []).filter((e) => e.noteId === n.id)
+  return (
+    <div className="note-editor__orders">
+      <div className="alert-strip alert-strip--calm">Las órdenes de esta nota quedan como se firmaron. Para cambiarlas usa Cambiar u OMITIR en la siguiente nota.</div>
+      {!!n.orders?.length && <fieldset className="fs"><legend>Indicaciones</legend><ol className="note__list">{(n.orders ?? []).slice(0, n.indicationCount ?? n.orders?.length).map((o, i) => <li key={i}>{o}</li>)}</ol></fieldset>}
+      {exams.length > 0 && <fieldset className="fs"><legend>Exámenes</legend><ul className="note__list">{exams.map((e) => <li key={e.id}>{e.name}</li>)}</ul></fieldset>}
+      {meds.length > 0 && <fieldset className="fs"><legend>Medicamentos</legend><ul className="note__list">{meds.map((m) => {
+        const given = file.doses.filter((x) => x.medId === m.id && x.status === 'given').sort((a, b) => a.givenAt.localeCompare(b.givenAt))[0]
+        return <li key={m.id}>{medLabel(m)}{given && <div className="locked-line">Ya fue administrado por {staffById(given.givenBy)?.name ?? '—'} a las {time(given.givenAt)}. Corrígelo con una adenda.</div>}</li>
+      })}</ul></fieldset>}
+    </div>
+  )
+}
+
+function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAuthorize, seed, correct, onExpired }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: (examBatch?: string) => void; onStale?: () => void
   /** PQ1 (ronda 9): «Nota postquirúrgica»: la misma ventana (órdenes, borrador, pie), con su columna izquierda propia. */
-  variant?: 'postop'; onAuthorize?: (procedure: string) => void; seed?: Partial<PostopDraft> }) {
-  const { addInpatientNote } = useStore()
+  variant?: 'postop'; onAuthorize?: (procedure: string) => void; seed?: Partial<PostopDraft>
+  /** GE4 (ronda 9): «Corregir»: la misma ventana, ya llenada, con «Guardar corrección». `onExpired` pasa lo escrito a una adenda. */
+  correct?: InpatientNote; onExpired?: (text: string) => void }) {
+  const { addInpatientNote, staffById } = useStore()
   // Una nota, un identificador: si se guarda dos veces no se duplica (ni sus medicamentos en la hoja)
   const [clientId] = useState(() => crypto.randomUUID())
-  const [n, setN] = useState({ subjective: '', objective: '', assessment: kind === 'admission' ? file.hospitalization.diagnoses.map((d) => d.label).join('. ') : '', plan: '' })
+  const [n, setN] = useState(() => correct ? { subjective: correct.subjective, objective: correct.objective, assessment: correct.assessment, plan: correct.plan }
+    : { subjective: '', objective: '', assessment: kind === 'admission' ? file.hospitalization.diagnoses.map((d) => d.label).join('. ') : '', plan: '' })
   // Dos formatos (MC4): Estándar ('dx': diagnóstico, examen físico y observaciones) y SOAP. Empieza en el que el médico
   // eligió en Mi configuración (Estándar si no eligió); cada formato guarda su borrador mientras el modal está abierto
   const { user } = useStore()
-  const [format, setFormat] = useState<'soap' | 'dx'>(() => (kind === 'admission' ? 'soap' : user?.prefs?.noteFormat ?? 'dx'))
+  const [format, setFormat] = useState<'soap' | 'dx'>(() => (correct ? (correct.format === 'dx' ? 'dx' : 'soap') : kind === 'admission' ? 'soap' : user?.prefs?.noteFormat ?? 'dx'))
   // NE4 (ronda 8): los diagnósticos vigentes bajan de la última nota firmada de la estancia (o de la impresión diagnóstica
   // del ingreso), como las órdenes; se quitan o se agregan. Estándar y SOAP usan el mismo campo. El borrador manda.
   const [carried, setCarried] = useState<Diagnosis[]>(() => (kind === 'evolution' ? currentDiagnoses(file) : []))
-  const [d, setD] = useState<{ diagnoses: Diagnosis[]; evolution: string; exam: string; observations: string }>(() => ({ diagnoses: carried, evolution: '', exam: '', observations: '' }))
+  const [d, setD] = useState<{ diagnoses: Diagnosis[]; evolution: string; exam: string; observations: string }>(() => (correct
+    ? { diagnoses: correct.diagnoses ?? [], evolution: correct.evolution ?? '', exam: correct.exam ?? '', observations: correct.observations ?? '' }
+    : { diagnoses: carried, evolution: '', exam: '', observations: '' }))
+  const [why, setWhy] = useState('')
+  const [expired, setExpired] = useState(false)
+  // GE4: si venció el plazo, lo escrito pasa a una adenda (texto plano, como se leería en la nota)
+  const correctionText = () => postop ? [pq.procedureName, pq.description].filter(Boolean).join('. ')
+    : format === 'soap' ? SOAP.map((x) => `${x.letter}. ${n[x.key]}`).join('\n') : [d.evolution, d.exam, d.observations].filter((x) => x.trim()).join('\n')
+  void staffById
   const dxChanged = JSON.stringify(d.diagnoses) !== JSON.stringify(carried)
   // PQ1 y PQ2 (ronda 9): nota postquirúrgica
   const postop = variant === 'postop'
-  const [pq, setPq] = useState<PostopDraft>(() => ({ ...blankPostop(carried, user), ...seed }))
+  const [pq, setPq] = useState<PostopDraft>(() => (correct?.postop ? postopDraftOf(correct) : { ...blankPostop(carried, user), ...seed }))
   const [meds, setMeds] = useState<NewMed[]>([])
   const [stop, setStop] = useState<string[]>([])
   const [adding, setAdding] = useState(kind === 'admission')
@@ -1070,7 +1183,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   const active = file.meds.filter((m) => !m.stoppedAt && !courseDone(m))
   // AN1: la nota se guarda sola como borrador (aquí y en el servidor) mientras se escribe
   const noteBlank = (!postop || (!pq.procedureName.trim() && !pq.description.trim() && !pq.postDiagnoses.length && !pq.anesthesia)) && !Object.values(n).some((v) => v.trim()) && !dxChanged && !d.evolution.trim() && !d.exam.trim() && !d.observations.trim() && !meds.length && !stop.length && !exams.length && !extra.length && !Object.keys(decisions).length && !nvFilled
-  const draft = useDraftSync('evolucion', `${file.hospitalization.id}:${postop ? 'postop' : kind}`, { n, format, d, meds, stop, extra, exams, decisions, vitalsMode, nv, nvAt, pq }, (x) => {
+  const draft = useDraftSync('evolucion', correct ? `${file.hospitalization.id}:correct:${correct.id}` : `${file.hospitalization.id}:${postop ? 'postop' : kind}`, { n, format, d, meds, stop, extra, exams, decisions, vitalsMode, nv, nvAt, pq }, (x) => {
     if (seed) return // viene de un borrador de procedimiento mayor: manda lo que se traía
     if (x.pq) setPq(x.pq)
     if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD({ ...x.d, evolution: x.d.evolution ?? '' }); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams); if (x.decisions) setDecisions(x.decisions); if (x.vitalsMode) setVitalsMode(x.vitalsMode); if (x.nv) { setNv(x.nv); if (x.nvAt) setNvAt(x.nvAt) }
@@ -1082,7 +1195,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
     ...meds.flatMap((m) => (m.prn && !m.prnCondition?.trim() ? [`la condición PRN de ${m.drug}`] : []))]
   // SOAP: los cuatro campos, como siempre. Estándar: algo escrito, una indicación o un medicamento.
   // MC8: un valor imposible (temperatura 90) no se acepta, como en el formulario de enfermería
-  const pqCheck = postopIssues(pq, file)
+  const pqAll = postopIssues(pq, file)
+  // GE4: al corregir, la autorización ya quedó resuelta al firmar
+  const pqCheck = correct ? { ...pqAll, missing: pqAll.missing.filter((m) => !m.startsWith('la autorización')) } : pqAll
   const ready = !blanks.length && (postop ? !pqCheck.missing.length : !nvErrors.length && !nvFuture && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
     : (dxChanged && d.diagnoses.length > 0) || !!d.evolution.trim() || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0 || exams.length > 0 || Object.keys(decisions).length > 0))
   /** Un set se agrega al final: indicaciones y medicamentos (que pasan a la hoja al guardar), todo editable. */
@@ -1118,9 +1233,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
     setExams((x) => (x.some((y) => examKey(y.name) === examKey(hit.name)) ? x : [...x, { group: hit.group, name: hit.name, priority: 'routine', place: 'clinic' }]))
   const dxField = (<>
     <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label="Diagnósticos (CIE-11)" />
-    {carried.length > 0 && <small className="muted" style={{ marginTop: -6 }}>{dxChanged ? 'Cambiaste los diagnósticos de la nota anterior.' : 'Vienen de la nota anterior. Agrega, quita o cambia lo que haga falta.'}</small>}
+    {carried.length > 0 && !correct && <small className="muted" style={{ marginTop: -6 }}>{dxChanged ? 'Cambiaste los diagnósticos de la nota anterior.' : 'Vienen de la nota anterior. Agrega, quita o cambia lo que haga falta.'}</small>}
   </>)
-  const vitalsBlock = (
+  const vitalsBlock = correct ? null : (
             <fieldset className="fs note-vitals" key="nv"><legend>Signos vitales (opcional)</legend>
               {!nv ? <button type="button" className="btn btn--soft btn--sm" style={{ justifySelf: 'start' }} onClick={() => { setNv({ ...EMPTY_VITALS }); setNvAt(inputDateTime(new Date())) }}><Plus size={15} />Agregar signos vitales</button> : (<>
                 <VitalsFields v={nv} setV={setNv} checked={nvChecked} setChecked={setNvChecked} ageYears={ageYears} />
@@ -1136,11 +1251,28 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
             </fieldset>
   )
   return (
-    <Modal title={postop ? 'Nota postquirúrgica' : kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'} wide className="note-modal" onClose={onClose}
+    <Modal title={`${correct ? 'Corregir: ' : ''}${postop ? 'Nota postquirúrgica' : kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'}`} wide className="note-modal" onClose={onClose}
       top={(!noteBlank || p.allergies.length > 0) && <>
         {!noteBlank && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}
         {p.allergies.length > 0 && <div className="alert-strip"><TriangleAlert size={16} />Alergias: {p.allergies.join(', ')}</div>}
-      </>} footer={<>
+      </>} footer={correct ? <>
+      {expired ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="alert">{GRACE_EXPIRED_TEXT}
+        {onExpired && <button type="button" className="btn btn--soft btn--sm" style={{ marginLeft: 8 }} onClick={() => onExpired(correctionText())}>Pasar a una adenda</button>}</span>
+        : <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>}
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={!ready || busy || expired} onClick={async () => {
+        setBusy(true)
+        try {
+          const body = postop ? { diagnoses: pq.postDiagnoses, postop: postopPayload(pq, pqCheck) } : format === 'soap' ? { ...n, diagnoses: d.diagnoses } : { ...d }
+          await api(`/inpatient/notes/${correct.id}/correct`, { body: { version: correct.version ?? 1, reason: why.trim() || undefined, ...body } })
+          draft.clear(); notify('Corrección guardada'); onSaved()
+        } catch (e) {
+          // Vencido: lo escrito queda en el borrador y se ofrece la adenda
+          if (e instanceof ApiError && e.status === 409 && /minutos/.test(e.message)) setExpired(true)
+          else notify(e instanceof Error ? e.message : 'No se pudo guardar la corrección.', 'error')
+        } finally { setBusy(false) }
+      }}>Guardar corrección</button>
+    </> : <>
       {postop && pqCheck.missing.length && !blanks.length ? <span className="field__msg field__msg--warn" style={{ marginRight: 'auto' }} role="status">Para firmar falta {pqCheck.missing.join(', ')}.</span>
         : blanks.length ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="status">Completa los espacios ___ de {blanks.join(', ')}.</span>
         : <span className="muted" style={{ marginRight: 'auto', fontSize: 13.5 }}>{meds.length ? `${meds.length} medicamento(s) nuevo(s)` : ''}{stop.length ? `${meds.length ? ', ' : ''}${stop.length} omitido(s)` : ''}</span>}
@@ -1156,7 +1288,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         if (ok) { draft.clear(); onSaved(ok.examBatch ?? undefined) } else onStale?.()
       }}>Firmar nota</button>
     </>}>
-      {kind === 'evolution' && !postop && (
+      {kind === 'evolution' && !postop && !correct && (
         <div className="segmented" role="radiogroup" aria-label="Formato de la nota">
           <button type="button" role="radio" aria-checked={format === 'dx'} onClick={() => setFormat('dx')} title="Diagnóstico, evolución, examen físico y observaciones">Estándar</button>
           <button type="button" role="radio" aria-checked={format === 'soap'} onClick={() => setFormat('soap')} title="Subjetivo, objetivo, análisis y plan">SOAP</button>
@@ -1165,7 +1297,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
       <div className="note-editor">
       <div className="soap-stack">
         {/* MC8 (ronda 6): opcional; si no se toca, no se guarda nada. Va antes del examen físico (en SOAP, arriba de la S: NE6) */}
-        {postop && <PostopFields pq={pq} setPq={setPq} file={file} check={pqCheck} onAuthorize={onAuthorize} />}
+        {postop && <PostopFields pq={pq} setPq={setPq} file={file} check={pqCheck} onAuthorize={onAuthorize} noAuth={!!correct} />}
         {!postop && <>
         {format === 'soap' && kind === 'evolution' && dxField}
         {/* NE6 (ronda 9): en SOAP, los signos vitales van arriba, antes de «S. Subjetivo» (los diagnósticos, NE4, quedan encima) */}
@@ -1190,7 +1322,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         </>)}
         </>}
       </div>
-      <div className="note-editor__orders">
+      {correct ? <CorrectionOrders n={correct} file={file} /> : <div className="note-editor__orders">
       <div className="set-bar">
         <OrderSetPicker where={file.hospitalization.kind === 'observation' ? 'observation' : 'hospital'} patientId={p.id} onApply={applySet} />
         <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions }) => ({ med: { drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions: instructions || undefined } })), ...exams.map((e) => ({ exam: e }))]} />
@@ -1302,7 +1434,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
           : adding ? <MedForm key={meds.length} p={p} onAdd={(m) => { setMeds([...meds, m]); setAdding(false) }} onAddAnother={(m) => setMeds([...meds, m])} onCancel={() => setAdding(false)} />
           : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
       </fieldset>
-      </div>
+      </div>}
       </div>
     </Modal>
   )
@@ -1518,11 +1650,19 @@ function NursingNotes({ file, reload }: { file: File; reload: () => void }) {
 
 function NursingRow({ n, who, file, reload, canAdd, kinds }: { n: InpatientNote; who?: string; file: File; reload: () => void; canAdd: boolean; kinds?: Addendum['kind'][] }) {
   const count = (file.addenda ?? []).filter((a) => a.targetId === n.id).length
+  // GE4 (ronda 9)
+  const [correcting, setCorrecting] = useState(false)
+  const [toAddendum, setToAddendum] = useState<string | undefined>()
   return (
     <div className="nnote">
       <div className="nnote__when"><b>{date(n.at, { day: 'numeric', month: 'short' })}</b><span>{time(n.at)}</span></div>
       <div><p>{n.text}</p><small className="muted">{who}{count > 0 && <span className="badge badge--amber" style={{ marginLeft: 6 }}>Con adenda</span>}</small>
-        <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={canAdd} kinds={kinds} onAdded={reload} /></div>
+        <div className="signed-row">
+          <VersionTag version={n.version} kind="note" id={n.id} render={(v) => <p>{String(v.text ?? '')}</p>} />
+          <GraceButton record={n} authorId={n.authorId} onCorrect={() => setCorrecting(true)} />
+        </div>
+        <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={canAdd} kinds={kinds} onAdded={reload} openWith={toAddendum} /></div>
+      {correcting && <TextCorrection n={n} onClose={() => setCorrecting(false)} onSaved={() => { setCorrecting(false); reload() }} onExpired={(t) => { setCorrecting(false); setToAddendum(t) }} />}
     </div>
   )
 }

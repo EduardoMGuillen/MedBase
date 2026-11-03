@@ -1,6 +1,7 @@
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
+import { assertGrace, graceUntil, saveVersion } from '../grace.js'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import type { Sql } from '../sql.js'
 import { can } from '../../src/lib/permissions.js'
@@ -39,6 +40,9 @@ export const toExamOrder = (r: Row, events: Row[] = []): ExamOrder => ({
   status: r.status as ExamStatus, orderedBy: String(r.ordered_by), orderedAt: String(r.ordered_at), statusAt: r.status_at ? String(r.status_at) : undefined,
   statusBy: r.status_by ? String(r.status_by) : undefined, cancelReason: r.cancel_reason ? String(r.cancel_reason) : undefined,
   result: j<ExamOrder['result']>(r.result, undefined), critical: Boolean(r.critical) || undefined,
+  // GE4 (ronda 9): quien cargó el resultado lo puede corregir unos minutos, mientras el médico no lo revise
+  resultVersion: Number(r.result_version ?? 1) > 1 ? Number(r.result_version) : undefined,
+  resultGraceUntil: r.status === 'result' ? graceUntil(j<{ at?: string }>(r.result, {}).at) : undefined,
   reviewedBy: r.reviewed_by ? String(r.reviewed_by) : undefined, reviewedAt: r.reviewed_at ? String(r.reviewed_at) : undefined,
   uncatalogued: Boolean(r.uncatalogued) || undefined,
   events: events.filter((e) => e.exam_id === r.id).map((e) => ({ status: e.status as ExamStatus, by: String(e.by_id), at: String(e.at), note: e.note ? String(e.note) : undefined })),
@@ -436,12 +440,19 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
         highOpen: z.boolean().optional() })).max(60).optional(),
       report: z.string().trim().max(6000).optional(),
       fileIds: z.array(z.string()).max(10).optional(),
+      // GE4 (ronda 9): corregir el resultado recién cargado (quien lo cargó, en el periodo de gracia, sin revisar todavía)
+      correct: z.boolean().optional(), version: z.number().int().optional(), why: z.string().trim().max(300).optional(),
     }), req.body)
     if (!b.values?.length && !b.report && !b.fileIds?.length) fail(400, 'Escribe los valores o el informe, o sube el archivo del resultado.')
     const cid = clinicOf(req)
     const user = userOf(req)
     const r = await examRow(cid, String(req.params.id))
-    if (['result', 'reviewed', 'cancelled'].includes(String(r!.status))) fail(409, 'Este examen ya tiene resultado o está cancelado.')
+    const before = r!.result ? JSON.parse(String(r!.result)) as { at?: string; by?: string } : undefined
+    if (b.correct) {
+      if (r!.status !== 'result') fail(409, r!.status === 'reviewed' ? 'El médico ya revisó este resultado: corrígelo con una adenda.' : 'Este examen no tiene resultado que corregir.')
+      assertGrace(user.id, before?.by, before?.at, 'cargó el resultado')
+      if (Number(r!.result_version ?? 1) !== (b.version ?? 1)) fail(409, 'El resultado cambió mientras lo corregías. Actualiza la página.')
+    } else if (['result', 'reviewed', 'cancelled'].includes(String(r!.status))) fail(409, 'Este examen ya tiene resultado o está cancelado.')
     for (const f of b.fileIds ?? []) if (!(await sql.one('SELECT 1 FROM attachments WHERE id = ? AND clinic_id = ? AND patient_id = ?', [f, cid, String(r!.patient_id)]))) fail(400, 'El archivo no corresponde a este paciente.')
     // AD1 (ronda 5): los umbrales de los grupos de la clínica (analitos propios incluidos)
     const limits = criticalLimitsOf((await settings(cid)).criticalGroups)
@@ -464,12 +475,18 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
       const critical = isCritical(limits, v.analyte, num, sex)
       return { ...v, unit: v.unit ?? ref?.unit, low, high, highOpen: highOpen || undefined, reference: ref?.text, flag: Number.isFinite(num) ? flagOf(num, low, high, highOpen) : undefined, critical: critical || undefined }
     })
-    const at = new Date().toISOString()
+    // GE4: al corregir, la hora del primer registro se conserva (de ahí cuentan los minutos) y la versión anterior se guarda
+    const at = b.correct && before?.at ? before.at : new Date().toISOString()
     const critical = values.some((v) => v.critical)
     const who = await patientName(String(r!.patient_id))
     await sql.tx(async (q) => {
+      if (b.correct) {
+        const next = await saveVersion(q, { clinicId: cid, kind: 'exam_result', id: String(r!.id), version: Number(r!.result_version ?? 1), authorId: String(before!.by), at: String(before!.at), by: user.id, reason: b.why, data: before })
+        await q.run('UPDATE exam_orders SET result_version = ? WHERE id = ?', [next, String(r!.id)])
+        await audit(user, `Corrigió el resultado de ${label(r!)} de ${who} en el periodo de gracia (versión ${next})${b.why ? `: ${b.why}` : ''}`, q, String(r!.patient_id))
+      }
       await q.run('UPDATE exam_orders SET status = ?, status_at = ?, status_by = ?, result = ?, critical = ? WHERE id = ?',
-        ['result', at, user.id, JSON.stringify({ values: values.length ? values : undefined, report: b.report || undefined, fileIds: b.fileIds?.length ? b.fileIds : undefined, at, by: user.id }), critical, String(r!.id)])
+        ['result', b.correct ? r!.status_at : at, user.id, JSON.stringify({ values: values.length ? values : undefined, report: b.report || undefined, fileIds: b.fileIds?.length ? b.fileIds : undefined, at, by: user.id, correctedAt: b.correct ? new Date().toISOString() : undefined }), critical, String(r!.id)])
       await event(q, cid, String(r!.id), 'result', user.id, at, critical ? 'Valor crítico' : undefined)
       const flagged = values.filter((v) => v.flag).map((v) => `${v.analyte} ${v.value} (${v.flag === 'high' ? 'alto' : 'bajo'})`)
       await audit(user, `Cargó el resultado de ${label(r!)} de ${who}${flagged.length ? `: ${flagged.join(', ')}` : ''}${critical ? '; VALOR CRÍTICO' : ''}`, q, String(r!.patient_id))

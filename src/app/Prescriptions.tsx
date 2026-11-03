@@ -3,6 +3,7 @@ import { DateField } from '../components/DateTimeField'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ban, ChevronLeft, Copy, FileText, MessageCircle, Plus, Printer, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
+import { api } from '../lib/api'
 import { Loading, Modal, PageHead } from '../components/ui'
 import { age, date, formatPhone, fullName, identityLine, localISODate, medicationLine, frequencyText, recordNumber, time, whatsappUrl } from '../lib/format'
 import { stayPath, yearsOld } from '../lib/inpatient'
@@ -242,8 +243,12 @@ export function PrescriptionSheet() {
           {!patient && g && can('rx.write') && can('patients.manage') && <GuestLink rx={rx} guest={g} onLinked={load} />}
           {can('rx.write') && !rx.voidedAt && <button className="btn btn--danger" onClick={() => setVoiding(true)}><Ban size={16} />Anular</button>}
           {can('rx.write') && rx.voidedAt && <Link className="btn btn--soft" to={`/app/recetas?repetir=${rx.id}`}><Copy size={16} />Emitir una nueva</Link>}
-          {p.phone && !rx.voidedAt && <a className="btn btn--ghost" href={whatsappUrl(p.phone, rxMessage)} target="_blank" rel="noreferrer"><MessageCircle size={16} />Enviar por WhatsApp</a>}
-          <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir o guardar PDF (media carta)</button>
+          {p.phone && !rx.voidedAt && <a className="btn btn--ghost" href={whatsappUrl(p.phone, rxMessage)} target="_blank" rel="noreferrer" onClick={() => { api(`/prescriptions/${rx.id}/printed`, { body: { how: 'whatsapp' } }).catch(() => null) }}><MessageCircle size={16} />Enviar por WhatsApp</a>}
+          <button className="btn btn--primary" onClick={() => {
+            // GE4 (ronda 9): impresa (o descargada), la receta ya no se corrige en el periodo de gracia
+            api(`/prescriptions/${rx.id}/printed`, { body: { how: 'print' } }).catch(() => null)
+            window.print()
+          }}><Printer size={16} />Imprimir o guardar PDF (media carta)</button>
         </div>
       </div>
       {examBatch && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap' }}>También se ordenaron exámenes: se imprimen en su propia orden, aparte de la receta.

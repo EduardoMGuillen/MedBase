@@ -28,7 +28,7 @@ import { registerBilling } from './routes/billing.js'
 import { registerReports } from './routes/reports.js'
 import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
-import { pendingOrders, registerInpatient, vitalsModeInput } from './routes/inpatient.js'
+import { pendingOrders, registerInpatient, vitalsBody, vitalsModeInput } from './routes/inpatient.js'
 import { syncStayOrders } from './medOrders.js'
 import { ensureHospitalAuthorization, refreshPendingAuthorizationsForPatient } from './authorizations.js'
 import { createIcdClient, icdConfigFromEnv, type IcdClient } from './icd.js'
@@ -48,6 +48,7 @@ import { yearsOld } from '../src/lib/inpatient.js'
 import { normalizeDni } from '../src/lib/format.js'
 import { AUDIT_KINDS, auditKind, type AuditKind } from '../src/lib/audit.js'
 import { hasBlank, medHasBlank } from '../src/lib/orderSets.js'
+import { assertGrace, printedAt, saveVersion, toVersion } from './grace.js'
 import { DAY_NAMES_PLURAL, rangesOn, scheduleFromWeek, scheduleProblems, SLOT_OPTIONS, weekday, weekOf, withinSchedule } from '../src/lib/schedule.js'
 import type { ApptStatus, Staff } from '../src/lib/types.js'
 
@@ -915,11 +916,11 @@ export function createApp(opts: AppOptions) {
           [rxId, folio, patientId, user.id, consultId, now.toISOString(), JSON.stringify(rxItems), cid, await rxValidityOf(q, user.id, c.validityDays), marks.signatureId, marks.stampId])
       }
       await q.run(`INSERT INTO consultations (id,patient_id,doctor_id,appointment_id,date,reason,symptoms,symptom_onset,history,exam,diagnoses,plan,vitals_id,prescription_id,orders,observations,clinic_id,indications,
-          admit_kind, meds)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          admit_kind, meds, recorded_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [consultId, patientId, user.id, c.appointmentId, now.toISOString(), c.reason, JSON.stringify(c.symptoms), c.symptomOnset ?? null,
           c.history, c.exam, JSON.stringify(c.diagnoses), c.orders.map((o, i) => `${i + 1}. ${o}`).join('\n'), c.vitalsId ?? null, rxId, JSON.stringify(c.orders), c.observations, cid,
-          c.indications ? JSON.stringify(c.indications) : null, stayKind, items.length ? JSON.stringify(items) : null])
+          c.indications ? JSON.stringify(c.indications) : null, stayKind, items.length ? JSON.stringify(items) : null, now.toISOString()])
       await q.run(`UPDATE appointments SET status = 'done' WHERE id = ?`, [c.appointmentId])
       // RF1 (ronda 8): las referencias firmadas con la nota en borrador quedan en esta consulta
       await q.run('UPDATE referrals SET consultation_id = ? WHERE appointment_id = ? AND consultation_id IS NULL AND clinic_id = ?', [consultId, c.appointmentId, cid])
@@ -1019,6 +1020,97 @@ export function createApp(opts: AppOptions) {
   })
 
   /** Anular una receta emitida (con motivo). Queda en el historial marcada como anulada; se emite otra si hace falta. */
+  // GE4 (ronda 9): cada impresión o descarga de la receta queda registrada (y en la bitácora); una receta impresa ya no se corrige
+  app.post('/api/prescriptions/:id/printed', auth, need('rx.view'), async (req, res) => {
+    const { how } = parse(z.object({ how: z.enum(['print', 'pdf', 'whatsapp']).default('print') }), req.body ?? {})
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const row = (await sql.one('SELECT id, folio, patient_id FROM prescriptions WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La receta no existe.')
+    await sql.run('INSERT INTO print_log (id, clinic_id, target_kind, target_id, how, by_id, at) VALUES (?,?,?,?,?,?,?)', [randomUUID(), cid, 'prescription', String(row!.id), how, user.id, new Date().toISOString()])
+    await audit(user, `${how === 'pdf' ? 'Descargó en PDF' : how === 'whatsapp' ? 'Envió por WhatsApp' : 'Imprimió'} la receta ${row!.folio}${row!.patient_id ? ` de ${await patientName(String(row!.patient_id))}` : ''}`)
+    res.json({ ok: true })
+  })
+
+  /**
+   * GE4 (ronda 9): «Corregir» la nota de consulta externa en el periodo de gracia (sólo quien la firmó). Se corrige lo
+   * escrito y los diagnósticos; los medicamentos de la receta, sólo si la receta no se imprimió, descargó ni anuló.
+   */
+  app.post('/api/consultations/:id/correct', auth, need('consult.write'), async (req, res) => {
+    const b = parse(z.object({
+      version: z.number().int().min(1),
+      why: z.string().trim().max(300).optional(),
+      reason: z.string().trim().min(1, 'Escribe el motivo de consulta.'),
+      history: z.string().default(''), exam: z.string().default(''), observations: z.string().max(4000).default(''),
+      diagnoses: z.array(diagnosisInput).min(1, 'Agrega al menos un diagnóstico.'),
+      items: z.array(rxItem).optional(),
+    }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const c = (await sql.one('SELECT * FROM consultations WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La consulta no existe.')
+    assertGrace(user.id, c!.doctor_id, c!.recorded_at, 'firmó la nota')
+    if (Number(c!.version ?? 1) !== b.version) fail(409, 'La nota cambió mientras la corregías. Actualiza la página.')
+    const rx = c!.prescription_id ? await sql.one('SELECT * FROM prescriptions WHERE id = ?', [String(c!.prescription_id)]) : undefined
+    if (b.items) {
+      if (!rx) fail(409, 'Esta consulta no tiene receta.')
+      if (rx!.voided_at) fail(409, 'La receta está anulada.')
+      if (await printedAt(sql, 'prescription', String(rx!.id))) fail(409, 'Ya se imprimió la receta. Corrígelo con una adenda.')
+      if (!b.items.length) fail(400, 'La receta necesita al menos un medicamento; para quitarla, anúlala.')
+      if (b.items.some((it) => it.applyInClinic)) fail(400, '«Aplicar en la clínica» no se agrega en una corrección.')
+      if (b.items.some(medHasBlank)) fail(400, 'Completa los espacios ___ de los medicamentos.')
+    }
+    const version = Number(c!.version ?? 1)
+    const who = await patientName(String(c!.patient_id))
+    await sql.tx(async (q) => {
+      const next = await saveVersion(q, { clinicId: cid, kind: 'consultation', id: String(c!.id), version, authorId: String(c!.doctor_id), at: String(c!.recorded_at), by: user.id, reason: b.why,
+        data: { reason: c!.reason, history: c!.history, exam: c!.exam, observations: c!.observations, diagnoses: JSON.parse(String(c!.diagnoses ?? '[]')), items: rx ? JSON.parse(String(rx.items)) : undefined } })
+      await q.run('UPDATE consultations SET reason = ?, history = ?, exam = ?, observations = ?, diagnoses = ?, version = ? WHERE id = ?',
+        [b.reason, b.history, b.exam, b.observations, JSON.stringify(b.diagnoses), next, String(c!.id)])
+      if (b.items) await q.run('UPDATE prescriptions SET items = ? WHERE id = ?', [JSON.stringify(b.items), String(rx!.id)])
+      await audit(user, `Corrigió su nota de consulta de ${who} en el periodo de gracia (versión ${next})${b.items ? `, con la receta ${rx!.folio}` : ''}${b.why ? `: ${b.why}` : ''}`, q, String(c!.patient_id))
+    })
+    res.json(toConsultation((await sql.one('SELECT * FROM consultations WHERE id = ?', [String(c!.id)]))!))
+  })
+
+  /** GE4 (ronda 9): «Ver versiones»: las anteriores, en solo lectura, para quien ya ve ese registro (clínico). */
+  const VERSION_TABLE = { note: 'hosp_notes', dose: 'hosp_doses', vitals: 'vitals', consultation: 'consultations', exam_result: 'exam_orders' } as const
+  app.get('/api/versions/:kind/:id', auth, need('chart.view'), async (req, res) => {
+    const kind = String(req.params.kind) as keyof typeof VERSION_TABLE
+    if (!VERSION_TABLE[kind]) fail(404, 'No hay versiones de ese registro.')
+    const cid = clinicOf(req)
+    if (!(await sql.one(`SELECT 1 FROM ${VERSION_TABLE[kind]} WHERE id = ? AND clinic_id = ?`, [String(req.params.id), cid]))) fail(404, 'El registro no existe.')
+    const rows = await sql.query('SELECT * FROM record_versions WHERE clinic_id = ? AND target_kind = ? AND target_id = ? ORDER BY version', [cid, kind, String(req.params.id)])
+    res.json(rows.map(toVersion))
+  })
+
+  /** GE4 (ronda 9): «Corregir» una toma de signos vitales (preclínica u hoja de la estancia) en el periodo de gracia. */
+  app.post('/api/vitals/:vid/correct', auth, need('vitals.record'), async (req, res) => {
+    const b = parse(vitalsBody.extend({ version: z.number().int().min(1), why: z.string().trim().max(300).optional() }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const v = (await sql.one('SELECT * FROM vitals WHERE id = ? AND clinic_id = ?', [String(req.params.vid), cid])) ?? fail(404, 'La toma no existe.')
+    if (v!.voided_at) fail(409, 'Esa toma está anulada.')
+    assertGrace(user.id, v!.taken_by, v!.recorded_at ?? (v!.hospitalization_id ? undefined : v!.taken_at), 'registró la toma')
+    if (Number(v!.version ?? 1) !== b.version) fail(409, 'La toma cambió mientras la corregías. Actualiza la página.')
+    if (v!.hospitalization_id) {
+      const h = await sql.one('SELECT status FROM hospitalizations WHERE id = ?', [String(v!.hospitalization_id)])
+      if (h?.status !== 'active') fail(409, 'La estancia ya terminó.')
+    }
+    const takenAt = b.takenAt && v!.hospitalization_id ? new Date(b.takenAt) : new Date(String(v!.taken_at))
+    if (takenAt.getTime() > Date.now() + 60_000) fail(400, 'La hora de la toma no puede ser en el futuro.')
+    const cols = ['systolic', 'diastolic', 'heart_rate', 'temperature', 'spo2', 'weight_kg', 'height_cm', 'pain_scale', 'resp_rate', 'glucose', 'notes', 'taken_at'] as const
+    const next = Number(v!.version ?? 1)
+    const who = await patientName(String(v!.patient_id))
+    await sql.tx(async (q) => {
+      const n = await saveVersion(q, { clinicId: cid, kind: 'vitals', id: String(v!.id), version: next, authorId: String(v!.taken_by), at: String(v!.recorded_at ?? v!.taken_at), by: user.id, reason: b.why,
+        data: Object.fromEntries(cols.map((c) => [c, v![c] ?? null])) })
+      await q.run(`UPDATE vitals SET systolic = ?, diastolic = ?, heart_rate = ?, temperature = ?, spo2 = ?, weight_kg = ?, height_cm = ?, pain_scale = ?, resp_rate = ?, glucose = ?, notes = ?, taken_at = ?, version = ? WHERE id = ?`,
+        [b.systolic ?? null, b.diastolic ?? null, b.heartRate ?? null, b.temperature ?? null, b.spo2 ?? null, b.weightKg ?? null, b.heightCm ?? null, b.painScale ?? null, b.respRate ?? null, b.glucose ?? null, b.notes || null,
+          takenAt.toISOString(), n, String(v!.id)])
+      await audit(user, `Corrigió la toma de signos vitales de ${who} en el periodo de gracia (versión ${n})${b.why ? `: ${b.why}` : ''}`, q, String(v!.patient_id))
+    })
+    res.json(toVitals((await sql.one('SELECT * FROM vitals WHERE id = ?', [String(v!.id)]))!))
+  })
+
   app.post('/api/prescriptions/:id/void', auth, need('rx.write'), async (req, res) => {
     const { reason } = parse(z.object({ reason: z.string().trim().min(5, 'Escribe por qué se anula la receta.').max(300) }), req.body)
     const user = userOf(req)
@@ -1038,7 +1130,7 @@ export function createApp(opts: AppOptions) {
     const hosp = rx.hospitalizationId ? await sql.one('SELECT * FROM hospitalizations WHERE id = ? AND clinic_id = ?', [rx.hospitalizationId, cid]) : undefined
     const patient = rx.patientId ? toPatient((await patientRow(cid, rx.patientId))!, true) : null
     await audit(userOf(req), `Abrió la receta ${rx.folio}`)
-    res.json({ prescription: rx, consultation: cons ? toConsultation(cons) : null, hospitalization: hosp ? toHospitalization(hosp) : null, patient })
+    res.json({ prescription: { ...rx, printedAt: await printedAt(sql, 'prescription', rx.id) }, consultation: cons ? toConsultation(cons) : null, hospitalization: hosp ? toHospitalization(hosp) : null, patient })
   })
 
   // ---------- Personal ----------

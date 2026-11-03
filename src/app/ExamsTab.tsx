@@ -4,6 +4,7 @@ import { DateTimeField } from '../components/DateTimeField'
 import { Link } from 'react-router-dom'
 import { Camera, CheckCheck, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileText, FlaskConical, Printer, ScanLine, TriangleAlert, Upload, X } from 'lucide-react'
 import { useStore } from '../lib/store'
+import { CorrectionReason, GraceButton, VersionTag } from '../components/Grace'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
 import { cap, date, dateTime, inputDateTime, shortStaff } from '../lib/format'
@@ -146,6 +147,9 @@ function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload
         {<>
           {open && can('exams.process') && isPending(e) && e.status === 'ordered' && <button className="btn btn--soft btn--sm" onClick={() => act('status', { status: e.group === 'lab' ? 'sample' : 'done' })}>{next}</button>}
           {canResult && <button className={`btn ${optional ? 'btn--ghost' : 'btn--primary'} btn--sm`} onClick={() => setResult(true)}>{e.group === 'lab' ? 'Cargar resultado' : optional ? 'Agregar informe (opcional)' : 'Cargar informe'}</button>}
+          {/* GE4 (ronda 9): quien cargó el resultado lo corrige unos minutos, mientras no se revise */}
+          {e.status === 'result' && e.result && <GraceButton record={{ graceUntil: e.resultGraceUntil }} authorId={e.result.by} onCorrect={() => setResult(true)} />}
+          <VersionTag version={e.resultVersion} kind="exam_result" id={e.id} render={(x) => <ResultView e={{ ...e, result: x as unknown as NonNullable<ExamOrder['result']> }} />} />
           {canReview(e) && can('exams.order') && user?.role === 'doctor' && <button className="btn btn--primary btn--sm" onClick={() => act('review')}><CheckCheck size={14} />Marcar revisado</button>}
           {open && isPending(e) && (can('exams.process') || can('exams.order')) && <button className="btn btn--ghost btn--sm" onClick={() => setCancelling(true)}>Cancelar</button>}
         </>}
@@ -202,27 +206,33 @@ function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => void
   // UM1 (ronda 8): el rango que corresponde al sexo del paciente; el servidor marca Alto/Bajo con el mismo
   const sex = patient(e.patientId)?.sex
   const ref = (a: (typeof analytes)[number]) => { const r = rangeFor(a, sex); return [rangeText(r), a.text].filter(Boolean).join(' · ') }
-  const [values, setValues] = useState<Record<string, string>>({})
-  const [extra, setExtra] = useState<{ analyte: string; value: string; unit: string }[]>([])
-  const [report, setReport] = useState('')
+  // GE4: al corregir, el formulario viene ya llenado con el resultado cargado
+  const correcting = e.status === 'result' && !!e.result
+  const prev = correcting ? e.result!.values ?? [] : []
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(prev.filter((v) => analytes.some((a) => a.name === v.analyte)).map((v) => [v.analyte, v.value])))
+  const [extra, setExtra] = useState<{ analyte: string; value: string; unit: string }[]>(() => prev.filter((v) => !analytes.some((a) => a.name === v.analyte)).map((v) => ({ analyte: v.analyte, value: v.value, unit: v.unit ?? '' })))
+  const [report, setReport] = useState(correcting ? e.result!.report ?? '' : '')
+  const [why, setWhy] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const filled = [...analytes.filter((a) => values[a.name]?.trim()).map((a) => ({ analyte: a.name, value: values[a.name].trim(), unit: a.unit || undefined })),
     ...extra.filter((x) => x.analyte.trim() && x.value.trim()).map((x) => ({ analyte: x.analyte.trim(), value: x.value.trim(), unit: x.unit.trim() || undefined }))]
-  const ready = filled.length > 0 || report.trim().length > 0 || !!file
+  const ready = filled.length > 0 || report.trim().length > 0 || !!file || (correcting && !!e.result!.fileIds?.length)
   return (
-    <Modal title={`${e.group === 'lab' ? 'Resultado' : 'Informe'}: ${examLine(e)}`} wide onClose={onClose} footer={<>
+    <Modal title={`${correcting ? 'Corregir: ' : ''}${e.group === 'lab' ? 'Resultado' : 'Informe'}: ${examLine(e)}`} wide onClose={onClose} footer={<>
+      {correcting && <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
         try {
           const fileIds = file ? [(await uploadLarge(e.patientId, file, { name: file.name, mime: file.type || 'application/pdf', category: e.group, title: e.name, hospitalizationId: e.hospitalizationId })).id] : undefined
-          await api(`/exams/${e.id}/result`, { body: { values: filled.length ? filled : undefined, report: report.trim() || undefined, fileIds } })
+          await api(`/exams/${e.id}/result`, { body: { values: filled.length ? filled : undefined, report: report.trim() || undefined, fileIds: fileIds ?? (correcting ? e.result!.fileIds : undefined),
+            ...(correcting ? { correct: true, version: e.resultVersion ?? 1, why: why.trim() || undefined } : {}) } })
           onDone()
         } catch (x) { notify((x as Error).message, 'error') }
         setBusy(false)
-      }}>Guardar {e.group === 'lab' ? 'resultado' : 'informe'}</button>
+      }}>{correcting ? 'Guardar corrección' : `Guardar ${e.group === 'lab' ? 'resultado' : 'informe'}`}</button>
     </>}>
       {e.group === 'lab' && (<>
         {analytes.length > 0 && <table className="exam-values exam-values--input"><thead><tr><th>Analito</th><th>Valor</th><th>Referencia</th></tr></thead><tbody>
