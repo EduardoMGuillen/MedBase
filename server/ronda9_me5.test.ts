@@ -42,9 +42,10 @@ async function as(email: string, password = DEMO_PASSWORD) {
   return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), patch: (p: string, b: unknown) => call('PATCH', p, b) }
 }
 
-/** Lo que crea la carga en una clínica sin medicamentos propios: todas las filas menos las que ya son del catálogo base. */
-const EXPECTED_CREATED = LNME_ITEMS.length - new Set(LNME_BASE.map((b) => b.no)).size
-const countLnme = async (clinicId: string) => Number((await sql.one(`SELECT count(*) AS n FROM clinic_drugs WHERE clinic_id = ? AND lnme_match = 'created'`, [clinicId]))!.n)
+/** ME6 (ronda 10): la carga crea las 530 filas, también las que son del catálogo base (antes 509: ver ronda10.test.ts). */
+const EXPECTED_CREATED = LNME_ITEMS.length
+void LNME_BASE
+const countLnme = async (clinicId: string) => Number((await sql.one(`SELECT count(DISTINCT lnme_no) AS n FROM clinic_drugs WHERE clinic_id = ? AND lnme_no IS NOT NULL`, [clinicId]))!.n)
 const snapshot = async (clinicId: string) => JSON.stringify(await sql.query('SELECT * FROM clinic_drugs WHERE clinic_id = ? ORDER BY id', [clinicId]))
 const catalogOf = (drugs: ClinicDrug[]) => localDrugProvider.catalog(drugs)
 
@@ -121,7 +122,7 @@ describe('ME5: carga en la base de cada clínica', () => {
     // La titular lo ve en su vademécum
     const doc = await as('me5@test.hn', office.body.password)
     const boot = (await doc.get('/api/bootstrap')).body
-    assert.equal(boot.clinicDrugs.filter((d: ClinicDrug) => d.lnme?.match === 'created').length, EXPECTED_CREATED)
+    assert.equal(boot.clinicDrugs.filter((d: ClinicDrug) => d.lnme).length, EXPECTED_CREATED)
   })
 
   test('lo que la clínica ya tenía conserva sus datos y gana la etiqueta; con duda no se une', async () => {
@@ -173,9 +174,9 @@ describe('ME5: lo que ve el médico', () => {
     assert.deepEqual(keys(para), keys(acet))
     assert.equal(para.filter((d) => d.presentation === 'Tableta 500 mg').length, 1, 'el paracetamol y el acetaminofén de 500 mg son uno')
     assert.equal(para.find((d) => d.presentation === 'Tableta 500 mg')!.name, 'Acetaminofén')
-    assert.ok(para.find((d) => d.presentation === 'Tableta 500 mg')!.lnme, 'el del catálogo base gana la etiqueta LNME')
-    // El del catálogo base sigue ahí (para lo ya escrito y el aviso «No está en el vademécum»), sólo no se ofrece dos veces
-    assert.ok(drugs.some((d) => d.name === 'Paracetamol' && d.presentation === 'Tableta 500 mg'))
+    assert.equal(para.find((d) => d.presentation === 'Tableta 500 mg')!.lnme?.no, 26, 'ME6: es la fila #26 del listado')
+    // ME6: el del catálogo base ya no se ofrece aparte; su nombre es alias de la fila («Paracetamol»)
+    assert.ok(drugs.some((d) => d.lnme?.no === 26 && d.aliases?.includes('Paracetamol')))
     // Epinefrina encuentra la adrenalina
     assert.ok(searchDrugs(drugs, 'epinefrina', 20).some((d) => d.name === 'Adrenalina (epinefrina)'))
   })
@@ -186,8 +187,9 @@ describe('ME5: lo que ve el médico', () => {
     const lido = drugs.find((d) => d.lnme?.no === 9)!
     assert.equal(lido.lnme!.unconfirmed, true)
     assert.equal(drugs.find((d) => d.lnme?.no === 30)!.lnme!.complementary, true)
-    // El acetaminofén IV del catálogo base es el #27 (Lista complementaria)
-    const iv = drugs.find((d) => d.name === 'Acetaminofén' && d.presentation === 'Frasco 1 g/100 ml')!
+    // El acetaminofén IV del catálogo base es el #27 (Lista complementaria); ME6: con los datos del .md
+    const iv = drugs.find((d) => d.lnme?.no === 27)!
+    assert.equal(iv.name, 'Acetaminofén IV')
     assert.equal(iv.lnme?.no, 27)
     assert.equal(iv.lnme?.complementary, true)
     assert.equal(drugs.find((d) => d.lnme?.no === 35)!.lnme!.restriction, 'uso exclusivo oncología')
@@ -197,8 +199,8 @@ describe('ME5: lo que ve el médico', () => {
     // Vía: IV sola → Intravenosa; «IV, IM» → se deja la que estaba; del catálogo base → la regla de siempre
     assert.equal(lnmeRoute(drugs.find((d) => d.lnme?.no === 168)!, 'Oral'), 'Intravenosa')
     assert.equal(lnmeRoute(drugs.find((d) => d.lnme?.no === 20)!, 'Oral'), 'Oral')
-    assert.equal(lnmeRoute(drugs.find((d) => d.name === 'Ceftriaxona')!, 'Oral'), undefined)
-    // Ceftriaxona del catálogo base: su presentación de siempre, con la etiqueta
+    // ME6: Ceftriaxona es la fila #96 (vía «IV, IM»: no se precarga una sola)
+    assert.equal(lnmeRoute(drugs.find((d) => d.name === 'Ceftriaxona')!, 'Oral'), 'Oral')
     assert.equal(drugs.find((d) => d.name === 'Ceftriaxona')!.lnme?.no, 96)
     // Salbutamol e ipratropio para nebulizar se encuentran (componentes de una nebulización, ME4)
     assert.ok(searchDrugs(drugs, 'Salbutamol solución para nebulizar', 5).length)

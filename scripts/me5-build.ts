@@ -18,6 +18,9 @@ export const MANUAL_BASE: Record<string, number> = {
   'Salbutamol|Inhalador 100 mcg/dosis': 524, // «Salbutamol inhalador | Inhalador 200 dosis (100 µg/dosis)»
   'Enoxaparina|Jeringa 40 mg/0,4 ml': 302, // «Enoxaparina | Jeringa precargada 40 mg/0.4 ml»
   'Nitrofurantoína|Cápsula 100 mg': 125, // «Nitrofurantoína | Cápsula/tableta 100 mg»
+  // ME6 (ronda 10): Emil los da como el mismo medicamento (VALIDAR: Emil)
+  'Ondansetrón|Ampolla 8 mg/4 ml': 403, // «Ondansetrón | Ampolla 4 mg/2 ml y 8 mg/4 ml» (el listado junta las dos)
+  'Tramadol|Ampolla 50 mg/ml': 32, // «Tramadol | Ampolla 100 mg/2 ml» (misma concentración: 50 mg/ml)
 }
 
 const md = readFileSync('data/presentaciones_medicamentos_lnme.md', 'utf8')

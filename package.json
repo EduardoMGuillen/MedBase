@@ -18,7 +18,9 @@
     "superadmin": "tsx server/create-superadmin.ts",
     "um1:build": "tsx scripts/um1-build.ts",
     "check:dates": "node scripts/check-dates.mjs",
-    "me5:build": "tsx scripts/me5-build.ts"
+    "me5:build": "tsx scripts/me5-build.ts",
+    "me6:compare": "tsx scripts/me6-compare.ts",
+    "um3:diagnose": "tsx scripts/um3-diagnose.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",

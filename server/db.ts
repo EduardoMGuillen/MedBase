@@ -14,14 +14,14 @@ import { SCENARIO_PATIENT_IDS, insertClinicScenarios, insertOfficeScenarios } fr
 import { ensureHospitalAuthorization } from './authorizations.js'
 import { loadRonda7 } from './catalogLoader.js'
 import { loadLabSources, loadRefValues } from './refLoader.js'
-import { loadLnme } from './lnmeLoader.js'
+import { forceLnmeOnce, loadLnme } from './lnmeLoader.js'
 import { closeVisitsOfInpatients } from './stayVisits.js'
 import { cleanArchivedThresholds } from './ronda10.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '70'
+const SCHEMA_VERSION = '71'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1140,6 +1140,8 @@ export function ensureDb(sql: Sql) {
       await cleanArchivedThresholds(q)
       // v66 (ronda 9, ME5): el LNME Honduras 2023 en el vademécum de cada clínica y consultorio (idempotente)
       for (const c of await q.query('SELECT id FROM clinics')) await loadLnme(q, String(c.id))
+      // v71 (ronda 10, ME6): las 530 filas del .md, una vez con el .md mandando sobre lo que ya había (clínicas de demostración)
+      await forceLnmeOnce(q)
       // v57/v58 (ronda 8, CX2): nadie internado sigue a la vez en la consulta externa (idempotente)
       await closeVisitsOfInpatients(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])

@@ -3,7 +3,7 @@ import { useStore } from '../lib/store'
 import { Modal } from './ui'
 import { ROUTES } from '../lib/format'
 import type { ClinicDrug } from '../lib/types'
-import { UNCONFIRMED } from './DrugSuggestion'
+import { routeWords } from '../lib/lnme/route'
 
 /**
  * AD4: medicamento del vademécum de la clínica: agregar (desde la consulta, Mi configuración o Configuración) o editar
@@ -28,21 +28,13 @@ export function DrugForm({ drug, initialName = '', onClose }: { drug?: ClinicDru
   // ME5: los del LNME se archivan (se ocultan); nada se borra y ninguna carga los reactiva
   const l = drug?.lnme
   return (
-    <Modal title={l?.match === 'created' ? 'Medicamento del LNME' : drug ? 'Medicamento de la clínica' : 'Agregar medicamento'} onClose={onClose} footer={<>
+    <Modal title={drug ? 'Medicamento del vademécum' : 'Agregar medicamento'} onClose={onClose} footer={<>
       {drug && <button className={`btn ${drug.active ? 'btn--danger' : 'btn--soft'}`} style={{ marginRight: 'auto' }} disabled={busy} onClick={() => save({ active: !drug.active })}>{drug.active ? (l ? 'Archivar' : 'Desactivar') : 'Reactivar'}</button>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={f.name.trim().length < 2 || busy} onClick={() => save()}>{drug ? 'Guardar' : 'Agregar'}</button>
     </>}>
-      {l && (
-        <p className="muted" style={{ fontSize: 13.5, margin: '0 0 12px' }}>
-          <b>LNME Honduras 2023 (AM 5230-2023) · #{l.no}</b>{l.complementary ? ' · Lista complementaria' : ''}<br />
-          {[l.group, l.subgroup].filter(Boolean).join(' › ')}<br />
-          {[l.presentationFull && `Presentación del listado: ${l.presentationFull}`, l.form, l.routes && `Vía: ${l.routes}`, l.package && `Envase: ${l.package}`].filter(Boolean).join(' · ')}
-          {l.certainty === 'unconfirmed' && <><br /><span className="field__msg--warn">{UNCONFIRMED}</span></>}
-          {l.restriction && <><br />{l.restriction}</>}
-          {drug?.origin === 'clinic' && l.match === 'created' && <><br />Editado por la clínica: las cargas del listado ya no lo cambian.</>}
-        </p>
-      )}
+      {/* ME6 (ronda 10): todas las columnas del listado nacional (el .md), sin símbolos ni anotaciones en el nombre */}
+      {l && <DrugListing l={l} />}
       <div className="form-grid">
         <label className="field span-2"><span>Nombre genérico (obligatorio)</span><input className="input" autoFocus value={f.name} onChange={set('name')} placeholder="Ej. Ademetionina" /></label>
         <label className="field span-2"><span>Nombre comercial</span><input className="input" value={f.brand} onChange={set('brand')} placeholder="Ej. Heptral" /></label>
@@ -53,5 +45,29 @@ export function DrugForm({ drug, initialName = '', onClose }: { drug?: ClinicDru
         <label className="field span-2"><span>Indicaciones de uso habitual (opcional)</span><input className="input" value={f.usualUse} onChange={set('usualUse')} placeholder="Ej. Colestasis intrahepática" /></label>
       </div>
     </Modal>
+  )
+}
+
+const CERTAINTY: Record<string, string> = { confirmed: '✔️ Confirmada', unconfirmed: '⚠️ Por confirmar con farmacia', none: 'Sin marca' }
+
+/** ME6 (ronda 10): el detalle del medicamento según el listado nacional (Honduras 2023, AM 5230-2023). */
+export function DrugListing({ l }: { l: NonNullable<ClinicDrug['lnme']> }) {
+  const rows: [string, string][] = [
+    ['Nombre', l.name],
+    ['Presentación habitual', l.presentationFull || '—'],
+    ['Forma farmacéutica', l.form || '—'],
+    ['Vía', routeWords(l.routes) || '—'],
+    ['Envase primario', l.package || '—'],
+    ['Grupo terapéutico', l.group || '—'],
+    ['Subgrupo', l.subgroup || '—'],
+    ['N.º en el listado nacional', `${l.no} (Listado Nacional de Medicamentos Esenciales de Honduras 2023, AM 5230-2023)`],
+    ['Lista complementaria', l.complementary ? 'Sí' : 'No'],
+    ['Restricción de uso', l.restriction || '—'],
+    ['Certeza de la presentación', CERTAINTY[l.certainty] ?? 'Sin marca'],
+  ]
+  return (
+    <dl className="drug-listing">
+      {rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
+    </dl>
   )
 }

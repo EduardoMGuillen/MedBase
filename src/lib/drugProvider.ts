@@ -30,7 +30,7 @@ const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCa
 /** Un medicamento agregado por la clínica, con la forma del catálogo. */
 export const fromClinicDrug = (d: ClinicDrug): Drug => ({
   name: d.name, presentation: [d.presentation, d.concentration].filter(Boolean).join(' '), group: 'clínica', brand: d.brand, clinicId: d.id,
-  usual: d.route ? { dose: d.usualDose ?? '', route: d.route, frequency: 'Cada 8 horas', duration: '' } : undefined,
+  usual: usualOf(d),
   ...(d.lnme ? {
     aliases: d.lnme.aliases,
     lnme: lnmeTag({ no: d.lnme.no, complementary: d.lnme.complementary, certainty: d.lnme.certainty, restriction: d.lnme.restriction,
@@ -39,6 +39,17 @@ export const fromClinicDrug = (d: ClinicDrug): Drug => ({
       own: d.lnme.match === 'created', routes: d.lnme.routes ?? '', name: d.lnme.name, form: d.lnme.form ?? '' }),
   } : {}),
 })
+
+/**
+ * ME6 (ronda 10): lo que se precarga al elegir una fila del listado. La vía es la del .md (si tiene una sola equivalente); la
+ * dosis, la frecuencia y los días, los del medicamento del catálogo base que es esa misma fila (si lo hay).
+ */
+function usualOf(d: ClinicDrug): Drug['usual'] {
+  const base = d.lnme ? DRUGS.find((x) => LNME_BASE.some((l) => l.no === d.lnme!.no && l.base === `${x.name}|${x.presentation}`) && x.usual)?.usual : undefined
+  const route = d.route ?? base?.route
+  if (!route) return undefined
+  return { dose: d.usualDose ?? base?.dose ?? '', route, frequency: base?.frequency ?? 'Cada 8 horas', duration: base?.duration ?? '' }
+}
 
 /** ME5: la etiqueta LNME de un medicamento (la que lee el buscador). */
 function lnmeTag(x: { no: number; complementary: boolean; certainty: string; restriction?: string; alternatives: string[]; own: boolean; routes: string; name: string; form: string }): DrugLnme {
@@ -82,7 +93,12 @@ export const lnmeRoute = (d: Drug, current?: string): string | undefined => (d.l
 export const localDrugProvider: DrugProvider = {
   id: 'local',
   label: 'Catálogo de Clinara y vademécum de la clínica',
-  catalog: (clinicDrugs) => [...BASE, ...clinicDrugs.filter((d) => d.active).map(fromClinicDrug)],
+  // ME6 (ronda 10): un medicamento del catálogo base que ya es una fila del listado en la clínica no se ofrece aparte (su nombre
+  // es alias de esa fila): el .md manda
+  catalog: (clinicDrugs) => {
+    const listed = new Set(clinicDrugs.flatMap((d) => (d.lnme ? [d.lnme.no] : [])))
+    return [...BASE.filter((d) => !(d.lnme && listed.has(d.lnme.no))), ...clinicDrugs.filter((d) => d.active).map(fromClinicDrug)]
+  },
   async search(query, clinicDrugs, limit = 20) {
     return searchDrugs(this.catalog(clinicDrugs), query, limit)
   },

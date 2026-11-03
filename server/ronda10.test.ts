@@ -172,3 +172,75 @@ describe('EN4 (ronda 10): «Día N de M» de un tratamiento', () => {
     assert.equal(treatmentDay({ firstAt: first, days: 7 }, new Date('2026-11-05T05:00:00.000Z')), 'Día 3 de 7')
   })
 })
+
+describe('ME6 (ronda 10): el vademécum con las 530 filas del .md', () => {
+  test('cada cuenta tiene los 530 números (0 faltantes) y la carga forzada ya corrió una vez', async () => {
+    const { compareLnme } = await import('./lnmeLoader.js')
+    const list = await compareLnme(sql)
+    assert.ok(list.length >= 3)
+    for (const c of list) assert.deepEqual(c.missing, [], c.name)
+    assert.ok(await sql.one(`SELECT 1 FROM meta WHERE key = 'me6:done'`))
+    // Los 21 que faltaban (filas que eran del catálogo base) ahora están en la base
+    const id = await mainClinic()
+    for (const no of [26, 27, 49, 78, 88, 90, 91, 96, 105, 117, 125, 297, 302, 398, 399, 401, 433, 435, 524, 539, 549]) {
+      assert.ok(await sql.one('SELECT 1 FROM clinic_drugs WHERE clinic_id = ? AND lnme_no = ?', [id, no]), `#${no}`)
+    }
+  })
+
+  test('la vía del .md queda guardada y se muestra con palabras completas', async () => {
+    const { routeWords } = await import('../src/lib/lnme/route.js')
+    const id = await mainClinic()
+    const via = async (no: number) => routeWords(String((await sql.one('SELECT lnme_routes FROM clinic_drugs WHERE clinic_id = ? AND lnme_no = ?', [id, no]))!.lnme_routes ?? ''))
+    assert.equal(await via(403), 'Intravenosa, intramuscular') // Ondansetrón
+    assert.equal(await via(96), 'Intravenosa, intramuscular') // Ceftriaxona
+    assert.equal(await via(91), 'Intravenosa, intramuscular') // Cefazolina
+    assert.equal(await via(302), 'Subcutánea') // Enoxaparina
+    assert.equal(await via(433), 'Intravenosa, intramuscular, subcutánea') // Insulina cristalina
+    assert.equal(await via(390), '') // Glutaraldehído: sin vía
+    assert.equal(await via(430), '') // Condón masculino: sin vía
+  })
+
+  test('Aciclovir: sus tres presentaciones; Ondansetrón y Tramadol toman los datos del .md; los de la base que no están siguen', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const { localDrugProvider } = await import('../src/lib/drugProvider.js')
+    const drugs = localDrugProvider.catalog((await doc.get('/api/bootstrap')).body.clinicDrugs)
+    assert.equal(searchDrugs(drugs, 'Aciclovir', 8).length, 3)
+    const ond = searchDrugs(drugs, 'Ondansetrón', 8)
+    assert.deepEqual(ond.map((d) => d.lnme?.no), [403], 'una sola fila: la del .md')
+    assert.equal(ond[0].presentation, 'Ampolla 4 mg/2 ml y 8 mg/4 ml')
+    assert.deepEqual(searchDrugs(drugs, 'Tramadol', 8).map((d) => d.lnme?.no), [32])
+    for (const name of ['Ambroxol', 'Metamizol', 'Ketorolaco']) assert.ok(drugs.some((d) => d.name === name && !d.clinicId), `${name} sigue en el catálogo base`)
+    // Sin duplicados: cada número una vez
+    const nos = drugs.flatMap((d) => (d.lnme ? [d.lnme.no] : []))
+    assert.equal(nos.length, new Set(nos).size)
+  })
+
+  test('la carga forzada: lo editado por la clínica demo toma los datos del .md sin duplicarse; dos veces = una', async () => {
+    const { forceLnmeOnce, loadLnme } = await import('./lnmeLoader.js')
+    const id = await mainClinic()
+    const row = (await sql.one('SELECT * FROM clinic_drugs WHERE clinic_id = ? AND lnme_no = 169', [id]))!
+    // Como lo dejaría una edición de la clínica (ME5): otro nombre y presentación, archivado, origen «clinic»
+    await sql.run(`UPDATE clinic_drugs SET name = 'Aciclovir genérico', presentation = 'Tableta 400 mg (caja)', norm_key = 'aciclovir generico|tableta 400 mg (caja)', active = FALSE, origin = 'clinic', origin_label = 'Editado por la clínica' WHERE id = ?`, [String(row.id)])
+    // Una carga normal (futura) respeta la edición
+    await loadLnme(sql, id)
+    assert.equal((await sql.one('SELECT name FROM clinic_drugs WHERE id = ?', [String(row.id)]))!.name, 'Aciclovir genérico')
+    // La carga de ME6 (forzada, una vez por base) no la respeta
+    await sql.run(`DELETE FROM meta WHERE key = 'me6:done'`)
+    const rep = await forceLnmeOnce(sql)
+    assert.equal(rep[id].replaced, 1)
+    const after1 = (await sql.one('SELECT * FROM clinic_drugs WHERE id = ?', [String(row.id)]))!
+    assert.equal(after1.name, 'Aciclovir')
+    assert.equal(after1.presentation, 'Tableta 400 mg')
+    assert.equal(after1.active, true)
+    assert.equal(after1.origin, 'lnme')
+    assert.ok(JSON.parse(String(after1.aliases)).includes('Aciclovir genérico'), 'el nombre anterior queda como alias')
+    assert.equal(Number((await sql.one('SELECT count(*) AS n FROM clinic_drugs WHERE clinic_id = ? AND lnme_no = 169', [id]))!.n), 1)
+    assert.ok(await sql.one(`SELECT 1 FROM config_backups WHERE clinic_id = ? AND kind = 'me6-vademecum-before'`, [id]))
+    // Idempotente: otra corrida no cambia nada
+    const snap = JSON.stringify(await sql.query('SELECT * FROM clinic_drugs WHERE clinic_id = ? ORDER BY id', [id]))
+    assert.deepEqual(await forceLnmeOnce(sql), {})
+    const again = await loadLnme(sql, id, { force: true })
+    assert.equal(again.created + again.replaced + again.updated, 0)
+    assert.equal(JSON.stringify(await sql.query('SELECT * FROM clinic_drugs WHERE clinic_id = ? ORDER BY id', [id])), snap)
+  })
+})
