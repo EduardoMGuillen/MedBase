@@ -528,6 +528,24 @@ export interface DischargeData {
 }
 
 /** Nota de procedimiento: un solo texto, con la hora del procedimiento aparte de la hora en que se escribió. */
+/** PQ1 (ronda 9): una persona del equipo quirúrgico: del personal (staffId) o escrita a mano. */
+export interface TeamMember { staffId?: string; name: string }
+
+/** PQ1 y PQ2 (ronda 9): lo propio de la nota postquirúrgica. Los diagnósticos postoperatorios van en `diagnoses` (bajan a la siguiente nota). */
+export interface PostopData {
+  preDiagnoses: Diagnosis[]
+  startAt: string
+  endAt: string
+  anesthesia: string
+  anesthesiaOther?: string
+  procedureName: string
+  description: string
+  team: Partial<Record<import('./clinicalConfig').SurgicalRole, TeamMember>>
+  authorizationId?: string
+  urgent?: boolean
+  justification?: string
+}
+
 export interface ProcedureData {
   name: string
   performedAt: string // fecha y hora del procedimiento (la nota se escribe después: `at`)
@@ -557,8 +575,10 @@ export interface InpatientNote {
   checklist?: boolean
   /** Cuántas de las órdenes son indicaciones (van primero); el resto son medicamentos. Notas anteriores: sin dato. */
   indicationCount?: number
-  /** 'dx': formato Estándar (diagnóstico, examen físico y observaciones). Sin dato: SOAP. */
-  format?: 'soap' | 'dx'
+  /** 'dx': formato Estándar (diagnóstico, examen físico y observaciones). Sin dato: SOAP. 'postop': nota postquirúrgica (PQ1, ronda 9). */
+  format?: 'soap' | 'dx' | 'postop'
+  /** PQ1 (ronda 9): datos de la nota postquirúrgica (los diagnósticos postoperatorios van en `diagnoses`). */
+  postop?: PostopData
   diagnoses?: Diagnosis[]
   /** Ronda 8: Estándar: evolución (cómo sigue desde la nota anterior, lo que refiere). Va entre diagnósticos y examen físico. */
   evolution?: string

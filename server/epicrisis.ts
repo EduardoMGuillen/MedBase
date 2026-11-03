@@ -71,6 +71,11 @@ export async function buildEpicrisis(q: Sql, h: Row): Promise<EpicrisisData> {
     meds: [...grouped.values()].sort((a, b) => a.start.localeCompare(b.start)),
     procedures: [
       ...notes.filter((n) => n.kind === 'procedure').map((n) => { const x = j<{ name: string; performedAt: string }>(n.data, { name: '', performedAt: String(n.at) }); return { name: x.name, at: x.performedAt } }),
+      // PQ1 (ronda 9): las cirugías (nota postquirúrgica)
+      ...notes.filter((n) => n.kind === 'evolution' && j<{ format?: string }>(n.data, {}).format === 'postop').map((n) => {
+        const x = j<{ postop?: { procedureName: string; startAt: string } }>(n.data, {}).postop
+        return { name: `${x?.procedureName ?? 'Cirugía'} (nota postquirúrgica)`, at: x?.startAt ?? String(n.at) }
+      }),
       ...legacy.map((x) => ({ name: String(x.name), at: String(x.created_at) })),
     ].sort((a, b) => a.at.localeCompare(b.at)),
     evolution: d?.summary ?? '',

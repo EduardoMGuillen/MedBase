@@ -135,6 +135,10 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
   checklist: r.kind === 'admission' || r.kind === 'evolution' ? j<{ checklist?: boolean }>(r.data, {}).checklist || undefined : undefined,
   indicationCount: r.kind === 'admission' || r.kind === 'evolution' ? j<{ indications?: number }>(r.data, {}).indications : undefined,
   // Formato Estándar (diagnóstico, examen físico y observaciones); las notas sin formato son SOAP
+  // PQ1 (ronda 9): nota postquirúrgica (una nota de la estancia con órdenes, como la evolución)
+  ...(r.kind === 'evolution' && j<{ format?: string }>(r.data, {}).format === 'postop'
+    ? { format: 'postop' as const, diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses ?? [], postop: j<{ postop?: InpatientNote['postop'] }>(r.data, {}).postop }
+    : {}),
   ...(r.kind === 'evolution' && j<{ format?: string }>(r.data, {}).format === 'dx'
     ? { format: 'dx' as const, diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses ?? [], exam: j<{ exam?: string }>(r.data, {}).exam ?? '',
       observations: j<{ observations?: string }>(r.data, {}).observations ?? '', evolution: j<{ evolution?: string }>(r.data, {}).evolution || undefined }

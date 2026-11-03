@@ -103,6 +103,9 @@ export async function stayReferralDraft(q: Sql, cid: string, h: Row, doctorId: s
       return `${medLabel(m)}, ${span}${given.length ? `; ${given.length} dosis aplicada${given.length === 1 ? '' : 's'}, la última ${dm(given.at(-1)!.givenAt)}` : '; sin dosis aplicadas'}`
     }),
     ...(base.indications ? [`Indicaciones: ${base.indications.split('\n').filter(Boolean).join('; ')}`] : []),
+    // PQ1 (ronda 9): procedimientos realizados (notas de procedimiento y postquirúrgicas)
+    ...notes.filter((n) => n.kind === 'procedure' && n.procedure).map((n) => `Procedimiento: ${n.procedure!.name} (${dm(n.procedure!.performedAt)})`),
+    ...notes.filter((n) => n.format === 'postop' && n.postop).map((n) => `Cirugía: ${n.postop!.procedureName} (${dm(n.postop!.startAt)}), anestesia ${n.postop!.anesthesia === 'Otra' ? n.postop!.anesthesiaOther ?? 'otra' : n.postop!.anesthesia.toLowerCase()}`),
   ].join('\n')
   const exams = await examLines(q, cid, 'hospitalization_id = ?', [String(h.id)])
   return {

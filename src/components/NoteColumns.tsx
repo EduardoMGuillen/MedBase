@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react'
 import { Pill, Printer } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import type { ExamOrder, InpatientNote, Vitals } from '../lib/types'
+import type { Diagnosis, ExamOrder, InpatientNote, PostopData, Vitals } from '../lib/types'
 import { vitalLevel, type VitalKey } from '../lib/vitals'
 import { examLine, GROUP_LABEL } from '../lib/exams'
-import { dxCode, examText } from '../lib/format'
+import { dmyTime, dxCode, examText } from '../lib/format'
+import { anesthesiaText, teamLines } from '../lib/postop'
 
 /**
  * Una nota como en papel: a la izquierda el texto clínico; a la derecha las indicaciones (órdenes que no son
@@ -100,8 +101,24 @@ const SOAP_TEXT = [['subjective', 'S. Subjetivo'], ['objective', 'O. Objetivo'],
  * Texto clínico de una nota de evolución u observación (columna izquierda), según su formato: S, O, A y P, o
  * Diagnósticos, Examen físico y Observaciones.
  */
-export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { evolution?: string }; vitals?: Vitals; ageYears?: number }) {
+export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { evolution?: string; postop?: PostopData }; vitals?: Vitals; ageYears?: number }) {
   const empty = <span className="muted">Sin datos.</span>
+  const dxList = (list?: Diagnosis[]) => list?.length ? <ol className="note__list">{list.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol> : <p>{empty}</p>
+  // PQ1 y PQ2 (ronda 9): nota postquirúrgica; del equipo, sólo los cargos llenos
+  if (n.format === 'postop' && n.postop) {
+    const x = n.postop
+    const hm = (iso: string) => dmyTime(iso)
+    const team = teamLines(x.team)
+    return <>
+      <div className="note__sec"><h4>Diagnóstico preoperatorio</h4>{dxList(x.preDiagnoses)}</div>
+      <div className="note__sec"><h4>Diagnóstico postoperatorio</h4>{dxList(n.diagnoses)}</div>
+      <div className="note__sec"><h4>Procedimiento realizado</h4><p>{x.procedureName}</p>
+        <p className="muted">Inicio {hm(x.startAt)} · Cierre {hm(x.endAt)} · Anestesia: {anesthesiaText(x)}</p></div>
+      <div className="note__sec"><h4>Descripción del procedimiento</h4><p>{x.description}</p></div>
+      <div className="note__sec"><h4>Equipo quirúrgico</h4><ul className="note__list">{team.map((t) => <li key={t.label}><b>{t.label}:</b> {t.name}</li>)}</ul></div>
+      {x.urgent && <div className="note__sec"><h4>Urgencia, sin autorización previa</h4><p>{x.justification}</p></div>}
+    </>
+  }
   // MC8 (ronda 6): los signos vitales anotados en la nota, en la franja de siempre, encima del examen físico (en SOAP, arriba de la S: NE6, ronda 9)
   const strip = vitals && <div className="note__sec"><h4>Signos vitales</h4><VitalsStrip v={vitals} ageYears={ageYears} />{vitals.takenAt && <small className="muted">Tomados a las {new Date(vitals.takenAt).toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })}</small>}</div>
   if (n.format === 'dx') {

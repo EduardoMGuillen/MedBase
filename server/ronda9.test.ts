@@ -123,3 +123,40 @@ describe('ME3 y ME4: primera dosis distinta y nebulización en todos los formula
     assert.equal(bad.status, 400, 'una nebulización no lleva primera dosis distinta')
   })
 })
+
+describe('PQ1 y PQ2: nota postquirúrgica con equipo quirúrgico', () => {
+  const pre = [{ code: 'DB10', label: 'Apendicitis aguda' }]
+  const postop = (x: Record<string, unknown> = {}) => {
+    const start = new Date(Date.now() - 90 * 60_000).toISOString(); const end = new Date(Date.now() - 20 * 60_000).toISOString()
+    return { preDiagnoses: pre, startAt: start, endAt: end, anesthesia: 'General', procedureName: 'Apendicectomía', description: 'Sin complicaciones, sangrado mínimo.',
+      team: { surgeon: { staffId: 's-herrera', name: 'Dra. Lucía Herrera' }, scrub: { name: 'Enf. Externa' } }, ...x }
+  }
+  test('sin autorización ni urgencia: 409 con el mismo mensaje del procedimiento mayor; con urgencia se firma y entra en la cadena', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
+    const body = { kind: 'evolution', format: 'postop', diagnoses: [{ code: 'DB10.0', label: 'Apendicitis perforada' }] }
+    const no = await doc.post(`/api/inpatient/${stay.id}/notes`, { ...body, postop: postop() })
+    assert.equal(no.status, 409)
+    assert.match(no.body.error, /No hay autorización firmada/)
+    const ok = await doc.post(`/api/inpatient/${stay.id}/notes`, { ...body, postop: postop({ urgent: true, justification: 'Abdomen agudo, sin familiar' }) })
+    assert.equal(ok.status, 201, JSON.stringify(ok.body))
+    const file = (await doc.get(`/api/inpatient/${stay.id}`)).body
+    const n = file.notes.find((x: any) => x.id === ok.body.id)
+    assert.equal(n.kind, 'evolution'); assert.equal(n.format, 'postop')
+    assert.deepEqual(n.diagnoses.map((d: any) => d.code), ['DB10.0'])
+    assert.equal(n.postop.team.scrub.name, 'Enf. Externa'); assert.equal(n.postop.urgent, true)
+    const audit = (await (await as('admin@demo.clinara')).get('/api/audit')).body
+    assert.ok(JSON.stringify(audit).includes('Equipo quirúrgico de «Apendicectomía»'))
+  })
+  test('validaciones: cirujano obligatorio, cierre después del inicio, nada en el futuro, «Otra» se especifica', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
+    const post = (x: Record<string, unknown>) => doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'postop', diagnoses: pre, postop: postop({ urgent: true, justification: 'Abdomen agudo, sin familiar', ...x }) })
+    assert.equal((await post({ team: { assistant1: { name: 'Dr. X' } } })).status, 400)
+    assert.equal((await post({ endAt: new Date(Date.now() - 120 * 60_000).toISOString() })).status, 400)
+    assert.equal((await post({ endAt: new Date(Date.now() + 60 * 60_000).toISOString() })).status, 400)
+    assert.equal((await post({ anesthesia: 'Otra' })).status, 400)
+    assert.equal((await post({ anesthesia: 'Otra', anesthesiaOther: 'Hipnosis' })).status, 201)
+    assert.equal((await post({ preDiagnoses: [] })).status, 400)
+  })
+})

@@ -98,6 +98,16 @@ export const INFUSION_UNITS = [{ value: 'ml/h', label: 'mL/h', max: 1000 }, { va
 export const XRAY_SUBGROUPS = ['Rayos X']
 export const XRAY_PREFIXES = ['Rayos X', 'Radiografía', 'Rx']
 
+/** PQ1 (ronda 9). VALIDAR: Emil. «Tipo de anestesia» de la nota postquirúrgica («Otra» pide especificar). */
+export const ANESTHESIA_TYPES = ['General', 'Raquídea', 'Epidural', 'Bloqueo regional', 'Local', 'Sedación', 'Otra']
+
+/** PQ2 (ronda 9). Equipo quirúrgico: cargos y orden (formulario, tarjeta, nota completa e impresión). Sólo el primero es obligatorio. */
+export const SURGICAL_TEAM = [
+  { key: 'surgeon', label: 'Cirujano principal' }, { key: 'assistant1', label: 'Ayudante 1' }, { key: 'assistant2', label: 'Ayudante 2' },
+  { key: 'circulating', label: 'Circular' }, { key: 'scrub', label: 'Instrumentista' }, { key: 'anesthesiologist', label: 'Anestesiólogo' },
+] as const
+export type SurgicalRole = (typeof SURGICAL_TEAM)[number]['key']
+
 /** ME4 (ronda 9). VALIDAR: Emil. Nebulización: máximo de componentes por orden y diluyentes que se ofrecen («Otro» pide escribirlo). */
 export const NEB_MAX_COMPONENTS = 5
 export const NEB_DILUENTS = ['SSN 0.9%', 'Agua estéril', 'Otro']

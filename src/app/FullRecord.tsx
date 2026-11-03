@@ -74,8 +74,8 @@ export default function FullRecord() {
   const entries: Entry[] = [
     ...(consult ? [{ at: consult.consultation.date, kind: 'consult' as const, title: 'Nota de ingreso (consulta externa)' }] : []),
     ...file.notes.filter((n) => n.kind !== 'nursing').map((n) => ({
-      at: n.procedure?.performedAt ?? n.at, kind: 'note' as const, note: n,
-      title: n.kind === 'admission' ? 'Nota de ingreso' : n.kind === 'evolution' ? 'Nota de evolución' : n.kind === 'procedure' ? 'Nota de procedimiento' : 'Nota de egreso',
+      at: n.procedure?.performedAt ?? n.postop?.startAt ?? n.at, kind: 'note' as const, note: n,
+      title: n.kind === 'admission' ? 'Nota de ingreso' : n.kind === 'evolution' ? (n.format === 'postop' ? 'Nota postquirúrgica' : 'Nota de evolución') : n.kind === 'procedure' ? 'Nota de procedimiento' : 'Nota de egreso',
     })),
     ...file.procedures.filter((x) => x.kind === 'procedure').map((x) => ({ at: x.createdAt, kind: 'legacy' as const, legacy: x, title: 'Procedimiento (registro anterior)' })),
   ].sort((a, b) => a.at.localeCompare(b.at))

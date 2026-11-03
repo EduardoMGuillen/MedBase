@@ -1,6 +1,6 @@
 import { closeOpenVisits } from '../stayVisits.js'
 import { nebulizationBody } from '../../src/lib/medExtras.js'
-import { INFUSION_UNITS, NEB_MAX_COMPONENTS } from '../../src/lib/clinicalConfig.js'
+import { ANESTHESIA_TYPES, INFUSION_UNITS, NEB_MAX_COMPONENTS, SURGICAL_TEAM } from '../../src/lib/clinicalConfig.js'
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -462,7 +462,17 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const b = parse(z.object({
       kind: z.enum(['admission', 'evolution']),
       // Dos formatos: Estándar (diagnóstico, examen físico y observaciones) o SOAP. El de cada médico se elige en Mi configuración
-      format: z.enum(['soap', 'dx']).default('soap'),
+      format: z.enum(['soap', 'dx', 'postop']).default('soap'),
+      // PQ1 y PQ2 (ronda 9): nota postquirúrgica
+      postop: z.object({
+        preDiagnoses: z.array(diagnosisInput).max(20).default([]),
+        startAt: when, endAt: when,
+        anesthesia: z.string().trim().min(1, 'Elige el tipo de anestesia.').max(60), anesthesiaOther: z.string().trim().max(120).optional(),
+        procedureName: z.string().trim().min(3, 'Escribe el procedimiento realizado.').max(200),
+        description: z.string().trim().min(10, 'Escribe la descripción del procedimiento.').max(10000),
+        team: z.partialRecord(z.enum(SURGICAL_TEAM.map((t) => t.key) as [string, ...string[]]), z.object({ staffId: z.string().optional(), name: z.string().trim().max(120) })).default({}),
+        authorizationId: z.string().optional(), urgent: z.boolean().default(false), justification: z.string().trim().max(1000).optional(),
+      }).optional(),
       subjective: text, objective: text, assessment: text, plan: text,
       diagnoses: z.array(diagnosisInput).max(20).default([]),
       exam: text, observations: text,
@@ -492,6 +502,17 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       if (empty) fail(400, `Escribe ${empty[1]}.`)
     } else if (b.kind === 'admission') {
       fail(400, 'La nota de ingreso se escribe en formato SOAP.')
+    } else if (b.format === 'postop') {
+      // PQ1 (ronda 9): obligatorios; el cierre no antes del inicio; ninguna hora en el futuro
+      const x = b.postop ?? fail(400, 'Faltan los datos de la nota postquirúrgica.')
+      if (!x!.preDiagnoses.length) fail(400, 'Agrega el diagnóstico preoperatorio.')
+      if (!b.diagnoses.length) fail(400, 'Agrega el diagnóstico postoperatorio.')
+      if (x!.anesthesia === 'Otra' && !x!.anesthesiaOther) fail(400, 'Especifica el tipo de anestesia.')
+      if (!ANESTHESIA_TYPES.includes(x!.anesthesia)) fail(400, 'Elige un tipo de anestesia de la lista.')
+      if (!x!.team.surgeon?.name.trim()) fail(400, 'Escribe o elige al cirujano principal.')
+      const start = new Date(x!.startAt).getTime(); const end = new Date(x!.endAt).getTime()
+      if (start > Date.now() + 2 * 60_000 || end > Date.now() + 2 * 60_000) fail(400, 'La hora de inicio y la de cierre no pueden ser en el futuro.')
+      if (end < start) fail(400, 'La hora de cierre no puede ser anterior a la de inicio.')
     } else if (!b.diagnoses.length && !b.evolution && !b.exam && !b.observations && !b.orders.length && !b.meds.length && !b.exams.length) {
       fail(400, 'Escribe al menos un diagnóstico, el examen físico, una observación, una indicación o un medicamento.')
     }
@@ -500,6 +521,18 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const user = userOf(req)
     const cid = clinicOf(req)
     const h = await activeHosp(cid, String(req.params.id))
+    // PQ1 (ronda 9): toda nota postquirúrgica es un procedimiento mayor: la misma regla que tenía la casilla de la nota de
+    // procedimiento: autorización quirúrgica firmada (la elegida o una de las 24 horas antes del inicio) o urgencia justificada
+    let postopAuth: { authorizationId?: string; urgent?: boolean; justification?: string } | undefined
+    if (b.format === 'postop') {
+      const x = b.postop!
+      const start = new Date(x.startAt)
+      const hasAuth = x.authorizationId ? await authorizationFor(String(h.id), x.authorizationId) : await signedAuthorization(String(h.id), start)
+      if (!hasAuth && !(x.urgent && (x.justification ?? '').length >= 10)) {
+        fail(409, 'No hay autorización firmada registrada para este procedimiento. Regístrala o marca "Urgencia, sin autorización previa" con la justificación.')
+      }
+      postopAuth = { authorizationId: x.authorizationId, urgent: !hasAuth && x.urgent ? true : undefined, justification: !hasAuth && x.urgent ? x.justification : undefined }
+    }
     const id = String(h.id)
     if (b.clientId) {
       const same = await sql.one('SELECT * FROM hosp_notes WHERE id = ? AND hospitalization_id = ? AND author_id = ?', [b.clientId, id, user.id])
@@ -557,12 +590,18 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan, data) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [noteId, cid, id, b.kind, user.id, at, b.format === 'soap' ? b.subjective : '', b.format === 'soap' ? b.objective : '', b.format === 'soap' ? b.assessment : '', b.format === 'soap' ? b.plan : '',
           JSON.stringify({ orders, checklist, indications: indicationCount === undefined ? undefined : Math.min(indicationCount, orders.length), lines, basedOn: b.chain ? b.chain.basedOn ?? undefined : undefined, vitals: b.vitals && vitalsTag ? { ...b.vitals, tag: vitalsTag } : undefined, vitalsId,
-            ...(b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, evolution: b.evolution || undefined, exam: b.exam, observations: b.observations }
+            ...(b.format === 'postop' ? { format: 'postop', diagnoses: b.diagnoses, postop: { ...b.postop!, startAt: new Date(b.postop!.startAt).toISOString(), endAt: new Date(b.postop!.endAt).toISOString(), ...postopAuth } }
+              : b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, evolution: b.evolution || undefined, exam: b.exam, observations: b.observations }
               : b.kind === 'evolution' && b.diagnoses.length ? { diagnoses: b.diagnoses } : {}) })])
       await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
       examBatch = await insertExams(q, { clinicId: cid, patientId: String(h.patient_id), hospitalizationId: id, noteId, by: user.id, at }, b.exams)
       if (vitalsTag && b.vitals && vitalsTag !== 'continue') await audit(user, `Indicó ${vitalsModeShort(b.vitals) === 'sin control programado' ? 'sin control programado de signos vitales' : `signos vitales ${vitalsModeShort(b.vitals)}`} a ${name} en su nota`, q)
-      const what = b.kind === 'admission' ? 'nota de ingreso' : 'nota de evolución'
+      const what = b.kind === 'admission' ? 'nota de ingreso' : b.format === 'postop' ? `nota postquirúrgica («${b.postop!.procedureName}»${postopAuth?.urgent ? ', urgencia sin autorización previa' : ''})` : 'nota de evolución'
+      // PQ2 (ronda 9): queda en la bitácora quién participó
+      if (b.format === 'postop') {
+        const team = SURGICAL_TEAM.filter((t) => b.postop!.team[t.key]?.name.trim()).map((t) => `${t.label}: ${b.postop!.team[t.key]!.name.trim()}`).join('; ')
+        await audit(user, `Equipo quirúrgico de «${b.postop!.procedureName}» de ${name}: ${team}`, q)
+      }
       const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`, b.exams.length && `${b.exams.length} examen(es)`, taken && 'signos vitales (origen: nota de evolución)'].filter(Boolean).join(', ')
       await audit(user, `Escribió ${what} de ${name}${changes ? `: ${changes}` : ''}`, q)
       // NE4 (ronda 8): qué diagnóstico se quitó o se agregó respecto de los vigentes (la última nota con diagnósticos o el ingreso)
