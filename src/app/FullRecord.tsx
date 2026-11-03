@@ -200,7 +200,7 @@ export default function FullRecord() {
                   <div key={e.id} className="fr-lab">
                     <b>{examLine(e)}</b>{e.priority === 'urgent' ? ' (urgente)' : ''} · pedido {dm(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)} · {examStatusLabel(e)}{e.cancelReason ? `: ${e.cancelReason}` : ''}
                     {e.indication && <p>Indicación: {e.indication}</p>}
-                    {e.result && <ResultView e={e} />}
+                    {e.result && <ResultView e={e} withFiles={false} />}
                     {e.result?.fileIds?.map((f) => <PdfOrImage key={f} id={f} />)}
                   </div>
                 )) : <p className="muted">Sin exámenes de {GROUP_LABEL[g].toLowerCase()}.</p>}

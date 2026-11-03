@@ -2,7 +2,7 @@ import { Fragment, useRef, useState } from 'react'
 import { fromLocalValue } from '../lib/dateInput'
 import { DateTimeField } from '../components/DateTimeField'
 import { Link } from 'react-router-dom'
-import { Camera, CheckCheck, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileText, FlaskConical, Printer, ScanLine, TriangleAlert, Upload, X } from 'lucide-react'
+import { Camera, CheckCheck, ChevronRight, ChevronsDownUp, ChevronsUpDown, FlaskConical, Printer, ScanLine, TriangleAlert, Upload, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { CorrectionReason, GraceButton, VersionTag } from '../components/Grace'
 import { api } from '../lib/api'
@@ -12,7 +12,8 @@ import { canReview, examCatalog, examLine, examStatusLabel, findExam, GROUP_LABE
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { rangeFor, rangeText, type LabReference } from '../lib/labReference'
 import { SourceTag } from '../components/SourceTag'
-import { openFile, uploadLarge } from '../lib/files'
+import { uploadLarge } from '../lib/files'
+import { FileChip, FileThumb } from '../components/FilePreview'
 import type { ExamGroup, ExamOrder } from '../lib/types'
 
 const TONE: Record<string, string> = { ordered: 'amber', sample: 'ink', done: 'ink', result: 'mint', reviewed: 'done', cancelled: '' }
@@ -175,10 +176,15 @@ export function ReferenceNote({ r }: { r: LabReference }) {
   )
 }
 
-/** Resultado: valores con unidad y rango (alto o bajo marcado), informe y archivos. */
-export function ResultView({ e }: { e: ExamOrder }) {
-  const { notify } = useStore()
+/**
+ * Resultado: valores con unidad y rango (alto o bajo marcado), informe y archivos.
+ * EX4 (ronda 10): «Resultado» en pantalla, como antes (tabla o informe), y además cada archivo con su nombre y tipo y «Ver
+ * archivo» (vista previa dentro de la app, con Descargar e Imprimir). Si el resultado solo trae archivo, se ve su miniatura.
+ */
+export function ResultView({ e, withFiles = true }: { e: ExamOrder; withFiles?: boolean }) {
   const r = e.result!
+  const files = withFiles ? r.fileIds ?? [] : []
+  const onlyFile = files.length > 0 && !r.values?.length && !r.report
   return (
     <div className="exam-result">
       {e.critical && <p className="exam-result__critical"><TriangleAlert size={14} />Valor crítico</p>}
@@ -192,7 +198,8 @@ export function ResultView({ e }: { e: ExamOrder }) {
         ))}</tbody></table>
       ) : null}
       {r.report && <p className="exam-result__report">{r.report}</p>}
-      {r.fileIds?.map((f, i) => <button key={f} type="button" className="btn btn--ghost btn--sm" onClick={() => openFile(f).catch((x: Error) => notify(x.message, 'error'))}><FileText size={14} />Archivo {r.fileIds!.length > 1 ? i + 1 : ''}</button>)}
+      {onlyFile && <FileThumb id={files[0]} />}
+      {files.length > 0 && <div className="exam-result__files">{files.map((f) => <FileChip key={f} id={f} />)}</div>}
     </div>
   )
 }
