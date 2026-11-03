@@ -685,3 +685,8 @@ tr.clickable { cursor: pointer; }
 .role-menu__pop button[aria-checked="true"] { font-weight: 700; }
 .role-menu__pop button[aria-checked="false"] { padding-left: 30px; }
 .role-menu__pop button:hover { background: var(--ward, rgba(0,0,0,.05)); }
+
+/* EX1 (ronda 8): filtros de exámenes con su conteo; a 390 px parten línea */
+.exam-tools__filters { flex-wrap: wrap; max-width: 100%; }
+.exam-tools__filters .num { color: var(--faint); font-weight: 600; margin-left: 2px; }
+.exam-tools .fold-tools { align-self: end; }

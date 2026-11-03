@@ -17,9 +17,14 @@ const TONE: Record<string, string> = { ordered: 'amber', sample: 'ink', done: 'i
  * cada uno con lo pedido, su estado y su resultado. Quien los procesa marca muestra tomada o realizado y carga el
  * resultado; el médico lo marca como revisado; cualquiera de los dos lo cancela con motivo.
  */
-type ExamSort = 'recent' | 'oldest' | 'pending'
-const EXAM_SORTS: { key: ExamSort; label: string }[] = [
-  { key: 'recent', label: 'Más recientes primero' }, { key: 'oldest', label: 'Más antiguos primero' }, { key: 'pending', label: 'Pendientes primero' },
+type ExamSort = 'recent' | 'oldest'
+const EXAM_SORTS: { key: ExamSort; label: string }[] = [{ key: 'recent', label: 'Más recientes primero' }, { key: 'oldest', label: 'Más antiguos primero' }]
+type ExamFilter = 'all' | 'pending' | 'result' | 'critical'
+const EXAM_FILTERS: { key: ExamFilter; label: string; test: (e: ExamOrder) => boolean }[] = [
+  { key: 'all', label: 'Todos', test: () => true },
+  { key: 'pending', label: 'Pendientes', test: (e) => isPending(e) },
+  { key: 'result', label: 'Con resultado', test: (e) => e.status === 'result' || e.status === 'reviewed' },
+  { key: 'critical', label: 'Críticos', test: (e) => !!e.critical },
 ]
 const fold = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 const dayKey = (iso: string) => new Date(iso).toDateString()
@@ -28,53 +33,62 @@ const dayKey = (iso: string) => new Date(iso).toDateString()
  * EX1: exámenes de un paciente (en una estancia o en su historial) en dos subsecciones, Laboratorio e Imagen y gabinete,
  * cada uno con lo pedido, su estado y su resultado. Quien los procesa marca muestra tomada o realizado y carga el
  * resultado; el médico lo marca como revisado; cualquiera de los dos lo cancela con motivo.
- * Ronda 8: cada examen es desplegable (abiertos, sólo los pendientes y los críticos sin revisar), se busca por nombre y
- * se ordena por fecha (con el día como encabezado) o con los pendientes primero.
+ * EX1 (ronda 8): cada examen es una fila desplegable; cerrada muestra nombre, estado, fecha del pedido y «Valor crítico», y
+ * sus botones de acción se usan sin abrirla. Sólo un crítico sin revisar empieza abierto. Arriba: «Buscar examen», orden
+ * por fecha (con el día como encabezado), filtros con su conteo y «Expandir todo / Contraer todo». Es sólo presentación.
  */
 export function ExamList({ exams, patientId, hospitalizationId, reload, open = true }: { exams: ExamOrder[]; patientId: string; hospitalizationId?: string; reload: () => void; open?: boolean }) {
   const { can } = useStore()
   const [uploading, setUploading] = useState<ExamGroup | null>(null)
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<ExamSort>('recent')
+  const [filter, setFilter] = useState<ExamFilter>('all')
   // Abiertos a mano (true) o cerrados a mano (false); lo que no está aquí sigue la regla
   const [shown, setShown] = useState<Record<string, boolean>>({})
   const groups: ExamGroup[] = ['lab', 'imaging']
   const batches = [...new Set(exams.filter((e) => e.status !== 'cancelled').map((e) => e.batchId))]
-  const startsOpen = (e: ExamOrder) => isPending(e) || (!!e.critical && e.status === 'result')
+  const startsOpen = (e: ExamOrder) => !!e.critical && e.status === 'result'
   const isOpen = (e: ExamOrder) => shown[e.id] ?? startsOpen(e)
   const match = (e: ExamOrder) => !q.trim() || fold(`${examLine(e)} ${e.indication ?? ''}`).includes(fold(q.trim()))
-  const order = (a: ExamOrder, b: ExamOrder) => (sort === 'pending' ? Number(isPending(b)) - Number(isPending(a)) || (a.priority === 'urgent' ? -1 : 0) - (b.priority === 'urgent' ? -1 : 0) : 0)
-    || (sort === 'oldest' ? a.orderedAt.localeCompare(b.orderedAt) : b.orderedAt.localeCompare(a.orderedAt))
-  const setAll = (list: ExamOrder[], v: boolean) => setShown((x) => ({ ...x, ...Object.fromEntries(list.map((e) => [e.id, v])) }))
+  const passes = (e: ExamOrder) => EXAM_FILTERS.find((f) => f.key === filter)!.test(e)
+  const order = (a: ExamOrder, b: ExamOrder) => (sort === 'oldest' ? a.orderedAt.localeCompare(b.orderedAt) : b.orderedAt.localeCompare(a.orderedAt))
+  const visible = exams.filter((e) => match(e) && passes(e))
+  const setAll = (v: boolean) => setShown((x) => ({ ...x, ...Object.fromEntries(visible.map((e) => [e.id, v])) }))
   return (
     <div className="hc" data-tour="examenes-tab">
-      {exams.length > 3 && (
+      {exams.length > 0 && (
         <div className="exam-tools" role="search">
-          <label className="field field--inline exam-tools__q"><span>Buscar</span>
-            <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre del examen, ej. hemograma" /></label>
-          <label className="field field--inline"><span>Ordenar</span>
+          <label className="field field--inline exam-tools__q"><span>Buscar examen</span>
+            <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar examen" aria-label="Buscar examen" /></label>
+          <label className="field field--inline"><span>Orden</span>
             <select className="select" value={sort} onChange={(e) => setSort(e.target.value as ExamSort)}>{EXAM_SORTS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}</select></label>
+          <div className="segmented segmented--sm exam-tools__filters" role="radiogroup" aria-label="Mostrar">
+            {EXAM_FILTERS.map((f) => <button key={f.key} type="button" role="radio" aria-checked={filter === f.key} onClick={() => setFilter(f.key)}>
+              {f.label} <span className="num">{exams.filter((e) => match(e) && f.test(e)).length}</span></button>)}
+          </div>
+          <span className="fold-tools">
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setAll(true)}><ChevronsUpDown size={14} />Expandir todo</button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setAll(false)}><ChevronsDownUp size={14} />Contraer todo</button>
+          </span>
         </div>
       )}
       {groups.map((g) => {
         const all = exams.filter((e) => e.group === g)
-        const list = all.filter(match).sort(order)
-        const anyOpen = list.some(isOpen)
+        const list = all.filter((e) => match(e) && passes(e)).sort(order)
         return (
           <section key={g} className="panel">
             <div className="panel__head"><div><h2>{g === 'lab' ? <FlaskConical size={17} style={{ verticalAlign: '-3px' }} /> : <ScanLine size={17} style={{ verticalAlign: '-3px' }} />} {GROUP_LABEL[g]}</h2>
               <p>{all.filter(isPending).length} pendiente{all.filter(isPending).length === 1 ? '' : 's'} · {all.filter((e) => e.status === 'result' || e.status === 'reviewed').length} con resultado</p></div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {list.length > 1 && <button className="btn btn--ghost btn--sm" onClick={() => setAll(list, !anyOpen)}>{anyOpen ? <><ChevronsDownUp size={14} />Contraer todo</> : <><ChevronsUpDown size={14} />Expandir todo</>}</button>}
                 {open && can('exams.process') && <button className="btn btn--ghost btn--sm" onClick={() => setUploading(g)}><Upload size={14} />Subir resultado externo</button>}
               </div></div>
             {list.length ? <div className="rows">{list.map((e, i) => (
               <Fragment key={e.id}>
-                {sort !== 'pending' && (i === 0 || dayKey(list[i - 1].orderedAt) !== dayKey(e.orderedAt)) && <div className="exam-day">{cap(date(e.orderedAt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>}
+                {(i === 0 || dayKey(list[i - 1].orderedAt) !== dayKey(e.orderedAt)) && <div className="exam-day">{cap(date(e.orderedAt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>}
                 <ExamRow e={e} reload={reload} open={open} expanded={isOpen(e)} onToggle={() => setShown((x) => ({ ...x, [e.id]: !isOpen(e) }))} />
               </Fragment>
             ))}</div>
-              : <div className="empty">{all.length ? `Ningún examen de ${GROUP_LABEL[g].toLowerCase()} coincide con «${q.trim()}».` : `Sin exámenes de ${GROUP_LABEL[g].toLowerCase()}.`}</div>}
+              : <div className="empty">{all.length ? 'Ningún examen coincide' : `Sin exámenes de ${GROUP_LABEL[g].toLowerCase()}.`}</div>}
           </section>
         )
       })}
@@ -124,7 +138,8 @@ function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload
       </div>
       <div className="exam-row__side">
         <span className={`badge ${TONE[e.status] ? `badge--${TONE[e.status]}` : ''}`}>{examStatusLabel(e)}</span>
-        {expanded && <>
+        {/* EX1: las acciones se usan sin abrir la fila */}
+        {<>
           {open && can('exams.process') && isPending(e) && e.status === 'ordered' && <button className="btn btn--soft btn--sm" onClick={() => act('status', { status: e.group === 'lab' ? 'sample' : 'done' })}>{next}</button>}
           {canResult && <button className={`btn ${optional ? 'btn--ghost' : 'btn--primary'} btn--sm`} onClick={() => setResult(true)}>{e.group === 'lab' ? 'Cargar resultado' : optional ? 'Agregar informe (opcional)' : 'Cargar informe'}</button>}
           {canReview(e) && can('exams.order') && user?.role === 'doctor' && <button className="btn btn--primary btn--sm" onClick={() => act('review')}><CheckCheck size={14} />Marcar revisado</button>}
