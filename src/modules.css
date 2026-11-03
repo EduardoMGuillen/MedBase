@@ -766,3 +766,21 @@ button.src-tag--none { cursor: pointer; }
 .stat-line { gap: 2px; align-content: center; }
 .stat-line .check-inline { font-size: 13px; font-weight: 600; color: var(--muted); min-height: 32px; cursor: pointer; }
 .stat-line small { font-size: 12px; }
+
+/* GE5 (ronda 10): paginación de las listas largas */
+.pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px 22px; border-top: 1px solid var(--line-soft); }
+.pager__info { font-size: 13.5px; color: var(--muted); }
+.pager__btns { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.pager__btn { min-width: 36px; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); font: inherit; font-size: 14px; font-weight: 600; color: var(--ink-deep); cursor: pointer; }
+.pager__btn:hover:not(:disabled) { background: var(--ward); }
+.pager__btn:disabled { color: var(--faint); cursor: default; }
+.pager__num.is-on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.pager__gap { padding: 0 4px; color: var(--muted); }
+@media (max-width: 600px) {
+  .pager { padding: 12px 16px; justify-content: center; }
+  .pager__info { width: 100%; text-align: center; }
+  .pager__btns { justify-content: center; }
+  .pager__btn { min-width: 44px; min-height: 44px; }
+}
+/* GE5: filas fuera de la página: ocultas en pantalla, presentes al imprimir (cierre de caja completo) */
+@media screen { .pager-off { display: none !important; } }

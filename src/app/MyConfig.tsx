@@ -9,6 +9,7 @@ import { ScheduleEditor } from './ScheduleEditor'
 import { PasswordPanel, TwoFactorPanel } from './Account'
 import { PERMISSIONS, permissionsFor, ROLE_LABEL, VIEW_LABEL, viewsOf } from '../lib/permissions'
 import { drugKey, useVademecum } from '../lib/vademecum'
+import { Pagination, paginate, usePage } from '../components/Pagination'
 import { fromClinicDrug } from '../lib/drugProvider'
 import type { ClinicDrug, Role } from '../lib/types'
 import { normalize } from '../lib/patients'
@@ -223,6 +224,9 @@ function VademecumPanel() {
   const inactive = clinicDrugs.filter((d) => !d.active && canEdit(d)).map(fromClinicDrug)
   const n = normalize(q)
   const list = [...drugs, ...inactive].filter((d) => (!onlyFav || favs.has(drugKey(d))) && (!onlyClinic || d.clinicId) && (!n || normalize(`${d.name} ${d.brand ?? ''} ${d.presentation}`).includes(n)))
+  // GE5 (ronda 10): por páginas (antes cortaba en 60 y pedía escribir para ver el resto)
+  const [pageNo, setPage] = usePage(JSON.stringify([q, onlyFav, onlyClinic]))
+  const pg = paginate(list, pageNo)
   const toggle = (key: string) => saveMyProfile({ favDrugs: favs.has(key) ? [...favs].filter((x) => x !== key) : [...favs, key] })
   return (
     <section className="panel">
@@ -235,7 +239,7 @@ function VademecumPanel() {
           <label className="check-inline"><input type="checkbox" checked={onlyClinic} onChange={(e) => setOnlyClinic(e.target.checked)} />Sólo agregados por la clínica</label>
         </div>
         <ul className="fav-list">
-          {list.slice(0, 60).map((d) => {
+          {pg.rows.map((d) => {
             const key = drugKey(d)
             const cd = clinicDrug(d.clinicId)
             return (
@@ -249,7 +253,7 @@ function VademecumPanel() {
             )
           })}
         </ul>
-        {list.length > 60 && <p className="muted" style={{ fontSize: 13.5 }}>Mostrando 60 de {list.length}. Escribe para buscar.</p>}
+        <Pagination {...pg} onPage={setPage} label="Páginas de mi vademécum" />
         {!list.length && <div className="empty">{onlyFav ? 'Todavía no marcas favoritos.' : onlyClinic && !n ? 'La clínica todavía no agrega medicamentos.' : 'Ningún medicamento coincide.'}</div>}
       </div>
       {adding && <DrugForm onClose={() => setAdding(false)} />}

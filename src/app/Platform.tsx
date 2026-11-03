@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { Building2, ChevronLeft, ExternalLink, Plus, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, Loading, Modal, PageHead } from '../components/ui'
+import { Pagination, paginate, usePage } from '../components/Pagination'
 import { date, time } from '../lib/format'
 import { ROLE_LABEL, ROLE_SUMMARY, ROLES_BY_KIND } from '../lib/permissions'
 import type { Clinic, ClinicKind, ClinicRole, Staff } from '../lib/types'
@@ -37,6 +38,9 @@ export default function Platform() {
   useEffect(load, [load])
 
   const active = (clinics ?? []).filter((c) => c.active)
+  // GE5 (ronda 10): las cuentas por páginas
+  const [clinicsPageNo, setClinicsPage] = usePage(null)
+  const clinicsPage = paginate(clinics ?? [], clinicsPageNo)
   const sum = (k: 'staff' | 'patients' | 'consultations30') => active.reduce((n, c) => n + (c.stats?.[k] ?? 0), 0)
 
   return (
@@ -57,7 +61,7 @@ export default function Platform() {
         <section className="panel table-wrap">
           <table className="table">
             <thead><tr><th>Cuenta</th><th>Tipo</th><th>Estado</th><th style={{ textAlign: 'right' }}>Usuarios</th><th style={{ textAlign: 'right' }}>Pacientes</th><th style={{ textAlign: 'right' }}>Citas 30 días</th><th>Última actividad</th></tr></thead>
-            <tbody>{clinics.map((c) => (
+            <tbody>{clinicsPage.rows.map((c) => (
               <tr key={c.id} style={c.active ? undefined : { opacity: 0.6 }}>
                 <td><div className="cell-person"><span className="clinic-ico"><Building2 size={18} /></span>
                   <Link to={`/app/clinicas/${c.id}`}>{c.name}<small>/reservar/{c.slug}</small></Link></div></td>
@@ -70,6 +74,7 @@ export default function Platform() {
               </tr>
             ))}</tbody>
           </table>
+          <Pagination {...clinicsPage} onPage={setClinicsPage} label="Páginas de las cuentas" />
           {!clinics.length && <div className="empty">Aún no hay cuentas. Crea la primera con <b>Nueva cuenta</b>.</div>}
         </section>
 

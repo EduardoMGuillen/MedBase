@@ -4,6 +4,8 @@ import { Download } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Loading } from '../components/ui'
+import { Pagination, usePage } from '../components/Pagination'
+import { PAGE_SIZE } from '../lib/clinicalConfig'
 import { date, localISODate, time } from '../lib/format'
 import { AUDIT_KINDS, type AuditKind } from '../lib/audit'
 import { ROLE_LABEL, ROLES_BY_KIND } from '../lib/permissions'
@@ -27,21 +29,28 @@ export function AuditLog({ mine = false }: { mine?: boolean }) {
     const from = new Date(); from.setDate(from.getDate() - 30)
     return { ...EMPTY, from: localISODate(from), to: localISODate(new Date()) }
   })
-  const [rows, setRows] = useState<Row[] | null>(null)
+  const [data, setData] = useState<{ rows: Row[]; total: number } | null>(null)
+  const rows = data?.rows ?? null
   const set = (k: keyof Filters) => (v: string) => setF((x) => ({ ...x, [k]: v }))
+  // GE5 (ronda 10): por páginas, sobre la lista completa (en el servidor); cambiar un filtro vuelve a la página 1
+  const [page, setPage] = usePage(JSON.stringify(f), 'pagina_bitacora')
+  const query = () => new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][])
   useEffect(() => {
     let alive = true
-    const params = new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][])
+    const params = query()
+    params.set('page', String(page)); params.set('size', String(PAGE_SIZE))
     const t = setTimeout(() => {
-      api<Row[]>(`/audit${mine ? '/mine' : ''}?${params}`).then((r) => { if (alive) setRows(r) }).catch((e: Error) => notify(e.message, 'error'))
+      api<{ rows: Row[]; total: number }>(`/audit${mine ? '/mine' : ''}?${params}`).then((r) => { if (alive) setData(r) }).catch((e: Error) => notify(e.message, 'error'))
     }, f.q ? 300 : 0)
     return () => { alive = false; clearTimeout(t) }
-  }, [f, mine, notify])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f, mine, notify, page])
   const who = (id: string) => (id === 'online' ? 'Reserva en línea' : id === 'sistema' ? 'Sistema' : staffById(id)?.name ?? 'Administración de Clinara')
-  const exportCsv = () => rows && download(`bitacora${mine ? `-${user?.name.replace(/\W+/g, '-').toLowerCase()}` : ''}-${f.from || 'inicio'}-a-${f.to || 'hoy'}.csv`, toCsv([
+  // Exportar a Excel lleva todo lo filtrado, no solo la página
+  const exportCsv = async () => { const all = await api<Row[]>(`/audit${mine ? '/mine' : ''}?${query()}`).catch((e: Error) => { notify(e.message, 'error'); return null }); if (!all) return; download(`bitacora${mine ? `-${user?.name.replace(/\W+/g, '-').toLowerCase()}` : ''}-${f.from || 'inicio'}-a-${f.to || 'hoy'}.csv`, toCsv([
     ['Fecha', 'Hora', ...(mine ? [] : ['Persona']), 'Rol', 'Tipo', 'Acción', 'Paciente'],
-    ...rows.map((r) => [localISODate(new Date(r.at)), time(r.at), ...(mine ? [] : [who(r.userId)]), r.role ? ROLE_LABEL[r.role] : '', AUDIT_KINDS[r.kind], r.action, r.patientName ?? '']),
-  ]))
+    ...all.map((r) => [localISODate(new Date(r.at)), time(r.at), ...(mine ? [] : [who(r.userId)]), r.role ? ROLE_LABEL[r.role] : '', AUDIT_KINDS[r.kind], r.action, r.patientName ?? '']),
+  ])) }
   const roles = ROLES_BY_KIND[settings.kind ?? 'clinic']
   return (
     <section className="panel table-wrap">
@@ -73,7 +82,7 @@ export function AuditLog({ mine = false }: { mine?: boolean }) {
           ))}</tbody>
         </table>
         {!rows.length && <div className="empty">Nada en la bitácora con esos filtros.</div>}
-        {rows.length >= 2000 && <p className="muted" style={{ padding: '10px 22px', fontSize: 13.5 }}>Se muestran las 2000 más recientes. Acota las fechas para ver más.</p>}
+        <Pagination page={Math.min(page, Math.max(1, Math.ceil(data!.total / PAGE_SIZE)))} pages={Math.max(1, Math.ceil(data!.total / PAGE_SIZE))} total={data!.total} size={PAGE_SIZE} onPage={setPage} label="Páginas de la bitácora" />
       </>)}
     </section>
   )

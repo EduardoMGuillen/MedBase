@@ -43,9 +43,10 @@ import { registerRoster } from './routes/roster.js'
 import { registerEpicrisis } from './routes/epicrisis.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permission } from '../src/lib/permissions.js'
-import { NEB_MAX_COMPONENTS } from '../src/lib/clinicalConfig.js'
+import { NEB_MAX_COMPONENTS, PAGE_SIZE } from '../src/lib/clinicalConfig.js'
 import { yearsOld } from '../src/lib/inpatient.js'
 import { normalizeDni } from '../src/lib/format.js'
+import { normalize } from '../src/lib/patients.js'
 import { AUDIT_KINDS, auditKind, type AuditKind } from '../src/lib/audit.js'
 import { hasBlank, medHasBlank } from '../src/lib/orderSets.js'
 import { assertGrace, printedAt, saveVersion, toVersion } from './grace.js'
@@ -361,19 +362,25 @@ export function createApp(opts: AppOptions) {
     if (f.from) { where.push('a.at >= ?'); args.push(new Date(`${f.from}T00:00:00-06:00`).toISOString()) }
     if (f.to) { where.push('a.at < ?'); const d = new Date(`${f.to}T00:00:00-06:00`); d.setUTCDate(d.getUTCDate() + 1); args.push(d.toISOString()) }
     const rows = await sql.query(`SELECT a.*, p.first_name, p.last_name FROM audit a LEFT JOIN patients p ON p.id = a.patient_id
-      WHERE ${where.join(' AND ')} ORDER BY a.id DESC LIMIT 3000`, args)
+      WHERE ${where.join(' AND ')} ORDER BY a.id DESC LIMIT 50000`, args)
     const list = rows.map((r) => ({ ...toAudit(r), role: r.role ? String(r.role) : undefined, kind: (r.kind ? String(r.kind) : auditKind(String(r.action))) as AuditKind,
       patientId: r.patient_id ? String(r.patient_id) : undefined, patientName: r.first_name ? `${r.first_name} ${r.last_name}` : undefined }))
-    return (f.kind && f.kind in AUDIT_KINDS ? list.filter((x) => x.kind === f.kind) : list).slice(0, 2000)
+    return f.kind && f.kind in AUDIT_KINDS ? list.filter((x) => x.kind === f.kind) : list
+  }
+  /** GE5 (ronda 10): con `page`, una página de la lista completa ({ rows, total }); sin ella, todo (exportar a Excel). */
+  const auditPage = z.object({ page: z.coerce.number().int().min(1).max(100000).optional(), size: z.coerce.number().int().min(5).max(200).default(PAGE_SIZE) })
+  const sendAudit = (res: express.Response, list: Awaited<ReturnType<typeof auditRows>>, q: unknown) => {
+    const { page, size } = parse(auditPage, q)
+    res.json(page ? { rows: list.slice((page - 1) * size, page * size), total: list.length, page, size } : list)
   }
 
   app.get('/api/audit/mine', auth, async (req, res) => {
     const user = userOf(req)
-    res.json(await auditRows(clinicOf(req), { ...parse(auditFilters, req.query), userId: user.id }))
+    sendAudit(res, await auditRows(clinicOf(req), { ...parse(auditFilters, req.query), userId: user.id }), req.query)
   })
 
   app.get('/api/audit', auth, need('audit.view'), async (req, res) => {
-    res.json(await auditRows(clinicOf(req), parse(auditFilters, req.query)))
+    sendAudit(res, await auditRows(clinicOf(req), parse(auditFilters, req.query)), req.query)
   })
 
   // ---------- Datos iniciales según el rol ----------
@@ -1181,6 +1188,32 @@ export function createApp(opts: AppOptions) {
     await sql.run('UPDATE prescriptions SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?', [new Date().toISOString(), user.id, reason, String(row!.id)])
     await audit(user, `Anuló la receta ${row!.folio}${row!.patient_id ? ` de ${await patientName(String(row!.patient_id))}` : ''}: ${reason}`)
     res.json(toPrescription((await sql.one('SELECT * FROM prescriptions WHERE id = ?', [String(row!.id)]))!))
+  })
+
+  /**
+   * GE5 (ronda 10): historial de recetas por páginas, sobre TODAS las de la clínica (la carga inicial trae solo las 500 más
+   * recientes). Busca por paciente (nombre, expediente), persona no registrada (nombre, teléfono) y fechas, sin tildes.
+   */
+  app.get('/api/prescriptions', auth, need('rx.view'), async (req, res) => {
+    const cid = clinicOf(req)
+    const f = parse(z.object({ q: z.string().max(120).optional(), from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      mine: z.enum(['1']).optional(), page: z.coerce.number().int().min(1).max(100000).default(1), size: z.coerce.number().int().min(5).max(100).default(PAGE_SIZE) }), req.query)
+    const where = ['r.clinic_id = ?']
+    const args: unknown[] = [cid]
+    if (f.mine) { where.push('r.doctor_id = ?'); args.push(userOf(req).id) }
+    // Fechas del día local (Honduras, UTC−6): issued_at se guarda en UTC
+    if (f.from) { where.push('r.issued_at >= ?'); args.push(new Date(`${f.from}T00:00:00-06:00`).toISOString()) }
+    if (f.to) { where.push('r.issued_at < ?'); args.push(new Date(new Date(`${f.to}T00:00:00-06:00`).getTime() + 86_400_000).toISOString()) }
+    const fold = (x: string) => `translate(lower(${x}), 'áéíóúüñ', 'aeiouun')`
+    const q = f.q?.trim() ? normalize(f.q) : ''
+    if (q) {
+      where.push(`(${fold(`COALESCE(p.first_name, '') || ' ' || COALESCE(p.last_name, '') || ' ' || COALESCE(p.record, '')`)} LIKE ? OR ${fold(`COALESCE(r.guest, '')`)} LIKE ?)`)
+      args.push(`%${q}%`, `%${q}%`)
+    }
+    const from = `FROM prescriptions r LEFT JOIN patients p ON p.id = r.patient_id WHERE ${where.join(' AND ')}`
+    const total = Number((await sql.one<{ n: number }>(`SELECT COUNT(*)::int AS n ${from}`, args))?.n ?? 0)
+    const rows = await sql.query(`SELECT r.* ${from} ORDER BY r.issued_at DESC, r.id DESC LIMIT ? OFFSET ?`, [...args, f.size, (f.page - 1) * f.size])
+    res.json({ rows: rows.map(toPrescription), total, page: f.page, size: f.size })
   })
 
   app.get('/api/prescriptions/:id', auth, need('rx.view'), async (req, res) => {

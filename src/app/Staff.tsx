@@ -4,6 +4,7 @@ import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead } from '../components/ui'
 import { CLINIC_PERMISSIONS, features, PERMISSIONS, permissionsFor, ROLE_LABEL, ROLE_SUMMARY, ROLES_BY_KIND } from '../lib/permissions'
 import { AuditLog } from './Activity'
+import { Pagination, paginate, usePage } from '../components/Pagination'
 import type { Role, Staff } from '../lib/types'
 
 type Tab = 'people' | 'roles' | 'audit'
@@ -17,6 +18,9 @@ export default function StaffPage() {
   const [creating, setCreating] = useState(false)
   const [secret, setSecret] = useState<{ name: string; email: string; password: string } | null>(null)
   const [rolesOf, setRolesOf] = useState<Staff | null>(null)
+  // GE5 (ronda 10): el personal por páginas (la página en la dirección)
+  const [staffPageNo, setStaffPage] = usePage(tab)
+  const staffPage = paginate(staff, staffPageNo)
 
   return (
     <div className="page">
@@ -35,7 +39,7 @@ export default function StaffPage() {
         <section className="panel table-wrap">
           <table className="table table--sticky table--cards">
             <thead><tr><th>Nombre</th><th>Rol</th><th>Correo</th><th>Estado</th><th /></tr></thead>
-            <tbody>{staff.map((s) => (
+            <tbody>{staffPage.rows.map((s) => (
               <tr key={s.id}>
                 <td className="tc-full"><div className="cell-person"><Avatar name={s.name} color={s.color} /><span style={{ fontWeight: 600 }}>{s.name}<small>{[s.specialty, s.license].filter(Boolean).join(', ')}</small></span></div></td>
                 <td data-label="Rol" className="tc-full">
@@ -64,6 +68,7 @@ export default function StaffPage() {
               </tr>
             ))}</tbody>
           </table>
+          <Pagination {...staffPage} onPage={setStaffPage} label="Páginas del personal" />
         </section>
       )}
 

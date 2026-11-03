@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { CheckCheck, MessageCircle, Plus, Smartphone, Trash2 } from 'lucide-react'
 import { useStore, type FollowupInput } from '../lib/store'
 import { Modal, PageHead } from '../components/ui'
+import { Pagination, paginate, usePage } from '../components/Pagination'
 import { clinicWhatsapp, date, dateTime, fullName, localISODate, time } from '../lib/format'
 import { addDays, CHRONIC_PRESETS, clinicToday, daysLabel, daysUntil, FOLLOWUP_KIND, followupMessage, REMINDER_TYPE } from '../lib/followups'
 import type { Followup } from '../lib/types'
@@ -27,6 +28,9 @@ export default function Followups() {
   const today = clinicToday()
   // Los procedimientos de antes (si alguno no se migró) también son recordatorios
   const list = followups.filter((f) => (kind === 'reminder' ? f.kind !== 'chronic' : f.kind === kind)).sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  // GE5 (ronda 10): por páginas; cambiar de pestaña vuelve a la página 1
+  const [pageNo, setPage] = usePage(kind)
+  const pg = paginate(list, pageNo)
   const count = (k: Kind) => followups.filter((f) => (k === 'reminder' ? f.kind !== 'chronic' : f.kind === k)).length
 
   return (
@@ -49,7 +53,7 @@ export default function Followups() {
             <th>{kind === 'chronic' ? 'Próximo control' : 'Fecha'}</th>{kind === 'chronic' && <th>Cada</th>}<th>Último aviso</th><th />
           </tr></thead>
           <tbody>
-            {list.map((f) => {
+            {pg.rows.map((f) => {
               const p = patient(f.patientId)
               if (!p) return null
               const overdue = f.dueDate < today
@@ -80,6 +84,7 @@ export default function Followups() {
             })}
           </tbody>
         </table>
+        <Pagination {...pg} onPage={setPage} label="Páginas de seguimientos" />
         {!list.length && <div className="empty">No hay {FOLLOWUP_KIND[kind].plural.toLowerCase()}. El médico los programa al firmar una consulta o desde aquí.</div>}
       </section>
       {sending && <WhatsAppMock f={sending} onClose={() => setSending(null)} />}

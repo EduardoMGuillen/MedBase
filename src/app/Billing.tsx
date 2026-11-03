@@ -3,6 +3,7 @@ import { DateField } from '../components/DateTimeField'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, Download, FileText, MessageCircle, Plus, Printer, Search, Wallet, X } from 'lucide-react'
 import { useStore } from '../lib/store'
+import { Pagination, paginate, usePage } from '../components/Pagination'
 import { Loading, Modal, PageHead } from '../components/ui'
 import { LogoMark } from '../components/Logo'
 import { contactLine, date, fullName, localISODate, METHOD_LABEL, money, time, whatsappUrl } from '../lib/format'
@@ -49,6 +50,8 @@ export default function Billing() {
   const charged = (payments ?? []).filter((p) => { const d = localISODate(new Date(p.paidAt)); return d >= range[0] && d <= range[1] })
   const shown = charged.filter((p) => { const pt = patient(p.patientId); return matchesPayment(p, pt ? fullName(pt) : '', q) })
   const noInvoice = charged.filter((p) => !p.voided && !p.invoiceNo).length
+  const [page, setPage] = usePage(JSON.stringify([tab, q, from, to]))
+  const pg = paginate(shown, page)
   const owed = (balances ?? []).reduce((s, p) => s + (p.balance ?? 0), 0)
 
   const exportCsv = () => {
@@ -123,10 +126,12 @@ export default function Billing() {
         <section className="panel table-wrap">
           <table className="table table--sticky table--cards">
             <thead><tr><th>Recibo</th><th>Factura</th><th>Fecha</th><th>Paciente</th><th>Forma de pago</th><th>Cobró</th><th style={{ textAlign: 'right' }}>Total</th></tr></thead>
-            <tbody>{shown.map((p) => {
+            <tbody>{shown.map((p, i) => {
               const pt = patient(p.patientId)
+              // GE5 (ronda 10): en pantalla, solo la página; al imprimir el cierre de caja salen todos
+              const off = i < (pg.page - 1) * pg.size || i >= pg.page * pg.size
               return (
-                <tr key={p.id} style={p.voided ? { opacity: 0.5 } : undefined} onClick={() => nav(`/app/recibos/${p.id}`)} className="clickable">
+                <tr key={p.id} style={p.voided ? { opacity: 0.5 } : undefined} onClick={() => nav(`/app/recibos/${p.id}`)} className={`clickable${off ? ' pager-off' : ''}`}>
                   <td className="num tc-lead"><Link to={`/app/recibos/${p.id}`}>{p.receiptNo}</Link>{p.voided && <span className="badge badge--red" style={{ marginLeft: 8 }}>Anulado</span>}</td>
                   <td data-label="Factura" className="num">{p.invoiceNo ?? (p.voided ? '—' : <span style={{ color: 'var(--faint)' }}>Sin anotar</span>)}</td>
                   <td data-label="Fecha" className="num">{date(p.paidAt, { day: 'numeric', month: 'short' })} {time(p.paidAt)}</td>
@@ -139,6 +144,7 @@ export default function Billing() {
               )
             })}</tbody>
           </table>
+          <div className="no-print"><Pagination {...pg} onPage={setPage} label="Páginas de los cobros" /></div>
           {!shown.length && <div className="empty">{charged.length ? 'Ningún cobro coincide con la búsqueda.' : tab === 'today' ? 'Todavía no hay cobros hoy. Toca «Nuevo cobro» para cobrar.' : 'No hay cobros en este periodo.'}</div>}
         </section>
         {tab === 'today' && charged.length > 0 && <button className="btn btn--ghost no-print" style={{ justifySelf: 'start' }} onClick={() => window.print()}><Printer size={16} />Imprimir cierre de caja</button>}

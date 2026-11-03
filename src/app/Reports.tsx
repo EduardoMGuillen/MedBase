@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Download } from 'lucide-react'
 import { useStore, type Report } from '../lib/store'
 import { Loading, PageHead } from '../components/ui'
+import { Pagination, paginate, usePage } from '../components/Pagination'
 import { BarChart, HBars } from '../components/Charts'
 import { localISODate, METHOD_LABEL, money } from '../lib/format'
 
@@ -19,6 +20,9 @@ export default function Reports() {
   }, [days, fetchReport, notify])
 
   const cur = settings.currency
+  // GE5 (ronda 10): las tablas del reporte, por páginas
+  const [doctorsPageNo, setDoctorsPage] = usePage(String(days))
+  const doctorsPage = paginate(report?.byDoctor ?? [], doctorsPageNo)
   const short = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('es-HN', { day: 'numeric', month: 'short' })
   const long = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })
 
@@ -76,11 +80,12 @@ export default function Reports() {
             <div className="panel__head"><h2>Por médico</h2></div>
             <table className="table table--sticky">
               <thead><tr><th>Médico</th><th style={{ textAlign: 'right' }}>Citas</th><th style={{ textAlign: 'right' }}>Atendidas</th><th style={{ textAlign: 'right' }}>No asistió</th><th style={{ textAlign: 'right' }}>Ingresos</th></tr></thead>
-              <tbody>{report.byDoctor.map((d) => (
+              <tbody>{doctorsPage.rows.map((d) => (
                 <tr key={d.id}><td>{d.name}</td><td className="num" style={{ textAlign: 'right' }}>{d.appointments}</td><td className="num" style={{ textAlign: 'right' }}>{d.done}</td>
                   <td className="num" style={{ textAlign: 'right' }}>{d.noShow}</td><td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{money(d.revenue, cur)}</td></tr>
               ))}</tbody>
             </table>
+            <Pagination {...doctorsPage} onPage={setDoctorsPage} label="Páginas del reporte por médico" />
           </section>}
           <section className="panel">
             <div className="panel__head"><h2>Formas de pago</h2></div>

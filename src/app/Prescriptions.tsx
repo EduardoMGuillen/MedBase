@@ -5,6 +5,8 @@ import { Ban, ChevronLeft, Copy, FileText, MessageCircle, Plus, Printer, UserPlu
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Loading, Modal, PageHead } from '../components/ui'
+import { Pagination, usePage } from '../components/Pagination'
+import { PAGE_SIZE } from '../lib/clinicalConfig'
 import { age, date, formatPhone, fullName, identityLine, localISODate, medicationLine, frequencyText, recordNumber, time, whatsappUrl } from '../lib/format'
 import { stayPath, yearsOld } from '../lib/inpatient'
 import { useNow } from '../lib/hooks'
@@ -33,7 +35,7 @@ export function ClinicLogo({ settings, size = 26 }: { settings: ClinicSettings; 
  * que no está en la biblioteca: se escriben sus datos a mano y no se le crea expediente.
  */
 export default function Prescriptions() {
-  const { prescriptions, patient, staffById, user, can, settings } = useStore()
+  const { prescriptions, patient, staffById, user, can, settings, notify } = useStore()
   const [mine, setMine] = useState(user?.role === 'doctor' && features(settings).multiDoctor)
   const [q, setQ] = useState('')
   const [from, setFrom] = useState('')
@@ -48,13 +50,21 @@ export default function Prescriptions() {
   useEffect(() => { if (params.get('repetir')) setParams({}, { replace: true }) }, [])
   // Cada receta nueva o repetida abre un formulario limpio
   const seq = useRef(0)
-  const s = normalize(q)
   const nameOf = (r: Prescription) => { const p = patient(r.patientId); return p ? fullName(p) : r.guest?.name ?? '' }
-  const list = prescriptions
-    .filter((r) => !mine || r.doctorId === user?.id)
-    .filter((r) => { const p = patient(r.patientId); return !s || normalize(`${nameOf(r)} ${p?.record ?? ''} ${r.guest?.phone ?? ''}`).includes(s) })
-    .filter((r) => { const d = localISODate(new Date(r.issuedAt)); return (!from || d >= from) && (!to || d <= to) })
-    .sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))
+  // GE5 (ronda 10): el historial completo, por páginas, buscado y filtrado en el servidor (no solo lo que trajo la carga inicial)
+  const [page, setPage] = usePage(JSON.stringify([q, from, to, mine]))
+  const [data, setData] = useState<{ rows: Prescription[]; total: number; page: number; size: number } | null>(null)
+  useEffect(() => {
+    let alive = true
+    const params = new URLSearchParams(Object.entries({ q: q.trim(), from, to, mine: mine ? '1' : '', page: String(page), size: String(PAGE_SIZE) }).filter(([, v]) => v))
+    const t = setTimeout(() => {
+      api<{ rows: Prescription[]; total: number; page: number; size: number }>(`/prescriptions?${params}`).then((r) => { if (alive) setData(r) }).catch((e: Error) => notify(e.message, 'error'))
+    }, q ? 250 : 0)
+    return () => { alive = false; clearTimeout(t) }
+  }, [q, from, to, mine, page, prescriptions.length, notify])
+  const list = data?.rows ?? []
+  const total = data?.total ?? 0
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const write = can('rx.write')
   const repeat = (r: Prescription) => {
     setDraft({ key: ++seq.current, patientId: r.patientId, guest: r.patientId ? undefined : r.guest, items: r.items.map((x) => ({ ...x })), indications: r.indications ?? [] })
@@ -62,12 +72,12 @@ export default function Prescriptions() {
   }
   return (
     <div className="page">
-      <PageHead title="Recetas" sub={write ? 'Emite una receta sin abrir una consulta, también para alguien que no está registrado, o repite una anterior.' : `${list.length} recetas emitidas`}
+      <PageHead title="Recetas" sub={write ? 'Emite una receta sin abrir una consulta, también para alguien que no está registrado, o repite una anterior.' : `${total} recetas emitidas`}
         actions={write && !draft && <button className="btn btn--primary" onClick={() => setDraft({ key: ++seq.current, patientId: '', items: [], indications: [] })}><Plus size={17} />Nueva receta</button>} />
       {write && draft && <NewPrescription key={draft.key} initial={draft} onClose={() => setDraft(null)} />}
       <section className="panel">
         <div className="panel__head">
-          <div><h2>Historial</h2><p>{list.length} {list.length === 1 ? 'receta' : 'recetas'}</p></div>
+          <div><h2>Historial</h2><p>{total} {total === 1 ? 'receta' : 'recetas'}</p></div>
           {user?.role === 'doctor' && features(settings).multiDoctor && (
             <div className="segmented" role="radiogroup" aria-label="Qué recetas ver">
               <button role="radio" aria-checked={mine} onClick={() => setMine(true)}>Mías</button>
@@ -94,7 +104,8 @@ export default function Prescriptions() {
               {write && <button className="btn btn--ghost btn--sm" onClick={() => repeat(r)}><Copy size={14} />Repetir receta</button>}
             </div>
           )
-        })}</div> : <div className="empty">{q || from || to ? 'Ninguna receta coincide con la búsqueda.' : 'Las recetas que emitas aparecerán aquí.'}</div>}
+        })}</div> : !data ? <Loading /> : <div className="empty">{q || from || to ? 'Ninguna receta coincide con la búsqueda.' : 'Las recetas que emitas aparecerán aquí.'}</div>}
+        <Pagination page={Math.min(page, pages)} pages={pages} total={total} size={PAGE_SIZE} onPage={setPage} label="Páginas del historial de recetas" />
       </section>
     </div>
   )

@@ -132,3 +132,33 @@ describe('UM3 (ronda 10): limpieza de los umbrales archivados', () => {
     await sql.run('UPDATE clinics SET critical_groups = ? WHERE id = ?', [JSON.stringify(before), id])
   })
 })
+
+describe('GE5 (ronda 10): paginación', () => {
+  test('números de página con puntos suspensivos', async () => {
+    const { pageNumbers, paginate } = await import('../src/components/Pagination.js')
+    assert.deepEqual(pageNumbers(1, 3), [1, 2, 3])
+    assert.deepEqual(pageNumbers(1, 21), [1, 2, 3, 4, null, 21])
+    assert.deepEqual(pageNumbers(10, 21), [1, null, 9, 10, 11, null, 21])
+    assert.deepEqual(pageNumbers(21, 21), [1, null, 18, 19, 20, 21])
+    const p = paginate(Array.from({ length: 530 }, (_, i) => i), 22)
+    assert.equal(p.page, 22, 'una página que no existe se ajusta a la última')
+    assert.deepEqual([p.rows[0], p.rows.at(-1), p.pages], [525, 529, 22])
+  })
+  test('recetas y bitácora: páginas de la lista completa en el servidor', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const all = await doc.get('/api/prescriptions?page=1&size=5')
+    assert.equal(all.status, 200)
+    assert.ok(all.body.total >= all.body.rows.length && all.body.rows.length <= 5)
+    if (all.body.total > 5) {
+      const p2 = await doc.get('/api/prescriptions?page=2&size=5')
+      assert.ok(!p2.body.rows.some((r: any) => all.body.rows.some((x: any) => x.id === r.id)), 'la página 2 no repite la 1')
+    }
+    const reception = await as('smejia@demo.clinara')
+    assert.equal((await reception.get('/api/prescriptions?page=1')).status, 403, 'recepción no ve recetas')
+    const admin = await as('admin@demo.clinara')
+    const log = await admin.get('/api/audit?page=1&size=10')
+    assert.equal(log.status, 200)
+    assert.ok(Array.isArray(log.body.rows) && log.body.rows.length <= 10 && log.body.total >= log.body.rows.length)
+    assert.ok(Array.isArray((await admin.get('/api/audit')).body), 'sin página, todo (exportar a Excel)')
+  })
+})

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { DateField } from '../components/DateTimeField'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, SlidersHorizontal, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { features, hasRole } from '../lib/permissions'
 import { Avatar, Modal, PageHead } from '../components/ui'
+import { Pagination, paginate, usePage } from '../components/Pagination'
 import { IdentificationForm } from './PatientForms'
 import { age, date, dniDigits, fullName, localISODate } from '../lib/format'
 import { useIsPhone } from '../lib/hooks'
@@ -53,9 +54,20 @@ export default function Patients() {
   }, [fetchPatientIndex, appointments.length, patients.length])
 
   const setParam = (changes: Partial<Filters>) => setValues((v) => ({ ...v, ...changes }))
+  // GE5 (ronda 10): la página va en la dirección (?pagina=3). Buscar, filtrar u ordenar vuelve a la página 1; al volver de
+  // un expediente con «Atrás» se sigue en la misma página.
+  const [page, setPage] = usePage(null)
+  const synced = useRef(JSON.stringify([values, sort]))
   useEffect(() => {
-    setParams(Object.fromEntries(Object.entries(values).filter(([, v]) => v)), { replace: true })
-  }, [values, setParams])
+    const key = JSON.stringify([values, sort])
+    const changed = synced.current !== key
+    synced.current = key
+    setParams((prev) => {
+      const next = new URLSearchParams(Object.fromEntries(Object.entries(values).filter(([, v]) => v)))
+      if (!changed && prev.get('pagina')) next.set('pagina', prev.get('pagina')!)
+      return next
+    }, { replace: true })
+  }, [values, sort, setParams])
 
   const lastVisit = (id: string) => index?.get(id)?.lastConsultAt ?? appointments
     .filter((a) => a.patientId === id && a.status === 'done')
@@ -147,6 +159,7 @@ export default function Patients() {
   const clearAll = () => setParam(Object.fromEntries(FILTER_KEYS.map((k) => [k, ''])))
   const summary = filterSummary(list.length, f, { doctorName: staff.find((x) => x.id === f.medico)?.name, total: registered.length })
 
+  const paged = paginate(list, page)
   const toggle = (key: SortKey) => setSort((s) => s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: 1 })
   const mark = (key: SortKey) => sort.key === key ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''
   const where = Object.entries(WHERE).filter(([k]) => (k !== 'hospitalizado' || features(settings).hospital) && (k !== 'observacion' || features(settings).observation))
@@ -233,7 +246,7 @@ export default function Patients() {
             <th><button className="th-sort" onClick={() => toggle('next')}>Próxima cita{mark('next')}</button></th>
           </tr></thead>
           <tbody>
-            {list.map((p) => {
+            {paged.rows.map((p) => {
               const nx = nextAppt(p.id)
               const lv = lastVisit(p.id)
               const eg = dischargeOf(p.id)
@@ -259,6 +272,7 @@ export default function Patients() {
             })}
           </tbody>
         </table>
+        <Pagination {...paged} onPage={setPage} label="Páginas de la biblioteca de pacientes" />
         {!list.length && <div className="empty">{q ? `Ningún paciente coincide con “${q}”${chips.length ? ' y los filtros elegidos' : ''}.` : 'Ningún paciente cumple los filtros elegidos.'} {chips.length > 0 && <button className="linklike" onClick={clearAll}>Limpiar filtros</button>}</div>}
       </section>
 
