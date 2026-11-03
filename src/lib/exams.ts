@@ -1,5 +1,6 @@
 import type { ExamGroup, ExamOrder, ExamStatus } from './types'
 import { EXISTING_SUBGROUP, LAB_AREAS, LAB_ORDER, SECTION_SEP } from './labCatalog.js'
+import { XRAY_PREFIXES, XRAY_SUBGROUPS } from './clinicalConfig.js'
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 export const examKey = (name: string) => norm(name)
@@ -198,7 +199,23 @@ export const NEXT_ACTION: Record<ExamGroup, Partial<Record<ExamStatus, string>>>
  */
 export function reportOptional(e: { group: ExamGroup; name: string; subgroup?: string }) {
   if (e.group !== 'imaging') return false
-  return subgroupOf(e) === 'Rayos X' || /\b(radiograf[ií]a|rayos\s*x|rx)\b/i.test(e.name.normalize('NFC'))
+  // EX3 (ronda 8): el subgrupo del catálogo o, escrito a mano, un nombre que empiece por «Rayos X», «Radiografía» o «Rx»
+  // (sin importar mayúsculas ni tildes). La lista está en clinicalConfig (VALIDAR: Emil).
+  const sub = subgroupOf(e)
+  if (XRAY_SUBGROUPS.some((g) => sub === g || sub.endsWith(`${SECTION_SEP}${g}`))) return true
+  const name = fold(e.name)
+  return XRAY_PREFIXES.some((p) => { const f = fold(p); return name === f || name.startsWith(`${f} `) || name.startsWith(`${f}.`) || name.startsWith(`${f}-`) || name.startsWith(`${f}:`) })
+}
+
+const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
+
+/** EX3 (ronda 8): estado que se muestra. En Rayos X, «Realizado · sin informe» (terminado) y «Con informe». */
+export function examStatusLabel(e: Pick<ExamOrder, 'group' | 'status' | 'name'> & { subgroup?: string }) {
+  if (reportOptional(e)) {
+    if (e.status === 'done') return 'Realizado · sin informe'
+    if (e.status === 'result') return 'Con informe'
+  }
+  return STATUS_LABEL[e.group][e.status]
 }
 
 /** ¿Sigue pendiente para el área que lo realiza (todavía sin resultado)? Una radiografía realizada ya no lo está. */

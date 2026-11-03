@@ -6,7 +6,7 @@ import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { doseAt, medLabel } from '../src/lib/inpatient.js'
-import { canReview, isPending, reportOptional } from '../src/lib/exams.js'
+import { canReview, examStatusLabel, isPending, reportOptional } from '../src/lib/exams.js'
 import { criticalLimitsOf, customized, DEFAULT_CRITICAL_GROUPS, isCritical, mergeCriticalGroups } from '../src/lib/clinicalConfig.js'
 
 let server: Server
@@ -115,6 +115,13 @@ describe('Ronda 8: rayos X sin informe obligatorio', () => {
     assert.ok(reportOptional({ group: 'imaging', name: 'Radiografía de tórax' }))
     assert.ok(reportOptional({ group: 'imaging', name: 'Rayos X lateral de columna lumbar' }))
     assert.ok(!reportOptional({ group: 'imaging', name: 'Ultrasonido abdominal' }))
+    // EX3: por prefijo, sin importar mayúsculas ni tildes; no basta con que aparezca en medio del nombre
+    assert.ok(reportOptional({ group: 'imaging', name: 'RX de tórax PA' }))
+    assert.ok(reportOptional({ group: 'imaging', name: 'radiografia de mano' }))
+    assert.ok(!reportOptional({ group: 'imaging', name: 'Tomografía con rayos x previos' }))
+    assert.equal(examStatusLabel({ group: 'imaging', name: 'Radiografía de tórax', status: 'done' }), 'Realizado · sin informe')
+    assert.equal(examStatusLabel({ group: 'imaging', name: 'Radiografía de tórax', status: 'result' }), 'Con informe')
+    assert.equal(examStatusLabel({ group: 'imaging', name: 'Tomografía (TAC)', status: 'done' }), 'Realizado')
     assert.ok(!reportOptional({ group: 'lab', name: 'Hemograma' }))
     assert.ok(!isPending({ status: 'done', group: 'imaging', name: 'Radiografía de tórax' }))
     assert.ok(isPending({ status: 'done', group: 'imaging', name: 'Tomografía (TAC)' }))

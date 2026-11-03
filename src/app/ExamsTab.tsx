@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
 import { cap, date, dateTime, inputDateTime, shortStaff } from '../lib/format'
-import { canReview, examCatalog, examLine, findExam, GROUP_LABEL, isPending, NEXT_ACTION, reportOptional, STATUS_LABEL } from '../lib/exams'
+import { canReview, examCatalog, examLine, examStatusLabel, findExam, GROUP_LABEL, isPending, NEXT_ACTION, reportOptional, STATUS_LABEL } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { openFile, uploadLarge } from '../lib/files'
 import type { ExamGroup, ExamOrder } from '../lib/types'
@@ -123,7 +123,7 @@ function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload
         </div>}
       </div>
       <div className="exam-row__side">
-        <span className={`badge ${TONE[e.status] ? `badge--${TONE[e.status]}` : ''}`}>{STATUS_LABEL[e.group][e.status]}</span>
+        <span className={`badge ${TONE[e.status] ? `badge--${TONE[e.status]}` : ''}`}>{examStatusLabel(e)}</span>
         {expanded && <>
           {open && can('exams.process') && isPending(e) && e.status === 'ordered' && <button className="btn btn--soft btn--sm" onClick={() => act('status', { status: e.group === 'lab' ? 'sample' : 'done' })}>{next}</button>}
           {canResult && <button className={`btn ${optional ? 'btn--ghost' : 'btn--primary'} btn--sm`} onClick={() => setResult(true)}>{e.group === 'lab' ? 'Cargar resultado' : optional ? 'Agregar informe (opcional)' : 'Cargar informe'}</button>}

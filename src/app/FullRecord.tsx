@@ -15,7 +15,7 @@ import { EpicrisisSheet } from './Epicrisis'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import type { Addendum, Consultation, InpatientFile, InpatientNote, Patient, Vitals } from '../lib/types'
 import { ADDENDUM_KIND } from '../lib/drafts'
-import { examLine, GROUP_LABEL, STATUS_LABEL } from '../lib/exams'
+import { examLine, examStatusLabel, GROUP_LABEL } from '../lib/exams'
 import { ResultView } from './ExamsTab'
 import { ConsultationBody, Identification } from './PatientChart'
 import { NoteColumns, NoteExams, NoteText } from '../components/NoteColumns'
@@ -198,7 +198,7 @@ export default function FullRecord() {
                 <h3 className="fr-h3">{GROUP_LABEL[g]}</h3>
                 {list.length ? list.map((e) => (
                   <div key={e.id} className="fr-lab">
-                    <b>{examLine(e)}</b>{e.priority === 'urgent' ? ' (urgente)' : ''} · pedido {dm(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)} · {STATUS_LABEL[g][e.status]}{e.cancelReason ? `: ${e.cancelReason}` : ''}
+                    <b>{examLine(e)}</b>{e.priority === 'urgent' ? ' (urgente)' : ''} · pedido {dm(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)} · {examStatusLabel(e)}{e.cancelReason ? `: ${e.cancelReason}` : ''}
                     {e.indication && <p>Indicación: {e.indication}</p>}
                     {e.result && <ResultView e={e} />}
                     {e.result?.fileIds?.map((f) => <PdfOrImage key={f} id={f} />)}
