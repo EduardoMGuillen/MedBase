@@ -1140,10 +1140,11 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
       )}
       <div className="note-editor">
       <div className="soap-stack">
-        {/* MC8 (ronda 6): opcional; si no se toca, no se guarda nada. Va antes del examen físico (en SOAP, al principio) */}
+        {/* MC8 (ronda 6): opcional; si no se toca, no se guarda nada. Va antes del examen físico (en SOAP, arriba de la S: NE6) */}
         {format === 'soap' && kind === 'evolution' && dxField}
+        {/* NE6 (ronda 9): en SOAP, los signos vitales van arriba, antes de «S. Subjetivo» (los diagnósticos, NE4, quedan encima) */}
+        {format === 'soap' && vitalsBlock}
         {format === 'soap' ? SOAP.map((s) => (<div key={s.key} style={{ display: 'contents' }}>
-          {s.key === 'objective' && vitalsBlock}
           <label className="field dictate-field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
             <AutoTextarea value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} />
             <DictateButton label={s.label} onText={(f) => setN((x) => ({ ...x, [s.key]: f(x[s.key]) }))} /></label></div>

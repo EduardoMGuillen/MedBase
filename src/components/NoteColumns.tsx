@@ -102,7 +102,7 @@ const SOAP_TEXT = [['subjective', 'S. Subjetivo'], ['objective', 'O. Objetivo'],
  */
 export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { evolution?: string }; vitals?: Vitals; ageYears?: number }) {
   const empty = <span className="muted">Sin datos.</span>
-  // MC8 (ronda 6): los signos vitales anotados en la nota, en la franja de siempre, encima del examen físico (o del objetivo)
+  // MC8 (ronda 6): los signos vitales anotados en la nota, en la franja de siempre, encima del examen físico (en SOAP, arriba de la S: NE6, ronda 9)
   const strip = vitals && <div className="note__sec"><h4>Signos vitales</h4><VitalsStrip v={vitals} ageYears={ageYears} />{vitals.takenAt && <small className="muted">Tomados a las {new Date(vitals.takenAt).toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })}</small>}</div>
   if (n.format === 'dx') {
     return <>
@@ -118,6 +118,8 @@ export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subj
   // NE4 (ronda 8): una evolución SOAP también lleva los diagnósticos vigentes (las de antes no)
   return <>
     {!!n.diagnoses?.length && <div className="note__sec"><h4>Diagnósticos</h4><ol className="note__list">{n.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol></div>}
-    {SOAP_TEXT.map(([k, label]) => <div key={k}>{k === 'objective' && strip}<div className="note__sec"><h4>{label}</h4><p>{n[k] || empty}</p></div></div>)}
+    {/* NE6 (ronda 9): los signos vitales arriba, antes de la S */}
+    {strip}
+    {SOAP_TEXT.map(([k, label]) => <div key={k}><div className="note__sec"><h4>{label}</h4><p>{n[k] || empty}</p></div></div>)}
   </>
 }
