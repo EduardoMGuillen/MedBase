@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { CalendarDays, Clock } from 'lucide-react'
 import {
   clinicParts, dateFromDisplay, dateToDisplay, fromDisplay, maskDate, maskDateTime, maskTime, MONTHS, timeFromDisplay, toDisplay, toLocalValue, WEEKDAYS_SHORT,
@@ -18,14 +19,57 @@ const MINUTES = Array.from({ length: 60 }, (_, i) => pad(i))
 function usePopover() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLSpanElement>(null)
+  const popRef = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     if (!open) return
-    const close = (e: MouseEvent | KeyboardEvent) => { if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) setOpen(false) }
+    // El panel va fuera del campo (en un portal): un clic adentro de cualquiera de los dos no lo cierra
+    const close = (e: MouseEvent) => { const t = e.target as Node; if (!ref.current?.contains(t) && !popRef.current?.contains(t)) setOpen(false) }
+    // Esc cierra solo el calendario, no la ventana en que está
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); e.stopPropagation(); setOpen(false) } }
     document.addEventListener('mousedown', close)
-    document.addEventListener('keydown', close)
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close) }
+    window.addEventListener('keydown', esc, true)
+    return () => { document.removeEventListener('mousedown', close); window.removeEventListener('keydown', esc, true) }
   }, [open])
-  return { open, setOpen, ref }
+  return { open, setOpen, ref, popRef }
+}
+
+/**
+ * EN4 (ronda 10): el calendario y la hora se abren POR ENCIMA DE TODO (en un portal, con posición fija): ninguna ventana con
+ * desplazamiento los recorta. Van debajo del campo o, si abajo no cabe, arriba; nunca se salen de la pantalla (si no caben
+ * ni arriba ni abajo, se desplazan por dentro). Vale para todas las ventanas que usan la fecha y hora de GE3.
+ */
+function Popover({ anchor, popRef, className, label, children }: { anchor: React.RefObject<HTMLSpanElement | null>; popRef: React.RefObject<HTMLSpanElement | null>; className: string; label: string; children: ReactNode }) {
+  const [pos, setPos] = useState<{ top: number; left: number; maxHeight?: number } | null>(null)
+  useLayoutEffect(() => {
+    const place = () => {
+      const a = anchor.current?.getBoundingClientRect()
+      const el = popRef.current
+      if (!a || !el) return
+      const gap = 4, margin = 8
+      const h = el.scrollHeight, w = el.offsetWidth
+      const below = window.innerHeight - a.bottom - gap - margin
+      const above = a.top - gap - margin
+      let top: number
+      let maxHeight: number | undefined
+      if (h <= below) top = a.bottom + gap
+      else if (h <= above) top = a.top - gap - h
+      else if (below >= above) { top = a.bottom + gap; maxHeight = below }
+      else { top = margin; maxHeight = above }
+      const left = Math.max(margin, Math.min(a.left, window.innerWidth - w - margin))
+      setPos((p) => (p && p.top === top && p.left === left && p.maxHeight === maxHeight ? p : { top, left, maxHeight }))
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true) }
+  }, [anchor, popRef])
+  return createPortal(
+    <span ref={popRef} className={`dtf__pop dtf__pop--floating ${className}`} role="dialog" aria-label={label}
+      style={pos ? { top: pos.top, left: pos.left, maxHeight: pos.maxHeight, overflowY: pos.maxHeight ? 'auto' : undefined } : { top: -9999, left: -9999 }}>
+      {children}
+    </span>,
+    document.body,
+  )
 }
 
 /** Calendario de un mes en español (semanas de lunes a domingo). */
@@ -100,14 +144,14 @@ export function DateTimeField({ value, onChange, max, min, invalid, id, label = 
       {now && <button type="button" className="btn btn--ghost btn--sm dtf__now" onClick={() => set(toLocalValue(new Date()))}>Ahora</button>}
       {text.length >= 16 && !parsed && <small className="field__msg field__msg--error dtf__msg">No es una fecha y hora válida.</small>}
       {pop.open && (
-        <span className="dtf__pop" role="dialog" aria-label={label}>
+        <Popover anchor={pop.ref} popRef={pop.popRef} className="" label={label}>
           <Calendar value={value} min={min} max={max} onPick={(ymd) => set(`${ymd}T${value.slice(11, 16) || pad(clinicParts(new Date()).h) + ':' + pad(clinicParts(new Date()).mi)}`)} />
           <TimePicker value={value.slice(11, 16)} onPick={(hm) => set(`${value.slice(0, 10) || toLocalValue(new Date()).slice(0, 10)}T${hm}`)} />
           <span className="dtf__popfoot">
             {now && <button type="button" className="btn btn--ghost btn--sm" onClick={() => set(toLocalValue(new Date()))}>Ahora</button>}
             <button type="button" className="btn btn--primary btn--sm" onClick={() => pop.setOpen(false)}>Listo</button>
           </span>
-        </span>
+        </Popover>
       )}
     </span>
   )
@@ -140,10 +184,10 @@ export function DateField({ value, onChange, max, min, invalid, id, label = 'Fec
       <button type="button" className="icon-btn dtf__btn" aria-label={`Elegir ${label.toLowerCase()}`} aria-expanded={pop.open} onClick={() => pop.setOpen(!pop.open)}><CalendarDays size={17} /></button>
       {text.length >= 10 && !parsed && <small className="field__msg field__msg--error dtf__msg">No es una fecha válida.</small>}
       {pop.open && (
-        <span className="dtf__pop" role="dialog" aria-label={label}>
+        <Popover anchor={pop.ref} popRef={pop.popRef} className="" label={label}>
           <Calendar value={value} min={min} max={max} onPick={(ymd) => { set(ymd); pop.setOpen(false) }} />
           <span className="dtf__popfoot"><button type="button" className="btn btn--ghost btn--sm" onClick={() => { set(toLocalValue(new Date()).slice(0, 10)); pop.setOpen(false) }}>Hoy</button></span>
-        </span>
+        </Popover>
       )}
     </span>
   )
@@ -168,10 +212,10 @@ export function TimeField({ value, onChange, invalid, id, label = 'Hora', step }
         onBlur={() => { if (!timeFromDisplay(text)) setText(value) }} />
       <button type="button" className="icon-btn dtf__btn" aria-label={`Elegir ${label.toLowerCase()}`} aria-expanded={pop.open} onClick={() => pop.setOpen(!pop.open)}><Clock size={17} /></button>
       {pop.open && (
-        <span className="dtf__pop dtf__pop--time" role="dialog" aria-label={label}>
+        <Popover anchor={pop.ref} popRef={pop.popRef} className="dtf__pop--time" label={label}>
           <TimePicker value={value} onPick={set} />
           <span className="dtf__popfoot"><button type="button" className="btn btn--primary btn--sm" onClick={() => pop.setOpen(false)}>Listo</button></span>
-        </span>
+        </Popover>
       )}
     </span>
   )

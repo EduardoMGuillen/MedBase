@@ -135,7 +135,7 @@ describe('UM3 (ronda 10): limpieza de los umbrales archivados', () => {
 
 describe('GE5 (ronda 10): paginación', () => {
   test('números de página con puntos suspensivos', async () => {
-    const { pageNumbers, paginate } = await import('../src/components/Pagination.js')
+    const { pageNumbers, paginate } = await import('../src/lib/pagination.js')
     assert.deepEqual(pageNumbers(1, 3), [1, 2, 3])
     assert.deepEqual(pageNumbers(1, 21), [1, 2, 3, 4, null, 21])
     assert.deepEqual(pageNumbers(10, 21), [1, null, 9, 10, 11, null, 21])
@@ -160,5 +160,15 @@ describe('GE5 (ronda 10): paginación', () => {
     assert.equal(log.status, 200)
     assert.ok(Array.isArray(log.body.rows) && log.body.rows.length <= 10 && log.body.total >= log.body.rows.length)
     assert.ok(Array.isArray((await admin.get('/api/audit')).body), 'sin página, todo (exportar a Excel)')
+  })
+})
+
+describe('EN4 (ronda 10): «Día N de M» de un tratamiento', () => {
+  test('una orden de 1 día que empezó a las 22:30 sigue en «Día 1 de 1» a la mañana siguiente (no «Día 2 de 1»)', async () => {
+    const { treatmentDay } = await import('../src/lib/inpatient.js')
+    const first = '2026-11-03T04:30:00.000Z' // 2/11 22:30 en Honduras
+    assert.equal(treatmentDay({ firstAt: first, days: 1 }, new Date('2026-11-03T12:30:00.000Z')), 'Día 1 de 1') // 3/11 06:30
+    assert.equal(treatmentDay({ firstAt: first, days: 1 }, new Date('2026-11-04T04:30:00.000Z')), 'Completó 1 día')
+    assert.equal(treatmentDay({ firstAt: first, days: 7 }, new Date('2026-11-05T05:00:00.000Z')), 'Día 3 de 7')
   })
 })

@@ -18,15 +18,27 @@ export function StatusBadge({ status }: { status: ApptStatus }) {
 }
 
 /** `top` (NE1, ronda 7): lo que queda fijo bajo el título (p. ej. «Alergias») mientras el cuerpo se desplaza. */
-export function Modal({ title, onClose, children, footer, top, wide = false, className = '' }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; top?: ReactNode; wide?: boolean; className?: string }) {
+/**
+ * `steady` (EN4, ronda 10): la ventana no se encoge de golpe cuando cambia su contenido (p. ej. al pasar de una pestaña a
+ * otra): guarda el alto mayor que tuvo, sin pasar del máximo de la ventana.
+ */
+export function Modal({ title, onClose, children, footer, top, wide = false, className = '', steady = false }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; top?: ReactNode; wide?: boolean; className?: string; steady?: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+  const box = useRef<HTMLDivElement>(null)
+  const tallest = useRef(0)
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!steady || !el) return
+    const h = Math.min(el.offsetHeight, window.innerHeight * 0.9)
+    if (h > tallest.current) { tallest.current = h; el.style.minHeight = `${h}px` }
+  })
   return (
     <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${wide ? 'modal--wide' : ''} ${className}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={box} className={`modal ${wide ? 'modal--wide' : ''} ${className}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal__head">
           <h2>{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Cerrar"><X size={18} /></button>

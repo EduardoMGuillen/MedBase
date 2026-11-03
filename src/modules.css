@@ -794,3 +794,20 @@ button.src-tag--none { cursor: pointer; }
 .exam-picker-modal .modal__body > .exam-picker__results { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; align-content: start; }
 .exam-picker-modal .exam-picker__menu { max-height: 28vh; }
 .exam-picker__empty { padding: 18px 4px; text-align: center; }
+/* EN4 (ronda 10): el calendario de GE3 flota por encima de todo (portal con posición fija; ninguna ventana lo recorta) */
+.dtf__pop--floating { position: fixed; z-index: 1000; }
+
+/* EN4 (ronda 10): ventana de registro de una dosis (y suspensión de infusión y corrección). ~560 px de ancho, alto según el
+   contenido hasta el 90 % de la pantalla, sin barra propia si cabe; título y pie fijos, solo el cuerpo se desplaza. */
+.dose-modal { width: min(560px, 100%); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden !important; }
+.dose-modal .modal__head { flex: none; padding-bottom: 4px; }
+.dose-modal .modal__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
+.dose-modal .modal__foot { flex: none; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.dose-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; padding: 4px; gap: 4px; }
+.dose-tabs button { min-height: 44px; font-size: 15px; font-weight: 500; color: var(--ink-deep); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; }
+.dose-tabs button:hover { background: var(--ward); }
+.dose-tabs button[aria-checked='true'] { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 700; box-shadow: none; }
+@media (max-width: 600px) {
+  .modal-bg:has(.dose-modal) { place-items: stretch; }
+  .dose-modal { max-height: 100vh !important; height: 100vh; border-radius: 0 !important; }
+}

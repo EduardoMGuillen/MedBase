@@ -524,7 +524,7 @@ function StopInfusionModal({ med, onClose, onSaved }: { med: InpatientMed; onClo
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   return (
-    <Modal title="Suspender infusión" onClose={onClose} footer={<>
+    <Modal title="Suspender infusión" className="dose-modal" onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--danger" disabled={busy} onClick={async () => {
         setBusy(true)
@@ -578,7 +578,7 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
   const last = med.prn ? doses.filter((d) => d.status === 'given').sort((a, b) => b.givenAt.localeCompare(a.givenAt))[0] : undefined
   const tooSoon = last && med.everyHours && Date.now() - new Date(last.givenAt).getTime() < med.everyHours * 3_600_000
   return (
-    <Modal title={med.nebulization ? 'Nebulización' : medLabel(med)} onClose={onClose} footer={<>
+    <Modal title={med.nebulization ? 'Nebulización' : medLabel(med)} className="dose-modal" steady onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className={`btn ${given ? 'btn--primary' : 'btn--danger'}`} disabled={busy || (!given && !note.trim()) || (old && reason.trim().length < 5)} onClick={async () => {
         setBusy(true)
@@ -629,9 +629,10 @@ function SkipReasons({ value, onChange, reasons = SKIP_REASONS }: { value: strin
 }
 
 /** OB1 (ronda 5): Administrada, No aplicada u Omitida. */
+/** EN4 (ronda 10): las tres pestañas como control segmentado a todo el ancho, iguales, de 44 px o más, con la elegida marcada. */
 function DoseStatus({ value, onChange }: { value: Dose['status']; onChange: (s: Dose['status']) => void }) {
   return (
-    <div className="segmented" role="radiogroup" aria-label="Resultado">
+    <div className="segmented dose-tabs" role="radiogroup" aria-label="Resultado">
       {(['given', 'skipped', 'omitted'] as const).map((s) => <button key={s} type="button" role="radio" aria-checked={value === s} onClick={() => onChange(s)}>{DOSE_LABEL[s]}</button>)}
     </div>
   )
@@ -649,7 +650,7 @@ function CorrectDoseModal({ med, dose, onClose, onSaved }: { med: InpatientMed; 
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   return (
-    <Modal title={`Corregir: ${medLabel(med)}`} onClose={onClose} footer={<>
+    <Modal title={`Corregir: ${medLabel(med)}`} className="dose-modal" steady onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={busy || (!grace && reason.trim().length < 5) || (!given && !note.trim())} onClick={async () => {
         setBusy(true)

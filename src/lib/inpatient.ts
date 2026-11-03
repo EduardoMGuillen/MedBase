@@ -177,11 +177,17 @@ export function durationDays(duration?: string) {
   return /semana/.test(m[2] ?? '') ? n * 7 : /mes/.test(m[2] ?? '') ? n * 30 : n
 }
 
-/** Un medicamento sin días queda "hasta nueva orden"; con días, se cuenta "Día N de M". */
+/**
+ * Un medicamento sin días queda "hasta nueva orden"; con días, se cuenta "Día N de M".
+ * EN4 (ronda 10): con días, N se cuenta en periodos de 24 horas desde la primera dosis, igual que el fin del tratamiento
+ * (`courseEnd`). Antes se contaba por día del calendario y una orden de 1 día que empezó a las 22:30 decía «Día 2 de 1» a
+ * la mañana siguiente, aunque seguía vigente hasta las 22:30. Sin días se sigue contando por día del calendario.
+ */
 export function treatmentDay(m: Pick<InpatientMed, 'firstAt' | 'days'>, now = new Date()) {
   if (courseDone(m, now)) return `Completó ${m.days} ${m.days === 1 ? 'día' : 'días'}`
-  const n = Math.max(1, stayDay(m.firstAt, now))
-  return m.days ? `Día ${n} de ${m.days}` : `Día ${n} · Hasta nueva orden`
+  if (!m.days) return `Día ${Math.max(1, stayDay(m.firstAt, now))} · Hasta nueva orden`
+  const n = Math.min(m.days, Math.max(1, Math.floor((now.getTime() - new Date(m.firstAt).getTime()) / (24 * HOUR)) + 1))
+  return `Día ${n} de ${m.days}`
 }
 
 /** Día de estancia: el día del ingreso es el día 1. */
