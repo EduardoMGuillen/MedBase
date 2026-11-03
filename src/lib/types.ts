@@ -779,7 +779,8 @@ export interface AuthorizationData {
 
 /** Referencia a otro centro (consultorio): lo que se imprime, como se emitió. */
 export interface ReferralData {
-  patient: { name: string; dni?: string; age: string; sex?: 'F' | 'M'; record: string }
+  /** RF1 (ronda 8): también las alergias del paciente. */
+  patient: { name: string; dni?: string; age: string; sex?: 'F' | 'M'; record: string; allergies?: string[] }
   doctor: { name: string; license?: string; specialty?: string }
   place: { name: string; address: string; phone: string; logo?: string; office?: boolean }
   admittedAt: string
@@ -813,6 +814,13 @@ export interface ReferralData {
   transport?: string
   /** Se informó al paciente o a su responsable del motivo y el destino. */
   informed?: boolean
+  /** RF1 (ronda 8): prioridad «Rutina | Urgente» (la misma de las órdenes de examen). Las de antes usan `urgency`. */
+  priority?: 'routine' | 'urgent'
+  /**
+   * RF1: casilla obligatoria «El paciente (o su representante) fue informado de la referencia y está de acuerdo en que su
+   * información clínica se comparta con el centro receptor», con la fecha y hora en que se marcó.
+   */
+  consentAt?: string
 }
 
 export type ReferralSource = 'observation' | 'hospital' | 'consultation'
@@ -821,6 +829,8 @@ export interface Referral {
   id: string
   hospitalizationId?: string
   consultationId?: string
+  /** RF1 (ronda 8): emitida desde una consulta en borrador (se enlaza a la consulta al firmarla). */
+  appointmentId?: string
   patientId: string
   number: string
   data: ReferralData

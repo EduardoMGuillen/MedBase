@@ -31,7 +31,7 @@ import { useExamCatalog } from '../lib/useExamCatalog'
 import { Addenda, DraftBadge, SignedBadge } from '../components/Addenda'
 import { useDraftSync } from '../lib/drafts'
 import { BedFields } from '../components/BedFields'
-import { ReferralModal } from './Referral'
+import { ReferralActions, ReferralModal } from './Referral'
 import { features } from '../lib/permissions'
 import { ConsultationBody, Identification } from './PatientChart'
 import { DischargeDocuments } from './Epicrisis'
@@ -670,6 +670,9 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
   const [referring, setReferring] = useState(false)
   const { settings } = useStore()
   const discharged = notes.some((n) => n.kind === 'discharge')
+  // RF1 (ronda 8): «¿Registrar el egreso?» después de firmar una referencia abre el egreso con «Trasladado a otro centro»
+  const [notesParams, setNotesParams] = useSearchParams()
+  const transfer = notesParams.get('egreso') === 'traslado'
   const [writing, setWriting] = useState<null | 'note' | 'procedure' | 'discharge' | 'authorization'>(null)
   // EX2 (ronda 8): lote de exámenes con externos de la nota recién firmada
   const [ordersFor, setOrdersFor] = useState<string | null>(null)
@@ -687,6 +690,11 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
     ...file.procedures.filter((x) => x.kind === 'procedure').map((x) => ({ at: x.createdAt, key: x.id, legacy: x })),
   ].sort((a, b) => a.at.localeCompare(b.at) || a.key.localeCompare(b.key))
   const doctor = can('inpatient.orders')
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (transfer && doctor && hasAdmission && !discharged && h.status === 'active') setWriting('discharge')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transfer])
   return (
     <div className="hc">
       {open && (doctor || can('inpatient.care')) && (
@@ -712,7 +720,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         onCreated={(a) => { setWriting(null); setSurgicalFor(a.id) }} />}
       {surgicalFor && <ConsentChoice authorizationId={surgicalFor} p={p} onDone={() => { setSurgicalFor(null); reload(); if (procDraft) setWriting('procedure') }} />}
       {/* MC5: la nota de egreso se escribe en la misma hoja que la epicrisis */}
-      {writing === 'discharge' && <DischargeWriter file={file} p={p} onDone={() => { setWriting(null); reload() }} />}
+      {writing === 'discharge' && <DischargeWriter file={file} p={p} initialCondition={transfer ? 'Trasladado a otro centro' : undefined} onDone={() => { setWriting(null); reload(); if (transfer) { const q = new URLSearchParams(notesParams); q.delete('egreso'); setNotesParams(q, { replace: true }) } }} />}
       {referring && <ReferralModal from={{ kind: 'stay', id: h.id }} stayKind={h.kind === 'observation' ? 'observation' : 'hospital'} onClose={() => { setReferring(false); reload() }} />}
       {converting && <ConvertModal file={file} p={p} onClose={() => setConverting(false)} onDone={() => nav(`/app/hospitalizados/${h.id}?firmar=1`)} />}
       {h.consultationId && <ConsultEntry consultationId={h.consultationId} file={file} />}
@@ -995,7 +1003,6 @@ const EMPTY_MED: NewMed = { drug: '', presentation: '', dose: '', route: 'Intrav
 
 function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: (examBatch?: string) => void; onStale?: () => void }) {
   const { addInpatientNote } = useStore()
-  const nav = useNavigate()
   // Una nota, un identificador: si se guarda dos veces no se duplica (ni sus medicamentos en la hoja)
   const [clientId] = useState(() => crypto.randomUUID())
   const [n, setN] = useState({ subjective: '', objective: '', assessment: kind === 'admission' ? file.hospitalization.diagnoses.map((d) => d.label).join('. ') : '', plan: '' })
@@ -1513,9 +1520,9 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
       <DischargeDocuments file={file} />
       {file.referrals.map((r) => (
         <article key={r.id} className="panel consult-entry">
-          <div className="panel__head"><div><h2>Referencia {r.number} {r.voidedAt ? <span className="badge badge--red">Anulada</span> : <span className="badge badge--mint">Emitida</span>}</h2>
+          <div className="panel__head"><div><h2>Referencia {r.number} {r.voidedAt ? <span className="badge badge--red">Anulada</span> : <span className="badge badge--mint">Firmada</span>}</h2>
             <p>{dateTime(r.issuedAt)}, {staffById(r.issuedBy)?.name}{r.destination ? ` · a ${r.destination}` : ''}</p></div>
-            <Link className="btn btn--ghost btn--sm" to={`/app/referencias/${r.id}`}>Ver e imprimir</Link></div>
+            <ReferralActions r={r} /></div>
         </article>
       ))}
       {list.map((a) => <AuthorizationEntry key={a.id} a={a} file={file} p={p} reload={reload} />)}

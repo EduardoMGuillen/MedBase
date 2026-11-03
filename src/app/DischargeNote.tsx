@@ -37,7 +37,7 @@ const toRx = (m: InpatientMed): PrescriptionItem => ({
  * automático), evolución, diagnósticos de egreso, condición, medicamentos al alta, exámenes pendientes, indicaciones y
  * seguimiento. Al guardar se cierra el expediente, se libera la cama, sale la receta y la epicrisis con lo mismo.
  */
-export function DischargeWriter({ file, p, onDone }: { file: InpatientFile; p: Patient; onDone: () => void }) {
+export function DischargeWriter({ file, p, onDone, initialCondition }: { file: InpatientFile; p: Patient; onDone: () => void; initialCondition?: string }) {
   const { discharge } = useStore()
   const nav = useNavigate()
   const h = file.hospitalization
@@ -47,7 +47,8 @@ export function DischargeWriter({ file, p, onDone }: { file: InpatientFile; p: P
   const legacyDx = h.diagnoses.filter((d) => legacyTag(d) && !dx.some((x) => normalize(x.label) === normalize(d.label)))
   const [hea, setHea] = useState('')
   const [summary, setSummary] = useState('')
-  const [condition, setCondition] = useState('Mejorado')
+  // RF1 (ronda 8): después de una referencia se propone «Trasladado a otro centro»
+  const [condition, setCondition] = useState(initialCondition ?? 'Mejorado')
   const [items, setItems] = useState<PrescriptionItem[]>([])
   const [medForm, setMedForm] = useState<{ index: number; initial?: PrescriptionItem } | null>(null)
   const [exams, setExams] = useState<ExamInput[]>([])
@@ -63,7 +64,7 @@ export function DischargeWriter({ file, p, onDone }: { file: InpatientFile; p: P
 
   const snapshot: Draft = { hea, summary, dx, condition, items, exams, instructions, followUp, validity }
   const draft = useDraftSync<Draft>('egreso', h.id, snapshot, (d) => {
-    setHea(d.hea ?? ''); setSummary(d.summary ?? ''); if (d.dx?.length) setDx(d.dx); setCondition(d.condition || 'Mejorado'); setItems(d.items ?? [])
+    setHea(d.hea ?? ''); setSummary(d.summary ?? ''); if (d.dx?.length) setDx(d.dx); setCondition(d.condition || initialCondition || 'Mejorado'); setItems(d.items ?? [])
     setExams(d.exams ?? []); setInstructions(d.instructions ?? ''); setFollowUp(d.followUp ?? ''); if (d.validity) setValidity(d.validity)
   }, !summary.trim() && !items.length && !exams.length && !instructions.trim())
 

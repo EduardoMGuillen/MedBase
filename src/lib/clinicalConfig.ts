@@ -96,6 +96,12 @@ export const INFUSION_UNITS = [{ value: 'ml/h', label: 'mL/h', max: 1000 }, { va
 export const XRAY_SUBGROUPS = ['Rayos X']
 export const XRAY_PREFIXES = ['Rayos X', 'Radiografía', 'Rx']
 
+/** RF1 (ronda 8). VALIDAR: Emil. Pie fijo de la hoja de referencia (confidencialidad). Sin citas legales en pantalla. */
+export const REFERRAL_FOOTER = 'Documento confidencial. Contiene información clínica para uso exclusivo del personal de salud del centro receptor.'
+
+/** RF1. VALIDAR: Emil. Texto de la casilla obligatoria antes de firmar la referencia. */
+export const REFERRAL_CONSENT = 'El paciente (o su representante) fue informado de la referencia y está de acuerdo en que su información clínica se comparta con el centro receptor.'
+
 /** Un analito con su umbral crítico. Un límite vacío es «No aplica». */
 export interface CriticalAnalyte { id: string; name: string; unit?: string; low?: number; high?: number; archivedAt?: string
   /** Ronda 8: la fuente del umbral que trae la app (referencia bibliográfica). Los que agrega la clínica no la tienen. */

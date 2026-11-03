@@ -920,6 +920,8 @@ export function createApp(opts: AppOptions) {
           c.history, c.exam, JSON.stringify(c.diagnoses), c.orders.map((o, i) => `${i + 1}. ${o}`).join('\n'), c.vitalsId ?? null, rxId, JSON.stringify(c.orders), c.observations, cid,
           c.indications ? JSON.stringify(c.indications) : null, stayKind, items.length ? JSON.stringify(items) : null])
       await q.run(`UPDATE appointments SET status = 'done' WHERE id = ?`, [c.appointmentId])
+      // RF1 (ronda 8): las referencias firmadas con la nota en borrador quedan en esta consulta
+      await q.run('UPDATE referrals SET consultation_id = ? WHERE appointment_id = ? AND consultation_id IS NULL AND clinic_id = ?', [consultId, c.appointmentId, cid])
       for (const f of c.followups) await insertFollowup(q, cid, user.id, { ...f, patientId })
       // Con ingreso, los exámenes son de la estancia (enfermería los gestiona); si no, de la consulta externa
       examBatch = await insertExams(q, { clinicId: cid, patientId, consultationId: consultId, hospitalizationId: stayId ?? undefined, by: user.id, at: now.toISOString() }, c.exams)

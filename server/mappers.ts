@@ -225,7 +225,7 @@ export const toClinic = (r: Row): Clinic => ({
 })
 
 export const toReferral = (r: Row): Referral => ({
-  id: String(r.id), hospitalizationId: s(r.hospitalization_id), consultationId: s(r.consultation_id), patientId: String(r.patient_id), number: String(r.number), data: j<ReferralData>(r.data, {} as ReferralData),
+  id: String(r.id), hospitalizationId: s(r.hospitalization_id), consultationId: s(r.consultation_id), appointmentId: s(r.appointment_id), patientId: String(r.patient_id), number: String(r.number), data: j<ReferralData>(r.data, {} as ReferralData),
   destination: s(r.destination), issuedBy: String(r.issued_by), issuedAt: String(r.issued_at), voidedAt: s(r.voided_at), voidedBy: s(r.voided_by), voidReason: s(r.void_reason),
 })
 

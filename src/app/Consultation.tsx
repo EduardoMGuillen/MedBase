@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { DictateField } from '../components/Dictate'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ClipboardList, FlaskConical, Pencil, Pill, Plus, X } from 'lucide-react'
+import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ClipboardList, FlaskConical, Pencil, Pill, Plus, Send, X } from 'lucide-react'
 import { useStore, type FollowupInput } from '../lib/store'
 import { PatientHeader } from '../components/PatientHeader'
-import { date, medicationOrder, missingDays, time } from '../lib/format'
+import { date, dxCode, medicationLine, medicationOrder, missingDays, time } from '../lib/format'
 import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { normalize } from '../lib/patients'
 import { useVademecum } from '../lib/vademecum'
@@ -15,6 +15,7 @@ import { features } from '../lib/permissions'
 import { BackgroundView, useChart, VitalsGrid } from './PatientChart'
 import { BackgroundForm, IdentityPrompt } from './PatientForms'
 import { VitalsModal } from './WaitingRoom'
+import { ReferralModal } from './Referral'
 import { emptyFollowup, FollowupFields } from './Followups'
 import type { Diagnosis, ExamInput, PrescriptionItem, VitalsMode } from '../lib/types'
 import { VitalsFrequency } from '../components/VitalsFrequency'
@@ -83,6 +84,8 @@ export default function Consultation() {
   const [newFollowup, setNewFollowup] = useState<FollowupInput | null>(null)
   const [admit, setAdmit] = useState(saved.admit ?? false)
   const [observe, setObserve] = useState(saved.observe ?? false)
+  // RF1 (ronda 8): hoja de referencia desde la consulta en borrador
+  const [referring, setReferring] = useState(false)
   // MC6 (ronda 6): con ingreso, el médico indica cada cuánto se toman los signos (por turno por defecto)
   const [vitalsPlan, setVitalsPlan] = useState<VitalsMode>(saved.vitalsPlan ?? { mode: 'shift' })
   const [dx, setDx] = useState<Diagnosis[]>(saved.dx ?? [])
@@ -392,6 +395,10 @@ export default function Consultation() {
                       <span><b>Ingreso a hospitalización</b><small>Esta nota queda como nota de ingreso y sus medicamentos pasan a la hoja. Al firmar eliges la cama.</small></span></label>}
                   </div>
               )}
+              {/* RF1 (ronda 8): referir a otro centro con la nota todavía en borrador (también desde la nota firmada) */}
+              {store.user?.role === 'doctor' && appt.doctorId === store.user.id && (
+                <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => setReferring(true)}><Send size={15} />Referir a otro centro</button>
+              )}
               {rxCount > 0 && <RxValidityField value={validity} onChange={setValidity} />}
               <p style={{ fontSize: 14, color: 'var(--muted)' }}>
                 {missing.length ? `Para firmar falta ${missing.join(', ')}.` : `Al firmar se cierra la cita${rxCount ? ` y se emite una receta con ${rxCount} medicamento${rxCount > 1 ? 's' : ''}` : ''}${admit && !hospitalized ? ', se ingresa a hospitalización' : observe && !hospitalized ? ' e ingresa a observación' : ''}${inClinic.length ? `${ambulatory ? ', queda en observación para aplicarle ' : '; pasan a la hoja de medicamentos: '}${inClinic.map((m) => m.drug).join(', ')}` : ''}.`}
@@ -403,6 +410,9 @@ export default function Consultation() {
       </div>
 
       {triage && <VitalsModal appt={appt} onClose={() => setTriage(false)} onSaved={() => setTriage(false)} />}
+      {referring && <ReferralModal from={{ kind: 'appointment', id: appt.id }} onClose={() => setReferring(false)} onSigned={(r) => { setReferring(false); store.notify(`Referencia ${r.number} firmada. Queda en el expediente; al firmar la nota se enlaza a esta consulta.`) }}
+        prefill={{ history, exam, admissionDiagnosis: dx.map((d) => `${d.label} (${dxCode(d)})`).join('; '),
+          treatment: [...meds.map((m) => medicationLine(m)), ...(indications.length ? [`Indicaciones: ${indications.join('; ')}`] : [])].join('\n') }} />}
       {editBg && <BackgroundForm initial={p} onClose={() => setEditBg(false)} onSave={async (data) => { if (await updatePatient(p.id, data)) { setEditBg(false); reload() } }} />}
     </div>
   )

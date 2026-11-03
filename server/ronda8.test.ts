@@ -218,29 +218,51 @@ describe('Ronda 8: referencia a otro centro', () => {
     assert.equal(draft.body.source, 'consultation')
     assert.match(draft.body.admissionDiagnosis, /Fiebre/)
     assert.match(draft.body.treatment, /Acetaminofén/)
-    const r = await doc.post(`/api/consultations/${consultationId}/referral`, { ...draft.body, reason: 'Valoración por infectología', destination: 'Hospital Escuela', informed: true })
+    const r = await doc.post(`/api/consultations/${consultationId}/referral`, { ...draft.body, reason: 'Valoración por infectología', destination: 'Hospital Escuela', priority: 'urgent', consent: true })
     assert.equal(r.status, 201, JSON.stringify(r.body))
     assert.equal(r.body.consultationId, consultationId)
     assert.equal(r.body.data.reason, 'Valoración por infectología')
+    assert.equal(r.body.data.priority, 'urgent')
+    assert.ok(Array.isArray(r.body.data.patient.allergies), 'la hoja lleva las alergias')
     const note = (await doc.get(`/api/consultations/${consultationId}`)).body
     assert.equal(note.referrals.length, 1)
+    // RF1: la impresión queda en la bitácora; la lista del paciente la trae
+    assert.equal((await doc.post(`/api/referrals/${r.body.id}/printed`, { how: 'print' })).status, 200)
+    assert.ok((await doc.get(`/api/patients/${draft.body.patient ? r.body.patientId : ''}/referrals`)).body.some((x: any) => x.id === r.body.id))
   })
 
-  test('desde la hospitalización y la observación de la clínica; si sigue internado, la estancia no se cierra', async () => {
+  test('RF1: desde la consulta en borrador (por su cita); al firmar la nota se enlaza a la consulta', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const reception = await as('smejia@demo.clinara')
+    const p = await freePatient(doc)
+    const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-herrera', reason: 'Dolor torácico' })
+    const draft = await doc.get(`/api/appointments/${w.body.id}/referral-draft`)
+    assert.equal(draft.status, 200)
+    const r = await doc.post(`/api/appointments/${w.body.id}/referral`, { ...draft.body, history: 'Dolor opresivo', admissionDiagnosis: 'Dolor torácico', reason: 'Valoración por cardiología', destination: 'Hospital Escuela', consent: true })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(r.body.consultationId, undefined)
+    const c = await doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Dolor torácico', symptoms: [], history: 'Dolor opresivo', exam: 'Estable', observations: '',
+      diagnoses: [{ code: 'MD30', label: 'Dolor torácico' }], orders: ['Reposo.'], indications: ['Reposo.'], plan: '', items: [], exams: [] })
+    assert.equal(c.status, 201, JSON.stringify(c.body))
+    assert.equal((await doc.get(`/api/referrals/${r.body.id}`)).body.consultationId, c.body.consultationId)
+  })
+
+  test('desde la hospitalización y la observación de la clínica; RF1: firmarla nunca cierra la estancia', async () => {
     const doc = await as('lherrera@demo.clinara')
     const hosp = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     const d1 = await doc.get(`/api/inpatient/${hosp.id}/referral-draft`)
     assert.equal(d1.status, 200)
     assert.equal(d1.body.source, 'hospital')
-    const r1 = await doc.post(`/api/inpatient/${hosp.id}/referral`, { ...d1.body, reason: 'Tomografía que no hay en la clínica', closeStay: false })
+    const r1 = await doc.post(`/api/inpatient/${hosp.id}/referral`, { ...d1.body, reason: 'Tomografía que no hay en la clínica', destination: 'Centro de imágenes', consent: true })
     assert.equal(r1.status, 201, JSON.stringify(r1.body))
     assert.equal((await doc.get(`/api/inpatient/${hosp.id}`)).body.hospitalization.status, 'active')
     const obs = (await consult(doc, (await freePatient(doc)).id, true)).hospitalizationId!
     const d2 = await doc.get(`/api/inpatient/${obs}/referral-draft`)
-    const r2 = await doc.post(`/api/inpatient/${obs}/referral`, { ...d2.body, reason: 'Requiere UCI' })
+    const r2 = await doc.post(`/api/inpatient/${obs}/referral`, { ...d2.body, reason: 'Requiere UCI', destination: 'Hospital Escuela', consent: true, closeStay: true })
     assert.equal(r2.status, 201)
-    const after2 = (await doc.get(`/api/inpatient/${obs}`)).body.hospitalization
-    assert.deepEqual([after2.status, after2.outcome], ['discharged', 'referred'])
+    assert.equal((await doc.get(`/api/inpatient/${obs}`)).body.hospitalization.status, 'active')
+    // Enfermería no firma referencias
+    assert.equal((await (await as('crios@demo.clinara')).post(`/api/inpatient/${obs}/referral`, { ...d2.body, reason: 'x x x', destination: 'H', consent: true })).status, 403)
   })
 })
 

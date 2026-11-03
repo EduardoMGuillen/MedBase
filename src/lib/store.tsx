@@ -34,7 +34,9 @@ export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescr
 
 /** Medicamento que el médico indica en una nota de hospitalización. */
 /** Ronda 8: de dónde sale una referencia. */
-export type ReferralFrom = { kind: 'stay' | 'consultation'; id: string }
+/** RF1 (ronda 8): de dónde sale la referencia: una estancia, una consulta firmada o una consulta en borrador (su cita). */
+export type ReferralFrom = { kind: 'stay' | 'consultation' | 'appointment'; id: string }
+const referralBase = (src: ReferralFrom) => `/${src.kind === 'stay' ? 'inpatient' : src.kind === 'appointment' ? 'appointments' : 'consultations'}/${src.id}`
 export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'prnCondition' | 'instructions' | 'days' | 'replacesId' | 'infusionRate' | 'infusionUnit' | 'loadingDose' | 'loadingStat'> & { firstAt?: string }
 export type FollowupInput = Pick<Followup, 'kind' | 'title' | 'dueDate' | 'everyDays' | 'notes' | 'reminderType'>
 
@@ -157,7 +159,7 @@ function useStoreValue() {
     api<{ source: 'api' | 'file'; release: string; results: Diagnosis[]; error?: string }>(`/icd/search?q=${encodeURIComponent(q)}`), [])
   const fetchIcdFrequent = useCallback(() => api<(Diagnosis & { code: string; label: string })[]>('/icd/frequent'), [])
   // Ronda 8: la referencia sale de una estancia (observación u hospitalización) o de una consulta externa
-  const fetchReferralDraft = useCallback((src: ReferralFrom) => api<ReferralData>(`/${src.kind === 'stay' ? 'inpatient' : 'consultations'}/${src.id}/referral-draft`), [])
+  const fetchReferralDraft = useCallback((src: ReferralFrom) => api<ReferralData>(`${referralBase(src)}/referral-draft`), [])
   const fetchReferral = useCallback((id: string) => api<Referral>(`/referrals/${id}`), [])
   const fetchAuthorization = useCallback((id: string) => api<Authorization>(`/authorizations/${id}`), [])
   const fetchCertificate = useCallback((id: string) => api<Certificate>(`/certificates/${id}`), [])
@@ -178,8 +180,10 @@ function useStoreValue() {
     staffById: (id: string) => data.staff.find((s) => s.id === id),
     fetchBalances, fetchAttachmentMeta, fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
     fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient, searchIcd, fetchIcdFrequent, fetchReferralDraft, fetchReferral,
-    emitReferral: (src: ReferralFrom, b: Partial<ReferralData> & { closeStay?: boolean }) => run(() => api<Referral>(`/${src.kind === 'stay' ? 'inpatient' : 'consultations'}/${src.id}/referral`, { body: b }),
-      src.kind === 'stay' && b.closeStay !== false ? 'Referencia emitida; la estancia quedó cerrada como «Referido»' : 'Referencia emitida'),
+    emitReferral: (src: ReferralFrom, b: Partial<ReferralData> & { consent: boolean }) => run(() => api<Referral>(`${referralBase(src)}/referral`, { body: b }),
+      'Referencia firmada'),
+    fetchPatientReferrals: (patientId: string) => api<Referral[]>(`/patients/${patientId}/referrals`),
+    logReferralPrint: (id: string, how: 'print' | 'pdf') => api(`/referrals/${id}/printed`, { body: { how } }).catch(() => null),
     voidReferral: (id: string, reason: string) => run(() => api<Referral>(`/referrals/${id}/void`, { body: { reason } }), 'Referencia anulada'),
     bed: (id?: string) => (id ? data.beds.find((b) => b.id === id) : undefined),
     /** Hospitalización abierta del paciente, si la tiene. */

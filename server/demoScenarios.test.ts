@@ -87,7 +87,7 @@ describe('Casos de demostración para probar cada estado', () => {
     assert.match(draft.diagnosis, /Crisis hipertensiva \(BA03\)/)
     assert.match(draft.medications, /Captopril/)
     assert.match(draft.evolution, /se refiere al hospital/)
-    const r = await doc.post('/api/inpatient/he-re1/referral', { ...draft, condition: 'Estable', destination: 'Hospital Escuela' })
+    const r = await doc.post('/api/inpatient/he-re1/referral', { ...draft, reason: 'Crisis hipertensiva que no cede', condition: 'Estable', destination: 'Hospital Escuela', consent: true })
     assert.equal(r.status, 201, JSON.stringify(r.body))
     assert.equal(r.body.number, `REF-${new Date().getFullYear()}-0002`)
 

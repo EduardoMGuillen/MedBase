@@ -6,7 +6,7 @@ import { can } from '../../src/lib/permissions.js'
 import type { Addendum } from '../../src/lib/types.js'
 
 /** Qué se guarda como borrador mientras se escribe (una consulta, una nota de evolución, de procedimiento, de egreso o de enfermería). */
-const SCOPES = ['consulta', 'evolucion', 'procedimiento', 'egreso', 'enfermeria'] as const
+const SCOPES = ['consulta', 'evolucion', 'procedimiento', 'egreso', 'enfermeria', 'referencia'] as const
 const KIND_LABEL = { correction: 'corrección', info: 'información adicional', result: 'resultado posterior' } as const
 
 export const toAddendum = (r: Row): Addendum => ({

@@ -17,7 +17,8 @@ import { PatientHeader } from '../components/PatientHeader'
 import { age, BACKGROUND_GROUPS, bmi, date, dxCode, examText, time, money } from '../lib/format'
 import { Attachments } from './Attachments'
 import { AllergiesForm, BackgroundForm, IdentificationForm } from './PatientForms'
-import type { Certificate, Consultation, Patient, Vitals } from '../lib/types'
+import type { Certificate, Consultation, Patient, Referral, Vitals } from '../lib/types'
+import { ReferralActions } from './Referral'
 import { CERT_KIND } from '../lib/certificates'
 import { vitalLevel, type VitalKey } from '../lib/vitals'
 import { stayPath, yearsOld } from '../lib/inpatient'
@@ -158,7 +159,7 @@ export function ConsultationBody({ c, vitals, exams, vitalsLine }: { c: Consulta
     meds={<MedLines items={c.orders.slice(c.indications.length)} />} />
 }
 
-type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'exams' | 'rx' | 'certs' | 'files'
+type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'exams' | 'rx' | 'certs' | 'refs' | 'files'
 
 export default function PatientChart() {
   const { id } = useParams()
@@ -177,6 +178,12 @@ export default function PatientChart() {
   const loadExams = useCallback(() => { if (id && can('chart.view')) api<ExamOrder[]>(`/patients/${id}/exams`).then(setExams).catch(() => setExams([])) }, [id, can])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (tab === 'exams') loadExams() }, [tab, id])
+  // RF1 (ronda 8): las referencias del paciente (de consulta externa, observación y hospitalización)
+  const [refs, setRefs] = useState<Referral[] | null>(null)
+  useEffect(() => {
+    if (!id || !can('chart.view')) return
+    api<Referral[]>(`/patients/${id}/referrals`).then(setRefs).catch(() => setRefs([]))
+  }, [id, can])
   const [editing, setEditing] = useState<null | 'id' | 'allergies' | 'background'>(null)
   const clinical = can('chart.view')
   const p = patient(id!)
@@ -199,7 +206,8 @@ export default function PatientChart() {
   const n = (k: unknown[]) => (chart ? ` (${k.length})` : '')
   const tabs: [Tab, string, boolean][] = [
     ['history', 'Historia clínica', true], ['consults', `Consultas${n(cs)}`, clinical], ['hosp', `Hospitalizaciones${n(hs)}`, clinical && (!chart || hs.length > 0)],
-    ['vitals', 'Signos vitales', clinical], ['exams', `Exámenes${exams ? ` (${exams.filter((e) => e.status !== 'cancelled').length})` : ''}`, clinical], ['rx', `Recetas${n(rxs)}`, clinical && can('rx.view')], ['certs', `Constancias${certs ? ` (${certs.length})` : ''}`, clinical], ['files', 'Archivos', clinical],
+    ['vitals', 'Signos vitales', clinical], ['exams', `Exámenes${exams ? ` (${exams.filter((e) => e.status !== 'cancelled').length})` : ''}`, clinical], ['rx', `Recetas${n(rxs)}`, clinical && can('rx.view')], ['certs', `Constancias${certs ? ` (${certs.length})` : ''}`, clinical],
+    ['refs', `Referencias${refs?.length ? ` (${refs.length})` : ''}`, clinical && !!refs?.length], ['files', 'Archivos', clinical],
   ]
   const save = async (data: Partial<Patient>) => { if (await updatePatient(p.id, data)) { setEditing(null); reload() } }
 
@@ -355,6 +363,19 @@ export default function PatientChart() {
               {x.voidedAt ? <span className="badge badge--red">Anulada</span> : <span className="badge badge--mint">Vigente</span>}
             </Link>
           ))}</div> : <div className="empty">{certs ? 'Sin constancias emitidas. Se generan desde la nota de cada consulta.' : 'Cargando…'}</div>}
+        </section>
+      )}
+
+      {tab === 'refs' && clinical && (
+        <section className="panel">
+          {refs?.length ? <div className="rows">{refs.map((r) => (
+            <div key={r.id} className="row" style={{ gridTemplateColumns: '130px 1fr auto' }}>
+              <span className="num" style={{ fontSize: 13.5 }}>{date(r.issuedAt)}<br /><span style={{ color: 'var(--muted)' }}>{r.number}</span></span>
+              <div className="row__who"><strong>Hoja de referencia{r.destination ? ` a ${r.destination}` : ''}</strong>
+                <span>{staffById(r.issuedBy)?.name}{r.data.service ? ` · ${r.data.service}` : ''}{r.data.priority === 'urgent' ? ' · Urgente' : ''} {r.voidedAt ? <span className="badge badge--red">Anulada</span> : <span className="badge badge--mint">Firmada</span>}</span></div>
+              <ReferralActions r={r} />
+            </div>
+          ))}</div> : <div className="empty">Sin referencias.</div>}
         </section>
       )}
 

@@ -28,7 +28,7 @@ export default function ConsultNote() {
         <div className="page-head__actions">
           {can('consult.write') && <Link className="btn btn--ghost" data-tour="constancia" to={`/app/constancia/${c.id}`}><FileBadge size={16} />Generar constancia</Link>}
           {/* Ronda 8: referencia a otro centro desde la consulta externa */}
-          {can('consult.write') && user?.role === 'doctor' && <button className="btn btn--ghost" onClick={() => setReferring(true)}><Send size={16} />Referencia</button>}
+          {can('consult.write') && user?.role === 'doctor' && <button className="btn btn--ghost" onClick={() => setReferring(true)}><Send size={16} />Referir a otro centro</button>}
           {(data.referrals ?? []).map((r) => <Link key={r.id} className="btn btn--soft" to={`/app/referencias/${r.id}`}><Send size={16} />{r.number}{r.voidedAt ? ' (anulada)' : ''}</Link>)}
           <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir nota</button>
         </div>

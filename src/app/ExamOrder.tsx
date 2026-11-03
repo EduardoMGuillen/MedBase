@@ -7,7 +7,7 @@ import { Loading } from '../components/ui'
 import { DocHeader } from '../components/DocHeader'
 import { MarkImage } from '../components/MarkImage'
 import { age, dmyTime, fullName, identityLine, recordNumber, whatsappUrl } from '../lib/format'
-import { examLine, GROUP_LABEL } from '../lib/exams'
+import { examLine } from '../lib/exams'
 import { yearsOld } from '../lib/inpatient'
 import type { Diagnosis, ExamGroup, ExamOrder } from '../lib/types'
 
