@@ -249,7 +249,8 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
             </section>
           )
         })}
-        {n && !hits.length && <p className="muted">Ningún examen del catálogo coincide con «{q.trim()}».</p>}
+        {/* GE6 (ronda 10): sin resultados, el mismo espacio con el aviso (la ventana no se encoge) */}
+        {n && !hits.length && <p className="muted exam-picker__empty">Ningún examen coincide</p>}
         {q.trim().length >= 2 && !exact && !catalogOnly && (
           <div className="exam-picker__new">
             {!askType ? (

@@ -784,3 +784,13 @@ button.src-tag--none { cursor: pointer; }
 }
 /* GE5: filas fuera de la página: ocultas en pantalla, presentes al imprimir (cierre de caja completo) */
 @media screen { .pager-off { display: none !important; } }
+
+/* GE6 (ronda 10): «Ordenar exámenes» mide siempre lo mismo (85 % del alto, hasta 900 px; el ancho de siempre). Arriba quedan
+   fijos el buscador, las pestañas, «Mis sets», «Perfiles» y «Expandir / Contraer»; abajo, «Seleccionados (N)» y los botones.
+   Solo la lista del medio se desplaza. A 390 px ocupa toda la pantalla (MC4). */
+.exam-picker-modal { height: min(85vh, 900px); }
+.exam-picker-modal .modal__body { display: flex; flex-direction: column; overflow: hidden; }
+.exam-picker-modal .modal__body > * { flex: none; }
+.exam-picker-modal .modal__body > .exam-picker__results { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; align-content: start; }
+.exam-picker-modal .exam-picker__menu { max-height: 28vh; }
+.exam-picker__empty { padding: 18px 4px; text-align: center; }
