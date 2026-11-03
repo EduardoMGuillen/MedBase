@@ -16,11 +16,12 @@ import { loadRonda7 } from './catalogLoader.js'
 import { loadLabSources, loadRefValues } from './refLoader.js'
 import { loadLnme } from './lnmeLoader.js'
 import { closeVisitsOfInpatients } from './stayVisits.js'
+import { cleanArchivedThresholds } from './ronda10.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '69'
+const SCHEMA_VERSION = '70'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1066,6 +1067,16 @@ END
 $fn$;
 -- v69 (ronda 9, GE4): el seguimiento sabe de qué consulta salió, para ajustar sus avisos si la nota se corrige a tiempo
 ALTER TABLE followups ADD COLUMN IF NOT EXISTS source_id TEXT;
+-- v70 (ronda 10): exportación de lo que una limpieza o carga borra o reemplaza (umbrales archivados de UM3, catálogo de imagen
+-- de CA5, datos del vademécum de ME6). Nunca se borra.
+CREATE TABLE IF NOT EXISTS config_backups (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT,
+  kind TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  data TEXT NOT NULL,
+  note TEXT
+);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -1125,6 +1136,8 @@ export function ensureDb(sql: Sql) {
       await loadLabSources(q)
       for (const c of await q.query('SELECT id FROM clinics')) await loadRefValues(q, String(c.id))
       await migrateCriticalDefaults(q)
+      // v70 (ronda 10, UM3): los umbrales archivados se quitan una vez (los predeterminados y los que tienen resultados, no)
+      await cleanArchivedThresholds(q)
       // v66 (ronda 9, ME5): el LNME Honduras 2023 en el vademécum de cada clínica y consultorio (idempotente)
       for (const c of await q.query('SELECT id FROM clinics')) await loadLnme(q, String(c.id))
       // v57/v58 (ronda 8, CX2): nadie internado sigue a la vez en la consulta externa (idempotente)

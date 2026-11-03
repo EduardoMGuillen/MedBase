@@ -303,6 +303,15 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
       if (o && changed) history.push({ ...prev!, reason: 'Editado por la clínica' })
       return { ...a, history: history.length ? history : undefined, editedAt: changed && d ? stamp : o?.editedAt, editedBy: changed && d ? user.id : o?.editedBy }
     }) }))
+    // UM3 (ronda 10): lo retirado sigue retirado (no se muestra ni vuelve a la lista de archivados)
+    for (const g of groups) {
+      const old = before.find((x) => x.id === g.id)
+      if (old?.retiredAt) Object.assign(g, { archivedAt: old.archivedAt ?? stamp, retiredAt: old.retiredAt })
+      for (const a of g.analytes) {
+        const o = before.flatMap((x) => x.analytes).find((x) => x.id === a.id)
+        if (o?.retiredAt) Object.assign(a, { archivedAt: o.archivedAt ?? stamp, retiredAt: o.retiredAt })
+      }
+    }
     for (const g of groups) for (const a of g.analytes) {
       for (const [l, sx] of [[a, ''], [a.f, ' (mujeres)'], [a.m, ' (hombres)']] as const) {
         if (l?.low != null && l?.high != null && l.low > l.high) fail(400, `${a.name}${sx}: el límite inferior no puede ser mayor que el superior.`)

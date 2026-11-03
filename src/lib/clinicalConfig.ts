@@ -124,6 +124,8 @@ export interface Limits { low?: number; high?: number }
 /** Un analito con su umbral crítico. Un límite vacío es «No aplica»; sin ninguno, «Sin umbral crítico definido». */
 export interface CriticalAnalyte {
   id: string; name: string; unit?: string; low?: number; high?: number; archivedAt?: string
+  /** UM3 (ronda 10): archivado del que dependen resultados: queda en la base pero no aparece en ninguna pantalla. */
+  retiredAt?: string
   /** UM2 (ronda 8): por sexo, cuando el valor de la fuente lo distingue (se compara con el sexo del paciente). */
   f?: Limits; m?: Limits
   /** UM2: fuentes del valor que trae la app (códigos de LAB_SOURCES), «initial» o ninguna (lo agregó la clínica). */
@@ -138,7 +140,8 @@ export interface CriticalAnalyte {
   history?: { at: string; by: string; low?: number; high?: number; f?: Limits; m?: Limits; reason: string }[]
 }
 /** Grupo de analitos («Hemograma», «Química sanguínea»…), como vienen los resultados del laboratorio. */
-export interface CriticalGroup { id: string; name: string; archivedAt?: string; analytes: CriticalAnalyte[] }
+/** UM3 (ronda 10): `retiredAt`, retirado (invisible en toda pantalla; ver CriticalAnalyte). */
+export interface CriticalGroup { id: string; name: string; archivedAt?: string; retiredAt?: string; analytes: CriticalAnalyte[] }
 
 const an = (id: string, name: string, unit: string, low?: number, high?: number): CriticalAnalyte => ({ id, name, unit: unit || undefined, low, high, sources: ['initial'] })
 const slug = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
@@ -236,9 +239,9 @@ export interface CriticalLimit extends Limits { f?: Limits; m?: Limits }
 export function criticalLimitsOf(groups?: CriticalGroup[] | null): Map<string, CriticalLimit> {
   const out = new Map<string, CriticalLimit>()
   for (const g of mergeCriticalGroups(groups)) {
-    if (g.archivedAt) continue
+    if (g.archivedAt || g.retiredAt) continue
     for (const a of g.analytes) {
-      if (a.archivedAt) continue
+      if (a.archivedAt || a.retiredAt) continue
       if (a.low == null && a.high == null && !a.f && !a.m) continue
       out.set(norm(a.name), { low: a.low, high: a.high, f: a.f, m: a.m })
     }

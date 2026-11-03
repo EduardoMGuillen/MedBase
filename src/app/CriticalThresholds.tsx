@@ -26,7 +26,8 @@ function restored<T extends { archivedAt?: string }>(x: T): T {
 export function CriticalThresholds() {
   const { settings, saveCriticalGroups, staffById } = useStore()
   // Ronda 8: los de la app con lo que la clínica cambió encima (y los nuevos de la app, solos)
-  const saved = useMemo(() => mergeCriticalGroups(settings.criticalGroups), [settings.criticalGroups])
+  // UM3 (ronda 10): lo retirado no aparece en ninguna pantalla (el servidor lo conserva aunque no se envíe)
+  const saved = useMemo(() => mergeCriticalGroups(settings.criticalGroups).filter((g) => !g.retiredAt).map((g) => ({ ...g, analytes: g.analytes.filter((a) => !a.retiredAt) })), [settings.criticalGroups])
   const [groups, setGroups] = useState<CriticalGroup[]>(() => structuredClone(saved))
   const [text, setText] = useState<Record<string, string>>({})
   const [showArchived, setShowArchived] = useState(false)
