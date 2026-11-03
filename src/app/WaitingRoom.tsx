@@ -5,7 +5,10 @@ import { useStore } from '../lib/store'
 import { features, hasRole } from '../lib/permissions'
 import { Modal, PageHead, StatusBadge } from '../components/ui'
 import { age, fullName, sameDay, time } from '../lib/format'
-import type { ActiveStay, Appointment, Patient } from '../lib/types'
+import type { ActiveStay, Appointment, Patient, Vitals } from '../lib/types'
+import { api, ApiError } from '../lib/api'
+import { GRACE_EXPIRED_TEXT } from '../lib/grace'
+import { CorrectionReason, GraceButton } from '../components/Grace'
 import { parseDecimal, VITALS, type VitalKey } from '../lib/vitals'
 import { EMPTY_VITALS, FIELDS, fieldIssue, vitalNumber, type VitalsForm } from '../lib/vitalsForm'
 import { VitalsFields } from '../components/VitalsFields'
@@ -23,13 +26,15 @@ const minutesSince = (iso?: string) => (iso ? Math.max(0, Math.round((Date.now()
  * la preclínica y el médico los atiende. No se muestra "por llegar": esa lista no aporta aquí.
  */
 export default function WaitingRoom() {
-  const { appointments, patient, staffById, can, setStatus, user, activeStayOf, inpatientOf, takeAppointment, settings, saveMyProfile } = useStore()
+  const { appointments, vitals, patient, staffById, can, setStatus, user, activeStayOf, inpatientOf, takeAppointment, settings, saveMyProfile } = useStore()
   // Un consultorio tiene un solo médico: no hay "Mis pacientes / Toda la clínica" ni atender al de otro médico
   const multiDoctor = features(settings).multiDoctor
   const nav = useNavigate()
   const [taking, setTaking] = useState<Appointment | null>(null)
   const [busy, setBusy] = useState(false)
   const [triage, setTriage] = useState<Appointment | null>(null)
+  // GE4 (ronda 9): quien hizo la preclínica la corrige en el periodo de gracia, con el mismo formulario
+  const [fixing, setFixing] = useState<{ appt: Appointment; vitals: Vitals } | null>(null)
   const [walkIn, setWalkIn] = useState(false)
   const [completing, setCompleting] = useState<Appointment | null>(null)
   // El médico ve "Mis pacientes" por defecto y se recuerda su última elección en este navegador
@@ -89,6 +94,10 @@ export default function WaitingRoom() {
           {a.status === 'arrived' && can('vitals.record') && (interned
             ? <button className="btn btn--primary btn--sm" disabled aria-describedby={`cx2-${a.id}`}><Activity size={15} />Preclínica</button>
             : <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Preclínica</button>)}
+          {(() => {
+            const pv = ['triaged', 'in_consult'].includes(a.status) ? vitals.find((x) => x.appointmentId === a.id) : undefined
+            return pv && <GraceButton record={pv} authorId={pv.takenBy} onCorrect={() => setFixing({ appt: a, vitals: pv })} />
+          })()}
           {interned && <small id={`cx2-${a.id}`} className="muted" style={{ fontSize: 12.5, maxWidth: 190 }}>{stayConflictText(stay)}</small>}
           {/* CE1 (ronda 6): el cobro no va en Atendidos: se registra en Caja (o «Cobrar» del médico y del consultorio) */}
           {['arrived', 'triaged', 'in_consult'].includes(a.status) && !interned && own && can('consult.write') &&
@@ -131,6 +140,7 @@ export default function WaitingRoom() {
         ))}
       </div>
       {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}
+      {fixing && <VitalsModal appt={fixing.appt} correct={fixing.vitals} onClose={() => setFixing(null)} onSaved={() => setFixing(null)} />}
       {walkIn && <WalkInModal onClose={() => setWalkIn(false)} />}
       {taking && (
         <Modal title="Atender paciente de otro médico" onClose={() => setTaking(null)} footer={<>
@@ -213,12 +223,17 @@ function WalkInModal({ onClose }: { onClose: () => void }) {
  * Triaje: enfermería registra el motivo de consulta y los signos vitales; el médico recibe ambos.
  * Cada campo se revisa al salir de él (nunca mientras se escribe) y otra vez al guardar.
  */
-export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onClose: () => void; onSaved: () => void }) {
-  const { patient, addVitals } = useStore()
+export function VitalsModal({ appt, onClose, onSaved, correct }: { appt: Appointment; onClose: () => void; onSaved: () => void
+  /** GE4 (ronda 9): «Corregir» la preclínica ya guardada (mismo formulario, ya llenado, con «Guardar corrección»). */
+  correct?: Vitals }) {
+  const { patient, addVitals, notify, refresh } = useStore()
   const p = patient(appt.patientId)!
   const ageYears = p.birthDate ? yearsOld(p.birthDate) : undefined
-  const [reason, setReason] = useState(appt.reason)
-  const [v, setV] = useState<VitalsForm>(EMPTY_VITALS)
+  const [reason, setReason] = useState(correct?.chiefComplaint ?? appt.reason)
+  const [v, setV] = useState<VitalsForm>(() => correct
+    ? { ...EMPTY_VITALS, ...Object.fromEntries(FIELDS.map((k) => [k, correct[k] == null ? '' : String(correct[k]).replace('.', ',')])), notes: correct.notes ?? '' } : EMPTY_VITALS)
+  const [why, setWhy] = useState('')
+  const [expired, setExpired] = useState(false)
   // Campos que ya se revisaron (al salir de ellos o al intentar guardar)
   const [checked, setChecked] = useState<Set<VitalKey>>(new Set())
   const [confirming, setConfirming] = useState(false)
@@ -234,6 +249,17 @@ export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onC
   const save = async () => {
     const num = (k: VitalKey) => vitalNumber(v, k)
     setBusy(true)
+    if (correct) {
+      try {
+        await api(`/vitals/${correct.id}/correct`, { body: { version: correct.version ?? 1, why: why.trim() || undefined, chiefComplaint: reason.trim(),
+          ...Object.fromEntries(FIELDS.map((k) => [k, num(k)])), notes: v.notes.trim() || undefined } })
+        notify('Corrección guardada'); await refresh(); onSaved()
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409 && /minutos/.test(e.message)) setExpired(true)
+        else notify(e instanceof Error ? e.message : 'No se pudo guardar la corrección.', 'error')
+      } finally { setBusy(false) }
+      return
+    }
     const ok = await addVitals({
       patientId: p.id, appointmentId: appt.id, chiefComplaint: reason.trim(), systolic: num('systolic'), diastolic: num('diastolic'), heartRate: num('heartRate'),
       respRate: num('respRate'), temperature: num('temperature'), spo2: num('spo2'), glucose: num('glucose'), weightKg: num('weightKg'), heightCm: num('heightCm'),
@@ -251,13 +277,15 @@ export function VitalsModal({ appt, onClose, onSaved }: { appt: Appointment; onC
   }
 
   return (
-    <Modal title={`Preclínica de ${fullName(p)}`} onClose={onClose} footer={confirming ? <>
+    <Modal title={`${correct ? 'Corregir: ' : ''}Preclínica de ${fullName(p)}`} onClose={onClose} footer={confirming ? <>
       <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }}>Revise: {errors.map((k) => `${VITALS[k].label.toLowerCase()} ${v[k]}`).join(', ')}.</span>
       <button className="btn btn--ghost" onClick={() => setConfirming(false)}>Corregir</button>
       <button className="btn btn--danger" disabled={busy} onClick={save}>Guardar de todos modos</button>
     </> : <>
+      {correct && (expired ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="alert">{GRACE_EXPIRED_TEXT.replace(/ Lo que escribiste.*$/, '')}</span>
+        : <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>)}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={!ready || busy} onClick={trySave}>Guardar preclínica</button>
+      <button className="btn btn--primary" disabled={!ready || busy || expired} onClick={trySave}>{correct ? 'Guardar corrección' : 'Guardar preclínica'}</button>
     </>}>
       {p.allergies.length > 0 && <div className="alert-strip">Alergias: {p.allergies.join(', ')}</div>}
       <p className="muted" style={{ fontSize: 13.5 }}>Registra el motivo y sólo los signos que apliquen. Ningún signo es obligatorio. Puedes usar punto o coma para los decimales.</p>

@@ -14,7 +14,7 @@ Pedido: `docs/ronda9/PEDIDO_RONDA9.md`. Plan: `PLAN_RONDA9.md`. Un commit por pu
 | ME5 | Hecho | `src/lib/lnme/*`, `server/lnmeLoader.ts`, `scripts/me5-build.ts`, `DrugSuggestion.tsx`, `docs/ronda9/ME5_reporte.md` | Escribe «salbu» en cualquier formulario: sale con «LNME»; «Paracetamol» y «Acetaminofén» llevan al mismo. Configuración › Vademécum muestra el origen y el número |
 | PQ1 | Hecho | `src/app/PostopNote.tsx`, `NoteEditor` (variante postop), `server/routes/inpatient.ts`, epicrisis y referencia | Notas › «Nota postquirúrgica» (después de «Autorización quirúrgica»): diagnósticos pre y post, horas, anestesia, descripción y órdenes a la derecha. Sin autorización pide la urgencia justificada |
 | PQ2 | Hecho | `PostopNote.tsx`, `NoteColumns.tsx` | En la misma ventana, «Equipo quirúrgico»: el cirujano viene con quien escribe; los demás se eligen del personal o se escriben. En la tarjeta salen solo los cargos llenos |
-| GE4 | Parcial (ver §3) | `server/grace.ts`, `src/components/Grace.tsx`, `src/app/ConsultCorrection.tsx`, rutas de notas, dosis, signos, consulta y exámenes; v67–v68 | Firma una evolución: «Corregir» y «Corregible hasta HH:mm». Corrige y guarda: «Corregida · v2», y «Ver versiones» muestra la v1. Entra con otro médico: no ve «Corregir» (y por URL, 403) |
+| GE4 | Hecho, con las exclusiones de §3 | `server/grace.ts`, `server/correctionLocks.ts`, `src/components/Grace.tsx`, `src/app/ConsultCorrection.tsx`, rutas de notas, dosis, signos, consulta y exámenes; preclínica en `WaitingRoom.tsx`; v67–v69 | Firma una evolución: «Corregir» y «Corregible hasta HH:mm». Corrige y guarda: «Corregida · v2», y «Ver versiones» muestra la v1. Entra con otro médico: no ve «Corregir» (y por URL, 403) |
 
 Pruebas automáticas: `server/ronda9.test.ts` (GE3, ME3/ME4, PQ1/PQ2 y GE4) y `server/ronda9_me5.test.ts`.
 
@@ -60,10 +60,19 @@ Reglas aplicadas a todos:
 | Suspensión de infusión y toma de muestra | **Excluidas en esta ronda** |
 | Pagos y caja, autorizaciones y consentimientos firmados, agenda, anulaciones | **No aplica**, según el pedido |
 
-**Lo que quedó fuera**, por no poder hacerlo de forma segura en esta ronda:
-1. **Órdenes de la nota.** Corregir una nota no cambia sus órdenes, aunque no se hayan cumplido. Para eso siguen Cambiar y OMITIR en la siguiente nota. El pedido quería que un medicamento no administrado se actualizara en la hoja y que un examen sin muestra se cancelara: **no está hecho**, porque toca la cadena MC7 y la hoja de medicamentos.
-2. **Preclínica.** El servidor ya la corrige (`/api/vitals/:id/correct`), pero falta el botón en la pantalla de preclínica.
-3. **Avisos programados.** No se ajustan.
+**Completado después del primer despliegue** (lo que había quedado parcial):
+1. **Órdenes de la nota.** «Corregir» en una nota de ingreso o de evolución (incluida la postquirúrgica) ahora corrige también su columna de órdenes, con el mismo formulario:
+   - **Indicaciones nuevas** de la nota: se cambian, se quitan o se agregan. La que reemplaza a otra («Cambiar») se corrige pero no se quita. Lo que bajó de la nota anterior (Continúa, Omitida) queda como se firmó.
+   - **Medicamentos de la nota** que nadie ha registrado: el cambio pasa a la hoja de medicamentos en el mismo renglón. El que se quita queda suspendido con el motivo «Quitado al corregir la nota (periodo de gracia)»; no se borra. También se pueden agregar.
+   - **Exámenes** sin muestra tomada ni orden impresa: el que se quita se cancela con el mismo motivo. También se pueden agregar; si hay externos, se ofrece imprimir su orden como al firmar.
+   - **Bloqueado**, con su explicación: el medicamento con una dosis registrada («Ya fue administrado por [nombre] a las HH:mm. Corrígelo con una adenda.», o «Ya lo marcó como no aplicado/omitido…»), el examen con muestra o resultado, y el examen cuya orden ya se imprimió o descargó («Ya se imprimió la orden de exámenes. Corrígelo con una adenda.»). Para eso, imprimir o descargar una orden de exámenes ahora queda en `print_log`.
+   - **Toda la columna queda como se firmó** si enfermería ya revisó alguna orden de la nota (las revisiones van por número de renglón y no se reescriben) o si ya se firmó otra nota después (la cadena MC7 ya siguió). Lo escrito sí se corrige.
+   - La versión anterior guarda cómo estaban la hoja y los exámenes, y «Ver versiones» muestra sus órdenes.
+2. **Preclínica.** La tarjeta de «Listos para consulta» muestra «Corregir» y «Corregible hasta HH:mm» a quien la registró. Se corrigen los signos, las observaciones y el motivo de consulta.
+3. **Avisos programados.** Los seguimientos que salen de una consulta ahora saben de qué consulta salieron (v69). Al corregir la consulta se cambian su motivo y su fecha, o se quitan (quedan inactivos), mientras su aviso no se haya enviado; si ya se envió, se cambian en Seguimientos. La corrección de la consulta también cancela los exámenes sin muestra ni orden impresa.
+4. **Receta de una consulta que hospitalizó.** Sus medicamentos ya pasaron a la hoja de la estancia, así que ahora quedan bloqueados con «Los medicamentos ya pasaron a la hoja de la estancia. Corrígelos con una adenda.» (antes la receta se cambiaba y la hoja no).
+
+**Sigue excluido** (como dice la tabla): egreso, hoja de referencia, constancias, suspensión de infusión y toma de muestra como registros propios. En la hospitalización no hay avisos programados que salgan de las notas: las alertas de dosis se calculan de la hoja, así que se ajustan solas.
 
 ## 4. Cambios en la base de datos
 
@@ -77,6 +86,7 @@ Todas las migraciones son idempotentes y no borran nada.
   - Columnas `version` en `hosp_notes`, `hosp_doses`, `vitals` y `consultations`; `recorded_at` en `hosp_doses` y `consultations`; `result_version` en `exam_orders`.
   - Los guardias de la base (`note_signed_guard` y `consultation_signed_guard`) ahora aceptan una corrección GE4.
   - Los registros anteriores no se convierten: no tienen periodo de gracia.
+- **v69:** `followups.source_id` (la consulta de la que salió el seguimiento). Los seguimientos de antes quedan sin ella.
 
 ## 5. Valores por defecto
 
@@ -108,6 +118,7 @@ Se usaron A1 a A18 tal como están en la sección 6, con estos ajustes:
 - **Plazo vencido con la ventana abierta:** está probado en el servidor, no esperé los 5 minutos en el navegador.
 - **Con qué cuentas lo probé:** el consultorio de la Dra. López y la cuenta del Dr. Fúnez usan las mismas rutas, pero no los recorrí a mano. Las pruebas automáticas cubren a la Dra. Herrera, al Dr. Paz, a la Lic. Ríos y a Administración.
 - **ME5:** lo hizo un agente aparte y no lo revisé en el navegador.
+- **Órdenes, preclínica y consulta (GE4, segunda parte):** probé en el navegador a 1400 px quitar un medicamento, cambiar una indicación, cancelar un examen y cambiar una dosis en una evolución; corregir una preclínica, y quitar un examen y cambiar un seguimiento en una consulta. Los renglones bloqueados están probados en el servidor, no los vi en pantalla.
 
 ## 9. Despliegue
 

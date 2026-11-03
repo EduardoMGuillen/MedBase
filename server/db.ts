@@ -20,7 +20,7 @@ import { closeVisitsOfInpatients } from './stayVisits.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '68'
+const SCHEMA_VERSION = '69'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1064,6 +1064,8 @@ BEGIN
   RETURN NEW;
 END
 $fn$;
+-- v69 (ronda 9, GE4): el seguimiento sabe de qué consulta salió, para ajustar sus avisos si la nota se corrige a tiempo
+ALTER TABLE followups ADD COLUMN IF NOT EXISTS source_id TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

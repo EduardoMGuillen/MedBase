@@ -41,12 +41,12 @@ export async function sweepFollowupReminders(sql: Sql, clinicId: string) {
   }
 }
 
-export async function insertFollowup(q: Sql, clinicId: string, userId: string, f: z.infer<typeof followupInput> & { patientId: string }) {
+export async function insertFollowup(q: Sql, clinicId: string, userId: string, f: z.infer<typeof followupInput> & { patientId: string }, sourceId?: string) {
   const id = randomUUID()
   const kind = f.kind === 'procedure' ? 'reminder' : f.kind
   const type = f.kind === 'procedure' ? 'procedure' : kind === 'reminder' ? f.reminderType ?? 'other' : null
-  await q.run(`INSERT INTO followups (id, clinic_id, patient_id, kind, reminder_type, title, due_date, every_days, notes, created_by, created_at, active) VALUES (?,?,?,?,?,?,?,?,?,?,?,TRUE)`,
-    [id, clinicId, f.patientId, kind, type, f.title, f.dueDate, kind === 'chronic' ? f.everyDays ?? null : null, f.notes || null, userId, new Date().toISOString()])
+  await q.run(`INSERT INTO followups (id, clinic_id, patient_id, kind, reminder_type, title, due_date, every_days, notes, created_by, created_at, active, source_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,TRUE,?)`,
+    [id, clinicId, f.patientId, kind, type, f.title, f.dueDate, kind === 'chronic' ? f.everyDays ?? null : null, f.notes || null, userId, new Date().toISOString(), sourceId ?? null])
   return id
 }
 

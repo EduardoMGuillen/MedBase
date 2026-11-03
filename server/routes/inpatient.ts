@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { type Ctx, diagnosisInput, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
 import { assertGrace, saveVersion } from '../grace.js'
+import { noteMedRows, noteOrderLocks, REMOVED_IN_GRACE } from '../correctionLocks.js'
 import { toAttachment, toAuthorization, toBed, toDose, toEpicrisis, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral, toVitals } from '../mappers.js'
 import { currentVitalsMode, frequencyFromOrders, sameVitalsMode, VITALS_FREQUENCIES, vitalsModeShort } from '../../src/lib/vitalsSheet.js'
 import { buildEpicrisis, createEpicrisisDraft, missingForIssue } from '../epicrisis.js'
@@ -1008,6 +1009,113 @@ export function registerInpatient(app: Express, ctx: Ctx) {
    * firma (hora del servidor). Se corrige la columna izquierda (lo escrito y los diagnósticos); las órdenes quedan como se
    * firmaron. La versión anterior se guarda completa y la nota queda con la nueva (la cadena MC7/NE4 lee esta).
    */
+  /**
+   * GE4: las órdenes que se corrigen en el periodo de gracia. Las indicaciones nuevas de la nota (las que no cambian a otra)
+   * se editan, se quitan o se agregan; los medicamentos de la nota que nadie registró se cambian en la hoja, se quitan
+   * (quedan suspendidos con su motivo, no se borran) o se agregan; los exámenes sin muestra ni orden impresa se cancelan.
+   * Lo ya cumplido o impreso queda bloqueado (correctionLocks). Lo continuado u omitido de la nota anterior no se toca.
+   */
+  const ordersFix = z.object({
+    indications: z.array(z.object({ id: z.string().optional(), text: z.string().trim().min(1).max(500) })).max(40),
+    meds: z.array(z.object({ id: z.string().optional(), med: medInput })).max(20),
+    keepExams: z.array(z.string()).max(40),
+    exams: z.array(examInput).max(40),
+  })
+  const sameMed = (r: Row, m: z.infer<typeof medInput>) => JSON.stringify([r.drug, r.presentation ?? '', r.dose, r.route, r.every_hours ?? null, Boolean(r.prn), r.prn ? r.prn_condition ?? '' : '',
+    new Date(String(r.first_at)).getTime(), r.instructions ?? '', r.days ?? null, r.infusion_rate == null ? null : Number(r.infusion_rate), r.infusion_rate ? r.infusion_unit ?? 'ml/h' : null,
+    r.loading_dose ?? null, r.nebulization ? JSON.parse(String(r.nebulization)) : null]) === JSON.stringify([m.drug, m.presentation ?? '', m.dose, m.route, m.everyHours ?? null, m.prn, m.prn ? m.prnCondition ?? '' : '',
+    new Date(m.firstAt ?? String(r.first_at)).getTime(), m.instructions ?? '', m.days ?? null, m.infusionRate ?? null, m.infusionRate ? m.infusionUnit ?? 'ml/h' : null,
+    m.loadingDose && m.everyHours && !m.prn && !m.infusionRate ? m.loadingDose : null, m.nebulization ?? null])
+  const rowLabel = (r: Row) => medLabel(toInpatientMed(r))
+  async function correctOrders(q: Sql, h: Row, n: Row, data: Record<string, unknown>, o: z.infer<typeof ordersFix>, userId: string) {
+    const locks = await noteOrderLocks(q, n)
+    if (locks.all) fail(409, locks.all)
+    if (o.indications.some((x) => hasBlank(x.text)) || o.meds.some((x) => medHasBlank(x.med))) fail(400, 'Completa los espacios ___ de las órdenes antes de guardar.')
+    const at = new Date().toISOString()
+    const noteId = String(n.id)
+    const changes: string[] = []
+    const lines = data.lines as OrderLine[]
+    // Indicaciones: lo que bajó de la nota anterior (Continúa, Omitida, Modificada) queda; la Nueva que reemplaza a otra se
+    // corrige pero no se quita; las nuevas sueltas se editan, se quitan o se agregan (van al final, como al firmar)
+    const ind = lines.filter((l) => l.kind === 'ind')
+    const free = ind.filter((l) => l.tag === 'new' && !l.replaces)
+    const dot = (t: string) => (/[.!?]$/.test(t) ? t : `${t}.`)
+    const fixed = ind.filter((l) => !free.includes(l)).map((l) => {
+      if (l.tag !== 'new') return l
+      const x = o.indications.find((y) => y.id === l.id) ?? fail(409, `«${l.text}» reemplaza a otra indicación: corrígela, no se quita aquí.`)
+      if (dot(x!.text) !== l.text) changes.push(`cambió la indicación «${l.text}» por «${dot(x!.text)}»`)
+      return { ...l, text: dot(x!.text) }
+    })
+    const fixedIds = new Set(fixed.map((l) => l.id))
+    const freeNew: OrderLine[] = o.indications.filter((x) => !x.id || !fixedIds.has(x.id)).map((x) => {
+      const old = x.id ? free.find((l) => l.id === x.id) ?? fail(400, 'Esa indicación no es de esta nota.') : undefined
+      if (!old) changes.push(`agregó la indicación «${dot(x.text)}»`)
+      else if (old.text !== dot(x.text)) changes.push(`cambió la indicación «${old.text}» por «${dot(x.text)}»`)
+      return { id: old?.id ?? randomUUID(), kind: 'ind', text: dot(x.text), tag: 'new' }
+    })
+    for (const l of free) if (!freeNew.some((x) => x.id === l.id)) changes.push(`quitó la indicación «${l.text}»`)
+    // Medicamentos de la nota
+    const rows = await noteMedRows(q, noteId)
+    const ids = o.meds.flatMap((x) => (x.id ? [x.id] : []))
+    if (new Set(ids).size !== ids.length || ids.some((id) => !rows.some((r) => r.id === id))) fail(400, 'Ese medicamento no es de esta nota.')
+    for (const r of rows) {
+      const id = String(r.id)
+      const p = o.meds.find((x) => x.id === id)
+      if (!p) {
+        if (locks.meds[id]) fail(409, `${r.drug}: ${locks.meds[id]}`)
+        if (locks.keep.includes(id)) fail(409, `${r.drug} reemplaza a otro medicamento: corrígelo, no se quita aquí.`)
+        await q.run('UPDATE hosp_meds SET stopped_at = ?, stopped_by = ?, stop_reason = ? WHERE id = ?', [at, userId, REMOVED_IN_GRACE, id])
+        changes.push(`quitó ${rowLabel(r)} (no se había administrado)`)
+      } else if (!sameMed(r, p.med)) {
+        if (locks.meds[id]) fail(409, `${r.drug}: ${locks.meds[id]}`)
+        const m = p.med
+        const loading = m.loadingDose && m.everyHours && !m.prn && !m.infusionRate
+        await q.run(`UPDATE hosp_meds SET drug = ?, presentation = ?, dose = ?, route = ?, every_hours = ?, prn = ?, prn_condition = ?, first_at = ?, instructions = ?, days = ?,
+            infusion_rate = ?, infusion_unit = ?, loading_dose = ?, loading_stat = ?, nebulization = ? WHERE id = ?`,
+          [m.drug, m.presentation || null, m.dose, m.route, m.everyHours ?? null, m.prn, m.prn ? m.prnCondition || null : null, new Date(m.firstAt ?? String(r.first_at)).toISOString(), m.instructions || null,
+            m.days ?? null, m.infusionRate ?? null, m.infusionRate ? m.infusionUnit || 'ml/h' : null, loading ? m.loadingDose : null, loading ? m.loadingStat !== false : null,
+            m.nebulization ? JSON.stringify(m.nebulization) : null, id])
+        changes.push(`cambió ${rowLabel(r)} por ${medLabel({ ...m, everyHours: m.everyHours, prn: m.prn })} en la hoja`)
+      }
+    }
+    const added = o.meds.filter((x) => !x.id).map((x) => ({ ...x.med, replacesId: undefined }))
+    if (added.length) {
+      // El número de renglón de la nota sigue después de los que ya tenía (incluidos los quitados)
+      const max = await q.one<{ n: number | null }>(`SELECT MAX(source_index)::int AS n FROM hosp_meds WHERE source = 'note' AND source_id = ?`, [noteId])
+      await createMedOrders(q, { clinicId: String(h.clinic_id), hospitalizationId: String(h.id), patientId: String(h.patient_id), source: 'note', sourceId: noteId, orderedBy: userId, orderedAt: at,
+        items: [...Array<null>((max?.n ?? -1) + 1).fill(null), ...added.map((m) => ({ ...m, firstAt: m.firstAt ?? at }))] })
+      for (const m of added) changes.push(`agregó ${medLabel({ ...m, everyHours: m.everyHours, prn: m.prn })}`)
+    }
+    // Las líneas de medicamento: las que bajaron quedan; las nuevas se rehacen con lo que quedó en la hoja
+    const oldNew = lines.filter((l) => l.kind === 'med' && l.tag === 'new')
+    const byPos = oldNew.every((l) => !l.medId)
+    const all = await q.query(`SELECT * FROM hosp_meds WHERE source = 'note' AND source_id = ? ORDER BY source_index`, [noteId])
+    const medLines: OrderLine[] = all.flatMap((r, k) => (r.stop_reason === REMOVED_IN_GRACE ? [] : [{
+      id: oldNew.find((l) => l.medId === r.id)?.id ?? (byPos ? oldNew[k]?.id : undefined) ?? randomUUID(),
+      kind: 'med' as const, text: rowLabel(r), tag: 'new' as const, medId: String(r.id), ...(r.replaces_id ? { replaces: String(r.replaces_id) } : {}) }]))
+    const next = [...fixed, ...freeNew, ...lines.filter((l) => l.kind === 'med' && l.tag !== 'new'), ...medLines]
+    // Exámenes: los quitados se cancelan (si no tienen muestra ni orden impresa); los nuevos van en un lote nuevo
+    const exams = await q.query(`SELECT * FROM exam_orders WHERE note_id = ? AND status <> 'cancelled'`, [noteId])
+    if (o.keepExams.some((id) => !exams.some((e) => e.id === id))) fail(400, 'Ese examen no es de esta nota.')
+    for (const e of exams.filter((x) => !o.keepExams.includes(String(x.id)))) {
+      if (locks.exams[String(e.id)]) fail(409, `${e.name}: ${locks.exams[String(e.id)]}`)
+      await q.run(`UPDATE exam_orders SET status = 'cancelled', cancel_reason = ?, status_at = ?, status_by = ? WHERE id = ?`, [REMOVED_IN_GRACE, at, userId, String(e.id)])
+      await q.run('INSERT INTO exam_events (id, clinic_id, exam_id, status, by_id, at, note) VALUES (?,?,?,?,?,?,?)', [randomUUID(), String(h.clinic_id), String(e.id), 'cancelled', userId, at, REMOVED_IN_GRACE])
+      changes.push(`canceló el examen ${e.name}`)
+    }
+    const examBatch = await insertExams(q, { clinicId: String(h.clinic_id), patientId: String(h.patient_id), hospitalizationId: String(h.id), noteId, by: userId, at }, o.exams)
+    for (const e of o.exams) changes.push(`agregó el examen ${e.name}`)
+    const indCount = fixed.length + freeNew.length
+    return { data: { ...data, lines: next, orders: next.map(lineOrder), indications: indCount }, changes, examBatch: o.exams.some((e) => e.place === 'external') ? examBatch ?? undefined : undefined,
+      snapshot: { meds: rows.map((r) => toInpatientMed(r)), exams: exams.map((e) => ({ id: String(e.id), name: String(e.name), status: String(e.status) })) } }
+  }
+
+  /** GE4: qué órdenes de la nota se pueden corregir (para la ventana de corrección). */
+  app.get('/api/inpatient/notes/:id/correct', auth, need('inpatient.orders', 'inpatient.care'), async (req, res) => {
+    const n = (await sql.one('SELECT * FROM hosp_notes WHERE id = ? AND clinic_id = ?', [String(req.params.id), clinicOf(req)])) ?? fail(404, 'La nota no existe.')
+    res.json(await noteOrderLocks(sql, n!))
+  })
+
   app.post('/api/inpatient/notes/:id/correct', auth, need('inpatient.orders', 'inpatient.care'), async (req, res) => {
     const text = z.string().trim().max(6000).default('')
     const b = parse(z.object({
@@ -1019,6 +1127,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       postop: postopInput.optional(),
       // Nota de procedimiento y de enfermería
       name: z.string().trim().max(200).optional(), performedAt: when.optional(), text: z.string().trim().max(10000).optional(),
+      // Las órdenes de la nota (sólo si cambiaron)
+      orders: ordersFix.optional(),
     }), req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
@@ -1060,14 +1170,19 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     if (kind === 'admission') what = 'nota de ingreso'
     const version = Number(n!.version ?? 1)
     const who = await patientName(String(h.patient_id))
+    if (b.orders && kind !== 'admission' && kind !== 'evolution') fail(400, 'Esta nota no lleva órdenes.')
+    let examBatch: string | undefined
     await sql.tx(async (q) => {
+      // Las órdenes primero: si algo ya se cumplió, nada se guarda
+      const fix = b.orders ? await correctOrders(q, h, n!, set.data, b.orders, user.id) : undefined
+      if (fix) { set.data = fix.data; examBatch = fix.examBatch }
       const next = await saveVersion(q, { clinicId: cid, kind: 'note', id: String(n!.id), version, authorId: String(n!.author_id), at: String(n!.at), by: user.id, reason: b.reason,
-        data: { subjective: n!.subjective, objective: n!.objective, assessment: n!.assessment, plan: n!.plan, text: n!.text, data } })
+        data: { subjective: n!.subjective, objective: n!.objective, assessment: n!.assessment, plan: n!.plan, text: n!.text, data, ...(fix ? fix.snapshot : {}) } })
       await q.run('UPDATE hosp_notes SET subjective = ?, objective = ?, assessment = ?, plan = ?, text = ?, data = ?, version = ? WHERE id = ?',
         [set.subjective, set.objective, set.assessment, set.plan, set.text, JSON.stringify(set.data), next, String(n!.id)])
-      await audit(user, `Corrigió su ${what} de ${who} en el periodo de gracia (versión ${next})${b.reason ? `: ${b.reason}` : ''}`, q)
+      await audit(user, `Corrigió su ${what} de ${who} en el periodo de gracia (versión ${next})${fix?.changes.length ? `; órdenes: ${fix.changes.join('; ')}` : ''}${b.reason ? `: ${b.reason}` : ''}`, q)
     })
-    res.json(toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [String(n!.id)]))!))
+    res.json({ ...toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [String(n!.id)]))!), examBatch })
   })
 
   app.post('/api/vitals/:vid/void', auth, need('vitals.record'), async (req, res) => {

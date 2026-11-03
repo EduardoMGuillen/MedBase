@@ -393,6 +393,9 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     const cid = clinicOf(req)
     const list = await examsWhere(sql, 'clinic_id = ? AND batch_id = ? AND grp = ?', [cid, String(req.params.batch), b.group])
     if (!list.length) fail(404, 'La orden no existe.')
+    // GE4 (ronda 9): una orden impresa o descargada ya no se corrige en el periodo de gracia
+    await sql.run('INSERT INTO print_log (id, clinic_id, target_kind, target_id, how, by_id, at) VALUES (?,?,?,?,?,?,?)',
+      [randomUUID(), cid, `exam_${b.group}`, String(req.params.batch), b.how, userOf(req).id, new Date().toISOString()])
     await audit(userOf(req), `${b.how === 'pdf' ? 'Descargó en PDF' : 'Imprimió'} la orden de ${GROUP_LABEL[b.group].toLowerCase()}${list[0].orderNo ? ` ${list[0].orderNo}` : ''} de ${await patientName(list[0].patientId)}`)
     res.json({ ok: true })
   })

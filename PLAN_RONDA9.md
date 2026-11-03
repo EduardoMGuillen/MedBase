@@ -27,14 +27,14 @@ hora la decide el servidor; cada corrección guarda la versión anterior complet
 
 | Registro | Decisión |
 |---|---|
-| Nota de ingreso y de evolución (Estándar y SOAP) | **Sí.** Se corrige la columna izquierda (diagnósticos, textos). La columna de órdenes queda como se firmó: la cadena MC7/NE4 lee la última versión |
+| Nota de ingreso y de evolución (Estándar y SOAP) | **Sí.** Lo escrito, los diagnósticos y las órdenes que nadie cumplió (la hoja y Exámenes se actualizan). Lo cumplido o impreso, bloqueado; con revisiones de enfermería u otra nota posterior, la columna de órdenes queda como se firmó. La cadena MC7/NE4 lee la última versión |
 | Nota postquirúrgica | **Sí**, igual que la evolución (diagnósticos, horas, anestesia, procedimiento, descripción, equipo) |
 | Nota de procedimiento | **Sí** (nombre, hora, texto). Su autorización no se toca |
 | Nota de enfermería | **Sí** (texto) |
-| Nota de consulta externa | **Sí** (motivo, historia, examen, diagnósticos, plan). La receta va aparte (abajo) |
+| Nota de consulta externa | **Sí** (motivo, historia, examen, diagnósticos, plan), sus exámenes sin muestra y sus seguimientos sin aviso enviado (v69). La receta va aparte (abajo) |
 | Receta | **Sí si no se imprimió ni descargó**; impresa: bloqueada con «Ya se imprimió la receta. Corrígelo con una adenda.» |
 | Administración de medicamentos (aplicada, no aplicada, omitida, inicio de infusión, nebulización) | **Sí** (hora real, estado, observación). La hoja recalcula el estado |
-| Signos vitales y preclínica | **Sí** (los valores y la hora) |
+| Signos vitales y preclínica | **Sí** (los valores y la hora; en la preclínica, también el motivo) |
 | Resultados de exámenes | **Sí** mientras el médico no los haya revisado |
 | Nota de egreso | **No en esta ronda** (el pedido permite excluirla): corregirla toca la receta de salida y el cierre de la estancia. Se corrige con adenda |
 | Hoja de referencia, constancias, órdenes de exámenes | **No en esta ronda**: son documentos que se entregan; siguen con anulación y nuevo documento |

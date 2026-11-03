@@ -34,7 +34,7 @@ import { useExamCatalog } from '../lib/useExamCatalog'
 import { Addenda, DraftBadge, SignedBadge } from '../components/Addenda'
 import { useDraftSync } from '../lib/drafts'
 import { api, ApiError, serverNow } from '../lib/api'
-import { GRACE_EXPIRED_TEXT } from '../lib/grace'
+import { GRACE_EXPIRED_TEXT, REMOVED_IN_GRACE } from '../lib/grace'
 import { CorrectionReason, GraceButton, VersionTag } from '../components/Grace'
 import { BedFields } from '../components/BedFields'
 import { ReferralActions, ReferralModal } from './Referral'
@@ -825,6 +825,7 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
   // GE4 (ronda 9): corregir en el periodo de gracia; si vence con la ventana abierta, lo escrito pasa a una adenda
   const [correcting, setCorrecting] = useState(false)
   const [toAddendum, setToAddendum] = useState<string | undefined>()
+  const [ordersFor, setOrdersFor] = useState<string | null>(null)
   const p = patient(file.hospitalization.patientId)
   return (
     <article className="panel consult-entry">
@@ -840,18 +841,30 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
           meds={meds.length ? <OrderChecklist n={n} orders={meds} file={file} reload={reload} pill /> : <p className="muted">Sin medicamentos.</p>} />
         <div className="signed-row">
           <SignedBadge by={author?.name} at={n.at} addenda={(file.addenda ?? []).filter((a) => a.targetId === n.id).length} />
-          <VersionTag version={n.version} kind="note" id={n.id} render={(x) => <NoteText n={{ ...n, ...noteFromVersion(n, x) }} />} />
+          <VersionTag version={n.version} kind="note" id={n.id} render={(x) => <VersionNote n={n} x={x} />} />
           <GraceButton record={n} authorId={n.authorId} onCorrect={() => setCorrecting(true)} />
         </div>
         <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={can('inpatient.orders') && user?.role === 'doctor'} onAdded={reload} openWith={toAddendum} />
       </div>
       {correcting && p && <NoteEditor file={file} p={p} kind={n.kind === 'admission' ? 'admission' : 'evolution'} variant={n.format === 'postop' ? 'postop' : undefined} correct={n}
-        onClose={() => setCorrecting(false)} onSaved={() => { setCorrecting(false); reload() }} onExpired={(t) => { setCorrecting(false); setToAddendum(t) }} />}
+        onClose={() => setCorrecting(false)} onSaved={(b) => { setCorrecting(false); reload(); if (b) setOrdersFor(b) }} onExpired={(t) => { setCorrecting(false); setToAddendum(t) }} />}
+      {ordersFor && <ExamOrdersOffer batch={ordersFor} onClose={() => setOrdersFor(null)} />}
     </article>
   )
 }
 
 /** GE4: una versión anterior guardada ({subjective, …, data}) vuelta a la forma de la nota, para mostrarla igual. */
+/** GE4: una versión anterior de la nota, con sus órdenes y exámenes como estaban. */
+function VersionNote({ n, x }: { n: InpatientNote; x: Record<string, unknown> }) {
+  const data = (typeof x.data === 'string' ? JSON.parse(x.data) : x.data ?? {}) as { orders?: string[] }
+  const exams = (x.exams as { id: string; name: string; status: string }[] | undefined)?.filter((e) => e.status !== 'cancelled')
+  return <>
+    <NoteText n={{ ...n, ...noteFromVersion(n, x) }} />
+    {!!data.orders?.length && <><h4>Órdenes</h4><ol className="note__list">{data.orders.map((o, i) => <li key={i}>{o}</li>)}</ol></>}
+    {!!exams?.length && <><h4>Exámenes</h4><ul className="note__list">{exams.map((e) => <li key={e.id}>{e.name}</li>)}</ul></>}
+  </>
+}
+
 function noteFromVersion(n: InpatientNote, x: Record<string, unknown>): Partial<InpatientNote> {
   const data = (typeof x.data === 'string' ? JSON.parse(x.data) : x.data ?? {}) as Record<string, unknown>
   return { subjective: String(x.subjective ?? ''), objective: String(x.objective ?? ''), assessment: String(x.assessment ?? ''), plan: String(x.plan ?? ''), text: String(x.text ?? ''),
@@ -1098,23 +1111,96 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize, onCon
 
 const EMPTY_MED: NewMed = { drug: '', presentation: '', dose: '', route: 'Intravenosa', everyHours: 8, prn: false, instructions: '' }
 
+/** GE4 (ronda 9): las órdenes de la nota tal como se corrigen (lo que va al servidor si cambió). */
+type OrdersFix = { indications: { id?: string; text: string; replaces?: string }[]; meds: { id?: string; med: NewMed }[]; keepExams: string[]; exams: ExamInput[] }
+type OrderLocks = { all?: string; meds: Record<string, string>; keep: string[]; exams: Record<string, string> }
+
+/** Cómo estaban las órdenes al firmar (o en la última versión): el punto de partida de la corrección. */
+function ordersOf(n: InpatientNote, file: File): OrdersFix {
+  return {
+    indications: (n.lines ?? []).filter((l) => l.kind === 'ind' && l.tag === 'new').map((l) => ({ id: l.id, text: l.text, replaces: l.replaces })),
+    meds: file.meds.filter((m) => m.noteId === n.id && m.stopReason !== REMOVED_IN_GRACE).map((m) => ({ id: m.id, med: { ...medToNew(m), firstAt: m.prn ? undefined : m.firstAt, loadingGivenAt: undefined } as NewMed })),
+    keepExams: (file.exams ?? []).filter((e) => e.noteId === n.id && e.status !== 'cancelled').map((e) => e.id),
+    exams: [],
+  }
+}
+
 /**
- * GE4 (ronda 9): al corregir una nota, la columna de órdenes queda como se firmó. Lo que enfermería ya cumplió sale
- * bloqueado con quién y a qué hora; lo demás se cambia como siempre (Cambiar u OMITIR en la siguiente nota).
+ * GE4 (ronda 9): al corregir una nota, la columna de órdenes se corrige con lo que nadie ha cumplido: las indicaciones nuevas
+ * (se cambian, se quitan o se agregan), los medicamentos que nadie registró (la hoja se actualiza) y los exámenes sin muestra
+ * ni orden impresa (se cancelan). Lo cumplido o impreso sale bloqueado con su explicación; lo que bajó de la nota anterior
+ * (Continúa, Omitida) queda como se firmó. Si enfermería ya revisó órdenes o ya hay otra nota, la columna no se toca.
  */
-function CorrectionOrders({ n, file }: { n: InpatientNote; file: File }) {
-  const { staffById } = useStore()
-  const meds = file.meds.filter((m) => m.noteId === n.id)
-  const exams = (file.exams ?? []).filter((e) => e.noteId === n.id)
+function CorrectionOrders({ n, file, p, value, onChange, locks }: { n: InpatientNote; file: File; p: Patient; value: OrdersFix; onChange: (v: OrdersFix) => void; locks?: OrderLocks }) {
+  const [text, setText] = useState('')
+  const [editing, setEditing] = useState<number | null>(null)
+  const [adding, setAdding] = useState(false)
+  const kept = (n.lines ?? []).filter((l) => l.kind === 'ind' && l.tag !== 'new')
+  const exams = (file.exams ?? []).filter((e) => e.noteId === n.id && e.status !== 'cancelled')
+  const carried = (n.lines ?? []).filter((l) => l.kind === 'med' && l.tag !== 'new')
+  if (!locks) return <div className="note-editor__orders"><Loading /></div>
+  if (locks.all) {
+    const meds = file.meds.filter((m) => m.noteId === n.id && m.stopReason !== REMOVED_IN_GRACE)
+    return (
+      <div className="note-editor__orders">
+        <div className="alert-strip alert-strip--amber">{locks.all}</div>
+        {!!n.orders?.length && <fieldset className="fs"><legend>Indicaciones</legend><ol className="note__list">{(n.orders ?? []).slice(0, n.indicationCount ?? n.orders?.length).map((o, i) => <li key={i}>{o}</li>)}</ol></fieldset>}
+        {exams.length > 0 && <fieldset className="fs"><legend>Exámenes</legend><ul className="note__list">{exams.map((e) => <li key={e.id}>{e.name}</li>)}</ul></fieldset>}
+        {meds.length > 0 && <fieldset className="fs"><legend>Medicamentos</legend><ul className="note__list">{meds.map((m) => <li key={m.id}>{medLabel(m)}</li>)}</ul></fieldset>}
+      </div>
+    )
+  }
+  const set = (x: Partial<OrdersFix>) => onChange({ ...value, ...x })
+  const add = () => {
+    const lines = text.split(/\r?\n/).map((t) => t.replace(/^\s*(\d+\s*[.)-]|[-•*])\s*/, '').trim()).filter(Boolean)
+    if (lines.length) set({ indications: [...value.indications, ...lines.map((t) => ({ text: /[.!?]$/.test(t) ? t : `${t}.` }))] })
+    setText('')
+  }
   return (
     <div className="note-editor__orders">
-      <div className="alert-strip alert-strip--calm">Las órdenes de esta nota quedan como se firmaron. Para cambiarlas usa Cambiar u OMITIR en la siguiente nota.</div>
-      {!!n.orders?.length && <fieldset className="fs"><legend>Indicaciones</legend><ol className="note__list">{(n.orders ?? []).slice(0, n.indicationCount ?? n.orders?.length).map((o, i) => <li key={i}>{o}</li>)}</ol></fieldset>}
-      {exams.length > 0 && <fieldset className="fs"><legend>Exámenes</legend><ul className="note__list">{exams.map((e) => <li key={e.id}>{e.name}</li>)}</ul></fieldset>}
-      {meds.length > 0 && <fieldset className="fs"><legend>Medicamentos</legend><ul className="note__list">{meds.map((m) => {
-        const given = file.doses.filter((x) => x.medId === m.id && x.status === 'given').sort((a, b) => a.givenAt.localeCompare(b.givenAt))[0]
-        return <li key={m.id}>{medLabel(m)}{given && <div className="locked-line">Ya fue administrado por {staffById(given.givenBy)?.name ?? '—'} a las {time(given.givenAt)}. Corrígelo con una adenda.</div>}</li>
-      })}</ul></fieldset>}
+      <div className="alert-strip alert-strip--calm">Lo que nadie ha cumplido se corrige aquí: la hoja de medicamentos y los exámenes se actualizan al guardar. Lo ya cumplido o impreso queda como se firmó.</div>
+      <fieldset className="fs"><legend>Indicaciones</legend>
+        {kept.length > 0 && <ol className="note__list">{kept.map((l) => <li key={l.id}><span className={l.tag === 'omitted' ? 'struck' : ''}>{l.text}</span><LineTag tag={l.tag} /></li>)}</ol>}
+        {value.indications.length > 0 && <ol className="orders">{value.indications.map((o, i) => (
+          <li key={o.id ?? `new-${i}`}><span className="orders__n">{kept.length + i + 1}.</span>
+            <input className={`input${hasBlank(o.text) ? ' input--blank' : ''}`} value={o.text} aria-label={`Indicación ${kept.length + i + 1}`}
+              onChange={(e) => set({ indications: value.indications.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)) })} />
+            <span className="orders__tools">{!o.replaces && <button type="button" className="icon-btn" aria-label="Quitar indicación" onClick={() => set({ indications: value.indications.filter((_, j) => j !== i) })}><X size={14} /></button>}</span></li>
+        ))}</ol>}
+        <div className="order-add">
+          <textarea className="textarea textarea--sm" rows={2} value={text} aria-label="Nueva indicación" placeholder="Escribe una indicación y presiona Enter"
+            onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); add() } }} />
+          <button className="btn btn--soft" disabled={!text.trim()} type="button" onClick={add} aria-label="Agregar indicación"><Plus size={16} /></button>
+        </div>
+      </fieldset>
+      <fieldset className="fs"><legend>Exámenes</legend>
+        {exams.length > 0 && <ul className="note__list">{exams.map((e) => {
+          const on = value.keepExams.includes(e.id)
+          return <li key={e.id}>
+            <span className={on ? '' : 'struck'}>{e.name}</span>
+            {locks.exams[e.id] ? <div className="locked-line">{locks.exams[e.id]}</div>
+              : <button type="button" className="btn btn--ghost btn--sm" style={{ marginLeft: 8 }} onClick={() => set({ keepExams: on ? value.keepExams.filter((x) => x !== e.id) : [...value.keepExams, e.id] })}>{on ? 'Quitar' : 'Deshacer'}</button>}
+          </li>
+        })}</ul>}
+        <ExamsBlock value={value.exams} onChange={(v) => set({ exams: v })} inStay />
+      </fieldset>
+      <fieldset className="fs note-editor__meds"><legend>Medicamentos</legend>
+        {carried.length > 0 && <ul className="note__list">{carried.map((l) => <li key={l.id}><span className={l.tag === 'continue' ? '' : 'struck'}>{l.text}</span><LineTag tag={l.tag} /></li>)}</ul>}
+        {value.meds.length > 0 && <ol className="orders">{value.meds.map((x, i) => {
+          const lock = x.id ? locks.meds[x.id] : undefined
+          return <li key={x.id ?? `new-${i}`}><span className="orders__n">–</span>
+            <span className="orders__text"><Pill size={13} className="orders__pill" />{medLabel(x.med)}{x.med.days ? ` por ${x.med.days} días` : ''}{x.med.instructions ? `. ${x.med.instructions}` : ''}
+              {lock && <div className="locked-line">{lock}</div>}</span>
+            {!lock && <span className="orders__tools">
+              <button type="button" className="icon-btn" aria-label={`Editar ${x.med.drug}`} onClick={() => { setEditing(i); setAdding(false) }}><Pencil size={14} /></button>
+              {!(x.id && locks.keep.includes(x.id)) && <button type="button" className="icon-btn" aria-label={`Quitar ${x.med.drug}`} onClick={() => { set({ meds: value.meds.filter((_, j) => j !== i) }); setEditing(null) }}><X size={14} /></button>}
+            </span>}</li>
+        })}</ol>}
+        {editing !== null && value.meds[editing] ? <MedForm key={`fix-${editing}`} p={p} initial={editInitial(value.meds[editing].med)}
+            onAdd={(m) => { set({ meds: value.meds.map((x, j) => (j === editing ? { ...x, med: { ...m, replacesId: x.med.replacesId } } : x)) }); setEditing(null) }} onCancel={() => setEditing(null)} />
+          : adding ? <MedForm p={p} onAdd={(m) => { set({ meds: [...value.meds, { med: m }] }); setAdding(false) }} onCancel={() => setAdding(false)} />
+          : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
+      </fieldset>
     </div>
   )
 }
@@ -1141,6 +1227,15 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
     : { diagnoses: carried, evolution: '', exam: '', observations: '' }))
   const [why, setWhy] = useState('')
   const [expired, setExpired] = useState(false)
+  // GE4: las órdenes de la nota que se corrige y qué está bloqueado (lo dice el servidor)
+  const [fixStart] = useState(() => (correct ? ordersOf(correct, file) : undefined))
+  const [fix, setFix] = useState(fixStart)
+  const [locks, setLocks] = useState<OrderLocks | undefined>()
+  useEffect(() => {
+    if (!correct) return
+    api<OrderLocks>(`/inpatient/notes/${correct.id}/correct`).then(setLocks).catch(() => setLocks({ all: 'No se pudo revisar qué órdenes ya se cumplieron. Corrígelas con una adenda.', meds: {}, keep: [], exams: {} }))
+  }, [correct])
+  const fixChanged = !!fix && !locks?.all && JSON.stringify(fix) !== JSON.stringify(fixStart)
   // GE4: si venció el plazo, lo escrito pasa a una adenda (texto plano, como se leería en la nota)
   const correctionText = () => postop ? [pq.procedureName, pq.description].filter(Boolean).join('. ')
     : format === 'soap' ? SOAP.map((x) => `${x.letter}. ${n[x.key]}`).join('\n') : [d.evolution, d.exam, d.observations].filter((x) => x.trim()).join('\n')
@@ -1198,7 +1293,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   const pqAll = postopIssues(pq, file)
   // GE4: al corregir, la autorización ya quedó resuelta al firmar
   const pqCheck = correct ? { ...pqAll, missing: pqAll.missing.filter((m) => !m.startsWith('la autorización')) } : pqAll
-  const ready = !blanks.length && (postop ? !pqCheck.missing.length : !nvErrors.length && !nvFuture && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
+  const fixBlank = !!fix && (fix.indications.some((x) => hasBlank(x.text)) || fix.meds.some((x) => medHasBlank(x.med)))
+  const ready = !blanks.length && !fixBlank && (postop ? !pqCheck.missing.length : !nvErrors.length && !nvFuture && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
     : (dxChanged && d.diagnoses.length > 0) || !!d.evolution.trim() || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0 || exams.length > 0 || Object.keys(decisions).length > 0))
   /** Un set se agrega al final: indicaciones y medicamentos (que pasan a la hoja al guardar), todo editable. */
   const applySet = (set: OrderSet) => {
@@ -1264,8 +1360,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         setBusy(true)
         try {
           const body = postop ? { diagnoses: pq.postDiagnoses, postop: postopPayload(pq, pqCheck) } : format === 'soap' ? { ...n, diagnoses: d.diagnoses } : { ...d }
-          await api(`/inpatient/notes/${correct.id}/correct`, { body: { version: correct.version ?? 1, reason: why.trim() || undefined, ...body } })
-          draft.clear(); notify('Corrección guardada'); onSaved()
+          const orders = fixChanged && fix ? { indications: fix.indications.map(({ id, text }) => ({ id, text: text.trim() })).filter((x) => x.text), meds: fix.meds, keepExams: fix.keepExams, exams: fix.exams } : undefined
+          const r = await api<{ examBatch?: string }>(`/inpatient/notes/${correct.id}/correct`, { body: { version: correct.version ?? 1, reason: why.trim() || undefined, ...body, orders } })
+          draft.clear(); notify('Corrección guardada'); onSaved(r.examBatch)
         } catch (e) {
           // Vencido: lo escrito queda en el borrador y se ofrece la adenda
           if (e instanceof ApiError && e.status === 409 && /minutos/.test(e.message)) setExpired(true)
@@ -1322,7 +1419,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         </>)}
         </>}
       </div>
-      {correct ? <CorrectionOrders n={correct} file={file} /> : <div className="note-editor__orders">
+      {correct && fix ? <CorrectionOrders n={correct} file={file} p={p} value={fix} onChange={setFix} locks={locks} /> : <div className="note-editor__orders">
       <div className="set-bar">
         <OrderSetPicker where={file.hospitalization.kind === 'observation' ? 'observation' : 'hospital'} patientId={p.id} onApply={applySet} />
         <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions }) => ({ med: { drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions: instructions || undefined } })), ...exams.map((e) => ({ exam: e }))]} />

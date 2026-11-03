@@ -230,6 +230,100 @@ describe('GE4: periodo de gracia con versiones', () => {
     assert.equal((await doc.post(`/api/consultations/${r.body.consultationId}/correct`, { ...base, version: 2, exam: 'Dolor a la palpación' })).body.version, 3)
   })
 
+  test('órdenes de la nota: lo no cumplido se corrige en la hoja y en Exámenes; lo cumplido o impreso queda bloqueado', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
+    const file0 = (await doc.get(`/api/inpatient/${stay.id}`)).body
+    const last = [...file0.notes].filter((x: any) => x.kind === 'admission' || x.kind === 'evolution').sort((a: any, b: any) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id)).at(-1)
+    const first = new Date(Date.now() - 10 * 60_000).toISOString()
+    const meds = [
+      { drug: 'Ceftriaxona', dose: '1 g', route: 'Intravenosa', everyHours: 12, prn: false, firstAt: first },
+      { drug: 'Metoclopramida', dose: '10 mg', route: 'Intravenosa', everyHours: 8, prn: false, firstAt: first },
+      { drug: 'Ketorolaco', dose: '30 mg', route: 'Intravenosa', everyHours: 8, prn: false, firstAt: first },
+    ]
+    const n = await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', observations: 'Estable.', meds, orders: ['Dieta blanda.'],
+      exams: [{ group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' }, { group: 'lab', name: 'Glucosa', priority: 'routine', place: 'clinic' }],
+      chain: { basedOn: last?.id ?? null, decisions: [] } })
+    assert.equal(n.status, 201, JSON.stringify(n.body))
+    const file = (await doc.get(`/api/inpatient/${stay.id}`)).body
+    const mine = file.meds.filter((m: any) => m.noteId === n.body.id)
+    const byDrug = (d: string) => mine.find((m: any) => m.drug === d)
+    const exams = (file.exams ?? []).filter((e: any) => e.noteId === n.body.id)
+    // Enfermería administra la ceftriaxona y toma la muestra del hemograma
+    assert.equal((await nurse.post(`/api/inpatient/meds/${byDrug('Ceftriaxona').id}/doses`, { scheduledAt: byDrug('Ceftriaxona').firstAt, status: 'given' })).status, 201)
+    const hemo = exams.find((e: any) => e.name === 'Hemograma')
+    const glu = exams.find((e: any) => e.name === 'Glucosa')
+    const s1 = await nurse.post(`/api/exams/${hemo.id}/status`, { status: 'sample' })
+    assert.equal(s1.status, 200, JSON.stringify(s1.body))
+    const locks = (await doc.get(`/api/inpatient/notes/${n.body.id}/correct`)).body
+    assert.equal(locks.all, undefined, JSON.stringify(locks))
+    assert.match(locks.meds[byDrug('Ceftriaxona').id], /^Ya fue administrado por .+ a las \d\d:\d\d\. Corrígelo con una adenda\.$/)
+    assert.match(locks.exams[hemo.id], /muestra/)
+    const ind = n.body.lines.filter((l: any) => l.kind === 'ind' && l.tag === 'new')
+    const keepAll = { indications: ind.map((l: any) => ({ id: l.id, text: l.text })), meds: mine.map((m: any) => ({ id: m.id, med: { drug: m.drug, dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, firstAt: m.firstAt } })), keepExams: exams.map((e: any) => e.id), exams: [] }
+    const body = { version: 1, observations: 'Estable.', diagnoses: [] }
+    // Lo administrado no se quita ni se cambia
+    const bad = await doc.post(`/api/inpatient/notes/${n.body.id}/correct`, { ...body, orders: { ...keepAll, meds: keepAll.meds.filter((m: any) => m.med.drug !== 'Ceftriaxona') } })
+    assert.equal(bad.status, 409); assert.match(bad.body.error, /Ya fue administrado/)
+    const bad2 = await doc.post(`/api/inpatient/notes/${n.body.id}/correct`, { ...body, orders: { ...keepAll, keepExams: [glu.id] } })
+    assert.equal(bad2.status, 409); assert.match(bad2.body.error, /muestra/)
+    // Lo no cumplido sí: cambia la metoclopramida, quita el ketorolaco, quita la glucosa, cambia la dieta y agrega omeprazol
+    const ok = await doc.post(`/api/inpatient/notes/${n.body.id}/correct`, { ...body, orders: {
+      indications: [{ id: ind[0].id, text: 'Dieta líquida' }, { text: 'Control de diuresis' }],
+      meds: [...keepAll.meds.filter((m: any) => m.med.drug === 'Ceftriaxona'), { id: byDrug('Metoclopramida').id, med: { ...keepAll.meds.find((m: any) => m.med.drug === 'Metoclopramida').med, dose: '5 mg' } },
+        { med: { drug: 'Omeprazol', dose: '40 mg', route: 'Intravenosa', everyHours: 24, prn: false } }],
+      keepExams: [hemo.id], exams: [] } })
+    assert.equal(ok.status, 200, JSON.stringify(ok.body)); assert.equal(ok.body.version, 2)
+    const after = (await doc.get(`/api/inpatient/${stay.id}`)).body
+    const now = after.meds.filter((m: any) => m.noteId === n.body.id)
+    assert.equal(now.find((m: any) => m.drug === 'Metoclopramida').dose, '5 mg', 'la hoja se actualiza')
+    assert.ok(now.find((m: any) => m.drug === 'Ketorolaco').stoppedAt, 'el quitado queda suspendido, no se borra')
+    assert.ok(now.find((m: any) => m.drug === 'Omeprazol' && !m.stoppedAt))
+    assert.equal(after.exams.find((e: any) => e.id === glu.id).status, 'cancelled')
+    assert.equal(after.exams.find((e: any) => e.id === hemo.id).status, 'sample')
+    const lines = ok.body.lines.map((l: any) => l.text)
+    assert.ok(lines.includes('Dieta líquida.') && lines.includes('Control de diuresis.') && !lines.includes('Dieta blanda.'))
+    assert.ok(!lines.some((t: string) => /Ketorolaco/.test(t)) && lines.some((t: string) => /Metoclopramida 5 mg/.test(t)) && lines.some((t: string) => /Omeprazol/.test(t)))
+    assert.equal(ok.body.indicationCount, ok.body.lines.filter((l: any) => l.kind === 'ind').length)
+    assert.equal(ok.body.lines.filter((l: any) => l.kind === 'ind' && l.tag === 'new').length, 2)
+    // La versión 1 guarda cómo estaban la hoja y los exámenes
+    const v = (await doc.get(`/api/versions/note/${n.body.id}`)).body
+    assert.equal(v[0].data.meds.find((m: any) => m.drug === 'Metoclopramida').dose, '10 mg')
+    // Con una revisión de enfermería, la columna de órdenes queda como se firmó
+    assert.equal((await nurse.post(`/api/inpatient/notes/${n.body.id}/orders/0/review`, { checked: true })).status, 201)
+    const marked = await doc.post(`/api/inpatient/notes/${n.body.id}/correct`, { ...body, version: 2, orders: { ...keepAll, indications: [] } })
+    assert.equal(marked.status, 409); assert.match(marked.body.error, /Ya las revisó/)
+    // Lo escrito sí se sigue corrigiendo
+    assert.equal((await doc.post(`/api/inpatient/notes/${n.body.id}/correct`, { ...body, version: 2, observations: 'Estable, afebril.' })).body.version, 3)
+  })
+
+  test('consulta: los exámenes sin muestra se cancelan y los seguimientos sin aviso enviado se ajustan', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const reception = await as('smejia@demo.clinara')
+    const p = await freePatient(doc)
+    const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-herrera', reason: 'Control' })
+    const due = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10)
+    const r = await doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Control', history: 'Control', exam: 'Normal', diagnoses: [{ code: 'BA00', label: 'Hipertensión' }], orders: [],
+      exams: [{ group: 'lab', name: 'Perfil lipídico', priority: 'routine', place: 'clinic' }, { group: 'lab', name: 'Creatinina', priority: 'routine', place: 'clinic' }],
+      followups: [{ kind: 'reminder', reminderType: 'exam', title: 'Traer resultados', dueDate: due }] })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    const locks = (await doc.get(`/api/consultations/${r.body.consultationId}/correct`)).body
+    assert.equal(locks.exams.length, 2); assert.equal(locks.followups.length, 1); assert.equal(locks.followups[0].lock, undefined)
+    const keep = locks.exams.find((e: any) => e.name === 'Creatinina').id
+    const base = { version: 1, reason: 'Control', history: 'Control', exam: 'Normal', diagnoses: [{ code: 'BA00', label: 'Hipertensión' }] }
+    const later = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10)
+    const c = await doc.post(`/api/consultations/${r.body.consultationId}/correct`, { ...base, keepExams: [keep], followups: [{ id: locks.followups[0].id, title: 'Traer resultados de laboratorio', dueDate: later }] })
+    assert.equal(c.status, 200, JSON.stringify(c.body))
+    const again = (await doc.get(`/api/consultations/${r.body.consultationId}/correct`)).body
+    assert.deepEqual(again.exams.map((e: any) => e.name), ['Creatinina'])
+    assert.equal(again.followups[0].dueDate, later); assert.equal(again.followups[0].title, 'Traer resultados de laboratorio')
+    // Con el aviso enviado, el seguimiento ya no se ajusta aquí
+    await sql.run('UPDATE followups SET reminded_week = ? WHERE id = ?', [new Date().toISOString(), locks.followups[0].id])
+    const sent = await doc.post(`/api/consultations/${r.body.consultationId}/correct`, { ...base, version: 2, followups: [] })
+    assert.equal(sent.status, 409); assert.match(sent.body.error, /Ya se envió un aviso/)
+  })
+
   test('signos vitales: sólo quien los registró', async () => {
     const doc = await as('lherrera@demo.clinara')
     const nurse = await as('crios@demo.clinara')
