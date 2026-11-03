@@ -442,3 +442,19 @@ describe('UM1: carga en la base', () => {
     assert.equal((await (await as('lherrera@demo.clinara')).put(`/api/exams/catalog/${cat.id}/refs`, { rows: [] })).status, 403)
   })
 })
+
+describe('DM1: datos demo sin citas imposibles', () => {
+  test('nadie internado está en la cola de hoy; hay un hospitalizado y uno en observación sin cita hoy; los perfiles demo siguen', async () => {
+    const t = today()
+    const conflict = await sql.query(`SELECT a.id FROM appointments a JOIN hospitalizations h ON h.patient_id = a.patient_id AND h.clinic_id = a.clinic_id AND h.status = 'active'
+      WHERE a.status IN ('scheduled','confirmed','arrived','triaged','in_consult') AND a.start >= ? AND a.start < ?`, [t, `${t}T99`])
+    assert.equal(conflict.length, 0)
+    const free = async (kind: string) => Number((await sql.one(`SELECT COUNT(*)::int AS n FROM hospitalizations h WHERE h.status = 'active' AND h.kind = ?
+      AND NOT EXISTS (SELECT 1 FROM appointments a WHERE a.patient_id = h.patient_id AND a.start >= ? AND a.start < ? AND a.status <> 'cancelled' AND a.status <> 'done')`, [kind, t, `${t}T99`]))!.n)
+    assert.ok(await free('hospital') >= 1)
+    assert.ok(await free('observation') >= 1)
+    const names = (await sql.query('SELECT name FROM staff')).map((r) => String(r.name))
+    for (const n of ['Roberto Aguilar', 'Sofía Mejía', 'Carmen Ríos', 'Karla Mendoza', 'Lucía Herrera', 'Andrés Paz', 'Mariela Zúñiga', 'Ana López'])
+      assert.ok(names.some((x) => x.includes(n)), n)
+  })
+})
