@@ -9,6 +9,8 @@ import { allergyConflict, EMPTY_MED, FREQUENCIES, isPrnFrequency, type Drug } fr
 import { autoQuantity, defaultRoute, medicationLine, missingDays, ROUTES } from '../lib/format'
 import { normalize } from '../lib/patients'
 import { useVademecum } from '../lib/vademecum'
+import { lnmeRoute, searchDrugs } from '../lib/drugProvider'
+import { DrugOption, DrugPickedHint } from './DrugSuggestion'
 import { medHasBlank } from '../lib/orderSets'
 import type { Patient, PrescriptionItem } from '../lib/types'
 
@@ -72,14 +74,14 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
   const [overrideAllergy, setOverrideAllergy] = useState(false)
   const [overrideDup, setOverrideDup] = useState(false)
   const q = normalize(m.drug)
-  const matches = q ? drugs.filter((d) => normalize(`${d.name} ${d.brand ?? ''}`).includes(q)).slice(0, 8) : drugs.slice(0, 8)
-  const exact = drugs.some((d) => normalize(d.name) === q)
+  const matches = searchDrugs(drugs, m.drug, 8)
+  const exact = drugs.some((d) => normalize(d.name) === q || d.aliases?.some((a) => normalize(a) === q))
   const conflict = m.drug.trim() ? allergyConflict(patient.allergies, m.drug) : null
   const duplicate = q && current.some((x) => normalize(x.drug) === q && x !== initial) ? m.drug.trim() : null
   const pick = (d: Drug) => {
     setM((x) => ({
       ...x, drug: d.name, presentation: d.presentation,
-      route: d.usual?.route ?? (/ampolla|vial|frasco|bolsa/i.test(d.presentation) ? 'Intravenosa' : defaultRoute(d.presentation)),
+      route: d.usual?.route ?? lnmeRoute(d, x.route) ?? (/ampolla|vial|frasco|bolsa/i.test(d.presentation) ? 'Intravenosa' : defaultRoute(d.presentation)),
       dose: d.usual?.dose ?? x.dose, frequency: d.usual?.frequency ?? x.frequency, duration: d.usual?.duration ?? x.duration,
     }))
     setOpen(false); setOverrideAllergy(false); setOverrideDup(false)
@@ -123,8 +125,7 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
           <div className="suggest__list">
             {matches.map((d) => (
               <button type="button" key={`${d.name}|${d.presentation}`} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(d)}>
-                <span>{d.name}{d.brand ? <small className="muted"> ({d.brand})</small> : null}</span>
-                <span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{d.presentation}{d.clinicId ? ' · de la clínica' : ''}</span>
+                <DrugOption d={d} query={m.drug} clinicTag />
               </button>
             ))}
             {canAdd && q.length >= 3 && !exact && (
@@ -135,7 +136,7 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
         )}
       </div>}
       <div className="form-grid">
-        {!neb && <label className="field"><span>Presentación y concentración</span><input className="input" value={m.presentation} onChange={(e) => setM({ ...m, presentation: e.target.value })} placeholder="Ej. Tableta 500 mg" /></label>}
+        {!neb && <label className="field"><span>Presentación y concentración</span><input className="input" value={m.presentation} onChange={(e) => setM({ ...m, presentation: e.target.value })} placeholder="Ej. Tableta 500 mg" /><DrugPickedHint drugs={drugs} name={m.drug} presentation={m.presentation} /></label>}
         {!neb && <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g, 1 tableta, 5 ml" /></label>}
         <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => { const r = e.target.value; setM({ ...m, route: r, nebulization: isNebulization(r) ? m.nebulization ?? structuredClone(EMPTY_NEB) : m.nebulization }) }}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
         {neb && <NebulizerFields value={nebValue} onChange={(n) => setM({ ...m, nebulization: n })} allergies={patient.allergies} firstName={patient.firstName} />}

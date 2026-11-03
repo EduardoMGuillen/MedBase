@@ -383,6 +383,10 @@ button.chip[aria-pressed='true'] { background: var(--ink); color: #fff; border-c
 .suggest__list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lift); z-index: 10; max-height: 240px; overflow: auto; padding: 4px; }
 .suggest__list button { display: flex; width: 100%; text-align: left; gap: 10px; border: 0; background: transparent; padding: 9px 10px; border-radius: 7px; cursor: pointer; font-size: 14px; }
 .suggest__list button:hover, .suggest__list button:focus { background: var(--ward); outline: none; }
+/* ME5 (ronda 9): etiquetas del LNME en las sugerencias del vademécum */
+.drug-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; vertical-align: 1px; }
+.drug-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700; line-height: 1; padding: 3px 6px; border-radius: 999px; background: var(--ink-soft); color: var(--ink-deep); white-space: nowrap; }
+.drug-tag--warn { background: var(--amber); color: var(--amber-ink); }
 .suggest__list code { font-family: inherit; color: var(--ink); font-weight: 700; min-width: 48px; }
 .rx-item { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: #fcfdff; }
 .rx-item strong { font-size: 15px; }

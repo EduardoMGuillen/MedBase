@@ -7,6 +7,7 @@ import { slugify } from '../db.js'
 import { rolesOf, toAudit, toClinic, toStaff } from '../mappers.js'
 import { assertNotLastAdmin, assertRoleFits, CLINIC_ROLES, createStaffMember, tempPassword } from '../app.js'
 import { DEFAULT_SETTINGS } from '../../src/lib/seed.js'
+import { loadLnme } from '../lnmeLoader.js'
 
 const CLINIC_STATS = `
   (SELECT COUNT(*)::int FROM staff s WHERE s.clinic_id = c.id) AS staff_count,
@@ -72,6 +73,8 @@ export function registerPlatform(app: Express, { sql, auth, need, userOf, audit 
         [id, slug, b.name, b.address, b.phone, b.email, b.currency, DEFAULT_SETTINGS.rxValidityDays, DEFAULT_SETTINGS.reminderTemplate.replace('{clinica}', office ? 'el consultorio de {medico}' : '{clinica}'),
           new Date().toISOString(), b.kind, b.owner?.specialty || null, b.owner?.license ?? null])
       for (const [name, price] of office ? OFFICE_SERVICES : STARTER_SERVICES) await q.run('INSERT INTO services (id, name, price, active, clinic_id) VALUES (?,?,?,TRUE,?)', [randomUUID(), name, price, id])
+      // ME5 (ronda 9): toda clínica o consultorio nuevo nace con el LNME Honduras 2023 en su vademécum
+      await loadLnme(q, id)
     })
     const { user, password } = office
       ? await createStaffMember(sql, id, { name: b.owner!.name, role: 'doctor', email: b.owner!.email, license: b.owner!.license, specialty: b.owner!.specialty })

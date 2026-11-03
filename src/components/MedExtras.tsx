@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Plus, TriangleAlert, X } from 'lucide-react'
 import { useVademecum } from '../lib/vademecum'
 import { normalize } from '../lib/patients'
+import { searchDrugs } from '../lib/drugProvider'
 import { allergyConflict } from '../lib/catalogs'
 import { NEB_MAX_COMPONENTS } from '../lib/clinicalConfig'
 import { DILUENT_OPTIONS, type NebComponent, type Nebulization } from '../lib/medExtras'
@@ -39,7 +40,8 @@ export function NebulizerFields({ value, onChange, allergies, firstName }: { val
       <legend>Nebulizar con:</legend>
       {value.components.map((c, i) => {
         const q = normalize(c.drug)
-        const matches = q ? vademecum.filter((d) => normalize(`${d.name} ${d.brand ?? ''}`).includes(q)).slice(0, 6) : vademecum.slice(0, 6)
+        // ME5: la misma búsqueda del vademécum (nombre, marca y alias del LNME)
+        const matches = searchDrugs(vademecum, c.drug, 6)
         const known = !c.drug.trim() || vademecum.some((d) => normalize(d.name) === q)
         const conflict = c.drug.trim() ? allergyConflict(allergies, c.drug) : null
         return (

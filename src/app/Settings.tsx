@@ -69,8 +69,12 @@ function ClinicDrugs() {
   const n = normalize(q)
   // El catálogo base viene del proveedor (AD4), sin los de la clínica: esos se listan aparte, con sus acciones
   const DRUGS = drugProvider.catalog([])
-  const added = clinicDrugs.filter((d) => !n || normalize(`${d.name} ${d.brand ?? ''} ${d.presentation ?? ''}`).includes(n))
-  const base = onlyClinic ? [] : DRUGS.filter((d) => !n || normalize(`${d.name} ${d.presentation}`).includes(n))
+  // ME5: los que cargó el LNME (sin tocar o editados) son del listado, no «agregados por la clínica»; se buscan también por alias y número
+  const fromList = (d: ClinicDrug) => d.lnme?.match === 'created'
+  const added = clinicDrugs.filter((d) => (!onlyClinic || !fromList(d)) && (!n || normalize(`${d.name} ${d.brand ?? ''} ${d.presentation ?? ''} ${(d.lnme?.aliases ?? []).join(' ')} ${d.lnme ? `lnme #${d.lnme.no}` : ''}`).includes(n)))
+  const listed = added.filter(fromList)
+  const shownAdded = [...added.filter((d) => !fromList(d)), ...listed.slice(0, n ? 200 : 60)]
+  const base = onlyClinic ? [] : DRUGS.filter((d) => !n || normalize(`${d.name} ${d.presentation} ${(d.aliases ?? []).join(' ')}`).includes(n))
   const canEdit = (d: ClinicDrug) => can('drugs.manage') || d.createdBy === user?.id
   const importFile = async (file: File) => {
     const rows = parseCsv(await file.text())
@@ -84,7 +88,7 @@ function ClinicDrugs() {
   }
   return (
     <section className="panel table-wrap">
-      <SectionHead title="Vademécum" sub={`${DRUGS.length} del catálogo base y ${clinicDrugs.filter((d) => d.active).length} agregados por la clínica. Un medicamento desactivado ya no se ofrece al recetar.`} action={<>
+      <SectionHead title="Vademécum" sub={`${DRUGS.length} del catálogo base, ${clinicDrugs.filter((d) => d.active && fromList(d)).length} del LNME Honduras 2023 y ${clinicDrugs.filter((d) => d.active && !fromList(d)).length} agregados por la clínica. Un medicamento desactivado o archivado ya no se ofrece al recetar.`} action={<>
           <button className="btn btn--ghost btn--sm" onClick={() => download('plantilla-vademecum.csv', toCsv([[...IMPORT_COLUMNS], ['Ademetionina', 'Heptral', 'Tabletas', '400 mg', 'Oral', '1 tableta cada 12 horas', 'Colestasis intrahepática']]))}>
             <Download size={15} />Plantilla</button>
           <label className="btn btn--ghost btn--sm"><Upload size={15} />Importar CSV
@@ -105,21 +109,24 @@ function ClinicDrugs() {
       <table className="table table--sticky table--cards">
         <thead><tr><th>Nombre genérico</th><th>Comercial</th><th>Presentación</th><th>Vía</th><th>Origen</th><th /></tr></thead>
         <tbody>
-          {added.map((d) => (
+          {shownAdded.map((d) => (
             <tr key={d.id} style={d.active ? undefined : { opacity: 0.55 }}>
               <td className="tc-full"><b>{d.name}</b>{d.usualUse && <small className="muted" style={{ display: 'block' }}>{d.usualUse}</small>}</td><td data-label="Comercial">{d.brand ?? '—'}</td>
               <td data-label="Presentación">{[d.presentation, d.concentration].filter(Boolean).join(' ') || '—'}</td><td data-label="Vía">{d.route ?? '—'}</td>
-              <td data-label="Origen">Agregado por {staffById(d.createdBy)?.name ?? 'la clínica'}<br /><small className="muted">{date(d.createdAt)}{d.active ? '' : ' · desactivado'}</small></td>
+              <td data-label="Origen">{fromList(d) ? (d.origin === 'lnme' ? d.originLabel ?? 'LNME Honduras 2023' : 'Editado por la clínica') : <>Agregado por {staffById(d.createdBy)?.name ?? 'la clínica'}</>}
+                {d.lnme && <small className="muted"> · LNME #{d.lnme.no}{d.lnme.complementary ? ' · Lista complementaria' : ''}</small>}
+                <br /><small className="muted">{date(d.createdAt)}{d.active ? '' : fromList(d) ? ' · archivado' : ' · desactivado'}</small></td>
               <td className="tc-actions" style={{ textAlign: 'right' }}>{canEdit(d) && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(d)}>Editar</button>}</td>
             </tr>
           ))}
           {base.slice(0, n ? 200 : 60).map((d) => (
             <tr key={`${d.name}|${d.presentation}`}>
-              <td className="tc-full"><b>{d.name}</b></td><td data-label="Comercial">{d.brand ?? '—'}</td><td data-label="Presentación">{d.presentation}</td><td data-label="Vía">{d.usual?.route ?? '—'}</td><td data-label="Origen" className="muted">Catálogo base</td><td />
+              <td className="tc-full"><b>{d.name}</b></td><td data-label="Comercial">{d.brand ?? '—'}</td><td data-label="Presentación">{d.presentation}</td><td data-label="Vía">{d.usual?.route ?? '—'}</td><td data-label="Origen" className="muted">Catálogo base{d.lnme ? ` · LNME #${d.lnme.no}` : ''}</td><td />
             </tr>
           ))}
         </tbody>
       </table>
+      {listed.length > shownAdded.length - (added.length - listed.length) && <p className="muted" style={{ padding: '10px 22px', fontSize: 13.5 }}>Mostrando {shownAdded.length - (added.length - listed.length)} de {listed.length} del LNME. Escribe para buscar.</p>}
       {!n && !onlyClinic && base.length > 60 && <p className="muted" style={{ padding: '10px 22px', fontSize: 13.5 }}>Mostrando 60 del catálogo base. Escribe para buscar.</p>}
       {!added.length && !base.length && <div className="empty">{onlyClinic ? 'La clínica todavía no ha agregado medicamentos.' : 'Ningún medicamento coincide.'}</div>}
       {editing && <DrugForm drug={editing} onClose={() => setEditing(null)} />}

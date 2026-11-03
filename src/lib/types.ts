@@ -453,10 +453,36 @@ export interface ClinicDrug {
   usualDose?: string
   usualUse?: string
   active: boolean
+  /** Vacío en los que cargó el LNME (no los agregó una persona). */
   createdBy: string
   createdAt: string
   updatedBy?: string
   updatedAt?: string
+  /** ME5 (ronda 9): 'lnme' = cargado del listado y sin tocar; 'clinic' = agregado o editado por la clínica. */
+  origin?: 'lnme' | 'clinic'
+  originLabel?: string
+  lnme?: ClinicDrugLnme
+}
+
+/** ME5 (ronda 9): lo que trae del Listado Nacional de Medicamentos Esenciales (LNME Honduras 2023). */
+export interface ClinicDrugLnme {
+  no: number
+  /** created: lo creó la carga; exact / synonym: ya lo tenía la clínica y sólo ganó la etiqueta. */
+  match: 'created' | 'exact' | 'synonym'
+  name: string
+  group: string
+  subgroup?: string
+  form?: string
+  /** La vía como la escribe el listado («IV, IM»). */
+  routes?: string
+  package?: string
+  complementary: boolean
+  restriction?: string
+  note?: string
+  certainty: 'confirmed' | 'unconfirmed' | 'none'
+  presentationFull?: string
+  alternatives: string[]
+  aliases: string[]
 }
 
 export interface AuditEntry {

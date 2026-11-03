@@ -57,6 +57,28 @@ export interface Drug {
   brand?: string
   /** Agregado por la clínica (vademécum propio), no del catálogo base. */
   clinicId?: string
+  /** ME5 (ronda 9): del Listado Nacional de Medicamentos Esenciales (LNME Honduras 2023). */
+  lnme?: DrugLnme
+  /** ME5: otros nombres con que se busca («Paracetamol» para el acetaminofén). */
+  aliases?: string[]
+  /** ME5: es el mismo medicamento que otro del catálogo base (sinónimo): no se ofrece dos veces en la búsqueda. */
+  foldedInto?: string
+}
+
+/** ME5 (ronda 9): lo que el buscador muestra del LNME. */
+export interface DrugLnme {
+  no: number
+  complementary?: boolean
+  /** ⚠️ del archivo: «Presentación por confirmar con farmacia». */
+  unconfirmed?: boolean
+  /** Restricción de uso, tal cual. Se muestra como ayuda; no bloquea. */
+  restriction?: string
+  /** «(también …)»: otras presentaciones habituales. */
+  alternatives?: string[]
+  /** Lo creó la carga del listado (no es un medicamento que la clínica o Clinara ya tenía): la vía sale del listado. */
+  own?: boolean
+  /** La vía del formulario que corresponde a la del listado, si hay una sola equivalente. */
+  route?: string
 }
 
 const oral = (dose: string, frequency: string, duration: string): UsualDose => ({ dose, route: 'Oral', frequency, duration })

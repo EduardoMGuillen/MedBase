@@ -47,6 +47,8 @@ import { currentVitalsMode, vitalsModeText } from '../lib/vitalsSheet'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
 import { hasBlank, medHasBlank, orderKey } from '../lib/orderSets'
 import { useVademecum } from '../lib/vademecum'
+import { lnmeRoute, searchDrugs } from '../lib/drugProvider'
+import { DrugOption, DrugPickedHint } from '../components/DrugSuggestion'
 import type { OrderSet } from '../lib/types'
 
 type Tab = 'sheet' | 'notes' | 'vitals' | 'meds' | 'nursing' | 'labs' | 'annexes'
@@ -1343,8 +1345,7 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
   const conflict = m.drug ? allergyConflict(p.allergies, m.drug) : null
   // AD4: el mismo vademécum que al recetar (proveedor, medicamentos de la clínica y favoritos primero)
   const vademecum = useVademecum()
-  const q = normalize(m.drug)
-  const matches = q ? vademecum.filter((d) => normalize(`${d.name} ${d.brand ?? ''}`).includes(q)).slice(0, 6) : vademecum.slice(0, 6)
+  const matches = searchDrugs(vademecum, m.drug, 6)
   // ME4 (ronda 9): vía «Nebulización»: varios medicamentos en una sola orden (sin infusión ni primera dosis distinta)
   const neb = isNebulization(m.route)
   const infusion = freq === 'infusion' && !neb
@@ -1398,10 +1399,11 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
         {open && matches.length > 0 && (
           <div className="suggest__list">
             {matches.map((d) => <button type="button" key={`${d.name}-${d.presentation}`} onMouseDown={(e) => e.preventDefault()}
-              onClick={() => { setM({ ...m, drug: d.name, presentation: d.presentation, route: /ampolla|vial|frasco|bolsa/i.test(d.presentation) ? 'Intravenosa' : defaultRoute(d.presentation) }); setOpen(false) }}>
-              <span>{d.name}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{d.presentation}</span></button>)}
+              onClick={() => { setM({ ...m, drug: d.name, presentation: d.presentation, route: lnmeRoute(d, m.route) ?? (/ampolla|vial|frasco|bolsa/i.test(d.presentation) ? 'Intravenosa' : defaultRoute(d.presentation)) }); setOpen(false) }}>
+              <DrugOption d={d} query={m.drug} /></button>)}
           </div>
         )}
+        <DrugPickedHint drugs={vademecum} name={m.drug} presentation={m.presentation} />
       </div>}
       <div className="form-grid">
         {!neb && <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder={infusion ? 'Ej. 50 mg en 100 mL' : 'Ej. 8 mg'} /></label>}

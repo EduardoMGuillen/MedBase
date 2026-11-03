@@ -90,7 +90,15 @@ export const toCertificate = (r: Row): Certificate => ({
 export const toClinicDrug = (r: Row): ClinicDrug => ({
   id: String(r.id), name: String(r.name), brand: s(r.brand), presentation: s(r.presentation), concentration: s(r.concentration), route: s(r.route),
   usualDose: s(r.usual_dose), usualUse: s(r.usual_use),
-  active: Boolean(r.active), createdBy: String(r.created_by), createdAt: String(r.created_at), updatedBy: s(r.updated_by), updatedAt: s(r.updated_at),
+  active: Boolean(r.active), createdBy: r.created_by ? String(r.created_by) : '', createdAt: String(r.created_at), updatedBy: s(r.updated_by), updatedAt: s(r.updated_at),
+  // ME5 (ronda 9): el LNME Honduras 2023
+  origin: r.origin === 'lnme' ? 'lnme' : 'clinic', originLabel: s(r.origin_label),
+  lnme: r.lnme_no == null ? undefined : {
+    no: Number(r.lnme_no), match: (r.lnme_match ?? 'created') as NonNullable<ClinicDrug['lnme']>['match'], name: String(r.lnme_name ?? r.name), group: String(r.lnme_group ?? ''),
+    subgroup: s(r.lnme_subgroup), form: s(r.form), routes: s(r.lnme_routes), package: s(r.package), complementary: Boolean(r.complementary), restriction: s(r.restriction),
+    note: s(r.lnme_note), certainty: (r.certainty ?? 'none') as NonNullable<ClinicDrug['lnme']>['certainty'], presentationFull: s(r.presentation_full),
+    alternatives: j(r.alternatives, []), aliases: j(r.aliases, []),
+  },
 })
 
 export const toAudit = (r: Row): AuditEntry => ({ id: String(r.id), at: String(r.at), userId: String(r.user_id), action: String(r.action) })

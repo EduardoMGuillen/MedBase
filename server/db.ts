@@ -14,12 +14,13 @@ import { SCENARIO_PATIENT_IDS, insertClinicScenarios, insertOfficeScenarios } fr
 import { ensureHospitalAuthorization } from './authorizations.js'
 import { loadRonda7 } from './catalogLoader.js'
 import { loadLabSources, loadRefValues } from './refLoader.js'
+import { loadLnme } from './lnmeLoader.js'
 import { closeVisitsOfInpatients } from './stayVisits.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '65'
+const SCHEMA_VERSION = '66'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -967,6 +968,33 @@ ALTER TABLE addenda ADD CONSTRAINT addenda_target_kind_check CHECK (target_kind 
 -- v65 (ronda 9). ME4: nebulización con varios medicamentos en una sola orden (componentes y diluyente, en JSON). La dosis
 -- registrada guarda la composición aplicada en su columna «dose» (v59).
 ALTER TABLE hosp_meds ADD COLUMN IF NOT EXISTS nebulization TEXT;
+-- v66 (ronda 9, ME5): el Listado Nacional de Medicamentos Esenciales de Honduras 2023 (AM 5230-2023) entra al vademécum de
+-- cada clínica (misma tabla clinic_drugs: así lo ven la búsqueda, Mi vademécum y Configuración › Vademécum sin otra lista).
+-- Lo que la clínica ya tenía no se toca: si es el mismo medicamento, sólo gana el número, la etiqueta y el alias del LNME
+-- (lnme_match 'exact' o 'synonym'). Lo que no existía se crea (lnme_match 'created', origin 'lnme', sin autor). Si la clínica
+-- edita o archiva uno del listado, su origen pasa a 'clinic' («Editado por la clínica») y ninguna carga lo vuelve a pisar ni
+-- a reactivar. Nada se borra.
+ALTER TABLE clinic_drugs
+  ALTER COLUMN created_by DROP NOT NULL,
+  ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'clinic',
+  ADD COLUMN IF NOT EXISTS origin_label TEXT,
+  ADD COLUMN IF NOT EXISTS lnme_no INTEGER,
+  ADD COLUMN IF NOT EXISTS lnme_match TEXT,
+  ADD COLUMN IF NOT EXISTS lnme_version TEXT,
+  ADD COLUMN IF NOT EXISTS lnme_group TEXT,
+  ADD COLUMN IF NOT EXISTS lnme_subgroup TEXT,
+  ADD COLUMN IF NOT EXISTS lnme_name TEXT,
+  ADD COLUMN IF NOT EXISTS form TEXT,
+  ADD COLUMN IF NOT EXISTS lnme_routes TEXT,
+  ADD COLUMN IF NOT EXISTS package TEXT,
+  ADD COLUMN IF NOT EXISTS complementary BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS restriction TEXT,
+  ADD COLUMN IF NOT EXISTS lnme_note TEXT,
+  ADD COLUMN IF NOT EXISTS certainty TEXT,
+  ADD COLUMN IF NOT EXISTS presentation_full TEXT,
+  ADD COLUMN IF NOT EXISTS alternatives TEXT,
+  ADD COLUMN IF NOT EXISTS aliases TEXT;
+CREATE INDEX IF NOT EXISTS clinic_drugs_lnme ON clinic_drugs (clinic_id, lnme_no);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -1026,6 +1054,8 @@ export function ensureDb(sql: Sql) {
       await loadLabSources(q)
       for (const c of await q.query('SELECT id FROM clinics')) await loadRefValues(q, String(c.id))
       await migrateCriticalDefaults(q)
+      // v66 (ronda 9, ME5): el LNME Honduras 2023 en el vademécum de cada clínica y consultorio (idempotente)
+      for (const c of await q.query('SELECT id FROM clinics')) await loadLnme(q, String(c.id))
       // v57/v58 (ronda 8, CX2): nadie internado sigue a la vez en la consulta externa (idempotente)
       await closeVisitsOfInpatients(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
@@ -1422,6 +1452,8 @@ export async function ensureExamCatalog(q: Sql, clinicId: string) {
   // UM1 (ronda 8): y los valores de referencia del .md con sus fuentes
   await loadLabSources(q)
   await loadRefValues(q, clinicId)
+  // ME5 (ronda 9): y el LNME Honduras 2023 en su vademécum
+  await loadLnme(q, clinicId)
 }
 
 /**
@@ -1611,6 +1643,8 @@ export async function resetDemo(sql: Sql) {
     await loadLabSources(q)
     for (const c of await q.query('SELECT id FROM clinics')) await loadRefValues(q, String(c.id))
     await migrateCriticalDefaults(q)
+    // ME5 (ronda 9): el LNME en el vademécum de cada clínica de la demo
+    for (const c of await q.query('SELECT id FROM clinics')) await loadLnme(q, String(c.id))
   })
 }
 

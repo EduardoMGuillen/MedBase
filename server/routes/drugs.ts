@@ -14,12 +14,16 @@ const keyOf = (name: string, presentation?: string, concentration?: string) =>
 const body = z.object({
   name: z.string().trim().min(2, 'Escribe el nombre genérico.').max(120),
   brand: z.string().trim().max(120).optional(),
-  presentation: z.string().trim().max(60).optional(),
+  // ME5: las presentaciones del LNME son más largas («Frasco 120 ml (120 mg/5 ml)»)
+  presentation: z.string().trim().max(200).optional(),
   concentration: z.string().trim().max(60).optional(),
   route: z.string().trim().max(40).optional(),
   usualDose: z.string().trim().max(120).optional(),
   usualUse: z.string().trim().max(200).optional(),
 })
+
+/** ME5: origen de un medicamento del LNME que la clínica editó o archivó. */
+const EDITED = 'Editado por la clínica'
 
 /** Lo que impide agregar un medicamento: ya está en el catálogo base o en el de la clínica. */
 const baseMatch = (b: { name: string; presentation?: string; concentration?: string }, key: string) =>
@@ -51,7 +55,9 @@ export function registerDrugs(app: Express, { sql, auth, need, userOf, clinicOf,
     const existing = await sql.one('SELECT * FROM clinic_drugs WHERE clinic_id = ? AND norm_key = ?', [cid, key])
     if (existing) {
       // Si alguien lo había desactivado, se reactiva en lugar de duplicarlo
-      if (!existing.active) await sql.run('UPDATE clinic_drugs SET active = TRUE, updated_by = ?, updated_at = ? WHERE id = ?', [userOf(req).id, new Date().toISOString(), String(existing.id)])
+      // ME5: si era del LNME, desde ahora es de la clínica (ninguna carga lo vuelve a tocar)
+      if (!existing.active) await sql.run(`UPDATE clinic_drugs SET active = TRUE, updated_by = ?, updated_at = ?, origin = 'clinic', origin_label = CASE WHEN origin = 'lnme' THEN ? ELSE origin_label END WHERE id = ?`,
+        [userOf(req).id, new Date().toISOString(), EDITED, String(existing.id)])
       return res.json(toClinicDrug((await sql.one('SELECT * FROM clinic_drugs WHERE id = ?', [String(existing.id)]))!))
     }
     const id = await insert(cid, userOf(req).id, b, key)
@@ -100,11 +106,15 @@ export function registerDrugs(app: Express, { sql, auth, need, userOf, clinicOf,
     const key = keyOf(next.name, next.presentation as string | undefined, next.concentration as string | undefined)
     const clash = await sql.one('SELECT 1 FROM clinic_drugs WHERE clinic_id = ? AND norm_key = ? AND id <> ?', [cid, key, String(row!.id)])
     if (clash) fail(409, 'Ya hay otro medicamento igual en el vademécum de la clínica.')
-    await sql.run('UPDATE clinic_drugs SET name = ?, brand = ?, presentation = ?, concentration = ?, route = ?, active = ?, norm_key = ?, updated_by = ?, updated_at = ?, usual_dose = ?, usual_use = ? WHERE id = ?',
+    // ME5: uno del LNME editado o archivado por la clínica queda «Editado por la clínica»: ninguna carga futura lo pisa ni lo reactiva
+    const fromLnme = row!.origin === 'lnme'
+    await sql.run(`UPDATE clinic_drugs SET name = ?, brand = ?, presentation = ?, concentration = ?, route = ?, active = ?, norm_key = ?, updated_by = ?, updated_at = ?, usual_dose = ?, usual_use = ?,
+      origin = 'clinic', origin_label = ? WHERE id = ?`,
       [next.name, next.brand || null, next.presentation || null, next.concentration || null, next.route || null, next.active, key, userOf(req).id, new Date().toISOString(),
-        next.usualDose || null, next.usualUse || null, String(row!.id)])
-    const what = b.active === false ? 'Desactivó' : b.active === true && !row!.active ? 'Reactivó' : 'Editó'
-    await audit(userOf(req), `${what} en el vademécum de la clínica: ${next.name}`)
+        next.usualDose || null, next.usualUse || null, fromLnme ? EDITED : row!.origin_label ?? null, String(row!.id)])
+    const lnme = row!.lnme_no != null ? ` (LNME #${row!.lnme_no})` : ''
+    const what = b.active === false ? (lnme ? 'Archivó' : 'Desactivó') : b.active === true && !row!.active ? 'Reactivó' : 'Editó'
+    await audit(userOf(req), `${what} en el vademécum de la clínica: ${next.name}${lnme}`)
     res.json(toClinicDrug((await sql.one('SELECT * FROM clinic_drugs WHERE id = ?', [String(row!.id)]))!))
   })
 }
