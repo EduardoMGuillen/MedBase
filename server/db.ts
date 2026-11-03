@@ -16,12 +16,12 @@ import { loadRonda7 } from './catalogLoader.js'
 import { loadLabSources, loadRefValues } from './refLoader.js'
 import { forceLnmeOnce, loadLnme } from './lnmeLoader.js'
 import { closeVisitsOfInpatients } from './stayVisits.js'
-import { cleanArchivedThresholds } from './ronda10.js'
+import { cleanArchivedThresholds, loadImagingCatalog } from './ronda10.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '72'
+const SCHEMA_VERSION = '73'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1085,6 +1085,12 @@ CREATE TABLE IF NOT EXISTS print_jobs (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS print_jobs_patient ON print_jobs (clinic_id, patient_id);
+-- v73 (ronda 10). CA5: cada estudio de imagen guarda qué detalles pide al ordenar (proyección, contraste, lado, región), si
+-- administración los cambió; y cada orden, lo que se eligió (para armar «Rayos X de tórax PA y lateral»).
+ALTER TABLE exam_catalog ADD COLUMN IF NOT EXISTS details TEXT;
+ALTER TABLE exam_orders ADD COLUMN IF NOT EXISTS projections TEXT;
+ALTER TABLE exam_orders ADD COLUMN IF NOT EXISTS contrast TEXT;
+ALTER TABLE exam_orders ADD COLUMN IF NOT EXISTS detailed BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE TABLE IF NOT EXISTS config_backups (
   id TEXT PRIMARY KEY,
   clinic_id TEXT,
@@ -1156,6 +1162,8 @@ export function ensureDb(sql: Sql) {
       await cleanArchivedThresholds(q)
       // v66 (ronda 9, ME5): el LNME Honduras 2023 en el vademécum de cada clínica y consultorio (idempotente)
       for (const c of await q.query('SELECT id FROM clinics')) await loadLnme(q, String(c.id))
+      // v73 (ronda 10, CA5): el catálogo de Imagen y gabinete del Anexo A (los estudios de antes se borran; las órdenes no cambian)
+      for (const c of await q.query('SELECT id FROM clinics')) await loadImagingCatalog(q, String(c.id))
       // v71 (ronda 10, ME6): las 530 filas del .md, una vez con el .md mandando sobre lo que ya había (clínicas de demostración)
       await forceLnmeOnce(q)
       // v57/v58 (ronda 8, CX2): nadie internado sigue a la vez en la consulta externa (idempotente)
@@ -1556,6 +1564,8 @@ export async function ensureExamCatalog(q: Sql, clinicId: string) {
   await loadRefValues(q, clinicId)
   // ME5 (ronda 9): y el LNME Honduras 2023 en su vademécum
   await loadLnme(q, clinicId)
+  // CA5 (ronda 10): y el catálogo de Imagen y gabinete completo (marca la clínica como al día)
+  await loadImagingCatalog(q, clinicId)
 }
 
 /**

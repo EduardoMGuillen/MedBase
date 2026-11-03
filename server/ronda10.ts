@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { Sql } from './sql.js'
 import { DEFAULT_CRITICAL_GROUPS, defaultAnalyte, type CriticalAnalyte, type CriticalGroup } from '../src/lib/clinicalConfig.js'
+import { EXAMS, examKey } from '../src/lib/exams.js'
+import { IMAGING_REMOVED } from '../src/lib/imagingCatalog.js'
 
 /**
  * Ronda 10: migraciones y cargas de datos. Todas son idempotentes, corren en `ensureDb` para cada clínica y consultorio
@@ -93,4 +95,82 @@ export async function cleanArchivedThresholds(q: Sql): Promise<Record<string, Th
   }
   await q.run(`INSERT INTO meta (key, value) VALUES ('um3:done', ?) ON CONFLICT (key) DO NOTHING`, [new Date().toISOString()])
   return out
+}
+
+// ───────────────────────────── CA5: catálogo de Imagen y gabinete ─────────────────────────────
+
+export interface ImagingLoadReport {
+  deleted: string[]
+  created: string[]
+  updated: string[]
+  /** Sets o perfiles de los que se quitó un estudio borrado: nombre, de quién y qué se quitó. */
+  sets: { kind: 'set' | 'profile'; name: string; owner: string; removed: string[] }[]
+}
+
+/**
+ * CA5 (ronda 10): deja el catálogo de Imagen y gabinete con el Anexo A, en cada clínica y consultorio. Una vez por clínica
+ * (marca `ca5:<clínica>`; las nuevas nacen al día):
+ *  - BORRA (decisión de Emil, A1 y A2: es catálogo, no expediente) los estudios de antes de la lista fija (`base_key`) que no
+ *    siguen en el Anexo A: Radiografía, Radiografía de abdomen y de tórax, los ultrasonidos de antes, «Ultrasonido Doppler»,
+ *    «Tomografía (TAC)», «Resonancia magnética» y la «Mamografía» genérica. Lo que la clínica agregó a mano no se toca. Antes
+ *    se guarda la exportación en config_backups. Las órdenes guardan el NOMBRE del estudio (no una referencia al catálogo),
+ *    así que las antiguas siguen diciendo «Radiografía de tórax» en todas partes.
+ *  - Los del Anexo A que tienen el mismo nombre que uno de antes (Ultrasonido obstétrico, de tiroides, de partes blandas)
+ *    quedan con su subgrupo y sus detalles nuevos; los que faltan se crean activos, sin precio.
+ *  - Cardiología, Endoscopia y Otros conservan los suyos; los sinónimos no se duplican (IMAGING_SAME).
+ *  - A los «Mis sets» y perfiles se les quita el estudio borrado (no se reemplaza: no se sabe qué proyección querían).
+ */
+export async function loadImagingCatalog(q: Sql, clinicId: string): Promise<ImagingLoadReport | null> {
+  const mark = `ca5:${clinicId}`
+  if (await q.one('SELECT 1 FROM meta WHERE key = ?', [mark])) return null
+  const report: ImagingLoadReport = { deleted: [], created: [], updated: [], sets: [] }
+  const keep = new Set(EXAMS.filter((e) => e.group === 'imaging').map((e) => examKey(e.name)))
+  const removedKeys = new Set(IMAGING_REMOVED.map(examKey))
+  const rows = await q.query(`SELECT * FROM exam_catalog WHERE clinic_id = ? AND grp = 'imaging'`, [clinicId])
+  const gone = rows.filter((r) => r.base_key && removedKeys.has(String(r.base_key)) && !keep.has(String(r.norm_key)))
+  const now = new Date().toISOString()
+  if (gone.length) {
+    await saveConfigBackup(q, clinicId, 'ca5-imaging-removed', gone, `CA5 (ronda 10): ${gone.length} estudio(s) de imagen borrados del catálogo`)
+    await q.run(`DELETE FROM exam_catalog WHERE id IN (${gone.map(() => '?').join(',')})`, gone.map((r) => String(r.id)))
+    report.deleted = gone.map((r) => String(r.name))
+  }
+  const left = rows.filter((r) => !gone.includes(r))
+  for (const e of EXAMS.filter((x) => x.group === 'imaging')) {
+    const key = examKey(e.name)
+    const cur = left.find((r) => String(r.norm_key) === key)
+    if (!cur) {
+      await q.run('INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, base_key, subgroup, active, created_by, created_at) VALUES (?,?,?,?,?,?,?,TRUE,NULL,?)',
+        [randomUUID(), clinicId, 'imaging', e.name, key, key, e.subgroup ?? null, now])
+      report.created.push(e.name)
+    } else if (!cur.base_key || (removedKeys.has(key) && (cur.subgroup ?? null) !== (e.subgroup ?? null))) {
+      // El mismo nombre que uno de antes: queda como el del Anexo A (subgrupo y detalles de la lista fija)
+      await q.run('UPDATE exam_catalog SET base_key = COALESCE(base_key, ?), subgroup = ?, details = NULL WHERE id = ?', [key, e.subgroup ?? cur.subgroup ?? null, String(cur.id)])
+      report.updated.push(e.name)
+    }
+  }
+  // Mis sets (y los sets de la clínica) y perfiles: se quita el estudio borrado
+  const removedNames = new Set(report.deleted.map(examKey))
+  if (removedNames.size) {
+    const staffName = async (id: unknown) => (id ? String((await q.one('SELECT name FROM staff WHERE id = ?', [String(id)]))?.name ?? '—') : 'la clínica')
+    for (const s of await q.query('SELECT * FROM order_sets WHERE clinic_id = ? AND archived_at IS NULL', [clinicId])) {
+      const items = JSON.parse(String(s.items)) as { exam?: { name: string } }[]
+      const out = items.filter((it) => !(it.exam && removedNames.has(examKey(it.exam.name))))
+      if (out.length === items.length) continue
+      await q.run('UPDATE order_sets SET items = ?, updated_at = ? WHERE id = ?', [JSON.stringify(out), now, String(s.id)])
+      report.sets.push({ kind: 'set', name: String(s.name), owner: await staffName(s.owner_id), removed: items.filter((it) => !out.includes(it)).map((it) => it.exam!.name) })
+    }
+    for (const p of await q.query('SELECT * FROM exam_profiles WHERE clinic_id = ? AND archived_at IS NULL', [clinicId])) {
+      const items = JSON.parse(String(p.items)) as { name: string }[]
+      const out = items.filter((it) => !removedNames.has(examKey(it.name)))
+      if (out.length === items.length) continue
+      await q.run('UPDATE exam_profiles SET items = ? WHERE id = ?', [JSON.stringify(out), String(p.id)])
+      report.sets.push({ kind: 'profile', name: String(p.name), owner: await staffName(p.owner_id), removed: items.filter((it) => !out.includes(it)).map((it) => it.name) })
+    }
+  }
+  if (report.deleted.length || report.created.length || report.updated.length) {
+    await sysAudit(q, clinicId, `Catálogo de Imagen y gabinete (CA5, ronda 10): ${report.deleted.length} estudio(s) borrado(s)${report.deleted.length ? ` (${report.deleted.join(', ')})` : ''}, `
+      + `${report.created.length} creado(s), ${report.updated.length} actualizado(s)${report.sets.length ? `; se quitaron estudios borrados de ${report.sets.map((x) => `${x.kind === 'set' ? 'el set' : 'el perfil'} «${x.name}» (${x.owner})`).join(', ')}` : ''}. Copia previa en config_backups.`)
+  }
+  await q.run('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING', [mark, now])
+  return report
 }

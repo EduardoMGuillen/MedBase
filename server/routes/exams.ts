@@ -5,7 +5,8 @@ import { assertGrace, graceUntil, saveVersion } from '../grace.js'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import type { Sql } from '../sql.js'
 import { can } from '../../src/lib/permissions.js'
-import { areaFor, canReview, EXAMS, examKey, findExam, flagOf, FLOW, GROUP_LABEL, isPending, STATUS_LABEL } from '../../src/lib/exams.js'
+import { areaFor, canReview, EXAMS, examKey, findExam, flagOf, FLOW, GROUP_LABEL, isPending, STATUS_LABEL, examLine, missingDetail, hasDetails } from '../../src/lib/exams.js'
+import type { ImagingDetails } from '../../src/lib/imagingCatalog.js'
 import { ensureExamCatalog } from '../db.js'
 import { criticalLimitsOf, defaultAnalyte, defaultValues, isCritical, mergeCriticalGroups, type CriticalAnalyte, type CriticalGroup } from '../../src/lib/clinicalConfig.js'
 import { rangeFor, referenceFromRows } from '../../src/lib/labReference.js'
@@ -21,6 +22,10 @@ export const examInput = z.object({
   indication: z.string().trim().max(300).optional(),
   priority: z.enum(['routine', 'urgent']).default('routine'),
   place: z.enum(['clinic', 'external']).default('clinic'),
+  // CA5 (ronda 10): lo elegido al ordenar un estudio de imagen
+  projections: z.array(z.string().trim().min(1).max(60)).max(12).optional(),
+  contrast: z.string().trim().max(40).optional(),
+  detailed: z.boolean().optional(),
 })
 
 const j = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(String(v)) as T : fallback } catch { return fallback } }
@@ -29,6 +34,7 @@ const toClinicExam = (r: Row): ClinicExam => ({
   id: String(r.id), group: r.grp as ClinicExam['group'], name: String(r.name), active: Boolean(r.active), baseKey: r.base_key ? String(r.base_key) : undefined,
   createdBy: r.created_by ? String(r.created_by) : undefined, createdAt: String(r.created_at), archivedAt: r.archived_at ? String(r.archived_at) : undefined,
   subgroup: r.subgroup ? String(r.subgroup) : undefined,
+  details: j<ClinicExam['details']>(r.details, undefined),
 })
 
 export const toExamOrder = (r: Row, events: Row[] = []): ExamOrder => ({
@@ -45,6 +51,7 @@ export const toExamOrder = (r: Row, events: Row[] = []): ExamOrder => ({
   resultGraceUntil: r.status === 'result' ? graceUntil(j<{ at?: string }>(r.result, {}).at) : undefined,
   reviewedBy: r.reviewed_by ? String(r.reviewed_by) : undefined, reviewedAt: r.reviewed_at ? String(r.reviewed_at) : undefined,
   uncatalogued: Boolean(r.uncatalogued) || undefined,
+  projections: j<string[] | undefined>(r.projections, undefined), contrast: r.contrast ? String(r.contrast) : undefined, detailed: Boolean(r.detailed) || undefined,
   events: events.filter((e) => e.exam_id === r.id).map((e) => ({ status: e.status as ExamStatus, by: String(e.by_id), at: String(e.at), note: e.note ? String(e.note) : undefined })),
 })
 
@@ -67,7 +74,17 @@ export async function insertExams(q: Sql, c: { clinicId: string; patientId: stri
   // MC3 (ronda 6): un estudio que no está en el catálogo activo de la clínica queda «No catalogado» con el tipo que eligió el
   // médico, y va a la bandeja de su tipo como cualquier otro (antes, ronda 5, se volvía externo)
   await ensureExamCatalog(q, c.clinicId)
-  const known = new Set((await q.query('SELECT norm_key FROM exam_catalog WHERE clinic_id = ? AND active', [c.clinicId])).map((r) => String(r.norm_key)))
+  const rows = await q.query('SELECT norm_key, base_key, details FROM exam_catalog WHERE clinic_id = ? AND active', [c.clinicId])
+  const known = new Set(rows.map((r) => String(r.norm_key)))
+  // CA5 (ronda 10): un estudio que pide proyección, contraste, lado o región no se ordena sin ellos
+  for (const e of list) {
+    const r = rows.find((x) => String(x.norm_key) === examKey(e.name))
+    if (!r) continue
+    const details = r.details ? JSON.parse(String(r.details)) as ImagingDetails : EXAMS.find((b) => examKey(b.name) === (r.base_key ?? r.norm_key))?.details
+    const missing = missingDetail(e, details)
+    if (missing) fail(400, `${e.name}: falta elegir ${missing}.`)
+    if (hasDetails(details)) e.detailed = true
+  }
   const batch = randomUUID()
   // EX2 (ronda 8): número de orden correlativo por clínica y año (OE-2026-0001), el mismo para todo el lote
   await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`oe:${c.clinicId}`])
@@ -79,10 +96,11 @@ export async function insertExams(q: Sql, c: { clinicId: string; patientId: stri
     const uncatalogued = !known.has(examKey(raw.name))
     const id = randomUUID()
     const area = areaFor(e.group, e.place, c.inStay ?? !!c.hospitalizationId, { hasLab: Boolean(clinic.has_lab), hasImaging: Boolean(clinic.has_imaging) })
-    await q.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, consultation_id, hospitalization_id, note_id, batch_id, grp, name, region, side, indication, priority, place, area, status, ordered_by, ordered_at, uncatalogued, order_no)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ordered',?,?,?,?)`,
+    await q.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, consultation_id, hospitalization_id, note_id, batch_id, grp, name, region, side, indication, priority, place, area, status, ordered_by, ordered_at, uncatalogued, order_no,
+        projections, contrast, detailed)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ordered',?,?,?,?,?,?,?)`,
     [id, c.clinicId, c.patientId, c.consultationId ?? null, c.hospitalizationId ?? null, c.noteId ?? null, batch, e.group, e.name, e.region || null, e.side ?? null, e.indication || null,
-      e.priority, e.place, area, c.by, c.at, uncatalogued, orderNo])
+      e.priority, e.place, area, c.by, c.at, uncatalogued, orderNo, e.projections?.length ? JSON.stringify(e.projections) : null, e.contrast || null, !!e.detailed])
     await q.run('INSERT INTO exam_events (id, clinic_id, exam_id, status, by_id, at) VALUES (?,?,?,?,?,?)', [randomUUID(), c.clinicId, id, 'ordered', c.by, c.at])
   }
   return batch
@@ -109,7 +127,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
   const examRow = async (cid: string, id: string) => (await sql.one('SELECT * FROM exam_orders WHERE id = ? AND clinic_id = ?', [id, cid])) ?? fail(404, 'El examen no existe.')
   const event = (q: Sql, cid: string, examId: string, status: ExamStatus, by: string, at: string, note?: string) =>
     q.run('INSERT INTO exam_events (id, clinic_id, exam_id, status, by_id, at, note) VALUES (?,?,?,?,?,?,?)', [randomUUID(), cid, examId, status, by, at, note ?? null])
-  const label = (r: Row) => `${GROUP_LABEL[r.grp as 'lab']}: ${r.name}${r.region ? ` de ${r.region}` : ''}`
+  const label = (r: Row) => `${GROUP_LABEL[r.grp as 'lab']}: ${examLine(toExamOrder(r))}`
 
   // AD4 (ronda 5): el catálogo de la clínica es la batería completa (activos y archivados) y los perfiles del médico
   app.get('/api/exams/catalog', auth, async (req, res) => {
@@ -134,7 +152,10 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
   // Quitar es archivar: lo ya ordenado en notas anteriores no cambia.
   const catalogBody = z.object({ group: z.enum(['lab', 'imaging']), name: z.string().trim().min(2, 'Escribe el nombre del examen.').max(160),
     // CF3 (ronda 6): subgrupo; vacío se lee como «Otros»
-    subgroup: z.string().trim().max(60).optional() })
+    subgroup: z.string().trim().max(60).optional(),
+    // CA5 (ronda 10): qué pide al ordenarlo (vacío: lo de la lista fija)
+    details: z.object({ projections: z.array(z.string().trim().min(1).max(60)).max(15).optional(), contrast: z.enum(['ct', 'ct-multi', 'mr']).optional(),
+      side: z.boolean().optional(), region: z.boolean().optional() }).nullable().optional() })
   const catalogRow = async (cid: string, id: string) => (await sql.one('SELECT * FROM exam_catalog WHERE id = ? AND clinic_id = ?', [id, cid])) ?? fail(404, 'El examen no está en el catálogo.')
   app.post('/api/exams/catalog', auth, need('settings.manage'), async (req, res) => {
     const b = parse(catalogBody, req.body)
@@ -164,12 +185,14 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     if (key !== r.norm_key && await sql.one('SELECT 1 FROM exam_catalog WHERE clinic_id = ? AND norm_key = ? AND id <> ?', [cid, key, String(r.id)])) fail(409, `Ya hay un examen «${name}» en el catálogo.`)
     const now = new Date().toISOString()
     const active = b.active ?? Boolean(r.active)
-    await sql.run(`UPDATE exam_catalog SET name = ?, norm_key = ?, grp = ?, subgroup = ?, active = ?, archived_at = ?, archived_by = ?, updated_at = ?, updated_by = ? WHERE id = ?`,
-      [name, key, b.group ?? r.grp, b.subgroup === undefined ? r.subgroup ?? null : b.subgroup || null, active, active ? null : r.archived_at ?? now, active ? null : r.archived_by ?? user.id, now, user.id, String(r.id)])
+    await sql.run(`UPDATE exam_catalog SET name = ?, norm_key = ?, grp = ?, subgroup = ?, active = ?, archived_at = ?, archived_by = ?, updated_at = ?, updated_by = ?, details = ? WHERE id = ?`,
+      [name, key, b.group ?? r.grp, b.subgroup === undefined ? r.subgroup ?? null : b.subgroup || null, active, active ? null : r.archived_at ?? now, active ? null : r.archived_by ?? user.id, now, user.id,
+        b.details === undefined ? r.details ?? null : b.details ? JSON.stringify(b.details) : null, String(r.id)])
     const what = [
       b.name && b.name !== r.name && `«${r.name}» → «${b.name}»`,
       b.group && b.group !== r.grp && `${GROUP_LABEL[r.grp as 'lab']} → ${GROUP_LABEL[b.group]}`,
       b.subgroup !== undefined && (b.subgroup || null) !== (r.subgroup ?? null) && `subgrupo de ${name}: ${r.subgroup ?? 'sin subgrupo'} → ${b.subgroup || 'sin subgrupo'}`,
+      b.details !== undefined && JSON.stringify(b.details ?? null) !== String(r.details ?? 'null') && `detalles al ordenar ${name}: ${detailsText(b.details ?? undefined)}`,
     ].filter(Boolean)
     if (what.length) await audit(user, `Editó en el catálogo de exámenes: ${what.join('; ')}`)
     if (b.active === false && r.active) await audit(user, `Archivó del catálogo de exámenes: ${name}`)
@@ -560,4 +583,11 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     })
     res.status(201).json((await examsWhere(sql, 'id = ?', [id]))[0])
   })
+}
+
+/** CA5 (ronda 10): los detalles de un estudio en palabras, para la bitácora. */
+function detailsText(d?: ImagingDetails) {
+  if (!d) return 'los de la lista fija'
+  return [d.projections?.length && `proyecciones ${d.projections.join(', ')}`, d.contrast && `contraste ${d.contrast === 'mr' ? 'de resonancia' : d.contrast === 'ct-multi' ? 'de tomografía (con doble y triple)' : 'de tomografía'}`,
+    d.side && 'pide lado', d.region && 'pide región'].filter(Boolean).join('; ') || 'sin detalles'
 }

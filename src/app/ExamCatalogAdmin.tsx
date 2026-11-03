@@ -5,7 +5,8 @@ import { api } from '../lib/api'
 import { FoldHead, Modal, SectionHead } from '../components/ui'
 import { ExamPicker } from '../components/Exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
-import { byArea, EXAMS, examKey, GROUP_LABEL, SUBGROUPS, subgroupOf } from '../lib/exams'
+import { byArea, EXAMS, examKey, GROUP_LABEL, hasDetails, SUBGROUPS, subgroupOf } from '../lib/exams'
+import type { ImagingDetails } from '../lib/imagingCatalog'
 import { normalize } from '../lib/patients'
 import { rangeText, referenceOf, type LabReference } from '../lib/labReference'
 import { ReferenceNote } from './ExamsTab'
@@ -67,7 +68,9 @@ export function ExamCatalogAdmin() {
                   {refOf(e) ? <button type="button" className="linklike" style={{ fontSize: 13 }} aria-expanded={refOpen === e.id} onClick={() => setRefOpen(refOpen === e.id ? null : e.id)}>
                     {refOpen === e.id ? 'Ocultar valores de referencia' : `Valores de referencia${analytes(e) ? ` (${analytes(e)})` : ''}`}</button>
                     : e.group === 'lab' && <small className="muted">{analytes(e) > 0 ? `${analytes(e)} ${analytes(e) === 1 ? 'valor' : 'valores'} con rango de referencia` : 'Sin valores de referencia en la lista de Emil'}</small>}
-                  {refOpen === e.id && refOf(e) && <RefDetails r={refOf(e)!} />}</span>
+                  {refOpen === e.id && refOf(e) && <RefDetails r={refOf(e)!} />}
+                  {/* CA5 (ronda 10): qué pide al ordenarlo */}
+                  {e.group === 'imaging' && hasDetails(detailsOf(e)) && <small className="muted" style={{ display: 'block' }}>Pide al ordenar: {detailsSummary(detailsOf(e)!)}</small>}</span>
                 <span className="excat__acts">
                   {e.active && <button className="btn btn--ghost btn--sm" aria-label={`Editar ${e.name}`} title="Editar" onClick={() => setEditing(e)}><Pencil size={13} /><span>Editar</span></button>}
                   {e.active
@@ -119,12 +122,17 @@ function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () =
   const [group, setGroup] = useState<ExamGroup>(exam?.group ?? 'lab')
   // CF3 (ronda 6): subgrupo (el del examen, el de la lista fija u «Otros»)
   const [subgroup, setSubgroup] = useState(exam ? subgroupOf(exam) : 'Otros')
+  // CA5 (ronda 10): proyecciones y si pide contraste, lado o región (los de la lista fija si la clínica no los cambió)
+  const initialDetails = exam ? detailsOf(exam) ?? {} : {}
+  const [details, setDetails] = useState<ImagingDetails>(initialDetails)
+  const [newProj, setNewProj] = useState('')
+  const detailsChanged = JSON.stringify(clean(details)) !== JSON.stringify(clean(initialDetails))
   const options = [...new Set([...SUBGROUPS[group], subgroup])]
   const [busy, setBusy] = useState(false)
   const save = async () => {
     setBusy(true)
     try {
-      if (exam) await api(`/exams/catalog/${exam.id}`, { method: 'PATCH', body: { name: name.trim(), group, subgroup } })
+      if (exam) await api(`/exams/catalog/${exam.id}`, { method: 'PATCH', body: { name: name.trim(), group, subgroup, ...(detailsChanged ? { details: hasDetails(clean(details)) ? clean(details) : null } : {}) } })
       else await api('/exams/catalog', { body: { name: name.trim(), group, subgroup } })
       notify(exam ? 'Examen actualizado' : 'Examen agregado al catálogo')
       onSaved()
@@ -133,7 +141,7 @@ function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () =
   return (
     <Modal title={exam ? 'Editar examen' : 'Agregar examen'} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={busy || name.trim().length < 2 || (!!exam && name.trim() === exam.name && group === exam.group && subgroup === subgroupOf(exam))} onClick={save}>{exam ? 'Guardar' : 'Agregar'}</button>
+      <button className="btn btn--primary" disabled={busy || name.trim().length < 2 || (!!exam && name.trim() === exam.name && group === exam.group && subgroup === subgroupOf(exam) && !detailsChanged)} onClick={save}>{exam ? 'Guardar' : 'Agregar'}</button>
     </>}>
       <label className="field"><span>Nombre del examen</span><input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Dímero D" /></label>
       <div className="field"><span>Categoría</span>
@@ -145,6 +153,22 @@ function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () =
       <label className="field"><span>Subgrupo</span>
         <select className="select" value={subgroup} onChange={(e) => setSubgroup(e.target.value)}>{options.map((o) => <option key={o}>{o}</option>)}</select>
         <small className="muted">Así se agrupa al ordenar exámenes y en este catálogo.</small></label>
+      {exam && group === 'imaging' && (
+        <fieldset className="fs"><legend>Al ordenarlo pide</legend>
+          <div className="field"><span>Proyecciones (Rayos X)</span>
+            <div className="chips">{(details.projections ?? []).map((pr) => <span key={pr} className="chip">{pr}
+              <button type="button" className="icon-btn" aria-label={`Quitar ${pr}`} onClick={() => setDetails({ ...details, projections: (details.projections ?? []).filter((x) => x !== pr) })}><X size={12} /></button></span>)}</div>
+            <span style={{ display: 'flex', gap: 6 }}><input className="input" value={newProj} onChange={(e) => setNewProj(e.target.value)} placeholder="Ej. Oblicua" aria-label="Nueva proyección"
+              onKeyDown={(e) => { if (e.key === 'Enter' && newProj.trim()) { e.preventDefault(); setDetails({ ...details, projections: [...(details.projections ?? []), newProj.trim()] }); setNewProj('') } }} />
+              <button type="button" className="btn btn--soft btn--sm" disabled={!newProj.trim()} onClick={() => { setDetails({ ...details, projections: [...(details.projections ?? []), newProj.trim()] }); setNewProj('') }}><Plus size={14} />Agregar</button></span></div>
+          <label className="field"><span>Contraste</span>
+            <select className="select" value={details.contrast ?? ''} onChange={(e) => setDetails({ ...details, contrast: (e.target.value || undefined) as ImagingDetails['contrast'] })}>
+              <option value="">No pide contraste</option><option value="ct">Tomografía: simple, contrastada, simple y contrastada</option>
+              <option value="ct-multi">Tomografía, también doble y triple contraste</option><option value="mr">Resonancia: simple o con gadolinio</option></select></label>
+          <label className="check-inline"><input type="checkbox" checked={!!details.side} onChange={(e) => setDetails({ ...details, side: e.target.checked || undefined })} />Pide el lado (derecho, izquierdo o bilateral)</label>
+          <label className="check-inline"><input type="checkbox" checked={!!details.region} onChange={(e) => setDetails({ ...details, region: e.target.checked || undefined })} />Pide escribir la región</label>
+        </fieldset>
+      )}
       {exam && exam.group === 'lab' && <RefEditor exam={exam} onSaved={onSaved} />}
     </Modal>
   )
@@ -315,4 +339,13 @@ function RefDetails({ r }: { r: LabReference }) {
       <ReferenceNote r={r} />
     </span>
   )
+}
+
+/** CA5 (ronda 10): los detalles que pide un estudio: los guardados por la clínica o los de la lista fija. */
+function detailsOf(e: ClinicExam): ImagingDetails | undefined {
+  return e.details ?? EXAMS.find((b) => examKey(b.name) === (e.baseKey ?? examKey(e.name)))?.details
+}
+const clean = (d: ImagingDetails): ImagingDetails => ({ ...(d.projections?.length ? { projections: d.projections } : {}), ...(d.contrast ? { contrast: d.contrast } : {}), ...(d.side ? { side: true } : {}), ...(d.region ? { region: true } : {}) })
+function detailsSummary(d: ImagingDetails) {
+  return [d.projections?.length && `proyección (${d.projections.join(', ')})`, d.contrast && 'contraste', d.side && 'lado', d.region && 'región'].filter(Boolean).join(' · ')
 }

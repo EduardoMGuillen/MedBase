@@ -666,6 +666,11 @@ export interface ExamInput {
   place: 'clinic' | 'external'
   /** MC3 (ronda 6): no estaba en el catálogo de la clínica (escrito a mano, con su tipo elegido). */
   uncatalogued?: boolean
+  /** CA5 (ronda 10): proyecciones (Rayos X) y contraste (Tomografía, Resonancia) elegidos al ordenar. */
+  projections?: string[]
+  contrast?: string
+  /** CA5: la orden se arma con los detalles del estudio («Rayos X de tórax PA y lateral · …»). */
+  detailed?: boolean
 }
 
 export interface ExamResultValue { analyte: string; value: string; unit?: string; low?: number; high?: number; flag?: 'high' | 'low'; critical?: boolean
@@ -708,6 +713,8 @@ export interface ExamProfile { id: string; name: string; ownerId?: string; items
 /** Examen agregado al catálogo por la clínica. */
 /** AD4 (ronda 5): examen del catálogo de la clínica (la lista fija se copió a cada clínica; `baseKey` la enlaza). */
 export interface ClinicExam { id: string; group: ExamGroup; name: string; active: boolean; baseKey?: string; createdBy?: string; createdAt: string; archivedAt?: string
+  /** CA5 (ronda 10): detalles que pide al ordenar (si administración los cambió; si no, los de la lista fija). */
+  details?: import('./imagingCatalog').ImagingDetails
   /** CF3 (ronda 6): subgrupo (Hematología, Rayos X…). Vacío: el de la lista fija u «Otros». */
   subgroup?: string
   /** UM1 (ronda 8): valores de referencia vigentes de la clínica para este examen. */

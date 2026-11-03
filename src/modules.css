@@ -852,3 +852,15 @@ button.src-tag--none { cursor: pointer; }
 .offer-row:last-child { border-bottom: 0; }
 .offer-row p { margin: 0; }
 .offer-row__btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* CA5 (ronda 10): detalles de un estudio de imagen al ordenarlo (chips bajo su fila, dentro de la lista: la ventana no cambia) */
+.exam-pick-cell { min-width: 0; }
+.exam-pick-cell.has-details { grid-column: 1 / -1; }
+.exam-pick__missing { display: block; font-size: 12px; font-weight: 600; color: var(--amber-ink, #8a5a00); }
+.exam-details { display: grid; gap: 6px; padding: 4px 8px 10px 36px; }
+.exam-details__row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.exam-details__lbl { font-size: 12px; font-weight: 600; color: var(--muted); min-width: 72px; }
+.exam-details .chip--toggle { min-height: 32px; }
+.exam-details .input { flex: 1 1 220px; max-width: 420px; }
+.exam-picker__missing { margin-right: auto; align-self: center; }
+@media (max-width: 600px) { .exam-details { padding-left: 8px; } .exam-details .chip--toggle { min-height: 44px; } }

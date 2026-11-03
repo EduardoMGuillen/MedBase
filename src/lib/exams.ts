@@ -1,6 +1,7 @@
 import type { ExamGroup, ExamOrder, ExamStatus } from './types'
 import { EXISTING_SUBGROUP, LAB_AREAS, LAB_ORDER, SECTION_SEP } from './labCatalog.js'
-import { XRAY_PREFIXES, XRAY_SUBGROUPS } from './clinicalConfig.js'
+import { CONTRAST_PHRASE, CT_CONTRASTS, CT_MULTI_CONTRASTS, IMAGING_SEARCH_SYNONYMS, IMAGING_SIDES, MR_CONTRASTS, PROJECTION_KEEP_CASE, XRAY_PREFIXES, XRAY_SUBGROUPS } from './clinicalConfig.js'
+import { IMAGING_SAME, IMAGING_STUDIES, IMAGING_SUBGROUPS as IMAGING_AREAS, type ImagingDetails } from './imagingCatalog.js'
 import { referenceFromRows, referenceOf, type LabReference, type RefAnalyte, type RefRow } from './labReference.js'
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
@@ -29,6 +30,8 @@ export interface CatalogExam {
   subgroup?: string
   /** UM1 (ronda 8): valores de referencia con su fuente (resultado esperado, notas). */
   reference?: LabReference
+  /** CA5 (ronda 10): lo que se elige al ordenar un estudio de imagen (proyección, contraste, lado, región). */
+  details?: ImagingDetails
 }
 
 /** UM1 (ronda 8): los valores de referencia del documento de Emil reemplazan los analitos que el examen ya tuviera. */
@@ -76,26 +79,8 @@ export const EXAMS: CatalogExam[] = [
   { group: 'lab', name: 'Amilasa y lipasa', analytes: [a('Amilasa', 'U/L', 28, 100), a('Lipasa', 'U/L', 13, 60)] },
   { group: 'lab', name: 'Frotis de sangre periférica' },
   { group: 'lab', name: 'Gota gruesa' },
-  // Imagen y gabinete
-  { group: 'imaging', name: 'Radiografía de tórax' },
-  { group: 'imaging', name: 'Radiografía', region: true, side: true },
-  { group: 'imaging', name: 'Radiografía de abdomen' },
-  { group: 'imaging', name: 'Ultrasonido abdominal' },
-  { group: 'imaging', name: 'Ultrasonido pélvico' },
-  { group: 'imaging', name: 'Ultrasonido obstétrico' },
-  { group: 'imaging', name: 'Ultrasonido renal' },
-  { group: 'imaging', name: 'Ultrasonido de tiroides' },
-  { group: 'imaging', name: 'Ultrasonido de partes blandas', region: true, side: true },
-  { group: 'imaging', name: 'Ultrasonido Doppler', region: true, side: true },
-  { group: 'imaging', name: 'Tomografía (TAC)', region: true },
-  { group: 'imaging', name: 'Resonancia magnética', region: true },
-  { group: 'imaging', name: 'Mamografía', side: true },
-  { group: 'imaging', name: 'Electrocardiograma (EKG)' },
-  { group: 'imaging', name: 'Ecocardiograma' },
-  { group: 'imaging', name: 'Espirometría' },
-  { group: 'imaging', name: 'Endoscopia digestiva alta' },
-  { group: 'imaging', name: 'Colonoscopia' },
-  { group: 'imaging', name: 'Holter de 24 horas' },
+  // Imagen y gabinete: CA5 (ronda 10), el Anexo A (src/lib/imagingCatalog.ts); los que ya existían con otro nombre lo conservan
+  ...IMAGING_STUDIES.map((st): CatalogExam => ({ group: 'imaging', name: IMAGING_SAME[st.name] ?? st.name, subgroup: st.subgroup, ...(st.details ? { details: st.details } : {}) })),
 ]
 
 /**
@@ -103,21 +88,17 @@ export const EXAMS: CatalogExam[] = [
  * que tienen secciones, «Área › Sección» (un solo campo de texto). Lo que no se sabe ubicar va a «Otros». VALIDAR: Emil.
  */
 export const LAB_SUBGROUPS = LAB_AREAS.flatMap((a) => (a.sections ? a.sections.map((s) => `${a.area}${SECTION_SEP}${s}`) : [a.area]))
-export const IMAGING_SUBGROUPS = ['Rayos X', 'Ultrasonido', 'Tomografía', 'Resonancia', 'Cardiología', 'Endoscopia', 'Otros']
+export const IMAGING_SUBGROUPS = IMAGING_AREAS
 export const SUBGROUPS: Record<ExamGroup, string[]> = { lab: LAB_SUBGROUPS, imaging: IMAGING_SUBGROUPS }
 export const OTHER_SUBGROUP = 'Otros'
 
 /** Subgrupo de cada examen de la lista fija: Laboratorio según B3 (ronda 7), Imagen y gabinete según A6 (ronda 6). VALIDAR: Emil. */
 export const BASE_SUBGROUP: Record<string, string> = {
   ...EXISTING_SUBGROUP,
-  // Imagen y gabinete
+  // Imagen y gabinete: CA5 (ronda 10), los del Anexo A
+  ...Object.fromEntries(IMAGING_STUDIES.map((st) => [IMAGING_SAME[st.name] ?? st.name, st.subgroup])),
+  // Los de antes de CA5 (órdenes ya emitidas): su subgrupo de siempre (EX3 los sigue reconociendo como Rayos X)
   'Radiografía de tórax': 'Rayos X', 'Radiografía': 'Rayos X', 'Radiografía de abdomen': 'Rayos X',
-  'Ultrasonido abdominal': 'Ultrasonido', 'Ultrasonido pélvico': 'Ultrasonido', 'Ultrasonido obstétrico': 'Ultrasonido', 'Ultrasonido renal': 'Ultrasonido',
-  'Ultrasonido de tiroides': 'Ultrasonido', 'Ultrasonido de partes blandas': 'Ultrasonido', 'Ultrasonido Doppler': 'Ultrasonido',
-  'Tomografía (TAC)': 'Tomografía', 'Resonancia magnética': 'Resonancia',
-  'Electrocardiograma (EKG)': 'Cardiología', 'Ecocardiograma': 'Cardiología', 'Holter de 24 horas': 'Cardiología',
-  'Endoscopia digestiva alta': 'Endoscopia', 'Colonoscopia': 'Endoscopia',
-  'Mamografía': 'Otros', 'Espirometría': 'Otros',
 }
 const BASE_SUBGROUP_BY_KEY = new Map(Object.entries(BASE_SUBGROUP).map(([n, sg]) => [examKey(n), sg]))
 /** Nombres de la ronda 6 que cambiaron (un examen que la clínica agregó con ellos se ve en el área nueva). */
@@ -186,7 +167,8 @@ export const BASE_PROFILES: { id: string; name: string; items: { group: ExamGrou
     { group: 'imaging', name: 'Ultrasonido obstétrico' }] },
   { id: 'base-preop', name: 'Preoperatorio', items: [
     ...['Hemograma', 'Tiempos de coagulación (TP, TPT, INR)', 'Química sanguínea', 'Tipo y Rh', 'Examen general de orina (EGO)'].map((name) => ({ group: 'lab' as const, name })),
-    { group: 'imaging', name: 'Radiografía de tórax' }, { group: 'imaging', name: 'Electrocardiograma (EKG)' }] },
+    // CA5 (ronda 10): la radiografía de tórax ahora pide proyección: se elige al ordenar (no va en el perfil)
+    { group: 'imaging', name: 'Electrocardiograma (EKG)' }] },
   { id: 'base-hep', name: 'Perfil hepático', items: [{ group: 'lab', name: 'Perfil hepático' }, { group: 'lab', name: 'Tiempos de coagulación (TP, TPT, INR)' }] },
   { id: 'base-renal', name: 'Perfil renal', items: [{ group: 'lab', name: 'Perfil renal' }, { group: 'lab', name: 'Electrolitos' }, { group: 'lab', name: 'Examen general de orina (EGO)' }] },
 ]
@@ -265,12 +247,14 @@ export function flagOf(value: number, low?: number, high?: number, highOpen?: bo
  * lado del examen de la lista fija del que vienen (aunque se haya renombrado). Mientras el catálogo no ha llegado del
  * servidor, la lista fija. Favoritos primero.
  */
-export function examCatalog(clinicExams: { group: ExamGroup; name: string; id: string; active: boolean; baseKey?: string; subgroup?: string }[], favs: string[] = []): CatalogExam[] {
+export function examCatalog(clinicExams: { group: ExamGroup; name: string; id: string; active: boolean; baseKey?: string; subgroup?: string; details?: ImagingDetails }[], favs: string[] = []): CatalogExam[] {
   const all: CatalogExam[] = !clinicExams.length ? EXAMS.map((e) => withReference({ ...e, subgroup: subgroupOf(e) })) : clinicExams.filter((e) => e.active).map((e) => {
     const base = e.baseKey ? EXAMS.find((b) => examKey(b.name) === e.baseKey) : undefined
+    // CA5 (ronda 10): los detalles que guardó la clínica mandan sobre los de la lista fija
+    const details = (e as { details?: ImagingDetails }).details ?? base?.details
     // UM1: por su nombre o, si la clínica lo renombró, por el de la lista fija
-    const own = withReference({ ...(base ?? {}), group: e.group, name: e.name, clinicId: base ? undefined : e.id, subgroup: subgroupOf(e) }, (e as { refs?: RefRow[] }).refs)
-    return own.reference || !base ? own : { ...withReference({ ...base }), group: e.group, name: e.name, clinicId: undefined, subgroup: subgroupOf(e) }
+    const own = withReference({ ...(base ?? {}), group: e.group, name: e.name, clinicId: base ? undefined : e.id, subgroup: subgroupOf(e), details }, (e as { refs?: RefRow[] }).refs)
+    return own.reference || !base ? own : { ...withReference({ ...base }), group: e.group, name: e.name, clinicId: undefined, subgroup: subgroupOf(e), details }
   }).sort((a, b) => a.name.localeCompare(b.name, 'es'))
   const f = new Set(favs.map(examKey))
   return [...all.filter((e) => f.has(examKey(e.name))), ...all.filter((e) => !f.has(examKey(e.name)))]
@@ -285,9 +269,60 @@ export const findExam = (name: string, catalog: CatalogExam[] = EXAMS): CatalogE
   return ref ? { group: 'lab', name, reference: ref, analytes: ref.analytes } : undefined
 }
 
-/** Texto de un examen en una orden: «Radiografía de rodilla, derecha» con su indicación. */
-export function examLine(e: Pick<ExamOrder, 'name' | 'region' | 'side'>) {
+/**
+ * Texto de un examen en una orden: «Radiografía de rodilla, derecha» con su indicación.
+ * CA5 (ronda 10): un estudio con detalles (`detailed`) se arma completo, igual en la nota, la pestaña Exámenes, las órdenes
+ * impresas y la bandeja: «Rayos X de tórax PA y lateral», «Rayos X de rodilla AP y lateral · Lado derecho», «Tomografía de
+ * abdomen y pelvis con triple contraste», «Ultrasonido de partes blandas · Región: cara anterior del muslo derecho». Las
+ * órdenes de antes (sin `detailed`) siguen con su texto de siempre.
+ */
+export function examLine(e: Pick<ExamOrder, 'name' | 'region' | 'side'> & { projections?: string[]; contrast?: string; detailed?: boolean }) {
+  if (e.detailed) {
+    const proj = e.projections?.length ? ` ${joinY(e.projections.map(projectionText))}` : ''
+    const contrast = e.contrast ? ` ${CONTRAST_PHRASE[e.contrast] ?? e.contrast.toLowerCase()}` : ''
+    const side = e.side ? ` · ${IMAGING_SIDES.find((x) => x.value === e.side)?.phrase ?? ''}` : ''
+    const region = e.region?.trim() ? ` · Región: ${e.region.trim()}` : ''
+    return `${e.name}${proj}${contrast}${side}${region}`
+  }
   return [e.name + (e.region ? ` de ${e.region}` : ''), e.side ? (e.side === 'right' ? 'derecha' : e.side === 'left' ? 'izquierda' : 'bilateral') : ''].filter(Boolean).join(', ')
+}
+
+/** «AP, lateral y oblicua». */
+const joinY = (list: string[]) => (list.length < 2 ? list.join('') : `${list.slice(0, -1).join(', ')} y ${list.at(-1)}`)
+/** «Lateral» → «lateral»; «AP», «Towne» quedan igual. */
+const projectionText = (p: string) => (PROJECTION_KEEP_CASE.includes(p) || /^[A-ZÁÉÍÓÚÑ]{2}/.test(p) ? p : p.charAt(0).toLocaleLowerCase('es') + p.slice(1))
+
+/** CA5: las opciones de contraste de un estudio. */
+export function contrastOptions(d?: ImagingDetails): string[] {
+  if (d?.contrast === 'mr') return MR_CONTRASTS
+  if (d?.contrast === 'ct-multi') return CT_CONTRASTS
+  if (d?.contrast === 'ct') return CT_CONTRASTS.filter((c) => !CT_MULTI_CONTRASTS.includes(c))
+  return []
+}
+
+/** CA5: lo que falta elegir para poder ordenar el estudio («la proyección», «el contraste», «el lado», «la región»), o nada. */
+export function missingDetail(e: { projections?: string[]; contrast?: string; side?: string; region?: string }, d?: ImagingDetails) {
+  if (!d) return undefined
+  if (d.projections?.length && !e.projections?.length) return 'la proyección'
+  if (d.contrast && !e.contrast) return 'el contraste'
+  if (d.side && !e.side) return 'el lado'
+  if (d.region && !e.region?.trim()) return 'la región'
+  return undefined
+}
+
+/** ¿El estudio pide algún detalle al ordenarlo? */
+export const hasDetails = (d?: ImagingDetails) => !!d && (!!d.projections?.length || !!d.contrast || !!d.side || !!d.region)
+
+/**
+ * CA5: búsqueda de «Ordenar exámenes» sin tildes ni mayúsculas, palabra por palabra («tac abdomen», «rx torax»): cada palabra
+ * debe estar en el nombre, o uno de sus sinónimos (IMAGING_SEARCH_SYNONYMS: «rx» → «rayos x», «usg» → «ultrasonido»…).
+ */
+export function examMatches(name: string, query: string) {
+  const n = norm(name)
+  const words = norm(query).split(' ').filter(Boolean)
+  // Una abreviatura con sinónimo («tac», «rx») solo cuenta al inicio de una palabra (no «eritrosedimentación») o por su sinónimo
+  const starts = (w: string) => n.split(/[^a-z0-9]+/).some((x) => x.startsWith(w))
+  return words.every((w) => (IMAGING_SEARCH_SYNONYMS[w] ? starts(w) || IMAGING_SEARCH_SYNONYMS[w].some((x) => n.includes(x)) : n.includes(w)))
 }
 
 /**

@@ -318,3 +318,32 @@ export const PAGE_SIZE = 25
  * la firma y el sello del médico en papel no valen (la firma dibujada no es firma electrónica avanzada).
  */
 export const SIGN_AND_STAMP_LEGEND = 'Válida solo con firma y sello del médico'
+
+/**
+ * CA5 (ronda 10). VALIDAR: Emil. Detalles que se eligen al ordenar un estudio de imagen. Cada estudio del catálogo guarda
+ * cuáles usa (src/lib/imagingCatalog.ts y, si administración lo cambió, la base). Doble contraste = oral + intravenoso;
+ * triple = oral + intravenoso + rectal (uso habitual en la región); solo en abdomen, pelvis y abdomen y pelvis.
+ */
+export const CT_CONTRASTS = ['Simple', 'Contrastada', 'Simple y contrastada', 'Doble contraste', 'Triple contraste']
+export const CT_MULTI_CONTRASTS = ['Doble contraste', 'Triple contraste']
+export const MR_CONTRASTS = ['Simple', 'Con gadolinio']
+/** Cómo se lee cada contraste en la orden: «Tomografía de tórax contrastada», «… con triple contraste». */
+export const CONTRAST_PHRASE: Record<string, string> = {
+  Simple: 'simple', Contrastada: 'contrastada', 'Simple y contrastada': 'simple y contrastada', 'Doble contraste': 'con doble contraste',
+  'Triple contraste': 'con triple contraste', 'Con gadolinio': 'con gadolinio',
+}
+/** Lado: «· Lado derecho», «· Lado izquierdo», «· Bilateral». */
+export const IMAGING_SIDES = [{ value: 'right', label: 'Derecho', phrase: 'Lado derecho' }, { value: 'left', label: 'Izquierdo', phrase: 'Lado izquierdo' }, { value: 'both', label: 'Bilateral', phrase: 'Bilateral' }] as const
+/** Proyecciones que se escriben tal cual (siglas y nombres propios); las demás van en minúscula dentro de la orden. */
+export const PROJECTION_KEEP_CASE = ['AP', 'PA', 'Towne', 'Caldwell', 'Waters']
+/**
+ * CA5. VALIDAR: Emil. Sinónimos al buscar en «Ordenar exámenes» (sin tildes ni mayúsculas): la palabra escrita también
+ * encuentra lo de la derecha.
+ */
+export const IMAGING_SEARCH_SYNONYMS: Record<string, string[]> = {
+  rx: ['rayos x'], radiografia: ['rayos x'], placa: ['rayos x'],
+  tac: ['tomografia'], tc: ['tomografia'], tomo: ['tomografia'],
+  rm: ['resonancia'], rmn: ['resonancia'],
+  usg: ['ultrasonido'], eco: ['ultrasonido'], ecografia: ['ultrasonido'],
+  ekg: ['electrocardiograma'], ecg: ['electrocardiograma'],
+}

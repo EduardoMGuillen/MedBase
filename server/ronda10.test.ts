@@ -314,3 +314,108 @@ describe('EX5 y ME10 (ronda 10): órdenes de pendientes y receta de lo que no ha
     assert.equal((await (await as('smejia@demo.clinara')).post('/api/print-jobs', { kind: 'exams', examIds: [String(ex[0].id)] })).status, 403)
   })
 })
+
+describe('CA5 (ronda 10): Imagen y gabinete completo', () => {
+  test('el texto de la orden se arma solo; las órdenes antiguas no cambian', async () => {
+    const { examLine } = await import('../src/lib/exams.js')
+    assert.equal(examLine({ name: 'Rayos X de tórax', projections: ['PA', 'Lateral'], detailed: true }), 'Rayos X de tórax PA y lateral')
+    assert.equal(examLine({ name: 'Rayos X de rodilla', projections: ['AP', 'Lateral'], side: 'right', detailed: true }), 'Rayos X de rodilla AP y lateral · Lado derecho')
+    assert.equal(examLine({ name: 'Rayos X de rodilla', projections: ['AP', 'Lateral', 'Axial de rótula'], side: 'both', detailed: true }), 'Rayos X de rodilla AP, lateral y axial de rótula · Bilateral')
+    assert.equal(examLine({ name: 'Tomografía de cráneo', contrast: 'Simple', detailed: true }), 'Tomografía de cráneo simple')
+    assert.equal(examLine({ name: 'Tomografía de abdomen y pelvis', contrast: 'Triple contraste', detailed: true }), 'Tomografía de abdomen y pelvis con triple contraste')
+    assert.equal(examLine({ name: 'Tomografía de tórax', contrast: 'Contrastada', detailed: true }), 'Tomografía de tórax contrastada')
+    assert.equal(examLine({ name: 'Resonancia magnética de columna lumbosacra', contrast: 'Con gadolinio', detailed: true }), 'Resonancia magnética de columna lumbosacra con gadolinio')
+    assert.equal(examLine({ name: 'Ultrasonido Doppler venoso de miembros inferiores', side: 'left', detailed: true }), 'Ultrasonido Doppler venoso de miembros inferiores · Lado izquierdo')
+    assert.equal(examLine({ name: 'Ultrasonido de partes blandas', region: 'cara anterior del muslo derecho', detailed: true }), 'Ultrasonido de partes blandas · Región: cara anterior del muslo derecho')
+    // Una orden de antes, igual que siempre
+    assert.equal(examLine({ name: 'Radiografía de tórax' }), 'Radiografía de tórax')
+    assert.equal(examLine({ name: 'Radiografía', region: 'rodilla', side: 'right' }), 'Radiografía de rodilla, derecha')
+  })
+
+  test('detalles obligatorios, contrastes por estudio y búsqueda con sinónimos', async () => {
+    const { contrastOptions, EXAMS, examMatches, missingDetail, reportOptional } = await import('../src/lib/exams.js')
+    const d = (name: string) => EXAMS.find((e) => e.name === name)!.details
+    assert.equal(missingDetail({}, d('Rayos X de tórax')), 'la proyección')
+    assert.equal(missingDetail({ projections: ['AP'] }, d('Rayos X de rodilla')), 'el lado')
+    assert.equal(missingDetail({ contrast: 'Simple' }, d('Resonancia magnética de rodilla')), 'el lado')
+    assert.equal(missingDetail({}, d('Ultrasonido de partes blandas')), 'la región')
+    assert.equal(missingDetail({}, d('Angiotomografía cerebral')), undefined, 'la angiotomografía no pide contraste')
+    assert.deepEqual(contrastOptions(d('Tomografía de abdomen y pelvis')), ['Simple', 'Contrastada', 'Simple y contrastada', 'Doble contraste', 'Triple contraste'])
+    assert.ok(!contrastOptions(d('Tomografía de cráneo')).includes('Doble contraste'))
+    assert.deepEqual(contrastOptions(d('Resonancia magnética de rodilla')), ['Simple', 'Con gadolinio'])
+    const imaging = EXAMS.filter((e) => e.group === 'imaging').map((e) => e.name)
+    const find = (q: string) => imaging.filter((n) => examMatches(n, q))
+    assert.ok(find('rx').every((n) => /Rayos X/.test(n)) && find('rx').length >= 27)
+    assert.ok(find('tac abdomen').includes('Tomografía de abdomen y pelvis'))
+    const all = EXAMS.map((e) => e.name).filter((n) => examMatches(n, 'tac'))
+    assert.ok(all.every((n) => /tomografía/i.test(n)), `«tac» no encuentra laboratorio: ${all.join(', ')}`)
+    assert.ok(find('rx torax').includes('Rayos X de tórax'))
+    assert.deepEqual(find('usg tiroides'), ['Ultrasonido de tiroides'])
+    assert.ok(find('doppler').length === 9)
+    assert.ok(find('resonancia').length === 20)
+    assert.ok(find('ekg').includes('Electrocardiograma (EKG)'))
+    // EX3 sigue reconociendo los Rayos X nuevos (y los de antes)
+    assert.ok(reportOptional({ group: 'imaging', name: 'Rayos X de tórax' }))
+    assert.ok(reportOptional({ group: 'imaging', name: 'Radiografía de tórax' }))
+    assert.ok(!reportOptional({ group: 'imaging', name: 'Tomografía de cráneo' }))
+  })
+
+  test('cada clínica y consultorio: sin los estudios de antes (ni archivados) y con el Anexo A', async () => {
+    const { EXAMS, examKey } = await import('../src/lib/exams.js')
+    const { IMAGING_REMOVED, IMAGING_STUDIES } = await import('../src/lib/imagingCatalog.js')
+    const keep = new Set(EXAMS.filter((e) => e.group === 'imaging').map((e) => examKey(e.name)))
+    for (const c of await sql.query('SELECT id FROM clinics')) {
+      const names = (await sql.query(`SELECT norm_key FROM exam_catalog WHERE clinic_id = ? AND grp = 'imaging'`, [String(c.id)])).map((r) => String(r.norm_key))
+      for (const old of IMAGING_REMOVED) if (!keep.has(examKey(old))) assert.ok(!names.includes(examKey(old)), `${c.id}: sigue ${old}`)
+      for (const k of keep) assert.ok(names.includes(k), `${c.id}: falta ${k}`)
+      assert.ok(await sql.one('SELECT 1 FROM meta WHERE key = ?', [`ca5:${c.id}`]))
+    }
+    assert.equal(IMAGING_STUDIES.length, 128) // Anexo A: 28 + 8 + 21 + 9 + 19 + 20 + 6 + 7 + 10
+  })
+
+  test('la carga en una base de antes: borra con copia, quita de sets y perfiles, conserva las órdenes; dos veces = una', async () => {
+    const { loadImagingCatalog } = await import('./ronda10.js')
+    const id = await mainClinic()
+    const now = new Date().toISOString()
+    for (const [name, sub] of [['Radiografía de tórax', null], ['Mamografía', null], ['Tomografía (TAC)', null]]) {
+      const key = name!.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+      await sql.run('INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, base_key, subgroup, active, created_by, created_at) VALUES (?,?,?,?,?,?,?,FALSE,NULL,?) ON CONFLICT DO NOTHING',
+        [`old-${key}`, id, 'imaging', name, key, key, sub, now])
+    }
+    const set = `set-ca5-${Date.now()}`
+    await sql.run('INSERT INTO order_sets (id, clinic_id, owner_id, name, items, created_at) VALUES (?,?,?,?,?,?)',
+      [set, id, 's-herrera', 'Preoperatorio de prueba', JSON.stringify([{ exam: { group: 'imaging', name: 'Radiografía de tórax', priority: 'routine', place: 'clinic' } }, { exam: { group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' } }]), now])
+    // Una orden antigua con «Radiografía de tórax»
+    const ex = (await sql.one(`SELECT id, name FROM exam_orders WHERE clinic_id = ? LIMIT 1`, [id]))!
+    await sql.run(`UPDATE exam_orders SET name = 'Radiografía de tórax' WHERE id = ?`, [String(ex.id)])
+    await sql.run('DELETE FROM meta WHERE key = ?', [`ca5:${id}`])
+    const r = (await loadImagingCatalog(sql, id))!
+    assert.deepEqual([...r.deleted].sort(), ['Mamografía', 'Radiografía de tórax', 'Tomografía (TAC)'])
+    assert.ok(!(await sql.one(`SELECT 1 FROM exam_catalog WHERE clinic_id = ? AND norm_key = 'radiografia de torax'`, [id])), 'tampoco en archivados')
+    assert.deepEqual(r.sets.map((x) => [x.name, x.owner, x.removed]), [['Preoperatorio de prueba', 'Dra. Lucía Herrera', ['Radiografía de tórax']]])
+    assert.deepEqual(JSON.parse(String((await sql.one('SELECT items FROM order_sets WHERE id = ?', [set]))!.items)).map((x: any) => x.exam.name), ['Hemograma'])
+    assert.ok(await sql.one(`SELECT 1 FROM config_backups WHERE clinic_id = ? AND kind = 'ca5-imaging-removed'`, [id]))
+    assert.equal((await sql.one('SELECT name FROM exam_orders WHERE id = ?', [String(ex.id)]))!.name, 'Radiografía de tórax', 'la orden antigua conserva su texto')
+    assert.equal(await loadImagingCatalog(sql, id), null, 'la segunda vez no hace nada')
+    await sql.run('UPDATE exam_orders SET name = ? WHERE id = ?', [String(ex.name), String(ex.id)])
+  })
+
+  test('al ordenar: sin proyección no se acepta; con ella queda armada; Rayos X realizado queda terminado (EX3)', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const stay = String((await sql.one(`SELECT id FROM hospitalizations WHERE status = 'active' AND clinic_id = ? ORDER BY admitted_at LIMIT 1`, [await mainClinic()]))!.id)
+    const bad = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'CA5', exams: [{ group: 'imaging', name: 'Rayos X de tórax', priority: 'routine', place: 'clinic' }] })
+    assert.equal(bad.status, 400)
+    assert.match(String(bad.body.error ?? bad.body), /falta elegir la proyección/)
+    const ok = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'CA5', exams: [
+      { group: 'imaging', name: 'Rayos X de tórax', projections: ['PA', 'Lateral'], priority: 'routine', place: 'clinic' },
+      { group: 'imaging', name: 'Tomografía de abdomen y pelvis', contrast: 'Triple contraste', priority: 'routine', place: 'external' }] })
+    assert.equal(ok.status, 201, JSON.stringify(ok.body))
+    const list = (await doc.get(`/api/inpatient/${stay}`)).body.exams.filter((e: any) => e.noteId === ok.body.id)
+    const { examLine } = await import('../src/lib/exams.js')
+    assert.deepEqual(list.map(examLine).sort(), ['Rayos X de tórax PA y lateral', 'Tomografía de abdomen y pelvis con triple contraste'])
+    const rx = list.find((e: any) => e.name === 'Rayos X de tórax')
+    assert.equal((await nurse.post(`/api/exams/${rx.id}/status`, { status: 'done' })).status, 200)
+    assert.ok(!(await nurse.get('/api/exams/tray')).body.some((e: any) => e.id === rx.id), 'realizado: terminado sin informe')
+  })
+})
