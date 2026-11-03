@@ -35,7 +35,7 @@ export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescr
 /** Medicamento que el médico indica en una nota de hospitalización. */
 /** Ronda 8: de dónde sale una referencia. */
 export type ReferralFrom = { kind: 'stay' | 'consultation'; id: string }
-export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'prnCondition' | 'instructions' | 'days' | 'replacesId' | 'infusionRate' | 'infusionUnit' | 'loadingDose'> & { firstAt?: string }
+export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'prnCondition' | 'instructions' | 'days' | 'replacesId' | 'infusionRate' | 'infusionUnit' | 'loadingDose' | 'loadingStat'> & { firstAt?: string }
 export type FollowupInput = Pick<Followup, 'kind' | 'title' | 'dueDate' | 'everyDays' | 'notes' | 'reminderType'>
 
 export interface Report {
@@ -203,6 +203,8 @@ function useStoreValue() {
     addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations' | 'evolution'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string; exams?: ExamInput[]; chain?: { basedOn: string | null; decisions: { id: string; action: 'omit' | 'change'; text?: string }[] }; vitals?: VitalsMode; vitalsTaken?: Partial<Record<string, number>> & { takenAt?: string } }) =>
       run(() => api<InpatientNote & { examBatch?: string }>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : 'Nota de evolución guardada'),
     stopMed: (medId: string, reason: string) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/stop`, { body: { reason } }), 'Orden suspendida'),
+    // ME1 (ronda 8): enfermería suspende la infusión en curso
+    stopInfusion: (medId: string, b: { at?: string; note?: string }) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/infusion-stop`, { body: b }), 'Infusión suspendida'),
     addNursingNote: (id: string, text: string) => run(() => api<InpatientNote>(`/inpatient/${id}/nursing`, { body: { text } }), 'Nota de enfermería guardada'),
     correctDose: (doseId: string, b: { status?: Dose['status']; givenAt?: string; note?: string; reason: string }) =>
       run(() => api<Dose>(`/inpatient/doses/${doseId}`, { method: 'PATCH', body: b }), 'Dosis corregida'),

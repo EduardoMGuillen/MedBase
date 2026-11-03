@@ -1,4 +1,5 @@
 import { closeOpenVisits } from '../stayVisits.js'
+import { INFUSION_UNITS } from '../../src/lib/clinicalConfig.js'
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -9,7 +10,7 @@ import { currentVitalsMode, frequencyFromOrders, sameVitalsMode, VITALS_FREQUENC
 import { buildEpicrisis, createEpicrisisDraft, missingForIssue } from '../epicrisis.js'
 import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
-import { activeIndications, chainNote, courseDone, indicationLines, isScheduled, LATE_AFTER_MIN, lineOrder, medLabel } from '../../src/lib/inpatient.js'
+import { activeIndications, chainNote, courseDone, doseAt, indicationLines, isScheduled, LATE_AFTER_MIN, lineOrder, medLabel, twoDecimals } from '../../src/lib/inpatient.js'
 import type { InpatientNote, OrderLine, VitalsSegment } from '../../src/lib/types.js'
 import { VITALS_OTHER_RANGE } from '../../src/lib/clinicalConfig.js'
 import { examLine, isPending } from '../../src/lib/exams.js'
@@ -84,11 +85,17 @@ const medInput = z.object({
   days: z.number().int().min(1).max(365).optional(),
   // "Cambiar" en la nota: la orden nueva reemplaza a esta, que queda suspendida
   replacesId: z.string().optional(),
-  // Ronda 8: infusión continua con su velocidad (ml/h o ml/min) y primera dosis distinta (de carga, STAT)
-  infusionRate: z.number().positive('La velocidad de la infusión debe ser mayor que cero.').max(5000).optional(),
+  // ME1 (ronda 8): infusión con su velocidad (mL/h o mL/min; límites en clinicalConfig). ME2: primera dosis diferente
+  infusionRate: z.number().positive('La velocidad de infusión debe ser mayor que 0.').optional(),
   infusionUnit: z.enum(['ml/h', 'ml/min']).optional(),
   loadingDose: z.string().trim().max(60).optional(),
+  loadingStat: z.boolean().optional(),
 }).superRefine((m, ctx) => {
+  if (m.infusionRate) {
+    const unit = INFUSION_UNITS.find((u) => u.value === (m.infusionUnit ?? 'ml/h'))!
+    if (!twoDecimals(m.infusionRate)) ctx.addIssue({ code: 'custom', message: `${m.drug}: la velocidad de infusión lleva hasta dos decimales.` })
+    if (m.infusionRate > unit.max) ctx.addIssue({ code: 'custom', message: `${m.drug}: la velocidad de infusión no puede pasar de ${unit.max} ${unit.label}. Revísala.` })
+  }
   if (m.infusionRate && (m.everyHours || m.prn)) ctx.addIssue({ code: 'custom', message: `${m.drug}: una infusión continua no lleva frecuencia ni PRN.` })
   if (m.loadingDose && (!m.everyHours || m.prn)) ctx.addIssue({ code: 'custom', message: `${m.drug}: la primera dosis distinta va con una frecuencia (cada tantas horas).` })
 })
@@ -642,14 +649,16 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     if (late && (b.reason ?? '').length < 5) fail(400, 'Es una dosis de un día que ya pasó: escribe el motivo del registro tardío.')
     const id = randomUUID()
     try {
-      await sql.run('INSERT INTO hosp_doses (id, clinic_id, med_id, scheduled_at, given_at, given_by, status, note, corrected_at, corrected_by, correction_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-        [id, cid, med.id, scheduledAt, givenAt.toISOString(), user.id, b.status, b.note || null, late ? new Date().toISOString() : null, late ? user.id : null, late ? `Registro tardío: ${b.reason}` : null])
+      // ME2 (ronda 8): cada registro guarda la cantidad que correspondía a esa dosis (la inicial o las siguientes)
+      const amount = scheduledAt ? doseAt(med, new Date(scheduledAt)) : med.dose
+      await sql.run('INSERT INTO hosp_doses (id, clinic_id, med_id, scheduled_at, given_at, given_by, status, note, corrected_at, corrected_by, correction_reason, dose) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+        [id, cid, med.id, scheduledAt, givenAt.toISOString(), user.id, b.status, b.note || null, late ? new Date().toISOString() : null, late ? user.id : null, late ? `Registro tardío: ${b.reason}` : null, amount])
     } catch (e) {
       if ((e as { code?: string }).code === '23505') fail(409, 'Esa dosis ya fue registrada. Actualiza la página.')
       throw e
     }
     const delayed = b.status === 'given' && scheduledAt && givenAt.getTime() - new Date(scheduledAt).getTime() > LATE_AFTER_MIN * 60_000
-    await audit(user, `${DOSE_VERB[b.status]} ${medLabel(med)}${scheduledAt ? ` (dosis de las ${scheduledAt})` : ''} a ${await patientName(String(h.patient_id))} (${user.role === 'doctor' ? 'médico' : 'enfermería'})${delayed ? ', con retraso' : ''}${b.status !== 'given' ? `, motivo: ${b.note}` : ''}${late ? `, registro tardío: ${b.reason}` : ''}`)
+    await audit(user, `${med.infusionRate && b.status === 'given' ? 'Inició la infusión de' : DOSE_VERB[b.status]} ${medLabel(med)}${scheduledAt ? ` (${med.infusionRate ? 'inicio indicado' : doseAt(med, new Date(scheduledAt)) !== med.dose ? `dosis inicial de ${doseAt(med, new Date(scheduledAt))}` : 'dosis'} de las ${scheduledAt})` : ''} a ${await patientName(String(h.patient_id))} (${user.role === 'doctor' ? 'médico' : 'enfermería'})${delayed ? ', con retraso' : ''}${b.status !== 'given' ? `, motivo: ${b.note}` : ''}${late ? `, registro tardío: ${b.reason}` : ''}`)
     res.status(201).json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [id]))!))
   })
 
@@ -677,6 +686,28 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       [b.status ?? d!.status, b.givenAt ? new Date(b.givenAt).toISOString() : d!.given_at, b.note ?? d!.note ?? null, new Date().toISOString(), user.id, b.reason, JSON.stringify(previous), String(d!.id)])
     await audit(user, `Corrigió la dosis de ${medLabel(toInpatientMed(m))} de ${await patientName(String(h.patient_id))} (antes: ${DOSE_STATE[previous.status as keyof typeof DOSE_STATE] ?? previous.status} ${previous.givenAt}): ${b.reason}`)
     res.json(toDose((await sql.one('SELECT * FROM hosp_doses WHERE id = ?', [String(d!.id)]))!))
+  })
+
+  /**
+   * ME1 (ronda 8): «Suspender infusión». Enfermería (o el médico) registra cuándo se detuvo la infusión en curso, quién y,
+   * si quiere, por qué. La orden no se borra; si el médico cambia la velocidad, la orden nueva vuelve a pedir su inicio.
+   */
+  app.post('/api/inpatient/meds/:medId/infusion-stop', auth, need('inpatient.care', 'inpatient.orders'), async (req, res) => {
+    const b = parse(z.object({ at: when.optional(), note: z.string().trim().max(300).optional() }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const m = (await sql.one('SELECT * FROM hosp_meds WHERE id = ? AND clinic_id = ?', [String(req.params.medId), cid])) ?? fail(404, 'El medicamento no existe.')
+    const h = await activeHosp(cid, String(m!.hospitalization_id))
+    if (m!.infusion_rate == null) fail(400, 'Ese medicamento no es una infusión.')
+    if (m!.infusion_stopped_at) fail(409, 'La infusión ya estaba suspendida. Actualiza la página.')
+    const start = await sql.one(`SELECT given_at FROM hosp_doses WHERE med_id = ? AND status = 'given' ORDER BY given_at LIMIT 1`, [String(m!.id)])
+    if (!start) fail(409, 'La infusión todavía no se inicia: registra primero el inicio.')
+    const at = new Date(b.at ?? Date.now())
+    if (at.getTime() > Date.now() + 60_000) fail(400, 'La hora no puede ser en el futuro.')
+    if (at < new Date(String(start!.given_at))) fail(400, 'La hora de suspensión es anterior al inicio de la infusión.')
+    await sql.run('UPDATE hosp_meds SET infusion_stopped_at = ?, infusion_stopped_by = ?, infusion_stop_note = ? WHERE id = ?', [at.toISOString(), user.id, b.note || null, String(m!.id)])
+    await audit(user, `Suspendió la infusión de ${medLabel(toInpatientMed(m!))} de ${await patientName(String(h.patient_id))}${b.note ? `: ${b.note}` : ''}`)
+    res.json(toInpatientMed((await sql.one('SELECT * FROM hosp_meds WHERE id = ?', [String(m!.id)]))!))
   })
 
   /** El médico suspende una orden desde la hoja: queda con motivo, autor y hora; no se borra. */

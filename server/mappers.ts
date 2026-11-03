@@ -152,7 +152,8 @@ export const toInpatientMed = (r: Row): InpatientMed => ({
   stopReason: s(r.stop_reason), days: r.days == null ? undefined : Number(r.days), source: (s(r.source) as InpatientMed['source']) ?? undefined, sourceId: s(r.source_id),
   replacesId: s(r.replaces_id), prnCondition: s(r.prn_condition),
   infusionRate: r.infusion_rate == null ? undefined : Number(r.infusion_rate), infusionUnit: (s(r.infusion_unit) as InpatientMed['infusionUnit']) ?? undefined,
-  loadingDose: s(r.loading_dose),
+  loadingDose: s(r.loading_dose), loadingStat: r.loading_stat == null ? undefined : Boolean(r.loading_stat),
+  infusionStoppedAt: s(r.infusion_stopped_at), infusionStoppedBy: s(r.infusion_stopped_by), infusionStopNote: s(r.infusion_stop_note),
 })
 
 export const toOrderMark = (r: Row) => ({
@@ -180,7 +181,7 @@ function withoutImages(x: ConsentSigning): ConsentSigning {
 
 export const toDose = (r: Row): Dose => ({
   id: String(r.id), medId: String(r.med_id), scheduledAt: s(r.scheduled_at), givenAt: String(r.given_at), givenBy: String(r.given_by),
-  status: r.status as Dose['status'], note: s(r.note),
+  status: r.status as Dose['status'], note: s(r.note), dose: s(r.dose),
   correctedAt: s(r.corrected_at), correctedBy: s(r.corrected_by), correctionReason: s(r.correction_reason),
 })
 

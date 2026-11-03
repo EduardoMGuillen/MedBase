@@ -4,10 +4,12 @@ import { BedDouble, ChevronLeft, ChevronRight, FileSignature, FileText, FlaskCon
 import { useStore, type NewMed } from '../lib/store'
 import { AutoTextarea, Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
-import { date, dateTime, defaultRoute, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
+import { date, dateTime, defaultRoute, dmyTime, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
+import { DateTimeField } from '../components/DateTimeField'
+import { INFUSION_UNITS } from '../lib/clinicalConfig'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict } from '../lib/catalogs'
-import { activeIndications, chainNote, doseAt, formatRate, currentDiagnoses, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
+import { activeIndications, chainNote, doseAt, formatRate, infusionUnitLabel, isLoadingSlot, twoDecimals, currentDiagnoses, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
 import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
 import { NoteColumns, NoteExams, NoteText } from '../components/NoteColumns'
@@ -292,6 +294,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
   const [marking, setMarking] = useState<{ med: InpatientMed; at?: Date; late?: boolean } | null>(null)
   const [correcting, setCorrecting] = useState<{ med: InpatientMed; dose: Dose } | null>(null)
   const [stopping, setStopping] = useState<InpatientMed | null>(null)
+  const [stoppingInfusion, setStoppingInfusion] = useState<InpatientMed | null>(null)
   const [fixing, setFixing] = useState(false)
   const open = file.hospitalization.status === 'active'
   // EN2: «Registrar dosis» desde una alerta abre esa dosis (si es de un día anterior, como registro tardío)
@@ -360,6 +363,9 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
             const doses = dosesOf(m)
             const prnToday = doses.filter((d) => !d.scheduledAt && new Date(d.givenAt) >= start && new Date(d.givenAt) < end)
             const conflict = allergyConflict(p.allergies, m.drug)
+            // ME1 (ronda 8): una infusión tiene un solo evento, su inicio; ya iniciada, la fila dice desde cuándo y a qué velocidad
+            const started = m.infusionRate ? doses.filter((d) => d.status === 'given').sort((x, y) => x.givenAt.localeCompare(y.givenAt))[0] : undefined
+            const running = !!started && new Date(started.givenAt) < end
             return (
               <div key={m.id} className={`med ${m.stoppedAt ? 'med--stopped' : ''}`}>
                 <div className="med__head">
@@ -388,7 +394,15 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                         <small>{date(s.at.toISOString(), { day: '2-digit', month: '2-digit' })} · Atrasado</small>
                       </button>
                     ))}
-                  {slots.map((s) => {
+                  {running && (
+                    <span className="infusion-run">
+                      {m.infusionStoppedAt
+                        ? <>Infusión suspendida el {dmyTime(m.infusionStoppedAt)} por {by(m.infusionStoppedBy ?? '')}{m.infusionStopNote ? `: ${m.infusionStopNote}` : ''}. Estuvo desde {dmyTime(started!.givenAt)} · {formatRate(m.infusionRate!)} {infusionUnitLabel(m.infusionUnit)}.</>
+                        : <><b>En infusión desde {time(started!.givenAt)} · {formatRate(m.infusionRate!)} {infusionUnitLabel(m.infusionUnit)}</b>{new Date(started!.givenAt) < start ? ` (desde el ${dmyTime(started!.givenAt)})` : ''} · inició {by(started!.givenBy)}</>}
+                      {care && !m.infusionStoppedAt && !m.stoppedAt && isToday(ref) && <button className="btn btn--ghost btn--sm" onClick={() => setStoppingInfusion(m)}>Suspender infusión</button>}
+                    </span>
+                  )}
+                  {!running && slots.map((s) => {
                     const dose = doses.find((d) => d.scheduledAt && new Date(d.scheduledAt).getTime() === s.at.getTime())
                     const st = slotState(s.at, s.omitted, dose, undefined, m.everyHours)
                     // Hoy se registra directo; en un día pasado sólo en "Corregir registros"; lo futuro no se toca
@@ -398,6 +412,9 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                         onClick={() => (dose ? setCorrecting({ med: m, dose }) : setMarking({ med: m, at: s.at, late: past }))}
                         title={dose ? doseTitle(dose) : st === 'autoskip' ? 'No aplicada (sin registro). Cerrada automáticamente por el sistema al llegar la siguiente dosis. Todavía se puede registrar.' : STATE_LABEL[st]}>
                         <b>{time(s.at.toISOString())}</b>
+                        {/* ME2 (ronda 8): la dosis inicial lleva su etiqueta y su cantidad. ME1: el evento de una infusión es su inicio */}
+                        {isLoadingSlot(m, s.at) && <em className="slot2__tag">Dosis inicial · {m.loadingDose}</em>}
+                        {m.infusionRate && !dose && <em className="slot2__tag">Inicio de la infusión</em>}
                         <small>{dose ? `${dose.status === 'given' ? '✓' : '✗'} ${time(dose.givenAt)}${givenLate(dose) ? ' con retraso' : ''} ${by(dose.givenBy)}` : STATE_LABEL[st]}</small>
                       </button>
                     )
@@ -415,7 +432,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                     )}
                     {!prnToday.length && !(care && !m.stoppedAt && ref.getTime() === today.getTime()) && <span className="muted" style={{ fontSize: 13 }}>Según necesidad. Sin dosis este día.</span>}
                   </>)}
-                  {!m.prn && !slots.length && <span className="muted" style={{ fontSize: 13 }}>Sin dosis este día.</span>}
+                  {!m.prn && !slots.length && !running && <span className="muted" style={{ fontSize: 13 }}>Sin dosis este día.</span>}
                 </div>
               </div>
             )
@@ -428,6 +445,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
       {marking && <DoseModal med={marking.med} at={marking.at} late={marking.late} doses={dosesOf(marking.med)} onClose={() => setMarking(null)} onSaved={() => { setMarking(null); reload() }} />}
       {correcting && <CorrectDoseModal med={correcting.med} dose={correcting.dose} onClose={() => setCorrecting(null)} onSaved={() => { setCorrecting(null); reload() }} />}
       {stopping && <StopModal med={stopping} onClose={() => setStopping(null)} onSaved={() => { setStopping(null); reload() }} />}
+      {stoppingInfusion && <StopInfusionModal med={stoppingInfusion} onClose={() => setStoppingInfusion(null)} onSaved={() => { setStoppingInfusion(null); reload() }} />}
     </section>
   )
 }
@@ -483,6 +501,29 @@ function medOrigin(m: InpatientMed, file: File, who?: string) {
   return `Indicado en ${where}, ${who ?? 'médico'}, ${dm(m.orderedAt)}.`
 }
 
+/** ME1 (ronda 8): «Suspender infusión»: la hora (ahora, por omisión), quién (queda solo) y un motivo opcional. */
+function StopInfusionModal({ med, onClose, onSaved }: { med: InpatientMed; onClose: () => void; onSaved: () => void }) {
+  const { stopInfusion } = useStore()
+  const [when, setWhen] = useState(() => inputDateTime(new Date()))
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  return (
+    <Modal title="Suspender infusión" onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--danger" disabled={busy} onClick={async () => {
+        setBusy(true)
+        const ok = await stopInfusion(med.id, { at: new Date(when).toISOString(), note: note.trim() || undefined })
+        setBusy(false)
+        if (ok) onSaved()
+      }}>Suspender infusión</button>
+    </>}>
+      <p>{medLabel(med)}. Queda con tu nombre, tu rol y la hora.</p>
+      <div className="field"><span>Hora</span><DateTimeField value={when} max={inputDateTime(new Date())} onChange={setWhen} label="Hora en que se suspendió" /></div>
+      <label className="field"><span>Motivo (opcional)</span><input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ej. Se terminó la mezcla; el médico lo indicó" /></label>
+    </Modal>
+  )
+}
+
 /** El médico suspende una orden desde la hoja: pide el motivo; la orden queda en la hoja como suspendida. */
 function StopModal({ med, onClose, onSaved }: { med: InpatientMed; onClose: () => void; onSaved: () => void }) {
   const { stopMed } = useStore()
@@ -528,19 +569,20 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
         const ok = await recordDose(med.id, { scheduledAt: at?.toISOString(), givenAt: new Date(when).toISOString(), status, note: note.trim() || undefined, reason: old ? reason.trim() : undefined })
         setBusy(false)
         if (ok) onSaved()
-      }}>{given ? 'Registrar administración' : status === 'omitted' ? 'Registrar como omitida' : 'Registrar como no aplicada'}</button>
+      }}>{given ? (med.infusionRate ? 'Registrar inicio' : 'Registrar administración') : status === 'omitted' ? 'Registrar como omitida' : 'Registrar como no aplicada'}</button>
     </>}>
       <p>{at ? <>Dosis de las <b>{time(at.toISOString())}</b>{at.toDateString() !== new Date().toDateString() ? ` del ${date(at.toISOString())}` : ''}.
         {at.getTime() < opened - LATE_AFTER_MIN * 60_000 && <> <span className="badge badge--amber">Atrasada</span></>}</> : <>Dosis según necesidad (PRN){med.prnCondition ? `: ${med.prnCondition}` : ''}. Queda con tu nombre, tu rol y la hora real.</>}</p>
-      {/* Ronda 8: con primera dosis distinta, enfermería ve cuál toca en esta hora */}
-      {med.loadingDose && at && <p className="alert-strip alert-strip--amber" style={{ margin: 0 }}>Dosis a aplicar: <b>{doseAt(med, at)}</b>{doseAt(med, at) === med.loadingDose ? ' (primera dosis, STAT)' : ' (mantenimiento)'}</p>}
-      {med.infusionRate && <p className="muted" style={{ margin: 0 }}>Infusión continua a {formatRate(med.infusionRate)} {med.infusionUnit ?? 'ml/h'}: registra el inicio de la infusión.</p>}
+      {/* ME2 (ronda 8): la cantidad propuesta es la de esta dosis (la inicial o las siguientes) y queda guardada en el registro */}
+      {med.loadingDose && at && <p className="alert-strip alert-strip--amber" style={{ margin: 0 }}>{isLoadingSlot(med, at) ? 'Dosis inicial' : 'Dosis siguiente'}: <b>{doseAt(med, at)}</b></p>}
+      {/* ME1: el evento de una infusión es su inicio; después la fila queda «En infusión desde…» */}
+      {med.infusionRate && <p className="muted" style={{ margin: 0 }}>Registra el inicio de la infusión a {formatRate(med.infusionRate)} {infusionUnitLabel(med.infusionUnit)}.</p>}
       {tooSoon && <div className="alert-strip"><TriangleAlert size={16} />La última dosis fue a las {time(last!.givenAt)}; la indicación es cada {med.everyHours} horas.</div>}
       {at && (
         <DoseStatus value={status} onChange={(s) => { setStatus(s); setNote('') }} />
       )}
       {!given && <p className="muted" style={{ fontSize: 13.5 }}>Con el motivo, la dosis deja de alertar y queda en la hoja como {status === 'omitted' ? 'omitida' : 'no aplicada'}.</p>}
-      <label className="field"><span>Hora real</span><input className="input" type="datetime-local" value={when} max={inputDateTime(new Date())} onChange={(e) => setWhen(e.target.value)} /></label>
+      <div className="field"><span>{med.infusionRate && given ? 'Hora de inicio real' : 'Hora real'}</span><DateTimeField value={when} max={inputDateTime(new Date())} onChange={setWhen} label="Hora real" /></div>
       {given && at && new Date(when).getTime() - at.getTime() > LATE_AFTER_MIN * 60_000 && (
         <p className="muted" style={{ fontSize: 13.5 }}>Queda como administrada con retraso: {elapsed(Math.round((new Date(when).getTime() - at.getTime()) / 60_000))} después de la hora indicada.</p>)}
       {!given && <SkipReasons value={note} onChange={setNote} reasons={status === 'omitted' ? OMIT_REASONS : SKIP_REASONS} />}
@@ -1049,9 +1091,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
               {!nv ? <button type="button" className="btn btn--soft btn--sm" style={{ justifySelf: 'start' }} onClick={() => { setNv({ ...EMPTY_VITALS }); setNvAt(inputDateTime(new Date())) }}><Plus size={15} />Agregar signos vitales</button> : (<>
                 <VitalsFields v={nv} setV={setNv} checked={nvChecked} setChecked={setNvChecked} ageYears={ageYears} />
                 <div className="form-grid">
-                  <label className="field"><span>Hora de la toma</span>
-                    <input className={`input ${nvFuture ? 'input--error' : ''}`} type="datetime-local" value={nvAt} max={inputDateTime(new Date())} onChange={(e) => setNvAt(e.target.value)} />
-                    {nvFuture && <small className="field__msg field__msg--error">No puede ser en el futuro.</small>}</label>
+                  <div className="field"><span>Hora de la toma</span>
+                    <DateTimeField value={nvAt} invalid={nvFuture} onChange={setNvAt} label="Hora de la toma" />
+                    {nvFuture && <small className="field__msg field__msg--error">No puede ser en el futuro.</small>}</div>
                   <span style={{ alignSelf: 'end' }}><button type="button" className="btn btn--ghost btn--sm" onClick={() => { setNv(null); setNvChecked(new Set()) }}>Quitar signos vitales</button></span>
                 </div>
                 {nvErrors.length > 0 && <small className="field__msg field__msg--error">Revisa {nvErrors.map((k) => VITALS[k].label.toLowerCase()).join(', ')}: el valor no es posible.</small>}
@@ -1216,7 +1258,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
         {replacing && <p className="muted" style={{ fontSize: 13.5 }}>La indicación nueva reemplaza a {active.find((m) => m.id === replacing)?.drug}. La nota conservará el resto de órdenes.</p>}
         {editingMed !== null && meds[editingMed] ? <MedForm key={`edit-${editingMed}`} p={p} initial={editInitial(meds[editingMed])}
             onAdd={(m) => { setMeds(meds.map((x, j) => (j === editingMed ? { ...m, replacesId: x.replacesId } : x))); setEditingMed(null) }} onCancel={() => setEditingMed(null)} />
-          : replacing ? <MedForm p={p} initial={medToNew(active.find((m) => m.id === replacing)!)} onAdd={(m) => { setMeds([...meds, { ...m, replacesId: replacing }]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
+          : replacing ? <MedForm p={p} initial={medToNew(active.find((m) => m.id === replacing)!, file.doses)} onAdd={(m) => { setMeds([...meds, { ...m, replacesId: replacing }]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
           : adding ? <MedForm key={meds.length} p={p} onAdd={(m) => { setMeds([...meds, m]); setAdding(false) }} onAddAnother={(m) => setMeds([...meds, m])} onCancel={() => setAdding(false)} />
           : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
       </fieldset>
@@ -1232,23 +1274,31 @@ function editInitial(m: NewMed): NewMed {
   return { ...rest, instructions: m.instructions ?? '', ...(firstAt ? { firstAt: inputDateTime(new Date(firstAt)) } : {}) }
 }
 
-function medToNew(m: InpatientMed): NewMed {
-  // Ronda 8: al cambiarla, la dosis de carga ya se dio: sigue la de mantenimiento; una infusión conserva su velocidad
-  return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, prnCondition: m.prnCondition, instructions: m.instructions ?? '', firstAt: inputDateTime(new Date()), days: m.days,
-    infusionRate: m.infusionRate, infusionUnit: m.infusionUnit }
+function medToNew(m: InpatientMed, doses: Dose[] = []): NewMed & { loadingGivenAt?: string } {
+  // ME2 (ronda 8): si la dosis inicial ya se administró, «Cambiar» no la repite (sigue la de las siguientes); si no, se
+  // puede editar. ME1: una infusión conserva su velocidad para cambiarla.
+  const loadingGiven = m.loadingDose ? doses.find((d) => d.medId === m.id && d.status === 'given' && d.scheduledAt && new Date(d.scheduledAt).getTime() === new Date(m.firstAt).getTime()) : undefined
+  const keepLoading = !!m.loadingDose && !loadingGiven
+  const firstAt = keepLoading && new Date(m.firstAt) > new Date() ? new Date(m.firstAt) : new Date()
+  return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, prnCondition: m.prnCondition, instructions: m.instructions ?? '', firstAt: inputDateTime(firstAt), days: m.days,
+    infusionRate: m.infusionRate, infusionUnit: m.infusionUnit, loadingDose: keepLoading ? m.loadingDose : undefined, loadingStat: keepLoading ? m.loadingStat : undefined,
+    loadingGivenAt: loadingGiven?.givenAt }
 }
 
 /**
  * Medicamento de una nota. "Guardar y agregar otro" (o Enter en el último campo) lo agrega y deja el formulario
  * limpio para escribir el siguiente sin volver a abrirlo.
+ * Ronda 8: ME1 agrega la frecuencia «Infusión» (con su velocidad) y ME2 la casilla «Primera dosis diferente (STAT)». Sin
+ * usarlas, el formulario funciona como siempre (sección 2 del pedido).
  */
-function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; initial?: NewMed; onAdd: (m: NewMed) => void; onAddAnother?: (m: NewMed) => void; onCancel: () => void }) {
-  const [m, setM] = useState<NewMed>({ ...EMPTY_MED, firstAt: inputDateTime(new Date()), ...initial })
-  // Ronda 8: «Infusión continua» es una frecuencia más (sin horario de dosis: lleva la velocidad del goteo)
-  const [freq, setFreq] = useState(initial?.infusionRate ? 'infusion' : initial?.everyHours ? String(initial.everyHours) : 'once')
-  const [rate, setRate] = useState(initial?.infusionRate ? formatRate(initial.infusionRate) : '')
-  // Ronda 8: primera dosis distinta (de carga o STAT) y luego la de mantenimiento; apagado, se indica como siempre
-  const [loading, setLoading] = useState(!!initial?.loadingDose)
+function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; initial?: NewMed & { loadingGivenAt?: string }; onAdd: (m: NewMed) => void; onAddAnother?: (m: NewMed) => void; onCancel: () => void }) {
+  const { loadingGivenAt, ...init } = initial ?? ({} as NewMed & { loadingGivenAt?: string })
+  const [m, setM] = useState<NewMed>({ ...EMPTY_MED, firstAt: inputDateTime(new Date()), ...init })
+  const [freq, setFreq] = useState(init.infusionRate ? 'infusion' : init.everyHours ? String(init.everyHours) : 'once')
+  const [rate, setRate] = useState(init.infusionRate ? formatRate(init.infusionRate) : '')
+  const [loading, setLoading] = useState(!!init.loadingDose)
+  // ME2: «Ahora (STAT)» por omisión, o una fecha y hora elegida
+  const [loadingNow, setLoadingNow] = useState(init.loadingStat !== false)
   const [open, setOpen] = useState(false)
   const [override, setOverride] = useState(false)
   const conflict = m.drug ? allergyConflict(p.allergies, m.drug) : null
@@ -1257,17 +1307,25 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
   const q = normalize(m.drug)
   const matches = q ? vademecum.filter((d) => normalize(`${d.name} ${d.brand ?? ''}`).includes(q)).slice(0, 6) : vademecum.slice(0, 6)
   const infusion = freq === 'infusion'
+  const unit = INFUSION_UNITS.find((u) => u.value === (m.infusionUnit ?? INFUSION_UNITS[0].value)) ?? INFUSION_UNITS[0]
   const rateNum = parseDecimal(rate)
-  const rateOk = rateNum !== undefined && !Number.isNaN(rateNum) && rateNum > 0
-  const withLoading = loading && !infusion && !m.prn && freq !== 'once'
+  const rateIssue = !rate.trim() ? 'Escribe la velocidad de infusión.'
+    : rateNum === undefined || Number.isNaN(rateNum) || rateNum <= 0 ? 'La velocidad debe ser un número mayor que 0.'
+      : !twoDecimals(rateNum) ? 'Hasta dos decimales.'
+        : rateNum > unit.max ? `No puede pasar de ${unit.max} ${unit.label}.` : ''
+  // ME2: sólo con una frecuencia repetitiva (cada X horas), no con dosis única, infusión ni PRN
+  const repeating = !infusion && !m.prn && freq !== 'once'
+  const withLoading = loading && repeating
   const built = (): NewMed | null => {
     if (!m.drug.trim() || !m.dose.trim() || (conflict && !override) || (m.prn && !m.prnCondition?.trim())) return null
-    if (infusion && !rateOk) return null
+    if (infusion && rateIssue) return null
     if (withLoading && !m.loadingDose?.trim()) return null
     const everyHours = freq === 'once' || infusion ? undefined : Number(freq)
+    // Con dosis inicial «Ahora (STAT)», la primera hora de la orden es ahora; las siguientes, desde ahí más el intervalo
+    const firstAt = withLoading && loadingNow ? new Date().toISOString() : m.prn && !infusion ? undefined : new Date(m.firstAt!).toISOString()
     return { ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours, prn: infusion ? false : m.prn, instructions: m.instructions?.trim() || undefined, prnCondition: m.prn && !infusion ? m.prnCondition?.trim() : undefined,
-      firstAt: m.prn && !infusion ? undefined : new Date(m.firstAt!).toISOString(),
-      infusionRate: infusion ? rateNum : undefined, infusionUnit: infusion ? m.infusionUnit ?? 'ml/h' : undefined, loadingDose: withLoading ? m.loadingDose!.trim() : undefined }
+      firstAt, infusionRate: infusion ? rateNum : undefined, infusionUnit: infusion ? unit.value : undefined,
+      loadingDose: withLoading ? m.loadingDose!.trim() : undefined, loadingStat: withLoading ? loadingNow : undefined }
   }
   const preview = built()
   const another = () => { const x = built(); if (x && onAddAnother) onAddAnother(x) }
@@ -1276,8 +1334,11 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
     const x = built()
     if (x) onAdd(x)
   }
+  // Qué falta para «Agregar a la nota» (el botón queda apagado hasta tenerlo: es intencional y se dice por qué)
+  const missing = !m.drug.trim() ? 'el medicamento' : !m.dose.trim() ? (withLoading ? 'la dosis siguiente' : 'la dosis') : m.prn && !m.prnCondition?.trim() ? 'la condición PRN'
+    : infusion && rateIssue ? 'la velocidad de infusión' : withLoading && !m.loadingDose?.trim() ? 'la dosis inicial' : conflict && !override ? 'confirmar la alergia' : ''
   return (
-    <form className="rx-form" onSubmit={submit}>
+    <form className="rx-form med-form" onSubmit={submit}>
       <div className="field suggest"><span>Medicamento</span>
         <input className="input" autoFocus value={m.drug} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
           onChange={(e) => { setM({ ...m, drug: e.target.value }); setOverride(false); setOpen(true) }} placeholder="Busca en el vademécum o escríbelo" />
@@ -1290,54 +1351,66 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
         )}
       </div>
       <div className="form-grid">
-        <label className="field"><span>{withLoading ? 'Dosis de mantenimiento' : infusion ? 'Dosis (en la mezcla)' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder={infusion ? 'Ej. 50 mg en 100 ml' : 'Ej. 8 mg'} /></label>
+        <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder={infusion ? 'Ej. 50 mg en 100 mL' : 'Ej. 8 mg'} /></label>
         <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => setM({ ...m, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
         <label className="field"><span>Frecuencia</span>
           <select className="select" value={freq} onChange={(e) => { setFreq(e.target.value); if (e.target.value === 'infusion') setM({ ...m, prn: false, route: m.route === 'Oral' ? 'Intravenosa' : m.route }) }}>
             {INPATIENT_FREQUENCIES.filter((f) => !m.prn || f.hours).map((f) => <option key={f.label} value={f.hours ?? 'once'}>{m.prn ? `${f.label} como máximo` : f.label}</option>)}
-            {!m.prn && <option value="infusion">Infusión continua</option>}
+            {!m.prn && <option value="infusion">Infusión</option>}
           </select></label>
-        {infusion ? (
-          <div className="field"><span>Velocidad del goteo</span>
-            <div className="rate-field">
-              <input className={`input num ${rate && !rateOk ? 'input--error' : ''}`} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="Ej. 5" aria-label="Velocidad del goteo" />
-              <select className="select" value={m.infusionUnit ?? 'ml/h'} onChange={(e) => setM({ ...m, infusionUnit: e.target.value as InfusionUnit })} aria-label="Unidad de la velocidad">
-                <option value="ml/h">ml/h</option><option value="ml/min">ml/min</option>
-              </select>
-            </div>
-            {!rateOk && <small className="field__msg field__msg--warn">Escribe la velocidad: la infusión la necesita.</small>}</div>
-        ) : (
+        {/* ME1: una infusión no es PRN */}
+        {!infusion && (
           <label className="field" style={{ alignContent: 'end' }}><span>Según necesidad</span>
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', minHeight: 42 }}>
-              <input type="checkbox" checked={m.prn} onChange={(e) => { setM({ ...m, prn: e.target.checked }); if (e.target.checked && freq === 'once') setFreq('8') }} />PRN (si es necesario)</label></label>
+              <input type="checkbox" checked={m.prn} onChange={(e) => { setM({ ...m, prn: e.target.checked }); if (e.target.checked && freq === 'once') setFreq('8') }} />Según necesidad (PRN)</label></label>
+        )}
+        {infusion && (
+          <div className="field span-2"><span>Velocidad de infusión</span>
+            <div className="rate-field">
+              <input className={`input num ${rate && rateIssue ? 'input--error' : ''}`} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="Ej. 20" aria-label="Velocidad de infusión" aria-required="true" />
+              <select className="select" value={unit.value} onChange={(e) => setM({ ...m, infusionUnit: e.target.value as InfusionUnit })} aria-label="Unidad de la velocidad">
+                {INFUSION_UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+              </select>
+            </div>
+            {rateIssue && <small className={`field__msg ${rate ? 'field__msg--error' : 'field__msg--warn'}`}>{rateIssue}</small>}</div>
         )}
         {m.prn && !infusion && <label className="field"><span>Condición</span>
           <input className={`input ${!m.prnCondition?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.prnCondition ?? ''} onChange={(e) => setM({ ...m, prnCondition: e.target.value })} placeholder="Ej. si dolor, si fiebre" aria-required="true" />
           {!m.prnCondition?.trim() && <small className="field__msg field__msg--warn">Obligatoria en un PRN: cuándo se da.</small>}</label>}
-        {!m.prn && !infusion && freq !== 'once' && (
-          <label className="field span-2 check-line" style={{ margin: 0 }}><input type="checkbox" checked={loading} onChange={(e) => setLoading(e.target.checked)} />
-            <span><b>La primera dosis es distinta</b><small>Dosis de carga o STAT: por ejemplo, 2 g IM STAT y luego 1 g cada 12 horas.</small></span></label>
-        )}
-        {withLoading && <label className="field"><span>Primera dosis (STAT)</span>
-          <input className={`input ${!m.loadingDose?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.loadingDose ?? ''} onChange={(e) => setM({ ...m, loadingDose: e.target.value })} placeholder="Ej. 2 g" /></label>}
-        {(!m.prn || infusion) && <label className="field"><span>{infusion ? 'Inicio de la infusión' : withLoading ? 'Hora de la primera dosis' : freq === 'once' ? 'Hora de la dosis' : 'Primera dosis'}</span><input className="input" type="datetime-local" value={m.firstAt} onChange={(e) => setM({ ...m, firstAt: e.target.value })} /></label>}
+        {repeating && (loadingGivenAt
+          ? <p className="field span-2 muted" style={{ margin: 0, fontSize: 13.5 }}>Dosis inicial ya administrada el {dmyTime(loadingGivenAt)}.</p>
+          : <label className="field span-2 check-line" style={{ margin: 0 }}><input type="checkbox" checked={loading} onChange={(e) => setLoading(e.target.checked)} />
+            <span><b>Primera dosis diferente (STAT)</b><small>Una sola orden: por ejemplo, 2 gr STAT y luego 1 gr cada 12 horas.</small></span></label>)}
+        {withLoading && (<>
+          <label className="field"><span>Dosis inicial</span>
+            <input className={`input ${!m.loadingDose?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.loadingDose ?? ''} onChange={(e) => setM({ ...m, loadingDose: e.target.value })} placeholder="Ej. 2 gr" aria-required="true" /></label>
+          <div className="field"><span>Hora de la dosis inicial</span>
+            <select className="select" value={loadingNow ? 'now' : 'at'} onChange={(e) => { setLoadingNow(e.target.value === 'now'); if (e.target.value === 'at') setM({ ...m, firstAt: inputDateTime(new Date()) }) }} aria-label="Hora de la dosis inicial">
+              <option value="now">Ahora (STAT)</option><option value="at">Elegir fecha y hora</option>
+            </select>
+            {!loadingNow && <DateTimeField value={m.firstAt ?? ''} onChange={(v) => setM({ ...m, firstAt: v })} label="Fecha y hora de la dosis inicial" />}
+          </div>
+        </>)}
+        {(!m.prn || infusion) && !withLoading && <div className="field"><span>{infusion ? 'Hora de inicio' : 'Hora de la dosis'}</span>
+          <DateTimeField value={m.firstAt ?? ''} onChange={(v) => setM({ ...m, firstAt: v })} label={infusion ? 'Hora de inicio' : 'Hora de la dosis'} /></div>}
         <label className="field"><span>Total de días (opcional)</span>
           <input className="input num" type="number" min={1} max={365} inputMode="numeric" value={m.days ?? ''} placeholder="Hasta nueva orden"
             onChange={(e) => setM({ ...m, days: e.target.value ? Math.max(1, Math.min(365, Math.round(Number(e.target.value)))) : undefined })} /></label>
-        <label className="field"><span>Indicaciones</span><input className="input" value={m.instructions} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder={m.prn ? 'Ej. Si hay dolor intenso' : infusion ? 'Ej. Diluir en 100 ml de SSN' : 'Ej. Diluir en 100 ml'}
+        <label className="field span-2"><span>Indicaciones</span><input className="input" value={m.instructions} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder={m.prn ? 'Ej. Si hay dolor intenso' : infusion ? 'Ej. Diluir en 100 mL de SSN' : 'Ej. Diluir en 100 mL'}
           onKeyDown={(e) => { if (e.key === 'Enter' && onAddAnother) { e.preventDefault(); another() } }} /></label>
       </div>
-      {preview && (withLoading || infusion) && <p className="muted" style={{ fontSize: 13.5 }}>Se verá así: <b>{medLabel(preview)}</b></p>}
+      {preview && (withLoading || infusion) && <p className="muted" style={{ fontSize: 13.5, overflowWrap: 'anywhere' }}>Se verá así: <b>{medLabel(preview)}</b></p>}
       {conflict && (
         <div className="alert-strip" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
           <span style={{ display: 'flex', gap: 8 }}><TriangleAlert size={18} style={{ flex: 'none' }} />{p.firstName} es alérgica/o a {conflict}. {m.drug} puede provocar una reacción.</span>
           {!override && <button type="button" className="btn btn--danger btn--sm" style={{ background: '#fff' }} onClick={() => setOverride(true)}>Indicar de todos modos</button>}
         </div>
       )}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button className="btn btn--primary" disabled={!preview}><Plus size={16} />Agregar a la nota</button>
         {onAddAnother && <button type="button" className="btn btn--soft" disabled={!preview} onClick={another}>Guardar y agregar otro</button>}
         <button type="button" className="btn btn--ghost" onClick={onCancel}>Cancelar</button>
+        {!preview && missing && <small className="muted">Falta {missing}.</small>}
       </div>
     </form>
   )

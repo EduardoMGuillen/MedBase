@@ -17,7 +17,7 @@ import { closeVisitsOfInpatients } from './stayVisits.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '58'
+const SCHEMA_VERSION = '59'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -918,6 +918,14 @@ ALTER TABLE appointments
   ADD COLUMN IF NOT EXISTS cancel_reason TEXT,
   ADD COLUMN IF NOT EXISTS cancelled_by TEXT,
   ADD COLUMN IF NOT EXISTS cancelled_at TEXT;
+-- v59 (ronda 8). ME1: enfermería suspende la infusión en curso. ME2: la dosis inicial es STAT o a una hora elegida; cada dosis registrada
+-- guarda la cantidad que le correspondía.
+ALTER TABLE hosp_meds
+  ADD COLUMN IF NOT EXISTS loading_stat BOOLEAN,
+  ADD COLUMN IF NOT EXISTS infusion_stopped_at TEXT,
+  ADD COLUMN IF NOT EXISTS infusion_stopped_by TEXT,
+  ADD COLUMN IF NOT EXISTS infusion_stop_note TEXT;
+ALTER TABLE hosp_doses ADD COLUMN IF NOT EXISTS dose TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

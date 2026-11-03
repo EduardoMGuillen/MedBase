@@ -882,8 +882,14 @@ export interface InpatientMed {
   /** Ronda 8: infusión continua (sin horario de dosis): velocidad del goteo. */
   infusionRate?: number
   infusionUnit?: InfusionUnit
-  /** Ronda 8: primera dosis distinta (de carga, STAT) y luego `dose` con su frecuencia: «2 g IM STAT y luego 1 g c/12h». */
+  /** ME2 (ronda 8): primera dosis diferente y luego `dose` con su frecuencia: «Ceftriaxona IM · 2 gr STAT y luego 1 gr c/12h». */
   loadingDose?: string
+  /** ME2: la dosis inicial es «Ahora (STAT)» (por omisión) o a una hora elegida (`firstAt`): «2 gr el 02/11/2026 14:00». */
+  loadingStat?: boolean
+  /** ME1 (ronda 8): enfermería suspendió la infusión en curso (hora, quién y motivo opcional). */
+  infusionStoppedAt?: string
+  infusionStoppedBy?: string
+  infusionStopNote?: string
 }
 
 export type InfusionUnit = 'ml/h' | 'ml/min'
@@ -897,6 +903,8 @@ export interface Dose {
   /** OB1 (ronda 5): «Omitida» con motivo, además de administrada y no aplicada. */
   status: 'given' | 'skipped' | 'omitted'
   note?: string
+  /** ME2 (ronda 8): la cantidad que correspondía a esa dosis (la inicial o las siguientes). Las de antes no la tienen. */
+  dose?: string
   /** Registro tardío o corrección: quién, cuándo y por qué (el registro anterior queda guardado). */
   correctedAt?: string
   correctedBy?: string

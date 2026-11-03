@@ -26,14 +26,32 @@ export const courseEnd = (m: Pick<Schedulable, 'firstAt' | 'days'>) => (m.days ?
 /** ¿Ya terminó sus días? */
 export const courseDone = (m: Pick<Schedulable, 'firstAt' | 'days'>, now = new Date()) => courseEnd(m) <= now.getTime()
 
-/** Cómo se escribe en la nota: "Ondansetrón 8 mg IV c/8h", "Tramadol 50 mg SC c/12h PRN". */
-export function medLabel(m: Pick<InpatientMed, 'drug' | 'dose' | 'route' | 'everyHours' | 'prn'> & { prnCondition?: string; infusionRate?: number; infusionUnit?: string; loadingDose?: string }) {
+type Labelable = Pick<InpatientMed, 'drug' | 'dose' | 'route' | 'everyHours' | 'prn'> & { prnCondition?: string; infusionRate?: number; infusionUnit?: string; loadingDose?: string; loadingStat?: boolean; firstAt?: string }
+
+/** ME1 (ronda 8): «mL/h», «mL/min». */
+export const infusionUnitLabel = (u?: string) => (u === 'ml/min' ? 'mL/min' : 'mL/h')
+
+/** dd/mm/aaaa HH:mm en la hora local, sin depender del idioma del navegador. */
+const dmyHm = (iso: string) => {
+  const d = new Date(iso)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/**
+ * Cómo se escribe en la nota: «Ondansetrón 8 mg IV c/8h», «Tramadol 50 mg SC c/12h PRN · si dolor». Ronda 8:
+ * - ME1, infusión: «Midazolam 50 mg IV · Infusión a 20 mL/h».
+ * - ME2, primera dosis diferente: «Ceftriaxona IM · 2 gr STAT y luego 1 gr c/12h»; si la inicial no es ahora:
+ *   «Ceftriaxona IM · 2 gr el 02/11/2026 14:00 y luego 1 gr c/12h».
+ */
+export function medLabel(m: Labelable) {
   const route = ROUTE_ABBR[m.route] ?? m.route.toLowerCase()
-  // Ronda 8: infusión continua a su velocidad: «Midazolam 50 mg IV infusión continua a 5 ml/h»
-  if (m.infusionRate) return [m.drug, m.dose, route, `infusión continua a ${formatRate(m.infusionRate)} ${m.infusionUnit ?? 'ml/h'}`].filter(Boolean).join(' ')
+  if (m.infusionRate) return `${[m.drug, m.dose, route].filter(Boolean).join(' ')} · Infusión a ${formatRate(m.infusionRate)} ${infusionUnitLabel(m.infusionUnit)}`
   const freq = m.everyHours ? `c/${m.everyHours}h` : m.prn ? '' : 'dosis única'
-  // Ronda 8: primera dosis distinta: «Ceftriaxona 2 g IM STAT y luego 1 g IM c/12h»
-  if (m.loadingDose?.trim() && m.everyHours && !m.prn) return `${m.drug} ${m.loadingDose.trim()} ${route} STAT y luego ${m.dose} ${route} ${freq}`
+  if (m.loadingDose?.trim() && m.everyHours && !m.prn) {
+    const when = m.loadingStat === false && m.firstAt ? `el ${dmyHm(m.firstAt)}` : 'STAT'
+    return `${m.drug} ${route} · ${m.loadingDose.trim()} ${when} y luego ${m.dose} ${freq}`
+  }
   // MC2 (ronda 6): «PRN · si dolor»
   const prn = m.prn ? (m.prnCondition?.trim() ? `PRN · ${m.prnCondition.trim()}` : 'PRN') : ''
   return [m.drug, m.dose, route, freq, prn].filter(Boolean).join(' ')
@@ -42,9 +60,16 @@ export function medLabel(m: Pick<InpatientMed, 'drug' | 'dose' | 'route' | 'ever
 /** «5», «2.5» (sin ceros de más). */
 export const formatRate = (n: number) => String(Math.round(n * 100) / 100)
 
-/** Ronda 8: la dosis que toca en una hora indicada: la de carga en la primera, la de mantenimiento en las demás. */
+/** ¿La velocidad tiene a lo sumo dos decimales? */
+export const twoDecimals = (n: number) => Math.abs(Math.round(n * 100) - n * 100) < 1e-6
+
+/** ME2 (ronda 8): ¿es la hora de la dosis inicial? (la primera hora de la orden). */
+export const isLoadingSlot = (m: Pick<InpatientMed, 'firstAt'> & { loadingDose?: string }, at?: Date) =>
+  !!m.loadingDose?.trim() && !!at && at.getTime() === new Date(m.firstAt).getTime()
+
+/** ME2: la dosis que toca en una hora indicada: la inicial en la primera, la de las siguientes en las demás. */
 export function doseAt(m: Pick<InpatientMed, 'dose' | 'firstAt'> & { loadingDose?: string }, at?: Date) {
-  return m.loadingDose?.trim() && at && at.getTime() === new Date(m.firstAt).getTime() ? m.loadingDose.trim() : m.dose
+  return isLoadingSlot(m, at) ? m.loadingDose!.trim() : m.dose
 }
 
 /**

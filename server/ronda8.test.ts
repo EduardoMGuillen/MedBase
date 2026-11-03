@@ -164,11 +164,30 @@ describe('Ronda 8: nota de evolución y medicamentos', () => {
     const mida = file.meds.find((m: any) => m.drug === 'Midazolam')
     const cef = file.meds.find((m: any) => m.drug === 'Ceftriaxona')
     assert.deepEqual([mida.infusionRate, mida.infusionUnit, mida.everyHours], [5, 'ml/h', undefined])
-    assert.equal(medLabel(mida), 'Midazolam 50 mg en 100 ml IV infusión continua a 5 ml/h')
+    assert.equal(medLabel(mida), 'Midazolam 50 mg en 100 ml IV · Infusión a 5 mL/h')
     assert.equal(cef.loadingDose, '2 g')
-    assert.equal(medLabel(cef), 'Ceftriaxona 2 g IM STAT y luego 1 g IM c/12h')
+    assert.equal(cef.loadingStat, true)
+    assert.equal(medLabel(cef), 'Ceftriaxona IM · 2 g STAT y luego 1 g c/12h')
+    assert.equal(medLabel({ ...cef, loadingStat: false, firstAt: new Date(2026, 10, 2, 14, 0).toISOString() }), 'Ceftriaxona IM · 2 g el 02/11/2026 14:00 y luego 1 g c/12h')
     assert.equal(doseAt(cef, new Date(cef.firstAt)), '2 g')
     assert.equal(doseAt(cef, new Date(new Date(cef.firstAt).getTime() + 12 * 3_600_000)), '1 g')
+    // ME2: cada dosis registrada guarda la cantidad que le tocaba
+    const nurse = await as('crios@demo.clinara')
+    const d1 = await nurse.post(`/api/inpatient/meds/${cef.id}/doses`, { scheduledAt: cef.firstAt, status: 'given' })
+    assert.equal(d1.status, 201, JSON.stringify(d1.body))
+    assert.equal(d1.body.dose, '2 g')
+    // ME1: la infusión tiene un evento de inicio; después se suspende con hora, quién y motivo
+    assert.equal((await nurse.post(`/api/inpatient/meds/${mida.id}/infusion-stop`, {})).status, 409, 'sin inicio no se suspende')
+    assert.equal((await nurse.post(`/api/inpatient/meds/${mida.id}/doses`, { scheduledAt: mida.firstAt, status: 'given' })).status, 201)
+    const stopped = await nurse.post(`/api/inpatient/meds/${mida.id}/infusion-stop`, { note: 'Se terminó la mezcla' })
+    assert.equal(stopped.status, 200, JSON.stringify(stopped.body))
+    assert.ok(stopped.body.infusionStoppedAt)
+    assert.equal(stopped.body.infusionStopNote, 'Se terminó la mezcla')
+    // ME1: velocidad con más de dos decimales o fuera del límite no pasa
+    for (const infusionRate of [2.555, 5000]) {
+      const r = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'x', meds: [{ drug: 'Y', dose: '1', route: 'Intravenosa', prn: false, infusionRate }] })
+      assert.equal(r.status, 400, String(infusionRate))
+    }
     // Lo de siempre no cambia
     assert.equal(medLabel({ drug: 'Ondansetrón', dose: '8 mg', route: 'Intravenosa', everyHours: 8, prn: false }), 'Ondansetrón 8 mg IV c/8h')
     // Combinaciones sin sentido
@@ -262,5 +281,15 @@ describe('NE4: los diagnósticos bajan de nota en nota', () => {
     const lines = (Array.isArray(log) ? log : log.items ?? []).map((a: any) => a.action ?? a.text ?? '')
     assert.ok(lines.some((t: string) => /agregó Insuficiencia respiratoria \(CB41\); quitó Fiebre \(MG26\)/.test(t)), lines.slice(0, 5).join('\n'))
     assert.ok(lines.some((t: string) => /agregó Rinofaringitis aguda \(CA00\)$/.test(t)))
+  })
+})
+
+describe('NE5: fecha y hora dd/mm/aaaa HH:mm', () => {
+  test('se lee y se escribe sin depender del idioma del navegador', async () => {
+    const { fromDisplay, toDisplay } = await import('../src/lib/dateInput.js')
+    assert.equal(toDisplay('2026-11-02T12:52'), '02/11/2026 12:52')
+    assert.equal(fromDisplay('02/11/2026 12:52'), '2026-11-02T12:52')
+    assert.equal(fromDisplay('31/02/2026 10:00'), null)
+    assert.equal(fromDisplay('02/11/2026 24:00'), null)
   })
 })

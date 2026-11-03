@@ -83,6 +83,19 @@ export const LATE_RECORD_MINUTES = 60
  */
 export const QUEUE_GROUP_ROLES: string[] = ['admin']
 
+/**
+ * ME1 (ronda 8). VALIDAR: Emil. Infusión: unidades de la velocidad (la primera es la de por omisión) y su máximo. El máximo
+ * sólo frena un error de dedo (p. ej. 5000 en vez de 50); no es una dosis máxima de ningún medicamento.
+ */
+export const INFUSION_UNITS = [{ value: 'ml/h', label: 'mL/h', max: 1000 }, { value: 'ml/min', label: 'mL/min', max: 20 }] as const
+
+/**
+ * EX3 (ronda 8). VALIDAR: Emil. Estudios de Rayos X: el informe es opcional. Son los del subgrupo del catálogo y los no
+ * catalogados de Imagen y gabinete cuyo nombre empieza por uno de estos prefijos (sin importar mayúsculas ni tildes).
+ */
+export const XRAY_SUBGROUPS = ['Rayos X']
+export const XRAY_PREFIXES = ['Rayos X', 'Radiografía', 'Rx']
+
 /** Un analito con su umbral crítico. Un límite vacío es «No aplica». */
 export interface CriticalAnalyte { id: string; name: string; unit?: string; low?: number; high?: number; archivedAt?: string
   /** Ronda 8: la fuente del umbral que trae la app (referencia bibliográfica). Los que agrega la clínica no la tienen. */
