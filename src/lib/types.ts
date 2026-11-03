@@ -268,6 +268,10 @@ export interface Appointment {
   /** Médico al que estaba asignada antes de que otro la tomara desde 'Toda la clínica'. */
   reassignedFrom?: string
   reassignedAt?: string
+  /** CX2 (ronda 8): por qué se canceló; `cancelledBy` es el id de quien la canceló o 'system' (estancia activa). */
+  cancelReason?: string
+  cancelledBy?: string
+  cancelledAt?: string
 }
 
 export interface Vitals {
@@ -468,6 +472,9 @@ export interface Bed {
   active: boolean
   outOfServiceNote?: string
 }
+
+/** CX2 (ronda 8): estancia activa (observación u hospitalización sin egreso), sin datos clínicos: la ven todos los roles. */
+export interface ActiveStay { id: string; patientId: string; kind: 'hospital' | 'observation'; since: string; room?: string }
 
 export interface Hospitalization {
   id: string

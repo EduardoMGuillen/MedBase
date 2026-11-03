@@ -16,9 +16,9 @@ import type { Appointment } from '../lib/types'
  * `onArrive` permite que la pantalla decida qué hacer antes de marcar la llegada (p. ej. completar el registro).
  */
 export function ArrivalsPanel({ doctorId, onArrive, id }: { doctorId?: string; onArrive?: (a: Appointment) => void; id?: string }) {
-  const { appointments, patient, staffById, settings, can, user, saveMyProfile } = useStore()
+  const { appointments, patient, staffById, settings, can, user, saveMyProfile, stayOf } = useStore()
   const now = useNow()
-  const list = pendingArrivals(appointments, now, doctorId)
+  const list = pendingArrivals(appointments, now, doctorId, (id) => !!stayOf(id))
   const checkIn = can('checkin.manage') && !!onArrive
   // AD1/RE1 (ronda 6): «Por hora | Por médico», recordado por usuario y entre sesiones. Por defecto, por hora
   const grouped = features(settings).multiDoctor && !doctorId

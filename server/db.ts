@@ -17,7 +17,7 @@ import { closeVisitsOfInpatients } from './stayVisits.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '57'
+const SCHEMA_VERSION = '58'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -911,6 +911,13 @@ ALTER TABLE hosp_meds
 ALTER TABLE referrals ADD COLUMN IF NOT EXISTS consultation_id TEXT REFERENCES consultations(id);
 ALTER TABLE referrals ALTER COLUMN hospitalization_id DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS referrals_consult ON referrals (consultation_id);
+
+-- v58 (ronda 8, pedido completo). CX2: la cita que cancela el sistema por una estancia activa lleva motivo, autor («system»)
+-- y hora; también se guarda quién canceló a mano. Sólo columnas nuevas.
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS cancel_reason TEXT,
+  ADD COLUMN IF NOT EXISTS cancelled_by TEXT,
+  ADD COLUMN IF NOT EXISTS cancelled_at TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -966,7 +973,7 @@ export function ensureDb(sql: Sql) {
         await loadRonda7(q, String(c.id))
       }
       await markDemoClinics(q)
-      // v57 (ronda 8): nadie internado sigue a la vez en la consulta externa
+      // v57/v58 (ronda 8, CX2): nadie internado sigue a la vez en la consulta externa (idempotente)
       await closeVisitsOfInpatients(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })

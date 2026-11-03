@@ -71,7 +71,26 @@ describe('Ronda 8: incongruencias de la consulta externa', () => {
     assert.ok(appts.some((a: any) => a.status === 'done'), 'la que originó el ingreso queda atendida')
     const again = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-paz', reason: 'Otra vez' })
     assert.equal(again.status, 409)
-    assert.match(again.body.error, /observación/)
+    assert.match(again.body.error, /^Este paciente está en observación \(desde \d{2}\/\d{2}\/\d{4}\)\. No puede pasar a consulta externa hasta su egreso\.$/)
+    // CX2: la cita cerrada lleva motivo, autor «Sistema» y hora, y se puede reprogramar
+    const closed = appts.find((a: any) => a.id === other.body.id)
+    assert.equal(closed.cancelReason, 'Paciente con estancia activa (hospitalizado/observación)')
+    assert.equal(closed.cancelledBy, 'system')
+    assert.ok(closed.cancelledAt)
+    // CX2: no se agenda para hoy; a futuro sí
+    const d = new Date(); const pad = (n: number) => String(n).padStart(2, '0')
+    let future = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate())
+    // el Dr. Paz no atiende domingos
+    while (future.getDay() === 0 || future.getDay() === 6) future = new Date(future.getFullYear(), future.getMonth(), future.getDate() + 1)
+    const fut = `${future.getFullYear()}-${pad(future.getMonth() + 1)}-${pad(future.getDate())}T09:00:00`
+    const todayAppt = await reception.post('/api/appointments', { patientId: p.id, doctorId: 's-paz', start: `${today()}T${pad(Math.min(16, d.getHours() + 1))}:00:00`, reason: 'Control' })
+    assert.equal(todayAppt.status, 409, JSON.stringify(todayAppt.body))
+    assert.match(todayAppt.body.error, /No puede pasar a consulta externa hasta su egreso/)
+    assert.equal((await reception.post('/api/appointments', { patientId: p.id, doctorId: 's-paz', start: fut, reason: 'Control' })).status, 201)
+    const moved = await reception.patch(`/api/appointments/${other.body.id}`, { start: fut.replace('09:00', '10:00') })
+    assert.equal(moved.status, 200, JSON.stringify(moved.body))
+    assert.equal(moved.body.status, 'scheduled')
+    assert.equal(moved.body.cancelReason, undefined)
   })
 
   test('la migración cierra lo que ya estaba incongruente', async () => {
@@ -83,7 +102,11 @@ describe('Ronda 8: incongruencias de la consulta externa', () => {
     await sql.run(`INSERT INTO appointments (id, patient_id, doctor_id, start, minutes, reason, type, status, arrived_at, source, clinic_id) VALUES (?,?,?,?,30,'x','followup','arrived',?,'staff','c-sb')`,
       [id, String(h.patient_id), 's-paz', `${today()}T${p(now.getHours())}:00:00`, now.toISOString()])
     assert.ok(await closeVisitsOfInpatients(sql) >= 1)
-    assert.equal((await sql.one('SELECT status FROM appointments WHERE id = ?', [id]))!.status, 'cancelled')
+    const row = (await sql.one('SELECT status, cancel_reason, cancelled_by FROM appointments WHERE id = ?', [id]))!
+    assert.equal(row.status, 'cancelled')
+    assert.equal(row.cancelled_by, 'system')
+    // CX2: idempotente: la segunda vez no cambia nada
+    assert.equal(await closeVisitsOfInpatients(sql), 0)
   })
 })
 

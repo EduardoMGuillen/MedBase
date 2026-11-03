@@ -268,3 +268,12 @@ export const dxCode = (d: Diagnosis) => (d.code === 'S/C' ? 'sin código' : lega
  * nada escrito, devuelve "".
  */
 export const examText = (exam = '') => exam.split(/\r?\n/).filter((l) => !/^\s*[^:\n]{2,40}:\s*$/.test(l)).join('\n').trim()
+
+/** dd/mm/aaaa de una fecha ISO, en la hora local (ronda 8: formato de Honduras, sin depender del idioma del navegador). */
+export const dmy = (iso: string) => {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(`${iso}T12:00:00`) : new Date(iso)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`
+}
+/** dd/mm/aaaa HH:mm (24 horas). */
+export const dmyTime = (iso: string) => `${dmy(iso)} ${time(iso)}`

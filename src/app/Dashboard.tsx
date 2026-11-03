@@ -85,7 +85,7 @@ export function ApptRows({ list, showDoctor = false, action, empty = 'No hay cit
 }
 
 export default function Dashboard() {
-  const { user, appointments, patients, staff, audit, staffById, settings, can, fetchPayments, fetchBalances, setStatus } = useStore()
+  const { user, appointments, patients, staff, audit, staffById, settings, can, fetchPayments, fetchBalances, setStatus, stayOf } = useStore()
   const [todayRevenue, setTodayRevenue] = useState<number | null>(null)
   const [owed, setOwed] = useState<{ n: number; total: number } | null>(null)
   const [triage, setTriage] = useState<Appointment | null>(null)
@@ -202,7 +202,7 @@ export default function Dashboard() {
   // La asistente del consultorio hace lo de recepción y además la preclínica
   if (user.role === 'reception' || user.role === 'assistant') {
     const triageQueue = today.filter((a) => a.status === 'arrived')
-    const pending = pendingArrivals(appointments, now)
+    const pending = pendingArrivals(appointments, now, undefined, (id) => !!stayOf(id))
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
     const reminders = appointments.filter((a) => sameDay(a.start, tomorrow) && ['scheduled', 'confirmed'].includes(a.status)).sort((a, b) => a.start.localeCompare(b.start))
     const online = appointments.filter((a) => a.source === 'online' && a.status === 'scheduled' && new Date(a.start) >= now).sort((a, b) => a.start.localeCompare(b.start))

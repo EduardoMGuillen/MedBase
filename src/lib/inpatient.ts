@@ -98,6 +98,29 @@ export function slotState(at: Date, omitted: boolean, dose: Dose | undefined, no
 }
 
 /** Ruta del expediente de una estancia: observación u hospitalización. */
+/** dd/mm/aaaa de una fecha ISO (o «aaaa-mm-dd»), en la hora local. */
+const ddmmyyyy = (iso: string) => {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(`${iso}T12:00:00`) : new Date(iso)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`
+}
+
+/**
+ * CX2 (ronda 8): por qué un paciente con estancia activa no pasa a la consulta externa. El mismo texto en el servidor (409)
+ * y en pantalla: «Este paciente está hospitalizado (Cuarto 103, desde 29/10/2026). No puede pasar a consulta externa hasta su egreso.»
+ */
+export function stayConflictText(stay: { kind: string; since: string; room?: string }) {
+  const where = [stay.room ? `Cuarto ${stay.room}` : '', `desde ${ddmmyyyy(stay.since)}`].filter(Boolean).join(', ')
+  return `Este paciente está ${stay.kind === 'observation' ? 'en observación' : 'hospitalizado'} (${where}). No puede pasar a consulta externa hasta su egreso.`
+}
+
+/** CX2: aviso al agendar a futuro a quien hoy está internado. */
+export const stayFutureWarning = (kind: string) =>
+  `Hoy está ${kind === 'observation' ? 'en observación' : 'hospitalizado'}. Si sigue ${kind === 'observation' ? 'en observación' : 'hospitalizado'} ese día, la cita quedará en conflicto.`
+
+/** CX2: motivo con que el sistema cancela la cita de hoy de un paciente con estancia activa. */
+export const STAY_CANCEL_REASON = 'Paciente con estancia activa (hospitalizado/observación)'
+
 export const stayPath = (h: { id: string; kind?: string }) => `/app/${h.kind === 'observation' ? 'observacion' : 'hospitalizados'}/${h.id}`
 
 /** Tiempo transcurrido legible: "4 h 20 min", "35 min", "1 d 3 h". */

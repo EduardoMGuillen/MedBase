@@ -5,13 +5,13 @@ import { useStore } from '../lib/store'
 import { features, hasRole } from '../lib/permissions'
 import { Modal, PageHead, StatusBadge } from '../components/ui'
 import { age, fullName, sameDay, time } from '../lib/format'
-import type { Appointment, Patient } from '../lib/types'
+import type { ActiveStay, Appointment, Patient } from '../lib/types'
 import { parseDecimal, VITALS, type VitalKey } from '../lib/vitals'
 import { EMPTY_VITALS, FIELDS, fieldIssue, vitalNumber, type VitalsForm } from '../lib/vitalsForm'
 import { VitalsFields } from '../components/VitalsFields'
 import { ApptGroupList, GroupTools, groupAppointments, useFold, type ApptGroupView } from '../components/ApptGroups'
 import { QUEUE_GROUP_ROLES } from '../lib/clinicalConfig'
-import { stayPath, yearsOld } from '../lib/inpatient'
+import { stayConflictText, stayPath, yearsOld } from '../lib/inpatient'
 import { PatientPicker } from './Inpatients'
 import { IdentificationForm } from './PatientForms'
 import { CompleteRegistration } from './NewPatient'
@@ -23,7 +23,7 @@ const minutesSince = (iso?: string) => (iso ? Math.max(0, Math.round((Date.now()
  * la preclínica y el médico los atiende. No se muestra "por llegar": esa lista no aporta aquí.
  */
 export default function WaitingRoom() {
-  const { appointments, patient, staffById, can, setStatus, user, stayOf, inpatientOf, takeAppointment, settings, saveMyProfile } = useStore()
+  const { appointments, patient, staffById, can, setStatus, user, activeStayOf, inpatientOf, takeAppointment, settings, saveMyProfile } = useStore()
   // Un consultorio tiene un solo médico: no hay "Mis pacientes / Toda la clínica" ni atender al de otro médico
   const multiDoctor = features(settings).multiDoctor
   const nav = useNavigate()
@@ -62,10 +62,11 @@ export default function WaitingRoom() {
     const wait = a.status === 'arrived' ? minutesSince(a.arrivedAt) : null
     const own = a.doctorId === user?.id
     const hosp = inpatientOf(p.id)
-    const stay = stayOf(p.id)
+    const stay = activeStayOf(p.id)
     const takenFromMe = a.reassignedFrom === user?.id && !own
-    // Ronda 8: internado (en observación u hospitalizado) no sigue en la consulta externa: sin preclínica ni consulta
-    const interned = !!hosp && a.status !== 'done'
+    // CX2 (ronda 8): con una estancia activa no sigue en la consulta externa. Si aun así quedó en la cola (no debería: el
+    // servidor lo impide y la migración las cancela), la tarjeta lo marca y no deja hacer la preclínica ni atender.
+    const interned = !!stay && a.status !== 'done'
     return (
       <div key={a.id} className="queue-card" style={{ gridTemplateColumns: '1fr auto' }}>
         <div className="row__who">
@@ -75,8 +76,9 @@ export default function WaitingRoom() {
             <StatusBadge status={a.status} />
             {a.source === 'walkin' && <span className="badge badge--neutral">Sin cita</span>}
             {a.type === 'urgent' && <span className="badge badge--red">Urgente</span>}
-            {hosp ? <Link to={stayPath(hosp)} className="badge badge--ink"><BedDouble size={12} />{hosp.kind === 'observation' ? 'En observación' : 'Hospitalizado'}</Link>
-              : stay && <span className="badge badge--ink"><BedDouble size={12} />{stay === 'observation' ? 'En observación' : 'Hospitalizado'}</span>}
+            {interned ? <span className="badge badge--red"><BedDouble size={12} />Conflicto: hospitalizado</span>
+              : hosp ? <Link to={stayPath(hosp)} className="badge badge--ink"><BedDouble size={12} />{hosp.kind === 'observation' ? 'En observación' : 'Hospitalizado'}</Link>
+                : stay && <span className="badge badge--ink"><BedDouble size={12} />{stay.kind === 'observation' ? 'En observación' : 'Hospitalizado'}</span>}
             {a.reassignedFrom && <span className="badge badge--amber">{takenFromMe ? `Lo atiende ${staffById(a.doctorId)?.name}` : `Atendido por ${staffById(a.doctorId)?.name}, estaba con ${staffById(a.reassignedFrom)?.name}`}</span>}
             {wait !== null && <span className="wait">{wait} min esperando</span>}
           </div>
@@ -84,9 +86,10 @@ export default function WaitingRoom() {
         <div style={{ display: 'grid', gap: 6, alignContent: 'start' }}>
           {['scheduled', 'confirmed'].includes(a.status) && !interned && can('checkin.manage') &&
             <button className="btn btn--soft btn--sm" onClick={() => p.pending ? setCompleting(a) : setStatus(a.id, 'arrived', `Llegada de ${p.firstName} registrada`)}><LogIn size={15} />Llegó</button>}
-          {interned && <span className="muted" style={{ fontSize: 12.5, maxWidth: 170 }}>Está internado: se atiende desde su expediente.</span>}
-          {a.status === 'arrived' && !interned && can('vitals.record') &&
-            <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Preclínica</button>}
+          {a.status === 'arrived' && can('vitals.record') && (interned
+            ? <button className="btn btn--primary btn--sm" disabled aria-describedby={`cx2-${a.id}`}><Activity size={15} />Preclínica</button>
+            : <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Preclínica</button>)}
+          {interned && <small id={`cx2-${a.id}`} className="muted" style={{ fontSize: 12.5, maxWidth: 190 }}>{stayConflictText(stay)}</small>}
           {/* CE1 (ronda 6): el cobro no va en Atendidos: se registra en Caja (o «Cobrar» del médico y del consultorio) */}
           {['arrived', 'triaged', 'in_consult'].includes(a.status) && !interned && own && can('consult.write') &&
             <button className="btn btn--primary btn--sm" onClick={() => nav(`/app/consulta/${a.id}`)}><Stethoscope size={15} />{a.status === 'in_consult' ? 'Continuar' : 'Atender'}</button>}
@@ -150,9 +153,23 @@ export default function WaitingRoom() {
   )
 }
 
+/**
+ * CX2 (ronda 8): el paciente tiene una estancia activa: no pasa a la consulta externa. Dice dónde está y, a quien puede
+ * verlo, lleva a su expediente de la estancia.
+ */
+export function StayConflict({ stay }: { stay: ActiveStay }) {
+  const { can } = useStore()
+  return (
+    <div className="alert-strip" role="alert">
+      <span>{stayConflictText(stay)}</span>
+      {can('inpatient.view') && <> <Link to={stayPath(stay)}>Ver paciente hospitalizado</Link></>}
+    </div>
+  )
+}
+
 /** Paciente que llega de pie: se busca o se registra y entra a la sala de espera. */
 function WalkInModal({ onClose }: { onClose: () => void }) {
-  const { staff, walkIn, addPatient, can, user } = useStore()
+  const { staff, walkIn, addPatient, can, user, activeStayOf } = useStore()
   const doctors = staff.filter((s) => hasRole(s, 'doctor') && s.active)
   const [patientId, setPatientId] = useState('')
   const [doctorId, setDoctorId] = useState(user?.role === 'doctor' ? user.id : doctors[0]?.id ?? '')
@@ -170,7 +187,7 @@ function WalkInModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Paciente sin cita" onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={!patientId || !doctorId || !reason.trim() || busy} onClick={async () => {
+      <button className="btn btn--primary" disabled={!patientId || !doctorId || !reason.trim() || busy || !!activeStayOf(patientId)} onClick={async () => {
         setBusy(true)
         const ok = await walkIn({ patientId, doctorId, reason: reason.trim(), urgent })
         setBusy(false)
@@ -178,6 +195,7 @@ function WalkInModal({ onClose }: { onClose: () => void }) {
       }}>Pasar a sala de espera</button>
     </>}>
       <PatientPicker value={patientId} onChange={setPatientId} />
+      {patientId && activeStayOf(patientId) && <StayConflict stay={activeStayOf(patientId)!} />}
       {can('patients.manage') && <button className="btn btn--primary" style={{ justifySelf: 'start' }} onClick={() => setRegistering(true)}><UserPlus size={16} />Registrar paciente nuevo</button>}
       {doctors.length > 1 && <label className="field"><span>Médico</span>
         <select className="select" value={doctorId} onChange={(e) => setDoctorId(e.target.value)}>

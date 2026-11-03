@@ -410,7 +410,9 @@ export function createApp(opts: AppOptions) {
       can(user, 'rx.write') || can(user, 'drugs.manage') ? sql.query('SELECT * FROM clinic_drugs WHERE clinic_id = ? ORDER BY name', [cid]) : none,
       can(user, 'orders.review') ? pendingOrders(sql, cid) : Promise.resolve([]),
       // Estado del paciente (hospitalizado o en observación) para todos los roles, sin datos clínicos
-      sql.query(`SELECT patient_id, kind FROM hospitalizations WHERE clinic_id = ? AND status = 'active'`, [cid]),
+      // CX2 (ronda 8): también dónde está y desde cuándo, para el aviso de la consulta externa y la agenda
+      sql.query(`SELECT h.id, h.patient_id, h.kind, h.admitted_at, h.observation_at, b.room, b.label FROM hospitalizations h LEFT JOIN beds b ON b.id = h.bed_id
+        WHERE h.clinic_id = ? AND h.status = 'active'`, [cid]),
       // AD3: estado de cada cama (quién la ocupa y la especialidad del ingreso), sin datos clínicos, para todos los roles
       sql.query(`SELECT id, bed_id, patient_id, specialty FROM hospitalizations WHERE clinic_id = ? AND status = 'active' AND bed_id IS NOT NULL AND kind = 'hospital'`, [cid]),
     ])
@@ -429,7 +431,8 @@ export function createApp(opts: AppOptions) {
       discharges: discharges.map((r) => ({ patientId: String(r.patient_id), at: String(r.discharged_at) })),
       clinicDrugs: clinicDrugs.map(toClinicDrug),
       pendingOrders: pending,
-      stays: stays.map((r) => ({ patientId: String(r.patient_id), kind: String(r.kind) })),
+      stays: stays.map((r) => ({ id: String(r.id), patientId: String(r.patient_id), kind: String(r.kind), since: String(r.observation_at ?? r.admitted_at),
+        room: r.room ? `${r.room}${r.label ? `-${r.label}` : ''}` : undefined })),
       bedStays: bedStays.map((r) => ({ id: String(r.id), bedId: String(r.bed_id), patientId: String(r.patient_id), specialty: r.specialty ? String(r.specialty) : undefined })),
     })
   })
@@ -628,6 +631,11 @@ export function createApp(opts: AppOptions) {
     const start = a.start.length === 16 ? `${a.start}:00` : a.start
     const cid = clinicOf(req)
     if (a.patientId) (await patientRow(cid, a.patientId)) ?? fail(400, 'El paciente no existe.')
+    // CX2 (ronda 8): con una estancia activa no se agenda para hoy; a futuro sí (la agenda avisa)
+    if (a.patientId && start.slice(0, 10) <= localDate(new Date())) {
+      const stay = await activeStayOf(sql, cid, a.patientId)
+      if (stay) fail(409, stayConflictMessage(stay))
+    }
     const doc = await clinicStaffRow(cid, a.doctorId)
     if (!doc || !rolesOf(doc).includes('doctor') || !doc.active) fail(400, 'El médico elegido no está disponible.')
     assertInSchedule(doc!, start)
@@ -649,7 +657,9 @@ export function createApp(opts: AppOptions) {
   app.patch('/api/appointments/:id', auth, need('agenda.manage'), async (req, res) => {
     const cid = clinicOf(req)
     const row = (await apptRow(cid, String(req.params.id))) ?? fail(404, 'La cita no existe.')
-    if (!['scheduled', 'confirmed'].includes(String(row!.status))) fail(409, 'Sólo se pueden reprogramar citas que aún no empiezan.')
+    // CX2 (ronda 8): la que canceló el sistema por una estancia activa también se reprograma
+    const bySystem = row!.status === 'cancelled' && row!.cancelled_by === 'system'
+    if (!['scheduled', 'confirmed'].includes(String(row!.status)) && !bySystem) fail(409, 'Sólo se pueden reprogramar citas que aún no empiezan.')
     const b = parse(apptBody.pick({ doctorId: true, start: true, minutes: true, reason: true }).partial(), req.body)
     const next = {
       doctorId: b.doctorId ?? String(row!.doctor_id),
@@ -660,7 +670,11 @@ export function createApp(opts: AppOptions) {
     const doc = await clinicStaffRow(cid, next.doctorId)
     if (!doc || !rolesOf(doc).includes('doctor') || !doc.active) fail(400, 'El médico elegido no está disponible.')
     if (next.doctorId !== row!.doctor_id || next.start !== row!.start) assertInSchedule(doc!, next.start)
-    await sql.run('UPDATE appointments SET doctor_id = ?, start = ?, minutes = ?, reason = ?, status = ?, reminded_at = NULL WHERE id = ?',
+    if (next.start.slice(0, 10) <= localDate(new Date())) {
+      const stay = await activeStayOf(sql, cid, String(row!.patient_id))
+      if (stay) fail(409, stayConflictMessage(stay))
+    }
+    await sql.run('UPDATE appointments SET doctor_id = ?, start = ?, minutes = ?, reason = ?, status = ?, reminded_at = NULL, cancel_reason = NULL, cancelled_by = NULL, cancelled_at = NULL WHERE id = ?',
       [next.doctorId, next.start, next.minutes, next.reason, 'scheduled', String(row!.id)])
     await audit(userOf(req), `Reprogramó la cita de ${await patientName(String(row!.patient_id))} al ${next.start.slice(0, 10)} ${next.start.slice(11, 16)}`)
     res.json(toAppointment((await apptRow(cid, String(row!.id)))!))
@@ -689,10 +703,11 @@ export function createApp(opts: AppOptions) {
     // Ronda 8: un paciente internado no pasa a la consulta externa
     if (status === 'arrived' || status === 'in_consult') {
       const stay = await activeStayOf(sql, cid, String(row!.patient_id))
-      if (stay) fail(409, stayConflictMessage(await patientName(String(row!.patient_id)), stay.kind))
+      if (stay) fail(409, stayConflictMessage(stay))
     }
-    await sql.run('UPDATE appointments SET status = ?, arrived_at = COALESCE(?, arrived_at) WHERE id = ?',
-      [status, status === 'arrived' ? new Date().toISOString() : null, String(row!.id)])
+    const at = new Date().toISOString()
+    await sql.run(`UPDATE appointments SET status = ?, arrived_at = COALESCE(?, arrived_at), cancelled_by = COALESCE(?, cancelled_by), cancelled_at = COALESCE(?, cancelled_at) WHERE id = ?`,
+      [status, status === 'arrived' ? at : null, status === 'cancelled' ? user.id : null, status === 'cancelled' ? at : null, String(row!.id)])
     await audit(user, `${t.label} la cita de ${await patientName(String(row!.patient_id))}`)
     res.json(toAppointment((await apptRow(cid, String(row!.id)))!))
   })
@@ -733,7 +748,7 @@ export function createApp(opts: AppOptions) {
     const cid = clinicOf(req)
     ;(await patientRow(cid, b.patientId)) ?? fail(400, 'El paciente no existe.')
     const stay = await activeStayOf(sql, cid, b.patientId)
-    if (stay) fail(409, stayConflictMessage(await patientName(b.patientId), stay.kind))
+    if (stay) fail(409, stayConflictMessage(stay))
     const doc = await clinicStaffRow(cid, b.doctorId)
     if (!doc || !rolesOf(doc).includes('doctor') || !doc.active) fail(400, 'El médico elegido no está disponible.')
     const now = new Date()

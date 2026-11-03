@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
-import type { ExamOrder, VitalsMode,
+import type { ActiveStay, ExamOrder, VitalsMode,
   Addendum, Appointment, ExamInput, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Referral, ReferralData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
@@ -23,7 +23,7 @@ interface Data {
   discharges: { patientId: string; at: string }[] // último egreso de cada paciente
   clinicDrugs?: ClinicDrug[] // vademécum propio de la clínica
   pendingOrders?: PendingOrders[] // órdenes médicas sin revisar (enfermería)
-  stays?: { patientId: string; kind: Hospitalization['kind'] }[] // quién está hospitalizado o en observación (todos los roles)
+  stays?: ActiveStay[] // quién está hospitalizado o en observación (todos los roles)
   /** AD3: camas ocupadas (estancia, paciente y especialidad del ingreso), para todos los roles. */
   bedStays?: { id: string; bedId: string; patientId: string; specialty?: string }[]
 }
@@ -186,6 +186,7 @@ function useStoreValue() {
     inpatientOf: (patientId: string) => data.inpatients.find((h) => h.patientId === patientId),
     /** Hospitalizado o en observación ahora mismo; lo ven también recepción y caja. */
     stayOf: (patientId: string) => data.stays?.find((x) => x.patientId === patientId)?.kind,
+    activeStayOf: (patientId: string) => data.stays?.find((x) => x.patientId === patientId),
 
     walkIn: (b: { patientId: string; doctorId: string; reason: string; urgent?: boolean }) =>
       run(() => api<Appointment>('/appointments/walk-in', { body: b }), 'Paciente agregado a la consulta externa de hoy'),

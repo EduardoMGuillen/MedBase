@@ -4,7 +4,9 @@ import { ChevronLeft, ChevronRight, Globe, Plus, Receipt, Search, UserPlus, X } 
 import { useStore, type NewAppointment } from '../lib/store'
 import { Avatar, Modal, PageHead, StatusBadge } from '../components/ui'
 import { ReminderButton } from '../components/Reminder'
-import { cap, dniDigits, formatPhone, fullName, localISODate, time } from '../lib/format'
+import { cap, dmyTime, dniDigits, formatPhone, fullName, localISODate, time } from '../lib/format'
+import { stayFutureWarning } from '../lib/inpatient'
+import { StayConflict } from './WaitingRoom'
 import { DniInput } from '../components/DniInput'
 import { DAY_NAMES_PLURAL, describeSchedule, slotsOn, weekday } from '../lib/schedule'
 import { normalize, similarPatients } from '../lib/patients'
@@ -37,7 +39,7 @@ function range(view: View, cursor: Date): [Date, Date] {
 
 export default function Agenda() {
   const store = useStore()
-  const { staff, patients, user, can, patient, fetchAppointments, notify } = store
+  const { staff, patients, user, can, patient, fetchAppointments, notify, activeStayOf, staffById } = store
   const navigate = useNavigate()
   const phone = useIsPhone()
   // RE1 (ronda 5): cada quien elige en Mi configuración con qué vista se abre la agenda
@@ -121,12 +123,15 @@ export default function Agenda() {
         const p = patient(a.patientId)
         if (!p) return null
         const open = ['scheduled', 'confirmed'].includes(a.status)
+        // CX2 (ronda 8): cita de hoy (o ya pasada) de un paciente con estancia activa; y la que canceló el sistema, que se reprograma
+        const conflict = open && !!activeStayOf(a.patientId) && a.start.slice(0, 10) <= localISODate(new Date())
+        const bySystem = a.status === 'cancelled' && a.cancelledBy === 'system'
         const act = async (fn: () => Promise<unknown>) => { if (await fn()) setSelectedId(null) }
         return (
           <Modal title={fullName(p)} onClose={() => setSelectedId(null)} footer={<>
             {can('agenda.manage') && open && <button className="btn btn--danger" onClick={() => act(() => store.setStatus(a.id, 'cancelled', 'Cita cancelada'))}>Cancelar cita</button>}
-            {can('agenda.manage') && open && <button className="btn btn--ghost" onClick={() => { setRescheduling(a); setSelectedId(null) }}>Reprogramar</button>}
-            {can('checkin.manage') && open && sameDate(new Date(a.start), new Date()) && <button className="btn btn--soft" onClick={() => {
+            {can('agenda.manage') && (open || bySystem) && <button className="btn btn--ghost" onClick={() => { setRescheduling(a); setSelectedId(null) }}>Reprogramar</button>}
+            {can('checkin.manage') && open && !conflict && sameDate(new Date(a.start), new Date()) && <button className="btn btn--soft" onClick={() => {
               if (p.pending) { setCompleting(a); setSelectedId(null) } else act(() => store.setStatus(a.id, 'arrived', 'Llegada registrada'))
             }}>Registrar llegada</button>}
             {can('consult.write') && a.doctorId === user?.id && ['arrived', 'triaged', 'in_consult'].includes(a.status) &&
@@ -136,6 +141,7 @@ export default function Agenda() {
           </>}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <StatusBadge status={a.status} />
+              {conflict && <span className="badge badge--red">Hospitalizado: cita en conflicto</span>}
               {a.type === 'urgent' && <span className="badge badge--red">Urgente</span>}
               {p.pending && <span className="badge badge--amber">Paciente nuevo, completa su registro al llegar</span>}
               {a.source === 'online' && <span className="badge badge--ink">Reservada en línea</span>}
@@ -149,6 +155,11 @@ export default function Agenda() {
               {!p.pending && <span>Exp. <b>{p.record}</b></span>}<span>Tel. <b>{p.phone}</b></span>
             </div>
             {a.reason && <p><b>Motivo:</b> {a.reason}</p>}
+            {a.status === 'cancelled' && (a.cancelReason || a.cancelledBy) && (
+              <p className="muted" style={{ fontSize: 13.5 }}>Cancelada{a.cancelledBy ? ` por ${a.cancelledBy === 'system' ? 'Sistema' : staffById(a.cancelledBy)?.name ?? 'el personal'}` : ''}
+                {a.cancelledAt ? ` el ${dmyTime(a.cancelledAt)}` : ''}{a.cancelReason ? `. Motivo: ${a.cancelReason}` : ''}.</p>
+            )}
+            {conflict && <StayConflict stay={activeStayOf(a.patientId)!} />}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {open && (can('agenda.manage') || can('checkin.manage')) && <ReminderButton appt={a} />}
               {a.status === 'scheduled' && can('agenda.manage') && (
@@ -204,11 +215,15 @@ function Hours() {
 }
 
 function ApptBlock({ a, p, color, style, compact, onPick }: { a: Appointment; p: Patient; color: string; style: React.CSSProperties; compact?: boolean; onPick: (id: string) => void }) {
+  const { activeStayOf } = useStore()
+  // CX2 (ronda 8): cita de hoy o pasada, todavía abierta, de un paciente con estancia activa
+  const conflict = ['scheduled', 'confirmed'].includes(a.status) && !!activeStayOf(a.patientId) && a.start.slice(0, 10) <= localISODate(new Date())
   return (
-    <button className={`appt ${a.status === 'done' || a.status === 'no_show' ? 'appt--done' : ''} ${a.type === 'urgent' ? 'appt--urgent' : ''} ${compact ? 'appt--compact' : ''}`}
+    <button className={`appt ${a.status === 'done' || a.status === 'no_show' ? 'appt--done' : ''} ${a.type === 'urgent' || conflict ? 'appt--urgent' : ''} ${compact ? 'appt--compact' : ''}`}
       style={{ ...style, ['--c' as string]: color, textAlign: 'left', border: 0, borderLeft: `3px solid ${color}` }} onClick={() => onPick(a.id)}
       title={`${time(a.start)} ${fullName(p)}: ${a.reason}`}>
       {compact ? <><strong>{time(a.start)}</strong><span className="appt__name">{shortName(p)}</span></> : <strong>{time(a.start)} {fullName(p)}</strong>}
+      {!compact && conflict && <span className="badge badge--red" style={{ justifySelf: 'start' }}>Hospitalizado: cita en conflicto</span>}
       {!compact && <span>{a.source === 'online' && <Globe size={11} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }} aria-label="Reservada en línea" />}{a.reason}</span>}
     </button>
   )
@@ -391,7 +406,7 @@ function AppointmentForm({ title, submitLabel, doctors, patients, initial, lockP
   title: string; submitLabel: string; doctors: Staff[]; patients: Patient[]; initial: Partial<FormState>; lockPatient?: boolean
   onClose: () => void; onSave: (a: NewAppointment) => Promise<void>
 }) {
-  const { appointments } = useStore()
+  const { appointments, activeStayOf } = useStore()
   const [f, setF] = useState<FormState>({
     patientId: '', newPatient: null, doctorId: doctors[0]?.id ?? '', date: localISODate(new Date()), time: '', reason: '', type: '', ...initial,
   } as FormState)
@@ -414,7 +429,10 @@ function AppointmentForm({ title, submitLabel, doctors, patients, initial, lockP
   const np = f.newPatient
   const similar = np ? similarPatients(patients, { firstName: np.firstName, lastName: np.lastName, phone: np.phone, dni: np.dni }) : []
   const patientOk = f.patientId || (np && np.firstName.trim().length >= 2 && np.phone.replace(/\D/g, '').length >= 7)
-  const valid = patientOk && f.doctorId && f.date && f.time && options.includes(f.time)
+  // CX2 (ronda 8): con una estancia activa no se agenda para hoy; a futuro sí, con aviso
+  const stay = f.patientId ? activeStayOf(f.patientId) : undefined
+  const stayToday = !!stay && f.date <= localISODate(new Date())
+  const valid = patientOk && f.doctorId && f.date && f.time && options.includes(f.time) && !stayToday
 
   return (
     <Modal title={title} onClose={onClose} footer={<>
@@ -464,6 +482,8 @@ function AppointmentForm({ title, submitLabel, doctors, patients, initial, lockP
           </select>
         </label>
       </div>
+      {stay && (stayToday ? <StayConflict stay={stay} />
+        : <div className="alert-strip alert-strip--amber" role="status">{stayFutureWarning(stay.kind)}</div>)}
       {doctor && !slots.length && (
         <div className="alert-strip alert-strip--amber" role="status">
           {doctor.name} no atiende los {DAY_NAMES_PLURAL[weekday(f.date)]}. {describeSchedule(doctor.schedule) ? `Su horario: ${describeSchedule(doctor.schedule)}.` : 'No tiene horario configurado.'}

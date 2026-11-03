@@ -50,6 +50,7 @@ export const toAppointment = (r: Row): Appointment => ({
   source: (r.source as Appointment['source']) ?? 'staff', remindedAt: s(r.reminded_at),
   paid: r.paid == null ? undefined : Boolean(r.paid),
   reassignedFrom: s(r.reassigned_from), reassignedAt: s(r.reassigned_at),
+  cancelReason: s(r.cancel_reason), cancelledBy: s(r.cancelled_by), cancelledAt: s(r.cancelled_at),
 })
 
 export const toVitals = (r: Row): Vitals => ({
