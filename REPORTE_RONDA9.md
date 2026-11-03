@@ -108,3 +108,18 @@ Se usaron A1 a A18 tal como están en la sección 6, con estos ajustes:
 - **Plazo vencido con la ventana abierta:** está probado en el servidor, no esperé los 5 minutos en el navegador.
 - **Con qué cuentas lo probé:** el consultorio de la Dra. López y la cuenta del Dr. Fúnez usan las mismas rutas, pero no los recorrí a mano. Las pruebas automáticas cubren a la Dra. Herrera, al Dr. Paz, a la Lic. Ríos y a Administración.
 - **ME5:** lo hizo un agente aparte y no lo revisé en el navegador.
+
+## 9. Despliegue
+
+El primer despliegue de la ronda dejó la API caída unos minutos con `FUNCTION_INVOCATION_FAILED`. La causa fue `src/lib/grace.ts`, que importaba `./clinicalConfig` sin la extensión `.js`: en local funcionaba, pero la función de Vercel corre el servidor archivo por archivo (ESM de Node) y no lo encontraba.
+
+Correcciones:
+- Se arregló el import.
+- `api/index.ts` ahora responde con el motivo si la API no carga, en vez de tumbar la función.
+- `npm run build` corre `scripts/check-esm.mjs`, que revisa todos los imports que alcanza el servidor.
+
+Verificado en producción:
+- `/api/health` responde bien con Neon.
+- Inicio de sesión de la Dra. Herrera.
+- Santa Brígida tiene 509 medicamentos del LNME más el propio de la clínica.
+- Las rutas nuevas responden (por ejemplo, `/api/versions/...`).
