@@ -123,6 +123,15 @@ export async function pendingOrders(sql: Sql, cid: string) {
 const DOSE_VERB = { given: 'Administró', skipped: 'Marcó como no aplicada', omitted: 'Marcó como omitida' } as const
 const DOSE_STATE = { given: 'administrada', skipped: 'no aplicada', omitted: 'omitida' } as const
 
+
+/** NE4 (ronda 8): diagnósticos vigentes de la estancia: los de la última nota que los tenga o, si no, los del ingreso. */
+async function currentDxOf(q: Sql, h: Row): Promise<{ code: string; label: string }[]> {
+  for (const r of await q.query(`SELECT data FROM hosp_notes WHERE hospitalization_id = ? AND kind IN ('admission','evolution') ORDER BY at DESC`, [String(h.id)])) {
+    try { const dx = JSON.parse(String(r.data ?? '{}')).diagnoses; if (Array.isArray(dx) && dx.length) return dx } catch { /* nota sin datos */ }
+  }
+  try { return JSON.parse(String(h.diagnoses ?? '[]')) } catch { return [] }
+}
+
 export function registerInpatient(app: Express, ctx: Ctx) {
   const { sql, auth, need, userOf, clinicOf, audit, patientRow, patientName, assertRxIdentity, staffRow } = ctx
 
@@ -527,19 +536,31 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     // Fuera de la transacción: notas y órdenes de la consulta para saber la frecuencia vigente de una estancia de antes
     const vitalsCtx = b.vitals ? { notes: (await sql.query('SELECT * FROM hosp_notes WHERE hospitalization_id = ?', [id])).map(toInpatientNote),
       consultOrders: h.consultation_id ? JSON.parse(String((await sql.one('SELECT orders FROM consultations WHERE id = ?', [String(h.consultation_id)]))?.orders ?? '[]')) as string[] : [] } : undefined
+    // NE4: los diagnósticos vigentes antes de esta nota (para la bitácora)
+    const prevDx = b.kind === 'evolution' ? await currentDxOf(sql, h) : []
     await sql.tx(async (q) => {
       if (taken) await insertVitals(q, h, taken, user.id, new Date(taken.takenAt ?? at).toISOString(), at, vitalsId!, noteId)
       if (b.vitals) vitalsTag = await applyVitalsPlan(q, h, b.vitals, user.id, at, noteId, vitalsCtx)
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan, data) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [noteId, cid, id, b.kind, user.id, at, b.format === 'soap' ? b.subjective : '', b.format === 'soap' ? b.objective : '', b.format === 'soap' ? b.assessment : '', b.format === 'soap' ? b.plan : '',
           JSON.stringify({ orders, checklist, indications: indicationCount === undefined ? undefined : Math.min(indicationCount, orders.length), lines, basedOn: b.chain ? b.chain.basedOn ?? undefined : undefined, vitals: b.vitals && vitalsTag ? { ...b.vitals, tag: vitalsTag } : undefined, vitalsId,
-            ...(b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, evolution: b.evolution || undefined, exam: b.exam, observations: b.observations } : {}) })])
+            ...(b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, evolution: b.evolution || undefined, exam: b.exam, observations: b.observations }
+              : b.kind === 'evolution' && b.diagnoses.length ? { diagnoses: b.diagnoses } : {}) })])
       await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
       examBatch = await insertExams(q, { clinicId: cid, patientId: String(h.patient_id), hospitalizationId: id, noteId, by: user.id, at }, b.exams)
       if (vitalsTag && b.vitals && vitalsTag !== 'continue') await audit(user, `Indicó ${vitalsModeShort(b.vitals) === 'sin control programado' ? 'sin control programado de signos vitales' : `signos vitales ${vitalsModeShort(b.vitals)}`} a ${name} en su nota`, q)
       const what = b.kind === 'admission' ? 'nota de ingreso' : 'nota de evolución'
       const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`, b.exams.length && `${b.exams.length} examen(es)`, taken && 'signos vitales (origen: nota de evolución)'].filter(Boolean).join(', ')
       await audit(user, `Escribió ${what} de ${name}${changes ? `: ${changes}` : ''}`, q)
+      // NE4 (ronda 8): qué diagnóstico se quitó o se agregó respecto de los vigentes (la última nota con diagnósticos o el ingreso)
+      if (b.kind === 'evolution') {
+        const prev = prevDx
+        const key = (d: { code: string; label: string }) => `${d.code}|${d.label.trim().toLowerCase()}`
+        const removed = prev.filter((d) => !b.diagnoses.some((x) => key(x) === key(d)))
+        const added = b.diagnoses.filter((d) => !prev.some((x) => key(x) === key(d)))
+        const txt = (l: { code: string; label: string }[]) => l.map((d) => `${d.label} (${d.code})`).join('; ')
+        if (removed.length || added.length) await audit(user, `Diagnósticos de ${name} en su nota de evolución:${added.length ? ` agregó ${txt(added)}` : ''}${added.length && removed.length ? ';' : ''}${removed.length ? ` quitó ${txt(removed)}` : ''}`, q)
+      }
     })
     // Ronda 8: con exámenes externos, la orden se imprime al firmar (el paciente la lleva, como la receta)
     res.status(201).json({ ...toInpatientNote((await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [noteId]))!), examBatch: b.exams.some((e) => e.place === 'external') ? examBatch ?? undefined : undefined })

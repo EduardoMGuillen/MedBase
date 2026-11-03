@@ -115,5 +115,9 @@ export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subj
       <div className="note__sec"><h4>Observaciones</h4><p>{n.observations || empty}</p></div>
     </>
   }
-  return <>{SOAP_TEXT.map(([k, label]) => <div key={k}>{k === 'objective' && strip}<div className="note__sec"><h4>{label}</h4><p>{n[k] || empty}</p></div></div>)}</>
+  // NE4 (ronda 8): una evolución SOAP también lleva los diagnósticos vigentes (las de antes no)
+  return <>
+    {!!n.diagnoses?.length && <div className="note__sec"><h4>Diagnósticos</h4><ol className="note__list">{n.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol></div>}
+    {SOAP_TEXT.map(([k, label]) => <div key={k}>{k === 'objective' && strip}<div className="note__sec"><h4>{label}</h4><p>{n[k] || empty}</p></div></div>)}
+  </>
 }

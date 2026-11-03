@@ -958,8 +958,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
   // eligió en Mi configuración (Estándar si no eligió); cada formato guarda su borrador mientras el modal está abierto
   const { user } = useStore()
   const [format, setFormat] = useState<'soap' | 'dx'>(() => (kind === 'admission' ? 'soap' : user?.prefs?.noteFormat ?? 'dx'))
-  // Ronda 8: los diagnósticos bajan de la nota anterior (o del ingreso), como las órdenes; se cambian si hace falta
-  const [carried] = useState<Diagnosis[]>(() => (kind === 'evolution' ? currentDiagnoses(file) : []))
+  // NE4 (ronda 8): los diagnósticos vigentes bajan de la última nota firmada de la estancia (o de la impresión diagnóstica
+  // del ingreso), como las órdenes; se quitan o se agregan. Estándar y SOAP usan el mismo campo. El borrador manda.
+  const [carried, setCarried] = useState<Diagnosis[]>(() => (kind === 'evolution' ? currentDiagnoses(file) : []))
   const [d, setD] = useState<{ diagnoses: Diagnosis[]; evolution: string; exam: string; observations: string }>(() => ({ diagnoses: carried, evolution: '', exam: '', observations: '' }))
   const dxChanged = JSON.stringify(d.diagnoses) !== JSON.stringify(carried)
   const [meds, setMeds] = useState<NewMed[]>([])
@@ -1039,6 +1040,10 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
   const typedExamHit = typedExam(extraText, examList)
   const toExam = (hit: { group: ExamInput['group']; name: string }) =>
     setExams((x) => (x.some((y) => examKey(y.name) === examKey(hit.name)) ? x : [...x, { group: hit.group, name: hit.name, priority: 'routine', place: 'clinic' }]))
+  const dxField = (<>
+    <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label="Diagnósticos (CIE-11)" />
+    {carried.length > 0 && <small className="muted" style={{ marginTop: -6 }}>{dxChanged ? 'Cambiaste los diagnósticos de la nota anterior.' : 'Vienen de la nota anterior. Agrega, quita o cambia lo que haga falta.'}</small>}
+  </>)
   const vitalsBlock = (
             <fieldset className="fs note-vitals" key="nv"><legend>Signos vitales (opcional)</legend>
               {!nv ? <button type="button" className="btn btn--soft btn--sm" style={{ justifySelf: 'start' }} onClick={() => { setNv({ ...EMPTY_VITALS }); setNvAt(inputDateTime(new Date())) }}><Plus size={15} />Agregar signos vitales</button> : (<>
@@ -1067,7 +1072,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
         setBusy(true)
         // MC7 (ronda 6): el servidor arma el cuadro completo (Continúa, Nueva, Modificada, Omitida) sobre la última nota firmada
         const chain = { basedOn, decisions: Object.entries(decisions).filter(([id]) => activeInd.some((a) => a.id === id)).map(([id, x]) => ({ id, ...x })) }
-        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? n : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, evolution: d.evolution.trim(), exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId,
+        const ok = await addInpatientNote(file.hospitalization.id, { kind, format, exams, ...(format === 'soap' ? { ...n, diagnoses: kind === 'evolution' ? d.diagnoses : [] } : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, evolution: d.evolution.trim(), exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId,
           vitalsTaken: nvFilled ? { takenAt: new Date(nvAt).toISOString(), ...Object.fromEntries(FIELDS.map((k) => [k, vitalNumber(nv!, k)]).filter(([, x]) => x !== undefined)) } : undefined })
         setBusy(false)
         if (ok) { draft.clear(); onSaved(); if (ok.examBatch) nav(`/app/examenes/orden/${ok.examBatch}`) } else onStale?.()
@@ -1082,14 +1087,14 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
       <div className="note-editor">
       <div className="soap-stack">
         {/* MC8 (ronda 6): opcional; si no se toca, no se guarda nada. Va antes del examen físico (en SOAP, al principio) */}
+        {format === 'soap' && kind === 'evolution' && dxField}
         {format === 'soap' ? SOAP.map((s) => (<div key={s.key} style={{ display: 'contents' }}>
           {s.key === 'objective' && vitalsBlock}
           <label className="field dictate-field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
             <AutoTextarea value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} />
             <DictateButton label={s.label} onText={(f) => setN((x) => ({ ...x, [s.key]: f(x[s.key]) }))} /></label></div>
         )) : (<>
-          <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label="Diagnósticos (CIE-11)" />
-          {carried.length > 0 && <small className="muted" style={{ marginTop: -6 }}>{dxChanged ? 'Cambiaste los diagnósticos de la nota anterior.' : 'Vienen de la nota anterior. Agrega, quita o cambia lo que haga falta.'}</small>}
+          {dxField}
           {/* Ronda 8: el cuadro entre el diagnóstico y el examen físico */}
           <label className="field dictate-field"><span>Evolución <small style={{ fontWeight: 400 }}>Cómo ha seguido desde la nota anterior y lo que refiere el paciente.</small></span>
             <AutoTextarea value={d.evolution} onChange={(e) => setD({ ...d, evolution: e.target.value })} />
@@ -1112,7 +1117,13 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale }: { file: File; 
         <VitalsFrequency value={vitalsMode} onChange={setVitalsMode} />
         {stale && <div className="alert-strip alert-strip--amber" role="alert" style={{ flexWrap: 'wrap' }}>
           <span>Otra nota se firmó mientras escribías. Las indicaciones y los medicamentos activos ya se actualizaron con ella: revísalos antes de firmar.</span>
-          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setBasedOn(lastId)}>Entendido</button></div>}
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => {
+            // NE4: si no tocaste los diagnósticos, se recalculan sobre la nota que se acaba de firmar
+            const fresh = currentDiagnoses(file)
+            if (!dxChanged) setD((x) => ({ ...x, diagnoses: fresh }))
+            setCarried(fresh)
+            setBasedOn(lastId)
+          }}>Entendido</button></div>}
         {activeInd.length > 0 && (
           <div className="note-editor__active">
             <h4>Indicaciones activas</h4>

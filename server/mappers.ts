@@ -138,7 +138,8 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
   ...(r.kind === 'evolution' && j<{ format?: string }>(r.data, {}).format === 'dx'
     ? { format: 'dx' as const, diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses ?? [], exam: j<{ exam?: string }>(r.data, {}).exam ?? '',
       observations: j<{ observations?: string }>(r.data, {}).observations ?? '', evolution: j<{ evolution?: string }>(r.data, {}).evolution || undefined }
-    : {}),
+    // NE4 (ronda 8): la evolución SOAP también guarda los diagnósticos vigentes
+    : r.kind === 'evolution' && j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses?.length ? { diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses } : {}),
   procedure: r.kind === 'procedure' ? j(r.data, undefined) : undefined,
   // MC7 (ronda 6): el cuadro completo con sus etiquetas
   ...(r.kind === 'admission' || r.kind === 'evolution' ? { lines: j<{ lines?: InpatientNote['lines'] }>(r.data, {}).lines, basedOn: j<{ basedOn?: string }>(r.data, {}).basedOn, vitals: j<{ vitals?: InpatientNote['vitals'] }>(r.data, {}).vitals, vitalsId: j<{ vitalsId?: string }>(r.data, {}).vitalsId } : {}),

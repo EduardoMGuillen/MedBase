@@ -243,3 +243,24 @@ describe('CX1: Consulta externa por hora o por médico', () => {
     assert.equal((await again.patch('/api/me', { queueView: 'hour' })).status, 200)
   })
 })
+
+describe('NE4: los diagnósticos bajan de nota en nota', () => {
+  test('la evolución guarda la lista vigente (también en SOAP) y la bitácora dice qué se quitó y qué se agregó', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const stay = (await consult(doc, (await freePatient(doc)).id, true)).hospitalizationId!
+    // Del ingreso viene «Fiebre (MG26)»: se quita y se agrega otro
+    const n1 = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', diagnoses: [{ code: 'CB41', label: 'Insuficiencia respiratoria' }], exam: 'Disneico' })
+    assert.equal(n1.status, 201, JSON.stringify(n1.body))
+    const soap = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'soap', subjective: 'Mejor', objective: 'Estable', assessment: 'Mejoría', plan: 'Igual',
+      diagnoses: [{ code: 'CB41', label: 'Insuficiencia respiratoria' }, { code: 'CA00', label: 'Rinofaringitis aguda' }] })
+    assert.equal(soap.status, 201, JSON.stringify(soap.body))
+    const file = (await doc.get(`/api/inpatient/${stay}`)).body
+    const last = file.notes.find((x: any) => x.id === soap.body.id)
+    assert.deepEqual(last.diagnoses.map((d: any) => d.code), ['CB41', 'CA00'])
+    const admin = await as('admin@demo.clinara')
+    const log = (await admin.get('/api/audit?limit=50')).body
+    const lines = (Array.isArray(log) ? log : log.items ?? []).map((a: any) => a.action ?? a.text ?? '')
+    assert.ok(lines.some((t: string) => /agregó Insuficiencia respiratoria \(CB41\); quitó Fiebre \(MG26\)/.test(t)), lines.slice(0, 5).join('\n'))
+    assert.ok(lines.some((t: string) => /agregó Rinofaringitis aguda \(CA00\)$/.test(t)))
+  })
+})
