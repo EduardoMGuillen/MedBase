@@ -21,7 +21,7 @@ import { cleanArchivedThresholds } from './ronda10.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '71'
+const SCHEMA_VERSION = '72'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1069,6 +1069,22 @@ $fn$;
 ALTER TABLE followups ADD COLUMN IF NOT EXISTS source_id TEXT;
 -- v70 (ronda 10): exportación de lo que una limpieza o carga borra o reemplaza (umbrales archivados de UM3, catálogo de imagen
 -- de CA5, datos del vademécum de ME6). Nunca se borra.
+-- v72 (ronda 10). ME10: medicamento que la clínica no tiene: sigue en la hoja y va a una receta para comprarlo afuera.
+-- EX5 y ME10: cada orden de exámenes o receta que se imprime o descarga desde la pestaña Exámenes o la hoja (qué, de qué
+-- médico, quién y cuándo). Cuenta para el bloqueo de GE4 (print_log).
+ALTER TABLE hosp_meds ADD COLUMN IF NOT EXISTS buy_outside BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE hosp_meds ADD COLUMN IF NOT EXISTS buy_quantity TEXT;
+CREATE TABLE IF NOT EXISTS print_jobs (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  hospitalization_id TEXT,
+  kind TEXT NOT NULL CHECK (kind IN ('exams','rx')),
+  items TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS print_jobs_patient ON print_jobs (clinic_id, patient_id);
 CREATE TABLE IF NOT EXISTS config_backups (
   id TEXT PRIMARY KEY,
   clinic_id TEXT,

@@ -42,6 +42,7 @@ import { registerOrderSets } from './routes/orderSets.js'
 import { registerRoster } from './routes/roster.js'
 import { registerEpicrisis } from './routes/epicrisis.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
+import { registerPrintJobs } from './routes/printJobs.js'
 import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permission } from '../src/lib/permissions.js'
 import { NEB_MAX_COMPONENTS, PAGE_SIZE } from '../src/lib/clinicalConfig.js'
 import { yearsOld } from '../src/lib/inpatient.js'
@@ -1350,6 +1351,7 @@ export function createApp(opts: AppOptions) {
   registerRoster(app, ctx)
   registerEpicrisis(app, ctx)
   registerFollowups(app, ctx)
+  registerPrintJobs(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))
 
@@ -1380,6 +1382,8 @@ const rxItem = z.object({
   route: z.string().max(40).optional(), frequency: z.string().min(1).max(80), duration: z.string().trim().max(80).default(''),
   instructions: z.string().max(300).optional(), quantity: z.string().trim().max(80).optional(),
   applyInClinic: z.boolean().optional(),
+  // ME10 (ronda 10): con «Aplicar en la clínica», la clínica no lo tiene: va a una receta (cantidad: la cantidad total)
+  buyOutside: z.boolean().optional(),
   // MC2 (ronda 6): un PRN lleva su condición («si dolor»)
   prnCondition: z.string().trim().max(120).optional(),
   // ME3 (ronda 9): primera dosis distinta (STAT); ME4: nebulización con varios medicamentos

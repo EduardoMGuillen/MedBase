@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { fromLocalValue } from '../lib/dateInput'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { BedDouble, ChevronLeft, ChevronRight, FileSignature, FileText, FlaskConical, LogOut, NotebookPen, Pencil, Pill, Plus, Send, Syringe, TriangleAlert, X } from 'lucide-react'
+import { BedDouble, ChevronLeft, ChevronRight, FileSignature, FileText, FlaskConical, LogOut, NotebookPen, Pencil, Pill, Plus, Printer, Send, Syringe, TriangleAlert, X } from 'lucide-react'
 import { useStore, type NewMed } from '../lib/store'
 import { AutoTextarea, Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
@@ -9,7 +9,7 @@ import { date, dateTime, defaultRoute, dmyTime, inputDateTime, localISODate, ROU
 import { DateTimeField } from '../components/DateTimeField'
 import { INFUSION_UNITS } from '../lib/clinicalConfig'
 import { isNebulization, loadingAllowed, loadingDroppedByRoute, nebulizationBody, nebulizationReady } from '../lib/medExtras'
-import { EMPTY_NEB, LoadingDoseFields, LoadingDropped, NebulizerFields } from '../components/MedExtras'
+import { BuyOutsideFields, EMPTY_NEB, LoadingDoseFields, LoadingDropped, NebulizerFields } from '../components/MedExtras'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict } from '../lib/catalogs'
 import { activeIndications, chainNote, doseAt, formatRate, infusionUnitLabel, isLoadingSlot, twoDecimals, currentDiagnoses, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
@@ -333,6 +333,10 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
       || dosesOf(m).some((d) => new Date(d.givenAt) >= start && new Date(d.givenAt) < end)))
   // Enfermería registra las dosis; el médico también puede hacerlo cuando él la aplica
   const care = (can('inpatient.care') || can('inpatient.orders')) && open
+  // ME10 (ronda 10): medicamentos activos marcados «No hay en la clínica (va a receta)»
+  const canRx = can('chart.view') && (can('inpatient.care') || can('inpatient.orders'))
+  const buyMeds = file.meds.filter((m) => m.buyOutside && !m.stoppedAt)
+  const [printingRx, setPrintingRx] = useState(false)
   const by = (id: string) => { const s = staffById(id); return s ? `${shortStaff(s.name)}, ${ROLE_LABEL[mainRole(s)].toLowerCase()}` : '' }
   const doseTitle = (dose: Dose) => `${DOSE_LABEL[dose.status]}${givenLate(dose) ? ' con retraso' : ''} por ${by(dose.givenBy)}, ${dm(dose.givenAt)}${dose.note ? `: ${dose.note}` : ''}${dose.correctionReason ? `. ${dose.correctionReason.startsWith('Registro tardío') ? '' : 'Corregido: '}${dose.correctionReason} (${shortStaff(staffById(dose.correctedBy ?? '')?.name)})` : ''}`
   const label = view === 'week'
@@ -342,7 +346,9 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
   return (
     <section className="panel" data-tour="hoja-medicamentos">
       <div className="panel__head medsheet__head">
-        <div><h2>Hoja de medicamentos</h2><p>Se llena sola con lo que el médico indica en sus notas. {care ? 'Toca una hora para registrar la dosis; queda con tu nombre y tu rol.' : 'Enfermería registra cada dosis.'}</p></div>
+        <div><h2>Hoja de medicamentos</h2><p>Se llena sola con lo que el médico indica en sus notas. {care ? 'Toca una hora para registrar la dosis; queda con tu nombre y tu rol.' : 'Enfermería registra cada dosis.'}</p>
+          {/* ME10 (ronda 10): la receta de lo que no hay en la clínica (médico y enfermería; la marca solo la pone el médico) */}
+          {canRx && buyMeds.length > 0 && <button className="btn btn--soft btn--sm" style={{ marginTop: 8 }} onClick={() => setPrintingRx(true)}><Printer size={15} />Imprimir receta</button>}</div>
         <div className="medsheet__nav">
           <div className="segmented" role="radiogroup" aria-label="Vista">
             <button role="radio" aria-checked={view === 'day'} onClick={() => go({ view: 'day' })}>Día</button>
@@ -383,7 +389,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
               <div key={m.id} className={`med ${m.stoppedAt ? 'med--stopped' : ''}`}>
                 <div className="med__head">
                   <div>
-                    <strong>{medLabel(m)}</strong>
+                    <strong>{medLabel(m)}{m.buyOutside && <span className="badge badge--amber rx-tag" title={`No hay en la clínica: va a receta${m.buyQuantity ? ` (comprar ${m.buyQuantity})` : ''}`}>Receta</span>}</strong>
                     <span className="muted">{m.presentation ? `${m.presentation}. ` : ''}{m.instructions ? `${m.instructions} ` : ''}{medOrigin(m, file, staffById(m.orderedBy)?.name)}</span>
                     {m.stoppedAt
                       ? <span className="muted">{m.stopReason === 'Egreso' ? 'Terminó con el egreso' : `Suspendido por ${shortStaff(staffById(m.stoppedBy ?? '')?.name)} ${dm(m.stoppedAt)}${m.stopReason ? `: ${m.stopReason}` : ''}`}</span>
@@ -458,6 +464,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
       <div className="legend">
         {(['given', 'due', 'late', 'upcoming', 'skipped', 'omitted', 'autoskip'] as SlotState[]).map((s) => <span key={s}><i className={`slot2--${s}`} />{STATE_LABEL[s]}{s === 'autoskip' ? ': cerrada automáticamente por el sistema al llegar la siguiente dosis' : ''}</span>)}
       </div>
+      {printingRx && <PrintRxModal meds={buyMeds} onClose={() => setPrintingRx(false)} />}
       {marking && <DoseModal med={marking.med} at={marking.at} late={marking.late} doses={dosesOf(marking.med)} onClose={() => setMarking(null)} onSaved={() => { setMarking(null); reload() }} />}
       {correcting && <CorrectDoseModal med={correcting.med} dose={correcting.dose} onClose={() => setCorrecting(null)} onSaved={() => { setCorrecting(null); reload() }} />}
       {stopping && <StopModal med={stopping} onClose={() => setStopping(null)} onSaved={() => { setStopping(null); reload() }} />}
@@ -705,7 +712,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
   const [back, setBack] = useState<null | 'procedure' | 'postop'>(null)
   const [postopSeed, setPostopSeed] = useState<Partial<PostopDraft> | undefined>()
   // EX2 (ronda 8): lote de exámenes con externos de la nota recién firmada
-  const [ordersFor, setOrdersFor] = useState<string | null>(null)
+  const [ordersFor, setOrdersFor] = useState<{ batch?: string; rxNote?: string } | null>(null)
   const [authFor, setAuthFor] = useState<string | undefined>()
   // MC2: la quirúrgica recién generada (con sus tres salidas) y la nota de procedimiento que la pidió, para volver a ella
   const [surgicalFor, setSurgicalFor] = useState<string | null>(null)
@@ -750,7 +757,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         onConvert={(draft) => { setProcDraft(undefined); setPostopSeed({ procedureName: draft.name, description: draft.text, startAt: draft.performedAt, endAt: draft.performedAt, urgent: draft.urgent, justification: draft.justification }); setWriting('postop') }} />}
       {writing === 'authorization' && <AuthorizationForm file={file} p={p} template="surgical" initialProcedure={authFor} onClose={() => { setWriting(back); setBack(null) }}
         onCreated={(a) => { setWriting(null); setSurgicalFor(a.id) }} />}
-      {writing === 'postop' && <NoteEditor file={file} p={p} kind="evolution" variant="postop" seed={postopSeed} onClose={() => { setWriting(null); setPostopSeed(undefined) }} onSaved={(b) => { setWriting(null); setPostopSeed(undefined); reload(); if (b) setOrdersFor(b) }} onStale={reload}
+      {writing === 'postop' && <NoteEditor file={file} p={p} kind="evolution" variant="postop" seed={postopSeed} onClose={() => { setWriting(null); setPostopSeed(undefined) }} onSaved={(b, rx) => { setWriting(null); setPostopSeed(undefined); reload(); if (b || rx) setOrdersFor({ batch: b, rxNote: rx }) }} onStale={reload}
         onAuthorize={(name) => { setBack('postop'); setAuthFor(name || undefined); setWriting('authorization') }} />}
       {surgicalFor && <ConsentChoice authorizationId={surgicalFor} p={p} onDone={() => { setSurgicalFor(null); reload(); if (back) { setWriting(back); setBack(null) } }} />}
       {/* MC5: la nota de egreso se escribe en la misma hoja que la epicrisis */}
@@ -780,8 +787,8 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         if (n.kind === 'procedure') return <ProcedureNote key={n.id} n={n} file={file} reload={reload} />
         return <SoapNote key={n.id} n={n} file={file} reload={reload} />
       }) : !h.consultationId && <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
-      {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={(b) => { setWriting(null); reload(); if (b) setOrdersFor(b) }} onStale={reload} />}
-      {ordersFor && <ExamOrdersOffer batch={ordersFor} onClose={() => setOrdersFor(null)} />}
+      {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={(b, rx) => { setWriting(null); reload(); if (b || rx) setOrdersFor({ batch: b, rxNote: rx }) }} onStale={reload} />}
+      {ordersFor && <ExamOrdersOffer batch={ordersFor.batch} rxNote={ordersFor.rxNote} onClose={() => setOrdersFor(null)} />}
     </div>
   )
 }
@@ -827,7 +834,7 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
   // GE4 (ronda 9): corregir en el periodo de gracia; si vence con la ventana abierta, lo escrito pasa a una adenda
   const [correcting, setCorrecting] = useState(false)
   const [toAddendum, setToAddendum] = useState<string | undefined>()
-  const [ordersFor, setOrdersFor] = useState<string | null>(null)
+  const [ordersFor, setOrdersFor] = useState<{ batch?: string; rxNote?: string } | null>(null)
   const p = patient(file.hospitalization.patientId)
   return (
     <article className="panel consult-entry">
@@ -840,7 +847,7 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
           indications={<>{n.vitals && <p className="note-vitals-line">{vitalsModeText(n.vitals)}<LineTag tag={n.vitals.tag} /></p>}
             {indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : !n.vitals && <p className="muted">Sin indicaciones.</p>}</>}
           exams={<NoteExams list={(file.exams ?? []).filter((e) => e.noteId === n.id)} />}
-          meds={meds.length ? <OrderChecklist n={n} orders={meds} file={file} reload={reload} pill /> : <p className="muted">Sin medicamentos.</p>} />
+          meds={meds.length ? <>{<OrderChecklist n={n} orders={meds} file={file} reload={reload} pill />}{file.meds.some((m) => m.noteId === n.id && m.buyOutside && !m.stoppedAt) && <RxFromNote noteId={n.id} />}</> : <p className="muted">Sin medicamentos.</p>} />
         <div className="signed-row">
           <SignedBadge by={author?.name} at={n.at} addenda={(file.addenda ?? []).filter((a) => a.targetId === n.id).length} />
           <VersionTag version={n.version} kind="note" id={n.id} render={(x) => <VersionNote n={n} x={x} />} />
@@ -849,8 +856,8 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
         <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={can('inpatient.orders') && user?.role === 'doctor'} onAdded={reload} openWith={toAddendum} />
       </div>
       {correcting && p && <NoteEditor file={file} p={p} kind={n.kind === 'admission' ? 'admission' : 'evolution'} variant={n.format === 'postop' ? 'postop' : undefined} correct={n}
-        onClose={() => setCorrecting(false)} onSaved={(b) => { setCorrecting(false); reload(); if (b) setOrdersFor(b) }} onExpired={(t) => { setCorrecting(false); setToAddendum(t) }} />}
-      {ordersFor && <ExamOrdersOffer batch={ordersFor} onClose={() => setOrdersFor(null)} />}
+        onClose={() => setCorrecting(false)} onSaved={(b, rx) => { setCorrecting(false); reload(); if (b || rx) setOrdersFor({ batch: b, rxNote: rx }) }} onExpired={(t) => { setCorrecting(false); setToAddendum(t) }} />}
+      {ordersFor && <ExamOrdersOffer batch={ordersFor.batch} rxNote={ordersFor.rxNote} onClose={() => setOrdersFor(null)} />}
     </article>
   )
 }
@@ -1207,7 +1214,7 @@ function CorrectionOrders({ n, file, p, value, onChange, locks }: { n: Inpatient
   )
 }
 
-function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAuthorize, seed, correct, onExpired }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: (examBatch?: string) => void; onStale?: () => void
+function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAuthorize, seed, correct, onExpired }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: (examBatch?: string, rxNoteId?: string) => void; onStale?: () => void
   /** PQ1 (ronda 9): «Nota postquirúrgica»: la misma ventana (órdenes, borrador, pie), con su columna izquierda propia. */
   variant?: 'postop'; onAuthorize?: (procedure: string) => void; seed?: Partial<PostopDraft>
   /** GE4 (ronda 9): «Corregir»: la misma ventana, ya llenada, con «Guardar corrección». `onExpired` pasa lo escrito a una adenda. */
@@ -1364,7 +1371,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
           const body = postop ? { diagnoses: pq.postDiagnoses, postop: postopPayload(pq, pqCheck) } : format === 'soap' ? { ...n, diagnoses: d.diagnoses } : { ...d }
           const orders = fixChanged && fix ? { indications: fix.indications.map(({ id, text }) => ({ id, text: text.trim() })).filter((x) => x.text), meds: fix.meds, keepExams: fix.keepExams, exams: fix.exams } : undefined
           const r = await api<{ examBatch?: string }>(`/inpatient/notes/${correct.id}/correct`, { body: { version: correct.version ?? 1, reason: why.trim() || undefined, ...body, orders } })
-          draft.clear(); notify('Corrección guardada'); onSaved(r.examBatch)
+          draft.clear(); notify('Corrección guardada'); onSaved(r.examBatch, fixChanged && fix?.meds.some((x) => x.med.buyOutside) ? correct.id : undefined)
         } catch (e) {
           // Vencido: lo escrito queda en el borrador y se ofrece la adenda
           if (e instanceof ApiError && e.status === 409 && /minutos/.test(e.message)) setExpired(true)
@@ -1384,7 +1391,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
           vitalsTaken: !postop && nvFilled ? { takenAt: fromLocalValue(nvAt).toISOString(), ...Object.fromEntries(FIELDS.map((k) => [k, vitalNumber(nv!, k)]).filter(([, x]) => x !== undefined)) } : undefined })
         setBusy(false)
         // EX2 (ronda 8): con estudios externos se ofrece el cuadro «Órdenes de exámenes: Imprimir / Descargar PDF»
-        if (ok) { draft.clear(); onSaved(ok.examBatch ?? undefined) } else onStale?.()
+        // ME10 (ronda 10): y con medicamentos «No hay en la clínica (va a receta)», también la receta
+        if (ok) { draft.clear(); onSaved(ok.examBatch ?? undefined, meds.some((m) => m.buyOutside) ? ok.id : undefined) } else onStale?.()
       }}>Firmar nota</button>
     </>}>
       {kind === 'evolution' && !postop && !correct && (
@@ -1508,7 +1516,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
             <div className="rows">
               {active.map((m) => (
                 <div key={m.id} className="omit-row">
-                  <span className={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id) ? 'struck' : ''}>{medLabel(m)}</span>
+                  <span className={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id) ? 'struck' : ''}>{medLabel(m)}{m.buyOutside && <span className="badge badge--amber rx-tag">Receta</span>}</span>
                   <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <button type="button" className="btn btn--ghost btn--sm" disabled={stop.includes(m.id) || meds.some((x) => x.replacesId === m.id)} onClick={() => { setReplacing(m.id); setAdding(false) }}>Cambiar</button>
                     <label><input type="checkbox" checked={stop.includes(m.id)} onChange={(e) => { setStop(e.target.checked ? [...stop, m.id] : stop.filter((x) => x !== m.id)); if (e.target.checked) setReplacing(null) }} /> OMITIR</label>
@@ -1521,6 +1529,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         {meds.length > 0 && <ol className="orders">{meds.map((m, i) => (
           <li key={i} className={medHasBlank(m) ? 'orders__blank' : undefined}><span className="orders__n">–</span>
             <span className="orders__text"><Pill size={13} className="orders__pill" />{medLabel(m)}{m.days ? ` por ${m.days} días` : ''}{m.instructions ? `. ${m.instructions}` : ''}
+              {m.buyOutside && <span className="badge badge--amber rx-tag">Receta{m.buyQuantity ? ` · comprar ${m.buyQuantity}` : ''}</span>}
               {!inVademecum(m.drug) && <span className="chip chip--amber" style={{ marginLeft: 6 }}>No está en el vademécum de la clínica</span>}</span>
             <span className="orders__tools">
               <button type="button" className="icon-btn" aria-label={`Editar ${m.drug}`} onClick={() => { setEditingMed(i); setAdding(false); setReplacing(null) }}><Pencil size={14} /></button>
@@ -1553,7 +1562,7 @@ function medToNew(m: InpatientMed, doses: Dose[] = []): NewMed & { loadingGivenA
   const firstAt = keepLoading && new Date(m.firstAt) > new Date() ? new Date(m.firstAt) : new Date()
   return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, prnCondition: m.prnCondition, instructions: m.instructions ?? '', firstAt: inputDateTime(firstAt), days: m.days,
     infusionRate: m.infusionRate, infusionUnit: m.infusionUnit, loadingDose: keepLoading ? m.loadingDose : undefined, loadingStat: keepLoading ? m.loadingStat : undefined,
-    nebulization: m.nebulization ? structuredClone(m.nebulization) : undefined,
+    nebulization: m.nebulization ? structuredClone(m.nebulization) : undefined, buyOutside: m.buyOutside, buyQuantity: m.buyQuantity,
     loadingGivenAt: loadingGiven?.givenAt }
 }
 
@@ -1611,11 +1620,13 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
       firstAt, infusionRate: infusion ? rateNum : undefined, infusionUnit: infusion ? unit.value : undefined,
       loadingDose: withLoading ? m.loadingDose!.trim() : undefined, loadingStat: withLoading ? loadingNow : undefined, nebulization: undefined }
   }
-  const preview = built()
-  const another = () => { const x = built(); if (x && onAddAnother) onAddAnother(x) }
+  // ME10 (ronda 10): «No hay en la clínica (va a receta)»: la cantidad solo se guarda con la casilla marcada
+  const withBuy = (x: NewMed | null): NewMed | null => (x ? { ...x, buyOutside: x.buyOutside || undefined, buyQuantity: x.buyOutside ? x.buyQuantity?.trim() || undefined : undefined } : null)
+  const preview = withBuy(built())
+  const another = () => { const x = withBuy(built()); if (x && onAddAnother) onAddAnother(x) }
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const x = built()
+    const x = withBuy(built())
     if (x) onAdd(x)
   }
   // Qué falta para «Agregar a la nota» (el botón queda apagado hasta tenerlo: es intencional y se dice por qué)
@@ -1671,6 +1682,7 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
         <label className="field"><span>Total de días (opcional)</span>
           <input className="input num" type="number" min={1} max={365} inputMode="numeric" value={m.days ?? ''} placeholder="Hasta nueva orden"
             onChange={(e) => setM({ ...m, days: e.target.value ? Math.max(1, Math.min(365, Math.round(Number(e.target.value)))) : undefined })} /></label>
+        <BuyOutsideFields checked={!!m.buyOutside} onChecked={(v) => setM({ ...m, buyOutside: v })} quantity={m.buyQuantity ?? ''} onQuantity={(v) => setM({ ...m, buyQuantity: v })} />
         <label className="field span-2"><span>Indicaciones</span><input className="input" value={m.instructions} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder={m.prn ? 'Ej. Si hay dolor intenso' : infusion ? 'Ej. Diluir en 100 mL de SSN' : 'Ej. Diluir en 100 mL'}
           onKeyDown={(e) => { if (e.key === 'Enter' && onAddAnother) { e.preventDefault(); another() } }} /></label>
       </div>
@@ -1693,15 +1705,29 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
 }
 
 /** EX2 (ronda 8): al firmar una nota con estudios externos: «Órdenes de exámenes: Imprimir / Descargar PDF». */
-function ExamOrdersOffer({ batch, onClose }: { batch: string; onClose: () => void }) {
+function ExamOrdersOffer({ batch, rxNote, onClose }: { batch?: string; rxNote?: string; onClose: () => void }) {
   const nav = useNavigate()
+  const { notify } = useStore()
+  // ME10 (ronda 10): la receta de lo que no hay en la clínica (de esta nota), con los datos del médico que la firmó
+  const rx = async (how: 'imprimir' | 'pdf') => {
+    try { const { id } = await api<{ id: string }>('/print-jobs', { body: { kind: 'rx', noteId: rxNote } }); nav(`/app/impresion/${id}?accion=${how}`) } catch (x) { notify((x as Error).message, 'error') }
+  }
   return (
-    <Modal title="Órdenes de exámenes" onClose={onClose} footer={<>
-      <button className="btn btn--ghost" onClick={onClose}>Ahora no</button>
-      <button className="btn btn--soft" onClick={() => nav(`/app/examenes/orden/${batch}?accion=pdf`)}><FileText size={16} />Descargar PDF</button>
-      <button className="btn btn--primary" onClick={() => nav(`/app/examenes/orden/${batch}?accion=imprimir`)}>Imprimir</button>
-    </>}>
-      <p>La nota pidió estudios externos: el paciente lleva la orden en la mano (o en el teléfono). También queda en la tarjeta de la nota y en la pestaña Exámenes, en «Órdenes impresas».</p>
+    <Modal title={batch && rxNote ? 'Órdenes de exámenes y receta' : batch ? 'Órdenes de exámenes' : 'Receta'} onClose={onClose} footer={<button className="btn btn--ghost" onClick={onClose}>Ahora no</button>}>
+      {batch && <div className="offer-row">
+        <p><b>Órdenes de exámenes.</b> La nota pidió estudios externos: el paciente lleva la orden en la mano (o en el teléfono). También queda en la tarjeta de la nota y en la pestaña Exámenes, en «Órdenes impresas».</p>
+        <span className="offer-row__btns">
+          <button className="btn btn--primary btn--sm" onClick={() => nav(`/app/examenes/orden/${batch}?accion=imprimir`)}><Printer size={15} />Imprimir</button>
+          <button className="btn btn--soft btn--sm" onClick={() => nav(`/app/examenes/orden/${batch}?accion=pdf`)}><FileText size={15} />Descargar PDF</button>
+        </span>
+      </div>}
+      {rxNote && <div className="offer-row">
+        <p><b>Receta.</b> Hay medicamentos que la clínica no tiene: siguen en la hoja y la familia los compra con esta receta. Válida solo con firma y sello del médico.</p>
+        <span className="offer-row__btns">
+          <button className="btn btn--primary btn--sm" onClick={() => rx('imprimir')}><Printer size={15} />Imprimir</button>
+          <button className="btn btn--soft btn--sm" onClick={() => rx('pdf')}><FileText size={15} />Descargar PDF</button>
+        </span>
+      </div>}
     </Modal>
   )
 }
@@ -1815,3 +1841,51 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
 
 // ---------- Egreso ----------
 
+
+/** ME10 (ronda 10): desde la tarjeta de la nota: la receta de sus medicamentos que no hay en la clínica. */
+function RxFromNote({ noteId }: { noteId: string }) {
+  const { can, notify } = useStore()
+  const nav = useNavigate()
+  if (!(can('chart.view') && (can('inpatient.care') || can('inpatient.orders')))) return null
+  const go = async (how: 'imprimir' | 'pdf') => {
+    try { const { id } = await api<{ id: string }>('/print-jobs', { body: { kind: 'rx', noteId } }); nav(`/app/impresion/${id}?accion=${how}`) } catch (x) { notify((x as Error).message, 'error') }
+  }
+  return (
+    <span className="no-print" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+      <button type="button" className="btn btn--soft btn--sm" onClick={() => go('imprimir')}><Printer size={14} />Receta: Imprimir</button>
+      <button type="button" className="btn btn--ghost btn--sm" onClick={() => go('pdf')}><FileText size={14} />Descargar PDF</button>
+    </span>
+  )
+}
+
+/** ME10 (ronda 10): «Imprimir receta» de la hoja: los medicamentos activos que van a receta, todos marcados (se pueden quitar). */
+function PrintRxModal({ meds, onClose }: { meds: InpatientMed[]; onClose: () => void }) {
+  const { notify, staffById } = useStore()
+  const nav = useNavigate()
+  const [picked, setPicked] = useState<string[]>(() => meds.map((m) => m.id))
+  const [busy, setBusy] = useState(false)
+  const go = async (how: 'imprimir' | 'pdf') => {
+    setBusy(true)
+    try { const { id } = await api<{ id: string }>('/print-jobs', { body: { kind: 'rx', medIds: picked } }); nav(`/app/impresion/${id}?accion=${how}`) } catch (x) { notify((x as Error).message, 'error'); setBusy(false) }
+  }
+  const doctors = new Set(meds.filter((m) => picked.includes(m.id)).map((m) => m.orderedBy)).size
+  return (
+    <Modal title="Imprimir receta" onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--soft" disabled={!picked.length || busy} onClick={() => go('pdf')}><FileText size={15} />Descargar PDF</button>
+      <button className="btn btn--primary" disabled={!picked.length || busy} onClick={() => go('imprimir')}><Printer size={15} />Imprimir</button>
+    </>}>
+      <p className="muted" style={{ fontSize: 14, margin: 0 }}>Medicamentos activos que la clínica no tiene. La receta sale con los datos del médico que los indicó y sin su firma y sello en papel no vale.</p>
+      <div className="print-pick">
+        {meds.map((m) => (
+          <label key={m.id} className={`exam-row-pick${picked.includes(m.id) ? ' is-on' : ''}`}>
+            <input type="checkbox" checked={picked.includes(m.id)} onChange={() => setPicked(picked.includes(m.id) ? picked.filter((x) => x !== m.id) : [...picked, m.id])} />
+            <span><b>{medLabel(m)}</b>{m.buyQuantity && <small className="muted"> · comprar {m.buyQuantity}</small>}
+              <small className="muted" style={{ display: 'block' }}>Indicado por {shortStaff(staffById(m.orderedBy)?.name)}</small></span>
+          </label>
+        ))}
+      </div>
+      {doctors > 1 && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Los indicaron {doctors} médicos: sale una receta por cada uno.</p>}
+    </Modal>
+  )
+}

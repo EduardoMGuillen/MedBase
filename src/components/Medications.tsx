@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { isNebulization, loadingAllowed, loadingDroppedByRoute, nebulizationBody, nebulizationReady } from '../lib/medExtras'
-import { EMPTY_NEB, LoadingDoseFields, LoadingDropped, NebulizerFields } from './MedExtras'
+import { BuyOutsideFields, EMPTY_NEB, LoadingDoseFields, LoadingDropped, NebulizerFields } from './MedExtras'
 import { frequencyHours } from '../lib/inpatient'
 import { useStore } from '../lib/store'
 import { Modal } from './ui'
@@ -37,7 +37,7 @@ export function MedicationList({ items, patient, onEdit, onRemove, editing, requ
             <div>
               <span className="meds-list__line"><Pill size={13} className="orders__pill" aria-hidden="true" />{medicationLine(it)}</span>
               {(it.instructions || it.quantity || allergy || it.applyInClinic || noDays || blank || outside) && (
-                <small>{[it.applyInClinic && 'Se aplica en la clínica', it.instructions, it.quantity && `Cantidad: ${it.quantity}`, allergy && `Alergia a ${allergy}`,
+                <small>{[it.applyInClinic && (it.buyOutside ? 'Se aplica en la clínica · Receta (no hay en la clínica)' : 'Se aplica en la clínica'), it.instructions, it.quantity && `Cantidad: ${it.quantity}`, allergy && `Alergia a ${allergy}`,
                   noDays && 'Falta el total de días para la receta', blank && 'Completa los espacios ___', outside && 'No está en el vademécum de la clínica'].filter(Boolean).join(' · ')}</small>
               )}
             </div>
@@ -110,13 +110,15 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
       const clean = { components: nebValue.components.filter((c) => c.drug.trim()).map((c) => ({ drug: c.drug.trim(), amount: c.amount.trim() })),
         diluentVolume: nebValue.diluentVolume?.trim() || undefined, diluent: nebValue.diluent?.trim() || undefined }
       return onSave({ ...m, drug: 'Nebulización', presentation: '', dose: nebulizationBody(clean), nebulization: clean, loadingDose: undefined, duration: m.duration.trim(),
-        instructions: m.instructions?.trim() || undefined, quantity: m.quantity?.trim() || undefined, applyInClinic: clinicOption && m.applyInClinic ? true : undefined, prnCondition: prn ? m.prnCondition?.trim() : undefined })
+        instructions: m.instructions?.trim() || undefined, quantity: m.quantity?.trim() || undefined, applyInClinic: clinicOption && m.applyInClinic ? true : undefined, buyOutside: buy || undefined, prnCondition: prn ? m.prnCondition?.trim() : undefined })
     }
     onSave({ ...m, drug: m.drug.trim(), presentation: m.presentation.trim(), dose: m.dose.trim(), duration: m.duration.trim(), nebulization: undefined, loadingDose: withLoading ? m.loadingDose!.trim() : undefined,
       instructions: m.instructions?.trim() || undefined, quantity: m.quantity?.trim() || computed || undefined,
-      applyInClinic: clinicOption && m.applyInClinic ? true : undefined, prnCondition: prn ? m.prnCondition?.trim() : undefined })
+      applyInClinic: clinicOption && m.applyInClinic ? true : undefined, buyOutside: buy || undefined, prnCondition: prn ? m.prnCondition?.trim() : undefined })
   }
   const freqs = FREQUENCIES.includes(m.frequency) ? FREQUENCIES : [m.frequency, ...FREQUENCIES]
+  // ME10 (ronda 10): con «Aplicar en la clínica», «No hay en la clínica (va a receta)»; la cantidad es la que se compra
+  const buy = clinicOption && !!m.applyInClinic && !!m.buyOutside
   return (<>
     <form className="rx-form" onSubmit={submit}>
       {/* ME8 (ronda 10): el buscador compartido; no se abre al tocarlo, sugiere al escribir */}
@@ -140,13 +142,14 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
           <input className={`input ${needsDays && !m.duration.trim() && m.drug.trim() && m.dose.trim() ? 'input--warn' : ''}`} value={m.duration} onChange={(e) => setM({ ...m, duration: e.target.value })}
             placeholder={/única/i.test(m.frequency) ? 'No aplica' : needsDays ? 'Ej. 3 días' : 'Hasta nueva orden'} />
           {needsDays && !m.duration.trim() && m.drug.trim() && m.dose.trim() && <small className="field__msg field__msg--warn">La receta lleva los días: el paciente se va a su casa.</small>}</label>
-        <label className="field"><span>Cantidad total (opcional)</span><input className="input" value={m.quantity ?? ''} onChange={(e) => setM({ ...m, quantity: e.target.value })} placeholder={computed ? `Se calcula: ${computed}` : 'Ej. 20 tabletas'} /></label>
+        <label className="field"><span>{buy ? 'Cantidad a comprar (opcional)' : 'Cantidad total (opcional)'}</span><input className="input" value={m.quantity ?? ''} onChange={(e) => setM({ ...m, quantity: e.target.value })} placeholder={computed ? `Se calcula: ${computed}` : 'Ej. 20 tabletas'} /></label>
         <label className="field span-2"><span>Indicaciones especiales (opcional)</span><input className="input" value={m.instructions ?? ''} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder="Ej. Con los alimentos" /></label>
       </div>
       {clinicOption && (
         <label className="check-line"><input type="checkbox" checked={!!m.applyInClinic} onChange={(e) => setM({ ...m, applyInClinic: e.target.checked })} />
           <span><b>Aplicar en la clínica</b><small>No va a la receta: pasa a la hoja de medicamentos para que enfermería o el médico lo apliquen. El paciente queda en observación mientras se aplica.</small></span></label>
       )}
+      {clinicOption && m.applyInClinic && <div className="form-grid"><BuyOutsideFields checked={!!m.buyOutside} onChecked={(v) => setM({ ...m, buyOutside: v })} /></div>}
       {(neb ? nebulizationReady(nebValue) : m.drug.trim() && m.dose.trim()) && <p className="muted" style={{ fontSize: 13.5, overflowWrap: 'anywhere' }}>Se verá así: <b>{medicationLine(neb
         ? { ...m, drug: 'Nebulización', nebulization: nebValue } : { ...m, loadingDose: withLoading ? m.loadingDose : undefined })}</b></p>}
       {neb && nebConflict && !overrideAllergy && (

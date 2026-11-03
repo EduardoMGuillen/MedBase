@@ -839,3 +839,16 @@ button.src-tag--none { cursor: pointer; }
 .file-viewer__pdf { width: 100%; height: 70vh; border: 0; border-radius: 8px; background: var(--ward); }
 @media (max-width: 600px) { .file-chip__go { display: none; } .file-viewer__pdf { height: 60vh; } }
 @media print { .exam-result__files, .file-thumb { display: none !important; } }
+
+/* EX5 y ME10 (ronda 10): leyenda de las órdenes y recetas impresas */
+.sign-legend { margin: 10px 0 0; text-align: center; font-size: 12.5px; font-weight: 700; letter-spacing: .01em; }
+
+/* EX5 (ronda 10): acciones de un examen en una fila; ventana «Imprimir orden» */
+.exam-row__acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
+.print-pick { display: grid; gap: 4px; }
+@media (max-width: 600px) { .exam-row__acts { justify-content: flex-start; } .exam-row__acts .btn { min-height: 44px; } }
+.rx-tag { margin-left: 6px; font-size: 11px; vertical-align: 2px; }
+.offer-row { display: grid; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+.offer-row:last-child { border-bottom: 0; }
+.offer-row p { margin: 0; }
+.offer-row__btns { display: flex; gap: 8px; flex-wrap: wrap; }

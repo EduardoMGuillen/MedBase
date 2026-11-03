@@ -9,6 +9,7 @@ import { REMOVED_IN_GRACE } from '../src/lib/grace.js'
  */
 export { REMOVED_IN_GRACE }
 export const PRINTED_EXAMS = 'Ya se imprimió la orden de exámenes. Corrígelo con una adenda.'
+export const PRINTED_RX = 'Ya se imprimió la receta. Corrígelo con una adenda.'
 
 export interface OrderLocks {
   /** Toda la columna de órdenes queda como se firmó (con el motivo). */
@@ -36,6 +37,8 @@ async function medLock(q: Sql, m: Row) {
     return `Ya lo marcó como ${d.status === 'omitted' ? 'omitido' : 'no aplicado'} ${who} a las ${time(String(d.given_at))}. Corrígelo con una adenda.`
   }
   if (m.stopped_at) return `Ya se suspendió a las ${time(String(m.stopped_at))}. Corrígelo con una adenda.`
+  // ME10 (ronda 10): la receta de lo que no hay en la clínica ya se imprimió o descargó
+  if (m.buy_outside && await q.one(`SELECT 1 FROM print_log WHERE target_kind = 'hosp_med' AND target_id = ? LIMIT 1`, [String(m.id)])) return PRINTED_RX
   return undefined
 }
 
@@ -48,6 +51,8 @@ export async function examLock(q: Sql, e: Row) {
     return `Ya se realizó o tiene resultado (${who}${at}). Corrígelo con una adenda.`
   }
   if (await q.one('SELECT 1 FROM print_log WHERE target_kind = ? AND target_id = ? LIMIT 1', [`exam_${String(e.grp)}`, String(e.batch_id)])) return PRINTED_EXAMS
+  // EX5 (ronda 10): la orden de los pendientes impresa desde la pestaña Exámenes
+  if (await q.one(`SELECT 1 FROM print_log WHERE target_kind = 'exam_item' AND target_id = ? LIMIT 1`, [String(e.id)])) return PRINTED_EXAMS
   return undefined
 }
 

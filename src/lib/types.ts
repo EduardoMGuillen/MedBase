@@ -333,6 +333,8 @@ export interface PrescriptionItem {
   quantity?: string // cantidad total a dispensar (opcional), p. ej. "20 tabletas"
   /** Ambulatorio: se aplica en la clínica (va a la hoja de medicamentos, no a la receta). */
   applyInClinic?: boolean
+  /** ME10 (ronda 10): con «Aplicar en la clínica», la clínica no lo tiene: va a una receta (cantidad a comprar: `quantity`). */
+  buyOutside?: boolean
   /** MC2 (ronda 6): PRN («si es necesario»): cuándo se da ("si dolor", "si fiebre"). */
   prnCondition?: string
   /** ME3 (ronda 9): primera dosis distinta (STAT) y luego `dose` con su frecuencia. */
@@ -969,6 +971,9 @@ export interface InpatientMed {
   loadingStat?: boolean
   /** ME4 (ronda 9): nebulización con sus componentes y diluyente (la vía es «Nebulización»). */
   nebulization?: import('./medExtras').Nebulization
+  /** ME10 (ronda 10): la clínica no lo tiene: sigue en la hoja y va a una receta («Cantidad a comprar», opcional). */
+  buyOutside?: boolean
+  buyQuantity?: string
   /** ME1 (ronda 8): enfermería suspendió la infusión en curso (hora, quién y motivo opcional). */
   infusionStoppedAt?: string
   infusionStoppedBy?: string

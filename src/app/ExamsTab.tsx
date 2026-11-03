@@ -1,8 +1,8 @@
-import { Fragment, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { fromLocalValue } from '../lib/dateInput'
 import { DateTimeField } from '../components/DateTimeField'
-import { Link } from 'react-router-dom'
-import { Camera, CheckCheck, ChevronRight, ChevronsDownUp, ChevronsUpDown, FlaskConical, Printer, ScanLine, TriangleAlert, Upload, X } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Camera, CheckCheck, ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, FlaskConical, Printer, ScanLine, TriangleAlert, Upload, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { CorrectionReason, GraceButton, VersionTag } from '../components/Grace'
 import { api } from '../lib/api'
@@ -44,8 +44,12 @@ const dayKey = (iso: string) => new Date(iso).toDateString()
  * por fecha (con el día como encabezado), filtros con su conteo y «Expandir todo / Contraer todo». Es sólo presentación.
  */
 export function ExamList({ exams, patientId, hospitalizationId, reload, open = true }: { exams: ExamOrder[]; patientId: string; hospitalizationId?: string; reload: () => void; open?: boolean }) {
-  const { can } = useStore()
+  const { can, staffById } = useStore()
   const [uploading, setUploading] = useState<ExamGroup | null>(null)
+  const [printing, setPrinting] = useState<ExamGroup | null>(null)
+  const canPrint = can('chart.view') && (can('exams.order') || can('exams.process'))
+  // EX5: impresiones hechas desde aquí (con quién y cuándo), para «Órdenes impresas»
+  const jobs = usePrintJobs(canPrint ? patientId : undefined, exams.map((e) => e.id))
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<ExamSort>('recent')
   const [filter, setFilter] = useState<ExamFilter>('all')
@@ -86,6 +90,8 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
             <div className="panel__head"><div><h2>{g === 'lab' ? <FlaskConical size={17} style={{ verticalAlign: '-3px' }} /> : <ScanLine size={17} style={{ verticalAlign: '-3px' }} />} {GROUP_LABEL[g]}</h2>
               <p>{all.filter(isPending).length} pendiente{all.filter(isPending).length === 1 ? '' : 's'} · {all.filter((e) => e.status === 'result' || e.status === 'reviewed').length} con resultado</p></div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {/* EX5 (ronda 10): la orden de los pendientes, para imprimir o descargar (médico y enfermería) */}
+                {canPrint && all.some(printable) && <button className="btn btn--ghost btn--sm" onClick={() => setPrinting(g)}><Printer size={14} />Imprimir orden</button>}
                 {open && can('exams.process') && <button className="btn btn--ghost btn--sm" onClick={() => setUploading(g)}><Upload size={14} />Subir resultado externo</button>}
               </div></div>
             {list.length ? <div className="rows">{list.map((e, i) => (
@@ -98,7 +104,7 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
           </section>
         )
       })}
-      {batches.length > 0 && (
+      {(batches.length > 0 || jobs.length > 0) && (
         <section className="panel"><div className="panel__body" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {/* Ronda 8: cada orden se imprime (los externos los lleva el paciente, como la receta) */}
           <span className="muted" style={{ fontSize: 14 }}>Órdenes impresas:</span>
@@ -108,8 +114,10 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
             return <Link key={b} className={`btn ${list.some((e) => e.place === 'external') ? 'btn--soft' : 'btn--ghost'} btn--sm`} to={`/app/examenes/orden/${b}`}>
               <Printer size={14} />{f.orderNo ? `${f.orderNo} · ` : ''}{dateTime(f.orderedAt)}{list.some((e) => e.place === 'external') ? ' · para llevar' : ''}</Link>
           })}
+          {jobs.map((j) => <Link key={j.id} className="btn btn--ghost btn--sm" to={`/app/impresion/${j.id}`}><Printer size={14} />{dateTime(j.printedAt)} · {shortStaff(staffById(j.printedBy)?.name)}</Link>)}
         </div></section>
       )}
+      {printing && <PrintPending group={printing} exams={exams.filter((e) => e.group === printing && printable(e))} onClose={() => setPrinting(null)} />}
       {uploading && <ExternalResult group={uploading} patientId={patientId} hospitalizationId={hospitalizationId} onClose={() => setUploading(null)} onDone={() => { setUploading(null); reload() }} />}
     </div>
   )
@@ -144,8 +152,8 @@ function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload
       </div>
       <div className="exam-row__side">
         <span className={`badge ${TONE[e.status] ? `badge--${TONE[e.status]}` : ''}`}>{examStatusLabel(e)}</span>
-        {/* EX1: las acciones se usan sin abrir la fila */}
-        {<>
+        {/* EX1: las acciones se usan sin abrir la fila. EX5 (ronda 10): en una fila horizontal, no apiladas */}
+        {<span className="exam-row__acts">
           {open && can('exams.process') && isPending(e) && e.status === 'ordered' && <button className="btn btn--soft btn--sm" onClick={() => act('status', { status: e.group === 'lab' ? 'sample' : 'done' })}>{next}</button>}
           {canResult && <button className={`btn ${optional ? 'btn--ghost' : 'btn--primary'} btn--sm`} onClick={() => setResult(true)}>{e.group === 'lab' ? 'Cargar resultado' : optional ? 'Agregar informe (opcional)' : 'Cargar informe'}</button>}
           {/* GE4 (ronda 9): quien cargó el resultado lo corrige unos minutos, mientras no se revise */}
@@ -153,7 +161,7 @@ function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload
           <VersionTag version={e.resultVersion} kind="exam_result" id={e.id} render={(x) => <ResultView e={{ ...e, result: x as unknown as NonNullable<ExamOrder['result']> }} />} />
           {canReview(e) && can('exams.order') && user?.role === 'doctor' && <button className="btn btn--primary btn--sm" onClick={() => act('review')}><CheckCheck size={14} />Marcar revisado</button>}
           {open && isPending(e) && (can('exams.process') || can('exams.order')) && <button className="btn btn--ghost btn--sm" onClick={() => setCancelling(true)}>Cancelar</button>}
-        </>}
+        </span>}
       </div>
       {result && <ResultModal e={e} onClose={() => setResult(false)} onDone={() => { setResult(false); reload() }} />}
       {cancelling && <CancelExam e={e} onClose={() => setCancelling(false)} onDone={() => { setCancelling(false); reload() }} />}
@@ -319,6 +327,61 @@ function ExternalResult({ group, patientId, hospitalizationId, onClose, onDone }
         </div>
         <input ref={input} type="file" accept="image/*,application/pdf" capture="environment" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
       </div>
+    </Modal>
+  )
+}
+
+/** EX5 (ronda 10): pendiente para la orden: sin resultado ni cancelado. */
+const printable = (e: ExamOrder) => e.status !== 'cancelled' && isPending(e)
+
+/** EX5 y ME10: las impresiones de un paciente hechas desde la pestaña Exámenes o la hoja (las que incluyen estos renglones). */
+export function usePrintJobs(patientId: string | undefined, ids: string[], kind: 'exams' | 'rx' = 'exams') {
+  const [jobs, setJobs] = useState<{ id: string; kind: string; items: string[]; printedAt: string; printedBy: string }[]>([])
+  const key = ids.join(',')
+  useEffect(() => {
+    if (!patientId) return
+    let alive = true
+    api<{ id: string; kind: string; items: string[]; printedAt: string; printedBy: string }[]>(`/patients/${patientId}/print-jobs`).then((r) => { if (alive) setJobs(r) }).catch(() => null)
+    return () => { alive = false }
+  }, [patientId, key])
+  const set = new Set(ids)
+  return jobs.filter((j) => j.kind === kind && j.items.some((x) => set.has(x)))
+}
+
+/**
+ * EX5 (ronda 10): «Imprimir orden» de una sección: los exámenes pendientes con casillas (los «Externo» marcados y los de la
+ * clínica sin marcar). Sale la misma orden de EX2, una por médico que los pidió, con la leyenda de firma y sello.
+ */
+function PrintPending({ group, exams, onClose }: { group: ExamGroup; exams: ExamOrder[]; onClose: () => void }) {
+  const { notify, staffById } = useStore()
+  const nav = useNavigate()
+  const [picked, setPicked] = useState<string[]>(() => exams.filter((e) => e.place === 'external').map((e) => e.id))
+  const [busy, setBusy] = useState(false)
+  const go = async (how: 'imprimir' | 'pdf') => {
+    setBusy(true)
+    try {
+      const { id } = await api<{ id: string }>('/print-jobs', { body: { kind: 'exams', examIds: picked } })
+      nav(`/app/impresion/${id}?accion=${how}`)
+    } catch (x) { notify((x as Error).message, 'error'); setBusy(false) }
+  }
+  const doctors = new Set(exams.filter((e) => picked.includes(e.id)).map((e) => e.orderedBy)).size
+  return (
+    <Modal title={`Imprimir orden de ${GROUP_LABEL[group].toLowerCase()}`} onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--soft" disabled={!picked.length || busy} onClick={() => go('pdf')}><Download size={15} />Descargar PDF</button>
+      <button className="btn btn--primary" disabled={!picked.length || busy} onClick={() => go('imprimir')}><Printer size={15} />Imprimir</button>
+    </>}>
+      <p className="muted" style={{ fontSize: 14, margin: 0 }}>Los exámenes pendientes; los externos ya van marcados. Sale con los datos del médico que los pidió y sin su firma y sello en papel no vale.</p>
+      <div className="print-pick">
+        {exams.map((e) => (
+          <label key={e.id} className={`exam-row-pick${picked.includes(e.id) ? ' is-on' : ''}`}>
+            <input type="checkbox" checked={picked.includes(e.id)} onChange={() => setPicked(picked.includes(e.id) ? picked.filter((x) => x !== e.id) : [...picked, e.id])} />
+            <span><b>{examLine(e)}</b>{e.place === 'external' && <span className="badge" style={{ marginLeft: 6 }}>Externo</span>}{e.priority === 'urgent' && <span className="badge badge--red" style={{ marginLeft: 6 }}>Urgente</span>}
+              <small className="muted" style={{ display: 'block' }}>Pedido {dateTime(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)}</small></span>
+          </label>
+        ))}
+      </div>
+      {doctors > 1 && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Los pidieron {doctors} médicos: sale una orden por cada uno.</p>}
     </Modal>
   )
 }

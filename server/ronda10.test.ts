@@ -244,3 +244,73 @@ describe('ME6 (ronda 10): el vademécum con las 530 filas del .md', () => {
     assert.equal(JSON.stringify(await sql.query('SELECT * FROM clinic_drugs WHERE clinic_id = ? ORDER BY id', [id])), snap)
   })
 })
+
+describe('EX5 y ME10 (ronda 10): órdenes de pendientes y receta de lo que no hay en la clínica', () => {
+  const stayOf = async () => String((await sql.one(`SELECT id FROM hospitalizations WHERE status = 'active' AND clinic_id = ? ORDER BY admitted_at LIMIT 1`, [await mainClinic()]))!.id)
+
+  test('ME10: la nota guarda «va a receta» y la cantidad; enfermería imprime la receta del médico; queda registrada y bloquea la corrección', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const reception = await as('smejia@demo.clinara')
+    const stay = await stayOf()
+    const n = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'Control ME10', meds: [
+      { drug: 'Ceftriaxona', presentation: 'Vial 1 g', dose: '1 g', route: 'Intravenosa', everyHours: 12, prn: false, loadingDose: '2 g', loadingStat: true, buyOutside: true, buyQuantity: '10 viales' },
+      { drug: 'Omeprazol', presentation: 'Cápsula 20 mg', dose: '20 mg', route: 'Oral', everyHours: 24, prn: false }] })
+    assert.equal(n.status, 201, JSON.stringify(n.body))
+    const meds = await sql.query(`SELECT * FROM hosp_meds WHERE source = 'note' AND source_id = ? ORDER BY source_index`, [n.body.id])
+    assert.equal(meds[0].buy_outside, true)
+    assert.equal(meds[0].buy_quantity, '10 viales')
+    assert.equal(meds[1].buy_outside, false)
+    // La hoja la muestra (y se administra como cualquier orden)
+    const file = (await nurse.get(`/api/inpatient/${stay}`)).body
+    assert.equal(file.meds.find((m: any) => m.id === meds[0].id).buyOutside, true)
+    // Recepción no (tampoco por URL)
+    assert.equal((await reception.post('/api/print-jobs', { kind: 'rx', noteId: n.body.id })).status, 403)
+    // Sin medicamentos marcados no hay receta
+    assert.equal((await nurse.post('/api/print-jobs', { kind: 'rx', medIds: [meds[1].id] })).status, 400)
+    const job = await nurse.post('/api/print-jobs', { kind: 'rx', noteId: n.body.id })
+    assert.equal(job.status, 201, JSON.stringify(job.body))
+    assert.equal((await reception.get(`/api/print-jobs/${job.body.id}`)).status, 403)
+    const j = (await nurse.get(`/api/print-jobs/${job.body.id}`)).body
+    assert.deepEqual(j.doctors.map((d: any) => d.doctor.id), ['s-herrera'], 'sale con los datos del médico que indicó, no de quien imprime')
+    assert.deepEqual(j.meds.map((m: any) => m.drug), ['Ceftriaxona'])
+    assert.equal((await nurse.post(`/api/print-jobs/${job.body.id}/printed`, { how: 'pdf' })).status, 200)
+    assert.ok(await sql.one(`SELECT 1 FROM print_log WHERE target_kind = 'hosp_med' AND target_id = ? AND by_id = 's-rios'`, [String(meds[0].id)]))
+    assert.ok(await sql.one(`SELECT 1 FROM audit WHERE user_id = 's-rios' AND action LIKE 'Descargó en PDF la receta%'`))
+    const { noteOrderLocks, PRINTED_RX } = await import('./correctionLocks.js')
+    const locks = await noteOrderLocks(sql, (await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [n.body.id]))!)
+    assert.equal(locks.meds[String(meds[0].id)], PRINTED_RX, 'GE4: la receta impresa bloquea la corrección de ese renglón')
+    // «Órdenes impresas»: con quién y cuándo
+    const pid = String(meds[0].patient_id)
+    const list = (await nurse.get(`/api/patients/${pid}/print-jobs`)).body
+    assert.ok(list.some((x: any) => x.id === job.body.id && x.printedBy === 's-rios'))
+    assert.equal((await reception.get(`/api/patients/${pid}/print-jobs`)).status, 403)
+  })
+
+  test('EX5: «Imprimir orden» de pendientes: una orden por médico que pidió; registrada; bloquea la corrección; lo que ya tiene resultado no entra', async () => {
+    const herrera = await as('lherrera@demo.clinara')
+    const paz = await as('apaz@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const stay = await stayOf()
+    const a = await herrera.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'EX5 a', exams: [
+      { group: 'lab', name: 'Hemograma', priority: 'routine', place: 'external' }, { group: 'lab', name: 'Creatinina', priority: 'routine', place: 'clinic' }] })
+    assert.equal(a.status, 201, JSON.stringify(a.body))
+    const b = await paz.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'EX5 b', exams: [{ group: 'lab', name: 'Electrolitos', priority: 'urgent', place: 'clinic' }] })
+    assert.equal(b.status, 201, JSON.stringify(b.body))
+    const ex = await sql.query(`SELECT id, note_id, name FROM exam_orders WHERE note_id IN (?, ?)`, [a.body.id, b.body.id])
+    const job = await nurse.post('/api/print-jobs', { kind: 'exams', examIds: ex.map((e) => String(e.id)) })
+    assert.equal(job.status, 201, JSON.stringify(job.body))
+    const j = (await nurse.get(`/api/print-jobs/${job.body.id}`)).body
+    assert.equal(j.doctors.length, 2, 'con exámenes de dos médicos salen dos órdenes')
+    assert.deepEqual(j.doctors.map((d: any) => d.doctor.id).sort(), ['s-herrera', 's-paz'].sort())
+    assert.equal((await nurse.post(`/api/print-jobs/${job.body.id}/printed`, { how: 'print' })).status, 200)
+    const { examLock, PRINTED_EXAMS } = await import('./correctionLocks.js')
+    assert.equal(await examLock(sql, (await sql.one('SELECT * FROM exam_orders WHERE id = ?', [String(ex[0].id)]))!), PRINTED_EXAMS)
+    // Uno con resultado ya no está pendiente
+    const done = String(ex.find((e) => e.name === 'Creatinina')!.id)
+    await sql.run(`UPDATE exam_orders SET status = 'result', result = ? WHERE id = ?`, [JSON.stringify({ report: 'ok', at: new Date().toISOString(), by: 's-rios' }), done])
+    assert.equal((await nurse.post('/api/print-jobs', { kind: 'exams', examIds: [done] })).status, 409)
+    // Recepción no
+    assert.equal((await (await as('smejia@demo.clinara')).post('/api/print-jobs', { kind: 'exams', examIds: [String(ex[0].id)] })).status, 403)
+  })
+})

@@ -29,6 +29,22 @@ export function LoadingDoseFields({ checked, onChecked, value, onValue, givenAt,
   </>)
 }
 
+/**
+ * ME10 (ronda 10): «No hay en la clínica (va a receta)», apagada por defecto, en una línea. Marcada, pide «Cantidad a comprar»
+ * (opcional). Solo la marca el médico: enfermería imprime la receta pero no cambia la marca. `quantity === undefined`: el
+ * formulario ya tiene su propio campo de cantidad (consulta externa: «Cantidad total», que pasa a llamarse así).
+ */
+export function BuyOutsideFields({ checked, onChecked, quantity, onQuantity }: { checked: boolean; onChecked: (v: boolean) => void; quantity?: string; onQuantity?: (v: string) => void }) {
+  return (<>
+    <div className="field span-2 stat-line">
+      <label className="check-inline"><input type="checkbox" checked={checked} onChange={(e) => onChecked(e.target.checked)} />No hay en la clínica (va a receta)</label>
+      {checked && <small className="muted">Sigue en la hoja de medicamentos; se imprime una receta para que la familia lo compre.</small>}
+    </div>
+    {checked && quantity !== undefined && onQuantity && <label className="field"><span>Cantidad a comprar</span>
+      <input className="input" value={quantity} onChange={(e) => onQuantity(e.target.value)} placeholder="Ej. 10 viales" /></label>}
+  </>)
+}
+
 /** ME9 (ronda 10): aviso cuando se marcó la primera dosis distinta y la vía dejó de ser intravenosa. */
 export function LoadingDropped({ show }: { show: boolean }) {
   if (!show) return null
