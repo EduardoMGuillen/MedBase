@@ -262,7 +262,7 @@ export function createApp(opts: AppOptions) {
     if (!(user.roles ?? [user.role]).includes(role)) fail(403, 'No tienes ese rol.')
     if (role !== user.role) {
       await sql.run('UPDATE staff SET role = ? WHERE id = ?', [role, user.id])
-      await audit({ ...user, role }, `Cambió a la ${VIEW_LABEL[role].toLowerCase()} (antes: ${VIEW_LABEL[user.role].toLowerCase()})`)
+      await audit({ ...user, role }, `Cambió de rol a ${VIEW_LABEL[role]} (antes: ${VIEW_LABEL[user.role]})`)
     }
     res.json(session((await sql.one('SELECT s.*, c.kind AS clinic_kind FROM staff s LEFT JOIN clinics c ON c.id = s.clinic_id WHERE s.id = ?', [user.id]))!))
   })

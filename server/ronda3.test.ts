@@ -133,7 +133,7 @@ describe('AD5 varios roles y vista activa', () => {
     // La vista se recuerda en la cuenta: una sesión nueva entra en la misma vista
     assert.equal((await (await as('lherrera@demo.clinara')).get('/api/auth/me')).body.user.role, 'admin')
     // La bitácora guarda el cambio y el rol de cada acción
-    const row = await sql.one(`SELECT role FROM audit WHERE user_id = 's-herrera' AND action LIKE 'Cambió a la vista de administrador%' ORDER BY id DESC LIMIT 1`)
+    const row = await sql.one(`SELECT role FROM audit WHERE user_id = 's-herrera' AND action LIKE 'Cambió de rol a Administración%' ORDER BY id DESC LIMIT 1`)
     assert.equal(row?.role, 'admin')
     // No puede elegir un rol que no tiene
     assert.equal((await doc.post('/api/me/view', { role: 'nurse' })).status, 403)
