@@ -24,10 +24,12 @@ dist-ssr
 *.sw?
 
 # Base de datos local
-/data/
+/data/*
+!/data/*.md
 .env
 
 # Simulación local del runtime de Vercel
 .sim/
 .vercel
 Review/
+server/.tmp/

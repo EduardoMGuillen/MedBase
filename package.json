@@ -15,7 +15,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "db:neon": "tsx server/reset-db.ts .env.neon.local",
-    "superadmin": "tsx server/create-superadmin.ts"
+    "superadmin": "tsx server/create-superadmin.ts",
+    "um1:build": "tsx scripts/um1-build.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",

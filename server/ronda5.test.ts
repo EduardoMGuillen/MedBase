@@ -206,9 +206,10 @@ describe('AD1 umbrales críticos por grupo', () => {
     const admin = await as('admin@demo.clinara')
     let s = (await admin.get('/api/bootstrap')).body.settings
     const groups = structuredClone(s.criticalGroups)
-    assert.equal(groups.find((g: any) => g.name === 'Hemograma').analytes.find((a: any) => a.name === 'Hemoglobina').low, 7, 'los valores de antes, intactos')
+    // UM2 (ronda 8): los umbrales de la app son los del .md de Emil (Hb por sexo, ABIM-2026)
+    assert.deepEqual(groups.find((g: any) => g.name === 'Hemograma').analytes.find((a: any) => a.name === 'Hemoglobina').f, { low: 12, high: 16 })
     const hemo = groups.find((g: any) => g.name === 'Hemograma')
-    hemo.analytes.push({ id: 'a-hto', name: 'Hematocrito', unit: '%', low: 20, high: 60 })
+    hemo.analytes.push({ id: 'a-hto', name: 'Hemoglobina plasmática', unit: '%', low: 20, high: 60 })
     groups.push({ id: 'g-gases', name: 'Gases arteriales', analytes: [{ id: 'a-lact', name: 'Lactato', unit: 'mmol/L', high: 4 }, { id: 'a-po2', name: 'pO2', unit: 'mmHg', low: 50 }] })
     groups.find((g: any) => g.name === 'Electrolitos').analytes.find((a: any) => a.name === 'Potasio').high = 6.5
     assert.equal((await admin.put('/api/settings/critical-groups', { groups: [...groups, { id: 'g-x', name: 'Malo', analytes: [{ id: 'a-x', name: 'X', low: 5, high: 2 }] }] })).status, 400)
@@ -216,7 +217,7 @@ describe('AD1 umbrales críticos por grupo', () => {
     const r = await admin.put('/api/settings/critical-groups', { groups })
     assert.equal(r.status, 200, JSON.stringify(r.body))
     s = (await admin.get('/api/bootstrap')).body.settings
-    const hto = s.criticalGroups.find((g: any) => g.name === 'Hemograma').analytes.find((a: any) => a.name === 'Hematocrito')
+    const hto = s.criticalGroups.find((g: any) => g.name === 'Hemograma').analytes.find((a: any) => a.name === 'Hemoglobina plasmática')
     assert.deepEqual([hto.low, hto.high, hto.unit], [20, 60, '%'])
     // Archivar: deja de contar pero no se pierde
     const next = structuredClone(s.criticalGroups)
@@ -226,8 +227,8 @@ describe('AD1 umbrales críticos por grupo', () => {
     assert.ok(s.criticalGroups.find((g: any) => g.id === 'g-gases').analytes.find((a: any) => a.id === 'a-po2').archivedAt)
     assert.ok(s.criticalGroups.find((g: any) => g.id === 'g-otros').archivedAt, 'un grupo que no se mandó queda archivado, no borrado')
     const log = ((await admin.get('/api/audit/mine')).body.rows ?? (await admin.get('/api/audit/mine')).body) as any[]
-    assert.ok(log.some((e) => /agregó Hematocrito \(%\) a «Hemograma»: menor de 20, mayor de 60/.test(e.action)))
-    assert.ok(log.some((e) => /Potasio: crítico si es mayor de 6\.2 → 6\.5/.test(e.action)))
+    assert.ok(log.some((e) => /agregó Hemoglobina plasmática \(%\) a «Hemograma»: menor de 20, mayor de 60/.test(e.action)))
+    assert.ok(log.some((e) => /Potasio: crítico si es mayor de 5 → 6\.5/.test(e.action)))
     assert.ok(log.some((e) => /archivó pO2 de «Gases arteriales»/.test(e.action)))
     // Por URL o API, sólo administración
     assert.equal((await (await as('lherrera@demo.clinara')).put('/api/settings/critical-groups', { groups })).status, 403)
@@ -241,7 +242,8 @@ describe('AD1 umbrales críticos por grupo', () => {
     const res = await nurse.post(`/api/exams/${exam.id}/result`, { values: [{ analyte: 'Hematocrito', value: '18' }, { analyte: 'Hemoglobina', value: '9' }] })
     assert.equal(res.status, 200, JSON.stringify(res.body))
     assert.equal(res.body.critical, true)
-    assert.deepEqual(res.body.result.values.filter((v: any) => v.critical).map((v: any) => v.analyte), ['Hematocrito'])
+    // UM2 (ronda 8): con los umbrales del .md, la hemoglobina de 9 también es crítica
+    assert.deepEqual(res.body.result.values.filter((v: any) => v.critical).map((v: any) => v.analyte), ['Hematocrito', 'Hemoglobina'])
   })
 })
 

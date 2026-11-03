@@ -6,8 +6,9 @@ import type { Sql } from '../sql.js'
 import { can } from '../../src/lib/permissions.js'
 import { areaFor, canReview, EXAMS, examKey, findExam, flagOf, FLOW, GROUP_LABEL, isPending, STATUS_LABEL } from '../../src/lib/exams.js'
 import { ensureExamCatalog } from '../db.js'
-import { criticalLimitsOf, isCritical, mergeCriticalGroups, type CriticalGroup } from '../../src/lib/clinicalConfig.js'
-import { rangeFor } from '../../src/lib/labReference.js'
+import { criticalLimitsOf, defaultAnalyte, defaultValues, isCritical, mergeCriticalGroups, type CriticalAnalyte, type CriticalGroup } from '../../src/lib/clinicalConfig.js'
+import { rangeFor, referenceFromRows } from '../../src/lib/labReference.js'
+import { refRowsFor, toRefRow } from '../refLoader.js'
 import type { ClinicExam, ExamInput, ExamOrder, ExamProfile, ExamResultValue, ExamStatus } from '../../src/lib/types.js'
 
 /** Un examen que se ordena (en la consulta, en una nota o en un set). */
@@ -115,8 +116,12 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
       sql.query('SELECT * FROM exam_catalog WHERE clinic_id = ? ORDER BY name', [cid]),
       sql.query('SELECT * FROM exam_profiles WHERE clinic_id = ? AND archived_at IS NULL AND (owner_id IS NULL OR owner_id = ?) ORDER BY name', [cid, user.id]),
     ])
+    // UM1 (ronda 8): cada examen con sus valores de referencia vigentes (por su nombre o el de la lista fija)
+    const refs = (await sql.query('SELECT * FROM exam_ref_values WHERE clinic_id = ? AND archived_at IS NULL ORDER BY created_at, id', [cid])).map(toRefRow)
+    const byKey = new Map<string, ReturnType<typeof toRefRow>[]>()
+    for (const r of refs) byKey.set(r.examKey, [...(byKey.get(r.examKey) ?? []), r])
     res.json({
-      exams: catalog.map(toClinicExam),
+      exams: catalog.map((r) => { const e = toClinicExam(r); return { ...e, refs: byKey.get(String(r.norm_key)) ?? (r.base_key ? byKey.get(String(r.base_key)) : undefined) } }),
       profiles: profiles.map((r): ExamProfile => ({ id: String(r.id), name: String(r.name), ownerId: r.owner_id ? String(r.owner_id) : undefined, items: j(r.items, []), note: r.note ? String(r.note) : undefined })),
     })
   })
@@ -208,18 +213,96 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
   })
 
   /**
+   * UM1 (ronda 8): editar los valores de referencia de un examen (Administración; en un consultorio, la médica titular en su
+   * vista de administración). Cada fila que cambia queda archivada (no se borra) y la nueva pasa a «Editado por la clínica»,
+   * con la nota opcional: una carga futura del .md ya no la pisa. Todo queda en la bitácora.
+   */
+  const refInput = z.object({ id: z.string().optional(), analyte: z.string().trim().max(80).optional(), sex: z.enum(['all', 'F', 'M']).default('all'), unit: z.string().trim().max(40).default(''),
+    low: z.number().finite().optional(), high: z.number().finite().optional(), highOpen: z.boolean().optional(), expected: z.string().trim().max(1000).optional(), note: z.string().trim().max(2000).optional(),
+    archive: z.boolean().optional() })
+  app.put('/api/exams/catalog/:id/refs', auth, need('settings.manage'), async (req, res) => {
+    const b = parse(z.object({ rows: z.array(refInput).max(80), comment: z.string().trim().max(500).optional() }), req.body)
+    const cid = clinicOf(req)
+    const user = userOf(req)
+    const ex = (await sql.one('SELECT * FROM exam_catalog WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'El examen no existe.')
+    const current = await refRowsFor(sql, cid, String(ex!.name))
+    const now = new Date().toISOString()
+    const changes: string[] = []
+    const show = (x: { low?: number; high?: number; highOpen?: boolean; expected?: string }) => x.expected ?? ([x.low, x.high != null ? `${x.highOpen ? '<' : ''}${x.high}` : undefined].filter((v) => v != null).join('–') || '—')
+    for (const row of b.rows) {
+      if (row.low != null && row.high != null && row.low > row.high) fail(400, `${row.analyte || ex!.name}: el mínimo no puede ser mayor que el máximo.`)
+      const cur = row.id ? current.find((c) => c.id === row.id) : undefined
+      if (row.id && !cur) fail(409, 'Ese valor ya cambió. Actualiza la página.')
+      const label = `${row.analyte || 'resultado esperado'}${row.sex === 'F' ? ' (mujeres)' : row.sex === 'M' ? ' (hombres)' : ''}`
+      if (cur && row.archive) {
+        await sql.run('UPDATE exam_ref_values SET archived_at = ?, archived_by = ?, archive_reason = ? WHERE id = ?', [now, user.id, `Archivado por la clínica${b.comment ? `: ${b.comment}` : ''}`, cur.id])
+        changes.push(`archivó ${label}`)
+        continue
+      }
+      const same = cur && cur.low === row.low && cur.high === row.high && !!cur.highOpen === !!row.highOpen && (cur.expected ?? '') === (row.expected ?? '') && (cur.note ?? '') === (row.note ?? '') && cur.unit === row.unit
+      if (same) continue
+      if (cur) await sql.run('UPDATE exam_ref_values SET archived_at = ?, archived_by = ?, archive_reason = ? WHERE id = ?', [now, user.id, `Editado por la clínica${b.comment ? `: ${b.comment}` : ''}`, cur.id])
+      await sql.run(`INSERT INTO exam_ref_values (id, clinic_id, exam_key, exam_name, analyte, sex, unit, low, high, high_open, expected, note, warn, sources, origin, origin_label, edit_note, created_at, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'clinic', 'Editado por la clínica', ?,?,?)`,
+      [randomUUID(), cid, cur?.examKey ?? String(ex!.norm_key), String(ex!.name), row.analyte ?? '', row.sex, row.unit, row.low ?? null, row.high ?? null, !!row.highOpen, row.expected || null, row.note || null,
+        !!cur?.warn, JSON.stringify(['clinic']), b.comment || null, now, user.id])
+      changes.push(cur ? `${label}: ${show(cur)} → ${show(row)}` : `agregó ${label}: ${show(row)}`)
+    }
+    if (changes.length) await audit(user, `Valores de referencia de ${ex!.name}: ${changes.join('; ')}${b.comment ? ` (nota: ${b.comment})` : ''}`)
+    res.json(await refRowsFor(sql, cid, String(ex!.name)))
+  })
+
+  // UM1: historial de los valores de referencia de un examen (lo vigente y lo archivado, con quién y cuándo)
+  app.get('/api/exams/catalog/:id/refs/history', auth, need('settings.manage'), async (req, res) => {
+    const cid = clinicOf(req)
+    const ex = (await sql.one('SELECT * FROM exam_catalog WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'El examen no existe.')
+    const keys = [String(ex!.norm_key), ...(ex!.base_key ? [String(ex!.base_key)] : [])]
+    const rows = await sql.query(`SELECT * FROM exam_ref_values WHERE clinic_id = ? AND exam_key IN (${keys.map(() => '?').join(',')}) ORDER BY created_at DESC, id`, [cid, ...keys])
+    res.json(rows.map((r) => ({ ...toRefRow(r), archivedAt: r.archived_at ? String(r.archived_at) : undefined, archivedBy: r.archived_by ? String(r.archived_by) : undefined, archiveReason: r.archive_reason ? String(r.archive_reason) : undefined })))
+  })
+
+  // UM1 y UM2: la tabla de fuentes (código, cita completa, enlace)
+  app.get('/api/lab-sources', auth, async (_req, res) => {
+    res.json((await sql.query('SELECT * FROM lab_sources ORDER BY code')).map((r) => ({ code: String(r.code), citation: String(r.citation), urls: JSON.parse(String(r.urls ?? '[]')) })))
+  })
+
+  /**
    * AD1 (ronda 5): umbrales críticos por grupo. Se guarda la lista completa (los archivados se conservan) y cada cambio
    * queda en la bitácora con el valor anterior y el nuevo.
    */
-  const analyteInput = z.object({ id: z.string().min(1).max(60), name: z.string().trim().min(1, 'Escribe el nombre del analito.').max(60), unit: z.string().trim().max(20).optional(),
-    low: z.number().finite().optional(), high: z.number().finite().optional(), archivedAt: z.string().optional(), source: z.string().max(400).optional() })
+  const limitsInput = z.object({ low: z.number().finite().optional(), high: z.number().finite().optional() })
+  const analyteInput = z.object({ id: z.string().min(1).max(60), name: z.string().trim().min(1, 'Escribe el nombre del analito.').max(80), unit: z.string().trim().max(30).optional(),
+    low: z.number().finite().optional(), high: z.number().finite().optional(), archivedAt: z.string().optional(), source: z.string().max(400).optional(),
+    // UM2 (ronda 8): por sexo, y «Restablecer» (vuelve al valor predeterminado de la app)
+    f: limitsInput.optional(), m: limitsInput.optional(), reset: z.boolean().optional() }).passthrough()
   const groupInput = z.object({ id: z.string().min(1).max(60), name: z.string().trim().min(2, 'Escribe el nombre del grupo.').max(60), archivedAt: z.string().optional(), analytes: z.array(analyteInput).max(80) })
   app.put('/api/settings/critical-groups', auth, need('settings.manage'), async (req, res) => {
-    const { groups } = parse(z.object({ groups: z.array(groupInput).max(40) }), req.body)
+    const { groups: input } = parse(z.object({ groups: z.array(groupInput).max(60) }), req.body)
     const cid = clinicOf(req)
+    const user = userOf(req)
     const before: CriticalGroup[] = mergeCriticalGroups((await settings(cid)).criticalGroups)
+    const stamp = new Date().toISOString()
+    const sameL = (a?: { low?: number; high?: number }, b?: { low?: number; high?: number }) => (a?.low ?? null) === (b?.low ?? null) && (a?.high ?? null) === (b?.high ?? null)
+    // UM2: un analito que cambia queda «Personalizado» (quién y cuándo) y su valor anterior en el historial; «Restablecer» lo
+    // devuelve al valor predeterminado de la app. El predeterminado se guarda aparte (en el código), nunca se pisa.
+    const groups: CriticalGroup[] = input.map((g) => ({ ...g, analytes: g.analytes.map((raw) => {
+      const { reset, ...a } = raw as typeof raw & { history?: CriticalAnalyte['history']; editedAt?: string; editedBy?: string }
+      const o = before.flatMap((x) => x.analytes).find((x) => x.id === a.id)
+      const d = defaultAnalyte(a.id)
+      const history = [...(o?.history ?? [])]
+      const prev = o ? { at: stamp, by: user.id, low: o.low, high: o.high, f: o.f, m: o.m } : undefined
+      if (reset && d) {
+        if (prev && !(sameL(o, d) && sameL(o?.f, d.f) && sameL(o?.m, d.m))) history.push({ ...prev, reason: 'Restablecido al valor predeterminado de la app' })
+        return { ...a, ...defaultValues(d), history, editedAt: undefined, editedBy: undefined }
+      }
+      const changed = !o || !sameL(o, a) || !sameL(o.f, a.f) || !sameL(o.m, a.m)
+      if (o && changed) history.push({ ...prev!, reason: 'Editado por la clínica' })
+      return { ...a, history: history.length ? history : undefined, editedAt: changed && d ? stamp : o?.editedAt, editedBy: changed && d ? user.id : o?.editedBy }
+    }) }))
     for (const g of groups) for (const a of g.analytes) {
-      if (a.low != null && a.high != null && a.low >= a.high) fail(400, `${a.name}: el límite inferior debe ser menor que el superior.`)
+      for (const [l, sx] of [[a, ''], [a.f, ' (mujeres)'], [a.m, ' (hombres)']] as const) {
+        if (l?.low != null && l?.high != null && l.low > l.high) fail(400, `${a.name}${sx}: el límite inferior no puede ser mayor que el superior.`)
+      }
     }
     const active = groups.filter((g) => !g.archivedAt)
     if (new Set(active.map((g) => g.name.toLowerCase())).size !== active.length) fail(400, 'Hay dos grupos con el mismo nombre.')
@@ -245,6 +328,11 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
         if ((o.unit ?? '') !== (a.unit ?? '')) d.push(`unidad ${o.unit || 'sin unidad'} → ${a.unit || 'sin unidad'}`)
         if (o.low !== a.low) d.push(`crítico si es menor de ${lim(o.low)} → ${lim(a.low)}`)
         if (o.high !== a.high) d.push(`crítico si es mayor de ${lim(o.high)} → ${lim(a.high)}`)
+        for (const [k, label] of [['f', 'mujeres'], ['m', 'hombres']] as const) {
+          if ((o[k]?.low ?? null) !== (a[k]?.low ?? null)) d.push(`${label}: crítico si es menor de ${lim(o[k]?.low)} → ${lim(a[k]?.low)}`)
+          if ((o[k]?.high ?? null) !== (a[k]?.high ?? null)) d.push(`${label}: crítico si es mayor de ${lim(o[k]?.high)} → ${lim(a[k]?.high)}`)
+        }
+        if (!a.editedAt && o.editedAt && defaultAnalyte(a.id)) d.push('restablecido al valor de la app')
         if (d.length) changes.push(`${a.name}: ${d.join('; ')}`)
         if (!o.archivedAt && a.archivedAt) changes.push(`archivó ${a.name} de «${g.name}»`)
         if (o.archivedAt && !a.archivedAt) changes.push(`restauró ${a.name} en «${g.name}»`)
@@ -262,7 +350,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
       }
     }
     await sql.run('UPDATE clinics SET critical_groups = ? WHERE id = ?', [JSON.stringify(kept), cid])
-    for (const c of changes) await audit(userOf(req), `Umbrales críticos de laboratorio: ${c}`)
+    for (const c of changes) await audit(user, `Umbrales críticos de laboratorio: ${c}`)
     res.json(await settings(cid))
   })
 
@@ -359,7 +447,9 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     const limits = criticalLimitsOf((await settings(cid)).criticalGroups)
     // AD4: si la clínica renombró un examen de la lista fija, sus analitos siguen viniendo de él
     const linked = await sql.one('SELECT base_key FROM exam_catalog WHERE clinic_id = ? AND norm_key = ?', [cid, examKey(String(r!.name))])
-    const base = findExam(String(r!.name)) ?? (linked?.base_key ? findExam(EXAMS.find((e) => examKey(e.name) === linked.base_key)?.name ?? '') : undefined)
+    // UM1 (ronda 8): los valores de referencia de la clínica (su base); si el examen no tiene, los del archivo o la lista fija
+    const own = referenceFromRows(await refRowsFor(sql, cid, String(r!.name)))
+    const base = own ? { analytes: own.analytes } : findExam(String(r!.name)) ?? (linked?.base_key ? findExam(EXAMS.find((e) => examKey(e.name) === linked.base_key)?.name ?? '') : undefined)
     // UM1 (ronda 8): el rango del documento de valores de referencia, por el sexo del paciente cuando los separa
     const sex = (await sql.one('SELECT sex FROM patients WHERE id = ?', [String(r!.patient_id)]))?.sex as 'F' | 'M' | undefined
     const values: ExamResultValue[] = (b.values ?? []).map((v) => {
@@ -371,7 +461,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
       const low = own ? v.low : range.low
       const high = own ? v.high : range.high
       const highOpen = own ? v.highOpen : range.highOpen
-      const critical = isCritical(limits, v.analyte, num)
+      const critical = isCritical(limits, v.analyte, num, sex)
       return { ...v, unit: v.unit ?? ref?.unit, low, high, highOpen: highOpen || undefined, reference: ref?.text, flag: Number.isFinite(num) ? flagOf(num, low, high, highOpen) : undefined, critical: critical || undefined }
     })
     const at = new Date().toISOString()

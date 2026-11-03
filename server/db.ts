@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs'
-import { groupsFromLimits } from '../src/lib/clinicalConfig.js'
+import { defaultAnalyte, defaultValues, groupsFromLimits, mergeCriticalGroups, type CriticalGroup } from '../src/lib/clinicalConfig.js'
 import { EXAMS, examKey } from '../src/lib/exams.js'
 import { randomUUID } from 'node:crypto'
 import {
@@ -12,12 +12,13 @@ import { backfillMissingOrders, syncStayOrders } from './medOrders.js'
 import { SCENARIO_PATIENT_IDS, insertClinicScenarios, insertOfficeScenarios } from './demoScenarios.js'
 import { ensureHospitalAuthorization } from './authorizations.js'
 import { loadRonda7 } from './catalogLoader.js'
+import { loadLabSources, loadRefValues } from './refLoader.js'
 import { closeVisitsOfInpatients } from './stayVisits.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '61'
+const SCHEMA_VERSION = '62'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -930,6 +931,33 @@ ALTER TABLE hosp_doses ADD COLUMN IF NOT EXISTS dose TEXT;
 ALTER TABLE exam_orders ADD COLUMN IF NOT EXISTS order_no TEXT;
 -- v61 (ronda 8). RF1: la referencia también se emite desde una consulta todavía en borrador (por su cita); al firmarla se enlaza
 ALTER TABLE referrals ADD COLUMN IF NOT EXISTS appointment_id TEXT;
+
+-- v62 (ronda 8). UM1: las 59 fuentes del .md de valores de referencia y los valores de referencia de cada examen por
+-- clínica, con su origen (catalog: «Catálogo Clinara 2026-11-02»; initial: valor inicial de Clinara; clinic: definido por
+-- la clínica) y su historial (las filas reemplazadas quedan archivadas, no se borran). Ver server/refLoader.ts.
+CREATE TABLE IF NOT EXISTS lab_sources (
+  code TEXT PRIMARY KEY,
+  citation TEXT NOT NULL,
+  urls TEXT NOT NULL DEFAULT '[]',
+  version TEXT
+);
+CREATE TABLE IF NOT EXISTS exam_ref_values (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  exam_key TEXT NOT NULL,
+  exam_name TEXT NOT NULL,
+  analyte TEXT NOT NULL DEFAULT '',
+  sex TEXT NOT NULL DEFAULT 'all' CHECK (sex IN ('all','F','M')),
+  unit TEXT NOT NULL DEFAULT '',
+  low DOUBLE PRECISION, high DOUBLE PRECISION, high_open BOOLEAN NOT NULL DEFAULT FALSE,
+  expected TEXT, note TEXT, warn BOOLEAN NOT NULL DEFAULT FALSE,
+  sources TEXT NOT NULL DEFAULT '[]',
+  origin TEXT NOT NULL CHECK (origin IN ('catalog','initial','clinic')),
+  origin_label TEXT, version TEXT, md_row TEXT, edit_note TEXT,
+  created_at TEXT NOT NULL, created_by TEXT,
+  archived_at TEXT, archived_by TEXT, archive_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS exam_ref_clinic ON exam_ref_values (clinic_id, exam_key) WHERE archived_at IS NULL;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -985,6 +1013,10 @@ export function ensureDb(sql: Sql) {
         await loadRonda7(q, String(c.id))
       }
       await markDemoClinics(q)
+      // v62 (ronda 8, UM1 y UM2): fuentes, valores de referencia del .md y umbrales críticos con su fuente, en cada clínica
+      await loadLabSources(q)
+      for (const c of await q.query('SELECT id FROM clinics')) await loadRefValues(q, String(c.id))
+      await migrateCriticalDefaults(q)
       // v57/v58 (ronda 8, CX2): nadie internado sigue a la vez en la consulta externa (idempotente)
       await closeVisitsOfInpatients(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
@@ -1378,6 +1410,9 @@ export async function ensureExamCatalog(q: Sql, clinicId: string) {
   }
   // CF3 (ronda 6) y ronda 7: una clínica nueva recibe también los subgrupos, el catálogo completo y los perfiles
   await loadRonda7(q, clinicId)
+  // UM1 (ronda 8): y los valores de referencia del .md con sus fuentes
+  await loadLabSources(q)
+  await loadRefValues(q, clinicId)
 }
 
 /**
@@ -1398,6 +1433,35 @@ export async function migrateProcedureFollowups(q: Sql) {
 }
 
 /** v47 (AD1): cada clínica recibe sus umbrales en grupos, con los mismos números que tenía. Sólo llena lo que falta. */
+/**
+ * v62 (ronda 8, UM2): los umbrales del .md pasan a ser los de cada clínica. Lo que la clínica tenía en un analito de la app
+ * (aunque lo hubiera cambiado a mano) se reemplaza por el valor predeterminado; el anterior queda en el historial del
+ * analito con el motivo, quién («Sistema») y cuándo. Idempotente: corre una vez por clínica (marca um2:<versión>).
+ */
+export async function migrateCriticalDefaults(q: Sql) {
+  const version = 'um2:2026-11-02'
+  const now = new Date().toISOString()
+  for (const c of await q.query('SELECT id, critical_groups FROM clinics')) {
+    const mark = `${version}:${c.id}`
+    if (await q.one('SELECT 1 FROM meta WHERE key = ?', [mark])) continue
+    const saved = (c.critical_groups ? JSON.parse(String(c.critical_groups)) : []) as CriticalGroup[]
+    for (const g of saved) {
+      if (g.id === 'g-farmacos') g.name = 'Fármacos (niveles séricos)'
+      for (const a of g.analytes) {
+        const d = defaultAnalyte(a.id)
+        if (!d) continue
+        const differs = a.low !== d.low || a.high !== d.high || JSON.stringify(a.f ?? null) !== JSON.stringify(d.f ?? null) || JSON.stringify(a.m ?? null) !== JSON.stringify(d.m ?? null)
+        if (differs) a.history = [...(a.history ?? []), { at: now, by: 'system', low: a.low, high: a.high, f: a.f, m: a.m, reason: 'Reemplazado por Catálogo Clinara 2026-11-02' }]
+        Object.assign(a, defaultValues(d))
+        delete a.editedAt
+        delete a.editedBy
+      }
+    }
+    await q.run('UPDATE clinics SET critical_groups = ? WHERE id = ?', [JSON.stringify(mergeCriticalGroups(saved)), String(c.id)])
+    await q.run(`INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING`, [mark, now])
+  }
+}
+
 export async function migrateCriticalGroups(q: Sql) {
   for (const c of await q.query('SELECT id, critical_limits FROM clinics WHERE critical_groups IS NULL')) {
     const limits = c.critical_limits ? JSON.parse(String(c.critical_limits)) as Record<string, { low?: number; high?: number }> : undefined
@@ -1524,7 +1588,7 @@ export async function nextFolio(q: Sql, clinicId: string, now: Date) {
 /** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
 export async function resetDemo(sql: Sql) {
   await sql.tx(async (q) => {
-    await q.exec(`TRUNCATE exam_events, exam_orders, exam_profiles, exam_catalog, addenda, note_drafts, payment_installments, staff_marks, epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
+    await q.exec(`TRUNCATE exam_ref_values, exam_events, exam_orders, exam_profiles, exam_catalog, addenda, note_drafts, payment_installments, staff_marks, epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
       attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)
     await seed(q)
@@ -1533,6 +1597,11 @@ export async function resetDemo(sql: Sql) {
     await q.run(`DELETE FROM meta WHERE key = 'office_owner_admin'`)
     await migrateOfficeOwners(q)
     await markDemoClinics(q)
+    // UM1 y UM2 (ronda 8): valores de referencia y umbrales del .md en cada clínica de la demo
+    await q.run(`DELETE FROM meta WHERE key LIKE 'um2:%'`)
+    await loadLabSources(q)
+    for (const c of await q.query('SELECT id FROM clinics')) await loadRefValues(q, String(c.id))
+    await migrateCriticalDefaults(q)
   })
 }
 

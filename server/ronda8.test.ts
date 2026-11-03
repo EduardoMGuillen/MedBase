@@ -271,7 +271,10 @@ describe('Ronda 8: umbrales críticos de la app', () => {
     const merged = mergeCriticalGroups(undefined)
     assert.equal(merged.length, DEFAULT_CRITICAL_GROUPS.length)
     const saved = structuredClone(DEFAULT_CRITICAL_GROUPS).map((g) => (g.id === 'g-electrolitos' ? { ...g, analytes: g.analytes.filter((a) => a.id !== 'a-na') } : g))
-    saved[0].analytes[0] = { ...saved[0].analytes[0], low: 6 }
+    // UM2: sin personalizar manda el de la app (aunque lo guardado diga otra cosa); personalizado, el de la clínica
+    saved[0].analytes[0] = { ...saved[0].analytes[0], low: 6, f: undefined, m: undefined }
+    assert.deepEqual(mergeCriticalGroups(saved)[0].analytes.find((a) => a.id === 'a-hb')!.f, { low: 12, high: 16 })
+    saved[0].analytes[0] = { ...saved[0].analytes[0], editedAt: new Date().toISOString(), editedBy: 's-admin' }
     const m = mergeCriticalGroups(saved)
     const hb = m[0].analytes.find((a) => a.id === 'a-hb')!
     assert.equal(hb.low, 6)
@@ -360,12 +363,82 @@ describe('UM1: valores de referencia del documento de Emil', () => {
 })
 
 describe('UM2: umbrales críticos con fuente', () => {
-  test('los de los fármacos llegan solos a la clínica, con su fuente', async () => {
-    const groups = mergeCriticalGroups([{ id: 'g-hemograma', name: 'Hemograma', analytes: [{ id: 'a-hb', name: 'Hemoglobina', low: 6 }] }])
+  test('los del .md son los de la app, por sexo, con fuente; los fármacos con su número y el operador anotado', () => {
+    const groups = mergeCriticalGroups([{ id: 'g-hemograma', name: 'Hemograma', analytes: [{ id: 'a-hb', name: 'Hemoglobina', low: 7, high: 20 }] }])
+    const hb = groups.find((g) => g.id === 'g-hemograma')!.analytes.find((a) => a.id === 'a-hb')!
+    assert.deepEqual([hb.f, hb.m, hb.sources], [{ low: 12, high: 16 }, { low: 14, high: 18 }, ['ABIM-2026']])
+    const lim = criticalLimitsOf(groups)
+    assert.ok(isCritical(lim, 'Hemoglobina', 11, 'F'), 'una paciente con Hb 11 es crítica')
+    assert.ok(!isCritical(lim, 'Hemoglobina', 13, 'F'))
+    assert.ok(isCritical(lim, 'Hemoglobina', 13, 'M'))
     const drugs = groups.find((g) => g.id === 'g-farmacos')!
-    assert.ok(drugs.analytes.every((a) => a.source))
-    assert.ok(isCritical(criticalLimitsOf(groups), 'Ácido valproico', 100))
-    assert.ok(!isCritical(criticalLimitsOf(groups), 'Ácido valproico', 99))
-    assert.ok(isCritical(criticalLimitsOf(groups), 'Litio', 2.1))
+    assert.equal(drugs.name, 'Fármacos (niveles séricos)')
+    assert.deepEqual(drugs.analytes.map((a) => [a.name, a.high, a.op]).sort(), [['Carbamazepina', 15, '≥15.0'], ['Digoxina', 2.1, '≥2.1'], ['Fenitoína', 25, '≥25.0'], ['Fenobarbital', 50, '≥50.0'], ['Litio', 2, '>2.0'], ['Ácido valproico', 100, '≥100']].sort())
+    assert.ok(isCritical(lim, 'Digoxina', 2.5) && !isCritical(lim, 'Digoxina', 1.2))
+    const plaq = groups.flatMap((g) => g.analytes).find((a) => a.name === 'Plaquetas')!
+    assert.deepEqual([plaq.low, plaq.high, plaq.unit], [150, 450, '×10³/µL'])
+    // La glucosa (categorías) no es umbral del .md: queda el inicial sin fuente
+    assert.deepEqual(groups.flatMap((g) => g.analytes).find((a) => a.name === 'Glucosa')!.sources, ['initial'])
+  })
+
+  test('la migración reemplaza lo de la clínica (queda en el historial) y es idempotente; personalizar y restablecer', async () => {
+    const { migrateCriticalDefaults } = await import('./db.js')
+    await sql.run(`UPDATE clinics SET critical_groups = ? WHERE id = 'c-sb'`, [JSON.stringify([{ id: 'g-hemograma', name: 'Hemograma', analytes: [{ id: 'a-hb', name: 'Hemoglobina', unit: 'g/dL', low: 7, high: 20 }] }])])
+    await sql.run(`DELETE FROM meta WHERE key LIKE 'um2:%:c-sb'`)
+    await migrateCriticalDefaults(sql)
+    const after = JSON.parse(String((await sql.one(`SELECT critical_groups FROM clinics WHERE id = 'c-sb'`))!.critical_groups))
+    const hb = after.find((g: any) => g.id === 'g-hemograma').analytes.find((a: any) => a.id === 'a-hb')
+    assert.deepEqual(hb.f, { low: 12, high: 16 })
+    assert.equal(hb.history[0].low, 7)
+    const again = String((await sql.one(`SELECT critical_groups FROM clinics WHERE id = 'c-sb'`))!.critical_groups)
+    await migrateCriticalDefaults(sql)
+    assert.equal(String((await sql.one(`SELECT critical_groups FROM clinics WHERE id = 'c-sb'`))!.critical_groups), again, 'la segunda vez no cambia nada')
+    // Personalizar la digoxina: queda con quién y cuándo; «Restablecer» la devuelve
+    const admin = await as('admin@demo.clinara')
+    const groups = (await admin.get('/api/bootstrap')).body.settings.criticalGroups ?? mergeCriticalGroups(after)
+    const set = (high: number, reset?: boolean) => mergeCriticalGroups(groups).map((g: any) => ({ ...g, analytes: g.analytes.map((a: any) => (a.id === 'a-digoxina' ? { ...a, high, reset } : a)) }))
+    const r1 = await admin.put('/api/settings/critical-groups', { groups: set(3) })
+    assert.equal(r1.status, 200, JSON.stringify(r1.body))
+    const dig = mergeCriticalGroups(r1.body.criticalGroups).flatMap((g: any) => g.analytes).find((a: any) => a.id === 'a-digoxina')!
+    assert.equal(dig.high, 3)
+    assert.ok(dig.editedAt && dig.editedBy)
+    const r2 = await admin.put('/api/settings/critical-groups', { groups: set(3, true) })
+    const dig2 = mergeCriticalGroups(r2.body.criticalGroups).flatMap((g: any) => g.analytes).find((a: any) => a.id === 'a-digoxina')!
+    assert.equal(dig2.high, 2.1)
+    assert.equal(dig2.editedAt, undefined)
+    // Un médico de la clínica que no es Administración no puede (por URL directa)
+    assert.equal((await (await as('lherrera@demo.clinara')).put('/api/settings/critical-groups', { groups: set(3) })).status, 403)
+  })
+})
+
+describe('UM1: carga en la base', () => {
+  test('cada clínica tiene los valores del .md con su fuente; la carga es idempotente y no pisa lo editado', async () => {
+    const { loadRefValues } = await import('./refLoader.js')
+    const hb = await sql.query(`SELECT * FROM exam_ref_values WHERE clinic_id = 'c-sb' AND exam_key = 'hemograma' AND analyte = 'Hemoglobina' AND archived_at IS NULL ORDER BY sex`)
+    assert.deepEqual(hb.map((r) => [r.sex, Number(r.low), Number(r.high), JSON.parse(String(r.sources))[0]]), [['F', 12, 16, 'ABIM-2026'], ['M', 14, 18, 'ABIM-2026']])
+    // La creatinina que traía la app queda en el historial
+    const old = await sql.one(`SELECT * FROM exam_ref_values WHERE clinic_id = 'c-sb' AND exam_key = 'creatinina' AND origin = 'initial'`)
+    assert.ok(old?.archived_at)
+    assert.equal(Number(old!.low), 0.6)
+    const count = async () => Number((await sql.one(`SELECT COUNT(*)::int AS n FROM exam_ref_values WHERE clinic_id = 'c-sb'`))!.n)
+    const before = await count()
+    const rep = await loadRefValues(sql, 'c-sb')
+    assert.equal(rep.inserted, 0, 'la segunda vez no inserta nada')
+    assert.equal(await count(), before)
+    // La clínica edita la TSH; una carga futura no la pisa
+    const admin = await as('admin@demo.clinara')
+    const cat = (await admin.get('/api/exams/catalog')).body.exams.find((e: any) => e.name === 'TSH')
+    const row = cat.refs.find((r: any) => r.analyte === 'TSH')
+    const ed = await admin.put(`/api/exams/catalog/${cat.id}/refs`, { comment: 'Rango del laboratorio', rows: [{ ...row, low: 0.4, high: 4.5 }] })
+    assert.equal(ed.status, 200, JSON.stringify(ed.body))
+    assert.deepEqual(ed.body.map((r: any) => [r.low, r.origin, r.sources[0]]), [[0.4, 'clinic', 'clinic']])
+    await sql.run(`DELETE FROM exam_ref_values WHERE clinic_id = 'c-sb' AND exam_key = 'hemograma' AND analyte = 'Hemoglobina' AND sex = 'F'`)
+    await loadRefValues(sql, 'c-sb')
+    const tsh = await sql.query(`SELECT * FROM exam_ref_values WHERE clinic_id = 'c-sb' AND exam_key = 'tsh' AND archived_at IS NULL`)
+    assert.deepEqual(tsh.map((r) => [Number(r.low), r.origin]), [[0.4, 'clinic']])
+    // Las fuentes están en su tabla
+    assert.equal(Number((await sql.one('SELECT COUNT(*)::int AS n FROM lab_sources'))!.n), 59)
+    // Un médico que no es Administración no edita
+    assert.equal((await (await as('lherrera@demo.clinara')).put(`/api/exams/catalog/${cat.id}/refs`, { rows: [] })).status, 403)
   })
 })

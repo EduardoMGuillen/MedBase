@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Archive, ChevronDown, Pencil, Plus, RotateCcw } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { customized, defaultAnalyte, mergeCriticalGroups, type CriticalAnalyte, type CriticalGroup } from '../lib/clinicalConfig'
+import { customized, defaultAnalyte, defaultValues, mergeCriticalGroups, type CriticalAnalyte, type CriticalGroup } from '../lib/clinicalConfig'
+import { SourceTag } from '../components/SourceTag'
+import { dmyTime } from '../lib/format'
 import { examCatalog, EXAMS } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { parseDecimal } from '../lib/vitals'
@@ -22,7 +24,7 @@ function restored<T extends { archivedAt?: string }>(x: T): T {
  * src/lib/clinicalConfig.ts; lo que se guarda aquí manda sobre ellos.
  */
 export function CriticalThresholds() {
-  const { settings, saveCriticalGroups } = useStore()
+  const { settings, saveCriticalGroups, staffById } = useStore()
   // Ronda 8: los de la app con lo que la clínica cambió encima (y los nuevos de la app, solos)
   const saved = useMemo(() => mergeCriticalGroups(settings.criticalGroups), [settings.criticalGroups])
   const [groups, setGroups] = useState<CriticalGroup[]>(() => structuredClone(saved))
@@ -39,18 +41,25 @@ export function CriticalThresholds() {
 
   const setGroup = (id: string, f: (g: CriticalGroup) => CriticalGroup) => setGroups((gs) => gs.map((g) => (g.id === id ? f(g) : g)))
   const setAnalyte = (gid: string, aid: string, f: (a: CriticalAnalyte) => CriticalAnalyte) => setGroup(gid, (g) => ({ ...g, analytes: g.analytes.map((a) => (a.id === aid ? f(a) : a)) }))
-  const setLimit = (gid: string, a: CriticalAnalyte, side: 'low' | 'high', raw: string) => {
-    setText({ ...text, [`${a.id}-${side}`]: raw })
+  // UM2 (ronda 8): límites generales o, si el valor distingue sexo, de mujeres (f) y de hombres (m)
+  type Who = '' | 'f' | 'm'
+  const tkey = (a: CriticalAnalyte, who: Who, side: 'low' | 'high') => `${a.id}-${who}${side}`
+  const valueAt = (a: CriticalAnalyte, who: Who, side: 'low' | 'high') => (who ? a[who]?.[side] : a[side])
+  const setLimit = (gid: string, a: CriticalAnalyte, side: 'low' | 'high', raw: string, who: Who = '') => {
+    setText({ ...text, [tkey(a, who, side)]: raw })
     const v = parseDecimal(raw)
-    if (v === undefined || !Number.isNaN(v)) setAnalyte(gid, a.id, (x) => ({ ...x, [side]: v }))
+    if (v === undefined || !Number.isNaN(v)) setAnalyte(gid, a.id, (x) => (who ? { ...x, [who]: { ...x[who], [side]: v } } : { ...x, [side]: v }))
   }
-  const field = (a: CriticalAnalyte, side: 'low' | 'high') => text[`${a.id}-${side}`] ?? num(a[side])
-  const bad = (a: CriticalAnalyte, side: 'low' | 'high') => { const t = text[`${a.id}-${side}`]; return t != null && Number.isNaN(parseDecimal(t)) }
+  const field = (a: CriticalAnalyte, side: 'low' | 'high', who: Who = '') => text[tkey(a, who, side)] ?? num(valueAt(a, who, side))
+  const bad = (a: CriticalAnalyte, side: 'low' | 'high', who: Who = '') => { const t = text[tkey(a, who, side)]; return t != null && Number.isNaN(parseDecimal(t)) }
+  const sexed = (a: CriticalAnalyte) => !!(a.f || a.m)
+  const noLimits = (a: CriticalAnalyte) => a.low == null && a.high == null && a.f?.low == null && a.f?.high == null && a.m?.low == null && a.m?.high == null
+  const wrongOrder = (a: CriticalAnalyte) => [a, a.f, a.m].some((l) => l?.low != null && l?.high != null && l.low > l.high)
   // Un analito tiene un solo umbral: no se repite entre los activos
   const key = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
   const activeNames = groups.filter((g) => !g.archivedAt).flatMap((g) => g.analytes.filter((a) => !a.archivedAt).map((a) => key(a.name)))
   const repeated = (a: CriticalAnalyte) => !a.archivedAt && !!a.name.trim() && activeNames.filter((n) => n === key(a.name)).length > 1
-  const invalid = groups.some((g) => !g.name.trim() || g.analytes.some((a) => !a.name.trim() || bad(a, 'low') || bad(a, 'high') || repeated(a) || (a.low != null && a.high != null && a.low >= a.high)))
+  const invalid = groups.some((g) => !g.name.trim() || g.analytes.some((a) => !a.name.trim() || (['', 'f', 'm'] as Who[]).some((w) => bad(a, 'low', w) || bad(a, 'high', w)) || repeated(a) || wrongOrder(a)))
   const now = () => new Date().toISOString()
 
   const save = async () => {
@@ -68,7 +77,7 @@ export function CriticalThresholds() {
   return (
     <section className="panel crit">
       <div className="panel__head" style={{ flexWrap: 'wrap', gap: 10 }}>
-        <div><h2>Umbrales críticos de laboratorio</h2><p>Un resultado fuera de estos valores avisa al médico como crítico. La app ya trae los umbrales establecidos, con su fuente; la clínica puede cambiar cualquiera y volver al de la app cuando quiera. Organizados por grupo, como vienen del laboratorio.</p></div>
+        <div><h2>Umbrales críticos de laboratorio</h2><p>Un resultado fuera de estos valores avisa al médico como crítico. La app ya trae los umbrales establecidos, con su fuente; la clínica puede cambiar cualquiera («Personalizado») y restablecerlo cuando quiera. Organizados por grupo, como vienen del laboratorio. Se compara «menor de» y «mayor de» sin incluir el número.</p></div>
         <button className="btn btn--soft btn--sm" onClick={addGroup}><Plus size={15} />Agregar grupo</button>
       </div>
       <datalist id="crit-analytes">{suggestions.map((s) => <option key={s} value={s} />)}</datalist>
@@ -95,7 +104,7 @@ export function CriticalThresholds() {
               <div className="crit__rows" role="table" aria-label={`Umbrales de ${g.name}`}>
                 <div className="crit__row crit__row--head" role="row">
                   <span role="columnheader">Analito</span><span role="columnheader">Unidad</span>
-                  <span role="columnheader">Crítico si es menor de</span><span role="columnheader">Crítico si es mayor de</span><span />
+                  <span role="columnheader">Crítico si es menor de</span><span role="columnheader">Crítico si es mayor de</span><span role="columnheader">Fuente</span><span />
                 </div>
                 {list.map((a) => (
                   <div key={a.id} className={`crit__row${a.archivedAt ? ' is-archived' : ''}`} role="row">
@@ -104,25 +113,35 @@ export function CriticalThresholds() {
                     <input className="input crit__unit" value={a.unit ?? ''} placeholder="Sin unidad" aria-label={`${a.name}: unidad`} disabled={!!a.archivedAt}
                       onChange={(e) => setAnalyte(g.id, a.id, (x) => ({ ...x, unit: e.target.value }))} />
                     {(['low', 'high'] as const).map((side) => (
-                      <label key={side} className={`crit__lim crit__${side}`}><span className="crit__lbl">{side === 'low' ? 'Menor de' : 'Mayor de'}</span>
-                        <input className={`input num${bad(a, side) ? ' input--blank' : ''}`} inputMode="decimal" value={field(a, side)} placeholder="No aplica" disabled={!!a.archivedAt}
-                          aria-label={`${a.name}: crítico si es ${side === 'low' ? 'menor' : 'mayor'} de`} aria-invalid={bad(a, side)} onChange={(e) => setLimit(g.id, a, side, e.target.value)} /></label>
+                      <div key={side} className={`crit__lim crit__${side}`}><span className="crit__lbl">{side === 'low' ? 'Menor de' : 'Mayor de'}</span>
+                        {(sexed(a) ? (['f', 'm'] as Who[]) : ([''] as Who[])).map((who) => (
+                          <label key={who} className="crit__sex">{who && <small>{who === 'f' ? 'Mujeres' : 'Hombres'}</small>}
+                            <input className={`input num${bad(a, side, who) ? ' input--blank' : ''}`} inputMode="decimal" value={field(a, side, who)} placeholder="No aplica" disabled={!!a.archivedAt}
+                              aria-label={`${a.name}${who ? (who === 'f' ? ' (mujeres)' : ' (hombres)') : ''}: crítico si es ${side === 'low' ? 'menor' : 'mayor'} de`} aria-invalid={bad(a, side, who)}
+                              onChange={(e) => setLimit(g.id, a, side, e.target.value, who)} /></label>
+                        ))}
+                      </div>
                     ))}
+                    <span className="crit__srccell">{defaultAnalyte(a.id) ? <SourceTag codes={defaultAnalyte(a.id)!.sources} /> : a.name.trim() ? <span className="src-tag src-tag--none">Agregado por la clínica</span> : null}</span>
                     {a.archivedAt
                       ? <button type="button" className="icon-btn crit__btn" title="Restaurar" aria-label={`Restaurar ${a.name}`} onClick={() => setAnalyte(g.id, a.id, restored)}><RotateCcw size={15} /></button>
                       : <button type="button" className="icon-btn crit__btn" title="Archivar" aria-label={`Archivar ${a.name}`} onClick={() => setAnalyte(g.id, a.id, (x) => ({ ...x, archivedAt: now() }))}><Archive size={15} /></button>}
                     {(() => {
-                      // Ronda 8: la fuente del umbral de la app y, si la clínica lo cambió, el valor original para volver a él
+                      // UM2 (ronda 8): «Personalizado» (quién y cuándo) con «Restablecer»; el operador de la fuente; sin umbral
                       const d = defaultAnalyte(a.id)
-                      if (!d) return a.name.trim() ? <small className="crit__src">Agregado por la clínica.</small> : null
-                      const lim = (x?: number) => (x == null ? 'no aplica' : String(x))
+                      const who = a.editedBy ? staffById(a.editedBy)?.name : undefined
                       return <small className="crit__src">
-                        {customized(a) && <><span className="badge badge--amber">Cambiado por la clínica</span> Valor de la app: menor de {lim(d.low)}, mayor de {lim(d.high)}{d.unit ? ` ${d.unit}` : ''}.{' '}
-                          {!a.archivedAt && <button type="button" className="link-btn" onClick={() => { setText((t) => { const n = { ...t }; delete n[`${a.id}-low`]; delete n[`${a.id}-high`]; return n }); setAnalyte(g.id, a.id, (x) => ({ ...x, low: d.low, high: d.high, unit: d.unit })) }}>Volver al de la app</button>}{' '}</>}
-                        {d.source ? `Fuente: ${d.source}` : 'Umbral de la app. La lista de valores de referencia de Emil no trae un valor crítico para este analito.'}
+                        {noLimits(a) && <span className="muted">Sin umbral crítico definido. </span>}
+                        {d && customized(a) && <><span className="badge badge--amber">Personalizado</span> {who ? `por ${who}, ` : ''}{a.editedAt ? dmyTime(a.editedAt) : ''}.{' '}
+                          {!a.archivedAt && <button type="button" className="link-btn" onClick={() => {
+                            setText((t) => Object.fromEntries(Object.entries(t).filter(([k]) => !k.startsWith(`${a.id}-`))))
+                            setAnalyte(g.id, a.id, (x) => ({ ...x, ...defaultValues(d), editedAt: undefined, reset: true } as CriticalAnalyte))
+                          }}>Restablecer</button>}{' '}</>}
+                        {d?.op && <>La fuente dice «{d.op}»; la app avisa si es mayor de {d.high}. </>}
+                        {d?.sources?.includes('initial') && <>Valor inicial de Clinara (sin fuente) · VALIDAR: Emil. </>}
                       </small>
                     })()}
-                    {a.low != null && a.high != null && a.low >= a.high && <small className="crit__err">El límite inferior debe ser menor que el superior.</small>}
+                    {wrongOrder(a) && <small className="crit__err">El límite inferior no puede ser mayor que el superior.</small>}
                     {repeated(a) && <small className="crit__err">{a.name} ya está en la lista: un analito tiene un solo umbral.</small>}
                   </div>
                 ))}

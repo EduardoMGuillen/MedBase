@@ -1,7 +1,7 @@
 import type { ExamGroup, ExamOrder, ExamStatus } from './types'
 import { EXISTING_SUBGROUP, LAB_AREAS, LAB_ORDER, SECTION_SEP } from './labCatalog.js'
 import { XRAY_PREFIXES, XRAY_SUBGROUPS } from './clinicalConfig.js'
-import { referenceOf, type LabReference, type RefAnalyte } from './labReference.js'
+import { referenceFromRows, referenceOf, type LabReference, type RefAnalyte, type RefRow } from './labReference.js'
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 export const examKey = (name: string) => norm(name)
@@ -32,9 +32,10 @@ export interface CatalogExam {
 }
 
 /** UM1 (ronda 8): los valores de referencia del documento de Emil reemplazan los analitos que el examen ya tuviera. */
-export function withReference<T extends CatalogExam>(e: T): T {
+export function withReference<T extends CatalogExam>(e: T, rows?: RefRow[]): T {
   if (e.group !== 'lab') return e
-  const ref = referenceOf(e.name)
+  // Las filas de la clínica (su base) mandan; si no llegaron, las del archivo
+  const ref = rows?.length ? referenceFromRows(rows) : referenceOf(e.name)
   return ref ? { ...e, reference: ref, analytes: ref.analytes ?? e.analytes } : e
 }
 
@@ -268,7 +269,7 @@ export function examCatalog(clinicExams: { group: ExamGroup; name: string; id: s
   const all: CatalogExam[] = !clinicExams.length ? EXAMS.map((e) => withReference({ ...e, subgroup: subgroupOf(e) })) : clinicExams.filter((e) => e.active).map((e) => {
     const base = e.baseKey ? EXAMS.find((b) => examKey(b.name) === e.baseKey) : undefined
     // UM1: por su nombre o, si la clínica lo renombró, por el de la lista fija
-    const own = withReference({ ...(base ?? {}), group: e.group, name: e.name, clinicId: base ? undefined : e.id, subgroup: subgroupOf(e) })
+    const own = withReference({ ...(base ?? {}), group: e.group, name: e.name, clinicId: base ? undefined : e.id, subgroup: subgroupOf(e) }, (e as { refs?: RefRow[] }).refs)
     return own.reference || !base ? own : { ...withReference({ ...base }), group: e.group, name: e.name, clinicId: undefined, subgroup: subgroupOf(e) }
   }).sort((a, b) => a.name.localeCompare(b.name, 'es'))
   const f = new Set(favs.map(examKey))

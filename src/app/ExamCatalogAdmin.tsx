@@ -9,6 +9,8 @@ import { byArea, EXAMS, examKey, GROUP_LABEL, SUBGROUPS, subgroupOf } from '../l
 import { normalize } from '../lib/patients'
 import { rangeText, referenceOf, type LabReference } from '../lib/labReference'
 import { ReferenceNote } from './ExamsTab'
+import { SourceTag } from '../components/SourceTag'
+import { dmyTime } from '../lib/format'
 import type { ClinicExam, ExamGroup } from '../lib/types'
 
 /**
@@ -143,7 +145,82 @@ function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () =
       <label className="field"><span>Subgrupo</span>
         <select className="select" value={subgroup} onChange={(e) => setSubgroup(e.target.value)}>{options.map((o) => <option key={o}>{o}</option>)}</select>
         <small className="muted">Así se agrupa al ordenar exámenes y en este catálogo.</small></label>
+      {exam && exam.group === 'lab' && <RefEditor exam={exam} onSaved={onSaved} />}
     </Modal>
+  )
+}
+
+type Ref = NonNullable<ClinicExam['refs']>[number]
+type RefDraft = { id?: string; analyte: string; sex: 'all' | 'F' | 'M'; unit: string; low: string; high: string; highOpen: boolean; expected: string; note: string; archive?: boolean }
+const toDraft = (r: Ref): RefDraft => ({ id: r.id, analyte: r.analyte ?? '', sex: r.sex, unit: r.unit, low: r.low == null ? '' : String(r.low), high: r.high == null ? '' : String(r.high), highOpen: !!r.highOpen, expected: r.expected ?? '', note: r.note ?? '' })
+const SEX_LABEL = { all: 'Todos', F: 'Mujeres', M: 'Hombres' } as const
+
+/**
+ * UM1 (ronda 8): valores de referencia del examen, editables. Cada rango muestra su fuente (etiqueta que abre la cita y el
+ * enlace); al editar, la fuente pasa a «Definido por la clínica», con una nota opcional, y el valor anterior queda en el
+ * historial. Una carga futura del .md ya no pisa lo editado.
+ */
+function RefEditor({ exam, onSaved }: { exam: ClinicExam; onSaved: () => void }) {
+  const { notify, staffById } = useStore()
+  const initial = (exam.refs ?? []).map(toDraft)
+  const [rows, setRows] = useState<RefDraft[]>(initial)
+  const [comment, setComment] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [history, setHistory] = useState<(Ref & { archivedAt?: string; archivedBy?: string; archiveReason?: string })[] | null>(null)
+  const dirty = JSON.stringify(rows) !== JSON.stringify(initial)
+  const n = (t: string) => (t.trim() === '' ? undefined : Number(t.replace(',', '.')))
+  const bad = rows.some((r) => [r.low, r.high].some((t) => t.trim() && Number.isNaN(n(t)!)))
+  const set = (i: number, patch: Partial<RefDraft>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  const save = async () => {
+    setBusy(true)
+    try {
+      await api(`/exams/catalog/${exam.id}/refs`, { method: 'PUT', body: { comment: comment.trim() || undefined, rows: rows.filter((r) => r.id || r.analyte.trim() || r.expected.trim()).map((r) => ({
+        id: r.id, analyte: r.analyte.trim() || undefined, sex: r.sex, unit: r.unit.trim(), low: n(r.low), high: n(r.high), highOpen: r.highOpen || undefined,
+        expected: r.expected.trim() || undefined, note: r.note.trim() || undefined, archive: r.archive || undefined })) } })
+      notify('Valores de referencia guardados')
+      onSaved()
+    } catch (e) { notify((e as Error).message, 'error') } finally { setBusy(false) }
+  }
+  const refOf = (r: RefDraft) => (exam.refs ?? []).find((x) => x.id === r.id)
+  return (
+    <fieldset className="fs refed">
+      <legend>Valores de referencia</legend>
+      <p className="muted" style={{ fontSize: 13 }}>Referencia general; el rango oficial es el del laboratorio que emite el resultado.</p>
+      {!rows.length && <p className="muted">Sin valores de referencia.</p>}
+      <div className="refed__rows">{rows.map((r, i) => {
+        const cur = refOf(r)
+        return (
+          <div key={r.id ?? `new-${i}`} className={`refed__row${r.archive ? ' is-archived' : ''}`}>
+            <div className="refed__head">
+              {r.id ? <b>{r.analyte || 'Resultado esperado'}</b> : <input className="input" value={r.analyte} onChange={(e) => set(i, { analyte: e.target.value })} placeholder="Analito (vacío: resultado esperado)" aria-label="Analito" />}
+              {r.id ? <span className="badge">{SEX_LABEL[r.sex]}</span> : <select className="select" value={r.sex} onChange={(e) => set(i, { sex: e.target.value as RefDraft['sex'] })} aria-label="Sexo">{(['all', 'F', 'M'] as const).map((x) => <option key={x} value={x}>{SEX_LABEL[x]}</option>)}</select>}
+              {cur?.warn && <span className="badge badge--amber" title="Revisa la unidad que usa tu laboratorio">⚠️ Revisar unidad</span>}
+              <SourceTag codes={cur ? cur.sources : ['clinic']} />
+              {cur?.origin === 'clinic' && <small className="muted">Editado por la clínica{cur.editedBy ? ` (${staffById(cur.editedBy)?.name ?? ''})` : ''}</small>}
+              {r.id && <button type="button" className="link-btn" onClick={() => set(i, { archive: !r.archive })}>{r.archive ? 'No archivar' : 'Archivar'}</button>}
+            </div>
+            {(r.analyte || !r.expected) && <div className="refed__nums">
+              <label className="field"><span>Mínimo</span><input className="input num" inputMode="decimal" value={r.low} onChange={(e) => set(i, { low: e.target.value })} placeholder="Sin mínimo" /></label>
+              <label className="field"><span>Máximo</span><input className="input num" inputMode="decimal" value={r.high} onChange={(e) => set(i, { high: e.target.value })} placeholder="Sin máximo" /></label>
+              <label className="check-inline" style={{ alignSelf: 'end' }}><input type="checkbox" checked={r.highOpen} onChange={(e) => set(i, { highOpen: e.target.checked })} />«menor que» (sin incluir el máximo)</label>
+              <label className="field"><span>Unidad</span><input className="input" value={r.unit} onChange={(e) => set(i, { unit: e.target.value })} /></label>
+            </div>}
+            <label className="field"><span>{r.analyte ? 'Texto de referencia (categorías, por edad o fase)' : 'Resultado esperado'}</span>
+              <input className="input" value={r.expected} onChange={(e) => set(i, { expected: e.target.value })} /></label>
+            {r.note && <small className="muted">{r.note}</small>}
+          </div>
+        )
+      })}</div>
+      <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => setRows([...rows, { analyte: '', sex: 'all', unit: '', low: '', high: '', highOpen: false, expected: '', note: '' }])}><Plus size={14} />Agregar valor</button>
+      <label className="field"><span>Nota del cambio (opcional)</span><input className="input" value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Ej. Rango del laboratorio de la clínica" /></label>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" className="btn btn--primary btn--sm" disabled={!dirty || bad || busy} onClick={save}>Guardar valores de referencia</button>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={async () => setHistory(history ? null : await api(`/exams/catalog/${exam.id}/refs/history`))}>{history ? 'Ocultar historial' : 'Ver historial'}</button>
+      </div>
+      {history && <ul className="refed__hist">{history.filter((h) => h.archivedAt).map((h) => (
+        <li key={h.id}><b>{h.analyte || 'Resultado esperado'}</b>{h.sex !== 'all' ? ` (${SEX_LABEL[h.sex]})` : ''}: {h.expected ?? rangeText(h)} {h.unit} · {h.originLabel} · {h.archiveReason} el {dmyTime(h.archivedAt!)}{h.archivedBy ? ` por ${staffById(h.archivedBy)?.name ?? ''}` : ''}</li>
+      ))}{!history.some((h) => h.archivedAt) && <li className="muted">Sin cambios anteriores.</li>}</ul>}
+    </fieldset>
   )
 }
 

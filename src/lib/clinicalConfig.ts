@@ -16,6 +16,8 @@
  *   catálogo base de exámenes (src/lib/exams.ts, `EXAMS`).
  */
 import type { VitalKey } from './vitals.js'
+import { GENERATED } from './labRef/generated.js'
+import type { RefThreshold } from './labRef/build.js'
 
 /** [mínimo, máximo] aceptable; `null` es sin límite de ese lado. */
 export type Range = readonly [number | null, number | null]
@@ -102,39 +104,75 @@ export const REFERRAL_FOOTER = 'Documento confidencial. Contiene información cl
 /** RF1. VALIDAR: Emil. Texto de la casilla obligatoria antes de firmar la referencia. */
 export const REFERRAL_CONSENT = 'El paciente (o su representante) fue informado de la referencia y está de acuerdo en que su información clínica se comparta con el centro receptor.'
 
-/** Un analito con su umbral crítico. Un límite vacío es «No aplica». */
-export interface CriticalAnalyte { id: string; name: string; unit?: string; low?: number; high?: number; archivedAt?: string
-  /** Ronda 8: la fuente del umbral que trae la app (referencia bibliográfica). Los que agrega la clínica no la tienen. */
-  source?: string }
+/** Un límite crítico: «Crítico si es menor de» (`low`) y «Crítico si es mayor de» (`high`). */
+export interface Limits { low?: number; high?: number }
+
+/** Un analito con su umbral crítico. Un límite vacío es «No aplica»; sin ninguno, «Sin umbral crítico definido». */
+export interface CriticalAnalyte {
+  id: string; name: string; unit?: string; low?: number; high?: number; archivedAt?: string
+  /** UM2 (ronda 8): por sexo, cuando el valor de la fuente lo distingue (se compara con el sexo del paciente). */
+  f?: Limits; m?: Limits
+  /** UM2: fuentes del valor que trae la app (códigos de LAB_SOURCES), «initial» o ninguna (lo agregó la clínica). */
+  sources?: string[]
+  /** Texto de la fuente (compatibilidad con la ronda 8 v1). */
+  source?: string
+  /** UM2: operador original de la fuente cuando no es el de la pantalla («≥100»; la app compara «mayor de», >). */
+  op?: string
+  /** UM2: personalizado por la clínica (quién y cuándo). Sin esto, manda el valor predeterminado de la app. */
+  editedBy?: string; editedAt?: string
+  /** UM2: valores anteriores (no se borran). */
+  history?: { at: string; by: string; low?: number; high?: number; f?: Limits; m?: Limits; reason: string }[]
+}
 /** Grupo de analitos («Hemograma», «Química sanguínea»…), como vienen los resultados del laboratorio. */
 export interface CriticalGroup { id: string; name: string; archivedAt?: string; analytes: CriticalAnalyte[] }
 
-const an = (id: string, name: string, unit: string, low?: number, high?: number): CriticalAnalyte => ({ id, name, unit: unit || undefined, low, high })
+const an = (id: string, name: string, unit: string, low?: number, high?: number): CriticalAnalyte => ({ id, name, unit: unit || undefined, low, high, sources: ['initial'] })
+const slug = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
 
-/**
- * VALIDAR POR EMIL. Umbrales críticos de laboratorio por grupo. Son los mismos números que había antes de la ronda 5
- * (la lista plana `DEFAULT_CRITICAL`), sólo repartidos en grupos y con su unidad. Ronda 8: aquí va la lista completa del
- * catálogo con la fuente de cada umbral (`source`), cuando llegue el .md de Emil; las clínicas la reciben sola
- * (`mergeCriticalGroups`) sin perder lo que cambiaron.
- */
-export const DEFAULT_CRITICAL_GROUPS: CriticalGroup[] = [
+/** Los umbrales que la app traía antes de la ronda 8 (ids estables: las clínicas los tienen guardados). */
+const INITIAL_GROUPS: CriticalGroup[] = [
   { id: 'g-hemograma', name: 'Hemograma', analytes: [an('a-hb', 'Hemoglobina', 'g/dL', 7, 20), an('a-plaq', 'Plaquetas', '×10³/µL', 50, 1000), an('a-leu', 'Leucocitos', '×10³/µL', 2, 30)] },
   { id: 'g-quimica', name: 'Química sanguínea', analytes: [an('a-glu', 'Glucosa', 'mg/dL', 50, 400), an('a-cr', 'Creatinina', 'mg/dL', undefined, 5)] },
   { id: 'g-electrolitos', name: 'Electrolitos', analytes: [an('a-k', 'Potasio', 'mEq/L', 2.8, 6.2), an('a-na', 'Sodio', 'mEq/L', 120, 160)] },
   { id: 'g-coagulacion', name: 'Coagulación', analytes: [an('a-inr', 'INR', '', undefined, 5)] },
   { id: 'g-cardiacos', name: 'Marcadores cardíacos', analytes: [an('a-trop', 'Troponina I', 'ng/mL', undefined, 0.4)] },
   { id: 'g-otros', name: 'Otros', analytes: [an('a-ph', 'pH', '', 7.2, 7.6)] },
-  // UM2 (ronda 8): los únicos valores críticos que trae la lista de Emil (docs/ronda8/valores_referencia_laboratorio.md), con
-  // su fuente. La lista dice «≥100»: la pantalla dice «Crítico si es mayor de», así que va el valor anterior (99.9). VALIDAR: Emil.
-  { id: 'g-farmacos', name: 'Fármacos (niveles)', analytes: [
-    { ...an('a-valproico', 'Ácido valproico', 'µg/mL', undefined, 99.9), source: 'MSD-TDM (valor crítico ≥100)' },
-    { ...an('a-carbamazepina', 'Carbamazepina', 'µg/mL', undefined, 14.9), source: 'MSD-TDM (valor crítico ≥15.0)' },
-    { ...an('a-digoxina', 'Digoxina', 'ng/mL', undefined, 2.0), source: 'MSD-TDM (valor crítico ≥2.1)' },
-    { ...an('a-fenitoina', 'Fenitoína', 'µg/mL', undefined, 24.9), source: 'MSD-TDM (valor crítico ≥25.0)' },
-    { ...an('a-fenobarbital', 'Fenobarbital', 'µg/mL', undefined, 49.9), source: 'MSD-TDM (valor crítico ≥50.0)' },
-    { ...an('a-litio', 'Litio', 'mmol/L', undefined, 2.0), source: 'CHI-TDM (valor de pánico >2.0)' },
-  ] },
 ]
+
+/** Los fármacos que la ronda 8 (primera versión) ya había puesto: conservan su identificador. */
+const LEGACY_IDS: Record<string, string> = { 'Ácido valproico': 'a-valproico', 'Carbamazepina': 'a-carbamazepina', 'Digoxina': 'a-digoxina', 'Fenitoína': 'a-fenitoina', 'Fenobarbital': 'a-fenobarbital', 'Litio': 'a-litio' }
+
+/** Los umbrales iniciales que el .md reemplaza (para el historial «antes → ahora» de la carga). */
+export const INITIAL_CRITICAL: Record<string, Limits & { name: string; unit?: string }> = Object.fromEntries(INITIAL_GROUPS.flatMap((g) => g.analytes.map((a) => [a.id, { name: a.name, unit: a.unit, low: a.low, high: a.high }])))
+
+/**
+ * UM2 (ronda 8). VALIDAR: Emil. Umbrales críticos de la app: por decisión de Emil (A9), el rango normal de cada analito
+ * numérico del .md de valores de referencia (por sexo cuando lo distingue) y los 6 valores críticos de fármacos (Anexo A),
+ * con su fuente. Salen del archivo por el script (src/lib/labRef/generated.ts). RIESGO CLÍNICO: todo valor fuera del rango
+ * normal sale como crítico. Los iniciales que el .md no trae (Glucosa 50/400, pH 7.2/7.6) quedan como «Valor inicial de
+ * Clinara (sin fuente)». Una clínica nueva nace con todos.
+ */
+export const DEFAULT_CRITICAL_GROUPS: CriticalGroup[] = (() => {
+  const groups: CriticalGroup[] = structuredClone(INITIAL_GROUPS)
+  const byName = new Map(groups.flatMap((g) => g.analytes.map((a) => [a.name, a] as const)))
+  const fromFile = new Map<string, RefThreshold[]>()
+  for (const t of GENERATED.thresholds as RefThreshold[]) fromFile.set(t.analyte, [...(fromFile.get(t.analyte) ?? []), t])
+  for (const [name, list] of fromFile) {
+    const base = list[0]
+    const f = list.find((t) => t.sex === 'F')
+    const m = list.find((t) => t.sex === 'M')
+    const all = list.find((t) => t.sex === 'all')
+    const values: Partial<CriticalAnalyte> = { unit: base.unit || undefined, low: all?.low, high: all?.high, f: f && { low: f.low, high: f.high }, m: m && { low: m.low, high: m.high },
+      sources: [...new Set(list.flatMap((t) => t.sources))], op: base.op }
+    const existing = byName.get(name)
+    if (existing) { Object.assign(existing, values); continue }
+    const gid = base.group.startsWith('Fármacos') ? 'g-farmacos' : `g-um2-${slug(base.group)}`
+    let g = groups.find((x) => x.id === gid) ?? groups.find((x) => x.name.toLowerCase() === base.group.toLowerCase())
+    if (!g) { g = { id: gid, name: base.group, analytes: [] }; groups.push(g) }
+    g.analytes.push({ id: LEGACY_IDS[name] ?? `a-um2-${slug(name)}`, name, ...values })
+  }
+  return groups
+})()
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 
@@ -144,49 +182,76 @@ export function defaultAnalyte(id: string) {
   return undefined
 }
 
-/** ¿La clínica cambió el umbral que trae la app? */
-export const customized = (a: CriticalAnalyte) => {
-  const d = defaultAnalyte(a.id)
-  return !!d && (d.low !== a.low || d.high !== a.high || (d.unit ?? '') !== (a.unit ?? ''))
-}
+/** ¿La clínica lo personalizó? (UM2: «Personalizado», con quién y cuándo). */
+export const customized = (a: CriticalAnalyte) => !!a.editedAt && !!defaultAnalyte(a.id)
+
+/** Los valores (límites, sexo, unidad, fuente) que trae la app para aplicarlos a un analito guardado. */
+export const defaultValues = (d: CriticalAnalyte): Partial<CriticalAnalyte> => ({ unit: d.unit, low: d.low, high: d.high, f: d.f, m: d.m, sources: d.sources, op: d.op, source: undefined })
 
 /**
- * Ronda 8: los umbrales vigentes de una clínica. La app ya trae los suyos (con su fuente) y la clínica cambia los que quiera:
- * lo guardado por la clínica manda; los umbrales nuevos que traiga la app (un grupo o un analito que la clínica todavía no
- * tiene, ni activo ni archivado) se agregan solos. La fuente siempre es la de la app.
+ * Ronda 8: los umbrales vigentes de una clínica. Un analito de la app que la clínica no personalizó toma siempre el valor
+ * predeterminado (si la app lo actualiza, le llega solo); uno personalizado conserva el suyo (A9). Los grupos y analitos
+ * nuevos de la app que la clínica todavía no tiene (ni activos ni archivados) se agregan solos.
  */
 export function mergeCriticalGroups(saved?: CriticalGroup[] | null): CriticalGroup[] {
   if (!saved?.length) return structuredClone(DEFAULT_CRITICAL_GROUPS)
-  const out: CriticalGroup[] = saved.map((g) => ({ ...g, analytes: g.analytes.map((a) => { const d = defaultAnalyte(a.id); return d?.source ? { ...a, source: d.source } : a }) }))
+  const out: CriticalGroup[] = saved.map((g) => ({ ...g, analytes: g.analytes.map((a) => {
+    const d = defaultAnalyte(a.id)
+    if (!d) return a
+    return a.editedAt ? { ...a, sources: d.sources, op: d.op } : { ...a, ...defaultValues(d) }
+  }) }))
   const ids = new Set(out.flatMap((g) => g.analytes.map((a) => a.id)))
   const names = new Set(out.flatMap((g) => g.analytes.map((a) => norm(a.name))))
   for (const dg of DEFAULT_CRITICAL_GROUPS) {
     const missing = dg.analytes.filter((a) => !ids.has(a.id) && !names.has(norm(a.name)))
     if (!missing.length) continue
     const target = out.find((g) => g.id === dg.id) ?? out.find((g) => !g.archivedAt && norm(g.name) === norm(dg.name))
-    if (target) target.analytes.push(...missing.map((a) => ({ ...a })))
-    else out.push({ ...dg, analytes: missing.map((a) => ({ ...a })) })
+    if (target) target.analytes.push(...missing.map((a) => structuredClone(a)))
+    else out.push({ ...dg, analytes: missing.map((a) => structuredClone(a)) })
   }
   return out
 }
+
+/** Límites vigentes de un analito: los generales y, si los tiene, por sexo. */
+export interface CriticalLimit extends Limits { f?: Limits; m?: Limits }
 
 /**
  * Umbrales vigentes, por nombre de analito (sin distinguir mayúsculas ni tildes): los analitos activos de los grupos
  * activos de la clínica o, si la clínica todavía no tiene los suyos, los de este archivo.
  */
-export function criticalLimitsOf(groups?: CriticalGroup[] | null): Map<string, { low?: number; high?: number }> {
-  const out = new Map<string, { low?: number; high?: number }>()
+export function criticalLimitsOf(groups?: CriticalGroup[] | null): Map<string, CriticalLimit> {
+  const out = new Map<string, CriticalLimit>()
   for (const g of mergeCriticalGroups(groups)) {
     if (g.archivedAt) continue
-    for (const a of g.analytes) if (!a.archivedAt && (a.low != null || a.high != null)) out.set(norm(a.name), { low: a.low, high: a.high })
+    for (const a of g.analytes) {
+      if (a.archivedAt) continue
+      if (a.low == null && a.high == null && !a.f && !a.m) continue
+      out.set(norm(a.name), { low: a.low, high: a.high, f: a.f, m: a.m })
+    }
   }
   return out
 }
 
-/** ¿El valor cruza el umbral crítico de su analito? */
-export function isCritical(limits: Map<string, { low?: number; high?: number }>, analyte: string, value: number) {
+/** Los límites que aplican al sexo del paciente; sin sexo, los más amplios de los dos (no avisa de más). */
+export function limitsFor(lim: CriticalLimit, sex?: 'F' | 'M'): Limits {
+  if (!lim.f && !lim.m) return { low: lim.low, high: lim.high }
+  const pick = sex === 'F' ? lim.f : sex === 'M' ? lim.m : undefined
+  if (pick) return pick
+  if (sex) return { low: lim.low, high: lim.high }
+  const lows = [lim.f?.low, lim.m?.low]
+  const highs = [lim.f?.high, lim.m?.high]
+  return { low: lows.some((x) => x == null) ? undefined : Math.min(...(lows as number[])), high: highs.some((x) => x == null) ? undefined : Math.max(...(highs as number[])) }
+}
+
+/**
+ * ¿El valor cruza el umbral crítico de su analito? UM2 (ronda 8): la comparación no cambió: «menor de» es <, «mayor de»
+ * es > (estrictos). El operador de la fuente («≥100») queda anotado en el umbral.
+ */
+export function isCritical(limits: Map<string, CriticalLimit>, analyte: string, value: number, sex?: 'F' | 'M') {
   const lim = limits.get(norm(analyte))
-  return !!lim && Number.isFinite(value) && ((lim.low != null && value < lim.low) || (lim.high != null && value > lim.high))
+  if (!lim || !Number.isFinite(value)) return false
+  const l = limitsFor(lim, sex)
+  return (l.low != null && value < l.low) || (l.high != null && value > l.high)
 }
 
 /**
@@ -194,7 +259,9 @@ export function isCritical(limits: Map<string, { low?: number; high?: number }>,
  * ningún número. Lo que no está en los grupos por omisión va a «Otros».
  */
 export function groupsFromLimits(limits?: Record<string, { low?: number; high?: number }> | null): CriticalGroup[] {
-  const groups: CriticalGroup[] = DEFAULT_CRITICAL_GROUPS.map((g) => ({ ...g, analytes: g.analytes.map((a) => ({ ...a })) }))
+  // UM2 (ronda 8): una clínica sin umbrales propios nace con los de la app
+  if (!limits || !Object.keys(limits).length) return structuredClone(DEFAULT_CRITICAL_GROUPS)
+  const groups: CriticalGroup[] = INITIAL_GROUPS.map((g) => ({ ...g, analytes: g.analytes.map((a) => ({ ...a })) }))
   const byName = new Map(groups.flatMap((g) => g.analytes.map((a) => [norm(a.name), a] as const)))
   const others = groups.find((g) => g.id === 'g-otros')!
   let n = 0

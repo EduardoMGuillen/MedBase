@@ -529,7 +529,8 @@ describe('EX1 (ronda 4) exámenes: Laboratorio e Imagen y gabinete', () => {
     assert.equal(r.body.result.values[0].flag, 'low')
     assert.equal(r.body.result.values[0].unit, 'g/dL')
     assert.equal(r.body.result.values[1].flag, undefined)
-    assert.equal(r.body.critical, undefined)
+    // UM2 (ronda 8): el umbral crítico de la hemoglobina es su rango normal (A9): 9.1 ya es crítico
+    assert.equal(r.body.critical, true)
     const fresh = (await doc.get('/api/exams/new-results')).body
     assert.ok(fresh.some((e: any) => e.id === hemo.id))
     assert.equal((await nurse.post(`/api/exams/${hemo.id}/review`)).status, 403)

@@ -8,7 +8,7 @@ import { cap, date, dateTime, inputDateTime, shortStaff } from '../lib/format'
 import { canReview, examCatalog, examLine, examStatusLabel, findExam, GROUP_LABEL, isPending, NEXT_ACTION, reportOptional, STATUS_LABEL } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { rangeFor, rangeText, type LabReference } from '../lib/labReference'
-import { LAB_SOURCES, NO_SOURCE } from '../lib/labSources'
+import { SourceTag } from '../components/SourceTag'
 import { openFile, uploadLarge } from '../lib/files'
 import type { ExamGroup, ExamOrder } from '../lib/types'
 
@@ -159,16 +159,12 @@ function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload
  * fuentes. Recuerda que el rango oficial es el del laboratorio que emite el resultado.
  */
 export function ReferenceNote({ r }: { r: LabReference }) {
-  const cites = r.src.filter((x) => x !== NO_SOURCE)
   return (
     <div className="ref-note">
-      {r.text && <p><b>Valor de referencia:</b> {r.text}</p>}
-      {r.note && <p>{r.note}</p>}
-      <p className="muted">Fuente: {cites.length ? cites.map((k, i) => {
-        const s = LAB_SOURCES[k]
-        return <span key={k}>{i > 0 && ' · '}{s?.urls[0] ? <a href={s.urls[0]} target="_blank" rel="noreferrer" title={s.title}>{k}</a> : k}</span>
-      }) : null}{r.src.includes(NO_SOURCE) ? `${cites.length ? ' · ' : ''}‡ resultado esperado por principio, sin una fuente específica verificada` : ''}{!r.src.length ? 'el documento no da una' : ''}.
-        {' '}El rango oficial es el del laboratorio que emite el resultado.</p>
+      {r.text && <p><b>Resultado esperado:</b> {r.text}</p>}
+      {r.note && <p>{r.warn && <span aria-label="Advertencia">⚠️ </span>}{r.note}</p>}
+      <p className="ref-note__src">Fuente: {r.src.length ? r.src.map((c) => <SourceTag key={c} codes={[c]} />) : <span className="src-tag src-tag--none">Sin fuente</span>}</p>
+      <p className="muted">Referencia general; el rango oficial es el del laboratorio que emite el resultado.</p>
     </div>
   )
 }
