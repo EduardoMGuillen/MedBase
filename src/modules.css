@@ -761,3 +761,8 @@ button.src-tag--none { cursor: pointer; }
   .drug-opt { grid-template-columns: minmax(0, 1fr); }
   .drug-opt__pres { text-align: left; max-width: none; font-size: 13px; }
 }
+
+/* ME9 (ronda 10): «Primera dosis diferente (STAT)» discreta: una línea, sin recuadro, con la letra de las etiquetas */
+.stat-line { gap: 2px; align-content: center; }
+.stat-line .check-inline { font-size: 13px; font-weight: 600; color: var(--muted); min-height: 32px; cursor: pointer; }
+.stat-line small { font-size: 12px; }

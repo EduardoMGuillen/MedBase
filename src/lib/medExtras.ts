@@ -4,7 +4,7 @@
  * receta de salida del egreso, Consultorio). Un solo generador de texto: la nota, la hoja de enfermería, «Medicamentos
  * activos», la receta y la impresión dicen lo mismo.
  */
-import { NEB_DILUENTS } from './clinicalConfig.js'
+import { LOADING_DOSE_ROUTES, NEB_DILUENTS } from './clinicalConfig.js'
 
 export const NEB_ROUTE = 'Nebulización'
 
@@ -33,8 +33,20 @@ export const nebulizationReady = (n?: Nebulization) => !!n && n.components.some(
 export const loadingLine = (drug: string, route: string, loading: string, dose: string, freq: string, when = 'STAT') =>
   `${drug} ${route} · ${loading.trim()} ${when} y luego ${dose} ${freq}`.replace(/\s+/g, ' ').trim()
 
-/** ¿Se ofrece «Primera dosis diferente (STAT)»? Sólo con una frecuencia que se repite (cada X horas), no con dosis única, infusión, PRN ni nebulización. */
-export const loadingAllowed = (o: { everyHours?: number; prn?: boolean; infusion?: boolean; route?: string }) =>
+/** ¿La frecuencia admite una primera dosis distinta? Una que se repite (cada X horas): no dosis única, infusión, PRN ni nebulización. */
+const repeatingOrder = (o: { everyHours?: number; prn?: boolean; infusion?: boolean; route?: string }) =>
   !!o.everyHours && !o.prn && !o.infusion && !isNebulization(o.route)
+
+/**
+ * ¿Se ofrece «Primera dosis diferente (STAT)»? Con una frecuencia que se repite y, desde ME9 (ronda 10), solo por vía
+ * intravenosa (LOADING_DOSE_ROUTES, VALIDAR: Emil). Reemplaza ME2 y ME3, que la permitían con cualquier vía; las órdenes ya
+ * emitidas con otra vía no cambian (se siguen mostrando y administrando igual).
+ */
+export const loadingAllowed = (o: { everyHours?: number; prn?: boolean; infusion?: boolean; route?: string }) =>
+  repeatingOrder(o) && LOADING_DOSE_ROUTES.includes(o.route ?? '')
+
+/** ME9: la casilla estaba marcada y la vía dejó de ser intravenosa: al agregar no se guarda la dosis inicial (se avisa). */
+export const loadingDroppedByRoute = (checked: boolean, o: { everyHours?: number; prn?: boolean; infusion?: boolean; route?: string }) =>
+  checked && repeatingOrder(o) && !LOADING_DOSE_ROUTES.includes(o.route ?? '')
 
 export const DILUENT_OPTIONS = NEB_DILUENTS

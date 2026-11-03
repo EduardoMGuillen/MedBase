@@ -11,18 +11,28 @@ import { DILUENT_OPTIONS, type NebComponent, type Nebulization } from '../lib/me
  * ME3 (ronda 9): la casilla «Primera dosis diferente (STAT)» y su «Dosis inicial», la misma en todos los formularios de
  * medicamento. `extra` es lo que cada formulario agrega debajo (en las notas, la «Hora de la dosis inicial»; en la receta, nada:
  * no hay hoja ni hora programada).
+ * ME9 (ronda 10): una casilla de una sola línea, sin recuadro, con la letra de las demás etiquetas; el ejemplo sale como ayuda
+ * pequeña solo cuando está marcada. Solo se muestra con vía intravenosa (`loadingAllowed`).
  */
 export function LoadingDoseFields({ checked, onChecked, value, onValue, givenAt, extra, warn }: {
   checked: boolean; onChecked: (v: boolean) => void; value: string; onValue: (v: string) => void; givenAt?: string; extra?: ReactNode; warn?: boolean
 }) {
   if (givenAt) return <p className="field span-2 muted" style={{ margin: 0, fontSize: 13.5 }}>{givenAt}</p>
   return (<>
-    <label className="field span-2 check-line" style={{ margin: 0 }}><input type="checkbox" checked={checked} onChange={(e) => onChecked(e.target.checked)} />
-      <span><b>Primera dosis diferente (STAT)</b><small>Una sola orden: por ejemplo, 2 g STAT y luego 1 g cada 12 horas.</small></span></label>
+    <div className="field span-2 stat-line">
+      <label className="check-inline"><input type="checkbox" checked={checked} onChange={(e) => onChecked(e.target.checked)} />Primera dosis diferente (STAT)</label>
+      {checked && <small className="muted">Una sola orden: por ejemplo, 2 g STAT y luego 1 g cada 12 horas.</small>}
+    </div>
     {checked && <label className="field"><span>Dosis inicial</span>
       <input className={`input ${warn && !value.trim() ? 'input--warn' : ''}`} value={value} onChange={(e) => onValue(e.target.value)} placeholder="Ej. 2 g" aria-required="true" /></label>}
     {checked && extra}
   </>)
+}
+
+/** ME9 (ronda 10): aviso cuando se marcó la primera dosis distinta y la vía dejó de ser intravenosa. */
+export function LoadingDropped({ show }: { show: boolean }) {
+  if (!show) return null
+  return <small className="field span-2 field__msg field__msg--warn" role="status">Se quitó la primera dosis diferente porque la vía ya no es intravenosa.</small>
 }
 
 /**

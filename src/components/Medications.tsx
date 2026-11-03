@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { isNebulization, loadingAllowed, nebulizationBody, nebulizationReady } from '../lib/medExtras'
-import { EMPTY_NEB, LoadingDoseFields, NebulizerFields } from './MedExtras'
+import { isNebulization, loadingAllowed, loadingDroppedByRoute, nebulizationBody, nebulizationReady } from '../lib/medExtras'
+import { EMPTY_NEB, LoadingDoseFields, LoadingDropped, NebulizerFields } from './MedExtras'
 import { frequencyHours } from '../lib/inpatient'
 import { useStore } from '../lib/store'
 import { Modal } from './ui'
@@ -97,6 +97,8 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
   const repeating = loadingAllowed({ everyHours: frequencyHours(m.frequency), prn, route: m.route })
   const [loading, setLoading] = useState(!!initial?.loadingDose)
   const withLoading = loading && repeating
+  // ME9 (ronda 10): marcada y la vía ya no es intravenosa: no se guarda y se avisa (lo escrito vuelve si se regresa a IV)
+  const dropped = loadingDroppedByRoute(loading, { everyHours: frequencyHours(m.frequency), prn, route: m.route })
   const ready = (neb ? nebulizationReady(nebValue) && (!nebConflict || overrideAllergy) : m.drug.trim() && m.dose.trim() && (!conflict || overrideAllergy) && (!duplicate || overrideDup))
     && m.frequency && (!prn || m.prnCondition?.trim()) && (m.duration.trim() || !needsDays) && (!withLoading || m.loadingDose?.trim())
   // Con primera dosis distinta o nebulización la cantidad no se calcula sola (texto libre)
@@ -130,6 +132,7 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
         {neb && <NebulizerFields value={nebValue} onChange={(n) => setM({ ...m, nebulization: n })} allergies={patient.allergies} firstName={patient.firstName} />}
         <label className="field"><span>Frecuencia</span><select className="select" value={m.frequency} onChange={(e) => setM({ ...m, frequency: e.target.value })}>{freqs.map((f) => <option key={f}>{f}</option>)}</select></label>
         {repeating && <LoadingDoseFields checked={loading} onChecked={setLoading} value={m.loadingDose ?? ''} onValue={(v) => setM({ ...m, loadingDose: v })} warn={!!m.drug.trim()} />}
+        <LoadingDropped show={dropped && !neb} />
         {prn && <label className="field"><span>Condición</span>
           <input className={`input ${!m.prnCondition?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.prnCondition ?? ''} onChange={(e) => setM({ ...m, prnCondition: e.target.value })} placeholder="Ej. si dolor, si fiebre" aria-required="true" />
           {!m.prnCondition?.trim() && <small className="field__msg field__msg--warn">Obligatoria en un PRN: cuándo se da.</small>}</label>}

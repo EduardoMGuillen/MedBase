@@ -8,8 +8,8 @@ import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, dmyTime, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
 import { DateTimeField } from '../components/DateTimeField'
 import { INFUSION_UNITS } from '../lib/clinicalConfig'
-import { isNebulization, loadingAllowed, nebulizationBody, nebulizationReady } from '../lib/medExtras'
-import { EMPTY_NEB, LoadingDoseFields, NebulizerFields } from '../components/MedExtras'
+import { isNebulization, loadingAllowed, loadingDroppedByRoute, nebulizationBody, nebulizationReady } from '../lib/medExtras'
+import { EMPTY_NEB, LoadingDoseFields, LoadingDropped, NebulizerFields } from '../components/MedExtras'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict } from '../lib/catalogs'
 import { activeIndications, chainNote, doseAt, formatRate, infusionUnitLabel, isLoadingSlot, twoDecimals, currentDiagnoses, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
@@ -1586,6 +1586,8 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
   // ME2: sólo con una frecuencia repetitiva (cada X horas), no con dosis única, infusión ni PRN
   const repeating = loadingAllowed({ everyHours: freq === 'once' || infusion ? undefined : Number(freq), prn: m.prn, infusion, route: m.route })
   const withLoading = loading && repeating
+  // ME9 (ronda 10): marcada y la vía ya no es intravenosa: no se guarda y se avisa (lo escrito vuelve si se regresa a IV)
+  const dropped = !loadingGivenAt && loadingDroppedByRoute(loading, { everyHours: freq === 'once' || infusion ? undefined : Number(freq), prn: m.prn, infusion, route: m.route })
   const nebValue = m.nebulization ?? EMPTY_NEB
   const nebConflict = neb ? nebValue.components.map((c) => (c.drug.trim() ? allergyConflict(p.allergies, c.drug) : null)).find(Boolean) ?? null : null
   const built = (): NewMed | null => {
@@ -1662,6 +1664,7 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
             </select>
             {!loadingNow && <DateTimeField value={m.firstAt ?? ''} onChange={(v) => setM({ ...m, firstAt: v })} label="Fecha y hora de la dosis inicial" />}
           </div>} />}
+        <LoadingDropped show={dropped && !neb} />
         {(!m.prn || infusion) && !withLoading && <div className="field"><span>{infusion ? 'Hora de inicio' : 'Hora de la dosis'}</span>
           <DateTimeField value={m.firstAt ?? ''} onChange={(v) => setM({ ...m, firstAt: v })} label={infusion ? 'Hora de inicio' : 'Hora de la dosis'} /></div>}
         <label className="field"><span>Total de días (opcional)</span>
