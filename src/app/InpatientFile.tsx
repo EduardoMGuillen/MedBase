@@ -8,6 +8,8 @@ import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, defaultRoute, dmyTime, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
 import { DateTimeField } from '../components/DateTimeField'
 import { INFUSION_UNITS } from '../lib/clinicalConfig'
+import { isNebulization, loadingAllowed, nebulizationBody, nebulizationReady } from '../lib/medExtras'
+import { EMPTY_NEB, LoadingDoseFields, NebulizerFields } from '../components/MedExtras'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict } from '../lib/catalogs'
 import { activeIndications, chainNote, doseAt, formatRate, infusionUnitLabel, isLoadingSlot, twoDecimals, currentDiagnoses, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, INPATIENT_FREQUENCIES, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
@@ -563,7 +565,7 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
   const last = med.prn ? doses.filter((d) => d.status === 'given').sort((a, b) => b.givenAt.localeCompare(a.givenAt))[0] : undefined
   const tooSoon = last && med.everyHours && Date.now() - new Date(last.givenAt).getTime() < med.everyHours * 3_600_000
   return (
-    <Modal title={medLabel(med)} onClose={onClose} footer={<>
+    <Modal title={med.nebulization ? 'Nebulización' : medLabel(med)} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className={`btn ${given ? 'btn--primary' : 'btn--danger'}`} disabled={busy || (!given && !note.trim()) || (old && reason.trim().length < 5)} onClick={async () => {
         setBusy(true)
@@ -574,6 +576,12 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
     </>}>
       <p>{at ? <>Dosis de las <b>{time(at.toISOString())}</b>{at.toDateString() !== new Date().toDateString() ? ` del ${date(at.toISOString())}` : ''}.
         {at.getTime() < opened - LATE_AFTER_MIN * 60_000 && <> <span className="badge badge--amber">Atrasada</span></>}</> : <>Dosis según necesidad (PRN){med.prnCondition ? `: ${med.prnCondition}` : ''}. Queda con tu nombre, tu rol y la hora real.</>}</p>
+      {/* ME4 (ronda 9): una sesión de nebulización es una sola administración de todos sus componentes */}
+      {med.nebulization && <div className="alert-strip alert-strip--calm" style={{ margin: 0, flexDirection: 'column', alignItems: 'flex-start' }}>
+        <b>Nebulizar con:</b>
+        <ul style={{ margin: 0, paddingLeft: 18 }}>{med.nebulization.components.map((c, i) => <li key={i}>{c.drug} {c.amount}</li>)}</ul>
+        {med.nebulization.diluent?.trim() && <span>Diluido en {med.nebulization.diluentVolume ? `${med.nebulization.diluentVolume} de ` : ''}{med.nebulization.diluent}</span>}
+      </div>}
       {/* ME2 (ronda 8): la cantidad propuesta es la de esta dosis (la inicial o las siguientes) y queda guardada en el registro */}
       {med.loadingDose && at && <p className="alert-strip alert-strip--amber" style={{ margin: 0 }}>{isLoadingSlot(med, at) ? 'Dosis inicial' : 'Dosis siguiente'}: <b>{doseAt(med, at)}</b></p>}
       {/* ME1: el evento de una infusión es su inicio; después la fila queda «En infusión desde…» */}
@@ -1295,6 +1303,7 @@ function medToNew(m: InpatientMed, doses: Dose[] = []): NewMed & { loadingGivenA
   const firstAt = keepLoading && new Date(m.firstAt) > new Date() ? new Date(m.firstAt) : new Date()
   return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, everyHours: m.everyHours, prn: m.prn, prnCondition: m.prnCondition, instructions: m.instructions ?? '', firstAt: inputDateTime(firstAt), days: m.days,
     infusionRate: m.infusionRate, infusionUnit: m.infusionUnit, loadingDose: keepLoading ? m.loadingDose : undefined, loadingStat: keepLoading ? m.loadingStat : undefined,
+    nebulization: m.nebulization ? structuredClone(m.nebulization) : undefined,
     loadingGivenAt: loadingGiven?.givenAt }
 }
 
@@ -1319,7 +1328,9 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
   const vademecum = useVademecum()
   const q = normalize(m.drug)
   const matches = q ? vademecum.filter((d) => normalize(`${d.name} ${d.brand ?? ''}`).includes(q)).slice(0, 6) : vademecum.slice(0, 6)
-  const infusion = freq === 'infusion'
+  // ME4 (ronda 9): vía «Nebulización»: varios medicamentos en una sola orden (sin infusión ni primera dosis distinta)
+  const neb = isNebulization(m.route)
+  const infusion = freq === 'infusion' && !neb
   const unit = INFUSION_UNITS.find((u) => u.value === (m.infusionUnit ?? INFUSION_UNITS[0].value)) ?? INFUSION_UNITS[0]
   const rateNum = parseDecimal(rate)
   const rateIssue = !rate.trim() ? 'Escribe la velocidad de infusión.'
@@ -1327,9 +1338,20 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
       : !twoDecimals(rateNum) ? 'Hasta dos decimales.'
         : rateNum > unit.max ? `No puede pasar de ${unit.max} ${unit.label}.` : ''
   // ME2: sólo con una frecuencia repetitiva (cada X horas), no con dosis única, infusión ni PRN
-  const repeating = !infusion && !m.prn && freq !== 'once'
+  const repeating = loadingAllowed({ everyHours: freq === 'once' || infusion ? undefined : Number(freq), prn: m.prn, infusion, route: m.route })
   const withLoading = loading && repeating
+  const nebValue = m.nebulization ?? EMPTY_NEB
+  const nebConflict = neb ? nebValue.components.map((c) => (c.drug.trim() ? allergyConflict(p.allergies, c.drug) : null)).find(Boolean) ?? null : null
   const built = (): NewMed | null => {
+    if (neb) {
+      if (!nebulizationReady(nebValue) || (nebConflict && !override) || (m.prn && !m.prnCondition?.trim())) return null
+      const clean = { components: nebValue.components.filter((c) => c.drug.trim()).map((c) => ({ drug: c.drug.trim(), amount: c.amount.trim() })),
+        diluentVolume: nebValue.diluentVolume?.trim() || undefined, diluent: nebValue.diluent?.trim() || undefined }
+      const everyHours = freq === 'once' || freq === 'infusion' ? undefined : Number(freq)
+      return { ...m, drug: 'Nebulización', dose: nebulizationBody(clean), nebulization: clean, everyHours, instructions: m.instructions?.trim() || undefined,
+        prnCondition: m.prn ? m.prnCondition?.trim() : undefined, firstAt: m.prn ? undefined : fromLocalValue(m.firstAt!).toISOString(),
+        infusionRate: undefined, infusionUnit: undefined, loadingDose: undefined, loadingStat: undefined }
+    }
     if (!m.drug.trim() || !m.dose.trim() || (conflict && !override) || (m.prn && !m.prnCondition?.trim())) return null
     if (infusion && rateIssue) return null
     if (withLoading && !m.loadingDose?.trim()) return null
@@ -1338,7 +1360,7 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
     const firstAt = withLoading && loadingNow ? new Date().toISOString() : m.prn && !infusion ? undefined : fromLocalValue(m.firstAt!).toISOString()
     return { ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours, prn: infusion ? false : m.prn, instructions: m.instructions?.trim() || undefined, prnCondition: m.prn && !infusion ? m.prnCondition?.trim() : undefined,
       firstAt, infusionRate: infusion ? rateNum : undefined, infusionUnit: infusion ? unit.value : undefined,
-      loadingDose: withLoading ? m.loadingDose!.trim() : undefined, loadingStat: withLoading ? loadingNow : undefined }
+      loadingDose: withLoading ? m.loadingDose!.trim() : undefined, loadingStat: withLoading ? loadingNow : undefined, nebulization: undefined }
   }
   const preview = built()
   const another = () => { const x = built(); if (x && onAddAnother) onAddAnother(x) }
@@ -1348,11 +1370,12 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
     if (x) onAdd(x)
   }
   // Qué falta para «Agregar a la nota» (el botón queda apagado hasta tenerlo: es intencional y se dice por qué)
-  const missing = !m.drug.trim() ? 'el medicamento' : !m.dose.trim() ? (withLoading ? 'la dosis siguiente' : 'la dosis') : m.prn && !m.prnCondition?.trim() ? 'la condición PRN'
+  const missing = neb ? (!nebulizationReady(nebValue) ? 'al menos un medicamento con su cantidad' : m.prn && !m.prnCondition?.trim() ? 'la condición PRN' : nebConflict && !override ? 'confirmar la alergia' : '')
+    : !m.drug.trim() ? 'el medicamento' : !m.dose.trim() ? (withLoading ? 'la dosis siguiente' : 'la dosis') : m.prn && !m.prnCondition?.trim() ? 'la condición PRN'
     : infusion && rateIssue ? 'la velocidad de infusión' : withLoading && !m.loadingDose?.trim() ? 'la dosis inicial' : conflict && !override ? 'confirmar la alergia' : ''
   return (
     <form className="rx-form med-form" onSubmit={submit}>
-      <div className="field suggest"><span>Medicamento</span>
+      {!neb && <div className="field suggest"><span>Medicamento</span>
         <input className="input" autoFocus value={m.drug} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
           onChange={(e) => { setM({ ...m, drug: e.target.value }); setOverride(false); setOpen(true) }} placeholder="Busca en el vademécum o escríbelo" />
         {open && matches.length > 0 && (
@@ -1362,14 +1385,15 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
               <span>{d.name}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{d.presentation}</span></button>)}
           </div>
         )}
-      </div>
+      </div>}
       <div className="form-grid">
-        <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder={infusion ? 'Ej. 50 mg en 100 mL' : 'Ej. 8 mg'} /></label>
-        <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => setM({ ...m, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
+        {!neb && <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder={infusion ? 'Ej. 50 mg en 100 mL' : 'Ej. 8 mg'} /></label>}
+        <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => { const r = e.target.value; setM({ ...m, route: r, nebulization: isNebulization(r) ? m.nebulization ?? structuredClone(EMPTY_NEB) : m.nebulization }); if (isNebulization(r) && freq === 'infusion') setFreq('6') }}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
+        {neb && <NebulizerFields value={nebValue} onChange={(n) => setM({ ...m, nebulization: n })} allergies={p.allergies} firstName={p.firstName} />}
         <label className="field"><span>Frecuencia</span>
           <select className="select" value={freq} onChange={(e) => { setFreq(e.target.value); if (e.target.value === 'infusion') setM({ ...m, prn: false, route: m.route === 'Oral' ? 'Intravenosa' : m.route }) }}>
             {INPATIENT_FREQUENCIES.filter((f) => !m.prn || f.hours).map((f) => <option key={f.label} value={f.hours ?? 'once'}>{m.prn ? `${f.label} como máximo` : f.label}</option>)}
-            {!m.prn && <option value="infusion">Infusión</option>}
+            {!m.prn && !neb && <option value="infusion">Infusión</option>}
           </select></label>
         {/* ME1: una infusión no es PRN */}
         {!infusion && (
@@ -1390,20 +1414,14 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
         {m.prn && !infusion && <label className="field"><span>Condición</span>
           <input className={`input ${!m.prnCondition?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.prnCondition ?? ''} onChange={(e) => setM({ ...m, prnCondition: e.target.value })} placeholder="Ej. si dolor, si fiebre" aria-required="true" />
           {!m.prnCondition?.trim() && <small className="field__msg field__msg--warn">Obligatoria en un PRN: cuándo se da.</small>}</label>}
-        {repeating && (loadingGivenAt
-          ? <p className="field span-2 muted" style={{ margin: 0, fontSize: 13.5 }}>Dosis inicial ya administrada el {dmyTime(loadingGivenAt)}.</p>
-          : <label className="field span-2 check-line" style={{ margin: 0 }}><input type="checkbox" checked={loading} onChange={(e) => setLoading(e.target.checked)} />
-            <span><b>Primera dosis diferente (STAT)</b><small>Una sola orden: por ejemplo, 2 gr STAT y luego 1 gr cada 12 horas.</small></span></label>)}
-        {withLoading && (<>
-          <label className="field"><span>Dosis inicial</span>
-            <input className={`input ${!m.loadingDose?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.loadingDose ?? ''} onChange={(e) => setM({ ...m, loadingDose: e.target.value })} placeholder="Ej. 2 gr" aria-required="true" /></label>
-          <div className="field"><span>Hora de la dosis inicial</span>
+        {repeating && <LoadingDoseFields checked={loading} onChecked={setLoading} value={m.loadingDose ?? ''} onValue={(v) => setM({ ...m, loadingDose: v })} warn={!!m.drug.trim()}
+          givenAt={loadingGivenAt ? `Dosis inicial ya administrada el ${dmyTime(loadingGivenAt)}.` : undefined}
+          extra={<div className="field"><span>Hora de la dosis inicial</span>
             <select className="select" value={loadingNow ? 'now' : 'at'} onChange={(e) => { setLoadingNow(e.target.value === 'now'); if (e.target.value === 'at') setM({ ...m, firstAt: inputDateTime(new Date()) }) }} aria-label="Hora de la dosis inicial">
               <option value="now">Ahora (STAT)</option><option value="at">Elegir fecha y hora</option>
             </select>
             {!loadingNow && <DateTimeField value={m.firstAt ?? ''} onChange={(v) => setM({ ...m, firstAt: v })} label="Fecha y hora de la dosis inicial" />}
-          </div>
-        </>)}
+          </div>} />}
         {(!m.prn || infusion) && !withLoading && <div className="field"><span>{infusion ? 'Hora de inicio' : 'Hora de la dosis'}</span>
           <DateTimeField value={m.firstAt ?? ''} onChange={(v) => setM({ ...m, firstAt: v })} label={infusion ? 'Hora de inicio' : 'Hora de la dosis'} /></div>}
         <label className="field"><span>Total de días (opcional)</span>
@@ -1412,13 +1430,14 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
         <label className="field span-2"><span>Indicaciones</span><input className="input" value={m.instructions} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder={m.prn ? 'Ej. Si hay dolor intenso' : infusion ? 'Ej. Diluir en 100 mL de SSN' : 'Ej. Diluir en 100 mL'}
           onKeyDown={(e) => { if (e.key === 'Enter' && onAddAnother) { e.preventDefault(); another() } }} /></label>
       </div>
-      {preview && (withLoading || infusion) && <p className="muted" style={{ fontSize: 13.5, overflowWrap: 'anywhere' }}>Se verá así: <b>{medLabel(preview)}</b></p>}
+      {preview && (withLoading || infusion || neb) && <p className="muted" style={{ fontSize: 13.5, overflowWrap: 'anywhere' }}>Se verá así: <b>{medLabel(preview)}</b></p>}
       {conflict && (
         <div className="alert-strip" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
           <span style={{ display: 'flex', gap: 8 }}><TriangleAlert size={18} style={{ flex: 'none' }} />{p.firstName} es alérgica/o a {conflict}. {m.drug} puede provocar una reacción.</span>
           {!override && <button type="button" className="btn btn--danger btn--sm" style={{ background: '#fff' }} onClick={() => setOverride(true)}>Indicar de todos modos</button>}
         </div>
       )}
+      {neb && nebConflict && !override && <button type="button" className="btn btn--danger btn--sm" style={{ justifySelf: 'start' }} onClick={() => setOverride(true)}>Indicar de todos modos</button>}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button className="btn btn--primary" disabled={!preview}><Plus size={16} />Agregar a la nota</button>
         {onAddAnother && <button type="button" className="btn btn--soft" disabled={!preview} onClick={another}>Guardar y agregar otro</button>}

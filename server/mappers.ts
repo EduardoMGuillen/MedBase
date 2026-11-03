@@ -153,6 +153,7 @@ export const toInpatientMed = (r: Row): InpatientMed => ({
   replacesId: s(r.replaces_id), prnCondition: s(r.prn_condition),
   infusionRate: r.infusion_rate == null ? undefined : Number(r.infusion_rate), infusionUnit: (s(r.infusion_unit) as InpatientMed['infusionUnit']) ?? undefined,
   loadingDose: s(r.loading_dose), loadingStat: r.loading_stat == null ? undefined : Boolean(r.loading_stat),
+  nebulization: r.nebulization ? j(r.nebulization, undefined) : undefined,
   infusionStoppedAt: s(r.infusion_stopped_at), infusionStoppedBy: s(r.infusion_stopped_by), infusionStopNote: s(r.infusion_stop_note),
 })
 

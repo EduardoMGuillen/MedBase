@@ -37,7 +37,7 @@ export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescr
 /** RF1 (ronda 8): de dónde sale la referencia: una estancia, una consulta firmada o una consulta en borrador (su cita). */
 export type ReferralFrom = { kind: 'stay' | 'consultation' | 'appointment'; id: string }
 const referralBase = (src: ReferralFrom) => `/${src.kind === 'stay' ? 'inpatient' : src.kind === 'appointment' ? 'appointments' : 'consultations'}/${src.id}`
-export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'prnCondition' | 'instructions' | 'days' | 'replacesId' | 'infusionRate' | 'infusionUnit' | 'loadingDose' | 'loadingStat'> & { firstAt?: string }
+export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'prnCondition' | 'instructions' | 'days' | 'replacesId' | 'infusionRate' | 'infusionUnit' | 'loadingDose' | 'loadingStat' | 'nebulization'> & { firstAt?: string }
 export type FollowupInput = Pick<Followup, 'kind' | 'title' | 'dueDate' | 'everyDays' | 'notes' | 'reminderType'>
 
 export interface Report {

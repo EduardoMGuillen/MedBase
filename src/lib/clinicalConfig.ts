@@ -98,6 +98,10 @@ export const INFUSION_UNITS = [{ value: 'ml/h', label: 'mL/h', max: 1000 }, { va
 export const XRAY_SUBGROUPS = ['Rayos X']
 export const XRAY_PREFIXES = ['Rayos X', 'Radiografía', 'Rx']
 
+/** ME4 (ronda 9). VALIDAR: Emil. Nebulización: máximo de componentes por orden y diluyentes que se ofrecen («Otro» pide escribirlo). */
+export const NEB_MAX_COMPONENTS = 5
+export const NEB_DILUENTS = ['SSN 0.9%', 'Agua estéril', 'Otro']
+
 /** RF1 (ronda 8). VALIDAR: Emil. Pie fijo de la hoja de referencia (confidencialidad). Sin citas legales en pantalla. */
 export const REFERRAL_FOOTER = 'Documento confidencial. Contiene información clínica para uso exclusivo del personal de salud del centro receptor.'
 

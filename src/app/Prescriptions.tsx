@@ -269,8 +269,14 @@ export function PrescriptionSheet() {
         <ol>
           {rx.items.map((it, i) => (
             <li key={i}>
+              {/* ME3 y ME4 (ronda 9): una sola línea con el mismo texto de la nota */}
+              {it.nebulization?.components?.length || it.loadingDose ? <>
+                <strong>{medicationLine(it)}</strong>
+                <p>{it.instructions ? `${it.instructions}.` : ''}{it.quantity ? ` Cantidad: ${it.quantity}.` : ''}</p>
+              </> : <>
               <strong>{it.drug}</strong> <span style={{ color: 'var(--muted)' }}>{it.presentation}</span>
               <p>{it.dose}{it.route ? ` vía ${it.route.toLowerCase()}` : ''}, {it.prnCondition ? frequencyText(it) : it.frequency.toLowerCase()}{it.duration ? `, durante ${it.duration}` : ''}.{it.instructions ? ` ${it.instructions}` : ''}{it.quantity ? ` Cantidad: ${it.quantity}.` : ''}</p>
+              </>}
             </li>
           ))}
         </ol>

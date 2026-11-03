@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { Nebulization } from '../src/lib/medExtras.js'
 import type { Row, Sql } from './sql.js'
 import { durationDays, frequencyHours } from '../src/lib/inpatient.js'
 import { normalize } from '../src/lib/patients.js'
@@ -33,6 +34,8 @@ export interface OrderInput {
   loadingDose?: string
   /** ME2: la dosis inicial es ahora (STAT, por omisión) o a la hora `firstAt` elegida. */
   loadingStat?: boolean
+  /** ME4 (ronda 9): nebulización con sus componentes. */
+  nebulization?: Nebulization
 }
 
 /** Un medicamento de la consulta externa como orden de la hoja: "Cada 8 horas" → cada 8 h; "3 días" → 3. */
@@ -41,6 +44,8 @@ export function orderFromItem(it: PrescriptionItem, firstAt: string): OrderInput
     drug: it.drug, presentation: it.presentation || undefined, dose: it.dose, route: it.route || 'Oral',
     everyHours: frequencyHours(it.frequency), prn: /necesidad|necesario|\bprn\b/i.test(it.frequency), prnCondition: it.prnCondition || undefined, firstAt,
     instructions: it.instructions || undefined, days: durationDays(it.duration),
+    // ME3 y ME4 (ronda 9): «Aplicar en la clínica» con primera dosis distinta (STAT, ahora) o nebulización
+    loadingDose: it.loadingDose || undefined, loadingStat: it.loadingDose ? true : undefined, nebulization: it.nebulization,
   }
 }
 
@@ -60,13 +65,13 @@ export async function createMedOrders(q: Sql, o: {
   for (const [index, m] of o.items.entries()) {
     if (!m || active.has(normalize(m.drug))) continue
     const row = await q.one(`INSERT INTO hosp_meds (id, clinic_id, hospitalization_id, patient_id, note_id, source, source_id, source_index, drug, presentation, dose, route,
-        every_hours, prn, first_at, instructions, days, replaces_id, ordered_by, ordered_at, prn_condition, infusion_rate, infusion_unit, loading_dose, loading_stat)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        every_hours, prn, first_at, instructions, days, replaces_id, ordered_by, ordered_at, prn_condition, infusion_rate, infusion_unit, loading_dose, loading_stat, nebulization)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT (hospitalization_id, source_id, source_index) WHERE source_id IS NOT NULL AND source_index IS NOT NULL DO NOTHING RETURNING id`,
       [randomUUID(), o.clinicId, o.hospitalizationId, o.patientId, o.source === 'note' ? o.sourceId : null, o.source, o.sourceId, index, m.drug, m.presentation || null,
         m.dose, m.route, m.everyHours ?? null, m.prn, new Date(m.firstAt).toISOString(), m.instructions || null, m.days ?? null, m.replacesId ?? null, o.orderedBy, o.orderedAt, m.prn ? m.prnCondition || null : null,
         m.infusionRate ?? null, m.infusionRate ? m.infusionUnit || 'ml/h' : null, m.loadingDose && m.everyHours && !m.prn && !m.infusionRate ? m.loadingDose : null,
-        m.loadingDose && m.everyHours && !m.prn && !m.infusionRate ? m.loadingStat !== false : null])
+        m.loadingDose && m.everyHours && !m.prn && !m.infusionRate ? m.loadingStat !== false : null, m.nebulization ? JSON.stringify(m.nebulization) : null])
     if (row) created++
   }
   return created

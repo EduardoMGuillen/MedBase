@@ -1,4 +1,7 @@
 import { CLINIC_TZ, clinicParts, toLocalValue } from './dateInput.js'
+import { loadingLine, nebulizationLine } from './medExtras.js'
+import { isPrnFrequency } from './catalogs.js'
+import { ROUTE_ABBR } from './inpatient.js'
 import type { ApptStatus, Background, ClinicContact, Diagnosis, Patient, PrescriptionItem } from './types'
 
 export const fullName = (p: Patient) => `${p.firstName} ${p.lastName}`
@@ -191,7 +194,8 @@ export const BACKGROUND_GROUPS: { title: string; female?: boolean; fields: { key
   ] },
 ]
 
-export const ROUTES = ['Oral', 'Sublingual', 'Intramuscular', 'Intravenosa', 'Subcutánea', 'Inhalada', 'Tópica', 'Oftálmica', 'Ótica', 'Nasal', 'Rectal', 'Vaginal']
+/** ME4 (ronda 9): «Nebulización» es una vía aparte; «Inhalada» (inhaladores) no cambia. */
+export const ROUTES = ['Oral', 'Sublingual', 'Intramuscular', 'Intravenosa', 'Subcutánea', 'Inhalada', 'Nebulización', 'Tópica', 'Oftálmica', 'Ótica', 'Nasal', 'Rectal', 'Vaginal']
 
 export const defaultRoute = (presentation = '') =>
   /inhalador/i.test(presentation) ? 'Inhalada' : /crema|ungüento|gel/i.test(presentation) ? 'Tópica' : /gotas oft/i.test(presentation) ? 'Oftálmica' : 'Oral'
@@ -203,6 +207,8 @@ export function frequencyText(i: Pick<PrescriptionItem, 'frequency' | 'prnCondit
 }
 
 export function medicationOrder(i: PrescriptionItem) {
+  // ME3 y ME4 (ronda 9): primera dosis distinta y nebulización, con el mismo texto de la receta
+  if (i.nebulization?.components?.length || i.loadingDose?.trim()) return `${medicationLine(i)}.${i.instructions ? ` ${i.instructions}` : ''}`
   const route = i.route ? ` vía ${i.route.toLowerCase()}` : ''
   const how = /única/i.test(i.frequency) ? '' : i.duration ? ` por ${i.duration}` : ', hasta nueva orden'
   return `${i.drug}${i.presentation ? ` (${i.presentation.toLowerCase()})` : ''}: ${i.dose}${route} ${i.prnCondition ? frequencyText(i) : i.frequency.toLowerCase()}${how}.${i.instructions ? ` ${i.instructions}` : ''}`
@@ -249,6 +255,12 @@ export function medicationLine(i: PrescriptionItem) {
   const freq = i.prnCondition?.trim() ? frequencyText(i) : i.frequency.replace(/^Cada (\d+) horas?$/i, 'cada $1 h').replace(/^Dosis única$/i, 'dosis única').replace(/^Según necesidad$/i, 'según necesidad')
   const once = /dosis única/i.test(i.frequency)
   const route = i.route ? ROUTE_SHORT[i.route] ?? i.route.toLowerCase() : ''
+  const days = !once ? (i.duration ? ` por ${i.duration}` : ' hasta nueva orden') : ''
+  // ME4 (ronda 9): una sola línea para la nebulización, con el mismo generador que las notas
+  if (i.nebulization?.components?.length) return `${nebulizationLine(i.nebulization, freq)}${days}`
+  // ME3 (ronda 9): primera dosis distinta, el mismo texto de ME2 («Ceftriaxona IM · 2 g STAT y luego 1 g c/12h»)
+  const hours = /cada\s+(\d+)\s*h/i.exec(i.frequency)?.[1]
+  if (i.loadingDose?.trim() && hours && !isPrnFrequency(i.frequency)) return `${loadingLine(i.drug, ROUTE_ABBR[i.route ?? ''] ?? route, i.loadingDose, i.dose, `c/${hours}h`)}${days}`
   const how = [i.dose, route, freq, !once ? (i.duration ? `por ${i.duration}` : 'hasta nueva orden') : ''].filter(Boolean).join(' ')
   return `${i.drug}${i.presentation ? ` ${presentationShort(i.presentation)}` : ''} — ${how}`
 }

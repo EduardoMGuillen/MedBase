@@ -327,6 +327,10 @@ export interface PrescriptionItem {
   applyInClinic?: boolean
   /** MC2 (ronda 6): PRN («si es necesario»): cuándo se da ("si dolor", "si fiebre"). */
   prnCondition?: string
+  /** ME3 (ronda 9): primera dosis distinta (STAT) y luego `dose` con su frecuencia. */
+  loadingDose?: string
+  /** ME4 (ronda 9): vía «Nebulización» con varios medicamentos en una sola orden. */
+  nebulization?: import('./medExtras').Nebulization
 }
 
 export interface Prescription {
@@ -904,6 +908,8 @@ export interface InpatientMed {
   loadingDose?: string
   /** ME2: la dosis inicial es «Ahora (STAT)» (por omisión) o a una hora elegida (`firstAt`): «2 gr el 02/11/2026 14:00». */
   loadingStat?: boolean
+  /** ME4 (ronda 9): nebulización con sus componentes y diluyente (la vía es «Nebulización»). */
+  nebulization?: import('./medExtras').Nebulization
   /** ME1 (ronda 8): enfermería suspendió la infusión en curso (hora, quién y motivo opcional). */
   infusionStoppedAt?: string
   infusionStoppedBy?: string

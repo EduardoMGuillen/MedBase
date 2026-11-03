@@ -1,5 +1,6 @@
 import { closeOpenVisits } from '../stayVisits.js'
-import { INFUSION_UNITS } from '../../src/lib/clinicalConfig.js'
+import { nebulizationBody } from '../../src/lib/medExtras.js'
+import { INFUSION_UNITS, NEB_MAX_COMPONENTS } from '../../src/lib/clinicalConfig.js'
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -90,7 +91,12 @@ const medInput = z.object({
   infusionUnit: z.enum(['ml/h', 'ml/min']).optional(),
   loadingDose: z.string().trim().max(60).optional(),
   loadingStat: z.boolean().optional(),
+  // ME4 (ronda 9): nebulización (vía «Nebulización») con sus componentes y diluyente
+  nebulization: z.object({ components: z.array(z.object({ drug: z.string().trim().min(1, 'Escribe el medicamento de la nebulización.').max(160), amount: z.string().trim().min(1, 'Escribe la cantidad de cada medicamento de la nebulización.').max(40) })).min(1).max(NEB_MAX_COMPONENTS, `Una nebulización lleva hasta ${NEB_MAX_COMPONENTS} medicamentos.`),
+    diluentVolume: z.string().trim().max(40).optional(), diluent: z.string().trim().max(80).optional() }).optional(),
 }).superRefine((m, ctx) => {
+  if (m.nebulization && m.route !== 'Nebulización') ctx.addIssue({ code: 'custom', message: 'La nebulización va con la vía «Nebulización».' })
+  if (m.nebulization && (m.infusionRate || m.loadingDose)) ctx.addIssue({ code: 'custom', message: 'Una nebulización no lleva infusión ni primera dosis distinta.' })
   if (m.infusionRate) {
     const unit = INFUSION_UNITS.find((u) => u.value === (m.infusionUnit ?? 'ml/h'))!
     if (!twoDecimals(m.infusionRate)) ctx.addIssue({ code: 'custom', message: `${m.drug}: la velocidad de infusión lleva hasta dos decimales.` })
@@ -650,7 +656,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const id = randomUUID()
     try {
       // ME2 (ronda 8): cada registro guarda la cantidad que correspondía a esa dosis (la inicial o las siguientes)
-      const amount = scheduledAt ? doseAt(med, new Date(scheduledAt)) : med.dose
+      // ME4 (ronda 9): una sesión de nebulización guarda la composición que se aplicó
+      const amount = med.nebulization ? nebulizationBody(med.nebulization) : scheduledAt ? doseAt(med, new Date(scheduledAt)) : med.dose
       await sql.run('INSERT INTO hosp_doses (id, clinic_id, med_id, scheduled_at, given_at, given_by, status, note, corrected_at, corrected_by, correction_reason, dose) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
         [id, cid, med.id, scheduledAt, givenAt.toISOString(), user.id, b.status, b.note || null, late ? new Date().toISOString() : null, late ? user.id : null, late ? `Registro tardío: ${b.reason}` : null, amount])
     } catch (e) {
@@ -987,6 +994,9 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       items: z.array(z.object({
         drug: z.string().trim().min(1), presentation: z.string().default(''), dose: z.string().trim().min(1, 'Escribe la dosis.'), route: z.string().optional(),
         frequency: z.string().min(1), duration: z.string().trim().min(1, 'Escribe la duración.'), instructions: z.string().optional(), quantity: z.string().max(60).optional(), prnCondition: z.string().trim().max(120).optional(),
+        // ME3 y ME4 (ronda 9): también en la receta de salida
+        loadingDose: z.string().trim().max(60).optional(), nebulization: z.object({ components: z.array(z.object({ drug: z.string().trim().min(1, 'Escribe el medicamento de la nebulización.').max(160), amount: z.string().trim().min(1, 'Escribe la cantidad de cada medicamento de la nebulización.').max(40) })).min(1).max(NEB_MAX_COMPONENTS, `Una nebulización lleva hasta ${NEB_MAX_COMPONENTS} medicamentos.`),
+    diluentVolume: z.string().trim().max(40).optional(), diluent: z.string().trim().max(80).optional() }).optional(),
       })).default([]),
       validityDays: validityInput,
       // MC5: HEA corregida, exámenes que se piden al alta y emitir la epicrisis con el mismo contenido

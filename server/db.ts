@@ -19,7 +19,7 @@ import { closeVisitsOfInpatients } from './stayVisits.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '63'
+const SCHEMA_VERSION = '65'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -963,6 +963,10 @@ CREATE INDEX IF NOT EXISTS exam_ref_clinic ON exam_ref_values (clinic_id, exam_k
 -- v63 (ronda 8, RF1): una referencia firmada no se edita: se corrige con adenda (como las notas)
 ALTER TABLE addenda DROP CONSTRAINT IF EXISTS addenda_target_kind_check;
 ALTER TABLE addenda ADD CONSTRAINT addenda_target_kind_check CHECK (target_kind IN ('consultation','note','referral'));
+
+-- v65 (ronda 9). ME4: nebulización con varios medicamentos en una sola orden (componentes y diluyente, en JSON). La dosis
+-- registrada guarda la composición aplicada en su columna «dose» (v59).
+ALTER TABLE hosp_meds ADD COLUMN IF NOT EXISTS nebulization TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

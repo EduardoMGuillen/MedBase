@@ -988,3 +988,12 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .exam-order__acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .exam-order__acts > b { min-width: 13rem; }
 .exam-sign-box { justify-self: start; align-self: end; width: 120px; height: 80px; border: 1px dashed var(--line); border-radius: 8px; display: grid; place-items: center; color: var(--faint); font-size: 12px; }
+
+/* ME4 (ronda 9): bloque «Nebulizar con:» */
+.neb { display: grid; gap: 10px; min-width: 0; }
+.neb__row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 7rem) 44px; gap: 8px; align-items: end; }
+.neb__row > * { min-width: 0; }
+.neb__x { min-height: 44px; }
+.neb__note { grid-column: 1 / -1; }
+.neb__dil { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 8px; }
+@media (max-width: 420px) { .neb__row { grid-template-columns: minmax(0, 1fr) 44px; } .neb__amount { grid-column: 1; } }

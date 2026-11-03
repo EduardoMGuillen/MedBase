@@ -1,5 +1,6 @@
 import type { Dose, InpatientFile, InpatientMed, InpatientNote, OrderLine, OrderLineTag, OrderMark } from './types.js'
 import { clinicParts } from './dateInput.js'
+import { loadingLine, nebulizationLine, type Nebulization } from './medExtras.js'
 import { normalize } from './patients.js'
 
 /**
@@ -27,7 +28,7 @@ export const courseEnd = (m: Pick<Schedulable, 'firstAt' | 'days'>) => (m.days ?
 /** ¿Ya terminó sus días? */
 export const courseDone = (m: Pick<Schedulable, 'firstAt' | 'days'>, now = new Date()) => courseEnd(m) <= now.getTime()
 
-type Labelable = Pick<InpatientMed, 'drug' | 'dose' | 'route' | 'everyHours' | 'prn'> & { prnCondition?: string; infusionRate?: number; infusionUnit?: string; loadingDose?: string; loadingStat?: boolean; firstAt?: string }
+type Labelable = Pick<InpatientMed, 'drug' | 'dose' | 'route' | 'everyHours' | 'prn'> & { prnCondition?: string; infusionRate?: number; infusionUnit?: string; loadingDose?: string; loadingStat?: boolean; firstAt?: string; nebulization?: Nebulization }
 
 /** ME1 (ronda 8): «mL/h», «mL/min». */
 export const infusionUnitLabel = (u?: string) => (u === 'ml/min' ? 'mL/min' : 'mL/h')
@@ -49,12 +50,14 @@ export function medLabel(m: Labelable) {
   const route = ROUTE_ABBR[m.route] ?? m.route.toLowerCase()
   if (m.infusionRate) return `${[m.drug, m.dose, route].filter(Boolean).join(' ')} · Infusión a ${formatRate(m.infusionRate)} ${infusionUnitLabel(m.infusionUnit)}`
   const freq = m.everyHours ? `c/${m.everyHours}h` : m.prn ? '' : 'dosis única'
-  if (m.loadingDose?.trim() && m.everyHours && !m.prn) {
-    const when = m.loadingStat === false && m.firstAt ? `el ${dmyHm(m.firstAt)}` : 'STAT'
-    return `${m.drug} ${route} · ${m.loadingDose.trim()} ${when} y luego ${m.dose} ${freq}`
-  }
   // MC2 (ronda 6): «PRN · si dolor»
   const prn = m.prn ? (m.prnCondition?.trim() ? `PRN · ${m.prnCondition.trim()}` : 'PRN') : ''
+  // ME4 (ronda 9): «Nebulizar con: Salbutamol 3 mL + Bromuro de ipratropio 1 mL, diluido en 3 mL de SSN 0.9% · c/6h»
+  if (m.nebulization?.components?.length) return nebulizationLine(m.nebulization, [freq, prn].filter(Boolean).join(' '))
+  if (m.loadingDose?.trim() && m.everyHours && !m.prn) {
+    const when = m.loadingStat === false && m.firstAt ? `el ${dmyHm(m.firstAt)}` : 'STAT'
+    return loadingLine(m.drug, route, m.loadingDose, m.dose, freq, when)
+  }
   return [m.drug, m.dose, route, freq, prn].filter(Boolean).join(' ')
 }
 

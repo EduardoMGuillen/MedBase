@@ -43,6 +43,7 @@ import { registerRoster } from './routes/roster.js'
 import { registerEpicrisis } from './routes/epicrisis.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permission } from '../src/lib/permissions.js'
+import { NEB_MAX_COMPONENTS } from '../src/lib/clinicalConfig.js'
 import { yearsOld } from '../src/lib/inpatient.js'
 import { normalizeDni } from '../src/lib/format.js'
 import { AUDIT_KINDS, auditKind, type AuditKind } from '../src/lib/audit.js'
@@ -1195,7 +1196,13 @@ const rxItem = z.object({
   applyInClinic: z.boolean().optional(),
   // MC2 (ronda 6): un PRN lleva su condición («si dolor»)
   prnCondition: z.string().trim().max(120).optional(),
+  // ME3 (ronda 9): primera dosis distinta (STAT); ME4: nebulización con varios medicamentos
+  loadingDose: z.string().trim().max(60).optional(),
+  nebulization: z.object({ components: z.array(z.object({ drug: z.string().trim().min(1, 'Escribe el medicamento de la nebulización.').max(160), amount: z.string().trim().min(1, 'Escribe la cantidad de cada medicamento de la nebulización.').max(40) })).min(1).max(NEB_MAX_COMPONENTS, `Una nebulización lleva hasta ${NEB_MAX_COMPONENTS} medicamentos.`),
+    diluentVolume: z.string().trim().max(40).optional(), diluent: z.string().trim().max(80).optional() }).optional(),
 }).refine((it) => !/^PRN\b/i.test(it.frequency) || !!it.prnCondition, 'Escribe la condición del medicamento PRN (ej. si dolor).')
+  .refine((it) => !it.nebulization || it.route === 'Nebulización', 'La nebulización va con la vía «Nebulización».')
+  .refine((it) => !it.loadingDose || (/cada\s+\d+\s*h/i.test(it.frequency) && !it.nebulization), 'La primera dosis distinta va con una frecuencia cada tantas horas.')
 
 const hhmm = z.string().regex(/^\d{2}:\d{2}$/, 'Escribe la hora como 08:00.')
 /** Horario de un médico: el formato anterior (una franja para todos los días) o franjas por día. */

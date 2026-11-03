@@ -1,4 +1,7 @@
 import { useState, type FormEvent } from 'react'
+import { isNebulization, loadingAllowed, nebulizationBody, nebulizationReady } from '../lib/medExtras'
+import { EMPTY_NEB, LoadingDoseFields, NebulizerFields } from './MedExtras'
+import { frequencyHours } from '../lib/inpatient'
 import { useStore } from '../lib/store'
 import { Modal } from './ui'
 import { Pencil, Pill, Plus, TriangleAlert, X } from 'lucide-react'
@@ -85,19 +88,34 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
   const needsDays = requireDuration && !m.applyInClinic && !/única/i.test(m.frequency)
   // MC2 (ronda 6): un PRN no se agrega sin su condición
   const prn = isPrnFrequency(m.frequency)
-  const ready = m.drug.trim() && m.dose.trim() && m.frequency && (!prn || m.prnCondition?.trim()) && (m.duration.trim() || !needsDays) && (!conflict || overrideAllergy) && (!duplicate || overrideDup)
-  const computed = needsDays ? autoQuantity(m) : undefined
+  // ME3 y ME4 (ronda 9): la misma lógica que la nota (src/lib/medExtras.ts y components/MedExtras.tsx)
+  const neb = isNebulization(m.route)
+  const nebValue = m.nebulization ?? EMPTY_NEB
+  const nebConflict = neb ? nebValue.components.map((c) => (c.drug.trim() ? allergyConflict(patient.allergies, c.drug) : null)).find(Boolean) ?? null : null
+  const repeating = loadingAllowed({ everyHours: frequencyHours(m.frequency), prn, route: m.route })
+  const [loading, setLoading] = useState(!!initial?.loadingDose)
+  const withLoading = loading && repeating
+  const ready = (neb ? nebulizationReady(nebValue) && (!nebConflict || overrideAllergy) : m.drug.trim() && m.dose.trim() && (!conflict || overrideAllergy) && (!duplicate || overrideDup))
+    && m.frequency && (!prn || m.prnCondition?.trim()) && (m.duration.trim() || !needsDays) && (!withLoading || m.loadingDose?.trim())
+  // Con primera dosis distinta o nebulización la cantidad no se calcula sola (texto libre)
+  const computed = needsDays && !withLoading && !neb ? autoQuantity(m) : undefined
   const submit = (e?: FormEvent) => {
     e?.preventDefault()
     if (!ready) return
-    onSave({ ...m, drug: m.drug.trim(), presentation: m.presentation.trim(), dose: m.dose.trim(), duration: m.duration.trim(),
+    if (neb) {
+      const clean = { components: nebValue.components.filter((c) => c.drug.trim()).map((c) => ({ drug: c.drug.trim(), amount: c.amount.trim() })),
+        diluentVolume: nebValue.diluentVolume?.trim() || undefined, diluent: nebValue.diluent?.trim() || undefined }
+      return onSave({ ...m, drug: 'Nebulización', presentation: '', dose: nebulizationBody(clean), nebulization: clean, loadingDose: undefined, duration: m.duration.trim(),
+        instructions: m.instructions?.trim() || undefined, quantity: m.quantity?.trim() || undefined, applyInClinic: clinicOption && m.applyInClinic ? true : undefined, prnCondition: prn ? m.prnCondition?.trim() : undefined })
+    }
+    onSave({ ...m, drug: m.drug.trim(), presentation: m.presentation.trim(), dose: m.dose.trim(), duration: m.duration.trim(), nebulization: undefined, loadingDose: withLoading ? m.loadingDose!.trim() : undefined,
       instructions: m.instructions?.trim() || undefined, quantity: m.quantity?.trim() || computed || undefined,
       applyInClinic: clinicOption && m.applyInClinic ? true : undefined, prnCondition: prn ? m.prnCondition?.trim() : undefined })
   }
   const freqs = FREQUENCIES.includes(m.frequency) ? FREQUENCIES : [m.frequency, ...FREQUENCIES]
   return (<>
     <form className="rx-form" onSubmit={submit}>
-      <div className="field suggest">
+      {!neb && <div className="field suggest">
         <span>Medicamento</span>
         <input className="input" autoFocus={!initial} value={m.drug} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} autoComplete="off"
           onChange={(e) => { setM({ ...m, drug: e.target.value }); setOverrideAllergy(false); setOverrideDup(false); setOpen(true) }} placeholder="Busca en el vademécum por nombre genérico o comercial" />
@@ -115,12 +133,14 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
             )}
           </div>
         )}
-      </div>
+      </div>}
       <div className="form-grid">
-        <label className="field"><span>Presentación y concentración</span><input className="input" value={m.presentation} onChange={(e) => setM({ ...m, presentation: e.target.value })} placeholder="Ej. Tableta 500 mg" /></label>
-        <label className="field"><span>Dosis</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g, 1 tableta, 5 ml" /></label>
-        <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => setM({ ...m, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
+        {!neb && <label className="field"><span>Presentación y concentración</span><input className="input" value={m.presentation} onChange={(e) => setM({ ...m, presentation: e.target.value })} placeholder="Ej. Tableta 500 mg" /></label>}
+        {!neb && <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g, 1 tableta, 5 ml" /></label>}
+        <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => { const r = e.target.value; setM({ ...m, route: r, nebulization: isNebulization(r) ? m.nebulization ?? structuredClone(EMPTY_NEB) : m.nebulization }) }}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
+        {neb && <NebulizerFields value={nebValue} onChange={(n) => setM({ ...m, nebulization: n })} allergies={patient.allergies} firstName={patient.firstName} />}
         <label className="field"><span>Frecuencia</span><select className="select" value={m.frequency} onChange={(e) => setM({ ...m, frequency: e.target.value })}>{freqs.map((f) => <option key={f}>{f}</option>)}</select></label>
+        {repeating && <LoadingDoseFields checked={loading} onChecked={setLoading} value={m.loadingDose ?? ''} onValue={(v) => setM({ ...m, loadingDose: v })} warn={!!m.drug.trim()} />}
         {prn && <label className="field"><span>Condición</span>
           <input className={`input ${!m.prnCondition?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.prnCondition ?? ''} onChange={(e) => setM({ ...m, prnCondition: e.target.value })} placeholder="Ej. si dolor, si fiebre" aria-required="true" />
           {!m.prnCondition?.trim() && <small className="field__msg field__msg--warn">Obligatoria en un PRN: cuándo se da.</small>}</label>}
@@ -135,14 +155,21 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
         <label className="check-line"><input type="checkbox" checked={!!m.applyInClinic} onChange={(e) => setM({ ...m, applyInClinic: e.target.checked })} />
           <span><b>Aplicar en la clínica</b><small>No va a la receta: pasa a la hoja de medicamentos para que enfermería o el médico lo apliquen. El paciente queda en observación mientras se aplica.</small></span></label>
       )}
-      {m.drug.trim() && m.dose.trim() && <p className="muted" style={{ fontSize: 13.5 }}>Se verá así: <b>{medicationLine(m)}</b></p>}
-      {conflict && (
+      {(neb ? nebulizationReady(nebValue) : m.drug.trim() && m.dose.trim()) && <p className="muted" style={{ fontSize: 13.5, overflowWrap: 'anywhere' }}>Se verá así: <b>{medicationLine(neb
+        ? { ...m, drug: 'Nebulización', nebulization: nebValue } : { ...m, loadingDose: withLoading ? m.loadingDose : undefined })}</b></p>}
+      {neb && nebConflict && !overrideAllergy && (
+        <div className="alert-strip" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+          <span style={{ display: 'flex', gap: 8 }}><TriangleAlert size={18} style={{ flex: 'none' }} />{patient.firstName} es alérgica/o a {nebConflict}.</span>
+          <button type="button" className="btn btn--danger btn--sm" style={{ background: '#fff' }} onClick={() => setOverrideAllergy(true)}>Indicar de todos modos</button>
+        </div>
+      )}
+      {!neb && conflict && (
         <div className="alert-strip" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
           <span style={{ display: 'flex', gap: 8 }}><TriangleAlert size={18} style={{ flex: 'none' }} />{patient.firstName} es alérgica/o a {conflict}. {m.drug} puede provocar una reacción.</span>
           {!overrideAllergy && <button type="button" className="btn btn--danger btn--sm" style={{ background: '#fff' }} onClick={() => setOverrideAllergy(true)}>Indicar de todos modos</button>}
         </div>
       )}
-      {duplicate && (
+      {!neb && duplicate && (
         <div className="alert-strip alert-strip--amber" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
           <span>{duplicate} ya está en la lista de medicamentos.</span>
           {!overrideDup && <button type="button" className="btn btn--ghost btn--sm" style={{ background: '#fff' }} onClick={() => setOverrideDup(true)}>Agregarlo otra vez</button>}
