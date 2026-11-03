@@ -100,7 +100,9 @@ Los diagnósticos registrados antes con CIE-10 se conservan y se muestran marcad
 | Observación | Estancia corta sin cama, desde la nota de consulta ("Ingreso a observación"). Lista con tiempo transcurrido, notas de evolución (la primera es la de consulta), hoja de medicamentos y laboratorio. Egreso o "Pasar a hospitalización" conservando todo el expediente |
 | Hospitalización | Tablero de camas por cuarto y especialidad. Expediente del hospitalizado: hoja de hospitalización, hoja de medicamentos con horario automático (enfermería o el médico registran cada dosis), notas de evolución en dos columnas (SOAP y órdenes) con checklist de enfermería y alertas de órdenes nuevas, notas de procedimiento con fecha y hora, autorizaciones (consentimiento informado) para imprimir, firmar y subir, notas de enfermería, laboratorios y nota de egreso con receta. Expediente completo paginado para imprimir |
 | Crónicos y seguimientos | Pacientes crónicos con control periódico, recordatorios y procedimientos programados. El mensaje de WhatsApp se ve como le llegaría al paciente; el envío es una simulación hasta conectar WhatsApp Business |
-| Recetas y constancias | Receta en media carta con logo, nombre, identidad (o responsable del menor), edad, expediente, medicamentos e indicaciones aparte. "Recetas" en el menú del médico: receta sin consulta, historial y "Repetir receta". Vademécum de la clínica para medicamentos que no están en el catálogo. Constancias de atención, incapacidad, acompañante o libres, con número correlativo, guardadas en el expediente; el diagnóstico sólo si se marca |
+| Recetas y constancias | Receta en media carta con logo, nombre, identidad (o responsable del menor), edad, expediente, medicamentos e indicaciones aparte. "Recetas" en el menú del médico: receta sin consulta, historial por páginas y "Repetir receta". Constancias de atención, incapacidad, acompañante o libres, con número correlativo, guardadas en el expediente; el diagnóstico sólo si se marca. En hospitalización y observación, un medicamento marcado «No hay en la clínica (va a receta)» sigue en la hoja y sale en una receta para comprarlo afuera (la imprime el médico o enfermería; válida solo con firma y sello del médico) |
+| Vademécum | Las 530 filas del Listado Nacional de Medicamentos Esenciales de Honduras 2023 (`data/presentaciones_medicamentos_lnme.md`) con todas sus columnas, más el catálogo base de Clinara y lo que agregue la clínica; todo con origen «Catálogo base Clinara». Páginas, orden por nombre o vía y filtro por vía en Configuración › Vademécum. El buscador de medicamento sugiere desde 2 letras |
+| Exámenes | Laboratorio (unos 314 exámenes y 27 perfiles) e Imagen y gabinete (128 estudios por región: al ordenar se eligen proyección, contraste, lado o región y la orden se arma sola). Resultados con valores, rangos y críticos, y archivos con vista previa. Órdenes impresas por grupo y por médico, también de los pendientes desde la pestaña Exámenes |
 | Expediente | Formato de historia clínica: ficha de identificación, alergias, antecedentes (patológicos, quirúrgicos, traumáticos, hospitalarios, transfusionales, medicamentos, no patológicos, heredofamiliares, gineco-obstétricos) y consultas en orden legal con el manejo al final. Nota de consulta imprimible, recetas, archivos y constancias |
 | Caja | Por cobrar, cobro con varios servicios, descuento, efectivo con cambio, tarjeta, transferencia o aseguradora, recibos imprimibles, cierre del día y anulación (sólo administración) |
 | Reportes | Ingresos, asistencia, reservas en línea, carga por médico, formas de pago y diagnósticos frecuentes, con exportación CSV |
@@ -131,17 +133,39 @@ Clinara funciona como plataforma: una sola instalación atiende a varias clínic
   ```
   Si existe `.env.neon.local`, la crea en la base de Neon; si no, en la base local.
 
+## Rondas de correcciones
+
+Cada ronda de correcciones de Emil tiene su pedido, su plan y su reporte. Las migraciones de datos de cada ronda son
+idempotentes y corren solas al desplegar (cuando cambia `SCHEMA_VERSION` en `server/db.ts`), en todas las clínicas y
+consultorios. Antes de borrar o reemplazar algo, guardan una copia en la tabla `config_backups`.
+
+| Ronda | Pedido | Plan | Reporte | Registro |
+|---|---|---|---|---|
+| 8 | `docs/ronda8/PEDIDO_RONDA8.md` | `PLAN_RONDA8.md` | `REPORTE_RONDA8.md` | — |
+| 9 | `docs/ronda9/PEDIDO_RONDA9.md` | `PLAN_RONDA9.md` | `REPORTE_RONDA9.md` | — |
+| 10 | `docs/ronda10/PEDIDO_RONDA10.md` | `PLAN_RONDA10.md` | `REPORTE_RONDA10.md` | `docs/ronda10/REGISTRO_RONDA10.md` |
+
+Ronda 10 (esquema 69 → 73): catálogo de Imagen y gabinete completo (CA5), limpieza de umbrales archivados (UM3),
+vademécum con las 530 filas del listado nacional y su pantalla con páginas (ME6, ME7), buscador de medicamento que solo
+sugiere al escribir (ME8), STAT solo intravenoso (ME9), receta de lo que no hay en la clínica (ME10), ventana de registro de
+dosis y calendario sin recortes (EN4), resultado en pantalla y con archivo (EX4), imprimir órdenes de pendientes (EX5),
+paginación en las listas largas (GE5) y «Ordenar exámenes» de tamaño fijo (GE6). Las constantes nuevas están en
+`src/lib/clinicalConfig.ts` con `VALIDAR: Emil`.
+
 ## Comandos
 
 | Comando | Qué hace |
 |---|---|
 | `npm run dev` | Levanta la API (puerto 3001) y la app (puerto 5173) con recarga automática |
-| `npm test` | Corre las pruebas de la API sobre Postgres: permisos, flujo de la cita, reserva en línea, caja, reportes, dos pasos, archivos, bitácora, hospitalización y las correcciones (`server/corrections.test.ts`) |
+| `npm test` | Corre las pruebas de la API sobre Postgres: permisos, flujo de la cita, reserva en línea, caja, reportes, dos pasos, archivos, bitácora, hospitalización y las de cada ronda de correcciones (`server/ronda*.test.ts`) |
 | `npm run build` | Compila la app para producción |
 | `npm start` | Sirve la app compilada y la API en http://localhost:3001 (ejecuta antes `npm run build`) |
 | `npm run db:reset` | Borra la base local y vuelve a cargar la demo con la agenda de hoy (detén antes el servidor) |
 | `npm run db:neon` | Crea las tablas y recarga la demo en Neon, usando la cadena de `.env.neon.local` |
 | `npm run superadmin -- correo "Nombre"` | Crea o restablece una cuenta de Administración de Clinara |
+| `npm run me5:build` | Regenera `src/lib/lnme/generated.ts` desde el `.md` del listado nacional (falla si el archivo no trae 530 filas válidas) |
+| `npm run me6:compare [-- .env.neon.local]` | Solo lee: compara, por número, las 530 filas del `.md` con el vademécum de cada clínica y consultorio (0 faltantes = completo) |
+| `npm run um3:diagnose [-- .env.neon.local]` | Solo lee: lista los umbrales críticos archivados de cada clínica, si son predeterminados y quién los archivó según la bitácora |
 
 La agenda de demo se genera con la fecha del día en que se crea la base. Si lo pruebas otro día, usa `npm run db:reset` o, como administración, el botón *Restablecer demo*.
 
