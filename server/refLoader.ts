@@ -29,17 +29,29 @@ export async function loadLabSources(q: Sql) {
   }
 }
 
-async function insertRow(q: Sql, clinicId: string, v: Omit<RefValue, 'how' | 'row'> & { row?: string }, origin: string, now: string, extra: { archived?: string; reason?: string } = {}) {
-  await q.run(`INSERT INTO exam_ref_values (id, clinic_id, exam_key, exam_name, analyte, sex, unit, low, high, high_open, expected, note, warn, sources, origin, origin_label, version, md_row,
-      created_at, archived_at, archive_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  [randomUUID(), clinicId, examKey(v.exam), v.exam, v.analyte ?? '', v.sex, v.unit ?? '', v.low ?? null, v.high ?? null, !!v.highOpen, v.expected ?? null, v.note ?? null, !!v.warn,
+const COLUMNS = ['id', 'clinic_id', 'exam_key', 'exam_name', 'analyte', 'sex', 'unit', 'low', 'high', 'high_open', 'expected', 'note', 'warn', 'sources', 'origin', 'origin_label',
+  'version', 'md_row', 'created_at', 'archived_at', 'archive_reason']
+
+/** Una fila lista para insertar (en lote: contra Neon, una por una tardaría demasiado en el primer pedido tras desplegar). */
+function rowOf(clinicId: string, v: Omit<RefValue, 'how' | 'row'> & { row?: string }, origin: string, now: string, extra: { archived?: string; reason?: string } = {}): unknown[] {
+  return [randomUUID(), clinicId, examKey(v.exam), v.exam, v.analyte ?? '', v.sex, v.unit ?? '', v.low ?? null, v.high ?? null, !!v.highOpen, v.expected ?? null, v.note ?? null, !!v.warn,
     JSON.stringify(v.sources ?? []), origin, origin === 'catalog' ? LOAD_ORIGIN : origin === 'initial' ? 'Valor inicial de Clinara (sin fuente) · VALIDAR: Emil' : 'Editado por la clínica',
-    origin === 'catalog' ? GENERATED.version : null, v.row ?? null, now, extra.archived ?? null, extra.reason ?? null])
+    origin === 'catalog' ? GENERATED.version : null, v.row ?? null, now, extra.archived ?? null, extra.reason ?? null]
+}
+
+async function insertMany(q: Sql, rows: unknown[][]) {
+  const per = Math.floor(1000 / COLUMNS.length)
+  for (let i = 0; i < rows.length; i += per) {
+    const chunk = rows.slice(i, i + per)
+    await q.run(`INSERT INTO exam_ref_values (${COLUMNS.join(',')}) VALUES ${chunk.map(() => `(${COLUMNS.map(() => '?').join(',')})`).join(',')}`, chunk.flat())
+  }
 }
 
 export async function loadRefValues(q: Sql, clinicId: string): Promise<RefLoadReport> {
   const now = new Date().toISOString()
   const report: RefLoadReport = { inserted: 0, replaced: [], kept: 0, initial: 0 }
+  const pending: unknown[][] = []
+  const archive: string[] = []
   const active = new Map((await q.query('SELECT * FROM exam_ref_values WHERE clinic_id = ? AND archived_at IS NULL', [clinicId])).map((r) => [keyOf(r as never), r]))
   const fileKeys = new Set((GENERATED.values as RefValue[]).filter((v) => v.analyte).map((v) => `${examKey(v.exam)}|${v.analyte}`))
   // Los rangos que traía la app en la lista fija: los que el .md reemplaza quedan archivados como «antes»; los demás, vigentes
@@ -48,8 +60,8 @@ export async function loadRefValues(q: Sql, clinicId: string): Promise<RefLoadRe
     const k = `${examKey(e.name)}|${a.name}`
     if (hadInitial.has(k)) continue
     const replaced = fileKeys.has(k)
-    await insertRow(q, clinicId, { exam: e.name, analyte: a.name, unit: a.unit, sex: 'all', low: a.low, high: a.high, sources: ['initial'] }, 'initial', now,
-      replaced ? { archived: now, reason: `Reemplazado por ${LOAD_ORIGIN}` } : {})
+    pending.push(rowOf(clinicId, { exam: e.name, analyte: a.name, unit: a.unit, sex: 'all', low: a.low, high: a.high, sources: ['initial'] }, 'initial', now,
+      replaced ? { archived: now, reason: `Reemplazado por ${LOAD_ORIGIN}` } : {}))
     report.initial++
     if (replaced) {
       const now2 = (GENERATED.values as RefValue[]).filter((v) => v.exam === e.name && v.analyte === a.name)
@@ -63,12 +75,17 @@ export async function loadRefValues(q: Sql, clinicId: string): Promise<RefLoadRe
     if (cur && cur.origin === 'clinic') { report.kept++; continue }
     if (cur && cur.origin === 'catalog' && same(cur, v)) { report.kept++; continue }
     if (cur) {
-      await q.run('UPDATE exam_ref_values SET archived_at = ?, archive_reason = ? WHERE id = ?', [now, `Reemplazado por ${LOAD_ORIGIN}`, String(cur.id)])
+      archive.push(String(cur.id))
       report.replaced.push({ exam: v.exam, analyte: v.analyte, sex: v.sex, before: fmt(cur), after: fmt({ low: v.low, high: v.high, high_open: v.highOpen, expected: v.expected }) })
     }
-    await insertRow(q, clinicId, v, 'catalog', now)
+    pending.push(rowOf(clinicId, v, 'catalog', now))
     report.inserted++
   }
+  for (let i = 0; i < archive.length; i += 500) {
+    const ids = archive.slice(i, i + 500)
+    await q.run(`UPDATE exam_ref_values SET archived_at = ?, archive_reason = ? WHERE id IN (${ids.map(() => '?').join(',')})`, [now, `Reemplazado por ${LOAD_ORIGIN}`, ...ids])
+  }
+  await insertMany(q, pending)
   return report
 }
 
