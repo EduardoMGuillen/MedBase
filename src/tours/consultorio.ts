@@ -6,7 +6,7 @@ import { HELP, type TourStep } from './types.js'
  */
 export const consultorio: TourStep[] = [
   { route: '/app', title: 'Tu consultorio está listo', body: 'Te mostramos dónde está cada cosa para atender, cobrar y administrar tu consultorio.' },
-  { route: '/app', target: 'vista', title: 'Vista de médico y vista de administrador', body: 'Eres médico y administrador. En la vista de médico ves lo clínico; en la de administrador, configuración, personal y reportes. Cambia aquí cuando quieras.' },
+  { route: '/app', target: 'vista', title: 'Médico y Administración', body: 'Eres médico y administrador. Como Médico ves lo clínico; como Administración, configuración, personal y reportes. Cambia de rol aquí cuando quieras.' },
   { route: '/app/consulta-externa', target: 'sala-espera', perm: 'consult.write', title: 'Atender', body: 'Tu sala de espera. Toca «Atender» para abrir la consulta: historia, examen, diagnóstico CIE-11, indicaciones, medicamentos y exámenes.' },
   { route: (c) => c.consultNote, target: 'nota-consulta', perm: 'consult.write', title: 'La nota de consulta', body: 'Firmada no se edita: para corregir algo se agrega una adenda. La receta y la orden de exámenes salen aparte.' },
   { route: '/app/caja', target: 'nuevo-cobro', perm: 'billing.manage', title: 'Cobrar', body: 'Cobras tú o tu asistente: servicios, forma de pago y abonos. El recibo se imprime o se envía por WhatsApp.' },

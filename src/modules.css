@@ -18,7 +18,8 @@
 .side__me { display: flex; gap: 10px; align-items: center; min-width: 0; flex: 1; text-decoration: none; border-radius: 10px; padding: 4px; margin: -4px; }
 .side__me { cursor: default; }
 /* Ronda 8: «Configuración» de cada persona queda pegada encima del perfil, al fondo del menú */
-.side__config { margin-top: auto; margin-bottom: 6px; }
+.side__config { margin-top: auto; margin-bottom: 6px; position: relative; }
+.side__config::before { content: ""; position: absolute; left: 8px; right: 8px; top: -8px; border-top: 1px solid var(--line-soft); }
 .side__config + .side__user { margin-top: 0; }
 .side__me div { min-width: 0; }
 .side__scrim { display: none; }
@@ -674,3 +675,13 @@ tr.clickable { cursor: pointer; }
 /* Ronda 8: fuente de cada umbral crítico y «Volver al de la app» */
 .crit__src { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-top: -2px; }
 .link-btn { background: none; border: 0; padding: 0; font: inherit; color: var(--petrol); text-decoration: underline; cursor: pointer; }
+
+/* GE2 (ronda 8): cambio de rol dentro de la tarjeta del usuario; la tarjeta no es botón */
+.role-menu { position: relative; }
+.role-menu__btn { display: inline-flex; align-items: center; gap: 2px; background: none; border: 0; padding: 2px 4px; margin-left: -4px; border-radius: 6px; font: inherit; color: inherit; cursor: pointer; }
+.role-menu__btn:hover, .role-menu__btn[aria-expanded="true"] { background: var(--ward, rgba(0,0,0,.05)); }
+.role-menu__pop { position: absolute; bottom: calc(100% + 6px); left: -8px; z-index: 30; min-width: 180px; display: grid; padding: 6px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.14); }
+.role-menu__pop button { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border: 0; background: none; border-radius: 6px; font: inherit; font-size: 14px; text-align: left; cursor: pointer; color: inherit; }
+.role-menu__pop button[aria-checked="true"] { font-weight: 700; }
+.role-menu__pop button[aria-checked="false"] { padding-left: 30px; }
+.role-menu__pop button:hover { background: var(--ward, rgba(0,0,0,.05)); }

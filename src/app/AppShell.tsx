@@ -8,7 +8,8 @@ import { Avatar } from '../components/ui'
 import { SearchPalette } from '../components/Search'
 import { Tour, TourResume, type TourEnd } from '../components/Tour'
 import { useStore } from '../lib/store'
-import { features, ROLE_LABEL, VIEW_LABEL, viewsOf, type Permission } from '../lib/permissions'
+import { features, type Permission } from '../lib/permissions'
+import { RoleMenu } from '../components/ViewSwitch'
 import type { Role } from '../lib/types'
 import { cap, localISODate, sameDay } from '../lib/format'
 import { miniTourFor, tourFor, tourKey, type TourCtx, type TourStep } from '../lib/tours'
@@ -29,7 +30,7 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
   { to: '/app/reportes', label: 'Reportes', icon: BarChart3, perm: 'reports.view', group: 'Administración' },
   { to: '/app/personal', label: 'Personal y roles', icon: UserCog, perm: 'staff.manage', group: 'Administración' },
   // Ronda 8: «Configuración» (la de cada persona) va abajo, sobre el perfil; la de la clínica se nombra completa para no repetirla
-  { to: '/app/configuracion', label: 'Configuración de la clínica', icon: Building2, perm: 'settings.manage', group: 'Administración' },
+  { to: '/app/configuracion', label: 'Configuración de la clínica', icon: SettingsIcon, perm: 'settings.manage', group: 'Administración' },
 ]
 
 export default function AppShell() {
@@ -173,8 +174,8 @@ export default function AppShell() {
             <Avatar name={user.name} color={user.color} />
             <div>
               <strong>{user.name}</strong>
-              {/* MC1 (ronda 5): la vista activa es sólo información; se cambia en Inicio */}
-              <small>{viewsOf(user).length > 1 ? VIEW_LABEL[user.role] : ROLE_LABEL[user.role]}</small>
+              {/* GE2 (ronda 8): sólo el nombre del rol; con varios roles, una flecha propia abre la lista para cambiar */}
+              <RoleMenu onSwitched={() => setOpen(false)} />
             </div>
           </div>
           <button className="icon-btn" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={async () => { await signOut(); nav('/login') }}>

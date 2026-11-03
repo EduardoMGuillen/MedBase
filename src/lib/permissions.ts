@@ -112,15 +112,10 @@ export function mainRole(s: { role: Role; roles?: Role[] }): Role {
   return (['doctor', 'nurse', 'assistant', 'reception', 'admin', 'superadmin'] as Role[]).find((r) => hasRole(s, r)) ?? s.role
 }
 
-/** AD5: nombre de cada vista en el selector y en el pie del menú. */
-export const VIEW_LABEL: Record<Role, string> = {
-  superadmin: 'Vista de plataforma',
-  admin: 'Vista de administrador',
-  doctor: 'Vista de médico',
-  nurse: 'Vista de enfermería',
-  reception: 'Vista de recepción',
-  assistant: 'Vista de asistente',
-}
+/**
+ * AD5: nombre de cada vista en el selector de rol. GE1 (ronda 6) y GE2 (ronda 8): sólo el nombre del rol, sin «Vista de».
+ */
+export const VIEW_LABEL: Record<Role, string> = { ...ROLE_LABEL, superadmin: 'Plataforma' }
 
 /** Vistas que puede elegir: sus roles, en el orden del menú (administración primero). */
 export function viewsOf(s: { role: Role; roles?: Role[] }): Role[] {
