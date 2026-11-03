@@ -119,7 +119,7 @@ export function CriticalThresholds() {
                       return <small className="crit__src">
                         {customized(a) && <><span className="badge badge--amber">Cambiado por la clínica</span> Valor de la app: menor de {lim(d.low)}, mayor de {lim(d.high)}{d.unit ? ` ${d.unit}` : ''}.{' '}
                           {!a.archivedAt && <button type="button" className="link-btn" onClick={() => { setText((t) => { const n = { ...t }; delete n[`${a.id}-low`]; delete n[`${a.id}-high`]; return n }); setAnalyte(g.id, a.id, (x) => ({ ...x, low: d.low, high: d.high, unit: d.unit })) }}>Volver al de la app</button>}{' '}</>}
-                        {d.source ? `Fuente: ${d.source}` : 'Umbral de la app (fuente pendiente de la lista de Emil).'}
+                        {d.source ? `Fuente: ${d.source}` : 'Umbral de la app. La lista de valores de referencia de Emil no trae un valor crítico para este analito.'}
                       </small>
                     })()}
                     {a.low != null && a.high != null && a.low >= a.high && <small className="crit__err">El límite inferior debe ser menor que el superior.</small>}

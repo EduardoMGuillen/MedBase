@@ -124,6 +124,16 @@ export const DEFAULT_CRITICAL_GROUPS: CriticalGroup[] = [
   { id: 'g-coagulacion', name: 'Coagulación', analytes: [an('a-inr', 'INR', '', undefined, 5)] },
   { id: 'g-cardiacos', name: 'Marcadores cardíacos', analytes: [an('a-trop', 'Troponina I', 'ng/mL', undefined, 0.4)] },
   { id: 'g-otros', name: 'Otros', analytes: [an('a-ph', 'pH', '', 7.2, 7.6)] },
+  // UM2 (ronda 8): los únicos valores críticos que trae la lista de Emil (docs/ronda8/valores_referencia_laboratorio.md), con
+  // su fuente. La lista dice «≥100»: la pantalla dice «Crítico si es mayor de», así que va el valor anterior (99.9). VALIDAR: Emil.
+  { id: 'g-farmacos', name: 'Fármacos (niveles)', analytes: [
+    { ...an('a-valproico', 'Ácido valproico', 'µg/mL', undefined, 99.9), source: 'MSD-TDM (valor crítico ≥100)' },
+    { ...an('a-carbamazepina', 'Carbamazepina', 'µg/mL', undefined, 14.9), source: 'MSD-TDM (valor crítico ≥15.0)' },
+    { ...an('a-digoxina', 'Digoxina', 'ng/mL', undefined, 2.0), source: 'MSD-TDM (valor crítico ≥2.1)' },
+    { ...an('a-fenitoina', 'Fenitoína', 'µg/mL', undefined, 24.9), source: 'MSD-TDM (valor crítico ≥25.0)' },
+    { ...an('a-fenobarbital', 'Fenobarbital', 'µg/mL', undefined, 49.9), source: 'MSD-TDM (valor crítico ≥50.0)' },
+    { ...an('a-litio', 'Litio', 'mmol/L', undefined, 2.0), source: 'CHI-TDM (valor de pánico >2.0)' },
+  ] },
 ]
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
