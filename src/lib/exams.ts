@@ -365,3 +365,32 @@ export function typedExam(text: string, catalog: Pick<CatalogExam, 'group' | 'na
   return catalog.find((e) => { const k = examKey(e.name); return t === k || t.startsWith(`${k} `) || k.startsWith(t) && t.length >= 5 }) ??
     catalog.find((e) => t.includes(examKey(e.name.replace(/\s*\(.*\)$/, ''))) && examKey(e.name).length >= 5)
 }
+
+/** IM3 (ronda 13): grupo de los exámenes escritos a mano (no catalogados), al final de la orden impresa. */
+export const UNCATALOGUED_GROUP = 'Otros exámenes'
+
+/**
+ * IM3 (ronda 13): la orden impresa agrupada como el catálogo que ve el médico en «Ordenar exámenes» y en Configuración ›
+ * Catálogo: por área del subgrupo (Hematología, Coagulación, Química en sangre…; en imagen, Rayos X, Ultrasonido…), las áreas
+ * en el orden del catálogo y los exámenes también (sección por sección y en el orden del formulario). El subgrupo es el que
+ * la clínica tiene guardado en su catálogo. Los escritos a mano o que ya no están en el catálogo van al final, en «Otros
+ * exámenes». La numeración reinicia en cada grupo (la pone quien imprime).
+ */
+export function orderGroups<T extends Pick<ExamOrder, 'group' | 'name'> & { uncatalogued?: boolean }>(list: T[], catalog: Pick<CatalogExam, 'group' | 'name' | 'subgroup'>[]) {
+  const known = new Map(catalog.map((c) => [`${c.group}:${examKey(c.name)}`, c]))
+  const inCat: (T & { subgroup?: string })[] = []
+  const loose: T[] = []
+  for (const e of list) {
+    const c = e.uncatalogued ? undefined : known.get(`${e.group}:${examKey(e.name)}`)
+    // Sin el catálogo de la clínica (todavía cargando, o quitado después), el subgrupo de la lista fija
+    const sg = c ? c.subgroup ?? subgroupOf(c) : e.uncatalogued ? OTHER_SUBGROUP : subgroupOf(e)
+    if (c || sg !== OTHER_SUBGROUP) inCat.push({ ...e, subgroup: sg })
+    else loose.push(e)
+  }
+  const out: { title: string; items: T[] }[] = []
+  for (const g of ['lab', 'imaging'] as ExamGroup[]) {
+    for (const a of byArea(inCat, g)) out.push({ title: a.title, items: [...a.items, ...a.sections.flatMap((s) => s.items)] as T[] })
+  }
+  if (loose.length) out.push({ title: UNCATALOGUED_GROUP, items: loose })
+  return out
+}
