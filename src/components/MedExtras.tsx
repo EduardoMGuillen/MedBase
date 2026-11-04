@@ -3,6 +3,7 @@ import { Plus, TriangleAlert, X } from 'lucide-react'
 import { useVademecum } from '../lib/vademecum'
 import { normalize } from '../lib/patients'
 import { DrugSearch } from './DrugSearch'
+import { NotInVademecum } from './AddToVademecum'
 import { allergyConflict } from '../lib/catalogs'
 import { NEB_MAX_COMPONENTS } from '../lib/clinicalConfig'
 import { DILUENT_OPTIONS, type NebComponent, type Nebulization } from '../lib/medExtras'
@@ -75,7 +76,8 @@ export function NebulizerFields({ value, onChange, allergies, firstName }: { val
             <label className="field neb__amount"><span>Cantidad</span><input className="input" value={c.amount} onChange={(e) => set(i, { amount: e.target.value })} placeholder="Ej. 3 mL" aria-label={`Cantidad del medicamento ${i + 1}`} /></label>
             <button type="button" className="icon-btn neb__x" aria-label={`Quitar ${c.drug || `el medicamento ${i + 1}`}`} disabled={value.components.length === 1}
               onClick={() => onChange({ ...value, components: value.components.filter((_, j) => j !== i) })}><X size={15} /></button>
-            {!known && <span className="chip chip--amber neb__note">No está en el vademécum de la clínica</span>}
+            {/* ME11 (ronda 11): la misma franja con «Agregar al vademécum» (vía: la del .md o vacía) */}
+            {!known && <NotInVademecum className="neb__note" drugs={vademecum} name={c.drug} onLinked={(d) => set(i, { drug: d.name })} />}
             {conflict && <span className="alert-strip neb__note" role="alert"><TriangleAlert size={15} />{firstName} es alérgica/o a {conflict}.</span>}
           </div>
         )

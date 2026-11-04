@@ -52,6 +52,7 @@ import { hasBlank, medHasBlank, orderKey } from '../lib/orderSets'
 import { useVademecum } from '../lib/vademecum'
 import { lnmeRoute } from '../lib/drugProvider'
 import { DrugPickedHint } from '../components/DrugSuggestion'
+import { NotInVademecum } from '../components/AddToVademecum'
 import { DrugSearch } from '../components/DrugSearch'
 import type { OrderSet } from '../lib/types'
 import { TabRow } from '../components/TabRow'
@@ -1640,7 +1641,10 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
       {!neb && <DrugSearch value={m.drug} drugs={vademecum} autoFocus placeholder="Busca en el vademécum o escríbelo"
         onChange={(t) => { setM({ ...m, drug: t }); setOverride(false) }}
         onPick={(d) => setM({ ...m, drug: d.name, presentation: d.presentation, route: lnmeRoute(d, m.route) ?? (/ampolla|vial|frasco|bolsa/i.test(d.presentation) ? 'Intravenosa' : defaultRoute(d.presentation)) })}
-        below={<DrugPickedHint drugs={vademecum} name={m.drug} presentation={m.presentation} />} />}
+        below={<><DrugPickedHint drugs={vademecum} name={m.drug} presentation={m.presentation} />
+          {/* ME11 (ronda 11): «Agregar al vademécum» en la franja; lo agregado queda enlazado */}
+          <NotInVademecum drugs={vademecum} name={m.drug} presentation={m.presentation} route={m.route}
+            onLinked={(d) => setM({ ...m, drug: d.name, presentation: d.presentation, route: lnmeRoute(d, m.route) ?? m.route })} /></>} />}
       <div className="form-grid">
         {!neb && <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder={infusion ? 'Ej. 50 mg en 100 mL' : 'Ej. 8 mg'} /></label>}
         <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => { const r = e.target.value; setM({ ...m, route: r, nebulization: isNebulization(r) ? m.nebulization ?? structuredClone(EMPTY_NEB) : m.nebulization }); if (isNebulization(r) && freq === 'infusion') setFreq('6') }}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>

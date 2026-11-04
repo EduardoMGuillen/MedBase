@@ -184,3 +184,20 @@ describe('CA6 (ronda 11): Imagen y gabinete con estudios genéricos', () => {
     assert.ok(!(await nurse.get('/api/exams/tray')).body.some((e: any) => e.id === list[0].id), 'EX3: realizado = terminado')
   })
 })
+
+describe('ME11 (ronda 11): agregar al vademécum desde el aviso', () => {
+  test('el médico agrega (queda en la bitácora); en Clínica no edita ni archiva (también por URL); Administración sí; en Consultorio la titular sí', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const admin = await as('admin@demo.clinara')
+    const add = await doc.post('/api/drugs', { name: 'Medicamento de prueba ME11', presentation: '0.5 mg/2 ml', route: 'Nebulización' })
+    assert.equal(add.status, 201, JSON.stringify(add.body))
+    assert.ok(await sql.one(`SELECT 1 FROM audit WHERE action LIKE 'Agregó al vademécum de la clínica: Medicamento de prueba ME11%' AND user_id = 's-herrera'`))
+    assert.equal((await doc.patch(`/api/drugs/${add.body.id}`, { active: false })).status, 403)
+    assert.equal((await doc.patch(`/api/drugs/${add.body.id}`, { name: 'Otro nombre' })).status, 403)
+    assert.equal((await admin.patch(`/api/drugs/${add.body.id}`, { active: false })).status, 200)
+    const office = await as('alopez@demo.clinara')
+    const own = await office.post('/api/drugs', { name: 'Medicamento de consultorio ME11' })
+    assert.equal(own.status, 201)
+    assert.equal((await office.patch(`/api/drugs/${own.body.id}`, { brand: 'Marca' })).status, 200)
+  })
+})

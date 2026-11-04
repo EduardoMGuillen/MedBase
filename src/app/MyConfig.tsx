@@ -217,7 +217,8 @@ function VademecumPanel() {
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<ClinicDrug | null>(null)
   const favs = useMemo(() => new Set(user?.prefs?.favDrugs ?? []), [user?.prefs?.favDrugs])
-  const canEdit = (d: ClinicDrug) => can('drugs.manage') || d.createdBy === user?.id
+  // ME11 (ronda 11): en Clínica, editar y archivar es de Administración; en un consultorio, también de la médica titular
+  const canEdit = (_d: ClinicDrug) => can('drugs.manage') || user?.clinicKind === 'office'
   const clinicDrug = (id?: string) => clinicDrugs.find((x) => x.id === id)
   // Los desactivados ya no se ofrecen al recetar; quien puede editarlos los sigue viendo aquí para reactivarlos
   const inactive = clinicDrugs.filter((d) => !d.active && canEdit(d)).map(fromClinicDrug)

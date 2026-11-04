@@ -3,7 +3,6 @@ import { isNebulization, loadingAllowed, loadingDroppedByRoute, nebulizationBody
 import { BuyOutsideFields, EMPTY_NEB, LoadingDoseFields, LoadingDropped, NebulizerFields } from './MedExtras'
 import { frequencyHours } from '../lib/inpatient'
 import { useStore } from '../lib/store'
-import { Modal } from './ui'
 import { Pencil, Pill, Plus, TriangleAlert, X } from 'lucide-react'
 import { allergyConflict, EMPTY_MED, FREQUENCIES, isPrnFrequency, type Drug } from '../lib/catalogs'
 import { autoQuantity, defaultRoute, medicationLine, missingDays, ROUTES } from '../lib/format'
@@ -12,6 +11,7 @@ import { useVademecum } from '../lib/vademecum'
 import { lnmeRoute, searchDrugs } from '../lib/drugProvider'
 import { DrugPickedHint } from './DrugSuggestion'
 import { DrugSearch } from './DrugSearch'
+import { AddDrugModal, NotInVademecum } from './AddToVademecum'
 import { medHasBlank } from '../lib/orderSets'
 import type { Patient, PrescriptionItem } from '../lib/types'
 
@@ -127,6 +127,8 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
         extra={(close) => canAdd && q.length >= 3 && !exact ? (
           <button type="button" className="suggest__new" onMouseDown={(e) => e.preventDefault()} onClick={() => { close(); setNewDrug(m.drug.trim()) }}>
             <Plus size={15} />{matches.length ? 'No está en la lista: ' : ''}agregar «{m.drug.trim()}» como nuevo medicamento</button>) : null} />}
+      {/* ME11 (ronda 11): la franja con «Agregar al vademécum» */}
+      {!neb && <NotInVademecum drugs={drugs} name={m.drug} presentation={m.presentation} route={m.route} onLinked={pick} />}
       <div className="form-grid">
         {!neb && <label className="field"><span>Presentación y concentración</span><input className="input" value={m.presentation} onChange={(e) => setM({ ...m, presentation: e.target.value })} placeholder="Ej. Tableta 500 mg" /><DrugPickedHint drugs={drugs} name={m.drug} presentation={m.presentation} /></label>}
         {!neb && <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g, 1 tableta, 5 ml" /></label>}
@@ -175,38 +177,8 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
         <button type="button" className="btn btn--ghost" onClick={onCancel}>Cancelar</button>
       </div>
     </form>
-    {newDrug !== null && <NewDrugModal name={newDrug} onClose={() => setNewDrug(null)} onCreated={(d) => { setNewDrug(null); pick(d) }} />}
+    {newDrug !== null && <AddDrugModal name={newDrug} presentation={m.presentation} route={m.route} drugs={drugs} onClose={() => setNewDrug(null)} onDone={(d) => { setNewDrug(null); pick(d) }} />}
     </>
   )
 }
 
-const FORMS = ['Tableta', 'Cápsula', 'Jarabe', 'Suspensión', 'Gotas', 'Ampolla', 'Vial', 'Crema', 'Ungüento', 'Gel', 'Inhalador', 'Supositorio', 'Óvulo', 'Parche', 'Solución']
-
-/** Registra un medicamento que no está en el vademécum: queda disponible para todos los médicos de la clínica. */
-export function NewDrugModal({ name, onClose, onCreated }: { name: string; onClose: () => void; onCreated: (d: Drug) => void }) {
-  const { addClinicDrug } = useStore()
-  const [f, setF] = useState({ name, brand: '', presentation: 'Tableta', concentration: '', route: 'Oral' })
-  const [busy, setBusy] = useState(false)
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
-  return (
-    <Modal title="Nuevo medicamento" onClose={onClose} footer={<>
-      <button type="button" className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button type="button" className="btn btn--primary" disabled={f.name.trim().length < 2 || busy} onClick={async () => {
-        setBusy(true)
-        const d = await addClinicDrug({ name: f.name.trim(), brand: f.brand.trim() || undefined, presentation: f.presentation || undefined, concentration: f.concentration.trim() || undefined, route: f.route })
-        setBusy(false)
-        if (d) onCreated({ name: d.name, brand: d.brand, presentation: [d.presentation, d.concentration].filter(Boolean).join(' '), group: 'clínica', clinicId: d.id,
-          usual: { dose: '', route: d.route ?? 'Oral', frequency: 'Cada 8 horas', duration: '' } })
-      }}><Plus size={16} />Agregar al vademécum</button>
-    </>}>
-      <p className="muted" style={{ fontSize: 13.5 }}>No está en el vademécum. Al guardarlo queda disponible para todos los médicos de la clínica.</p>
-      <div className="form-grid">
-        <label className="field span-2"><span>Nombre genérico</span><input className="input" autoFocus value={f.name} onChange={set('name')} /></label>
-        <label className="field span-2"><span>Nombre comercial (opcional)</span><input className="input" value={f.brand} onChange={set('brand')} placeholder="Ej. Tylenol" /></label>
-        <label className="field"><span>Presentación</span><select className="select" value={f.presentation} onChange={set('presentation')}>{FORMS.map((x) => <option key={x}>{x}</option>)}</select></label>
-        <label className="field"><span>Concentración</span><input className="input" value={f.concentration} onChange={set('concentration')} placeholder="Ej. 500 mg, 250 mg/5 ml" /></label>
-        <label className="field span-2"><span>Vía habitual</span><select className="select" value={f.route} onChange={set('route')}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
-      </div>
-    </Modal>
-  )
-}

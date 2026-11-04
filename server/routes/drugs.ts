@@ -92,11 +92,13 @@ export function registerDrugs(app: Express, { sql, auth, need, userOf, clinicOf,
     res.json({ added, skipped })
   })
 
-  // Lo editan quien lo agregó y administración (o el médico titular de un consultorio)
+  // ME11 (ronda 11): editar o archivar es de Administración; el médico solo agrega (en Clínica). En un consultorio, la médica
+  // titular también edita desde su vista de médico.
   app.patch('/api/drugs/:id', auth, need('rx.write', 'drugs.manage'), async (req, res) => {
     const cid = clinicOf(req)
     const row = (await sql.one('SELECT * FROM clinic_drugs WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'El medicamento no existe.')
-    if (!can(userOf(req), 'drugs.manage') && row!.created_by !== userOf(req).id) fail(403, 'Sólo quien lo agregó o administración puede editarlo.')
+    const user = userOf(req)
+    if (!can(user, 'drugs.manage') && user.clinicKind !== 'office') fail(403, 'Editar o archivar medicamentos del vademécum es de Administración.')
     const b = parse(body.partial().extend({ active: z.boolean().optional() }), req.body)
     const next = {
       name: b.name ?? String(row!.name), brand: b.brand ?? row!.brand, presentation: b.presentation ?? row!.presentation,
