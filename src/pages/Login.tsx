@@ -6,10 +6,11 @@ import { Avatar } from '../components/ui'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { ROLE_LABEL } from '../lib/permissions'
+import { positionOf } from '../lib/positions'
 import type { Staff } from '../lib/types'
 
 /** Cuentas de demo con botón de acceso rápido: un rol de cada tipo, la segunda clínica y el consultorio. */
-const DEMO_SHORTCUTS = ['s-super', 's-herrera', 's-funez', 's-rios', 's-mejia', 's-admin', 's2-rosales', 's3-lopez', 's3-asistente']
+const DEMO_SHORTCUTS = ['s-super', 's-herrera', 's-funez', 's-rios', 's-mejia', 's-admin', 's-ordonez', 's-castellanos', 's2-rosales', 's3-lopez', 's3-asistente']
 
 export default function Login() {
   const { user, signIn } = useStore()
@@ -97,7 +98,7 @@ export default function Login() {
                   <Avatar name={s.name} color={s.color} />
                   <span>
                     <strong>{s.name}</strong>
-                    <small>{ROLE_LABEL[s.role]}{s.specialty ? `, ${s.specialty}` : ''}{s.clinicName ? `. ${s.clinicName}` : ''}</small>
+                    <small>{positionOf(s.position)?.label ?? ROLE_LABEL[s.role]}{s.specialty ? `, ${s.specialty}` : ''}{s.clinicName ? `. ${s.clinicName}` : ''}</small>
                   </span>
                   <ChevronRight size={18} />
                 </button>
