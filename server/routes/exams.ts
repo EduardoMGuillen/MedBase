@@ -10,7 +10,7 @@ import { areaFor, canReview, EXAMS, examKey, findExam, flagOf, FLOW, GROUP_LABEL
 import type { ImagingDetails } from '../../src/lib/imagingCatalog.js'
 import { ensureExamCatalog } from '../db.js'
 import { removeCatalogExams, setChangesText } from '../ronda11.js'
-import { criticalLimitsOf, defaultAnalyte, defaultValues, isCritical, mergeCriticalGroups, type CriticalAnalyte, type CriticalGroup } from '../../src/lib/clinicalConfig.js'
+import { defaultAnalyte, defaultValues, mergeCriticalGroups, type CriticalAnalyte, type CriticalGroup } from '../../src/lib/clinicalConfig.js'
 import { rangeFor, referenceFromRows } from '../../src/lib/labReference.js'
 import { refRowsFor, toRefRow } from '../refLoader.js'
 import type { ClinicExam, ExamGroup, ExamInput, ExamOrder, ExamProfile, ExamResultValue, ExamStatus } from '../../src/lib/types.js'
@@ -577,8 +577,6 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
       if (Number(r!.result_version ?? 1) !== (b.version ?? 1)) fail(409, 'El resultado cambió mientras lo corregías. Actualiza la página.')
     } else if (['result', 'reviewed', 'cancelled'].includes(String(r!.status))) fail(409, 'Este examen ya tiene resultado o está cancelado.')
     for (const f of b.fileIds ?? []) if (!(await sql.one('SELECT 1 FROM attachments WHERE id = ? AND clinic_id = ? AND patient_id = ?', [f, cid, String(r!.patient_id)]))) fail(400, 'El archivo no corresponde a este paciente.')
-    // AD1 (ronda 5): los umbrales de los grupos de la clínica (analitos propios incluidos)
-    const limits = criticalLimitsOf((await settings(cid)).criticalGroups)
     // AD4: si la clínica renombró un examen de la lista fija, sus analitos siguen viniendo de él
     const linked = await sql.one('SELECT base_key FROM exam_catalog WHERE clinic_id = ? AND norm_key = ?', [cid, examKey(String(r!.name))])
     // UM1 (ronda 8): los valores de referencia de la clínica (su base); si el examen no tiene, los del archivo o la lista fija
@@ -595,12 +593,12 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
       const low = own ? v.low : range.low
       const high = own ? v.high : range.high
       const highOpen = own ? v.highOpen : range.highOpen
-      const critical = isCritical(limits, v.analyte, num, sex)
-      return { ...v, unit: v.unit ?? ref?.unit, low, high, highOpen: highOpen || undefined, reference: ref?.text, flag: Number.isFinite(num) ? flagOf(num, low, high, highOpen) : undefined, critical: critical || undefined }
+      // Ronda 12 (LB3): sin umbrales críticos; solo Alto o Bajo frente al valor de referencia
+      return { ...v, unit: v.unit ?? ref?.unit, low, high, highOpen: highOpen || undefined, reference: ref?.text, flag: Number.isFinite(num) && v.value.trim() !== '' ? flagOf(num, low, high, highOpen) : undefined }
     })
     // GE4: al corregir, la hora del primer registro se conserva (de ahí cuentan los minutos) y la versión anterior se guarda
     const at = b.correct && before?.at ? before.at : new Date().toISOString()
-    const critical = values.some((v) => v.critical)
+    const critical = false
     const who = await patientName(String(r!.patient_id))
     await sql.tx(async (q) => {
       if (b.correct) {

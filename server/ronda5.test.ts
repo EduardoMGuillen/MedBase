@@ -202,7 +202,8 @@ describe('AD1 umbrales críticos por grupo', () => {
     assert.deepEqual(all.find((x) => x[1] === 'Lactato'), ['Otros', 'Lactato', undefined, 4])
   })
 
-  test('Roberto agrega Hematocrito (20 y 60), uno con sólo límite superior y otro con sólo inferior; se archiva sin perderse; la bitácora guarda el antes y el después; un resultado nuevo dispara el aviso crítico', async () => {
+  // Ronda 12 (LB3): se quitó la función de umbrales críticos (pedido del médico); esta prueba de AD1 ya no aplica
+  test.skip('Roberto agrega Hematocrito (20 y 60), uno con sólo límite superior y otro con sólo inferior; se archiva sin perderse; la bitácora guarda el antes y el después; un resultado nuevo dispara el aviso crítico', async () => {
     const admin = await as('admin@demo.clinara')
     let s = (await admin.get('/api/bootstrap')).body.settings
     const groups = structuredClone(s.criticalGroups)

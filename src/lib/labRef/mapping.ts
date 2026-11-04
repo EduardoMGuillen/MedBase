@@ -53,6 +53,12 @@ const PL = 'Perfil lipídico'
 const EL = 'Electrolitos'
 const TC = 'Tiempos de coagulación (TP, TPT, INR)'
 const PATH = 'Negativo / no reactivo / no detectado'
+const GA = 'Gases arteriales'
+const EGO = 'Examen general de orina (EGO)'
+/** Ronda 12 (LB2): exámenes de orina de 24 horas; el volumen de la muestra va como analito de cada uno. */
+const URINE_24H = ['17 Cetosteroides en orina de 24 horas', '17 Hidroxiesteroides en orina de 24 horas', 'Ácido úrico / 24 horas', 'Ácido vanilmandélico en orina de 24 horas',
+  'Calcio / 24 horas', 'Creatinina / 24 horas', 'Depuración de creatinina / 24 horas', 'Fósforo / 24 horas', 'Magnesio / 24 horas', 'Proteínas totales / 24 horas',
+  'Cortisol libre en orina / 24 horas', 'Microalbuminuria en 24 horas']
 
 export const RULES: Rule[] = [
   // 1. Hematología
@@ -119,6 +125,13 @@ export const RULES: Rule[] = [
     cuts: [[/^Ayuno/, 'Glucosa en ayunas'], [/^1 h/, 'Glucosa 1 h'], [/^2 h/, 'Glucosa 2 h']] },
   { row: 'Diabetes gestacional › Curva 3 h, 100 g (Carpenter-Coustan)', how: 'cut', to: [['Curva de tolerancia 3 h glucosa gestacional 100 g']],
     cuts: [[/^Ayuno/, 'Glucosa en ayunas'], [/^1 h/, 'Glucosa 1 h'], [/^2 h/, 'Glucosa 2 h'], [/^3 h/, 'Glucosa 3 h']] },
+  // Ronda 12 (LB2): gases arteriales del adulto (los nombres de analito son los que ya tenía la app)
+  { row: 'Gases arteriales (adulto) › pH', how: 'range', to: [[GA, 'pH']] },
+  { row: 'Gases arteriales (adulto) › pCO₂', how: 'range', to: [[GA, 'pCO2']] },
+  { row: 'Gases arteriales (adulto) › pO₂', how: 'range', to: [[GA, 'pO2']] },
+  { row: 'Gases arteriales (adulto) › Bicarbonato (HCO₃⁻)', how: 'range', to: [[GA, 'HCO3']] },
+  { row: 'Gases arteriales (adulto) › Exceso de base', how: 'range', to: [[GA, 'Exceso de base']] },
+  { row: 'Gases arteriales (adulto) › Saturación de O₂', how: 'range', to: [[GA, 'Saturación de O₂']] },
   { row: 'Función renal, electrolitos y minerales › Creatinina', how: 'range', to: [['Creatinina', 'Creatinina'], [QS, 'Creatinina'], [PR, 'Creatinina']] },
   { row: 'Función renal, electrolitos y minerales › Nitrógeno ureico (BUN)', how: 'range', to: [['Urea nitrogenada (BUN)', 'Nitrógeno ureico (BUN)'], [QS, 'Nitrógeno ureico (BUN)'], [PR, 'Nitrógeno ureico (BUN)']] },
   { row: 'Función renal, electrolitos y minerales › Ácido úrico', how: 'range', to: [['Ácido úrico', 'Ácido úrico'], [QS, 'Ácido úrico'], [PR, 'Ácido úrico']] },
@@ -170,6 +183,7 @@ export const RULES: Rule[] = [
   { row: 'Otras › Investigación de hemoglobina S (HPLC)', how: 'expected', to: [['Investigación de hemoglobina S (HPLC)']] },
 
   // 4. Química en orina
+  { row: '- › Volumen de orina (24 h)', how: 'range', unit: 'mL/24 h', to: URINE_24H.map((e): Target => [e, 'Volumen de orina (24 h)']) },
   { row: '- › 17-cetosteroides (24 h)', how: 'range', to: [['17 Cetosteroides en orina de 24 horas', '17-cetosteroides']] },
   { row: '- › 17-hidroxiesteroides (24 h)', how: 'range', to: [['17 Hidroxiesteroides en orina de 24 horas', '17-hidroxiesteroides']] },
   { row: '- › Ácido úrico (24 h)', how: 'range', to: [['Ácido úrico / 24 horas', 'Ácido úrico (24 h)']] },
@@ -230,7 +244,8 @@ export const RULES: Rule[] = [
   { row: 'Drogas de abuso (orina, tamizaje inicial) › Cocaína (benzoilecgonina)', how: 'cutoff', to: [['Cocaína', 'Cocaína (benzoilecgonina)']] },
   { row: 'Drogas de abuso (orina, tamizaje inicial) › Marihuana (THCA)', how: 'cutoff', to: [['Marihuana', 'Marihuana (THCA)']] },
   { row: 'Drogas de abuso (orina, tamizaje inicial) › Etanol (sangre)', how: 'range', to: [['Etanol', 'Etanol (sangre)']] },
-  { row: 'Drogas de abuso (orina, tamizaje inicial) › Nicotina (cotinina)', how: 'note', to: [['Nicotina']] },
+  { row: 'Drogas de abuso (orina, tamizaje inicial) › Nicotina (suero)', how: 'range', to: [['Nicotina', 'Nicotina (suero)']] },
+  { row: 'Drogas de abuso (orina, tamizaje inicial) › Cotinina (suero)', how: 'note', to: [['Nicotina', 'Cotinina (suero)']] },
   { row: 'Drogas de abuso (orina, tamizaje inicial) › Sets de 2, 4, 7 y 12 drogas', how: 'note', to: [['Set de 2 drogas'], ['Set de 4 drogas'], ['Set de 7 drogas'], ['Set de 12 drogas']] },
   { row: 'Fármacos (rango terapéutico) › Ácido valproico', how: 'drug', to: [['Ácido valproico', 'Ácido valproico']] },
   { row: 'Fármacos (rango terapéutico) › Carbamazepina', how: 'drug', to: [['Carbamazepina', 'Carbamazepina']] },
@@ -298,9 +313,14 @@ export const RULES: Rule[] = [
   { row: 'Serologías con interpretación verificada › Anticuerpos hepatitis A IgG', how: 'expected', to: [['Anticuerpos hepatitis "A" IgG']] },
   { row: 'Serologías con interpretación verificada › Anticuerpos hepatitis A IgM', how: 'expected', to: [['Anticuerpos hepatitis "A" IgM']] },
   { row: 'Serologías con interpretación verificada › R.P.R.', how: 'expected', to: [['R.P.R.']] },
+  { row: 'Serologías con interpretación verificada › R.P.R. / V.D.R.L. reactivo: título', how: 'append', into: ['R.P.R.'], to: [['VDRL']] },
   { row: 'Serologías con interpretación verificada › V.D.R.L.', how: 'expected', to: [['VDRL']] },
   { row: 'Serologías con interpretación verificada › Anticuerpos Treponema (sífilis TP)', how: 'expected', to: [['Anticuerpos Treponema (sífilis TP)']] },
-  { row: 'Serologías con interpretación verificada › Anticuerpos dengue (IgM) y antígeno NS1', how: 'expected', to: [['Serología para dengue (NS1, IgM, IgG)']] },
+  { row: 'Serologías con interpretación verificada › Anticuerpos dengue (IgM) y antígeno NS1', how: 'expected', to: [['Serología para dengue (NS1, IgM, IgG)', 'IgM y antígeno NS1']] },
+  { row: 'Serologías con interpretación verificada › Anticuerpos dengue IgG', how: 'expected', to: [['Serología para dengue (NS1, IgM, IgG)', 'IgG']] },
+  { row: 'Serologías con interpretación verificada › Herpes simple tipo 1 y tipo 2, IgG específica', how: 'expected', to: [['Herpes II IgM, IgG', 'IgG (tipo 1 y tipo 2)']] },
+  { row: 'Serologías con interpretación verificada › Herpes simple IgM', how: 'expected', to: [['Herpes II IgM, IgG', 'IgM']] },
+  { row: 'Serologías con interpretación verificada › Toxoplasma IgG, avidez (índice, método VIDAS)', how: 'note', to: [['Toxo avidez', 'Índice de avidez IgG']] },
   { row: 'Serologías con interpretación verificada › Anticuerpos Zika IgG / IgM', how: 'expected', to: [['Anticuerpos Zika IgG'], ['Anticuerpos Zika IgM']] },
   { row: 'Serologías con interpretación verificada › Anticuerpos estreptolisina O (ASO)', how: 'range', unit: 'unidades Todd', to: [['Anticuerpos estreptolisina "O" (ASO)', 'ASO']] },
   { row: 'Serologías con interpretación verificada › Anticuerpos rubéola IgG', how: 'note', to: [['Anticuerpos rubéola IgG', 'Rubéola IgG']] },
@@ -328,7 +348,7 @@ export const RULES: Rule[] = [
   { row: '- › AFP', how: 'range', to: [['AFP', 'AFP']] },
   { row: '- › CEA', how: 'range', to: [['CEA', 'CEA']] },
   { row: '- › CA 19-9', how: 'range', to: [['Ca 19-9 (páncreas, vesícula)', 'CA 19-9']] },
-  { row: '- › CA 15-3', how: 'note', to: [['Ca 15-3 (mama)', 'CA 15-3']] },
+  { row: '- › CA 15-3', how: 'range', to: [['Ca 15-3 (mama)', 'CA 15-3']] },
   { row: '- › CA 125', how: 'range', to: [['Ca 125 (ovario)', 'CA 125']] },
   { row: '- › HE4', how: 'note', to: [['HE4 (proteína epididimal humana 4, ovario)', 'HE4']] },
   { row: '- › Algoritmo ROMA', how: 'note', to: [['Algoritmo ROMA (ovario)', 'ROMA']] },
@@ -371,12 +391,16 @@ export const RULES: Rule[] = [
     .map(([n, a]): Rule => ({ row: `Espermograma (límites inferiores de referencia, OMS 2021) › ${n}`, how: n === 'pH' ? 'range' : 'min', to: [['Espermograma', a]] })),
 
   // 12. Orina
-  { row: 'Examen físico › Color', how: 'expected', to: [['Examen general de orina (EGO)']] },
-  { row: 'Examen físico › Densidad (gravedad específica)', how: 'range', to: [['Examen general de orina (EGO)', 'Densidad']] },
-  { row: 'Examen químico › pH', how: 'range', to: [['Examen general de orina (EGO)', 'pH urinario']] },
-  ...['Glucosa', 'Cetonas', 'Proteínas', 'Bilirrubina', 'Nitritos', 'Hemoglobina (sangre)', 'Urobilinógeno'].map((n): Rule => ({ row: `Examen químico › ${n}`, how: 'expected', to: [['Examen general de orina (EGO)']] })),
-  { row: 'Examen microscópico › Eritrocitos', how: 'expected', to: [['Examen general de orina (EGO)']] },
-  ...['Leucocitos', 'Cilindros', 'Células epiteliales escamosas'].map((n): Rule => ({ row: `Examen microscópico › ${n}`, how: 'expected', to: [['Examen general de orina (EGO)']] })),
+  // Ronda 12 (LB2): cada parámetro del EGO es un analito (físico, químico y microscópico), en el orden del examen
+  { row: 'Examen físico › Color', how: 'expected', to: [[EGO, 'Color']] },
+  { row: 'Examen físico › Aspecto', how: 'expected', to: [[EGO, 'Aspecto']] },
+  { row: 'Examen físico › Densidad (gravedad específica)', how: 'range', to: [[EGO, 'Densidad']] },
+  { row: 'Examen químico › pH', how: 'range', to: [[EGO, 'pH urinario']] },
+  ...['Glucosa', 'Cetonas', 'Proteínas', 'Bilirrubina', 'Nitritos', 'Hemoglobina (sangre)'].map((n): Rule => ({ row: `Examen químico › ${n}`, how: 'expected', to: [[EGO, n]] })),
+  { row: 'Examen químico › Urobilinógeno', how: 'range', unit: 'mg/dL', to: [[EGO, 'Urobilinógeno']] },
+  { row: 'Examen microscópico › Eritrocitos', how: 'range', to: [[EGO, 'Eritrocitos']] },
+  { row: 'Examen microscópico › Leucocitos', how: 'range', to: [[EGO, 'Leucocitos']] },
+  ...['Cilindros', 'Células epiteliales escamosas', 'Cristales', 'Bacterias', 'Levaduras', 'Moco'].map((n): Rule => ({ row: `Examen microscópico › ${n}`, how: 'expected', to: [[EGO, n]] })),
   { row: 'Otras pruebas en orina › Porfobilinógeno', how: 'expected', to: [['Porfobilinógeno / urobilinógeno']] },
   { row: 'Otras pruebas en orina › Prueba de embarazo en orina', how: 'expected', to: [['Prueba de embarazo en orina']] },
 
@@ -398,9 +422,11 @@ export const RULES: Rule[] = [
   // 14. Biología molecular y 15. PCR
   { row: '- › Prueba de paternidad', how: 'expected', to: [['Prueba de paternidad (consultar previamente al laboratorio)']] },
   { row: '- › BRCA 1 y 2', how: 'expected', to: [['BRCA 1 y 2 (consultar previamente al laboratorio)']] },
-  { row: '- › PCR VIH / Carga viral VIH', how: 'expected', to: [['PCR HIV'], ['Carga viral VIH']] },
-  { row: '- › Carga viral hepatitis B / hepatitis C', how: 'expected', to: [['Carga viral hepatitis B'], ['Carga viral hepatitis C']] },
-  { row: '- › Carga viral / PCR citomegalovirus', how: 'expected', to: [['Carga viral citomegalovirus'], ['PCR para citomegalovirus']] },
+  { row: '- › Carga viral VIH-1 (ARN, plasma)', how: 'expected', to: [['Carga viral VIH']] },
+  { row: '- › PCR VIH cualitativa', how: 'expected', to: [['PCR HIV']] },
+  { row: '- › Carga viral hepatitis B (ADN, suero)', how: 'expected', to: [['Carga viral hepatitis B']] },
+  { row: '- › Carga viral hepatitis C (ARN, suero)', how: 'expected', to: [['Carga viral hepatitis C']] },
+  { row: '- › Carga viral citomegalovirus (ADN, plasma)', how: 'expected', to: [['Carga viral citomegalovirus'], ['PCR para citomegalovirus']] },
   { row: '- › PCR Epstein-Barr', how: 'expected', to: [['PCR para Epstein Barr']] },
   { row: '- › PCR herpes I y II', how: 'expected', to: [['PCR para herpes I y II']] },
   { row: '- › PCR Toxoplasma', how: 'expected', to: [['PCR para Toxoplasma']] },

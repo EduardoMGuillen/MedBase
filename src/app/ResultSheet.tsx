@@ -74,7 +74,7 @@ function ResultBlock({ e, staffById, showGroup }: { e: ExamOrder; staffById: (id
           <tbody>{r.values.map((v) => (
             <tr key={v.analyte}><td>{v.analyte}</td><td className={v.flag ? 'is-flag' : ''}>{v.value}</td><td>{v.unit ?? ''}</td>
               <td>{[rangeText(v), v.reference].filter(Boolean).join(' · ')}</td>
-              <td>{v.flag ? (v.flag === 'high' ? 'Alto' : 'Bajo') : ''}{v.critical ? <b> · Crítico</b> : ''}</td></tr>
+              <td>{v.flag ? (v.flag === 'high' ? 'Alto' : 'Bajo') : ''}</td></tr>
           ))}</tbody>
         </table>
       ) : null}

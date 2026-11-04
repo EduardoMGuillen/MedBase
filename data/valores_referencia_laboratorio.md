@@ -1,6 +1,6 @@
 # Valores de referencia de laboratorio — Catálogo completo
 
-**Población:** adultos no embarazadas (≥18 años), salvo indicación · **Unidades:** convencionales · **Fecha:** 2026-11-02
+**Población:** adultos no embarazadas (≥18 años), salvo indicación · **Unidades:** convencionales · **Fecha:** 2026-11-04 (actualización: campos nuevos verificados; ver *Cambios del 04/11/2026* al final)
 
 > **Cómo leer este documento**
 > - Los intervalos son referencias generales **verificadas en la fuente citada**. El rango oficial de un resultado es siempre el del laboratorio que lo emite (depende del método y del equipo).
@@ -121,6 +121,17 @@
 | Curva 2 h, 75 g (un paso, IADPSG) | Ayuno ≥92 · 1 h ≥180 · 2 h ≥153 (basta **un** valor) | mg/dL | [ADA-2026] |
 | Curva 3 h, 100 g (Carpenter-Coustan) | Ayuno ≥95 · 1 h ≥180 · 2 h ≥155 · 3 h ≥140 (se requieren **dos** valores) | mg/dL | [ADA-2026] |
 
+### Gases arteriales (adulto)
+
+| Parámetro | Valor de referencia | Unidades | Fuente |
+|---|---|---|---|
+| pH | 7.35–7.45 | — | [Mayo-MCHS-GSA] |
+| pCO₂ | Hombres 35–48 · Mujeres 32–45 | mm Hg | [Mayo-MCHS-GSA] |
+| pO₂ | 83–108 | mm Hg | [Mayo-MCHS-GSA] |
+| Bicarbonato (HCO₃⁻) | 22–26 | mmol/L | [Mayo-MCHS-GSA] |
+| Exceso de base | −2 a +3 | mmol/L | [Mayo-MCHS-GSA] |
+| Saturación de O₂ | 96–99 | % | [Mayo-MCHS-GSA] |
+
 ### Función renal, electrolitos y minerales
 
 | Prueba | Valor de referencia | Unidades | Fuente |
@@ -215,6 +226,7 @@
 
 | Prueba | Valor de referencia | Unidades | Fuente |
 |---|---|---|---|
+| Volumen de orina (24 h) | 800–2000 (con ingesta de líquidos de ~2 L/día) | mL/24 h | [MLP-Vol24h] |
 | 17-cetosteroides (24 h) | Hombres 7–20 · Mujeres 5–15 | mg/24 h | [MLP-17KS] |
 | 17-hidroxiesteroides (24 h) | Mujeres 2–8 · Hombres 3–10 | mg/24 h | [ABIM-2026] |
 | Ácido úrico (24 h) | 250–750 | mg/24 h | [ABIM-2026] |
@@ -315,7 +327,8 @@
 | Cocaína (benzoilecgonina) | 150 | ng/mL | [SAMHSA] |
 | Marihuana (THCA) | 50 | ng/mL | [SAMHSA] |
 | Etanol (sangre) | <5 (intoxicación ≥80–100) | mg/dL | [ABIM-2026] |
-| Nicotina (cotinina) ‡ | Negativo en no fumador; punto de corte depende del kit | ng/mL | ‡ |
+| Nicotina (suero) | <3.0 | ng/mL | [Mayo-Nicotina] |
+| Cotinina (suero) | No fumador sin exposición <3.0 · Exposición pasiva <8.0 · Consumidor de tabaco (pico) 200–800 | ng/mL | [Mayo-Nicotina] |
 | Sets de 2, 4, 7 y 12 drogas | Usan los puntos de corte de cada sustancia; las no listadas aquí dependen del kit ‡ | ng/mL | [SAMHSA] / ‡ |
 
 ### Fármacos (rango terapéutico)
@@ -383,7 +396,7 @@
 | ANA (ELISA) | ≤1.0 | U | [RespirRes-2017] |
 | ANA 9 líneas / ANA 18max / ENA / Panel de miositis (inmunoblot) ‡ | Negativo para cada antígeno | — | ‡ |
 | Anti-mitocondriales (AMA) | ≤1:5 | título | [ABIM-2026] |
-| Anti-membrana basal glomerular IgG ‡ | Negativo; punto de corte depende del kit | — | ‡ |
+| Anti-membrana basal glomerular IgG | <1.0 negativo · ≥1.0 positivo | U | [Mayo-GBM] |
 | Anticardiolipinas IgG | <20 | GPL | [ABIM-2026] |
 | Anticardiolipinas IgM | <20 | MPL | [ABIM-2026] |
 | Antifosfolípidos IgG / IgM | Ver anticardiolipinas y anti-β2 glicoproteína I | — | [ABIM-2026] |
@@ -409,9 +422,14 @@
 | Anticuerpos hepatitis A IgG | No reactivo = sin inmunidad; reactivo = inmunidad por infección o vacuna | [SD-Hepatitis] |
 | Anticuerpos hepatitis A IgM | No reactivo (reactivo = infección aguda o inmunización reciente) | [SD-Hepatitis] |
 | R.P.R. | No reactivo = sin evidencia de sífilis (puede ser negativo en sífilis primaria temprana) | [CDC-Sífilis] |
+| R.P.R. / V.D.R.L. reactivo: título | Se informa el título hasta el punto final (ej. 1:8), sin "<" ni ">"; usar el mismo tipo de prueba y laboratorio para el seguimiento | [CDPH-Sífilis-2025] |
 | V.D.R.L. | No reactivo (igual que RPR; títulos no intercambiables entre sí) | [CDC-Sífilis] |
 | Anticuerpos *Treponema* (sífilis TP) | No reactivo; si es reactivo, suele persistir de por vida | [CDC-Sífilis] |
 | Anticuerpos dengue (IgM) y antígeno NS1 | Negativos; un NS1 negativo no descarta infección | [CDC-Dengue] |
+| Anticuerpos dengue IgG | Negativo | [Mayo-Dengue] |
+| Herpes simple tipo 1 y tipo 2, IgG específica | Negativo | [Mayo-HSV] |
+| Herpes simple IgM ‡ | Negativo; sin fuente específica verificada (Mayo no ofrece IgM) | ‡ |
+| Toxoplasma IgG, avidez (índice, método VIDAS) | Baja ≤0.2 · Intermedia 0.2–0.3 · Alta >0.3. Una avidez alta (≥0.3) excluye infección adquirida en los últimos 4 meses | [RIMTSP-Toxo-2024] / [Montoya-2002] |
 | Anticuerpos Zika IgG / IgM | Negativos; reacción cruzada con otros flavivirus | [CDC-Zika] |
 | Anticuerpos estreptolisina O (ASO) | <200 unidades Todd | [ABIM-2026] |
 | Anticuerpos rubéola IgG | ≤7 UI/mL negativo (no inmune) · 8–9 equívoco · ≥10 positivo (inmune) | [UIowa-Rubéola] |
@@ -451,7 +469,7 @@ Resultado esperado en persona no infectada: **Negativo / No reactivo / No detect
 | AFP | <10 | ng/mL | [ABIM-2026] |
 | CEA | <2.5 | ng/mL | [ABIM-2026] |
 | CA 19-9 | 0–37 | U/mL | [ABIM-2026] |
-| CA 15-3 ‡ | Sin intervalo verificado (ABIM solo incluye CA 27-29 <38 U/mL) | U/mL | ‡ |
+| CA 15-3 | <30 (método Roche ECLIA) | U/mL | [Mayo-CA153] |
 | CA 125 | <35 | U/mL | [ABIM-2026] |
 | HE4 | Premenopausia 0–70 · Posmenopausia 0–140 | pmol/L | [Bumrungrad-ROMA] |
 | Algoritmo ROMA | Alto riesgo: premenopausia ≥7.4% · posmenopausia ≥25.3% | % | [Bumrungrad-ROMA] |
@@ -562,6 +580,7 @@ Citoquímica sin intervalos de referencia estandarizados; se interpreta según e
 | Parámetro | Resultado esperado | Fuente |
 |---|---|---|
 | Color | Casi incoloro a amarillo oscuro | [MLP-EGO] |
+| Aspecto | Claro | [Davis-EGO] |
 | Densidad (gravedad específica) | 1.002–1.030 | [ABIM-2026] |
 
 #### Examen químico
@@ -575,16 +594,20 @@ Citoquímica sin intervalos de referencia estandarizados; se interpreta según e
 | Bilirrubina | No detectable | [MLP-EGO] |
 | Nitritos | Ausentes | [MLP-EGO] |
 | Hemoglobina (sangre) | Ausente | [MLP-EGO] |
-| Urobilinógeno ‡ | Cantidades pequeñas; intervalo no verificado | ‡ |
+| Urobilinógeno | Hasta 1 mg/dL | [Davis-EGO] |
 
 #### Examen microscópico
 
 | Parámetro | Resultado esperado | Fuente |
 |---|---|---|
 | Eritrocitos | ≤4 por campo de alto poder | [MLP-Eritrocitos-orina] |
-| Leucocitos | No se encuentran normalmente | [MLP-EGO] |
+| Leucocitos | <5 por campo de alto poder | [Davis-EGO] |
 | Cilindros | Algunos cilindros hialinos son normales; otros tipos son anormales | [MLP-Cilindros] |
 | Células epiteliales escamosas | Pocas; abundantes sugieren contaminación de la muestra | [MLP-Epiteliales] |
+| Cristales | Pueden verse cristales normales según el pH: en orina ácida, ácido úrico, oxalato de calcio y uratos amorfos; en orina alcalina, fosfato triple, fosfato de calcio, biurato de amonio, carbonato de calcio y fosfatos amorfos | [Davis-EGO] |
+| Bacterias | No se observan | [Davis-EGO] |
+| Levaduras | No se observan | [Davis-EGO] |
+| Moco | Puede observarse en cualquier cantidad | [Mayo-MCHS-Orina] |
 
 ### Otras pruebas en orina
 
@@ -619,7 +642,7 @@ Citoquímica sin intervalos de referencia estandarizados; se interpreta según e
 
 | Prueba | Resultado esperado |
 |---|---|
-| Prueba de paternidad | No aplica intervalo de referencia (informa probabilidad de paternidad) |
+| Prueba de paternidad | No aplica intervalo de referencia. Informa probabilidad de paternidad e índice de paternidad combinado; la meta del análisis es probabilidad ≥99% e índice ≥100 [OSU-Paternidad] |
 | BRCA 1 y 2 | No aplica intervalo de referencia (informa variantes detectadas y su clasificación) |
 
 ---
@@ -630,9 +653,11 @@ Resultado esperado en persona no infectada: **No detectado.** No se verificó un
 
 | Prueba | Resultado esperado |
 |---|---|
-| PCR VIH / Carga viral VIH | No detectado ‡ |
-| Carga viral hepatitis B / hepatitis C | No detectado ‡ |
-| Carga viral / PCR citomegalovirus | No detectado ‡ |
+| Carga viral VIH-1 (ARN, plasma) | No detectado. Si se detecta por debajo del límite de cuantificación se informa "<20 copias/mL" (detectado, no cuantificable; límite propio de cada ensayo) [Mayo-VIH-CV] |
+| PCR VIH cualitativa | No detectado ‡ |
+| Carga viral hepatitis B (ADN, suero) | No detectado. "<10 UI/mL" = detectado, no cuantificable (límite propio del ensayo) [Mayo-VHB-CV] |
+| Carga viral hepatitis C (ARN, suero) | No detectado. "<15 UI/mL" = detectado, no cuantificable; **no equivale** a "No detectado" [Mayo-VHC-CV] |
+| Carga viral citomegalovirus (ADN, plasma) | No detectado. "<35 UI/mL" = detectado, no cuantificable (límite propio del ensayo) [Mayo-CMV-CV] |
 | PCR Epstein-Barr | No detectado ‡ |
 | PCR herpes I y II | No detectado ‡ |
 | PCR *Toxoplasma* | No detectado ‡ |
@@ -666,8 +691,12 @@ Resultado esperado en persona no infectada: **No detectado.** No se verificó un
 - **HE4 y ROMA:** los puntos de corte corresponden al método Abbott (CMIA).
 - **Widal:** el título significativo citado proviene de un estudio de 2017 en población de la India; depende de la endemicidad local.
 - **Autoanticuerpos:** los puntos de corte dependen del método y del kit.
+- **Cargas virales:** el límite de cuantificación depende del ensayo (los números citados son los de Mayo Clinic Laboratories). Un resultado "<límite" significa **detectado pero no cuantificable**, distinto de "No detectado".
+- **Cristales en orina:** Davis los describe como normales según el pH; algunos laboratorios (ej. Mayo Clinic Health System) informan "No se observan" como referencia. Se usa Davis (decisión de Emil, 04/11/2026); el laboratorio que emite el resultado puede ajustarlo.
+- **CA 15-3 y anti-MBG:** los valores son del método de Mayo Clinic Laboratories; verifica el de tu laboratorio.
+- **Cotinina:** valores en suero; en orina los puntos de corte son otros y dependen del kit.
 
-**Pruebas sin fuente específica verificada (‡):** marcadas en el texto. Son, en su mayoría, pruebas cualitativas de detección de patógenos o tinciones, cuyo resultado esperado en una persona sana es "negativo/no detectado" por definición, y algunas pruebas cuyo rango depende totalmente del kit (FAI, insulina posprandial, curva de insulina, CA 15-3, anti-MBG, urobilinógeno, rubéola IgM).
+**Pruebas sin fuente específica verificada (‡):** marcadas en el texto. Son, en su mayoría, pruebas cualitativas de detección de patógenos o tinciones, cuyo resultado esperado en una persona sana es "negativo/no detectado" por definición, y algunas pruebas cuyo rango depende totalmente del kit (FAI, insulina posprandial, curva de insulina, rubéola IgM). Desde el 04/11/2026, CA 15-3, anti-MBG, urobilinógeno y nicotina/cotinina ya tienen fuente verificada.
 
 ---
 
@@ -732,3 +761,48 @@ Resultado esperado en persona no infectada: **No detectado.** No se verificó un
 57. **[MGH-Retracción]** Van Cott EM, Laposata M. *Coagulation.* En: Jacobs DS et al. *The Laboratory Test Handbook*, 5.ª ed. (vía MGH Lab Test). https://mghlabtest.partners.org/?p=1097
 58. **[FPN-Coag]** FPnotebook. *Whole Blood Clotting Time.* https://mobile.fpnotebook.com/HemeOnc/Lab/WhlBldCltngTm.htm
 59. **[Shetty-Widal-2017]** Shetty J. *Use of Widal test in diagnosis of typhoid fever in North Indian population by estimating baseline titer in control group.* Asian J Pharm Clin Res 2017;10(7). https://journals.innovareacademics.in/index.php/ajpcr/article/download/18789/11635
+
+### Fuentes agregadas el 04/11/2026
+
+60. **[Davis-EGO]** *Davis's Lab & Diagnostic Tests.* Urinalysis (valores normales del examen físico, químico y microscópico). https://nursing.unboundmedicine.com/nursingcentral/pview/Davis-Lab-and-Diagnostic-Tests/425285/all/Urinalysis
+61. **[Mayo-MCHS-Orina]** Mayo Clinic Health System (Mankato), con Mayo Clinic Laboratories. *Urinalysis, Microscopic* (MICO), valores de referencia. https://isj.testcatalog.org/show/MICO
+62. **[MLP-Vol24h]** MedlinePlus. *Urine 24-hour volume.* https://medlineplus.gov/ency/article/003425.htm
+63. **[Mayo-VIH-CV]** Mayo Clinic Laboratories. *HIV-1 RNA Detection and Quantification, Plasma.* https://www.mayocliniclabs.com/test-catalog/overview/113581
+64. **[Mayo-VHB-CV]** Mayo Clinic Laboratories. *Hepatitis B Virus (HBV) DNA Detection and Quantification by Real-Time PCR, Serum.* https://www.mayocliniclabs.com/test-catalog/overview/65555
+65. **[Mayo-VHC-CV]** Mayo Clinic Laboratories. *Hepatitis C Virus (HCV) RNA Detection and Quantification by Real-Time RT-PCR, Serum.* https://www.mayocliniclabs.com/test-catalog/overview/97291
+66. **[Mayo-CMV-CV]** Mayo Clinic Laboratories. *Cytomegalovirus (CMV) DNA Detection and Quantification by Real-Time PCR, Plasma.* https://www.mayocliniclabs.com/test-catalog/overview/601954
+67. **[Mayo-CA153]** Mayo Clinic Laboratories. *Cancer Antigen 15-3 (CA 15-3), Serum.* https://www.mayocliniclabs.com/test-catalog/overview/81607
+68. **[Mayo-GBM]** Mayo Clinic Laboratories. *Glomerular Basement Membrane Antibodies, IgG, Serum.* https://www.mayocliniclabs.com/test-catalog/overview/8106
+69. **[Mayo-Nicotina]** Mayo Clinic Laboratories. *Nicotine and Metabolites, Serum.* https://www.mayocliniclabs.com/test-catalog/overview/82509
+70. **[CDPH-Sífilis-2025]** California Department of Public Health. *CDC and CDPH Laboratory Recommendations for Syphilis Testing* (19/12/2025). https://www.cdph.ca.gov/Programs/CID/DCDC/CDPH%20Document%20Library/DCL-Laboratory-Recommendations-Syphilis-Testing.pdf
+71. **[OSU-Paternidad]** Oklahoma State University Center for Health Sciences, Forensic Sciences. *DNA Reports* (relationship testing). https://medicine.okstate.edu/forensics/hit/dna-reports.html
+72. **[Mayo-MCHS-GSA]** Mayo Clinic Health System (Mankato), con Mayo Clinic Laboratories. *Blood Gas, Arterial, Point of Care* (PCABG), valores de referencia del adulto. https://isj.testcatalog.org/show/PCABG
+73. **[Mayo-Dengue]** Mayo Clinic Laboratories. *Dengue Virus Antibody, IgG and IgM, Serum* (DENGM). https://mml.testcatalog.org/show/DENGM
+74. **[Mayo-HSV]** Mayo Clinic Laboratories. *Herpes Simplex Virus (HSV) Type 1- and Type 2-Specific Antibodies, IgG, Serum* (HSVG). https://nyuhslab.testcatalog.org/show/HSVG
+75. **[RIMTSP-Toxo-2024]** Revista do Instituto de Medicina Tropical de São Paulo (2024). Avidez de IgG anti-*Toxoplasma* con VIDAS: puntos de corte del fabricante. https://scielo.br/j/rimtsp/a/bQxbLJkRYwvpFcQzhfB3vCs
+76. **[Montoya-2002]** Montoya JG, Liesenfeld O, Kinney S, Press C, Remington JS. Avidez de IgG anti-*Toxoplasma* con VIDAS en embarazadas. J Clin Microbiol 2002;40(7):2504-8. Resumen: https://stanfordhealthcare.org/publications/176/17626.html
+
+---
+
+## Cambios del 04/11/2026
+
+| Prueba | Antes | Ahora | Fuente |
+|---|---|---|---|
+| EGO · Aspecto | No estaba | Claro | [Davis-EGO] |
+| EGO · Urobilinógeno | ‡ Cantidades pequeñas; intervalo no verificado | Hasta 1 mg/dL | [Davis-EGO] |
+| EGO · Leucocitos | No se encuentran normalmente [MLP-EGO] | <5 por campo de alto poder (para poder escribir un número) | [Davis-EGO] |
+| EGO · Cristales, Bacterias, Levaduras | No estaban | Ver tabla del EGO | [Davis-EGO] |
+| EGO · Moco | No estaba | Puede observarse en cualquier cantidad | [Mayo-MCHS-Orina] |
+| Volumen de orina (24 h) | No estaba | 800–2000 mL/24 h | [MLP-Vol24h] |
+| Nicotina / cotinina | ‡ | Nicotina <3.0 ng/mL; cotinina por exposición | [Mayo-Nicotina] |
+| Anti-MBG IgG | ‡ | <1.0 U negativo | [Mayo-GBM] |
+| CA 15-3 | ‡ | <30 U/mL | [Mayo-CA153] |
+| RPR/VDRL reactivo | Sin regla de título | Título hasta punto final | [CDPH-Sífilis-2025] |
+| Cargas virales VIH, VHB, VHC, CMV | ‡ No detectado | No detectado, con el significado de "<límite" | [Mayo-…-CV] |
+| Prueba de paternidad | Sin umbral | Meta: probabilidad ≥99% e índice ≥100 | [OSU-Paternidad] |
+| Gases arteriales | No estaban | pH, pCO₂, pO₂, HCO₃⁻, exceso de base, SatO₂ | [Mayo-MCHS-GSA] |
+| Dengue IgG | No estaba | Negativo | [Mayo-Dengue] |
+| Herpes simple IgG | No estaba | Negativo | [Mayo-HSV] |
+| Toxoplasma IgG, avidez | No estaba | Baja, intermedia y alta por índice | [RIMTSP-Toxo-2024] / [Montoya-2002] |
+
+**No se encontró fuente verificable** (siguen con ‡): herpes simple IgM, rubéola IgM (Mayo indica que se hace en laboratorios de salud pública y no da valor), FAI, insulina y glucosa posprandial, curvas no estandarizadas, cultivos y tinciones ("sin crecimiento" / "no se observan" por definición), PCR cualitativas y paneles moleculares. La densidad de Davis (1.005–1.03) **no** reemplazó a la de ABIM (1.002–1.030), que es la fuente principal.

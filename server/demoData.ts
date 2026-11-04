@@ -752,16 +752,18 @@ async function generateStays(q: Sql, clinicId: string, office: boolean, docs: Do
       const resAt = plusMin(admitted, 240)
       const values = lab.values.map(([analyte, value, unit, low, high]) => {
         const x = Number(value.replace(/\s/g, ''))
-        return { analyte, value, unit, low, high, flag: x < low ? 'low' : x > high ? 'high' : undefined, critical: isCritical(limits, analyte, x) || undefined }
+        return { analyte, value, unit, low, high, flag: x < low ? 'low' : x > high ? 'high' : undefined, pending: isCritical(limits, analyte, x) }
       })
-      // Un valor crítico (según los umbrales de la clínica, AD1) queda sin revisar: el médico lo ve como alerta crítica
-      const critical = values.some((v) => v.critical)
+      // Ronda 12 (LB3): sin umbrales críticos. El resultado muy alterado (los umbrales de antes) sigue sin revisar, para que el
+      // médico lo vea en «Resultados por revisar»; no se marca como crítico
+      const critical = values.some((v) => v.pending)
+      for (const v of values) delete (v as { pending?: boolean }).pending
       await q.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, hospitalization_id, batch_id, grp, name, priority, place, area, status, ordered_by, ordered_at, status_at, status_by, result, critical, reviewed_by, reviewed_at)
         VALUES (?,?,?,?,?,'lab',?,'urgent','clinic','nursing',?,?,?,?,?,?,?,?,?)`,
       [eid, clinicId, p.id, stay, `${stay}-ex`, lab.name, critical ? 'result' : 'reviewed', d.id, ordered.toISOString(), resAt.toISOString(), nurse, JSON.stringify({ values, at: resAt.toISOString(), by: nurse }),
-        critical, critical ? null : d.id, critical ? null : plusMin(resAt, 40).toISOString()])
+        false, critical ? null : d.id, critical ? null : plusMin(resAt, 40).toISOString()])
       await insertRows(q, 'exam_events', ['id', 'clinic_id', 'exam_id', 'status', 'by_id', 'at', 'note'], [[`${eid}-0`, clinicId, eid, 'ordered', d.id, ordered.toISOString(), null],
-        [`${eid}-1`, clinicId, eid, 'sample', nurse, plusMin(ordered, 15).toISOString(), null], [`${eid}-2`, clinicId, eid, 'result', nurse, resAt.toISOString(), critical ? 'Valor crítico' : null],
+        [`${eid}-1`, clinicId, eid, 'sample', nurse, plusMin(ordered, 15).toISOString(), null], [`${eid}-2`, clinicId, eid, 'result', nurse, resAt.toISOString(), null],
         ...(critical ? [] : [[`${eid}-3`, clinicId, eid, 'reviewed', d.id, plusMin(resAt, 40).toISOString(), null]])])
     }
     for (const s of SURGICAL[i] ?? []) await surgicalAuthorization(q, h, d, nurse, s.procedure, s.state, plusMin(admitted, 60 * 20))

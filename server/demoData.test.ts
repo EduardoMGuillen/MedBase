@@ -154,7 +154,9 @@ describe('DM1 ronda 5: los mínimos del pedido', () => {
       if (now.getTime() - new Date(String(h.admitted_at)).getTime() >= 3 * 864e5 && v >= 4) longVitals++
     }
     assert.ok(longVitals >= 3, `${longVitals} hospitalizados con 3 días o más de signos`)
-    assert.ok(await n(`SELECT COUNT(*)::int AS n FROM exam_orders WHERE clinic_id = 'c-sb' AND critical AND status = 'result'`) >= 1, 'resultado crítico')
+    // Ronda 12 (LB3): sin umbrales críticos; el resultado muy alterado queda sin revisar (no marcado crítico)
+    assert.ok(await n(`SELECT COUNT(*)::int AS n FROM exam_orders WHERE clinic_id = 'c-sb' AND status = 'result'`) >= 1, 'resultado sin revisar')
+    assert.equal(await n(`SELECT COUNT(*)::int AS n FROM exam_orders WHERE critical`), 0, 'ninguno crítico')
     const auth = async (where: string) => n(`SELECT COUNT(*)::int AS n FROM authorizations a JOIN hospitalizations h ON h.id = a.hospitalization_id WHERE h.clinic_id = 'c-sb' AND h.status = 'active' AND a.archived_at IS NULL AND ${where}`)
     assert.ok(await auth(`a.status = 'signed' AND a.method = 'virtual' AND a.pdf_id IS NOT NULL`) >= 1, 'firmada en pantalla')
     assert.ok(await auth(`a.status = 'pending'`) >= 2, 'pendientes de firma')

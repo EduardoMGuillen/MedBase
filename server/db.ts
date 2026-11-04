@@ -9,6 +9,7 @@ import {
 } from '../src/lib/seed.js'
 import type { Appointment, Patient, Payment, Schedule } from '../src/lib/types.js'
 import type { Row, Sql } from './sql.js'
+import { clearCriticalFlags } from './ronda12.js'
 import { backfillMissingOrders, syncStayOrders } from './medOrders.js'
 import { SCENARIO_PATIENT_IDS, insertClinicScenarios, insertOfficeScenarios } from './demoScenarios.js'
 import { ensureHospitalAuthorization } from './authorizations.js'
@@ -23,7 +24,7 @@ import { addDeptDemo } from './demoDept.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '79'
+const SCHEMA_VERSION = '80'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1212,6 +1213,8 @@ export function ensureDb(sql: Sql) {
       await addDeptDemo(q)
       // v71 (ronda 10, ME6): las 530 filas del .md, una vez con el .md mandando sobre lo que ya había (clínicas de demostración)
       await forceLnmeOnce(q)
+      // v80 (ronda 12, LB3): sin umbrales críticos (los valores de referencia nuevos ya se cargaron arriba con loadRefValues)
+      await clearCriticalFlags(q)
       // v57/v58 (ronda 8, CX2): nadie internado sigue a la vez en la consulta externa (idempotente)
       await closeVisitsOfInpatients(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])

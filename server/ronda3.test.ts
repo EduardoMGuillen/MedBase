@@ -533,8 +533,8 @@ describe('EX1 (ronda 4) exámenes: Laboratorio e Imagen y gabinete', () => {
     assert.equal(r.body.result.values[0].flag, 'low')
     assert.equal(r.body.result.values[0].unit, 'g/dL')
     assert.equal(r.body.result.values[1].flag, undefined)
-    // UM2 (ronda 8): el umbral crítico de la hemoglobina es su rango normal (A9): 9.1 ya es crítico
-    assert.equal(r.body.critical, true)
+    // Ronda 12 (LB3): sin umbrales críticos; 9.1 solo sale Bajo
+    assert.ok(!r.body.critical)
     const fresh = (await doc.get('/api/exams/new-results')).body
     assert.ok(fresh.some((e: any) => e.id === hemo.id))
     assert.equal((await nurse.post(`/api/exams/${hemo.id}/review`)).status, 403)
@@ -545,12 +545,13 @@ describe('EX1 (ronda 4) exámenes: Laboratorio e Imagen y gabinete', () => {
     assert.deepEqual(file.exams.find((e: any) => e.id === hemo.id).events.map((e: any) => e.status), ['ordered', 'sample', 'result', 'reviewed'])
   })
 
-  test('un valor fuera del umbral crítico es una alerta crítica; cancelar pide motivo', async () => {
+  test('un valor muy bajo solo sale Bajo (ronda 12: sin umbrales críticos); cancelar pide motivo', async () => {
     const { doc, nurse, stayId } = await admitted('Crítico')
     await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', exam: 'Pálido.', exams: [EXAMS3[0], EXAMS3[2]] })
     const tray = (await nurse.get('/api/exams/tray')).body.filter((e: any) => e.hospitalizationId === stayId)
     const r = await nurse.post(`/api/exams/${tray[0].id}/result`, { values: [{ analyte: 'Hemoglobina', value: '5.8' }] })
-    assert.equal(r.body.critical, true)
+    assert.equal(r.body.result.values[0].flag, 'low')
+    assert.ok(!r.body.critical)
     assert.equal((await nurse.post(`/api/exams/${tray[1].id}/cancel`, { reason: '' })).status, 400)
     assert.equal((await nurse.post(`/api/exams/${tray[1].id}/cancel`, { reason: 'El paciente se trasladó a otro centro.' })).body.status, 'cancelled')
   })

@@ -926,3 +926,85 @@ button.src-tag--none { cursor: pointer; }
 .ro-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .roster__shift { display: grid; gap: 4px; margin-bottom: 8px; }
 @media (max-width: 600px) { .dept__wait { margin-left: 0; width: 100%; } .dept__filters > * { flex: 1 1 100%; max-width: none !important; } .dept__item .btn { min-height: 44px; } }
+
+/* Ronda 12 (LB1): formulario de resultados, un renglón por parámetro */
+.result-modal.modal--wide { width: min(920px, 100%); }
+.result-modal__who { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 10px 14px; border-radius: 12px; background: var(--ward); font-size: 14px; }
+.result-modal__urgent { color: var(--red-ink); }
+.result-modal__count { margin-right: auto; font-size: 13.5px; }
+.result-modal__src { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; font-size: 12.5px; }
+.result-modal__src > .muted { flex-basis: 100%; }
+.result-form { display: grid; border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; }
+.result-form__head, .result-form__row { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(220px, 1.3fr) minmax(160px, 1.4fr); gap: 12px; align-items: center; padding: 8px 14px; }
+.result-form__head { background: var(--ward); font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.result-form__row { border-top: 1px solid var(--line-soft); }
+.result-form__row.is-high, .result-form__row.is-low { background: #fff8ec; }
+.result-form__sec { padding: 8px 14px 4px; border-top: 1px solid var(--line-soft); font-size: 13px; font-weight: 700; color: var(--ink-deep); background: var(--paper); }
+.result-form__name { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.result-form__val { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.result-form__val .input { flex: 1 1 auto; min-width: 0; height: 36px; }
+.result-form__val .input.num { flex: 0 1 120px; }
+.result-form__unit { font-size: 13px; white-space: nowrap; }
+.result-form__ref { font-size: 13px; color: var(--muted); line-height: 1.4; overflow-wrap: anywhere; }
+.btn--xs { height: 28px; padding: 0 9px; font-size: 12.5px; }
+@media (max-width: 720px) {
+  .result-form__head { display: none; }
+  .result-form__row { grid-template-columns: 1fr; gap: 4px; }
+}
+.src-pop--left { right: auto; left: 0; }
+
+/* Ronda 12 (LB4): «Editar examen» con los datos en una fila y los parámetros en una tabla */
+.excat-modal.modal--wide { width: min(1080px, 100%); }
+.excat-form__top { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 16px; align-items: start; }
+.refed__title { display: grid; gap: 2px; }
+.refed__title h3 { margin: 0; font-size: 15px; color: var(--ink-deep); }
+.refed__title .muted { font-size: 13px; }
+.refed__table { display: grid; border: 1px solid var(--line-soft); border-radius: 12px; overflow: auto; }
+.refed__tr { display: grid; grid-template-columns: minmax(150px, 1.3fr) 84px 104px 92px minmax(170px, 2fr) minmax(90px, auto) 64px; gap: 8px; align-items: center; padding: 6px 12px; border-top: 1px solid var(--line-soft); min-width: 820px; }
+.refed__th { border-top: 0; background: var(--ward); font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+.refed__tr .input, .refed__tr .select { height: 34px; min-width: 0; width: 100%; }
+.refed__tr.is-archived { opacity: .5; text-decoration: line-through; }
+.refed__name { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 14px; min-width: 0; }
+.refed__max { display: flex; gap: 4px; align-items: center; }
+.refed__lt { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; color: var(--muted); }
+.refed__text { display: grid; gap: 2px; min-width: 0; }
+.refed__text small { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.refed__src { display: grid; gap: 2px; justify-items: start; min-width: 0; }
+.refed__src small { font-size: 11px; }
+.refed__act { text-align: right; }
+.refed__foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.refed__foot .input { flex: 1 1 260px; height: 34px; }
+
+/* CE1 (ronda 12): receta y órdenes de exámenes en un solo documento; cada orden en su hoja carta */
+.batch-sheets { display: grid; gap: 24px; margin-top: 24px; }
+.batch-sheets .exam-order + .exam-order { margin-top: 0; }
+@media print {
+  .print-hide { display: none !important; }
+  .batch-sheets { display: block; margin: 0; }
+  .batch-sheets .exam-order { break-before: page; }
+}
+
+/* LB5 e IM1 (ronda 12): Inicio de Laboratorio e Imágenes */
+.dept-home { display: grid; gap: 16px; }
+.dept-home__alarms .panel__head h2 { display: flex; align-items: center; gap: 8px; }
+.dept-home__alarms.is-on { border: 1px solid #f3c5c0; box-shadow: inset 4px 0 0 var(--red-ink); }
+.dept-home__list { list-style: none; margin: 0; padding: 0 0 6px; display: grid; }
+.dept-home__list li { display: grid; grid-template-columns: auto 1fr auto auto; gap: 12px; align-items: center; padding: 10px 22px; border-top: 1px solid var(--line-soft); }
+.dept-home__list li.is-urgent { background: #fff6f5; }
+.dept-home__ic { color: var(--amber-ink); }
+.dept-home__ic--red { color: var(--red-ink); }
+.dept-home__what { display: grid; gap: 2px; min-width: 0; }
+.dept-home__what b { margin-right: 6px; }
+.dept-home__what small { font-size: 13px; color: var(--muted); }
+.dept-home__wait { display: grid; text-align: right; font-weight: 650; font-size: 14px; }
+.dept-home__wait small { font-weight: 500; color: var(--muted); font-size: 12px; }
+.dept-home__areas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.dept-home__area { display: grid; gap: 4px; padding: 16px 20px; color: inherit; text-decoration: none; transition: box-shadow .15s, transform .15s; justify-items: start; }
+.dept-home__area:hover { box-shadow: 0 8px 22px -12px rgba(14, 34, 51, .35); transform: translateY(-1px); }
+.dept-home__area.has-urgent { box-shadow: inset 4px 0 0 var(--red-ink); }
+.dept-home__area-head { display: flex; align-items: center; gap: 8px; color: var(--ink-deep); }
+.dept-home__big { font-family: var(--display); font-size: 38px; font-weight: 700; line-height: 1.1; color: var(--ink-deep); }
+.dept-home__notes { display: grid; gap: 6px; font-size: 14px; }
+.dept-home__notes p { margin: 0; }
+.dept-home .panel__head h2 svg { vertical-align: -3px; margin-right: 6px; }
+@media (max-width: 720px) { .dept-home__list li { grid-template-columns: auto 1fr; } .dept-home__wait { text-align: left; } }

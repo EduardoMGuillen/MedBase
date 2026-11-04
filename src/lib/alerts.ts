@@ -46,7 +46,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 type AlertFile = Pick<InpatientFile, 'hospitalization' | 'notes' | 'marks' | 'meds' | 'doses' | 'vitals' | 'consultOrders' | 'authorizations'> & Partial<Pick<InpatientFile, 'exams'>>
 
-export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { nameOf?: (id: string) => string | undefined } = {}): FileAlert[] {
+export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { nameOf?: (id: string) => string | undefined
+  /** Ronda 12 (IM2): el radiólogo solo ve los avisos de sus estudios (nada de signos, medicamentos ni órdenes). */
+  groups?: ExamGroup[] } = {}): FileAlert[] {
   const h = file.hospitalization
   if (h.status !== 'active') return []
   const out: FileAlert[] = []
@@ -104,13 +106,8 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
       count: x.n, since: at, action: { label: 'Ver orden', go: { tab: 'notes' } } })
   }
 
-  // Exámenes: valores críticos sin revisar (crítico), pendientes por grupo (pendiente) y resultados por revisar (aviso)
-  const exams = (file.exams ?? []).filter((e) => e.status !== 'cancelled')
-  for (const e of exams.filter((x) => x.critical && x.status === 'result')) {
-    const vals = (e.result?.values ?? []).filter((v) => v.critical).map((v) => `${v.analyte} ${v.value}${v.unit ? ` ${v.unit}` : ''}`)
-    out.push({ key: `crit-${e.id}`, level: 'critical', tab: 'labs', text: `Valor crítico en ${examLine(e)}${vals.length ? `: ${list(vals, 3)}` : ''}`, count: 1,
-      since: new Date(e.result?.at ?? e.statusAt ?? e.orderedAt).getTime(), action: { label: 'Ver resultado', go: { tab: 'labs' } } })
-  }
+  // Exámenes: pendientes por grupo (pendiente) y resultados por revisar (aviso). Ronda 12 (LB3): sin umbrales críticos.
+  const exams = (file.exams ?? []).filter((e) => e.status !== 'cancelled' && (!opts.groups || opts.groups.includes(e.group)))
   // DP2 (ronda 11): el departamento marcó «No se realizó»: sigue pendiente; el médico decide si lo cancela
   for (const e of exams.filter((x) => x.notDone && isPending(x))) {
     out.push({ key: `notdone-${e.id}`, level: 'pending', tab: 'labs', text: `No se realizó ${examLine(e)}: ${e.notDone!.reason}`, count: 1,
@@ -124,7 +121,7 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
     out.push({ key: `exams-${g}`, level: 'pending', tab: 'labs', text: `${GROUP_LABEL[g]}: ${plural(pend.length, 'examen pendiente', 'exámenes pendientes')}${urgent ? ` (${urgent} urgente${urgent > 1 ? 's' : ''})` : ''}: ${list(pend.map(examLine), 3)}`,
       count: pend.length, since: new Date(pend[0].orderedAt).getTime(), action: { label: 'Ver exámenes', go: { tab: 'labs' } } })
   }
-  const toReview = exams.filter((e) => e.status === 'result' && !e.critical)
+  const toReview = exams.filter((e) => e.status === 'result')
   if (toReview.length) {
     out.push({ key: 'exams-review', level: 'info', tab: 'labs', text: `${plural(toReview.length, 'resultado listo', 'resultados listos')} por revisar: ${list(toReview.map(examLine), 3)}`,
       count: toReview.length, since: new Date(toReview[0].result?.at ?? toReview[0].orderedAt).getTime(), action: { label: 'Ver resultados', go: { tab: 'labs' } } })
@@ -142,7 +139,7 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
     out.push({ key: 'bed', level: 'pending', tab: 'sheet', text: `Falta asignar la cama${h.companionName ? '' : ' y anotar al acompañante'}`, count: 1, since: new Date(h.admittedAt).getTime(), action: { label: 'Asignar cama', go: { action: 'bed' } } })
   }
 
-  return out.sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level] || a.since - b.since)
+  return (opts.groups ? out.filter((a) => a.tab === 'labs') : out).sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level] || a.since - b.since)
 }
 
 /** "2 críticas · 3 pendientes · 1 aviso". */

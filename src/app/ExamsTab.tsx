@@ -2,16 +2,16 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { fromLocalValue } from '../lib/dateInput'
 import { DateTimeField } from '../components/DateTimeField'
 import { Link, useNavigate } from 'react-router-dom'
-import { Camera, CheckCheck, ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, FileText, FlaskConical, Printer, ScanLine, TriangleAlert, Upload, X } from 'lucide-react'
+import { Camera, CheckCheck, ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, FileText, FlaskConical, Printer, ScanLine, Upload, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { DateField } from '../components/DateTimeField'
 import { CorrectionReason, GraceButton, VersionTag } from '../components/Grace'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
-import { cap, date, dateTime, inputDateTime, shortStaff } from '../lib/format'
-import { canReview, examCatalog, examLine, examStatusLabel, findExam, GROUP_LABEL, isPending, NEXT_ACTION, reportOptional, STATUS_LABEL } from '../lib/exams'
+import { age, cap, date, dateTime, inputDateTime, shortStaff } from '../lib/format'
+import { canReview, examCatalog, examLine, examStatusLabel, findExam, flagOf, GROUP_LABEL, isPending, NEXT_ACTION, reportOptional, STATUS_LABEL } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
-import { rangeFor, rangeText, type LabReference } from '../lib/labReference'
+import { analyteSection, isQualitative, rangeFor, rangeText, type LabReference } from '../lib/labReference'
 import { SourceTag } from '../components/SourceTag'
 import { uploadLarge } from '../lib/files'
 import { FileChip, FileThumb, FileViewer } from '../components/FilePreview'
@@ -28,12 +28,11 @@ const TONE: Record<string, string> = { ordered: 'amber', sample: 'ink', done: 'i
  */
 type ExamSort = 'recent' | 'oldest'
 const EXAM_SORTS: { key: ExamSort; label: string }[] = [{ key: 'recent', label: 'Más recientes primero' }, { key: 'oldest', label: 'Más antiguos primero' }]
-type ExamFilter = 'all' | 'pending' | 'result' | 'critical'
+type ExamFilter = 'all' | 'pending' | 'result'
 const EXAM_FILTERS: { key: ExamFilter; label: string; test: (e: ExamOrder) => boolean }[] = [
   { key: 'all', label: 'Todos', test: () => true },
   { key: 'pending', label: 'Pendientes', test: (e) => isPending(e) },
   { key: 'result', label: 'Con resultado', test: (e) => e.status === 'result' || e.status === 'reviewed' },
-  { key: 'critical', label: 'Críticos', test: (e) => !!e.critical },
 ]
 const fold = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 const dayKey = (iso: string) => new Date(iso).toDateString()
@@ -65,7 +64,7 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
   const [shown, setShown] = useState<Record<string, boolean>>({})
   const groups: ExamGroup[] = only ? [only] : ['lab', 'imaging']
   const batches = [...new Set(exams.filter((e) => e.status !== 'cancelled').map((e) => e.batchId))]
-  const startsOpen = (e: ExamOrder) => !!e.critical && e.status === 'result'
+  const startsOpen = (e: ExamOrder) => e.status === 'result' && !!e.result?.values?.some((v) => v.flag)
   const isOpen = (e: ExamOrder) => shown[e.id] ?? startsOpen(e)
   const match = (e: ExamOrder) => !q.trim() || fold(`${examLine(e)} ${e.indication ?? ''}`).includes(fold(q.trim()))
   const passes = (e: ExamOrder) => EXAM_FILTERS.find((f) => f.key === filter)!.test(e)
@@ -152,11 +151,11 @@ export function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder;
   const canResult = open && mine && can('exams.process') && (isPending(e) || (optional && e.status === 'done')) && !(imagingTech && e.status === 'ordered')
   const id = `exam-${e.id}`
   return (
-    <div className={`exam-row${e.priority === 'urgent' && isPending(e) ? ' exam-row--urgent' : ''}${e.critical ? ' exam-row--critical' : ''}${expanded ? '' : ' is-folded'}`}>
+    <div className={`exam-row${e.priority === 'urgent' && isPending(e) ? ' exam-row--urgent' : ''}${expanded ? '' : ' is-folded'}`}>
       <div className="exam-row__main">
         <button type="button" className="exam-row__toggle" aria-expanded={expanded} aria-controls={id} onClick={onToggle}>
           <ChevronRight size={16} className="exam-row__chev" aria-hidden />
-          <strong>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red" style={{ marginLeft: 6 }}>Urgente</span>}{e.place === 'external' && <span className="badge" style={{ marginLeft: 6 }}>Externo</span>}{e.uncatalogued && <span className="badge badge--neutral" style={{ marginLeft: 6 }}>No catalogado</span>}{!expanded && e.critical && <span className="badge badge--red" style={{ marginLeft: 6 }}>Valor crítico</span>}</strong>
+          <strong>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red" style={{ marginLeft: 6 }}>Urgente</span>}{e.place === 'external' && <span className="badge" style={{ marginLeft: 6 }}>Externo</span>}{e.uncatalogued && <span className="badge badge--neutral" style={{ marginLeft: 6 }}>No catalogado</span>}</strong>
         </button>
         <span className="muted" style={{ fontSize: 13 }}>Pedido {dateTime(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)}{e.indication ? ` · ${e.indication}` : ''}</span>
         {expanded && <div id={id} className="exam-row__body">
@@ -220,13 +219,12 @@ export function ResultView({ e, withFiles = true }: { e: ExamOrder; withFiles?: 
   const onlyFile = files.length > 0 && !r.values?.length && !r.report
   return (
     <div className="exam-result">
-      {e.critical && <p className="exam-result__critical"><TriangleAlert size={14} />Valor crítico</p>}
       {r.values?.length ? (
         <table className="exam-values"><tbody>{r.values.map((v) => (
           <tr key={v.analyte} className={v.flag ? `is-${v.flag}` : undefined}>
             <th>{v.analyte}</th><td className="num"><b>{v.value}</b> {v.unit}</td>
             <td className="muted">{[rangeText(v), v.reference].filter(Boolean).join(' · ')}</td>
-            <td>{v.flag && <span className={`badge ${v.critical ? 'badge--red' : 'badge--amber'}`}>{v.flag === 'high' ? 'Alto' : 'Bajo'}{v.critical ? ' · crítico' : ''}</span>}</td>
+            <td>{v.flag && <span className="badge badge--amber">{v.flag === 'high' ? 'Alto' : 'Bajo'}</span>}</td>
           </tr>
         ))}</tbody></table>
       ) : null}
@@ -237,6 +235,12 @@ export function ResultView({ e, withFiles = true }: { e: ExamOrder; withFiles?: 
   )
 }
 
+/**
+ * Ronda 12 (LB1 y LB2): formulario de resultado. Cada analito del examen tiene su renglón (parámetro, resultado, unidad y valor de
+ * referencia), agrupado por la parte del examen que dice el documento (EGO: físico, químico y microscópico). Los numéricos
+ * marcan Alto o Bajo mientras se escribe; los cualitativos (Color, Nitritos, Cultivo) se escriben como texto, con «Normal» para
+ * poner el resultado esperado cuando es corto. Las fuentes van al final, en una sola línea.
+ */
 export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => void; onDone: () => void }) {
   const { notify, patient, user, staffById } = useStore()
   // DP2 (A25): el técnico en imágenes solo sube las imágenes del estudio realizado; el informe es del radiólogo o del médico
@@ -250,8 +254,9 @@ export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () 
   const found = findExam(e.name, examCatalog(clinicExams))
   const analytes = found?.analytes ?? []
   // UM1 (ronda 8): el rango que corresponde al sexo del paciente; el servidor marca Alto/Bajo con el mismo
-  const sex = patient(e.patientId)?.sex
-  const ref = (a: (typeof analytes)[number]) => { const r = rangeFor(a, sex); return [rangeText(r), a.text].filter(Boolean).join(' · ') }
+  const pt = patient(e.patientId)
+  const sex = pt?.sex
+  const refText = (a: (typeof analytes)[number]) => [rangeText(rangeFor(a, sex)), a.text].filter(Boolean).join(' · ')
   // GE4: al corregir, el formulario viene ya llenado con el resultado cargado
   const correcting = e.status === 'result' && !!e.result
   const prev = correcting ? e.result!.values ?? [] : []
@@ -265,23 +270,38 @@ export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () 
   const filled = [...analytes.filter((a) => values[a.name]?.trim()).map((a) => ({ analyte: a.name, value: values[a.name].trim(), unit: a.unit || undefined })),
     ...extra.filter((x) => x.analyte.trim() && x.value.trim()).map((x) => ({ analyte: x.analyte.trim(), value: x.value.trim(), unit: x.unit.trim() || undefined }))]
   const ready = (imagesOnly ? !!file : filled.length > 0 || report.trim().length > 0 || !!file || (correcting && !!e.result!.fileIds?.length)) && (!resp?.needsChoice || !!responsibleId)
+  // Partes del examen (solo si hay más de una): un encabezado antes del primer analito de cada parte
+  const sections = analytes.map((a) => analyteSection(found?.name ?? e.name, a.name))
+  const grouped = new Set(sections.filter(Boolean)).size > 1
+  const live = (a: (typeof analytes)[number]) => {
+    const v = (values[a.name] ?? '').trim().replace(',', '.')
+    if (!v || isQualitative(a) || !Number.isFinite(Number(v))) return undefined
+    const r = rangeFor(a, sex)
+    return flagOf(Number(v), r.low, r.high, r.highOpen)
+  }
+  const sources = found?.reference?.src ?? []
+  const empty = analytes.filter((a) => !values[a.name]?.trim()).length
   return (
-    <Modal title={`${correcting ? 'Corregir: ' : ''}${e.group === 'lab' ? 'Resultado' : 'Informe'}: ${examLine(e)}`} wide onClose={onClose} footer={<>
+    <Modal title={`${correcting ? 'Corregir: ' : ''}${e.group === 'lab' ? 'Resultado' : 'Informe'}: ${examLine(e)}`} wide className="result-modal" onClose={onClose} footer={<>
       {correcting && <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>}
+      {!correcting && analytes.length > 1 && <span className="muted result-modal__count">{analytes.length - empty} de {analytes.length} con resultado</span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
         try {
           const fileIds = file ? [(await uploadLarge(e.patientId, file, { name: file.name, mime: file.type || 'application/pdf', category: e.group, title: e.name, hospitalizationId: e.hospitalizationId })).id] : undefined
-          const saved = await api<ExamOrder>(`/exams/${e.id}/result`, { body: imagesOnly ? { fileIds, imagesOnly: true } : { values: filled.length ? filled : undefined, report: report.trim() || undefined, fileIds: fileIds ?? (correcting ? e.result!.fileIds : undefined),
+          await api<ExamOrder>(`/exams/${e.id}/result`, { body: imagesOnly ? { fileIds, imagesOnly: true } : { values: filled.length ? filled : undefined, report: report.trim() || undefined, fileIds: fileIds ?? (correcting ? e.result!.fileIds : undefined),
             ...(responsibleId ? { responsibleId } : {}), ...(correcting ? { correct: true, version: e.resultVersion ?? 1, why: why.trim() || undefined } : {}) } })
-          // DP2 (ronda 11): el mismo aviso de siempre; quien carga ve a quién se le avisó
-          if (saved.critical) notify(`Valor crítico: se avisó a ${staffById(e.orderedBy)?.name ?? 'el médico que lo pidió'}.`, 'error')
           onDone()
         } catch (x) { notify((x as Error).message, 'error') }
         setBusy(false)
       }}>{correcting ? 'Guardar corrección' : imagesOnly ? 'Subir imágenes' : `Guardar ${e.group === 'lab' ? 'resultado' : 'informe'}`}</button>
     </>}>
+      <div className="result-modal__who">
+        <span><b>{pt ? `${pt.firstName} ${pt.lastName}` : 'Paciente'}</b>{pt?.birthDate ? ` · ${age(pt.birthDate)}` : ''}{sex ? `, ${sex === 'F' ? 'femenino' : 'masculino'}` : ''}</span>
+        <span className="muted">Pidió {shortStaff(staffById(e.orderedBy)?.name)} · {dateTime(e.orderedAt)}{e.priority === 'urgent' ? ' · ' : ''}{e.priority === 'urgent' && <b className="result-modal__urgent">Urgente</b>}</span>
+        {e.indication && <span className="muted">Indicación: {e.indication}</span>}
+      </div>
       {resp && resp.microbiologists.length > 0 && (resp.needsChoice || resp.optional
         ? <label className="field"><span>Microbiólogo responsable{resp.optional ? ' (opcional)' : ''}</span>
           <select className="select" value={responsibleId} onChange={(x) => setResponsibleId(x.target.value)} aria-required="true">
@@ -290,24 +310,43 @@ export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () 
         : resp.auto && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Microbiólogo responsable: {resp.microbiologists.find((m) => m.id === resp.auto)?.name} (de turno).</p>)}
       {imagesOnly && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Sube las imágenes del estudio. El informe lo escribe el radiólogo o un médico.</p>}
       {e.group === 'lab' && (<>
-        {analytes.length > 0 && <table className="exam-values exam-values--input"><thead><tr><th>Analito</th><th>Valor</th><th>Referencia</th></tr></thead><tbody>
-          {analytes.map((a) => (
-            <tr key={a.name}><th>{a.name}</th><td><input className="input num" inputMode="decimal" value={values[a.name] ?? ''} onChange={(x) => setValues({ ...values, [a.name]: x.target.value })} aria-label={a.name} /> <span className="muted">{a.unit}</span></td>
-              <td className="muted">{ref(a)}</td></tr>
-          ))}</tbody></table>}
-        {found?.reference && <ReferenceNote r={found.reference} />}
+        {analytes.length > 0 && <div className="result-form" role="table" aria-label={`Resultados de ${examLine(e)}`}>
+          <div className="result-form__head" role="row"><span role="columnheader">Parámetro</span><span role="columnheader">Resultado</span><span role="columnheader">Valor de referencia</span></div>
+          {analytes.map((a, i) => {
+            const q = isQualitative(a)
+            const flag = live(a)
+            const normal = q && a.text && a.text.length <= 32 ? a.text.replace(/\s*\(.*\)\s*$/, '') : undefined
+            return (
+              <Fragment key={a.name}>
+                {grouped && sections[i] && sections[i] !== sections[i - 1] && <div className="result-form__sec" role="row">{sections[i]}</div>}
+                <div className={`result-form__row${flag ? ` is-${flag}` : ''}`} role="row">
+                  <label role="cell" htmlFor={`res-${e.id}-${i}`} className="result-form__name">{a.name === 'Resultado' ? examLine(e) : a.name}</label>
+                  <span role="cell" className="result-form__val">
+                    <input id={`res-${e.id}-${i}`} className={`input${q ? '' : ' num'}`} inputMode={q ? 'text' : 'decimal'} value={values[a.name] ?? ''} placeholder={q ? 'Escribe el resultado' : ''}
+                      onChange={(x) => setValues({ ...values, [a.name]: x.target.value })} />
+                    {a.unit && <span className="muted result-form__unit">{a.unit}</span>}
+                    {flag && <span className="badge badge--amber">{flag === 'high' ? 'Alto' : 'Bajo'}</span>}
+                    {normal && !values[a.name]?.trim() && <button type="button" className="btn btn--ghost btn--xs" onClick={() => setValues({ ...values, [a.name]: normal })} title={`Escribir «${normal}»`}>Normal</button>}
+                  </span>
+                  <span role="cell" className="result-form__ref">{refText(a) || <span className="muted">Sin valor de referencia</span>}</span>
+                </div>
+              </Fragment>
+            )
+          })}
+        </div>}
+        {!analytes.length && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Este examen no tiene parámetros en el catálogo: escribe el resultado abajo o agrega los valores.</p>}
         {extra.map((x, i) => (
           <div key={i} className="form-grid form-grid--3">
-            <input className="input" value={x.analyte} onChange={(ev) => setExtra(extra.map((y, j) => (j === i ? { ...y, analyte: ev.target.value } : y)))} placeholder="Analito" />
-            <input className="input num" value={x.value} onChange={(ev) => setExtra(extra.map((y, j) => (j === i ? { ...y, value: ev.target.value } : y)))} placeholder="Valor" />
+            <input className="input" value={x.analyte} onChange={(ev) => setExtra(extra.map((y, j) => (j === i ? { ...y, analyte: ev.target.value } : y)))} placeholder="Parámetro" />
+            <input className="input" value={x.value} onChange={(ev) => setExtra(extra.map((y, j) => (j === i ? { ...y, value: ev.target.value } : y)))} placeholder="Resultado" />
             <div style={{ display: 'flex', gap: 6 }}><input className="input" value={x.unit} onChange={(ev) => setExtra(extra.map((y, j) => (j === i ? { ...y, unit: ev.target.value } : y)))} placeholder="Unidad" />
               <button className="icon-btn" aria-label="Quitar" onClick={() => setExtra(extra.filter((_, j) => j !== i))}><X size={15} /></button></div>
           </div>
         ))}
-        <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => setExtra([...extra, { analyte: '', value: '', unit: '' }])}>Agregar otro valor</button>
+        <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => setExtra([...extra, { analyte: '', value: '', unit: '' }])}>Agregar otro parámetro</button>
       </>)}
-      {!imagesOnly && <label className="field"><span>{e.group === 'lab' ? 'Comentario o resultado en texto (opcional)' : 'Informe (conclusión)'}</span>
-        <textarea className="textarea" rows={4} value={report} onChange={(x) => setReport(x.target.value)} placeholder={e.group === 'lab' ? 'Ej. EGO: leucocitos 10-15 por campo, nitritos positivos.' : 'Ej. Vesícula con litos múltiples, pared de 3 mm; vía biliar sin dilatación.'} /></label>}
+      {!imagesOnly && <label className="field"><span>{e.group === 'lab' ? 'Comentario (opcional)' : 'Informe (conclusión)'}</span>
+        <textarea className="textarea" rows={e.group === 'lab' ? 2 : 4} value={report} onChange={(x) => setReport(x.target.value)} placeholder={e.group === 'lab' ? 'Observaciones del laboratorio sobre la muestra o el resultado.' : 'Ej. Vesícula con litos múltiples, pared de 3 mm; vía biliar sin dilatación.'} /></label>}
       <div className="field"><span>Foto o PDF del {e.group === 'lab' ? 'resultado' : 'informe o las imágenes'} (opcional)</span>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button type="button" className="btn btn--soft btn--sm" onClick={() => input.current?.click()}><Camera size={15} />{file ? 'Cambiar archivo' : 'Tomar foto o elegir archivo'}</button>
@@ -315,6 +354,8 @@ export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () 
         </div>
         <input ref={input} type="file" accept="image/*,application/pdf" hidden onChange={(x) => setFile(x.target.files?.[0] ?? null)} />
       </div>
+      {e.group === 'lab' && analytes.length > 0 && <p className="result-modal__src">Fuente: {sources.length ? sources.map((c) => <SourceTag key={c} codes={[c]} />) : <span className="src-tag src-tag--none">Sin fuente</span>}
+        <span className="muted">Referencia general; el rango oficial es el del laboratorio que emite el resultado.</span></p>}
     </Modal>
   )
 }
@@ -480,7 +521,7 @@ function PrintResults({ group, exams, onClose }: { group: ExamGroup; exams: Exam
         {shown.map((e) => (
           <label key={e.id} className={`exam-row-pick${picked.includes(e.id) ? ' is-on' : ''}`}>
             <input type="checkbox" checked={picked.includes(e.id)} onChange={() => setPicked(picked.includes(e.id) ? picked.filter((x) => x !== e.id) : [...picked, e.id])} />
-            <span><b>{examLine(e)}</b><small className="muted" style={{ display: 'block' }}>Resultado {e.result?.at ? dateTime(e.result.at) : ''}{e.critical ? ' · Valor crítico' : ''}</small></span>
+            <span><b>{examLine(e)}</b><small className="muted" style={{ display: 'block' }}>Resultado {e.result?.at ? dateTime(e.result.at) : ''}</small></span>
           </label>
         ))}
         {!shown.length && <p className="muted">Ningún examen coincide.</p>}

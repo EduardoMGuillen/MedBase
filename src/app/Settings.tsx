@@ -8,7 +8,6 @@ import { routeWords } from '../lib/lnme/route'
 import { Pagination, paginate, usePage } from '../components/Pagination'
 import { normalize } from '../lib/patients'
 import { download, parseCsv, toCsv } from '../lib/csv'
-import { CriticalThresholds } from './CriticalThresholds'
 import { ExamCatalogAdmin, LabProfilesAdmin } from './ExamCatalogAdmin'
 import { clinicWhatsapp, contactLine, date, fillTemplate, fullName, METHOD_LABEL, money } from '../lib/format'
 import { ContactsEditor } from '../components/Contacts'
@@ -415,8 +414,6 @@ function ServiceAreas() {
           <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={lab === !!settings.hasLab && img === !!settings.hasImaging} onClick={() => saveExamAreas({ hasLab: lab, hasImaging: img })}>Guardar áreas</button>
         </div>
       </section>
-      {/* AD1 (ronda 5): umbrales por grupo, con analitos propios */}
-      <CriticalThresholds />
     </div>
   )
 }

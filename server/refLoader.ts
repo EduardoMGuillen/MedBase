@@ -81,6 +81,13 @@ export async function loadRefValues(q: Sql, clinicId: string): Promise<RefLoadRe
     pending.push(rowOf(clinicId, v, 'catalog', now))
     report.inserted++
   }
+  // Ronda 12 (LB2): lo que el .md ya no trae así (el EGO y los líquidos tenían un solo «resultado esperado» sin analito; los
+  // rangos iniciales de los gases arteriales) queda archivado. Lo de la clínica no se toca.
+  const fileAll = new Set((GENERATED.values as RefValue[]).map((v) => keyOf({ exam_key: examKey(v.exam), analyte: v.analyte ?? '', sex: v.sex, md_row: v.row })))
+  for (const [k, cur] of active) {
+    if (cur.origin === 'catalog' && !fileAll.has(k)) archive.push(String(cur.id))
+    else if (cur.origin === 'initial' && fileKeys.has(`${cur.exam_key}|${cur.analyte}`)) archive.push(String(cur.id))
+  }
   for (let i = 0; i < archive.length; i += 500) {
     const ids = archive.slice(i, i + 500)
     await q.run(`UPDATE exam_ref_values SET archived_at = ?, archive_reason = ? WHERE id IN (${ids.map(() => '?').join(',')})`, [now, `Reemplazado por ${LOAD_ORIGIN}`, ...ids])

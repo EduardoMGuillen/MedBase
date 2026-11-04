@@ -7,6 +7,8 @@ import { LAB_SOURCES, NO_SOURCE, sourceLabel } from '../lib/labSources'
  */
 export function SourceTag({ codes }: { codes?: string[] }) {
   const [open, setOpen] = useState(false)
+  // Ronda 12 (LB1): la cita se abre hacia el lado con espacio (no se sale de la ventana)
+  const [left, setLeft] = useState(false)
   const ref = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     if (!open) return
@@ -20,11 +22,11 @@ export function SourceTag({ codes }: { codes?: string[] }) {
   const gray = list.every((c) => c === NO_SOURCE || c === 'initial')
   return (
     <span className="src-tag-wrap" ref={ref}>
-      <button type="button" className={`src-tag${gray ? ' src-tag--none' : ''}`} aria-expanded={open} onClick={() => setOpen(!open)} title="Ver la fuente">
+      <button type="button" className={`src-tag${gray ? ' src-tag--none' : ''}`} aria-expanded={open} onClick={() => { const r = ref.current?.getBoundingClientRect(); setLeft(!!r && r.left < 360); setOpen(!open) }} title="Ver la fuente">
         {sourceLabel(list[0])}{list.length > 1 ? ` +${list.length - 1}` : ''}
       </button>
       {open && (
-        <span className="src-pop" role="dialog" aria-label="Fuente">
+        <span className={`src-pop${left ? ' src-pop--left' : ''}`} role="dialog" aria-label="Fuente">
           {list.map((c) => {
             const s = LAB_SOURCES[c]
             return <span key={c} className="src-pop__item">

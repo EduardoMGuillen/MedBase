@@ -45,7 +45,8 @@ export function parseMd(md: string): { rows: MdRow[]; sources: MdSource[]; notes
     const cells = splitRow(l)
     if (!header) { header = cells.map(plain); continue }
     if (cells.every((c) => /^-+$/.test(c))) continue
-    if (/^Fuentes consultadas/.test(section) || /^Notas/.test(section)) continue
+    // Ronda 12: la tabla «Cambios del 04/11/2026» resume lo que cambió; no son filas de valores
+    if (/^Fuentes consultadas/.test(section) || /^Notas/.test(section) || /^Cambios/.test(section)) continue
     const raw = cells[0]
     const name = plain(raw).replace(/\s*[‡⚠️]+\s*/gu, ' ').replace(/\s+/g, ' ').trim()
     const byHeader: Record<string, string> = {}

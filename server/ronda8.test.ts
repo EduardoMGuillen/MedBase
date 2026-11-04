@@ -446,7 +446,8 @@ describe('UM1: carga en la base', () => {
     const tsh = await sql.query(`SELECT * FROM exam_ref_values WHERE clinic_id = 'c-sb' AND exam_key = 'tsh' AND archived_at IS NULL`)
     assert.deepEqual(tsh.map((r) => [Number(r.low), r.origin]), [[0.4, 'clinic']])
     // Las fuentes están en su tabla
-    assert.equal(Number((await sql.one('SELECT COUNT(*)::int AS n FROM lab_sources'))!.n), 59)
+    // Ronda 12: el .md del 04/11/2026 agregó 17 fuentes (60 a 76)
+    assert.equal(Number((await sql.one('SELECT COUNT(*)::int AS n FROM lab_sources'))!.n), 76)
     // Un médico que no es Administración no edita
     assert.equal((await (await as('lherrera@demo.clinara')).put(`/api/exams/catalog/${cat.id}/refs`, { rows: [] })).status, 403)
   })

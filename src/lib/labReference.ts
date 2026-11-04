@@ -79,6 +79,9 @@ export function referenceFromRows(rows: RefRow[]): LabReference | undefined {
     if (r.warn) a.warn = true
     if (r.origin === 'clinic') a.origin = 'clinic'
   }
+  // Ronda 12 (LB2): los analitos en el orden del documento (color, aspecto, densidad…); los de la clínica, al final
+  const order = (a: RefAnalyte) => FILE_ORDER.get(`${fold(rows[0].exam)}|${a.name}`) ?? Number.MAX_SAFE_INTEGER
+  analytes.sort((a, b) => order(a) - order(b))
   const examRows = rows.filter((x) => !x.analyte)
   const notes = uniq(rows.filter((x) => !x.analyte).map((x) => x.note).filter(Boolean) as string[])
   return {
@@ -94,8 +97,10 @@ const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCa
 
 /** Filas del archivo por examen (clave sin mayúsculas ni tildes). */
 const FILE_ROWS = new Map<string, RefRow[]>()
+const FILE_ORDER = new Map<string, number>()
 for (const v of GENERATED.values as RefValue[]) {
   const k = fold(v.exam)
+  if (v.analyte && !FILE_ORDER.has(`${k}|${v.analyte}`)) FILE_ORDER.set(`${k}|${v.analyte}`, FILE_ORDER.size)
   FILE_ROWS.set(k, [...(FILE_ROWS.get(k) ?? []), { ...v, origin: 'catalog' }])
 }
 export const fileRowsOf = (exam: string) => FILE_ROWS.get(fold(exam)) ?? []
@@ -120,3 +125,17 @@ export function rangeText(a: { low?: number; high?: number; highOpen?: boolean; 
   if (a.f || a.m) return [a.f && `Mujeres ${one(a.f[0], a.f[1])}`, a.m && `Hombres ${one(a.m[0], a.m[1])}`].filter(Boolean).join(' · ')
   return one(a.low, a.high)
 }
+
+/**
+ * Ronda 12 (LB1): la parte del examen a la que pertenece un analito según el documento («Examen físico», «Examen químico»,
+ * «Serie blanca»…), para agrupar el formulario de resultados. Sin dato (analito de la clínica o tabla sin subsección), nada.
+ */
+export function analyteSection(exam: string, analyte: string): string | undefined {
+  const row = fileRowsOf(exam).find((r) => r.analyte === analyte) as (RefRow & { row?: string }) | undefined
+  const parts = row?.row?.split(' › ') ?? []
+  const sub = parts.length >= 3 ? parts[parts.length - 2] : undefined
+  return sub && sub !== '-' && !/^(General|Otras)/.test(sub) ? sub : undefined
+}
+
+/** Ronda 12 (LB2): un analito sin números (Color, Nitritos, Cultivo): se escribe el resultado como texto. */
+export const isQualitative = (a: Pick<RefAnalyte, 'low' | 'high' | 'f' | 'm'>) => a.low == null && a.high == null && !a.f && !a.m

@@ -6,7 +6,7 @@ import { RULES, type Rule, type Target } from './mapping.js'
  * reglas de emparejamiento (mapping.ts). Los números salen del archivo, no se escriben a mano. El script
  * `npm run um1:build` guarda el resultado en src/lib/labRef/generated.json y una prueba comprueba que siga igual al .md.
  */
-export const LOAD_ORIGIN = 'Catálogo Clinara 2026-11-02'
+export const LOAD_ORIGIN = 'Catálogo Clinara 2026-11-04'
 export const NO_SOURCE = '‡'
 
 export type Sex = 'all' | 'F' | 'M'
@@ -67,7 +67,8 @@ const NUM = '(-?\\d[\\d,]*(?:\\.\\d+)?)'
 
 /** «a–b», «<x», «≤x», «≥x», «x»: el primer valor numérico del texto. */
 export function parseLimit(text: string): { low?: number; high?: number; highOpen?: boolean; rest: string } | null {
-  const t = text.trim()
+  // Ronda 12: «−2 a +3» (exceso de base) y «Hasta 1 mg/dL» (urobilinógeno)
+  const t = text.trim().replace(/−/g, '-').replace(/^(-?\d[\d.]*)\s+a\s+\+?(-?\d[\d.]*)/, '$1–$2').replace(/^Hasta\s+/i, '≤')
   let m = new RegExp(`^${NUM}\\s*[–-]\\s*${NUM}`).exec(t)
   if (m) return { low: num(m[1]), high: num(m[2]), rest: t.slice(m[0].length).trim() }
   m = new RegExp(`^(<|≤|≥|>)\\s*${NUM}`).exec(t)
@@ -251,13 +252,12 @@ export function buildReference(md: string): BuildResult {
     for (const exam of hit[1]) for (const v of values.filter((x) => x.exam === exam)) v.note = [v.note, text].filter(Boolean).join(' · ')
   }
 
-  // Un examen con varias filas de resultado esperado (EGO, líquidos): cada una lleva el nombre de su fila («Color: …»)
+  // Ronda 12 (LB2): todo resultado esperado es un analito con su casilla para escribir el resultado. Un examen con una sola
+  // fila sin analito (Coombs, urocultivo) tiene el analito «Resultado»; con varias (líquidos), cada fila es su analito.
   const examLevel = new Map<string, RefValue[]>()
-  for (const v of values) if (!v.analyte && v.expected) examLevel.set(v.exam, [...(examLevel.get(v.exam) ?? []), v])
-  for (const list of examLevel.values()) if (list.length > 1) for (const v of list) {
-    const name = v.row.split(' › ').at(-1)!
-    if (!v.expected!.startsWith(name)) v.expected = `${name}: ${v.expected}`
-  }
+  for (const v of values) if (!v.analyte) examLevel.set(v.exam, [...(examLevel.get(v.exam) ?? []), v])
+  const named = new Set(values.filter((v) => v.analyte).map((v) => v.exam))
+  for (const [exam, list] of examLevel) for (const v of list) v.analyte = list.length > 1 || named.has(exam) ? v.row.split(' › ').at(-1)! : 'Resultado'
 
   // UM2: el rango normal de cada analito numérico es su umbral crítico (A9). No: categorías, cualitativos, por edad o fase,
   // puntos de corte diagnósticos (UM2 punto 9) ni los de tamizaje de drogas. Un nombre de analito, un umbral.
@@ -276,7 +276,7 @@ export function buildReference(md: string): BuildResult {
   }
 
   const unmatched = rows.map((r) => `${r.sub} › ${r.name}`).filter((k) => !used.has(k))
-  return { version: '2026-11-02', sources, values, thresholds, skipped, unmatched, orphanRules }
+  return { version: '2026-11-04', sources, values, thresholds, skipped, unmatched, orphanRules }
 }
 
 function pick(p: { low?: number; high?: number; highOpen?: boolean }, scale?: number) {
