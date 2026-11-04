@@ -37,6 +37,7 @@ import { api, ApiError, serverNow } from '../lib/api'
 import { GRACE_EXPIRED_TEXT, REMOVED_IN_GRACE } from '../lib/grace'
 import { CorrectionReason, GraceButton, VersionTag } from '../components/Grace'
 import { BedFields } from '../components/BedFields'
+import { GoToNote } from '../components/GoToNote'
 import { ReferralActions, ReferralModal } from './Referral'
 import { features } from '../lib/permissions'
 import { ConsultationBody, Identification } from './PatientChart'
@@ -130,6 +131,7 @@ export default function InpatientFile() {
     q.set('tab', TAB_PARAM[k])
     setParams(q, { replace: true })
   }
+  const showNotes = () => { selectTab('notes'); window.scrollTo({ top: 0 }) }
   const canCare = can('inpatient.orders') || can('inpatient.care')
   const go = (g: AlertGo) => {
     if ('action' in g) {
@@ -191,8 +193,14 @@ export default function InpatientFile() {
       </div>
       {/* EN2: barra compacta; la autorización pendiente y la cama sin asignar van en ella como pendientes */}
       <AlertBar alerts={alerts} onGo={go} />
-      {writingNote && tab !== 'notes' && <p className="note-dock__hint" role="status"><NotebookPen size={15} />{writingNote} abierta: la encuentras al final de esta pestaña.
-        <button type="button" className="link-btn" onClick={() => document.querySelector('.note-dock')?.scrollIntoView({ behavior: 'smooth' })}>Ir a la nota</button></p>}
+      {/* NE8 (ronda 13): los dos avisos de la nota abierta van juntos, arriba del contenido de la pestaña */}
+      {writingNote && tab !== 'notes' && <div className="note-dock__hints" role="status">
+        <p className="note-dock__hint"><NotebookPen size={15} />{writingNote} abierta: la encuentras al final de esta pestaña.
+          <button type="button" className="link-btn" onClick={() => document.querySelector('.note-dock')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Ir a la nota</button></p>
+        <p className="note-dock__hint"><NotebookPen size={15} />Sigues escribiendo la {writingNote.toLowerCase()}: está aquí abajo.
+          <button type="button" className="link-btn" onClick={showNotes}>Ver las notas</button></p>
+      </div>}
+      {writingNote && tab !== 'notes' && <GoToNote target=".note-dock" />}
       {editing && <GeneralDataModal h={h} p={p} onClose={() => setEditing(false)} onDone={() => { setEditing(false); load() }} />}
       {admitting && <AdmitBedStep h={h} p={p} onClose={() => { setAdmitting(false); setParams({}, { replace: true }) }}
         onDone={async () => { setAdmitting(false); const f = await fetchInpatient(h.id); setFile(f); const a = f.authorizations.find((x) => x.template === 'hospital' && x.status === 'pending'); if (a) setConsentFor(a.id); setParams({}, { replace: true }) }} />}
@@ -229,12 +237,13 @@ export default function InpatientFile() {
       )}
 
       {tab === 'meds' && <MedSheet file={file} p={p} reload={load} onWriteNote={() => setTab('notes')} focusDose={focus.dose} onFocused={() => setFocus({})} />}
-      {/* HO1 (ronda 12): siempre montada: la nota que se escribe sigue abierta al cambiar de pestaña */}
-      <MedicalNotes file={file} p={p} reload={load} show={tab === 'notes'} onShow={() => { selectTab('notes'); window.scrollTo({ top: 0 }) }} onWriting={setWritingNote} />
       {tab === 'vitals' && <VitalsSheet file={file} p={p} reload={load} autoRecord={focus.record} autoRecordPast={focus.recordPast} onFocused={() => setFocus({})} />}
       {tab === 'nursing' && !obs && <NursingNotes file={file} reload={load} />}
       {tab === 'labs' && <ExamList exams={exams} patientId={h.patientId} hospitalizationId={h.id} reload={load} open={open} />}
       {tab === 'annexes' && <Annexes file={file} p={p} reload={load} />}
+      {/* HO1 (ronda 12): siempre montada: la nota que se escribe sigue abierta al cambiar de pestaña.
+          NE8 (ronda 13): va después del contenido de cualquier pestaña: lo de la pestaña arriba, la nota abajo */}
+      <MedicalNotes file={file} p={p} reload={load} show={tab === 'notes'} onWriting={setWritingNote} />
     </div>
   )
 }
@@ -708,7 +717,7 @@ type TimelineItem = { at: string; key: string; note?: InpatientNote; legacy?: Ho
  * ventana). La nota sigue abierta al cambiar de pestaña (signos, curva térmica, medicamentos, exámenes, anexos): con `show`
  * en falso solo se dibuja el editor, debajo de la pestaña que se esté viendo.
  */
-function MedicalNotes({ file, p, reload, show = true, onShow, onWriting }: { file: File; p: Patient; reload: () => void; show?: boolean; onShow?: () => void; onWriting?: (title: string | null) => void }) {
+function MedicalNotes({ file, p, reload, show = true, onWriting }: { file: File; p: Patient; reload: () => void; show?: boolean; onWriting?: (title: string | null) => void }) {
   const { staffById, can } = useStore()
   const notes = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'discharge' || n.kind === 'procedure')
   const h = file.hospitalization
@@ -768,10 +777,7 @@ function MedicalNotes({ file, p, reload, show = true, onShow, onWriting }: { fil
   </>
   // En otra pestaña: solo la nota que se está escribiendo, debajo de lo que se ve
   if (!show) return (<>
-    {inlineTitle && <div className="hc note-dock">
-      <p className="note-dock__bar"><NotebookPen size={15} />Sigues escribiendo la {inlineTitle.toLowerCase()}: está aquí abajo. <button type="button" className="link-btn" onClick={onShow}>Ver las notas</button></p>
-      {editors}
-    </div>}
+    {inlineTitle && <div className="hc note-dock">{editors}</div>}
     {modals}
   </>)
   return (

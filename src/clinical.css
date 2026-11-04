@@ -1050,7 +1050,7 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .modal-inline .modal__top { padding: 12px 24px 0; display: grid; gap: 8px; }
 .modal-inline .modal__body { overflow: visible !important; min-height: 0; }
 .modal-inline .modal__foot { position: sticky; bottom: 0; z-index: 4; background: var(--paper); padding: 12px 24px 16px; border-top: 1px solid var(--line-soft); border-radius: 0 0 var(--r-lg, 18px) var(--r-lg, 18px); flex-wrap: wrap; box-shadow: 0 -8px 16px -12px rgba(14, 34, 51, .25); }
-.note-dock { margin-top: 18px; }
+.note-dock { margin-top: 18px; scroll-margin-top: 150px; }
 .note-dock__bar, .note-dock__hint { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--ink-soft); color: var(--ink-deep); font-size: 14px; }
 .note-dock__hint { margin-bottom: 12px; }
 @media (max-width: 720px) { .modal-inline .modal__head, .modal-inline .modal__top { padding-left: 16px; padding-right: 16px; } .modal-inline .modal__foot { padding: 12px 16px; } }
@@ -1062,3 +1062,9 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .bg-form .textarea--auto { min-height: calc(3 * 1.55em + 22px); max-height: none; overflow-y: hidden; }
 @media (max-width: 640px) { .bg-form { grid-template-columns: 1fr; } .bg-form > .span-2 { grid-column: auto; } }
 
+/* NE8 (ronda 13): los dos avisos de la nota abierta, pegados (un bloque de dos renglones), arriba del contenido */
+.note-dock__hints { display: grid; gap: 6px; }
+.note-dock__hints .note-dock__hint { margin: 0; }
+/* CX5 y NE8 (ronda 13): «Ir a la nota» flotante cuando la nota queda fuera de la vista */
+.go-note { position: fixed; right: 24px; bottom: 24px; z-index: 45; min-height: 44px; box-shadow: 0 12px 28px -10px rgba(14, 34, 51, 0.45); }
+@media (max-width: 640px) { .go-note { right: 16px; bottom: 16px; } }
