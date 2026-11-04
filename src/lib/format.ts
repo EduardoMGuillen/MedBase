@@ -167,21 +167,24 @@ export const fileSize = (bytes: number) =>
 export const CIVIL_STATUS = ['Soltero(a)', 'Casado(a)', 'Unión libre', 'Divorciado(a)', 'Viudo(a)']
 export const EDUCATION = ['Ninguna', 'Preescolar', 'Primaria incompleta', 'Primaria completa', 'Secundaria incompleta', 'Secundaria completa', 'Técnico', 'Universitaria', 'Posgrado']
 
-/** Antecedentes en el orden de la historia clínica. `female` marca los gineco-obstétricos. */
-export const BACKGROUND_GROUPS: { title: string; female?: boolean; fields: { key: keyof Background; label: string; date?: boolean }[] }[] = [
+/**
+ * Antecedentes en el orden de la historia clínica. `female` marca los gineco-obstétricos.
+ * AN2 (ronda 12): los hospitalarios, traumáticos y quirúrgicos van en su propio apartado; tabaquismo, alcoholismo y otras
+ * sustancias son un solo campo, «Toxicomanías»; «Actividad física y alimentación» ya no se pide (lo escrito se conserva).
+ */
+export const BACKGROUND_GROUPS: { title: string; female?: boolean; fields: { key: keyof Background; label: string; date?: boolean; hint?: string }[] }[] = [
   { title: 'Personales patológicos', fields: [
     { key: 'pathological', label: 'Enfermedades' },
-    { key: 'surgical', label: 'Quirúrgicos' },
-    { key: 'traumatic', label: 'Traumáticos' },
-    { key: 'hospitalizations', label: 'Hospitalarios' },
-    { key: 'transfusions', label: 'Transfusionales' },
     { key: 'medications', label: 'Medicamentos actuales' },
+    { key: 'transfusions', label: 'Transfusionales' },
+  ] },
+  { title: 'Hospitalarios, traumáticos y quirúrgicos', fields: [
+    { key: 'hospitalizations', label: 'Hospitalarios' },
+    { key: 'traumatic', label: 'Traumáticos' },
+    { key: 'surgical', label: 'Quirúrgicos' },
   ] },
   { title: 'Personales no patológicos', fields: [
-    { key: 'smoking', label: 'Tabaquismo' },
-    { key: 'alcohol', label: 'Alcoholismo' },
-    { key: 'drugs', label: 'Otras sustancias' },
-    { key: 'lifestyle', label: 'Actividad física y alimentación' },
+    { key: 'toxic', label: 'Toxicomanías', hint: 'Tabaco, alcohol y otras sustancias: qué, cuánto y desde cuándo.' },
     { key: 'immunizations', label: 'Inmunizaciones' },
   ] },
   { title: 'Heredofamiliares', fields: [{ key: 'family', label: 'Antecedentes familiares' }] },
@@ -195,6 +198,16 @@ export const BACKGROUND_GROUPS: { title: string; female?: boolean; fields: { key
 ]
 
 /** ME4 (ronda 9): «Nebulización» es una vía aparte; «Inhalada» (inhaladores) no cambia. */
+/** AN2 (ronda 12): «Toxicomanías»; si todavía no se escribió, lo que había en tabaquismo, alcoholismo y otras sustancias. */
+export function toxicOf(b: Background): string {
+  if (b.toxic?.trim()) return b.toxic
+  return ([['Tabaquismo', b.smoking], ['Alcoholismo', b.alcohol], ['Otras sustancias', b.drugs]] as [string, string | undefined][])
+    .filter(([, v]) => v?.trim()).map(([k, v]) => `${k}: ${v!.trim().replace(/\.$/, '')}.`).join(' ')
+}
+
+/** El valor de un campo de antecedentes como se muestra (Toxicomanías se arma con los campos de antes). */
+export const backgroundValue = (b: Background, key: keyof Background) => (key === 'toxic' ? toxicOf(b) || undefined : b[key])
+
 export const ROUTES = ['Oral', 'Sublingual', 'Intramuscular', 'Intravenosa', 'Subcutánea', 'Inhalada', 'Nebulización', 'Tópica', 'Oftálmica', 'Ótica', 'Nasal', 'Rectal', 'Vaginal']
 
 export const defaultRoute = (presentation = '') =>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { BedDouble, FileBadge, FileText, Lock, NotebookPen, Pencil } from 'lucide-react'
+import { BedDouble, FileBadge, FileText, Lock, NotebookPen, Pencil, Printer } from 'lucide-react'
 import { AlertBar } from './MedAlerts'
 import { alertQuery } from '../lib/alerts'
 import { useFileAlerts } from '../lib/hooks'
@@ -14,7 +14,7 @@ import { useStore, type Chart } from '../lib/store'
 import { Loading, StatusBadge } from '../components/ui'
 import { IndicationList, MedLines, NoteColumns, NoteExams } from '../components/NoteColumns'
 import { PatientHeader } from '../components/PatientHeader'
-import { age, BACKGROUND_GROUPS, bmi, date, dxCode, examText, time, money } from '../lib/format'
+import { age, BACKGROUND_GROUPS, backgroundValue, bmi, date, dxCode, examText, time, money } from '../lib/format'
 import { Attachments } from './Attachments'
 import { AllergiesForm, BackgroundForm, IdentificationForm } from './PatientForms'
 import type { Certificate, Consultation, Patient, Referral, Vitals } from '../lib/types'
@@ -106,16 +106,18 @@ export function BackgroundView({ p, compact = false, only }: { p: Patient; compa
   const b = p.background ?? {}
   const groups = BACKGROUND_GROUPS.filter((g) => (!g.female || p.sex === 'F') && (!only || only.includes(g.title)))
   const withConditions = groups.some((g) => g.title === 'Personales patológicos') && p.conditions.length > 0
-  const any = groups.some((g) => g.fields.some((f) => b[f.key])) || withConditions
+  const any = groups.some((g) => g.fields.some((f) => backgroundValue(b, f.key))) || withConditions
   if (!any) return <p className="muted">Sin antecedentes registrados.</p>
+  // AN1 (ronda 12): cada antecedente en su renglón (nombre a la izquierda, texto justificado a todo el ancho), no en columnas angostas
   return (
     <div className={`bg-groups ${compact ? 'bg-groups--compact' : ''}`}>
       {groups.map((g) => {
-        const rows = g.fields.map((f) => [f.label, f.date && b[f.key] ? date(`${b[f.key]}T12:00:00`) : b[f.key]] as [string, string | undefined])
+        const rows = g.fields.map((f) => { const v = backgroundValue(b, f.key); return [f.label, f.date && v ? date(`${v}T12:00:00`) : v] as [string, string | undefined] })
         const extra = g.title === 'Personales patológicos' && p.conditions.length ? [['Enfermedades crónicas', p.conditions.join(', ')] as [string, string]] : []
         const all = [...extra, ...rows].filter(([, v]) => v)
         if (!all.length) return null
-        return <div key={g.title} className="bg-group"><h4>{g.title}</h4><Facts rows={all} /></div>
+        return <div key={g.title} className="bg-group"><h4>{g.title}</h4>
+          <dl className="bg-list">{all.map(([k, v]) => <div key={k} className="bg-list__row"><dt>{k}</dt><dd>{v}</dd></div>)}</dl></div>
       })}
     </div>
   )
@@ -162,8 +164,13 @@ export function ConsultationBody({ c, vitals, exams, vitalsLine }: { c: Consulta
 
 type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'exams' | 'rx' | 'certs' | 'refs' | 'files'
 
-export default function PatientChart() {
-  const { id } = useParams()
+/**
+ * CE2 (ronda 12): con `embedded`, el expediente completo dentro de la consulta (debajo de su encabezado): las mismas pestañas
+ * (consultas anteriores, exámenes, recetas, signos, hospitalizaciones…) sin salir de la nota que se está escribiendo.
+ */
+export default function PatientChart({ patientId, embedded = false }: { patientId?: string; embedded?: boolean } = {}) {
+  const params = useParams()
+  const id = patientId ?? params.id
   const { patient, appointments, staffById, can, updatePatient, followups, bed, inpatientOf, stayOf, fetchCertificates, fetchBalances, settings, user } = useStore()
   const [certs, setCerts] = useState<Certificate[] | null>(null)
   // AD9: saldo pendiente del paciente (abonos), visible para quien cobra
@@ -173,12 +180,13 @@ export default function PatientChart() {
     fetchBalances(id).then(setOwed).catch(() => null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, fetchBalances])
-  const [tab, setTab] = useState<Tab>(() => (new URLSearchParams(window.location.search).get('tab') === 'examenes' ? 'exams' : 'history'))
+  const [tab, setTab] = useState<Tab>(() => (embedded ? 'consults' : new URLSearchParams(window.location.search).get('tab') === 'examenes' ? 'exams' : 'history'))
   // EX1: exámenes del paciente (de consulta externa y de sus estancias), con sus resultados
   const [exams, setExams] = useState<ExamOrder[] | null>(null)
   const loadExams = useCallback(() => { if (id && can('chart.view')) api<ExamOrder[]>(`/patients/${id}/exams`).then(setExams).catch(() => setExams([])) }, [id, can])
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (tab === 'exams') loadExams() }, [tab, id])
+  // CE1 (ronda 12): las consultas también muestran (e imprimen) sus exámenes
+  useEffect(() => { if (tab === 'exams' || tab === 'consults') loadExams() }, [tab, id])
   // RF1 (ronda 8): las referencias del paciente (de consulta externa, observación y hospitalización)
   const [refs, setRefs] = useState<Referral[] | null>(null)
   useEffect(() => {
@@ -213,13 +221,13 @@ export default function PatientChart() {
   const save = async (data: Partial<Patient>) => { if (await updatePatient(p.id, data)) { setEditing(null); reload() } }
 
   return (
-    <div className="page page--chart">
-      <div className="sticky-top">
-        <PatientHeader p={p} clinical={clinical}>
+    <div className={embedded ? 'chart-embed' : 'page page--chart'}>
+      <div className={embedded ? 'chart-embed__tabs' : 'sticky-top'}>
+        {!embedded && <PatientHeader p={p} clinical={clinical}>
           {hospitalized && <Link className="btn btn--soft btn--sm" to={stayPath(hospitalized)}><BedDouble size={15} />{hospitalized.kind === 'observation' ? 'En observación' : `Hospitalizado, ${bedLabel(bed(hospitalized.bedId))}`}</Link>}
           {!hospitalized && stayOf(p.id) && <span className="badge badge--ink">{stayOf(p.id) === 'observation' ? 'En observación' : 'Hospitalizado'}</span>}
           {owed.length > 0 && <Link className="badge badge--amber" to={owed.length === 1 ? `/app/recibos/${owed[0].id}` : '/app/caja'}>Saldo pendiente {money(owed.reduce((s, x) => s + (x.balance ?? 0), 0), settings.currency)}</Link>}
-        </PatientHeader>
+        </PatientHeader>}
         <TabRow>
           {tabs.filter((t) => t[2]).map(([k, label]) => (
             <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>
@@ -227,7 +235,7 @@ export default function PatientChart() {
         </TabRow>
       </div>
 
-      {clinical && <HospAlerts id={hospitalized?.id ?? hs[0]?.id} />}
+      {clinical && !embedded && <HospAlerts id={hospitalized?.id ?? hs[0]?.id} />}
 
       {clinical && !chart && tab !== 'history' && <Loading label="Cargando expediente" />}
 
@@ -299,10 +307,12 @@ export default function PatientChart() {
                 <div className="page-head__actions">
                   <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}><NotebookPen size={15} />Nota</Link>
                   {c.prescriptionId && can('rx.view') && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${c.prescriptionId}`}><FileText size={15} />Receta</Link>}
+                  {(() => { const b = (exams ?? []).find((e) => e.consultationId === c.id && !e.noteId && e.status !== 'cancelled')?.batchId
+                    return b ? <Link className="btn btn--ghost btn--sm" to={`/app/examenes/orden/${b}`}><Printer size={15} />Exámenes</Link> : null })()}
                   {can('consult.write') && <Link className="btn btn--ghost btn--sm" to={`/app/constancia/${c.id}`}><FileBadge size={15} />Generar constancia</Link>}
                 </div>
               </div>
-              <div className="panel__body"><ConsultationBody c={c} vitals={vs.find((v) => v.id === c.vitalsId)} />
+              <div className="panel__body"><ConsultationBody c={c} vitals={vs.find((v) => v.id === c.vitalsId)} exams={exams ? exams.filter((e) => e.consultationId === c.id) : undefined} />
                 <Addenda list={chart?.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={reload} /></div>
             </article>
           )) : <section className="panel"><div className="empty">Este paciente aún no tiene consultas firmadas.</div></section>}

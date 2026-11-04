@@ -33,10 +33,17 @@
 .bg-groups--compact { gap: 12px; }
 .bg-groups--compact .facts { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px 18px; }
 .bg-groups--compact .facts dd { font-size: 13.5px; }
+/* AN1 (ronda 12): antecedentes en renglones a todo el ancho, con el texto justificado */
+.bg-list { display: grid; gap: 0; margin: 0; border-top: 1px solid var(--line-soft); }
+.bg-list__row { display: grid; grid-template-columns: minmax(150px, 210px) 1fr; gap: 4px 20px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
+.bg-list dt { font-size: 13px; color: var(--muted); font-weight: 600; padding-top: 1px; }
+.bg-list dd { margin: 0; font-size: 14.5px; line-height: 1.5; text-align: justify; hyphens: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.bg-groups--compact .bg-list dd { font-size: 14px; }
+@media (max-width: 640px) { .bg-list__row { grid-template-columns: 1fr; } }
 
 .note { display: grid; gap: 14px; }
 .note__sec h4 { font-family: var(--display); font-size: 14px; font-weight: 650; color: var(--ink-deep); margin: 0 0 4px; }
-.note__sec p { font-size: 14.5px; white-space: pre-wrap; }
+.note__sec p { font-size: 14.5px; white-space: pre-wrap; text-align: justify; hyphens: auto; }
 .note__vitals { font-variant-numeric: tabular-nums; color: var(--petrol); background: var(--ward); padding: 6px 10px; border-radius: 8px; margin-bottom: 6px; }
 .note__list { margin: 0; padding-left: 22px; display: grid; gap: 4px; font-size: 14.5px; }
 .consult-entry .panel__head h2::first-letter { text-transform: uppercase; }
@@ -1022,3 +1029,28 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .tabrow--l > .tabs { padding-left: 36px; scroll-padding-left: 40px; }
 .tabrow--r > .tabs { padding-right: 36px; scroll-padding-right: 40px; }
 @media (max-width: 600px) { .tabrow .tab { min-height: 44px; } }
+
+/* CE2 (ronda 12): el expediente completo dentro de la consulta, plegable */
+.chart-in-consult { margin-bottom: 16px; overflow: hidden; }
+.chart-in-consult__toggle { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 20px; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.chart-in-consult__toggle > svg:first-child { color: var(--ink); flex: none; }
+.chart-in-consult__toggle span { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.chart-in-consult__toggle b { font-size: 15px; color: var(--ink-deep); }
+.chart-in-consult__toggle small { font-size: 13px; color: var(--muted); }
+.chart-in-consult__chev { transition: transform .15s; flex: none; }
+.chart-in-consult.is-open .chart-in-consult__chev { transform: rotate(180deg); }
+.chart-in-consult__body { border-top: 1px solid var(--line-soft); padding: 12px 16px 16px; background: var(--ward); max-height: 75vh; overflow: auto; }
+.chart-embed { display: grid; gap: 14px; }
+.chart-embed__tabs { position: sticky; top: -12px; z-index: 3; background: var(--ward); padding-top: 4px; }
+
+/* HO1 (ronda 12): la nota se escribe dentro del expediente, no en una ventana */
+.modal-inline { display: block !important; overflow: visible !important; scroll-margin-top: 150px; border: 2px solid var(--ink-soft); }
+.modal-inline .modal__head { padding: 18px 24px 0; }
+.modal-inline .modal__head h2 { font-size: 20px; }
+.modal-inline .modal__top { padding: 12px 24px 0; display: grid; gap: 8px; }
+.modal-inline .modal__body { overflow: visible !important; min-height: 0; }
+.modal-inline .modal__foot { position: sticky; bottom: 0; z-index: 4; background: var(--paper); padding: 12px 24px 16px; border-top: 1px solid var(--line-soft); border-radius: 0 0 var(--r-lg, 18px) var(--r-lg, 18px); flex-wrap: wrap; box-shadow: 0 -8px 16px -12px rgba(14, 34, 51, .25); }
+.note-dock { margin-top: 18px; }
+.note-dock__bar, .note-dock__hint { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--ink-soft); color: var(--ink-deep); font-size: 14px; }
+.note-dock__hint { margin-bottom: 12px; }
+@media (max-width: 720px) { .modal-inline .modal__head, .modal-inline .modal__top { padding-left: 16px; padding-right: 16px; } .modal-inline .modal__foot { padding: 12px 16px; } }

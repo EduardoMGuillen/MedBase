@@ -62,7 +62,7 @@ type Tab = 'sheet' | 'notes' | 'vitals' | 'meds' | 'nursing' | 'labs' | 'annexes
 
 export default function InpatientFile() {
   const { id } = useParams()
-  const { fetchInpatient, notify, patient, bed, staffById, can } = useStore()
+  const { fetchInpatient, notify, patient, bed, staffById, can, user } = useStore()
   const [file, setFile] = useState<File | null>(null)
   // Desde la alerta de órdenes nuevas se entra directo a las notas; al firmar una consulta con ingreso, a completar la cama
   const [params, setParams] = useSearchParams()
@@ -72,7 +72,8 @@ export default function InpatientFile() {
   const [consentFor, setConsentFor] = useState<string | null>(null)
   const wantsConsent = params.get('firmar')
   const tabParam = ({ hoja: 'sheet', notas: 'notes', signos: 'vitals', medicamentos: 'meds', enfermeria: 'nursing', anexos: 'annexes', examenes: 'labs' } as Record<string, Tab>)[params.get('tab') ?? '']
-  const [tab, setTab] = useState<Tab>(tabParam ?? 'sheet')
+  // IM2 (ronda 12): el radiólogo entra directo a los exámenes (sus estudios)
+  const [tab, setTab] = useState<Tab>(tabParam ?? (user?.role === 'imaging' ? 'labs' : 'sheet'))
   // RG1: el recorrido cambia de pestaña con ?tab= sin salir del expediente
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (tabParam) setTab(tabParam) }, [tabParam])
@@ -80,6 +81,8 @@ export default function InpatientFile() {
   const [focus, setFocus] = useState<{ dose?: { medId: string; at: string }; record?: boolean; recordPast?: boolean }>(() => ({
     dose: params.get('dosis') && params.get('hora') ? { medId: params.get('dosis')!, at: params.get('hora')! } : undefined, record: params.get('registrar') === '1', recordPast: params.get('registrar') === 'anteriores' }))
   const [missing, setMissing] = useState(false)
+  // HO1 (ronda 12): la nota que se está escribiendo (abajo), para avisarlo en las otras pestañas
+  const [writingNote, setWritingNote] = useState<string | null>(null)
   const now = useNow()
   const alerts = useFileAlerts(file)
   const load = useCallback(() => {
@@ -188,6 +191,8 @@ export default function InpatientFile() {
       </div>
       {/* EN2: barra compacta; la autorización pendiente y la cama sin asignar van en ella como pendientes */}
       <AlertBar alerts={alerts} onGo={go} />
+      {writingNote && tab !== 'notes' && <p className="note-dock__hint" role="status"><NotebookPen size={15} />{writingNote} abierta: la encuentras al final de esta pestaña.
+        <button type="button" className="link-btn" onClick={() => document.querySelector('.note-dock')?.scrollIntoView({ behavior: 'smooth' })}>Ir a la nota</button></p>}
       {editing && <GeneralDataModal h={h} p={p} onClose={() => setEditing(false)} onDone={() => { setEditing(false); load() }} />}
       {admitting && <AdmitBedStep h={h} p={p} onClose={() => { setAdmitting(false); setParams({}, { replace: true }) }}
         onDone={async () => { setAdmitting(false); const f = await fetchInpatient(h.id); setFile(f); const a = f.authorizations.find((x) => x.template === 'hospital' && x.status === 'pending'); if (a) setConsentFor(a.id); setParams({}, { replace: true }) }} />}
@@ -224,7 +229,8 @@ export default function InpatientFile() {
       )}
 
       {tab === 'meds' && <MedSheet file={file} p={p} reload={load} onWriteNote={() => setTab('notes')} focusDose={focus.dose} onFocused={() => setFocus({})} />}
-      {tab === 'notes' && <MedicalNotes file={file} p={p} reload={load} />}
+      {/* HO1 (ronda 12): siempre montada: la nota que se escribe sigue abierta al cambiar de pestaña */}
+      <MedicalNotes file={file} p={p} reload={load} show={tab === 'notes'} onShow={() => { selectTab('notes'); window.scrollTo({ top: 0 }) }} onWriting={setWritingNote} />
       {tab === 'vitals' && <VitalsSheet file={file} p={p} reload={load} autoRecord={focus.record} autoRecordPast={focus.recordPast} onFocused={() => setFocus({})} />}
       {tab === 'nursing' && !obs && <NursingNotes file={file} reload={load} />}
       {tab === 'labs' && <ExamList exams={exams} patientId={h.patientId} hospitalizationId={h.id} reload={load} open={open} />}
@@ -697,7 +703,12 @@ const dm = (iso: string) => `${date(iso, { day: '2-digit', month: '2-digit' })} 
 /** Una entrada de la línea de tiempo: nota médica (SOAP, procedimiento o egreso) o registro anterior de procedimiento. */
 type TimelineItem = { at: string; key: string; note?: InpatientNote; legacy?: HospProcedure }
 
-function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () => void }) {
+/**
+ * HO1 (ronda 12): las notas de evolución, de procedimiento y postquirúrgicas se escriben abajo, dentro del expediente (no en una
+ * ventana). La nota sigue abierta al cambiar de pestaña (signos, curva térmica, medicamentos, exámenes, anexos): con `show`
+ * en falso solo se dibuja el editor, debajo de la pestaña que se esté viendo.
+ */
+function MedicalNotes({ file, p, reload, show = true, onShow, onWriting }: { file: File; p: Patient; reload: () => void; show?: boolean; onShow?: () => void; onWriting?: (title: string | null) => void }) {
   const { staffById, can } = useStore()
   const notes = file.notes.filter((n) => n.kind === 'admission' || n.kind === 'evolution' || n.kind === 'discharge' || n.kind === 'procedure')
   const h = file.hospitalization
@@ -731,22 +742,49 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
     ...file.procedures.filter((x) => x.kind === 'procedure').map((x) => ({ at: x.createdAt, key: x.id, legacy: x })),
   ].sort((a, b) => a.at.localeCompare(b.at) || a.key.localeCompare(b.key))
   const doctor = can('inpatient.orders')
+  // IM2 (ronda 12): el radiólogo (intervencionista) escribe notas de evolución, de procedimiento menor y postquirúrgicas (mayor)
+  const writer = doctor || can('inpatient.notes')
+  const inlineTitle = writing === 'note' ? (hasAdmission ? 'Nota de evolución' : 'Nota de ingreso') : writing === 'procedure' ? 'Nota de procedimiento' : writing === 'postop' ? 'Nota postquirúrgica' : null
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onWriting?.(inlineTitle) }, [inlineTitle])
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (transfer && doctor && hasAdmission && !discharged && h.status === 'active') setWriting('discharge')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transfer])
+  const editors = <>
+      {writing === 'procedure' && <ProcedureNoteForm inline file={file} initial={procDraft} onClose={() => { setWriting(null); setProcDraft(undefined) }} onSaved={() => { setWriting(null); setProcDraft(undefined); reload() }}
+        onAuthorize={(draft) => { setProcDraft(draft); setBack('procedure'); setAuthFor(draft.name); setWriting('authorization') }}
+        onConvert={(draft) => { setProcDraft(undefined); setPostopSeed({ procedureName: draft.name, description: draft.text, startAt: draft.performedAt, endAt: draft.performedAt, urgent: draft.urgent, justification: draft.justification }); setWriting('postop') }} />}
+      {writing === 'postop' && <NoteEditor inline notesOnly={!doctor} file={file} p={p} kind="evolution" variant="postop" seed={postopSeed} onClose={() => { setWriting(null); setPostopSeed(undefined) }} onSaved={(b, rx) => { setWriting(null); setPostopSeed(undefined); reload(); if (b || rx) setOrdersFor({ batch: b, rxNote: rx }) }} onStale={reload}
+        onAuthorize={(name) => { setBack('postop'); setAuthFor(name || undefined); setWriting('authorization') }} />}
+      {writing === 'note' && <NoteEditor inline notesOnly={!doctor} file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={(b, rx) => { setWriting(null); reload(); if (b || rx) setOrdersFor({ batch: b, rxNote: rx }) }} onStale={reload} />}
+  </>
+  const modals = <>
+      {writing === 'authorization' && <AuthorizationForm file={file} p={p} template="surgical" initialProcedure={authFor} onClose={() => { setWriting(back); setBack(null) }}
+        onCreated={(a) => { setWriting(null); setSurgicalFor(a.id) }} />}
+      {surgicalFor && <ConsentChoice authorizationId={surgicalFor} p={p} onDone={() => { setSurgicalFor(null); reload(); if (back) { setWriting(back); setBack(null) } }} />}
+      {ordersFor && <ExamOrdersOffer batch={ordersFor.batch} rxNote={ordersFor.rxNote} meds={file.meds} onClose={() => setOrdersFor(null)} />}
+  </>
+  // En otra pestaña: solo la nota que se está escribiendo, debajo de lo que se ve
+  if (!show) return (<>
+    {inlineTitle && <div className="hc note-dock">
+      <p className="note-dock__bar"><NotebookPen size={15} />Sigues escribiendo la {inlineTitle.toLowerCase()}: está aquí abajo. <button type="button" className="link-btn" onClick={onShow}>Ver las notas</button></p>
+      {editors}
+    </div>}
+    {modals}
+  </>)
   return (
     <div className="hc">
-      {open && (doctor || can('inpatient.care')) && (
+      {open && (writer || can('inpatient.care')) && (
         <section className="panel">
           <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <p className="muted">{hasAdmission ? 'Las notas quedan en orden, de la más antigua a la más reciente. Procedimientos, notas postquirúrgicas y egreso también son notas de evolución.' : 'Lo primero es la nota de ingreso, con las indicaciones de medicamentos.'}</p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {doctor && <button className="btn btn--primary" data-tour="nueva-evolucion" onClick={() => setWriting('note')}><NotebookPen size={16} />{hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso'}</button>}
-              {doctor && <button className="btn btn--primary" onClick={() => setWriting('procedure')}><Syringe size={16} />Procedimiento</button>}
-              <button className={`btn ${doctor ? 'btn--primary' : 'btn--soft'}`} onClick={() => { setAuthFor(undefined); setWriting('authorization') }}><FileSignature size={16} />Autorización quirúrgica</button>
-              {doctor && hasAdmission && <button className="btn btn--primary" onClick={() => setWriting('postop')}><NotebookPen size={16} />Nota postquirúrgica</button>}
+              {(doctor || (writer && hasAdmission)) && <button className="btn btn--primary" data-tour="nueva-evolucion" onClick={() => setWriting('note')}><NotebookPen size={16} />{hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso'}</button>}
+              {writer && <button className="btn btn--primary" onClick={() => setWriting('procedure')}><Syringe size={16} />{doctor ? 'Procedimiento' : 'Procedimiento menor'}</button>}
+              {(doctor || can('inpatient.care')) && <button className={`btn ${doctor ? 'btn--primary' : 'btn--soft'}`} onClick={() => { setAuthFor(undefined); setWriting('authorization') }}><FileSignature size={16} />Autorización quirúrgica</button>}
+              {writer && hasAdmission && <button className="btn btn--primary" onClick={() => setWriting('postop')}><NotebookPen size={16} />{doctor ? 'Nota postquirúrgica' : 'Procedimiento mayor (nota postquirúrgica)'}</button>}
               {doctor && hasAdmission && !discharged && <button className="btn btn--primary" data-tour="egreso" onClick={() => setWriting('discharge')}><LogOut size={16} />Egreso</button>}
               {doctor && obs && features(settings).hospital && <button className="btn btn--soft" onClick={() => setConverting(true)}><BedDouble size={16} />Pasar a hospitalización</button>}
               {/* Ronda 8: referencia a otro centro desde la observación y la hospitalización (antes, sólo el consultorio) */}
@@ -756,14 +794,6 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         </section>
       )}
       {can('orders.review') && <PendingOrdersPanel file={file} reload={reload} />}
-      {writing === 'procedure' && <ProcedureNoteForm file={file} initial={procDraft} onClose={() => { setWriting(null); setProcDraft(undefined) }} onSaved={() => { setWriting(null); setProcDraft(undefined); reload() }}
-        onAuthorize={(draft) => { setProcDraft(draft); setBack('procedure'); setAuthFor(draft.name); setWriting('authorization') }}
-        onConvert={(draft) => { setProcDraft(undefined); setPostopSeed({ procedureName: draft.name, description: draft.text, startAt: draft.performedAt, endAt: draft.performedAt, urgent: draft.urgent, justification: draft.justification }); setWriting('postop') }} />}
-      {writing === 'authorization' && <AuthorizationForm file={file} p={p} template="surgical" initialProcedure={authFor} onClose={() => { setWriting(back); setBack(null) }}
-        onCreated={(a) => { setWriting(null); setSurgicalFor(a.id) }} />}
-      {writing === 'postop' && <NoteEditor file={file} p={p} kind="evolution" variant="postop" seed={postopSeed} onClose={() => { setWriting(null); setPostopSeed(undefined) }} onSaved={(b, rx) => { setWriting(null); setPostopSeed(undefined); reload(); if (b || rx) setOrdersFor({ batch: b, rxNote: rx }) }} onStale={reload}
-        onAuthorize={(name) => { setBack('postop'); setAuthFor(name || undefined); setWriting('authorization') }} />}
-      {surgicalFor && <ConsentChoice authorizationId={surgicalFor} p={p} onDone={() => { setSurgicalFor(null); reload(); if (back) { setWriting(back); setBack(null) } }} />}
       {/* MC5: la nota de egreso se escribe en la misma hoja que la epicrisis */}
       {writing === 'discharge' && <DischargeWriter file={file} p={p} initialCondition={transfer ? 'Trasladado a otro centro' : undefined} onDone={() => { setWriting(null); reload(); if (transfer) { const q = new URLSearchParams(notesParams); q.delete('egreso'); setNotesParams(q, { replace: true }) } }} />}
       {referring && <ReferralModal from={{ kind: 'stay', id: h.id }} stayKind={h.kind === 'observation' ? 'observation' : 'hospital'} onClose={() => { setReferring(false); reload() }} />}
@@ -791,8 +821,8 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         if (n.kind === 'procedure') return <ProcedureNote key={n.id} n={n} file={file} reload={reload} />
         return <SoapNote key={n.id} n={n} file={file} reload={reload} />
       }) : !h.consultationId && <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
-      {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={(b, rx) => { setWriting(null); reload(); if (b || rx) setOrdersFor({ batch: b, rxNote: rx }) }} onStale={reload} />}
-      {ordersFor && <ExamOrdersOffer batch={ordersFor.batch} rxNote={ordersFor.rxNote} meds={file.meds} onClose={() => setOrdersFor(null)} />}
+      {editors}
+      {modals}
     </div>
   )
 }
@@ -1053,7 +1083,7 @@ function TextCorrection({ n, procedure, onClose, onSaved, onExpired }: { n: Inpa
  */
 type ProcDraft = { name: string; performedAt: string; text: string; major: boolean; urgent: boolean; justification: string }
 
-function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize, onConvert }: { file: File; initial?: ProcDraft; onClose: () => void; onSaved: () => void; onAuthorize: (draft: ProcDraft) => void; onConvert: (draft: ProcDraft) => void }) {
+function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize, onConvert, inline = false }: { file: File; initial?: ProcDraft; onClose: () => void; onSaved: () => void; onAuthorize: (draft: ProcDraft) => void; onConvert: (draft: ProcDraft) => void; inline?: boolean }) {
   const { addProcedureNote } = useStore()
   const now = useNow()
   // Si se fue a generar la autorización quirúrgica, al volver la nota sigue como estaba
@@ -1072,7 +1102,7 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize, onCon
   const basics = f.name.trim().length >= 3 && f.performedAt && !future && f.text.trim().length >= 10
   const ready = basics && (!f.major || covered || (f.urgent && f.justification.trim().length >= 10))
   return (
-    <Modal title="Nota de procedimiento" wide className="note-modal" onClose={onClose} footer={<>
+    <Modal title="Nota de procedimiento" wide inline={inline} className="note-modal" onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
         setBusy(true)
@@ -1218,7 +1248,11 @@ function CorrectionOrders({ n, file, p, value, onChange, locks }: { n: Inpatient
   )
 }
 
-function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAuthorize, seed, correct, onExpired }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: (examBatch?: string, rxNoteId?: string) => void; onStale?: () => void
+function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAuthorize, seed, correct, onExpired, inline = false, notesOnly = false }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: (examBatch?: string, rxNoteId?: string) => void; onStale?: () => void
+  /** HO1 (ronda 12): dentro del expediente, debajo de las notas (no en ventana), para seguir viendo las otras pestañas. */
+  inline?: boolean
+  /** IM2 (ronda 12): el radiólogo escribe la nota (evolución o postquirúrgica) sin indicaciones ni medicamentos. */
+  notesOnly?: boolean
   /** PQ1 (ronda 9): «Nota postquirúrgica»: la misma ventana (órdenes, borrador, pie), con su columna izquierda propia. */
   variant?: 'postop'; onAuthorize?: (procedure: string) => void; seed?: Partial<PostopDraft>
   /** GE4 (ronda 9): «Corregir»: la misma ventana, ya llenada, con «Guardar corrección». `onExpired` pasa lo escrito a una adenda. */
@@ -1360,7 +1394,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
             </fieldset>
   )
   return (
-    <Modal title={`${correct ? 'Corregir: ' : ''}${postop ? 'Nota postquirúrgica' : kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'}`} wide className="note-modal" onClose={onClose}
+    <Modal title={`${correct ? 'Corregir: ' : ''}${postop ? 'Nota postquirúrgica' : kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'}`} wide inline={inline && !correct} className="note-modal" onClose={onClose}
       top={(!noteBlank || p.allergies.length > 0) && <>
         {!noteBlank && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}
         {p.allergies.length > 0 && <div className="alert-strip"><TriangleAlert size={16} />Alergias: {p.allergies.join(', ')}</div>}
@@ -1405,7 +1439,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
           <button type="button" role="radio" aria-checked={format === 'soap'} onClick={() => setFormat('soap')} title="Subjetivo, objetivo, análisis y plan">SOAP</button>
         </div>
       )}
-      <div className="note-editor">
+      <div className={`note-editor${notesOnly && !correct ? ' note-editor--single' : ''}`}>
       <div className="soap-stack">
         {/* MC8 (ronda 6): opcional; si no se toca, no se guarda nada. Va antes del examen físico (en SOAP, arriba de la S: NE6) */}
         {postop && <PostopFields pq={pq} setPq={setPq} file={file} check={pqCheck} onAuthorize={onAuthorize} noAuth={!!correct} />}
@@ -1433,7 +1467,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         </>)}
         </>}
       </div>
-      {correct && fix ? <CorrectionOrders n={correct} file={file} p={p} value={fix} onChange={setFix} locks={locks} /> : <div className="note-editor__orders">
+      {correct && fix ? <CorrectionOrders n={correct} file={file} p={p} value={fix} onChange={setFix} locks={locks} /> : notesOnly ? null : <div className="note-editor__orders">
       <div className="set-bar">
         <OrderSetPicker where={file.hospitalization.kind === 'observation' ? 'observation' : 'hospital'} patientId={p.id} onApply={applySet} />
         <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions }) => ({ med: { drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions: instructions || undefined } })), ...exams.map((e) => ({ exam: e }))]} />

@@ -200,7 +200,9 @@ export interface Background {
   smoking?: string // tabaquismo
   alcohol?: string // alcoholismo
   drugs?: string // otras sustancias
-  lifestyle?: string // actividad física y alimentación
+  /** AN2 (ronda 12): toxicomanías (tabaquismo, alcoholismo y otras sustancias en un solo campo). Manda sobre los tres de arriba. */
+  toxic?: string
+  lifestyle?: string // actividad física y alimentación (ronda 12: ya no se pide ni se muestra; lo escrito se conserva)
   immunizations?: string // inmunizaciones
   // Gineco-obstétricos
   menarche?: string

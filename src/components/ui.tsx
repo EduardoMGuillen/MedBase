@@ -22,8 +22,13 @@ export function StatusBadge({ status }: { status: ApptStatus }) {
  * `steady` (EN4, ronda 10): la ventana no se encoge de golpe cuando cambia su contenido (p. ej. al pasar de una pestaña a
  * otra): guarda el alto mayor que tuvo, sin pasar del máximo de la ventana.
  */
-export function Modal({ title, onClose, children, footer, top, wide = false, className = '', steady = false }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; top?: ReactNode; wide?: boolean; className?: string; steady?: boolean }) {
+/**
+ * Ventana sobre la página. HO1 (ronda 12): con `inline` se dibuja como una sección más de la página (sin fondo oscuro ni
+ * Escape), para escribir una nota sin perder de vista el expediente; el pie con los botones queda fijo abajo.
+ */
+export function Modal({ title, onClose, children, footer, top, wide = false, className = '', steady = false, inline = false }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; top?: ReactNode; wide?: boolean; className?: string; steady?: boolean; inline?: boolean }) {
   useEffect(() => {
+    if (inline) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -36,6 +41,19 @@ export function Modal({ title, onClose, children, footer, top, wide = false, cla
     const h = Math.min(el.offsetHeight, window.innerHeight * 0.9)
     if (h > tallest.current) { tallest.current = h; el.style.minHeight = `${h}px` }
   })
+  // HO1: al abrirse en la página, se lleva a la vista
+  useEffect(() => { if (inline) box.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [inline])
+  if (inline) return (
+    <section ref={box} className={`panel modal-inline ${className}`} aria-label={title}>
+      <div className="modal__head">
+        <h2>{title}</h2>
+        <button className="icon-btn" onClick={onClose} aria-label="Cerrar"><X size={18} /></button>
+      </div>
+      {top && <div className="modal__top">{top}</div>}
+      <div className="modal__body">{children}</div>
+      {footer && <div className="modal__foot">{footer}</div>}
+    </section>
+  )
   return (
     <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={box} className={`modal ${wide ? 'modal--wide' : ''} ${className}`} role="dialog" aria-modal="true" aria-label={title}>

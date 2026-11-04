@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DictateField } from '../components/Dictate'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ClipboardList, FlaskConical, Pencil, Pill, Plus, Send, X } from 'lucide-react'
+import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ChevronDown, ClipboardList, FlaskConical, FolderOpen, Pencil, Pill, Plus, Send, X } from 'lucide-react'
 import { useStore, type FollowupInput } from '../lib/store'
 import { PatientHeader } from '../components/PatientHeader'
 import { date, dxCode, medicationLine, medicationOrder, missingDays, time } from '../lib/format'
@@ -12,7 +12,7 @@ import { MedicationForm, MedicationList } from '../components/Medications'
 import { followupLabel } from '../lib/followups'
 import { yearsOld } from '../lib/inpatient'
 import { features } from '../lib/permissions'
-import { BackgroundView, useChart, VitalsGrid } from './PatientChart'
+import PatientChart, { BackgroundView, useChart, VitalsGrid } from './PatientChart'
 import { BackgroundForm, IdentityPrompt } from './PatientForms'
 import { VitalsModal } from './WaitingRoom'
 import { ReferralModal } from './Referral'
@@ -44,7 +44,7 @@ interface Draft {
   orders?: { text: string; rx?: PrescriptionItem }[]
 }
 
-const PATHOLOGICAL = ['Personales patológicos', 'Heredofamiliares', 'Gineco-obstétricos']
+const PATHOLOGICAL = ['Personales patológicos', 'Hospitalarios, traumáticos y quirúrgicos', 'Heredofamiliares', 'Gineco-obstétricos']
 const NON_PATHOLOGICAL = ['Personales no patológicos']
 const draftKey = (id?: string) => `clinara.nota.${id}`
 function loadDraft(id?: string): Partial<Draft> {
@@ -101,6 +101,8 @@ export default function Consultation() {
   const [triage, setTriage] = useState(false)
   const [editBg, setEditBg] = useState(false)
   const [signing, setSigning] = useState(false)
+  // CE2 (ronda 12): el expediente completo (consultas anteriores, exámenes, recetas…) se abre aquí mismo, sin dejar la nota
+  const [showChart, setShowChart] = useState(false)
   const [validity, setValidity] = useRxValidity()
   const orderInput = useRef<HTMLInputElement>(null)
   const mine = !!appt && appt.doctorId === user?.id
@@ -215,6 +217,14 @@ export default function Consultation() {
           <DraftBadge savedAt={draft.savedAt} restored={draft.restored || Object.keys(saved).length > 0} offline={draft.offline} />
         </PatientHeader>
       </div>
+
+      <section className={`panel chart-in-consult${showChart ? ' is-open' : ''}`}>
+        <button type="button" className="chart-in-consult__toggle" aria-expanded={showChart} onClick={() => setShowChart(!showChart)}>
+          <FolderOpen size={17} /><span><b>Expediente completo de {p.firstName}</b>
+            <small>{chart ? `${chart.consultations.length} consulta${chart.consultations.length === 1 ? '' : 's'} anterior${chart.consultations.length === 1 ? '' : 'es'}${chart.hospitalizations.length ? `, ${chart.hospitalizations.length} hospitalización${chart.hospitalizations.length === 1 ? '' : 'es'}` : ''} · exámenes, recetas, signos y archivos. La nota sigue aquí abajo.` : 'Consultas anteriores, exámenes, recetas, signos y archivos.'}</small></span>
+          <ChevronDown size={18} className="chart-in-consult__chev" /></button>
+        {showChart && <div className="chart-in-consult__body"><PatientChart patientId={p.id} embedded /></div>}
+      </section>
 
       <div className="consult2">
         <div className="consult2__left">

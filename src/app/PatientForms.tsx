@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { DateField } from '../components/DateTimeField'
 import { Modal } from '../components/ui'
 import { useStore } from '../lib/store'
-import { BACKGROUND_GROUPS, CIVIL_STATUS, dniDigits, dniLength, EDUCATION, formatPhone } from '../lib/format'
+import { BACKGROUND_GROUPS, CIVIL_STATUS, toxicOf, dniDigits, dniLength, EDUCATION, formatPhone } from '../lib/format'
 import { DniInput } from '../components/DniInput'
 import { yearsOld } from '../lib/inpatient'
 import type { Background, Patient } from '../lib/types'
@@ -137,14 +137,18 @@ export function AllergiesForm({ initial, onClose, onSave }: { initial: Patient; 
 
 /** Antecedentes en el orden de la historia clínica. */
 export function BackgroundForm({ initial, onClose, onSave }: { initial: Patient; onClose: () => void; onSave: (p: Partial<Patient>) => Promise<void> }) {
-  const [b, setB] = useState<Background>(initial.background ?? {})
+  // AN2 (ronda 12): Toxicomanías empieza con lo que había en tabaquismo, alcoholismo y otras sustancias
+  const [b, setB] = useState<Background>(() => ({ ...(initial.background ?? {}), toxic: toxicOf(initial.background ?? {}) || undefined }))
   const [busy, setBusy] = useState(false)
   return (
     <Modal title="Antecedentes" onClose={onClose} wide footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={busy} onClick={async () => {
         setBusy(true)
-        const clean = Object.fromEntries(Object.entries(b).map(([k, v]) => [k, (v ?? '').trim()]).filter(([, v]) => v))
+        // Toxicomanías ya reúne los tres campos de antes: se quitan para no mostrar dos veces lo mismo
+        const { smoking: _s, alcohol: _a, drugs: _d, ...rest } = b
+        void _s; void _a; void _d
+        const clean = Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, (v ?? '').trim()]).filter(([, v]) => v))
         await onSave({ background: clean as Background })
         setBusy(false)
       }}>Guardar antecedentes</button>
@@ -154,10 +158,10 @@ export function BackgroundForm({ initial, onClose, onSave }: { initial: Patient;
         <fieldset key={g.title} className="fs"><legend>{g.title}</legend>
           <div className="form-grid">
             {g.fields.map((fl) => (
-              <label key={fl.key} className={`field ${g.fields.length === 1 ? 'span-2' : ''}`}><span>{fl.label}</span>
+              <label key={fl.key} className={`field ${g.fields.length === 1 || g.fields.length === 3 && fl === g.fields[2] ? 'span-2' : ''}`}><span>{fl.label}</span>
                 {fl.date
                   ? <DateField value={b[fl.key] ?? ''} onChange={(v) => setB({ ...b, [fl.key]: v })} label={fl.label} />
-                  : <textarea className="textarea textarea--sm" rows={2} value={b[fl.key] ?? ''} onChange={(e) => setB({ ...b, [fl.key]: e.target.value })} />}
+                  : <textarea className="textarea textarea--sm" rows={fl.key === 'toxic' ? 3 : 2} value={b[fl.key] ?? ''} placeholder={fl.hint} onChange={(e) => setB({ ...b, [fl.key]: e.target.value })} />}
               </label>
             ))}
           </div>

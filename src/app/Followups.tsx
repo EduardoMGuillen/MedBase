@@ -130,15 +130,26 @@ function WhatsAppMock({ f, onClose }: { f: Followup; onClose: () => void }) {
 }
 
 /** Programar un seguimiento: al firmar la consulta o desde esta pantalla. */
+/** SG1 (ronda 12): la fecha del próximo control a partir de hoy, en meses de calendario (6 meses: 4 nov → 4 may). */
+export function nextControl(everyDays: number, from = new Date()) {
+  const months = everyDays >= 365 ? Math.round(everyDays / 365) * 12 : Math.round(everyDays / 30)
+  const d = new Date(from.getFullYear(), from.getMonth() + months, from.getDate())
+  // 31 de enero + 1 mes: último día de febrero, no 3 de marzo
+  if (d.getDate() !== from.getDate()) d.setDate(0)
+  return localISODate(d)
+}
+
 export function FollowupFields({ value, onChange }: { value: FollowupInput; onChange: (v: FollowupInput) => void }) {
   const set = <K extends keyof FollowupInput>(k: K, v: FollowupInput[K]) => onChange({ ...value, [k]: v })
+  // SG1 (ronda 12): al elegir «Control cada», el próximo control se mueve solo (y se puede cambiar a mano después)
+  const every = (days: number) => onChange({ ...value, everyDays: days, dueDate: nextControl(days) })
   return (
     <div className="form-grid">
       <div className="field span-2"><span>Tipo</span>
         <div className="segmented" role="radiogroup">
           {(['chronic', 'reminder'] as Kind[]).map((k) => (
             <button type="button" key={k} role="radio" aria-checked={value.kind === k || (k === 'reminder' && value.kind === 'procedure')}
-              onClick={() => onChange({ ...value, kind: k, everyDays: k === 'chronic' ? value.everyDays ?? 90 : undefined, reminderType: k === 'reminder' ? value.reminderType ?? 'exam' : undefined })}>{FOLLOWUP_KIND[k].label}</button>
+              onClick={() => onChange({ ...value, kind: k, everyDays: k === 'chronic' ? value.everyDays ?? 90 : undefined, ...(k === 'chronic' && value.kind !== 'chronic' ? { dueDate: nextControl(value.everyDays ?? 90) } : {}), reminderType: k === 'reminder' ? value.reminderType ?? 'exam' : undefined })}>{FOLLOWUP_KIND[k].label}</button>
           ))}
         </div></div>
       {value.kind !== 'chronic' && (
@@ -152,14 +163,14 @@ export function FollowupFields({ value, onChange }: { value: FollowupInput; onCh
       )}
       <label className="field span-2"><span>{value.kind === 'chronic' ? 'Padecimiento crónico' : value.reminderType === 'procedure' || value.kind === 'procedure' ? 'Procedimiento' : 'Qué debe hacer el paciente'}</span>
         <input className="input" list={value.kind === 'chronic' ? 'chronic-presets' : undefined} value={value.title}
-          onChange={(e) => { const preset = CHRONIC_PRESETS.find((c) => c.title === e.target.value); onChange({ ...value, title: e.target.value, everyDays: preset?.everyDays ?? value.everyDays }) }}
+          onChange={(e) => { const preset = CHRONIC_PRESETS.find((c) => c.title === e.target.value); onChange({ ...value, title: e.target.value, everyDays: preset?.everyDays ?? value.everyDays, ...(preset?.everyDays && value.kind === 'chronic' ? { dueDate: nextControl(preset.everyDays) } : {}) }) }}
           placeholder={value.kind === 'chronic' ? 'Ej. Hipertensión arterial' : value.reminderType === 'procedure' || value.kind === 'procedure' ? 'Ej. Hernioplastia inguinal' : 'Ej. Hacerse química sanguínea y volver con resultados'} />
         <datalist id="chronic-presets">{CHRONIC_PRESETS.map((c) => <option key={c.title} value={c.title} />)}</datalist></label>
       <label className="field"><span>{value.kind === 'chronic' ? 'Próximo control' : 'Fecha'}</span>
         <DateField value={value.dueDate} min={localISODate(new Date())} onChange={(v) => set('dueDate', v)} label="Fecha" /></label>
       {value.kind === 'chronic' && (
         <label className="field"><span>Control cada</span>
-          <select className="select" value={value.everyDays ?? 90} onChange={(e) => set('everyDays', Number(e.target.value))}>
+          <select className="select" value={value.everyDays ?? 90} onChange={(e) => every(Number(e.target.value))}>
             {[30, 60, 90, 120, 180, 365].map((d) => <option key={d} value={d}>{d === 365 ? '1 año' : `${d / 30} ${d === 30 ? 'mes' : 'meses'}`}</option>)}
           </select></label>
       )}
@@ -170,7 +181,7 @@ export function FollowupFields({ value, onChange }: { value: FollowupInput; onCh
 }
 
 export const emptyFollowup = (kind: Kind = 'chronic'): FollowupInput => ({
-  kind, title: '', dueDate: addDays(localISODate(new Date()), kind === 'chronic' ? 90 : 7), everyDays: kind === 'chronic' ? 90 : undefined, notes: '', reminderType: kind === 'chronic' ? undefined : 'exam',
+  kind, title: '', dueDate: kind === 'chronic' ? nextControl(90) : addDays(localISODate(new Date()), 7), everyDays: kind === 'chronic' ? 90 : undefined, notes: '', reminderType: kind === 'chronic' ? undefined : 'exam',
 })
 
 function FollowupModal({ onClose }: { onClose: () => void }) {

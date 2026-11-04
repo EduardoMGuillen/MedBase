@@ -93,6 +93,30 @@ export default function ExamOrderPage() {
 type Doctor = Batch['doctor']
 
 /**
+ * CE1 (ronda 12): las órdenes de un lote debajo de otro documento (la receta), para imprimir todo junto. Mismas reglas que la
+ * página de la orden: si hay estudios «Externo», solo esos. Cada orden empieza en su propia hoja (carta).
+ */
+export function ExamBatchSheets({ batch, onGroups }: { batch: string; onGroups?: (g: ExamGroup[]) => void }) {
+  const { patient } = useStore()
+  const [data, setData] = useState<Batch | null>(null)
+  useEffect(() => { api<Batch>(`/exams/batch/${batch}`).then(setData).catch(() => setData(null)) }, [batch])
+  const live = data ? data.exams.filter((e) => e.status !== 'cancelled') : []
+  const shown = live.some((e) => e.place === 'external') ? live.filter((e) => e.place === 'external') : live
+  const groups = (['lab', 'imaging'] as ExamGroup[]).filter((g) => shown.some((e) => e.group === g))
+  const key = groups.join(',')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onGroups?.(groups) }, [key])
+  const p = data && data.exams[0] ? patient(data.exams[0].patientId) : undefined
+  if (!data || !p || !shown.length) return null
+  const number = data.exams[0].orderNo ?? data.exams[0].batchId.slice(0, 8).toUpperCase()
+  return <div className="batch-sheets">{groups.map((g) => <ExamOrderSheet key={g} group={g} exams={shown.filter((e) => e.group === g)} doctor={data.doctor} number={number} patient={p} />)}</div>
+}
+
+/** CE1: deja en la bitácora que se imprimieron las órdenes del lote (la impresión no depende del registro). */
+export const markBatchPrinted = (batch: string, groups: ExamGroup[], how: 'print' | 'pdf' = 'print') =>
+  Promise.all(groups.map((g) => api(`/exams/batch/${batch}/printed`, { body: { group: g, how } }).catch(() => null)))
+
+/**
  * EX2 (ronda 8) y EX5 (ronda 10): la hoja de una orden de exámenes (laboratorio o imagen y gabinete), carta: membrete, número,
  * fecha y hora, paciente, cada estudio como se ordenó (con «Urgente» y su indicación), el médico que lo pidió con especialidad y
  * colegiación, espacio para firma y sello y la leyenda «Válida solo con firma y sello del médico». Sin CIE-11 ni la palabra

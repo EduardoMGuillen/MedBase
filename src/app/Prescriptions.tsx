@@ -15,7 +15,8 @@ import { normalize, similarPatients } from '../lib/patients'
 import { MedicationForm, MedicationList } from '../components/Medications'
 import { PatientPicker } from './Inpatients'
 import { LogoMark } from '../components/Logo'
-import type { ClinicSettings, GuestPatient, Patient, Prescription, PrescriptionItem } from '../lib/types'
+import type { ClinicSettings, ExamGroup, GuestPatient, Patient, Prescription, PrescriptionItem } from '../lib/types'
+import { ExamBatchSheets, markBatchPrinted } from './ExamOrder'
 import { DniInput } from '../components/DniInput'
 import { DocHeader } from '../components/DocHeader'
 import { SimilarPatients } from './NewPatient'
@@ -222,6 +223,9 @@ export function PrescriptionSheet() {
   const [missing, setMissing] = useState(false)
   const [voiding, setVoiding] = useState(false)
   const examBatch = new URLSearchParams(useLocation().search).get('examenes')
+  // CE1 (ronda 12): las órdenes de exámenes de la misma consulta salen debajo de la receta y se imprimen juntas
+  const [examGroups, setExamGroups] = useState<ExamGroup[]>([])
+  const [rxOnly, setRxOnly] = useState(false)
   const load = useCallback(() => {
     if (id) fetchPrescription(id).then(setData).catch(() => setMissing(true))
   }, [id, fetchPrescription])
@@ -255,15 +259,20 @@ export function PrescriptionSheet() {
           {can('rx.write') && !rx.voidedAt && <button className="btn btn--danger" onClick={() => setVoiding(true)}><Ban size={16} />Anular</button>}
           {can('rx.write') && rx.voidedAt && <Link className="btn btn--soft" to={`/app/recetas?repetir=${rx.id}`}><Copy size={16} />Emitir una nueva</Link>}
           {p.phone && !rx.voidedAt && <a className="btn btn--ghost" href={whatsappUrl(p.phone, rxMessage)} target="_blank" rel="noreferrer" onClick={() => { api(`/prescriptions/${rx.id}/printed`, { body: { how: 'whatsapp' } }).catch(() => null) }}><MessageCircle size={16} />Enviar por WhatsApp</a>}
+          {examBatch && examGroups.length > 0 && <button className="btn btn--soft" onClick={() => {
+            api(`/prescriptions/${rx.id}/printed`, { body: { how: 'print' } }).catch(() => null)
+            setRxOnly(true); setTimeout(() => { window.print(); setRxOnly(false) }, 120)
+          }}><Printer size={16} />Solo la receta</button>}
           <button className="btn btn--primary" onClick={() => {
             // GE4 (ronda 9): impresa (o descargada), la receta ya no se corrige en el periodo de gracia
             api(`/prescriptions/${rx.id}/printed`, { body: { how: 'print' } }).catch(() => null)
+            if (examBatch && examGroups.length) void markBatchPrinted(examBatch, examGroups)
             window.print()
-          }}><Printer size={16} />Imprimir o guardar PDF (media carta)</button>
+          }}><Printer size={16} />{examBatch && examGroups.length ? `Imprimir receta y ${examGroups.length > 1 ? 'órdenes' : 'orden'} de exámenes` : 'Imprimir o guardar PDF (media carta)'}</button>
         </div>
       </div>
-      {examBatch && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap' }}>También se ordenaron exámenes: se imprimen en su propia orden, aparte de la receta.
-        <Link className="btn btn--soft btn--sm" to={`/app/examenes/orden/${examBatch}`}><Printer size={14} />Ver e imprimir las órdenes de exámenes</Link></div>}
+      {examBatch && examGroups.length > 0 && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap' }}>También se ordenaron exámenes: sus órdenes van debajo de la receta, cada una en su hoja, y se imprimen con el mismo botón.
+        <Link className="btn btn--ghost btn--sm" to={`/app/examenes/orden/${examBatch}`}>Abrir solo las órdenes</Link></div>}
       {rx.voidedAt && <div className="alert-strip no-print">Receta anulada el {date(rx.voidedAt)}, {time(rx.voidedAt)}{rx.voidedBy ? ` por ${staffById(rx.voidedBy)?.name ?? '—'}` : ''}. Motivo: {rx.voidReason}</div>}
       {voiding && <VoidRx id={rx.id} folio={rx.folio} onClose={() => setVoiding(false)} onDone={() => { setVoiding(false); load() }} />}
       <article className="rx-sheet rx-sheet--half" style={{ position: 'relative' }}>
@@ -306,6 +315,7 @@ export function PrescriptionSheet() {
         </div>
         <footer className="rx-sheet__foot"><span>Receta válida por {rx.validityDays ?? settings.rxValidityDays} días a partir de su emisión.</span><span>Emitida con Clinara</span></footer>
       </article>
+      {examBatch && <div className={rxOnly ? 'print-hide' : undefined}><ExamBatchSheets batch={examBatch} onGroups={setExamGroups} /></div>}
     </div>
   )
 }
