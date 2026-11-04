@@ -564,7 +564,8 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
         const duty = (await onDutyNow(sql, cid, 'lab')).filter((id) => micros.some((m) => m.id === id))
         if (b.responsibleId) { if (!micros.some((m) => m.id === b.responsibleId)) fail(400, 'Elige un microbiólogo de la lista.'); responsibleId = b.responsibleId }
         else if (duty.length === 1) responsibleId = duty[0]
-        else fail(400, 'Elige el microbiólogo responsable.')
+        // Obligatorio solo para el personal de Laboratorio; enfermería y el médico cargan como hoy (sin departamento)
+        else if (user.role === 'lab') fail(400, 'Elige el microbiólogo responsable.')
       }
     }
     const before = r!.result ? JSON.parse(String(r!.result)) as { at?: string; by?: string } : undefined

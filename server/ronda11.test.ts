@@ -248,10 +248,7 @@ describe('EX6 (ronda 11): «Ver PDF» e «Imprimir» en los resultados', () => {
     await nurse.post(`/api/exams/${ex.id}/status`, { status: 'sample' })
     const resp = (await nurse.get('/api/dept/responsible')).body
     const body: any = { values: [{ analyte: 'Sodio', value: '140' }] }
-    if (resp.needsChoice) {
-      assert.equal((await nurse.post(`/api/exams/${ex.id}/result`, body)).status, 400, 'sin microbiólogo de turno se elige')
-      body.responsibleId = 's-ordonez'
-    }
+    assert.equal(resp.needsChoice, false, 'enfermería carga como hoy (sin departamento)')
     assert.equal((await nurse.post(`/api/exams/${ex.id}/result`, body)).status, 200)
     assert.equal((await rec.post('/api/print-jobs', { kind: 'results', examIds: [ex.id] })).status, 403)
     const job = await nurse.post('/api/print-jobs', { kind: 'results', examIds: [ex.id] })
@@ -316,6 +313,12 @@ describe('DP (ronda 11): departamentos de Laboratorio clínico e Imágenes', () 
     const second = await tech.post(`/api/exams/${hemo.id}/status`, { status: 'sample' })
     assert.equal(second.status, 409)
     assert.match(String(second.body.error), /Muestra tomada por Lic\. Carmen Ríos \d\d:\d\d/)
+    // A24: el técnico de laboratorio, sin un solo microbiólogo de turno, elige al responsable
+    const rr = (await tech.get('/api/dept/responsible')).body
+    if (rr.needsChoice) assert.equal((await tech.post(`/api/exams/${hemo.id}/result`, { values: [{ analyte: 'Hemoglobina', value: '12' }] })).status, 400)
+    const res = await tech.post(`/api/exams/${hemo.id}/result`, { values: [{ analyte: 'Hemoglobina', value: '12' }], responsibleId: 's-ordonez' })
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    assert.equal(res.body.result.responsibleId, 's-ordonez')
     // Imágenes: el Rayos X realizado queda terminado (EX3); la tomografía pasa a «Por informar»; el técnico no informa
     const it = (await img.get('/api/dept/tray')).body.items.filter((e: any) => e.noteId === n.body.id)
     const rx = it.find((e: any) => e.name === 'Rayos X'), ct = it.find((e: any) => e.name === 'Tomografía')

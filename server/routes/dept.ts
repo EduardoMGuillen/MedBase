@@ -71,7 +71,7 @@ export function registerDept(app: Express, { sql, auth, need, userOf, clinicOf, 
     const micros = await microbiologistsFor(sql, cid)
     const duty = (await onDutyNow(sql, cid, 'lab')).filter((id) => micros.some((m) => m.id === id))
     const self = micros.some((m) => m.id === user.id)
-    res.json({ microbiologists: micros, onDuty: duty, needsChoice: micros.length > 0 && !self && duty.length !== 1, auto: self ? user.id : duty.length === 1 ? duty[0] : undefined })
+    res.json({ microbiologists: micros, onDuty: duty, needsChoice: micros.length > 0 && !self && duty.length !== 1 && user.role === 'lab', optional: micros.length > 0 && !self && duty.length !== 1 && user.role !== 'lab', auto: self ? user.id : duty.length === 1 ? duty[0] : undefined })
   })
 
   /** Conteo para el menú (pendientes del departamento). */

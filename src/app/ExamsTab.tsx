@@ -242,7 +242,7 @@ export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () 
   // DP2 (A25): el técnico en imágenes solo sube las imágenes del estudio realizado; el informe es del radiólogo o del médico
   const imagesOnly = e.group === 'imaging' && user?.role === 'imaging' && user.position !== 'radiologist'
   // EX6 (A24): el microbiólogo responsable (el de turno, o se elige si no hay uno solo)
-  const [resp, setResp] = useState<{ microbiologists: { id: string; name: string }[]; needsChoice: boolean; auto?: string } | null>(null)
+  const [resp, setResp] = useState<{ microbiologists: { id: string; name: string }[]; needsChoice: boolean; optional?: boolean; auto?: string } | null>(null)
   const [responsibleId, setResponsibleId] = useState('')
   useEffect(() => { if (e.group === 'lab' && !(e.status === 'result' && e.result)) api<NonNullable<typeof resp>>('/dept/responsible').then(setResp).catch(() => setResp(null)) }, [e.group, e.status, e.result])
   // AD4: también si la clínica renombró el examen, sus valores con rango vienen del de la lista fija
@@ -282,11 +282,11 @@ export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () 
         setBusy(false)
       }}>{correcting ? 'Guardar corrección' : imagesOnly ? 'Subir imágenes' : `Guardar ${e.group === 'lab' ? 'resultado' : 'informe'}`}</button>
     </>}>
-      {resp && resp.microbiologists.length > 0 && (resp.needsChoice
-        ? <label className="field"><span>Microbiólogo responsable</span>
+      {resp && resp.microbiologists.length > 0 && (resp.needsChoice || resp.optional
+        ? <label className="field"><span>Microbiólogo responsable{resp.optional ? ' (opcional)' : ''}</span>
           <select className="select" value={responsibleId} onChange={(x) => setResponsibleId(x.target.value)} aria-required="true">
             <option value="">Elige el microbiólogo responsable</option>{resp.microbiologists.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
-          <small className="muted">No hay un solo microbiólogo de turno: elige quién responde por este resultado (va en el PDF).</small></label>
+          <small className="muted">{resp.optional ? 'Si un microbiólogo responde por este resultado, elígelo (va en el PDF).' : 'No hay un solo microbiólogo de turno: elige quién responde por este resultado (va en el PDF).'}</small></label>
         : resp.auto && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Microbiólogo responsable: {resp.microbiologists.find((m) => m.id === resp.auto)?.name} (de turno).</p>)}
       {imagesOnly && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Sube las imágenes del estudio. El informe lo escribe el radiólogo o un médico.</p>}
       {e.group === 'lab' && (<>

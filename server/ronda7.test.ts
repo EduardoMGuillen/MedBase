@@ -78,7 +78,8 @@ describe('CA1 catálogo de exámenes individuales', () => {
     assert.equal(await sg('Urocultivo'), 'Microbiología / Bacteriología › Cultivos')
     assert.equal(await sg('Hemograma'), 'Hematología')
     const base = await sql.query(`SELECT name FROM exam_catalog WHERE clinic_id = 'c-sb' AND base_key IS NOT NULL`)
-    assert.equal(base.length, EXAMS.length, 'ningún examen de la lista fija se borró')
+    // CA7 (ronda 11): solo faltan los paquetes (estaban archivados y se borraron)
+    assert.equal(base.length, EXAMS.length - PACKAGES.length, 'ningún otro examen de la lista fija se borró')
   })
 
   test('buscar hepatitis, colesterol, TGO, PCR, dengue y VPH encuentra exámenes', async () => {
@@ -123,8 +124,9 @@ describe('CA2 y CA3 paquetes y perfiles', () => {
       assert.equal(count('Perfil lipídico'), 4)
       assert.equal(String(rows.find((r) => r.name === 'Perfil mayores de 35 años')!.note), 'PSA total: solo en pacientes masculinos')
       for (const p of LAB_PROFILES) assert.equal(count(p.name), p.items.length, p.name)
-      const archived = await sql.query(`SELECT name FROM exam_catalog WHERE clinic_id = ? AND NOT active AND archived_by = 'sistema'`, [cid])
-      assert.deepEqual(archived.map((r) => String(r.name)).sort(), [...PACKAGES].sort())
+      // CA7 (ronda 11): los paquetes archivados se borraron del catálogo y quedaron marcados como quitados
+      const removed = await sql.query(`SELECT name FROM exam_catalog_removed WHERE clinic_id = ? AND reason LIKE 'CA7%'`, [cid])
+      assert.deepEqual(removed.map((r) => String(r.name)).sort(), [...PACKAGES].sort())
     })
   }
 

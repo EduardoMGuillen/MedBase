@@ -262,14 +262,16 @@ describe('AD3 camas libres u ocupadas; la especialidad es del ingreso', () => {
 })
 
 describe('AD4 vademécum', () => {
-  test('administración y médicos agregan; lo edita su autor o administración; enfermería no', async () => {
+  test('administración y médicos agregan; lo edita administración (ME11, ronda 11); enfermería no', async () => {
     const admin = await as('admin@demo.clinara')
     const doc = await as('apaz@demo.clinara')
     const a = await doc.post('/api/drugs', { name: 'Ademetionina', brand: 'Heptral', presentation: 'Tabletas', concentration: '400 mg', route: 'Oral', usualDose: '1 tableta cada 12 horas', usualUse: 'Colestasis' })
     assert.equal(a.status, 201, JSON.stringify(a.body))
     assert.equal(a.body.usualDose, '1 tableta cada 12 horas')
     assert.equal((await (await as('mzuniga@demo.clinara')).patch(`/api/drugs/${a.body.id}`, { brand: 'X' })).status, 403)
-    assert.equal((await doc.patch(`/api/drugs/${a.body.id}`, { usualUse: 'Colestasis intrahepática' })).body.usualUse, 'Colestasis intrahepática')
+    // ME11 (ronda 11): en Clínica el médico solo agrega; editar es de Administración
+    assert.equal((await doc.patch(`/api/drugs/${a.body.id}`, { usualUse: 'Colestasis intrahepática' })).status, 403)
+    assert.equal((await admin.patch(`/api/drugs/${a.body.id}`, { usualUse: 'Colestasis intrahepática' })).body.usualUse, 'Colestasis intrahepática')
     assert.equal((await admin.patch(`/api/drugs/${a.body.id}`, { active: false })).body.active, false)
     assert.equal((await admin.post('/api/drugs', { name: 'Silimarina', presentation: 'Cápsulas', concentration: '140 mg' })).status, 201)
     assert.equal((await (await as('crios@demo.clinara')).post('/api/drugs', { name: 'Otra cosa' })).status, 403)
@@ -489,6 +491,8 @@ const EXAMS3 = [
 
 describe('EX1 (ronda 4) exámenes: Laboratorio e Imagen y gabinete', () => {
   test('en una consulta: dos grupos en el mismo lote (dos órdenes impresas), área enfermería si no hay laboratorio propio', async () => {
+    // DM2 (ronda 11): la demo tiene laboratorio e imágenes propios; esta prueba es sin ellos (se restablecen al final del grupo)
+    await (await as('admin@demo.clinara')).put('/api/settings/exam-areas', { hasLab: false, hasImaging: false })
     const { doc, apptId } = await walkIn('Exámenes')
     const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Control', diagnoses: DX, exams: EXAMS3 })
     assert.equal(c.status, 201, JSON.stringify(c.body))

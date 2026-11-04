@@ -111,7 +111,8 @@ describe('CF3 subgrupos y carga del catálogo', () => {
     assert.deepEqual(JSON.parse(profile!.items).map((i: any) => i.name), ['Hemograma', 'Examen general de orina (EGO)', 'Examen ficticio F', 'Examen raro de prueba'])
     const after = await sql.query(`SELECT name, active, subgroup FROM exam_catalog WHERE clinic_id = 'c-sb' AND base_key IS NOT NULL ORDER BY name`)
     assert.deepEqual(after, before, 'los originales no cambian')
-    assert.equal(before.length, EXAMS.length)
+    // CA7 (ronda 11): los 6 paquetes que la ronda 7 archivó (pasaron a perfiles) se borraron del catálogo
+    assert.equal(before.length, EXAMS.length - 6)
     const dup = await sql.query(`SELECT norm_key FROM exam_catalog WHERE clinic_id = 'c-sb' GROUP BY norm_key HAVING COUNT(*) > 1`)
     assert.equal(dup.length, 0)
     // Limpieza: lo de prueba se archiva para no afectar a las otras pruebas
@@ -140,7 +141,9 @@ describe('MC3 estudio no catalogado', () => {
     assert.equal(hemo.uncatalogued, undefined)
     const tray = (await nurse.get('/api/exams/tray')).body
     const ids = JSON.stringify(tray)
-    assert.ok(ids.includes(rx.id) && ids.includes(cort.id), 'enfermería los recibe en su bandeja')
+    // DM2 (ronda 11): la demo tiene personal de Imágenes: el estudio de imagen va a su bandeja; el laboratorio, también a enfermería
+    const imgTray = JSON.stringify((await (await as('pandino@demo.clinara')).get('/api/dept/tray')).body)
+    assert.ok(ids.includes(cort.id) && imgTray.includes(rx.id), 'cada uno llega a la bandeja de su tipo')
     // Imagen no usa «Muestra tomada»: su paso es «Realizado» (done)
     assert.equal((await nurse.post(`/api/exams/${rx.id}/status`, { status: 'done' })).status, 200)
   })

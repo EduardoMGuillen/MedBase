@@ -140,9 +140,11 @@ describe('Ronda 8: rayos X sin informe obligatorio', () => {
     const rx = file.exams.find((e: any) => e.name === 'Radiografía de tórax')
     const us = file.exams.find((e: any) => e.name === 'Ultrasonido abdominal')
     for (const e of [rx, us]) assert.equal((await nurse.post(`/api/exams/${e.id}/status`, { status: 'done' })).status, 200)
+    // DM2 (ronda 11): con personal de Imágenes en la demo, los estudios de imagen se trabajan en su bandeja
     const tray = (await nurse.get('/api/exams/tray')).body.map((e: any) => e.id)
     assert.ok(!tray.includes(rx.id), 'la radiografía realizada ya no está pendiente')
-    assert.ok(tray.includes(us.id), 'el ultrasonido sigue esperando su informe')
+    const items = (await (await as('pandino@demo.clinara')).get('/api/dept/tray')).body.items
+    assert.equal(items.find((e: any) => e.id === us.id)?.status, 'done', 'el ultrasonido sigue esperando su informe')
     assert.equal((await doc.post(`/api/exams/${rx.id}/review`)).status, 200)
     assert.equal((await doc.post(`/api/exams/${us.id}/review`)).status, 409)
   })

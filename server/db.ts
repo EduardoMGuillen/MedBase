@@ -202,7 +202,7 @@ ALTER TABLE attachments ADD COLUMN IF NOT EXISTS clinic_id TEXT REFERENCES clini
 ALTER TABLE services ADD COLUMN IF NOT EXISTS clinic_id TEXT REFERENCES clinics(id);
 ALTER TABLE audit ADD COLUMN IF NOT EXISTS clinic_id TEXT;
 ALTER TABLE staff DROP CONSTRAINT IF EXISTS staff_role_check;
-ALTER TABLE staff ADD CONSTRAINT staff_role_check CHECK (role IN ('superadmin','admin','doctor','nurse','reception','assistant'));
+ALTER TABLE staff ADD CONSTRAINT staff_role_check CHECK (role IN ('superadmin','admin','doctor','nurse','reception','assistant','lab','imaging'));
 -- Expedientes, folios y recibos se numeran por clínica
 ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_record_key;
 ALTER TABLE prescriptions DROP CONSTRAINT IF EXISTS prescriptions_folio_key;
@@ -517,7 +517,7 @@ CREATE INDEX IF NOT EXISTS referrals_stay ON referrals (hospitalization_id);
 ALTER TABLE clinics DROP CONSTRAINT IF EXISTS clinics_kind_check;
 ALTER TABLE clinics ADD CONSTRAINT clinics_kind_check CHECK (kind IN ('clinic','office'));
 ALTER TABLE staff DROP CONSTRAINT IF EXISTS staff_role_check;
-ALTER TABLE staff ADD CONSTRAINT staff_role_check CHECK (role IN ('superadmin','admin','doctor','nurse','reception','assistant'));
+ALTER TABLE staff ADD CONSTRAINT staff_role_check CHECK (role IN ('superadmin','admin','doctor','nurse','reception','assistant','lab','imaging'));
 
 -- v26: ronda 2 de Emil (A3). La autorización de hospitalización no existe en observación: las que quedaron como
 -- "No aplica" se archivan. No se borran; dejan de mostrarse y de contarse en Anexos.
@@ -854,7 +854,7 @@ CREATE TABLE IF NOT EXISTS duty_roster (
   removed_by TEXT, removed_at TEXT
 );
 CREATE INDEX IF NOT EXISTS duty_roster_day ON duty_roster (clinic_id, day);
-CREATE UNIQUE INDEX IF NOT EXISTS duty_roster_active ON duty_roster (clinic_id, day, staff_id) WHERE removed_at IS NULL;
+-- (v78, ronda 11: este índice único pasó a ser por departamento y turno: duty_roster_active2, más abajo)
 
 -- v47 (ronda 5, AD1): umbrales críticos de laboratorio por grupo, con analitos propios, unidad y archivados. Los
 -- umbrales planos (critical_limits) pasan a los grupos sin cambiar números y se conservan sin editarse.

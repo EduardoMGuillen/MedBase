@@ -251,22 +251,23 @@ describe('AD4 catálogo de exámenes de la clínica', () => {
   test('empieza con la lista de antes; Roberto agrega, edita y archiva (en la bitácora); el médico no lo edita; en el consultorio el titular sí', async () => {
     const admin = await as('admin@demo.clinara')
     let cat = (await admin.get('/api/exams/catalog')).body.exams
-    // CA2 (ronda 7): los paquetes de la lista fija siguen en el catálogo, pero archivados (pasaron a perfiles)
-    for (const e of EXAMS) assert.ok(cat.some((c: any) => c.name === e.name && c.group === e.group && (c.active || e.name in PACKAGE_REPLACEMENTS)), `falta ${e.name}`)
+    // CA2 (ronda 7): los paquetes de la lista fija pasaron a perfiles; CA7 (ronda 11) los borró del catálogo (estaban archivados)
+    for (const e of EXAMS) assert.ok(e.name in PACKAGE_REPLACEMENTS || cat.some((c: any) => c.name === e.name && c.group === e.group && c.active), `falta ${e.name}`)
     const add = await admin.post('/api/exams/catalog', { group: 'lab', name: 'Examen de prueba AD4' })
     assert.equal(add.status, 201, JSON.stringify(add.body))
     assert.equal((await admin.post('/api/exams/catalog', { group: 'lab', name: 'examen de prueba ad4' })).status, 409, 'sin duplicados')
     assert.equal((await admin.patch(`/api/exams/catalog/${add.body.id}`, { name: 'Examen de prueba AD4 cuantitativo' })).status, 200)
-    assert.equal((await admin.patch(`/api/exams/catalog/${add.body.id}`, { active: false })).status, 200)
     cat = (await admin.get('/api/exams/catalog')).body.exams
-    const d = cat.find((c: any) => c.id === add.body.id)
-    assert.equal(d.name, 'Examen de prueba AD4 cuantitativo')
-    assert.equal(d.active, false, 'archivado, no borrado')
-    assert.ok(d.archivedAt)
+    assert.equal(cat.find((c: any) => c.id === add.body.id).name, 'Examen de prueba AD4 cuantitativo')
+    // CA7 (ronda 11): ya no se archiva: «Quitar» lo borra del catálogo
+    assert.equal((await admin.patch(`/api/exams/catalog/${add.body.id}`, { active: false })).status, 400)
+    assert.equal((await admin.del(`/api/exams/catalog/${add.body.id}`)).status, 200)
+    cat = (await admin.get('/api/exams/catalog')).body.exams
+    assert.ok(!cat.some((c: any) => c.id === add.body.id))
     const log = ((await admin.get('/api/audit/mine')).body.rows ?? (await admin.get('/api/audit/mine')).body) as any[]
     assert.ok(log.some((e) => /Agregó al catálogo de exámenes \(Laboratorio\): Examen de prueba AD4$/.test(e.action)))
     assert.ok(log.some((e) => /«Examen de prueba AD4» → «Examen de prueba AD4 cuantitativo»/.test(e.action)))
-    assert.ok(log.some((e) => /Archivó del catálogo de exámenes: Examen de prueba AD4 cuantitativo/.test(e.action)))
+    assert.ok(log.some((e) => /Quitó del catálogo de exámenes \(Laboratorio\): Examen de prueba AD4 cuantitativo/.test(e.action)))
     // Archivar el hemograma no cambia los ya ordenados; un examen renombrado conserva sus valores de referencia
     const hemo = cat.find((c: any) => c.name === 'Hemograma')
     assert.equal((await admin.patch(`/api/exams/catalog/${hemo.id}`, { name: 'Hemograma completo' })).status, 200)
@@ -327,7 +328,8 @@ describe('MC5 ordenar exámenes del catálogo o externos', () => {
     const nurse = await as('crios@demo.clinara')
     const cat = (await admin.get('/api/exams/catalog')).body.exams
     const ves = cat.find((c: any) => c.name === 'Velocidad de eritrosedimentación')
-    assert.equal((await admin.patch(`/api/exams/catalog/${ves.id}`, { active: false })).status, 200)
+    // CA7 (ronda 11): ya no se archiva; se quita del catálogo (y se vuelve a agregar al final)
+    assert.equal((await admin.del(`/api/exams/catalog/${ves.id}`)).status, 200)
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     const n = await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', exam: 'Prurito.', exams: [
       { group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' },
@@ -339,14 +341,14 @@ describe('MC5 ordenar exámenes del catálogo o externos', () => {
     const panel = exams.find((e: any) => e.name === 'Panel de alergias')
     const ves2 = exams.filter((e: any) => e.name === 'Velocidad de eritrosedimentación').at(-1)
     assert.deepEqual([panel.place, panel.area], ['external', 'none'])
-    assert.deepEqual([ves2.place, ves2.uncatalogued], ['clinic', true], 'lo archivado queda «No catalogado»')
+    assert.deepEqual([ves2.place, ves2.uncatalogued], ['clinic', true], 'lo quitado queda «No catalogado»')
     const tray = (await nurse.get('/api/exams/tray')).body
     const ids = JSON.stringify(tray)
     assert.ok(!ids.includes(panel.id), 'lo externo no llega a la bandeja de enfermería')
     assert.ok(ids.includes(ves2.id), 'lo no catalogado sí llega, a la bandeja de su tipo')
     const batch = (await doc.get(`/api/exams/batch/${panel.batchId}`)).body
     assert.deepEqual(batch.exams.map((e: any) => [e.name, e.place]).sort(), [['Hemograma', 'clinic'], ['Panel de alergias', 'external'], ['Velocidad de eritrosedimentación', 'clinic']])
-    assert.equal((await admin.patch(`/api/exams/catalog/${ves.id}`, { active: true })).status, 200)
+    assert.equal((await admin.post('/api/exams/catalog', { group: 'lab', name: ves.name, subgroup: ves.subgroup })).status, 201)
   })
 })
 

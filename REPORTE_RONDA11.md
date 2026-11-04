@@ -27,8 +27,27 @@ nada.
 | DP6 | Hecho | `src/app/Roster.tsx`, `server/routes/roster.ts`, `server/roster.ts` | 1) Lic. Ordóñez › Rol de turnos › «Repetir turno»: Kevin Rivera, Mañana, lunes a viernes. 2) Roberto Aguilar › Configuración › Rol de turnos: «Médicos \| Enfermería \| Laboratorio \| Imágenes» |
 | DM2 | Hecho | `server/demoDept.ts`, `server/demoData.ts`, `server/db.ts` | 1) Entra con gordonez@, krivera@, mcastellanos@ y pandino@demo.clinara (clave de siempre). 2) Cada bandeja tiene órdenes |
 
-**Pruebas automáticas:** `server/ronda11.test.ts` (27 pruebas: CA6, CA7, ME11, ME12, EX6 y DP). Se ajustaron las de CA5 de
-`server/ronda10.test.ts` que probaban los estudios por región.
+**Pruebas automáticas:** `server/ronda11.test.ts`: 21 pruebas de CA6, CA7, ME11, ME12, EX6 y DP. Se ajustaron las pruebas de
+rondas anteriores que probaban el comportamiento que cambió a propósito:
+- los estudios por región de CA5;
+- «Archivar» del catálogo y los paquetes archivados;
+- el médico que editaba el vademécum;
+- los estudios de imagen en la bandeja de enfermería (ahora la demo tiene personal de Imágenes).
+
+**Resultado:** pasan todos los archivos menos dos pruebas que ya fallaban antes de esta ronda (lo comprobé corriéndolas
+sobre el código de la ronda 10):
+- «la demo trae casos completos» (`api.test.ts`);
+- «Dra. Mariela Zúñiga: 0 citas hoy» (`demoData.test.ts`, depende de la fecha).
+
+Con todos los archivos juntos, `npm test` no termina en mi equipo: cuando una prueba falla, el proceso se queda abierto.
+Por eso corrí cada archivo por separado.
+
+**Error de migración corregido:** el esquema volvía a crear la restricción de roles y el índice del rol de turnos
+antiguos. En una base que ya tuviera personal de Laboratorio, el siguiente cambio de versión habría fallado. Ya está
+corregido.
+
+**El microbiólogo responsable** solo es obligatorio cuando el resultado lo carga el personal de Laboratorio. Si lo carga
+enfermería o un médico, es opcional (así lo dice A24: «como hoy, sin departamento»).
 
 ## 2. Lo que pediste averiguar
 
@@ -60,10 +79,12 @@ nada.
   y arrastraba fuera de la tarjeta las líneas punteadas. Pasa con la **ventana no maximizada**: a 1100 y 1000 px el
   contenido llegaba a 1103 y 1043 px, con la tarjeta terminando en 1049 y 949 px. A 1366 px o más cabía. Ahora la
   columna no crece, los botones se parten y, si la tarjeta es angosta, la columna derecha va abajo.
-- **EX6: por qué el sodio 133 y el potasio 3.1 salen «críticos».** En la base, los umbrales críticos de UM2 para sodio
-  (136–145 mEq/L) y potasio (3.5–5.0 mEq/L), fuente ABIM-2026, son **iguales al rango de referencia normal**. Por eso
-  cualquier valor apenas fuera de rango se marca crítico. Parece que la carga de UM2 tomó el rango de referencia en lugar
-  del umbral de pánico. No lo cambié; revísalo en Áreas de servicio › Umbrales críticos.
+- **EX6: por qué el sodio 133 y el potasio 3.1 salen «críticos».** Aplicaron los umbrales críticos del grupo
+  «Electrolitos»: sodio 136–145 mEq/L y potasio 3.5–5.0 mEq/L, fuente ABIM-2026. Son **el mismo rango de referencia
+  normal**, porque así lo decidiste en la ronda 8 (A9): «el rango del `.md` es el umbral crítico». Ya entonces quedó
+  anotado el riesgo de que todo valor fuera de rango salga como crítico. No lo cambié. Si quieres umbrales de pánico
+  distintos, se cambian en Áreas de servicio › Umbrales críticos (o desde la Configuración de laboratorio, como
+  microbióloga).
 - **ME12: por qué no salía receta del medicamento nuevo.** La receta de ME10 solo se ofrecía para los medicamentos
   marcados «No hay en la clínica (va a receta)». El Ambroxol de la captura no estaba marcado, y que esté o no en el
   vademécum no tenía que ver. Ahora el médico elige cualquier medicamento activo.
@@ -168,12 +189,11 @@ Usé A1 a A25 tal como vienen. Decisiones mías, para confirmar:
 - **Alcance del Técnico en imágenes:** no escribe informes, solo sube imágenes. Falta validarlo.
 - **Acceso parcial al expediente (DP4)** y la regla de privacidad.
 - **La leyenda de la receta y los medicamentos controlados:** sigue pendiente desde la ronda 10.
-- **Los umbrales críticos de sodio y potasio:** ver §2.
+- **Los umbrales críticos:** son iguales a los rangos normales (A9 de la ronda 8); ver §2.
 
 ## 7. Hallazgos fuera de la lista (no implementados)
 
 - **Configuración › Vademécum:** con la ventana a ~1000 px, la tabla desborda la página por 18 px.
-- **Umbrales críticos iguales al rango normal:** ver §2 (EX6). Revisa si pasa con otros analitos.
 - **Laboratorio e Imágenes no tienen recorrido guiado.** Tampoco hay pantalla de «Inicio» para ellos: entran a su bandeja.
 - **La bandeja para Administración:** el servidor la deja ver en solo lectura, pero no puse la opción en su menú.
 - **La bandeja se actualiza cada 20 s** (consulta periódica, no en tiempo real).

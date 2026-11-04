@@ -22,6 +22,8 @@ const dayText = (d: string) => {
 type Dept = 'doctors' | 'nursing' | 'lab' | 'imaging'
 const DEPT_ROLE: Record<Dept, string> = { doctors: 'doctor', nursing: 'nurse', lab: 'lab', imaging: 'imaging' }
 const DEPT_LABEL: Record<Dept, string> = { doctors: 'Médicos', nursing: 'Enfermería', lab: 'Laboratorio', imaging: 'Imágenes' }
+/** En la bitácora: «Rol de turnos:» para Médicos (como siempre) y «Rol de turnos (Laboratorio):» para los demás. */
+const tag = (d: Dept) => (d === 'doctors' ? 'Rol de turnos' : `Rol de turnos (${DEPT_LABEL[d]})`)
 const SHIFT_LABEL: Record<string, string> = { morning: 'Mañana', afternoon: 'Tarde', night: 'Noche' }
 
 /**
@@ -70,7 +72,7 @@ export function registerRoster(app: Express, { sql, auth, userOf, clinicOf, audi
     const r = await assign(cid, user, b)
     if (!r) fail(409, 'Esa persona ya está en ese turno.')
     const past = b.day < localISODate(new Date())
-    await audit(user, `Rol de turnos (${DEPT_LABEL[b.dept]}): asignó a ${r!.name} el ${dayText(b.day)}${b.shift && b.dept !== 'doctors' ? `, turno ${SHIFT_LABEL[b.shift]}` : ''}${past ? ' (día que ya pasó)' : ''}`)
+    await audit(user, `${tag(b.dept)}: asignó a ${r!.name} el ${dayText(b.day)}${b.shift && b.dept !== 'doctors' ? `, turno ${SHIFT_LABEL[b.shift]}` : ''}${past ? ' (día que ya pasó)' : ''}`)
     res.status(201).json(toRow((await sql.one('SELECT * FROM duty_roster WHERE id = ?', [r!.id]))!))
   })
 
@@ -90,7 +92,7 @@ export function registerRoster(app: Express, { sql, auth, userOf, clinicOf, audi
       const r = await assign(cid, user, { day: d, staffId: b.staffId, dept: b.dept, shift: b.shift })
       if (r) { added++; name = r.name }
     }
-    if (added) await audit(user, `Rol de turnos (${DEPT_LABEL[b.dept]}): asignó a ${name} ${added} día(s) del ${dayText(b.from)} al ${dayText(b.to)}${b.shift && b.dept !== 'doctors' ? `, turno ${SHIFT_LABEL[b.shift]}` : ''}`)
+    if (added) await audit(user, `${tag(b.dept)}: asignó a ${name} ${added} día(s) del ${dayText(b.from)} al ${dayText(b.to)}${b.shift && b.dept !== 'doctors' ? `, turno ${SHIFT_LABEL[b.shift]}` : ''}`)
     res.json({ added })
   })
 
@@ -102,7 +104,7 @@ export function registerRoster(app: Express, { sql, auth, userOf, clinicOf, audi
     if (!canEdit(user, dept, String(r!.day))) fail(403, 'No puedes editar este rol de turnos.')
     await sql.run('UPDATE duty_roster SET removed_at = ?, removed_by = ? WHERE id = ?', [new Date().toISOString(), user.id, String(r!.id)])
     const past = String(r!.day) < localISODate(new Date())
-    await audit(user, `Rol de turnos (${DEPT_LABEL[dept]}): quitó a ${r!.name} del ${dayText(String(r!.day))}${r!.shift ? `, turno ${SHIFT_LABEL[String(r!.shift)]}` : ''}${past ? ' (día que ya pasó)' : ''}`)
+    await audit(user, `${tag(dept)}: quitó a ${r!.name} del ${dayText(String(r!.day))}${r!.shift ? `, turno ${SHIFT_LABEL[String(r!.shift)]}` : ''}${past ? ' (día que ya pasó)' : ''}`)
     res.json({ ok: true })
   })
 }
