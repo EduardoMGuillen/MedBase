@@ -9,6 +9,7 @@ import { clinicWhatsapp, date, dateTime, fullName, localISODate, time } from '..
 import { addDays, CHRONIC_PRESETS, clinicToday, daysLabel, daysUntil, FOLLOWUP_KIND, followupMessage, REMINDER_TYPE } from '../lib/followups'
 import type { Followup } from '../lib/types'
 import { PatientPicker } from './Inpatients'
+import { TabRow } from '../components/TabRow'
 
 type Kind = Followup['kind']
 
@@ -41,11 +42,11 @@ export default function Followups() {
         <Smartphone size={18} style={{ flex: 'none' }} />
         Los avisos se registran solos: una semana antes, un día antes y el día del control. Ese día recepción lo ve en su inicio para llamar al paciente. El WhatsApp sigue en simulación hasta conectar la línea de la clínica.
       </div>
-      <div className="tabs" role="tablist">
+      <TabRow>
         {(['chronic', 'reminder'] as Kind[]).map((k) => (
           <button key={k} className="tab" role="tab" aria-selected={kind === k} onClick={() => setKind(k)}>{FOLLOWUP_KIND[k].plural} ({count(k)})</button>
         ))}
-      </div>
+      </TabRow>
       <section className="panel table-wrap">
         <table className="table">
           <thead><tr>

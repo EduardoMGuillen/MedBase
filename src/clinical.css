@@ -1010,3 +1010,15 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .neb__note { grid-column: 1 / -1; }
 .neb__dil { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 8px; }
 @media (max-width: 420px) { .neb__row { grid-template-columns: minmax(0, 1fr) 44px; } .neb__amount { grid-column: 1; } }
+
+/* GE7 (ronda 11): fila de pestañas que se recorre (TabRow): flechas solo del lado donde hay pestañas ocultas, con degradado */
+.tabrow { position: relative; min-width: 0; max-width: 100%; }
+.tabrow > .tabs { min-width: 0; scroll-behavior: auto; overscroll-behavior-x: contain; }
+.tabrow__arrow { position: absolute; top: 0; bottom: 1px; width: 44px; z-index: 2; display: inline-flex; align-items: center; border: 0; cursor: pointer; color: var(--ink-deep); padding: 0; }
+.tabrow__arrow--l { left: 0; justify-content: flex-start; background: linear-gradient(to right, var(--ward) 55%, transparent); }
+.tabrow__arrow--r { right: 0; justify-content: flex-end; background: linear-gradient(to left, var(--ward) 55%, transparent); }
+.tabrow__arrow:hover { color: var(--ink); }
+.tabrow__arrow svg { width: 28px; height: 28px; padding: 5px; border-radius: 99px; background: var(--paper, #fff); box-shadow: 0 1px 3px rgb(0 0 0 / 0.18); }
+.tabrow--l > .tabs { padding-left: 36px; scroll-padding-left: 40px; }
+.tabrow--r > .tabs { padding-right: 36px; scroll-padding-right: 40px; }
+@media (max-width: 600px) { .tabrow .tab { min-height: 44px; } }

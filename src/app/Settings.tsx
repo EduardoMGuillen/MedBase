@@ -16,6 +16,7 @@ import type { Bed, ClinicDrug, ClinicSettings, PaymentMethod, Service, Staff } f
 import { ScheduleEditor } from './ScheduleEditor'
 import { Roster } from './Roster'
 import { features, hasRole } from '../lib/permissions'
+import { TabRow } from '../components/TabRow'
 
 type Tab = 'clinic' | 'services' | 'payments' | 'areas' | 'exams' | 'schedules' | 'roster' | 'beds' | 'drugs'
 
@@ -26,7 +27,7 @@ export default function Settings() {
   return (
     <div className="page">
       <PageHead title="Configuración" sub={f.office ? 'Datos que aparecen en tus recetas y recibos, precios, tu horario y lo que usa tu consultorio.' : 'Datos que aparecen en recetas y recibos, precios, horarios de atención y camas.'} />
-      <div className="tabs tabs--sticky" role="tablist">
+      <TabRow className="tabs--sticky">
         <button className="tab" role="tab" data-tour="tab:clinica" aria-selected={tab === 'clinic'} onClick={() => setTab('clinic')}>{f.office ? 'Consultorio' : 'Clínica'}</button>
         <button className="tab" role="tab" data-tour="tab:servicios" aria-selected={tab === 'services'} onClick={() => setTab('services')}>Servicios y precios</button>
         <button className="tab" role="tab" data-tour="tab:pagos" aria-selected={tab === 'payments'} onClick={() => setTab('payments')}>Formas de pago</button>
@@ -38,7 +39,7 @@ export default function Settings() {
         {!f.office && <button className="tab" role="tab" data-tour="tab:turnos" aria-selected={tab === 'roster'} onClick={() => setTab('roster')}>Rol de turnos</button>}
         {f.hospital && <button className="tab" role="tab" data-tour="tab:camas" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}>Camas</button>}
         <button className="tab" role="tab" data-tour="tab:vademecum" aria-selected={tab === 'drugs'} onClick={() => setTab('drugs')}>Vademécum</button>
-      </div>
+      </TabRow>
       {tab === 'clinic' && <ClinicForm />}
       {tab === 'services' && <Services />}
       {tab === 'payments' && <PaymentMethods />}

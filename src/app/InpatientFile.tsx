@@ -54,6 +54,7 @@ import { lnmeRoute } from '../lib/drugProvider'
 import { DrugPickedHint } from '../components/DrugSuggestion'
 import { DrugSearch } from '../components/DrugSearch'
 import type { OrderSet } from '../lib/types'
+import { TabRow } from '../components/TabRow'
 
 type Tab = 'sheet' | 'notes' | 'vitals' | 'meds' | 'nursing' | 'labs' | 'annexes'
 
@@ -175,13 +176,13 @@ export default function InpatientFile() {
           {h.observationAt && <span className="badge badge--amber">Vino de observación ({dateTime(h.observationAt)})</span>}
           <span className="muted">{h.diagnoses.map((d) => d.label).join('; ')}</span>
         </div>
-        <div className="tabs tabs--scroll" role="tablist" data-tour="expediente-tabs">
+        <TabRow data-tour="expediente-tabs">
           {tabs.map(([k, label]) => {
             const c = counts[k]
             return <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => selectTab(k)}>{label}
               {c && <span className={`tab-alert tab-alert--${c.level}`} aria-label={`${c.n} ${c.level === 'critical' ? 'críticas' : 'pendientes'}`}>{c.n}</span>}</button>
           })}
-        </div>
+        </TabRow>
       </div>
       {/* EN2: barra compacta; la autorización pendiente y la cama sin asignar van en ella como pendientes */}
       <AlertBar alerts={alerts} onGo={go} />

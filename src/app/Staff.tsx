@@ -6,6 +6,7 @@ import { CLINIC_PERMISSIONS, features, PERMISSIONS, permissionsFor, ROLE_LABEL, 
 import { AuditLog } from './Activity'
 import { Pagination, paginate, usePage } from '../components/Pagination'
 import type { Role, Staff } from '../lib/types'
+import { TabRow } from '../components/TabRow'
 
 type Tab = 'people' | 'roles' | 'audit'
 
@@ -29,11 +30,11 @@ export default function StaffPage() {
         actions={<>
           <button className="btn btn--primary" onClick={() => setCreating(true)}><UserPlus size={17} />{office ? 'Agregar personal' : 'Nuevo usuario'}</button>
         </>} />
-      <div className="tabs tabs--sticky" role="tablist">
+      <TabRow className="tabs--sticky">
         <button className="tab" role="tab" data-tour="tab:personal" aria-selected={tab === 'people'} onClick={() => setTab('people')}>Personal</button>
         <button className="tab" role="tab" data-tour="tab:permisos" aria-selected={tab === 'roles'} onClick={() => setTab('roles')}>Permisos por rol</button>
         <button className="tab" role="tab" data-tour="tab:bitacora" aria-selected={tab === 'audit'} onClick={() => setTab('audit')}>Bitácora</button>
-      </div>
+      </TabRow>
 
       {tab === 'people' && (
         <section className="panel table-wrap">

@@ -23,6 +23,7 @@ import { CERT_KIND } from '../lib/certificates'
 import { vitalLevel, type VitalKey } from '../lib/vitals'
 import { stayPath, yearsOld } from '../lib/inpatient'
 import { PatientEpicrises } from './Epicrisis'
+import { TabRow } from '../components/TabRow'
 
 /** Signos de una preclínica. Resalta lo que está fuera de rango según la edad (`src/lib/vitals.ts`). */
 export function VitalsGrid({ v, birthDate }: { v: Vitals; birthDate?: string }) {
@@ -219,11 +220,11 @@ export default function PatientChart() {
           {!hospitalized && stayOf(p.id) && <span className="badge badge--ink">{stayOf(p.id) === 'observation' ? 'En observación' : 'Hospitalizado'}</span>}
           {owed.length > 0 && <Link className="badge badge--amber" to={owed.length === 1 ? `/app/recibos/${owed[0].id}` : '/app/caja'}>Saldo pendiente {money(owed.reduce((s, x) => s + (x.balance ?? 0), 0), settings.currency)}</Link>}
         </PatientHeader>
-        <div className="tabs tabs--scroll" role="tablist">
+        <TabRow>
           {tabs.filter((t) => t[2]).map(([k, label]) => (
             <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>
           ))}
-        </div>
+        </TabRow>
       </div>
 
       {clinical && <HospAlerts id={hospitalized?.id ?? hs[0]?.id} />}
