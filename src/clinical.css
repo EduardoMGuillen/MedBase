@@ -441,10 +441,23 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 
 /* ---------- Nota de evolución en dos columnas (como en papel) ---------- */
 .note-2col { display: grid; grid-template-columns: minmax(0, 60fr) minmax(0, 40fr); gap: 20px; align-items: start; }
-.note-orders { border-left: 2px solid var(--line); padding-left: 16px; display: grid; gap: 8px; }
+.note-orders { border-left: 2px solid var(--line); padding-left: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
+/* GE8 (ronda 11): ninguna columna de la tarjeta crece por un texto o un botón largo: la columna derecha es una cuadrícula de
+   una sola columna «minmax(0, 1fr)» (antes «auto», que tomaba el ancho del botón de órdenes sin partir y arrastraba los
+   separadores fuera de la tarjeta), los botones se parten en dos líneas y, si la tarjeta es angosta, la derecha va abajo. */
+.note-2col-wrap { container: notecols / inline-size; min-width: 0; }
+.note-2col > *, .note-orders > *, .note-meds > *, .note-exams > * { min-width: 0; }
+.note-orders .btn { white-space: normal; height: auto; min-height: 40px; padding-top: 6px; padding-bottom: 6px; text-align: left; max-width: 100%; }
+.note-orders, .note-2col .note { overflow-wrap: anywhere; }
+@media screen {
+  @container notecols (max-width: 620px) {
+    .note-2col { grid-template-columns: minmax(0, 1fr); }
+    .note-orders { border-left: 0; padding-left: 0; border-top: 2px solid var(--line); padding-top: 14px; }
+  }
+}
 .note-orders h4 { font-family: var(--display); font-size: 14px; font-weight: 650; color: var(--ink-deep); margin: 0; }
 .order-check { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.order-check li { display: grid; grid-template-columns: 24px 1fr auto; gap: 6px; align-items: start; font-size: 14px; padding: 4px 0; border-bottom: 1px dashed var(--line-soft); }
+.order-check li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 6px; align-items: start; font-size: 14px; padding: 4px 0; border-bottom: 1px dashed var(--line-soft); }
 .order-check li:last-child { border-bottom: 0; }
 .order-check li.is-checked .order-check__order { text-decoration: line-through; text-decoration-color: var(--mint-ink); text-decoration-thickness: 1.5px; }
 .order-check li.is-pending .orders__n { color: var(--amber-ink); }
@@ -606,7 +619,7 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .dx-picker__warn { color: var(--amber-ink); text-transform: none; letter-spacing: 0; font-weight: 600; }
 
 /* ---------- Columna derecha de las notas: indicaciones y, debajo, medicamentos ---------- */
-.note-meds, .note-exams { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.note-meds, .note-exams { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
 .med-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
 .med-lines li { display: flex; gap: 6px; align-items: baseline; }
 .med-lines li::before { content: '–'; color: var(--muted); }

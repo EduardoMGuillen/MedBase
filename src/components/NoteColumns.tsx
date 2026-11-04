@@ -17,7 +17,8 @@ export function NoteColumns({ left, indicationsTitle = 'Indicaciones', indicatio
   left: ReactNode; indicationsTitle?: string; indications: ReactNode; exams?: ReactNode; meds?: ReactNode
 }) {
   return (
-    <div className="note-2col">
+    // GE8 (ronda 11): el envoltorio mide la tarjeta (container query) para apilar las columnas cuando no caben
+    <div className="note-2col-wrap"><div className="note-2col">
       <div className="note">{left}</div>
       <aside className="note-orders" aria-label={indicationsTitle}>
         <h4>{indicationsTitle}</h4>
@@ -26,7 +27,7 @@ export function NoteColumns({ left, indicationsTitle = 'Indicaciones', indicatio
         {exams !== undefined && <div className="note-exams"><h4>Exámenes</h4>{exams}</div>}
         {meds !== undefined && <div className="note-meds"><h4>Medicamentos</h4>{meds}</div>}
       </aside>
-    </div>
+    </div></div>
   )
 }
 
