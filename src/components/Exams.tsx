@@ -12,6 +12,13 @@ import { normalize } from '../lib/patients'
 import type { ExamGroup, ExamInput, OrderSet } from '../lib/types'
 
 const newExam = (group: ExamGroup, name: string): ExamInput => ({ group, name, priority: 'routine', place: 'clinic' })
+/** CA6 (ronda 11): cada fila marcada lleva su clave (el mismo estudio genérico se puede pedir varias veces). */
+let seq = 0
+const keyed = (e: ExamInput): ExamInput => (e.key ? e : { ...e, key: `k${Date.now().toString(36)}${(seq++).toString(36)}` })
+/** Lo que un set guarda de un examen: con lo escrito y elegido en sus campos (CA6), sin la clave de pantalla. */
+export const setExam = (e: ExamInput): ExamInput => ({ group: e.group, name: e.name, priority: e.priority ?? 'routine', place: e.place ?? 'clinic',
+  ...(e.subject ? { subject: e.subject } : {}), ...(e.projections?.length ? { projections: e.projections } : {}), ...(e.contrast ? { contrast: e.contrast } : {}),
+  ...(e.side ? { side: e.side } : {}), ...(e.region ? { region: e.region } : {}), ...(e.detailed ? { detailed: true } : {}) })
 
 /**
  * EX1: sección «Exámenes» (al nivel de Medicamentos e Indicaciones), con dos grupos separados: Laboratorio e Imagen y
@@ -100,7 +107,7 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
   const [savingSet, setSavingSet] = useState(false)
   const [q, setQ] = useState('')
   const [group, setGroup] = useState<'' | ExamGroup>('')
-  const [picked, setPickedState] = useState<ExamInput[]>(() => (catalogOnly ? [] : readPicked().filter((e) => !current.some((c) => examKey(c.name) === examKey(e.name)))))
+  const [picked, setPickedState] = useState<ExamInput[]>(() => (catalogOnly ? [] : readPicked().map(keyed).filter((e) => e.subject !== undefined || !current.some((c) => examKey(c.name) === examKey(e.name)))))
   const setPicked = (list: ExamInput[]) => { setPickedState(list); if (!catalogOnly) writePicked(list) }
   // MC3 (ronda 6): el tipo de lo no catalogado se elige siempre; no hay valor por defecto
   const [newGroup, setNewGroup] = useState<ExamGroup | null>(null)
@@ -113,26 +120,33 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
   const profiles = (allProfiles ?? []).filter((p) => !p.ownerId)
   const n = normalize(q.trim())
   const keyOf = (name: string) => examKey(name)
-  const have = new Set([...current, ...picked].map((e) => keyOf(e.name)))
-  const pickedKeys = new Set(picked.map((e) => keyOf(e.name)))
-  // CA5 (ronda 10): palabra por palabra y con sinónimos («rx torax», «tac abdomen», «usg tiroides», «doppler»)
-  const hits = catalog.filter((e) => (!group || e.group === group) && (!n || examMatches(e.name, q)))
   const detailsOf = (name: string) => catalog.find((c) => keyOf(c.name) === keyOf(name))?.details
-  // Lo que falta elegir de cada estudio marcado (al armar un set no se pide: se elige al ordenar)
+  // CA6 (ronda 11): un genérico con «¿De qué?» se puede pedir otra vez aunque ya esté en la nota (otro «de qué»)
+  const repeatable = (name: string) => !!detailsOf(name)?.what
+  const have = new Set([...current.filter((e) => !repeatable(e.name)), ...picked].map((e) => keyOf(e.name)))
+  const pickedKeys = new Set(picked.map((e) => keyOf(e.name)))
+  // CA5 (ronda 10): palabra por palabra y con sinónimos («rx torax», «tac abdomen», «usg tiroides», «doppler»); CA6: en un
+  // genérico, lo demás es «de qué» («rx torax» → Rayos X)
+  const hits = catalog.filter((e) => (!group || e.group === group) && (!n || examMatches(e.name, q, !!e.details?.what)))
+  // Lo que falta de cada estudio marcado (al armar un set no se pide: se elige al ordenar)
   const missingOf = (e: ExamInput) => (catalogOnly ? undefined : missingDetail(e, detailsOf(e.name)))
   const firstMissing = picked.map((e) => ({ e, m: missingOf(e) })).find((x) => x.m)
-  const setPickedItem = (name: string, patch: Partial<ExamInput>) => setPicked(picked.map((x) => (keyOf(x.name) === keyOf(name) ? { ...x, ...patch } : x)))
+  const setPickedItem = (key: string | undefined, patch: Partial<ExamInput>) => setPicked(picked.map((x) => (x.key === key ? { ...x, ...patch } : x)))
+  // CA6: «+ Otro Rayos X» agrega otra fila del mismo estudio, con sus propios campos
+  const addAgain = (e: CatalogExam) => setPicked([...picked, keyed(withDetailFlag(newExam(e.group, e.name)))])
   const exact = catalog.some((e) => keyOf(e.name) === keyOf(q.trim()))
   const inCatalog = (name: string) => catalog.some((c) => keyOf(c.name) === keyOf(name))
   const toggle = (g: ExamGroup, name: string) => {
-    if (current.some((c) => keyOf(c.name) === keyOf(name))) return
-    setPicked(pickedKeys.has(keyOf(name)) ? picked.filter((p) => keyOf(p.name) !== keyOf(name)) : [...picked, withDetailFlag(newExam(g, name))])
+    if (!repeatable(name) && current.some((c) => keyOf(c.name) === keyOf(name))) return
+    setPicked(pickedKeys.has(keyOf(name)) ? picked.filter((p) => keyOf(p.name) !== keyOf(name)) : [...picked, keyed(withDetailFlag(newExam(g, name)))])
   }
   // Un set o un perfil marca todos sus exámenes; los que la clínica archivó se omiten con aviso
-  const applyList = (label: string, list: { group: ExamGroup; name: string }[]) => {
+  // CA6: un set guarda lo escrito y elegido en los campos de un genérico: viene lleno y se puede cambiar
+  const applyList = (label: string, list: (Partial<ExamInput> & { group: ExamGroup; name: string })[]) => {
     const known = list.filter((e) => inCatalog(e.name))
     const gone = list.filter((e) => !inCatalog(e.name))
-    const add = known.filter((x) => !have.has(keyOf(x.name))).map((x) => withDetailFlag(newExam(x.group, catalog.find((c) => keyOf(c.name) === keyOf(x.name))!.name)))
+    const add = known.filter((x) => repeatable(x.name) || !have.has(keyOf(x.name))).map((x) => keyed(withDetailFlag({ ...newExam(x.group, catalog.find((c) => keyOf(c.name) === keyOf(x.name))!.name),
+      ...(x.subject ? { subject: x.subject } : {}), ...(x.projections ? { projections: x.projections } : {}), ...(x.contrast ? { contrast: x.contrast } : {}), ...(x.side ? { side: x.side } : {}), ...(x.region ? { region: x.region } : {}) })))
     setPicked([...picked, ...add])
     setMenu(null)
     if (gone.length) notify(`${gone.map((e) => e.name).join(', ')} ya no ${gone.length === 1 ? 'está' : 'están'} en el catálogo de la clínica: no se ${gone.length === 1 ? 'marcó' : 'marcaron'}.`, 'error')
@@ -167,7 +181,7 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
         <div className="exam-picker__picked" aria-live="polite">
           <b>Seleccionados ({picked.length})</b>
           <div className="chips">
-            {shown.map((e) => <span key={e.name} className={`chip${missingOf(e) ? ' chip--amber' : ''}`}>{examLine(e)}{e.uncatalogued && <small className="muted"> · no catalogado</small>}
+            {shown.map((e) => <span key={e.key ?? e.name} className={`chip${missingOf(e) ? ' chip--amber' : ''}`}>{examLine(e)}{e.uncatalogued && <small className="muted"> · no catalogado</small>}
               <button type="button" className="icon-btn" aria-label={`Quitar ${e.name}`} onClick={() => setPicked(picked.filter((x) => x !== e))}><X size={12} /></button></span>)}
             {picked.length > 6 && <button type="button" className="linklike" onClick={() => setShowAll(!showAll)}>{showAll ? 'Ver menos' : `y ${picked.length - 6} más`}</button>}
           </div>
@@ -176,7 +190,7 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
       {!catalogOnly && can('exams.order') && picked.some((e) => inCatalog(e.name)) && (
         <button className="btn btn--ghost" style={{ marginRight: 'auto' }} onClick={() => setSavingSet(true)}><ListChecks size={15} />Guardar selección como set</button>)}
       <button className="btn btn--ghost" onClick={close}>Cancelar</button>
-      {firstMissing && <small className="field__msg field__msg--warn exam-picker__missing" role="status">Falta elegir {firstMissing.m} de {firstMissing.e.name}.</small>}
+      {firstMissing && <small className="field__msg field__msg--warn exam-picker__missing" role="status">{firstMissing.m}: {firstMissing.e.name}.</small>}
       <button className="btn btn--primary" disabled={!picked.length || !!firstMissing} onClick={() => { if (!catalogOnly) writePicked([]); onAdd(picked) }}>Agregar ({picked.length})</button>
     </>}>
       <div className="exam-picker__bar">
@@ -228,17 +242,23 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
           const open = isOpen(g, marked)
           const rows = (items: CatalogExam[], id: string) => <div id={id} className="exam-rows">{items.map((e) => {
             const on = have.has(keyOf(e.name))
-            const already = current.some((c) => keyOf(c.name) === keyOf(e.name))
-            const mine = picked.find((x) => keyOf(x.name) === keyOf(e.name))
-            const missing = mine && missingOf(mine)
-            return <div key={e.name} className={`exam-pick-cell${mine && !catalogOnly && hasDetails(e.details) ? ' has-details' : ''}`}>
+            const already = !repeatable(e.name) && current.some((c) => keyOf(c.name) === keyOf(e.name))
+            const mine = picked.filter((x) => keyOf(x.name) === keyOf(e.name))
+            const missing = mine.map(missingOf).find(Boolean)
+            const detailed = mine.length > 0 && !catalogOnly && hasDetails(e.details)
+            return <div key={e.name} className={`exam-pick-cell${detailed ? ' has-details' : ''}`}>
               <label className={`exam-row-pick${on ? ' is-on' : ''}${already ? ' is-already' : ''}`}>
                 <input type="checkbox" checked={on} disabled={already} onChange={() => toggle(e.group, e.name)} />
                 <span>{e.name}{already && <small className="muted"> · ya está en la nota</small>}
-                  {missing && <small className="exam-pick__missing">Falta elegir {missing}</small>}</span>
+                  {missing && <small className="exam-pick__missing">{missing}</small>}</span>
               </label>
-              {/* CA5 (ronda 10): debajo del estudio marcado, sus botones (proyección, contraste, lado) y la región */}
-              {mine && !catalogOnly && hasDetails(e.details) && <ExamDetailChips exam={mine} details={e.details!} onChange={(patch) => setPickedItem(e.name, patch)} />}
+              {/* CA5 (ronda 10) y CA6 (ronda 11): debajo del estudio marcado, sus campos; cada fila repetida con los suyos y su ✕ */}
+              {detailed && mine.map((m) => <div key={m.key} className="exam-pick-inst">
+                {mine.length > 1 && <div className="exam-pick-inst__head"><b>{examLine(m)}</b>
+                  <button type="button" className="icon-btn" aria-label={`Quitar ${examLine(m)}`} onClick={() => setPicked(picked.filter((x) => x !== m))}><X size={14} /></button></div>}
+                <ExamDetailChips exam={m} details={e.details!} onChange={(patch) => setPickedItem(m.key, patch)} />
+              </div>)}
+              {detailed && e.details!.what && <button type="button" className="btn btn--ghost btn--sm exam-pick-again" onClick={() => addAgain(e)}><Plus size={14} />{(e.details!.again ?? `Otro ${e.name}`).replace(/^\+\s*/, '')}</button>}
             </div>
           })}</div>
           return (
@@ -287,7 +307,7 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
           </div>
         )}
       </div>
-      {savingSet && <ExamSetForm initial={picked.filter((e) => inCatalog(e.name))} onClose={() => setSavingSet(false)} onSaved={() => { setSavingSet(false); reloadSets() }} />}
+      {savingSet && <ExamSetForm initial={picked.filter((e) => inCatalog(e.name)).map(setExam)} onClose={() => setSavingSet(false)} onSaved={() => { setSavingSet(false); reloadSets() }} />}
     </Modal>
   )
 }
@@ -299,7 +319,8 @@ const examsOf = (s: OrderSet) => s.items.flatMap((it) => (it.exam ? [it.exam] : 
 export function ExamSetForm({ set, initial = [], onClose, onSaved }: { set?: OrderSet; initial?: ExamInput[]; onClose: () => void; onSaved: (s: OrderSet) => void }) {
   const { notify } = useStore()
   const [name, setName] = useState(set?.name ?? '')
-  const [exams, setExams] = useState<ExamInput[]>(() => (set ? examsOf(set) : initial).map((e) => ({ group: e.group, name: e.name, priority: 'routine', place: 'clinic' })))
+  // CA6 (ronda 11): un estudio genérico guarda lo escrito y elegido en sus campos
+  const [exams, setExams] = useState<ExamInput[]>(() => (set ? examsOf(set) : initial).map(setExam))
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
   const save = async () => {
@@ -324,8 +345,8 @@ export function ExamSetForm({ set, initial = [], onClose, onSaved }: { set?: Ord
         if (!list.length) return null
         return (
           <div key={g} className="field"><span>{g === 'lab' ? <FlaskConical size={14} /> : <ScanLine size={14} />} {GROUP_LABEL[g]}</span>
-            <div className="chips">{list.map((e) => (
-              <span key={e.name} className="chip">{e.name}<button type="button" className="icon-btn" aria-label={`Quitar ${e.name}`} onClick={() => setExams(exams.filter((x) => x !== e))}><X size={12} /></button></span>
+            <div className="chips">{list.map((e, i) => (
+              <span key={`${e.name}-${i}`} className="chip">{examLine(e)}<button type="button" className="icon-btn" aria-label={`Quitar ${examLine(e)}`} onClick={() => setExams(exams.filter((x) => x !== e))}><X size={12} /></button></span>
             ))}</div>
           </div>
         )
@@ -338,20 +359,32 @@ export function ExamSetForm({ set, initial = [], onClose, onSaved }: { set?: Ord
 }
 
 /**
- * CA5 (ronda 10): lo que falta para que la orden de imagen se pueda cumplir, con botones pequeños: proyecciones (varias),
- * contraste (uno), lado (uno) y la región escrita. La orden se arma sola («Rayos X de rodilla AP y lateral · Lado derecho»).
+ * CA5 (ronda 10) y CA6 (ronda 11): los campos de un estudio de imagen al ordenarlo. «¿De qué?» (texto libre, obligatorio, con
+ * su ejemplo), proyecciones (varias; en un genérico también se escribe otra), contraste (uno, o escrito), lado (obligatorio en
+ * CA5, opcional en los genéricos) y región. La orden se arma sola («Rayos X de rodilla AP, lateral y axial de rótula · Lado derecho»).
  */
 export function ExamDetailChips({ exam, details, onChange }: { exam: ExamInput; details: ImagingDetails; onChange: (patch: Partial<ExamInput>) => void }) {
   const projections = exam.projections ?? []
+  const buttons = details.projections ?? []
+  const chosen = buttons.filter((p) => projections.includes(p))
+  // Lo escrito es lo que no es un botón (se guarda al final de las proyecciones)
+  const typedProj = projections.filter((p) => !buttons.includes(p)).join(', ')
+  const setProj = (sel: string[], typed: string) => onChange({ projections: [...buttons.filter((p) => sel.includes(p)), ...(typed.trim() ? [typed] : [])] })
   const contrasts = contrastOptions(details)
+  const typedContrast = exam.contrast && !contrasts.includes(exam.contrast) ? exam.contrast : ''
   return (
     <div className="exam-details" role="group" aria-label={`Detalles de ${exam.name}`}>
-      {!!details.projections?.length && <div className="exam-details__row"><span className="exam-details__lbl">Proyección</span>
-        {details.projections.map((p) => <button key={p} type="button" className="chip chip--toggle" aria-pressed={projections.includes(p)}
-          onClick={() => onChange({ projections: projections.includes(p) ? projections.filter((x) => x !== p) : details.projections!.filter((x) => x === p || projections.includes(x)) })}>{p}</button>)}</div>}
+      {details.what && <label className="exam-details__row"><span className="exam-details__lbl">¿De qué?</span>
+        <input className="input input--sm exam-details__what" value={exam.subject ?? ''} onChange={(e) => onChange({ subject: e.target.value || undefined })} placeholder={details.whatHint ?? 'Ej. tórax'}
+          aria-label={`De qué es ${exam.name}`} aria-required="true" /></label>}
+      {buttons.length > 0 && <div className="exam-details__row"><span className="exam-details__lbl">Proyección</span>
+        {buttons.map((p) => <button key={p} type="button" className="chip chip--toggle" aria-pressed={chosen.includes(p)}
+          onClick={() => setProj(chosen.includes(p) ? chosen.filter((x) => x !== p) : [...chosen, p], typedProj)}>{p}</button>)}
+        {details.free && <input className="input input--sm exam-details__free" value={typedProj} onChange={(e) => setProj(chosen, e.target.value)} placeholder="Escribir proyección" aria-label={`Escribir proyección de ${exam.name}`} />}</div>}
       {contrasts.length > 0 && <div className="exam-details__row"><span className="exam-details__lbl">Contraste</span>
-        {contrasts.map((c) => <button key={c} type="button" className="chip chip--toggle" aria-pressed={exam.contrast === c} onClick={() => onChange({ contrast: exam.contrast === c ? undefined : c })}>{c}</button>)}</div>}
-      {details.side && <div className="exam-details__row"><span className="exam-details__lbl">Lado</span>
+        {contrasts.map((c) => <button key={c} type="button" className="chip chip--toggle" aria-pressed={exam.contrast === c} onClick={() => onChange({ contrast: exam.contrast === c ? undefined : c })}>{c}</button>)}
+        {details.free && <input className="input input--sm exam-details__free" value={typedContrast} onChange={(e) => onChange({ contrast: e.target.value || undefined })} placeholder="Escribir otro (ej. doble contraste)" aria-label={`Escribir contraste de ${exam.name}`} />}</div>}
+      {details.side && <div className="exam-details__row"><span className="exam-details__lbl">Lado{details.sideOptional && <small className="muted"> (opcional)</small>}</span>
         {IMAGING_SIDES.map((x) => <button key={x.value} type="button" className="chip chip--toggle" aria-pressed={exam.side === x.value} onClick={() => onChange({ side: exam.side === x.value ? undefined : x.value })}>{x.label}</button>)}</div>}
       {details.region && <label className="exam-details__row"><span className="exam-details__lbl">Región</span>
         <input className="input input--sm" value={exam.region ?? ''} onChange={(e) => onChange({ region: e.target.value || undefined })} placeholder="Ej. cara anterior del muslo derecho" aria-label={`Región de ${exam.name}`} /></label>}

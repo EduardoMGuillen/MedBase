@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Sql } from './sql.js'
-import { examKey } from '../src/lib/exams.js'
+import { EXAMS, examKey } from '../src/lib/exams.js'
+import { IMAGING_REMOVED_CA6, IMAGING_RENAMED_CA6 } from '../src/lib/imagingCatalog.js'
 import { saveConfigBackup } from './ronda10.js'
 
 /**
@@ -74,7 +75,56 @@ export async function cleanArchivedCatalog(q: Sql, clinicId: string) {
   return out
 }
 
+export interface Ca6Report { deleted: string[]; created: string[]; renamed: string[]; sets: SetChange[] }
+
+/**
+ * CA6 (ronda 11, corrige CA5): Imagen y gabinete con UN estudio por modalidad. Una vez por clínica (marca `ca6:<clínica>`):
+ *  - BORRA del catálogo los estudios por región de CA5 de Rayos X, Ultrasonido, Tomografía y Resonancia (IMAGING_REMOVED_CA6),
+ *    con copia previa y la marca de quitado (no quedan en «Ver archivados», que ya no existe, ni en ninguna lista). No toca
+ *    Ultrasonido Doppler, Estudios contrastados, Cardiología, Endoscopia ni Otros.
+ *  - Renombra «Angiorresonancia cerebral» a «Angiorresonancia magnética cerebral».
+ *  - Crea los genéricos que falten (Rayos X, Ultrasonido, Tomografía, Angiotomografía, Resonancia magnética): activos, sin precio.
+ *  - Quita de los sets y perfiles los estudios borrados (se listan en la bitácora con su dueño).
+ *  Las órdenes guardan el nombre (y lo elegido) del estudio: las de CA5 siguen diciendo «Rayos X de rodilla AP y lateral · Lado derecho».
+ */
+export async function loadImagingCa6(q: Sql, clinicId: string): Promise<Ca6Report | null> {
+  const mark = `ca6:${clinicId}`
+  if (await q.one('SELECT 1 FROM meta WHERE key = ?', [mark])) return null
+  const report: Ca6Report = { deleted: [], created: [], renamed: [], sets: [] }
+  const removed = new Set(IMAGING_REMOVED_CA6.map(examKey))
+  const rows = await q.query(`SELECT * FROM exam_catalog WHERE clinic_id = ? AND grp = 'imaging' ORDER BY name`, [clinicId])
+  const gone = rows.filter((r) => removed.has(String(r.norm_key)))
+  if (gone.length) {
+    const out = await removeCatalogExams(q, clinicId, gone, 'sistema', 'ca6-imaging-removed', 'CA6 (ronda 11): estudios de imagen por región')
+    report.deleted = out.removed
+    report.sets = out.sets
+  }
+  const now = new Date().toISOString()
+  for (const [from, to] of Object.entries(IMAGING_RENAMED_CA6)) {
+    const cur = rows.find((r) => String(r.norm_key) === examKey(from))
+    if (!cur || rows.some((r) => String(r.norm_key) === examKey(to))) continue
+    await q.run('UPDATE exam_catalog SET name = ?, norm_key = ?, base_key = ?, updated_at = ?, updated_by = ? WHERE id = ?', [to, examKey(to), examKey(to), now, 'sistema', String(cur.id)])
+    report.renamed.push(`${from} → ${to}`)
+  }
+  const have = new Set((await q.query(`SELECT norm_key FROM exam_catalog WHERE clinic_id = ?`, [clinicId])).map((r) => String(r.norm_key)))
+  for (const e of EXAMS.filter((x) => x.group === 'imaging')) {
+    const key = examKey(e.name)
+    if (have.has(key)) continue
+    await q.run('INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, base_key, subgroup, active, created_by, created_at) VALUES (?,?,?,?,?,?,?,TRUE,NULL,?)',
+      [randomUUID(), clinicId, 'imaging', e.name, key, key, e.subgroup ?? null, now])
+    report.created.push(e.name)
+  }
+  if (report.deleted.length || report.created.length || report.renamed.length) {
+    await sysAudit(q, clinicId, `Catálogo de Imagen y gabinete (CA6, ronda 11): ${report.deleted.length} estudio(s) borrado(s)${report.deleted.length ? ` (${report.deleted.join(', ')})` : ''}; `
+      + `creados: ${report.created.join(', ') || 'ninguno'}; renombrado: ${report.renamed.join(', ') || 'ninguno'}`
+      + `${report.sets.length ? `; se quitaron estudios borrados de ${setChangesText(report.sets)}` : ''}. Las órdenes ya emitidas no cambian. Copia previa en config_backups.`)
+  }
+  await q.run('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING', [mark, now])
+  return report
+}
+
 /** Ronda 11: el catálogo de cada clínica al día (CA6 y CA7). Idempotente. */
 export async function loadRonda11Catalog(q: Sql, clinicId: string) {
+  await loadImagingCa6(q, clinicId)
   await cleanArchivedCatalog(q, clinicId)
 }

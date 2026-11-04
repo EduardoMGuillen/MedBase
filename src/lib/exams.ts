@@ -1,7 +1,7 @@
 import type { ExamGroup, ExamOrder, ExamStatus } from './types'
 import { EXISTING_SUBGROUP, LAB_AREAS, LAB_ORDER, SECTION_SEP } from './labCatalog.js'
-import { CONTRAST_PHRASE, CT_CONTRASTS, CT_MULTI_CONTRASTS, IMAGING_SEARCH_SYNONYMS, IMAGING_SIDES, MR_CONTRASTS, PROJECTION_KEEP_CASE, XRAY_PREFIXES, XRAY_SUBGROUPS } from './clinicalConfig.js'
-import { IMAGING_SAME, IMAGING_STUDIES, IMAGING_SUBGROUPS as IMAGING_AREAS, type ImagingDetails } from './imagingCatalog.js'
+import { CONTRAST_PHRASE, CT_CONTRAST_BUTTONS, CT_CONTRASTS, CT_MULTI_CONTRASTS, IMAGING_SEARCH_SYNONYMS, IMAGING_SIDES, MR_CONTRAST_BUTTONS, MR_CONTRASTS, PROJECTION_KEEP_CASE, XRAY_PREFIXES, XRAY_SUBGROUPS } from './clinicalConfig.js'
+import { IMAGING_REMOVED_CA6, IMAGING_SAME, IMAGING_STUDIES, IMAGING_SUBGROUPS as IMAGING_AREAS, type ImagingDetails } from './imagingCatalog.js'
 import { referenceFromRows, referenceOf, type LabReference, type RefAnalyte, type RefRow } from './labReference.js'
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
@@ -99,6 +99,10 @@ export const BASE_SUBGROUP: Record<string, string> = {
   ...Object.fromEntries(IMAGING_STUDIES.map((st) => [IMAGING_SAME[st.name] ?? st.name, st.subgroup])),
   // Los de antes de CA5 (órdenes ya emitidas): su subgrupo de siempre (EX3 los sigue reconociendo como Rayos X)
   'Radiografía de tórax': 'Rayos X', 'Radiografía': 'Rayos X', 'Radiografía de abdomen': 'Rayos X',
+  // CA6 (ronda 11): los de CA5 que se borraron (órdenes ya emitidas) conservan su subgrupo
+  ...Object.fromEntries(IMAGING_REMOVED_CA6.map((n) => [n, n.startsWith('Rayos X') || n === 'Serie de abdomen agudo' ? 'Rayos X' : n.startsWith('Ultrasonido') ? 'Ultrasonido'
+    : /^(Tomograf|Angiotomograf|Urotomograf)/.test(n) ? 'Tomografía' : 'Resonancia'])),
+  'Angiorresonancia cerebral': 'Resonancia',
 }
 const BASE_SUBGROUP_BY_KEY = new Map(Object.entries(BASE_SUBGROUP).map(([n, sg]) => [examKey(n), sg]))
 /** Nombres de la ronda 6 que cambiaron (un examen que la clínica agregó con ellos se ve en el área nueva). */
@@ -276,7 +280,17 @@ export const findExam = (name: string, catalog: CatalogExam[] = EXAMS): CatalogE
  * abdomen y pelvis con triple contraste», «Ultrasonido de partes blandas · Región: cara anterior del muslo derecho». Las
  * órdenes de antes (sin `detailed`) siguen con su texto de siempre.
  */
-export function examLine(e: Pick<ExamOrder, 'name' | 'region' | 'side'> & { projections?: string[]; contrast?: string; detailed?: boolean }) {
+export function examLine(e: Pick<ExamOrder, 'name' | 'region' | 'side'> & { projections?: string[]; contrast?: string; detailed?: boolean; subject?: string }) {
+  // CA6 (ronda 11): estudio genérico: «[Estudio] [contraste] de [de qué] [proyecciones] · Lado [lado]»
+  if (e.subject?.trim()) {
+    const what = e.subject.trim()
+    const de = /^(de|del)\s/i.test(what) ? what : `de ${what}`
+    const contrast = e.contrast?.trim() ? ` ${contrastText(e.contrast)}` : ''
+    const projs = (e.projections ?? []).map((p) => p.trim()).filter(Boolean)
+    const proj = projs.length ? ` ${joinY(projs.map(projectionText))}` : ''
+    const side = e.side ? ` · ${IMAGING_SIDES.find((x) => x.value === e.side)?.phrase ?? ''}` : ''
+    return `${e.name}${contrast} ${de}${proj}${side}`
+  }
   if (e.detailed) {
     const proj = e.projections?.length ? ` ${joinY(e.projections.map(projectionText))}` : ''
     const contrast = e.contrast ? ` ${CONTRAST_PHRASE[e.contrast] ?? e.contrast.toLowerCase()}` : ''
@@ -292,37 +306,53 @@ const joinY = (list: string[]) => (list.length < 2 ? list.join('') : `${list.sli
 /** «Lateral» → «lateral»; «AP», «Towne» quedan igual. */
 const projectionText = (p: string) => (PROJECTION_KEEP_CASE.includes(p) || /^[A-ZÁÉÍÓÚÑ]{2}/.test(p) ? p : p.charAt(0).toLocaleLowerCase('es') + p.slice(1))
 
+/** CA6: el contraste en la orden: el de un botón («contrastada», «con contraste») o el escrito («doble contraste» → «con doble contraste»). */
+export function contrastText(c: string) {
+  const t = c.trim()
+  if (CONTRAST_PHRASE[t]) return CONTRAST_PHRASE[t]
+  const low = t.charAt(0).toLocaleLowerCase('es') + t.slice(1)
+  return /^(con|sin)\s/i.test(low) || !/contrast/i.test(low) ? low : `con ${low}`
+}
+
 /** CA5: las opciones de contraste de un estudio. */
 export function contrastOptions(d?: ImagingDetails): string[] {
+  if (d?.contrast === 'ct2') return CT_CONTRAST_BUTTONS
+  if (d?.contrast === 'mr2') return MR_CONTRAST_BUTTONS
   if (d?.contrast === 'mr') return MR_CONTRASTS
   if (d?.contrast === 'ct-multi') return CT_CONTRASTS
   if (d?.contrast === 'ct') return CT_CONTRASTS.filter((c) => !CT_MULTI_CONTRASTS.includes(c))
   return []
 }
 
-/** CA5: lo que falta elegir para poder ordenar el estudio («la proyección», «el contraste», «el lado», «la región»), o nada. */
-export function missingDetail(e: { projections?: string[]; contrast?: string; side?: string; region?: string }, d?: ImagingDetails) {
+/**
+ * CA5 y CA6: lo que falta para poder ordenar el estudio, como se lee en la fila («Falta escribir de qué», «Falta la
+ * proyección», «Falta el contraste», «Falta elegir el lado», «Falta escribir la región»), o nada. El lado opcional de CA6 no falta.
+ */
+export function missingDetail(e: { projections?: string[]; contrast?: string; side?: string; region?: string; subject?: string }, d?: ImagingDetails) {
   if (!d) return undefined
-  if (d.projections?.length && !e.projections?.length) return 'la proyección'
-  if (d.contrast && !e.contrast) return 'el contraste'
-  if (d.side && !e.side) return 'el lado'
-  if (d.region && !e.region?.trim()) return 'la región'
+  if (d.what && !e.subject?.trim()) return 'Falta escribir de qué'
+  if (d.projections?.length && !e.projections?.some((p) => p.trim())) return 'Falta la proyección'
+  if (d.contrast && !e.contrast?.trim()) return 'Falta el contraste'
+  if (d.side && !d.sideOptional && !e.side) return 'Falta elegir el lado'
+  if (d.region && !e.region?.trim()) return 'Falta escribir la región'
   return undefined
 }
 
 /** ¿El estudio pide algún detalle al ordenarlo? */
-export const hasDetails = (d?: ImagingDetails) => !!d && (!!d.projections?.length || !!d.contrast || !!d.side || !!d.region)
+export const hasDetails = (d?: ImagingDetails) => !!d && (!!d.projections?.length || !!d.contrast || !!d.side || !!d.region || !!d.what)
 
 /**
  * CA5: búsqueda de «Ordenar exámenes» sin tildes ni mayúsculas, palabra por palabra («tac abdomen», «rx torax»): cada palabra
  * debe estar en el nombre, o uno de sus sinónimos (IMAGING_SEARCH_SYNONYMS: «rx» → «rayos x», «usg» → «ultrasonido»…).
  */
-export function examMatches(name: string, query: string) {
+export function examMatches(name: string, query: string, free = false) {
   const n = norm(name)
   const words = norm(query).split(' ').filter(Boolean)
   // Una abreviatura con sinónimo («tac», «rx») solo cuenta al inicio de una palabra (no «eritrosedimentación») o por su sinónimo
   const starts = (w: string) => n.split(/[^a-z0-9]+/).some((x) => x.startsWith(w))
-  return words.every((w) => (IMAGING_SEARCH_SYNONYMS[w] ? starts(w) || IMAGING_SEARCH_SYNONYMS[w].some((x) => n.includes(x)) : n.includes(w)))
+  const hit = (w: string) => (IMAGING_SEARCH_SYNONYMS[w] ? starts(w) || IMAGING_SEARCH_SYNONYMS[w].some((x) => n.includes(x)) : n.includes(w))
+  // CA6 (ronda 11): en un genérico con «¿De qué?» el resto es de qué («rx torax» → Rayos X): basta con que una palabra sea el estudio
+  return free ? words.some(hit) : words.every(hit)
 }
 
 /**

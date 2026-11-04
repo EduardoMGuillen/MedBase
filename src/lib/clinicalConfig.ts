@@ -330,7 +330,20 @@ export const MR_CONTRASTS = ['Simple', 'Con gadolinio']
 /** Cómo se lee cada contraste en la orden: «Tomografía de tórax contrastada», «… con triple contraste». */
 export const CONTRAST_PHRASE: Record<string, string> = {
   Simple: 'simple', Contrastada: 'contrastada', 'Simple y contrastada': 'simple y contrastada', 'Doble contraste': 'con doble contraste',
-  'Triple contraste': 'con triple contraste', 'Con gadolinio': 'con gadolinio',
+  'Triple contraste': 'con triple contraste', 'Con gadolinio': 'con gadolinio', 'Con contraste': 'con contraste',
+}
+/**
+ * CA6 (ronda 11, corrige CA5). VALIDAR: Emil. Estudios genéricos de imagen («Rayos X», «Ultrasonido», «Tomografía»,
+ * «Angiotomografía», «Resonancia magnética»): al ordenarlos se escribe «¿De qué?» y, según el estudio, la proyección o el
+ * contraste (botones y, además, un cuadro para escribir otro). Reemplazan los cinco contrastes y el «Con gadolinio» de CA5.
+ */
+export const XRAY_PROJECTION_BUTTONS = ['AP', 'PA', 'Lateral', 'Oblicua', 'Axial']
+export const CT_CONTRAST_BUTTONS = ['Simple', 'Contrastada']
+export const MR_CONTRAST_BUTTONS = ['Simple', 'Con contraste']
+/** Ejemplo gris de «¿De qué?» por estudio. */
+export const WHAT_HINTS: Record<string, string> = {
+  'Rayos X': 'Ej. tórax, rodilla', Ultrasonido: 'Ej. tiroides, abdomen, venoso de miembros inferiores', 'Tomografía': 'Ej. cráneo, abdomen y pelvis',
+  'Angiotomografía': 'Ej. aorta, cerebral', 'Resonancia magnética': 'Ej. rodilla, columna lumbosacra',
 }
 /** Lado: «· Lado derecho», «· Lado izquierdo», «· Bilateral». */
 export const IMAGING_SIDES = [{ value: 'right', label: 'Derecho', phrase: 'Lado derecho' }, { value: 'left', label: 'Izquierdo', phrase: 'Lado izquierdo' }, { value: 'both', label: 'Bilateral', phrase: 'Bilateral' }] as const
@@ -345,5 +358,7 @@ export const IMAGING_SEARCH_SYNONYMS: Record<string, string[]> = {
   tac: ['tomografia'], tc: ['tomografia'], tomo: ['tomografia'],
   rm: ['resonancia'], rmn: ['resonancia'],
   usg: ['ultrasonido'], eco: ['ultrasonido'], ecografia: ['ultrasonido'],
+  // CA6 (ronda 11)
+  angiotac: ['angiotomografia'], angiotc: ['angiotomografia'],
   ekg: ['electrocardiograma'], ecg: ['electrocardiograma'],
 }

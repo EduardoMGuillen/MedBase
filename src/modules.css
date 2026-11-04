@@ -864,3 +864,10 @@ button.src-tag--none { cursor: pointer; }
 .exam-details .input { flex: 1 1 220px; max-width: 420px; }
 .exam-picker__missing { margin-right: auto; align-self: center; }
 @media (max-width: 600px) { .exam-details { padding-left: 8px; } .exam-details .chip--toggle { min-height: 44px; } }
+/* CA6 (ronda 11): cada fila repetida de un estudio genérico, con su encabezado y ✕; «+ Otro Rayos X» debajo */
+.exam-pick-inst { border-top: 1px dashed var(--line-soft); }
+.exam-pick-inst:first-of-type { border-top: 0; }
+.exam-pick-inst__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px 0 36px; font-size: 13px; overflow-wrap: anywhere; }
+.exam-pick-again { margin: 0 0 8px 36px; }
+.exam-details .exam-details__free { flex: 1 1 160px; max-width: 260px; }
+@media (max-width: 600px) { .exam-pick-inst__head { padding-left: 8px; } .exam-pick-again { margin-left: 8px; min-height: 44px; } .exam-details .exam-details__free { max-width: none; } }

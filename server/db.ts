@@ -22,7 +22,7 @@ import { loadRonda11Catalog } from './ronda11.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '74'
+const SCHEMA_VERSION = '75'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1100,7 +1100,7 @@ CREATE TABLE IF NOT EXISTS config_backups (
   data TEXT NOT NULL,
   note TEXT
 );
--- v74 (ronda 11). CA7: en el catálogo de exámenes ya no se archiva: «Quitar» borra. Queda la marca de lo quitado (quién,
+-- v74–v75 (ronda 11). CA7: en el catálogo de exámenes ya no se archiva: «Quitar» borra. Queda la marca de lo quitado (quién,
 -- cuándo, por qué) para que ninguna carga lo vuelva a poner. CA6: lo escrito en «¿De qué?» de un estudio genérico.
 CREATE TABLE IF NOT EXISTS exam_catalog_removed (
   id TEXT PRIMARY KEY,

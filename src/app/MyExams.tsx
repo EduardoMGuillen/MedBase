@@ -5,7 +5,7 @@ import { api } from '../lib/api'
 import { ExamSetForm } from '../components/Exams'
 import { useOrderSets } from '../lib/useOrderSets'
 import { useExamCatalog } from '../lib/useExamCatalog'
-import { examCatalog, examKey } from '../lib/exams'
+import { examCatalog, examKey, examLine } from '../lib/exams'
 import type { OrderSet } from '../lib/types'
 
 /** Exámenes de un set de exámenes. */
@@ -45,7 +45,7 @@ export function MyExams() {
                       <button className="btn btn--ghost btn--sm" onClick={() => { if (confirm(`¿Archivar el set «${s.name}»? Deja de aparecer al ordenar.`)) void act(() => api(`/order-sets/${s.id}`, { method: 'DELETE' }), 'Set archivado') }}><Archive size={13} />Archivar</button>
                     </span>
                   </div>
-                  <p className="exsets__items">{list.map((e) => e.name).join(' · ')}</p>
+                  <p className="exsets__items">{list.map((e) => examLine(e)).join(' · ')}</p>
                   {gone.length > 0 && <p className="exsets__warn"><TriangleAlert size={14} />{gone.map((e) => e.name).join(', ')} ya no {gone.length === 1 ? 'está' : 'están'} en el catálogo de la clínica: al ordenar se {gone.length === 1 ? 'omite' : 'omiten'}.</p>}
                 </li>
               )

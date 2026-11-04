@@ -134,7 +134,8 @@ function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () =
     setBusy(true)
     try {
       if (exam) await api(`/exams/catalog/${exam.id}`, { method: 'PATCH', body: { name: name.trim(), group, subgroup, ...(detailsChanged ? { details: hasDetails(clean(details)) ? clean(details) : null } : {}) } })
-      else await api('/exams/catalog', { body: { name: name.trim(), group, subgroup } })
+      // CA6 (ronda 11): un estudio de imagen nuevo también dice qué pide al ordenarlo (p. ej. «¿De qué?»)
+      else await api('/exams/catalog', { body: { name: name.trim(), group, subgroup, ...(group === 'imaging' && hasDetails(clean(details)) ? { details: clean(details) } : {}) } })
       notify(exam ? 'Examen actualizado' : 'Examen agregado al catálogo')
       onSaved()
     } catch (e) { notify((e as Error).message, 'error') } finally { setBusy(false) }
@@ -154,8 +155,11 @@ function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () =
       <label className="field"><span>Subgrupo</span>
         <select className="select" value={subgroup} onChange={(e) => setSubgroup(e.target.value)}>{options.map((o) => <option key={o}>{o}</option>)}</select>
         <small className="muted">Así se agrupa al ordenar exámenes y en este catálogo.</small></label>
-      {exam && group === 'imaging' && (
+      {group === 'imaging' && (
         <fieldset className="fs"><legend>Al ordenarlo pide</legend>
+          {/* CA6 (ronda 11): «¿De qué?» (texto libre obligatorio) con su ejemplo gris */}
+          <label className="check-inline"><input type="checkbox" checked={!!details.what} onChange={(e) => setDetails({ ...details, what: e.target.checked || undefined })} />Pide escribir «¿De qué?» (ej. tórax, rodilla)</label>
+          {details.what && <label className="field"><span>Ejemplo gris de «¿De qué?»</span><input className="input" value={details.whatHint ?? ''} onChange={(e) => setDetails({ ...details, whatHint: e.target.value || undefined })} placeholder="Ej. tórax, rodilla" /></label>}
           <div className="field"><span>Proyecciones (Rayos X)</span>
             <div className="chips">{(details.projections ?? []).map((pr) => <span key={pr} className="chip">{pr}
               <button type="button" className="icon-btn" aria-label={`Quitar ${pr}`} onClick={() => setDetails({ ...details, projections: (details.projections ?? []).filter((x) => x !== pr) })}><X size={12} /></button></span>)}</div>
@@ -164,9 +168,16 @@ function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () =
               <button type="button" className="btn btn--soft btn--sm" disabled={!newProj.trim()} onClick={() => { setDetails({ ...details, projections: [...(details.projections ?? []), newProj.trim()] }); setNewProj('') }}><Plus size={14} />Agregar</button></span></div>
           <label className="field"><span>Contraste</span>
             <select className="select" value={details.contrast ?? ''} onChange={(e) => setDetails({ ...details, contrast: (e.target.value || undefined) as ImagingDetails['contrast'] })}>
-              <option value="">No pide contraste</option><option value="ct">Tomografía: simple, contrastada, simple y contrastada</option>
-              <option value="ct-multi">Tomografía, también doble y triple contraste</option><option value="mr">Resonancia: simple o con gadolinio</option></select></label>
-          <label className="check-inline"><input type="checkbox" checked={!!details.side} onChange={(e) => setDetails({ ...details, side: e.target.checked || undefined })} />Pide el lado (derecho, izquierdo o bilateral)</label>
+              <option value="">No pide contraste</option>
+              <option value="ct2">Tomografía: simple o contrastada</option><option value="mr2">Resonancia: simple o con contraste</option>
+              {/* Los de CA5 (ronda 10), si un estudio todavía los usa */}
+              {details.contrast === 'ct' && <option value="ct">Tomografía: simple, contrastada, simple y contrastada</option>}
+              {details.contrast === 'ct-multi' && <option value="ct-multi">Tomografía, también doble y triple contraste</option>}
+              {details.contrast === 'mr' && <option value="mr">Resonancia: simple o con gadolinio</option>}</select></label>
+          {(!!details.projections?.length || !!details.contrast) && <label className="check-inline"><input type="checkbox" checked={!!details.free} onChange={(e) => setDetails({ ...details, free: e.target.checked || undefined })} />También se puede escribir otra proyección u otro contraste</label>}
+          <label className="field"><span>Lado (derecho, izquierdo o bilateral)</span>
+            <select className="select" value={details.side ? (details.sideOptional ? 'optional' : 'required') : ''} onChange={(e) => setDetails({ ...details, side: e.target.value ? true : undefined, sideOptional: e.target.value === 'optional' || undefined })}>
+              <option value="">No pide el lado</option><option value="optional">Opcional</option><option value="required">Obligatorio</option></select></label>
           <label className="check-inline"><input type="checkbox" checked={!!details.region} onChange={(e) => setDetails({ ...details, region: e.target.checked || undefined })} />Pide escribir la región</label>
         </fieldset>
       )}
@@ -346,7 +357,11 @@ function RefDetails({ r }: { r: LabReference }) {
 function detailsOf(e: ClinicExam): ImagingDetails | undefined {
   return e.details ?? EXAMS.find((b) => examKey(b.name) === (e.baseKey ?? examKey(e.name)))?.details
 }
-const clean = (d: ImagingDetails): ImagingDetails => ({ ...(d.projections?.length ? { projections: d.projections } : {}), ...(d.contrast ? { contrast: d.contrast } : {}), ...(d.side ? { side: true } : {}), ...(d.region ? { region: true } : {}) })
+const clean = (d: ImagingDetails): ImagingDetails => ({ ...(d.what ? { what: true, ...(d.whatHint?.trim() ? { whatHint: d.whatHint.trim() } : {}) } : {}),
+  ...(d.projections?.length ? { projections: d.projections } : {}), ...(d.contrast ? { contrast: d.contrast } : {}), ...(d.free && (d.projections?.length || d.contrast) ? { free: true } : {}),
+  ...(d.side ? { side: true, ...(d.sideOptional ? { sideOptional: true } : {}) } : {}), ...(d.region ? { region: true } : {}), ...(d.again ? { again: d.again } : {}) })
+/** «Pide al ordenar: de qué · proyección · lado». */
 function detailsSummary(d: ImagingDetails) {
-  return [d.projections?.length && `proyección (${d.projections.join(', ')})`, d.contrast && 'contraste', d.side && 'lado', d.region && 'región'].filter(Boolean).join(' · ')
+  return [d.what && 'de qué', d.projections?.length && `proyección (${d.projections.join(', ')}${d.free ? ' o escrita' : ''})`, d.contrast && `contraste${d.free ? ' (botones o escrito)' : ''}`,
+    d.side && (d.sideOptional ? 'lado (opcional)' : 'lado'), d.region && 'región'].filter(Boolean).join(' · ')
 }

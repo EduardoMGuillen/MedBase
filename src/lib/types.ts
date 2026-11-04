@@ -671,6 +671,10 @@ export interface ExamInput {
   contrast?: string
   /** CA5: la orden se arma con los detalles del estudio («Rayos X de tórax PA y lateral · …»). */
   detailed?: boolean
+  /** CA6 (ronda 11): «¿De qué?» de un estudio genérico («tórax» → «Rayos X de tórax PA y lateral»). */
+  subject?: string
+  /** CA6: clave solo de pantalla, para pedir el mismo estudio varias veces en una orden (no se guarda). */
+  key?: string
 }
 
 export interface ExamResultValue { analyte: string; value: string; unit?: string; low?: number; high?: number; flag?: 'high' | 'low'; critical?: boolean

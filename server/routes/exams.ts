@@ -27,6 +27,8 @@ export const examInput = z.object({
   projections: z.array(z.string().trim().min(1).max(60)).max(12).optional(),
   contrast: z.string().trim().max(40).optional(),
   detailed: z.boolean().optional(),
+  // CA6 (ronda 11): «¿De qué?» de un estudio genérico (Rayos X, Ultrasonido, Tomografía…)
+  subject: z.string().trim().max(120).optional(),
 })
 
 const j = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(String(v)) as T : fallback } catch { return fallback } }
@@ -53,6 +55,7 @@ export const toExamOrder = (r: Row, events: Row[] = []): ExamOrder => ({
   reviewedBy: r.reviewed_by ? String(r.reviewed_by) : undefined, reviewedAt: r.reviewed_at ? String(r.reviewed_at) : undefined,
   uncatalogued: Boolean(r.uncatalogued) || undefined,
   projections: j<string[] | undefined>(r.projections, undefined), contrast: r.contrast ? String(r.contrast) : undefined, detailed: Boolean(r.detailed) || undefined,
+  subject: r.subject ? String(r.subject) : undefined,
   events: events.filter((e) => e.exam_id === r.id).map((e) => ({ status: e.status as ExamStatus, by: String(e.by_id), at: String(e.at), note: e.note ? String(e.note) : undefined })),
 })
 
@@ -83,7 +86,7 @@ export async function insertExams(q: Sql, c: { clinicId: string; patientId: stri
     if (!r) continue
     const details = r.details ? JSON.parse(String(r.details)) as ImagingDetails : EXAMS.find((b) => examKey(b.name) === (r.base_key ?? r.norm_key))?.details
     const missing = missingDetail(e, details)
-    if (missing) fail(400, `${e.name}: falta elegir ${missing}.`)
+    if (missing) fail(400, `${e.name}: ${missing.charAt(0).toLowerCase()}${missing.slice(1)}.`)
     if (hasDetails(details)) e.detailed = true
   }
   const batch = randomUUID()
@@ -98,10 +101,10 @@ export async function insertExams(q: Sql, c: { clinicId: string; patientId: stri
     const id = randomUUID()
     const area = areaFor(e.group, e.place, c.inStay ?? !!c.hospitalizationId, { hasLab: Boolean(clinic.has_lab), hasImaging: Boolean(clinic.has_imaging) })
     await q.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, consultation_id, hospitalization_id, note_id, batch_id, grp, name, region, side, indication, priority, place, area, status, ordered_by, ordered_at, uncatalogued, order_no,
-        projections, contrast, detailed)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ordered',?,?,?,?,?,?,?)`,
+        projections, contrast, detailed, subject)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ordered',?,?,?,?,?,?,?,?)`,
     [id, c.clinicId, c.patientId, c.consultationId ?? null, c.hospitalizationId ?? null, c.noteId ?? null, batch, e.group, e.name, e.region || null, e.side ?? null, e.indication || null,
-      e.priority, e.place, area, c.by, c.at, uncatalogued, orderNo, e.projections?.length ? JSON.stringify(e.projections) : null, e.contrast || null, !!e.detailed])
+      e.priority, e.place, area, c.by, c.at, uncatalogued, orderNo, e.projections?.length ? JSON.stringify(e.projections.map((p) => p.trim()).filter(Boolean)) : null, e.contrast?.trim() || null, !!e.detailed, e.subject?.trim() || null])
     await q.run('INSERT INTO exam_events (id, clinic_id, exam_id, status, by_id, at) VALUES (?,?,?,?,?,?)', [randomUUID(), c.clinicId, id, 'ordered', c.by, c.at])
   }
   return batch
@@ -155,8 +158,11 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     // CF3 (ronda 6): subgrupo; vacío se lee como «Otros»
     subgroup: z.string().trim().max(60).optional(),
     // CA5 (ronda 10): qué pide al ordenarlo (vacío: lo de la lista fija)
-    details: z.object({ projections: z.array(z.string().trim().min(1).max(60)).max(15).optional(), contrast: z.enum(['ct', 'ct-multi', 'mr']).optional(),
-      side: z.boolean().optional(), region: z.boolean().optional() }).nullable().optional() })
+    details: z.object({ projections: z.array(z.string().trim().min(1).max(60)).max(15).optional(), contrast: z.enum(['ct', 'ct-multi', 'mr', 'ct2', 'mr2']).optional(),
+      side: z.boolean().optional(), region: z.boolean().optional(),
+      // CA6 (ronda 11): «¿De qué?», su ejemplo, lado opcional, escribir otra proyección o contraste y «+ Otro…»
+      what: z.boolean().optional(), whatHint: z.string().trim().max(80).optional(), sideOptional: z.boolean().optional(), free: z.boolean().optional(),
+      again: z.string().trim().max(60).optional() }).nullable().optional() })
   const catalogRow = async (cid: string, id: string) => (await sql.one('SELECT * FROM exam_catalog WHERE id = ? AND clinic_id = ?', [id, cid])) ?? fail(404, 'El examen no está en el catálogo.')
   app.post('/api/exams/catalog', auth, need('settings.manage'), async (req, res) => {
     const b = parse(catalogBody, req.body)
@@ -172,8 +178,9 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
       return res.json(toClinicExam((await catalogRow(cid, String(existing.id)))!))
     }
     const id = randomUUID()
-    await sql.run('INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, subgroup, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)', [id, cid, b.group, b.name, key, b.subgroup || null, userOf(req).id, now])
-    await audit(userOf(req), `Agregó al catálogo de exámenes (${GROUP_LABEL[b.group]}${b.subgroup ? ` · ${b.subgroup}` : ''}): ${b.name}`)
+    await sql.run('INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, subgroup, created_by, created_at, details) VALUES (?,?,?,?,?,?,?,?,?)',
+      [id, cid, b.group, b.name, key, b.subgroup || null, userOf(req).id, now, b.group === 'imaging' && b.details ? JSON.stringify(b.details) : null])
+    await audit(userOf(req), `Agregó al catálogo de exámenes (${GROUP_LABEL[b.group]}${b.subgroup ? ` · ${b.subgroup}` : ''}): ${b.name}${b.group === 'imaging' && b.details ? ` (pide al ordenar: ${detailsText(b.details)})` : ''}`)
     res.status(201).json(toClinicExam((await catalogRow(cid, id))!))
   })
   app.patch('/api/exams/catalog/:id', auth, need('settings.manage'), async (req, res) => {
@@ -602,6 +609,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
 /** CA5 (ronda 10): los detalles de un estudio en palabras, para la bitácora. */
 function detailsText(d?: ImagingDetails) {
   if (!d) return 'los de la lista fija'
-  return [d.projections?.length && `proyecciones ${d.projections.join(', ')}`, d.contrast && `contraste ${d.contrast === 'mr' ? 'de resonancia' : d.contrast === 'ct-multi' ? 'de tomografía (con doble y triple)' : 'de tomografía'}`,
-    d.side && 'pide lado', d.region && 'pide región'].filter(Boolean).join('; ') || 'sin detalles'
+  return [d.what && 'de qué', d.projections?.length && `proyecciones ${d.projections.join(', ')}${d.free ? ' (o escrita)' : ''}`,
+    d.contrast && `contraste ${d.contrast.startsWith('mr') ? 'de resonancia' : d.contrast === 'ct-multi' ? 'de tomografía (con doble y triple)' : 'de tomografía'}${d.free ? ' (o escrito)' : ''}`,
+    d.side && (d.sideOptional ? 'lado (opcional)' : 'lado'), d.region && 'región'].filter(Boolean).join('; ') || 'sin detalles'
 }
