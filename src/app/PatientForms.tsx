@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { DateField } from '../components/DateTimeField'
-import { Modal } from '../components/ui'
+import { AutoTextarea, Modal } from '../components/ui'
 import { useStore } from '../lib/store'
 import { BACKGROUND_GROUPS, CIVIL_STATUS, toxicOf, dniDigits, dniLength, EDUCATION, formatPhone } from '../lib/format'
 import { DniInput } from '../components/DniInput'
@@ -156,12 +156,14 @@ export function BackgroundForm({ initial, onClose, onSave }: { initial: Patient;
       <p style={{ fontSize: 13.5, color: 'var(--muted)' }}>Escribe <i>Negados</i> cuando el paciente no tenga antecedentes de ese tipo; así queda constancia de que se interrogó.</p>
       {BACKGROUND_GROUPS.filter((g) => !g.female || initial.sex === 'F').map((g) => (
         <fieldset key={g.title} className="fs"><legend>{g.title}</legend>
-          <div className="form-grid">
+          {/* AP4 (ronda 13): un apartado de tres campos (hospitalarios, traumáticos y quirúrgicos) va uno debajo del otro a todo el
+              ancho; los de dos, lado a lado y alineados arriba. Todos empiezan del mismo alto y crecen solos, sin barra interna. */}
+          <div className="form-grid bg-form">
             {g.fields.map((fl) => (
-              <label key={fl.key} className={`field ${g.fields.length === 1 || g.fields.length === 3 && fl === g.fields[2] ? 'span-2' : ''}`}><span>{fl.label}</span>
+              <label key={fl.key} className={`field ${g.fields.length === 1 || g.fields.length === 3 ? 'span-2' : ''}`}><span>{fl.label}</span>
                 {fl.date
                   ? <DateField value={b[fl.key] ?? ''} onChange={(v) => setB({ ...b, [fl.key]: v })} label={fl.label} />
-                  : <textarea className="textarea textarea--sm" rows={fl.key === 'toxic' ? 3 : 2} value={b[fl.key] ?? ''} placeholder={fl.hint} onChange={(e) => setB({ ...b, [fl.key]: e.target.value })} />}
+                  : <AutoTextarea rows={3} value={b[fl.key] ?? ''} placeholder={fl.hint} onChange={(e) => setB({ ...b, [fl.key]: e.target.value })} />}
               </label>
             ))}
           </div>

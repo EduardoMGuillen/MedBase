@@ -176,7 +176,6 @@ export const BACKGROUND_GROUPS: { title: string; female?: boolean; fields: { key
   { title: 'Personales patológicos', fields: [
     { key: 'pathological', label: 'Enfermedades' },
     { key: 'medications', label: 'Medicamentos actuales' },
-    { key: 'transfusions', label: 'Transfusionales' },
   ] },
   { title: 'Hospitalarios, traumáticos y quirúrgicos', fields: [
     { key: 'hospitalizations', label: 'Hospitalarios' },
@@ -195,6 +194,15 @@ export const BACKGROUND_GROUPS: { title: string; female?: boolean; fields: { key
     { key: 'contraception', label: 'Planificación familiar' },
     { key: 'gynecoNotes', label: 'Otros' },
   ] },
+]
+
+/**
+ * AP4 (ronda 13): campos que ya no se piden. Lo escrito no se borra: si un paciente tiene texto, se ve en solo lectura al
+ * final de su apartado con «(campo retirado)»; si no tiene, no aparece el rótulo.
+ */
+export const RETIRED_BACKGROUND: { group: string; key: keyof Background; label: string }[] = [
+  { group: 'Personales patológicos', key: 'transfusions', label: 'Transfusionales (campo retirado)' },
+  { group: 'Personales no patológicos', key: 'lifestyle', label: 'Actividad física y alimentación (campo retirado)' },
 ]
 
 /** ME4 (ronda 9): «Nebulización» es una vía aparte; «Inhalada» (inhaladores) no cambia. */

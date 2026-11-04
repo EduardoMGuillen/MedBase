@@ -14,7 +14,7 @@ import { useStore, type Chart } from '../lib/store'
 import { Loading, StatusBadge } from '../components/ui'
 import { IndicationList, MedLines, NoteColumns, NoteExams } from '../components/NoteColumns'
 import { PatientHeader } from '../components/PatientHeader'
-import { age, BACKGROUND_GROUPS, backgroundValue, bmi, date, dxCode, examText, time, money } from '../lib/format'
+import { age, BACKGROUND_GROUPS, backgroundValue, RETIRED_BACKGROUND, bmi, date, dxCode, examText, time, money } from '../lib/format'
 import { Attachments } from './Attachments'
 import { AllergiesForm, BackgroundForm, IdentificationForm } from './PatientForms'
 import type { Certificate, Consultation, Patient, Referral, Vitals } from '../lib/types'
@@ -105,16 +105,18 @@ export function Identification({ p }: { p: Patient }) {
 export function BackgroundView({ p, compact = false, only }: { p: Patient; compact?: boolean; only?: string[] }) {
   const b = p.background ?? {}
   const groups = BACKGROUND_GROUPS.filter((g) => (!g.female || p.sex === 'F') && (!only || only.includes(g.title)))
-  const withConditions = groups.some((g) => g.title === 'Personales patológicos') && p.conditions.length > 0
-  const any = groups.some((g) => g.fields.some((f) => backgroundValue(b, f.key))) || withConditions
+  // AP3 (ronda 13): las etiquetas de crónico ya no se repiten aquí como «Enfermedades crónicas»: se ven en el encabezado del
+  // paciente y siguen alimentando «Crónicos y seguimientos». Si «Enfermedades» está vacío, la tarjeta no inventa texto (A1).
+  const retired = (title: string) => RETIRED_BACKGROUND.filter((r) => r.group === title && b[r.key]?.trim()).map((r) => [r.label, b[r.key]] as [string, string | undefined])
+  const any = groups.some((g) => g.fields.some((f) => backgroundValue(b, f.key)) || retired(g.title).length > 0)
   if (!any) return <p className="muted">Sin antecedentes registrados.</p>
   // AN1 (ronda 12): cada antecedente en su renglón (nombre a la izquierda, texto justificado a todo el ancho), no en columnas angostas
   return (
     <div className={`bg-groups ${compact ? 'bg-groups--compact' : ''}`}>
       {groups.map((g) => {
         const rows = g.fields.map((f) => { const v = backgroundValue(b, f.key); return [f.label, f.date && v ? date(`${v}T12:00:00`) : v] as [string, string | undefined] })
-        const extra = g.title === 'Personales patológicos' && p.conditions.length ? [['Enfermedades crónicas', p.conditions.join(', ')] as [string, string]] : []
-        const all = [...extra, ...rows].filter(([, v]) => v)
+        // AP4 (ronda 13): lo escrito en un campo retirado se ve al final del apartado, en solo lectura
+        const all = [...rows, ...retired(g.title)].filter(([, v]) => v)
         if (!all.length) return null
         return <div key={g.title} className="bg-group"><h4>{g.title}</h4>
           <dl className="bg-list">{all.map(([k, v]) => <div key={k} className="bg-list__row"><dt>{k}</dt><dd>{v}</dd></div>)}</dl></div>

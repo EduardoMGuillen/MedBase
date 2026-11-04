@@ -1054,3 +1054,11 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .note-dock__bar, .note-dock__hint { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--ink-soft); color: var(--ink-deep); font-size: 14px; }
 .note-dock__hint { margin-bottom: 12px; }
 @media (max-width: 720px) { .modal-inline .modal__head, .modal-inline .modal__top { padding-left: 16px; padding-right: 16px; } .modal-inline .modal__foot { padding: 12px 16px; } }
+
+/* AP4 (ronda 13): ventana «Antecedentes». Los cuadros de una fila empiezan arriba y del mismo alto; crecen con el texto sin
+   barra interna. A 390 px todo va a una columna. */
+.bg-form { align-items: start; }
+.bg-form > .field { align-content: start; }
+.bg-form .textarea--auto { min-height: calc(3 * 1.55em + 22px); max-height: none; overflow-y: hidden; }
+@media (max-width: 640px) { .bg-form { grid-template-columns: 1fr; } .bg-form > .span-2 { grid-column: auto; } }
+
