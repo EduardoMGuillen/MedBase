@@ -101,7 +101,7 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
                 {/* EX5 (ronda 10): la orden de los pendientes, para imprimir o descargar (médico y enfermería) */}
                 {canPrint && all.some(printable) && <button className="btn btn--ghost btn--sm" onClick={() => setPrinting(g)}><Printer size={14} />Imprimir orden</button>}
                 {canResults(g) && all.some((e) => e.result) && <button className="btn btn--ghost btn--sm" onClick={() => setResults(g)}><Printer size={14} />Imprimir resultados</button>}
-                {open && can('exams.process') && <button className="btn btn--ghost btn--sm" onClick={() => setUploading(g)}><Upload size={14} />Subir resultado externo</button>}
+                {open && can('exams.process') && (!user || deptAllows(user, g)) && <button className="btn btn--ghost btn--sm" onClick={() => setUploading(g)}><Upload size={14} />Subir resultado externo</button>}
               </div></div>
             {list.length ? <div className="rows">{list.map((e, i) => (
               <Fragment key={e.id}>
@@ -141,13 +141,15 @@ export function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder;
   const [notDone, setNotDone] = useState(false)
   const dept = user?.role === 'lab' || user?.role === 'imaging'
   const imagingTech = user?.role === 'imaging' && user.position !== 'radiologist'
+  // DP4: Laboratorio e Imágenes solo trabajan los de su tipo (el radiólogo ve el laboratorio, pero sin acciones)
+  const mine = !user || deptAllows(user, e.group)
   const act = async (path: string, body?: unknown) => {
     try { await api(`/exams/${e.id}/${path}`, { body: body ?? {} }); reload() } catch (x) { notify((x as Error).message, 'error') }
   }
   const next = NEXT_ACTION[e.group][e.status]
   const optional = reportOptional(e)
   // Ronda 8: una radiografía realizada todavía acepta su informe (opcional)
-  const canResult = open && can('exams.process') && (isPending(e) || (optional && e.status === 'done')) && !(imagingTech && e.status === 'ordered')
+  const canResult = open && mine && can('exams.process') && (isPending(e) || (optional && e.status === 'done')) && !(imagingTech && e.status === 'ordered')
   const id = `exam-${e.id}`
   return (
     <div className={`exam-row${e.priority === 'urgent' && isPending(e) ? ' exam-row--urgent' : ''}${e.critical ? ' exam-row--critical' : ''}${expanded ? '' : ' is-folded'}`}>
@@ -171,7 +173,7 @@ export function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder;
         {e.notDone && e.status !== 'cancelled' && <span className="badge badge--red" title={`${shortStaff(staffById(e.notDone.by)?.name)}, ${dateTime(e.notDone.at)}`}>No se realizó: {e.notDone.reason}</span>}
         {/* EX1: las acciones se usan sin abrir la fila. EX5 (ronda 10): en una fila horizontal, no apiladas */}
         {<span className="exam-row__acts">
-          {open && can('exams.process') && isPending(e) && e.status === 'ordered' && <button className="btn btn--soft btn--sm" onClick={() => act('status', { status: e.group === 'lab' ? 'sample' : 'done' })}>{next}</button>}
+          {open && mine && can('exams.process') && isPending(e) && e.status === 'ordered' && <button className="btn btn--soft btn--sm" onClick={() => act('status', { status: e.group === 'lab' ? 'sample' : 'done' })}>{next}</button>}
           {canResult && <button className={`btn ${optional ? 'btn--ghost' : 'btn--primary'} btn--sm`} onClick={() => setResult(true)}>{e.group === 'lab' ? 'Cargar resultado' : imagingTech ? 'Subir imágenes' : optional ? 'Agregar informe (opcional)' : 'Cargar informe'}</button>}
           {/* GE4 (ronda 9): quien cargó el resultado lo corrige unos minutos, mientras no se revise */}
           {e.status === 'result' && e.result && <GraceButton record={{ graceUntil: e.resultGraceUntil }} authorId={e.result.by} onCorrect={() => setResult(true)} />}
@@ -180,7 +182,7 @@ export function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder;
           {e.result && <ResultPrintButtons e={e} />}
           {canReview(e) && can('exams.order') && user?.role === 'doctor' && <button className="btn btn--primary btn--sm" onClick={() => act('review')}><CheckCheck size={14} />Marcar revisado</button>}
           {open && isPending(e) && !dept && (can('exams.process') || can('exams.order')) && <button className="btn btn--ghost btn--sm" onClick={() => setCancelling(true)}>Cancelar</button>}
-          {dept && isPending(e) && can('dept.work') && (e.notDone
+          {dept && mine && isPending(e) && can('dept.work') && (e.notDone
             ? <button className="btn btn--soft btn--sm" onClick={() => act('retry')}>Reintentar</button>
             : <button className="btn btn--ghost btn--sm" onClick={() => setNotDone(true)}>No se realizó</button>)}
         </span>}
