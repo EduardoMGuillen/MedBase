@@ -149,6 +149,13 @@ consultorios. Antes de borrar o reemplazar algo, guardan una copia en la tabla `
 | 9 | `docs/ronda9/PEDIDO_RONDA9.md` | `PLAN_RONDA9.md` | `REPORTE_RONDA9.md` | — |
 | 10 | `docs/ronda10/PEDIDO_RONDA10.md` | `PLAN_RONDA10.md` | `REPORTE_RONDA10.md` | `docs/ronda10/REGISTRO_RONDA10.md` |
 | 11 | `docs/ronda11/PEDIDO_RONDA11.md` | `PLAN_RONDA11.md` | `REPORTE_RONDA11.md` | — |
+| 12 | `docs/ronda12/PEDIDO_RONDA12.md` | `PLAN_RONDA12.md` | `REPORTE_RONDA12.md` | — |
+| 13 | `docs/ronda13/PEDIDO_RONDA13.md` | `PLAN_RONDA13.md` | `REPORTE_RONDA13.md` | `docs/ronda13/despues/` |
+
+Ronda 13 (esquema 80 → 81): una sola plantilla de impresión para todos los documentos, en Carta (IM1), «Incluir
+diagnóstico» guardado con la receta (IM2), órdenes agrupadas como el catálogo (IM3), antecedentes sin «Transfusionales» (AP3,
+AP4), el expediente de la consulta que se contrae desde cualquier punto (CX5) y la nota debajo del contenido de cada pestaña
+(NE8). Detalle en `REPORTE_RONDA13.md`.
 
 Ronda 10 (esquema 69 → 73): catálogo de Imagen y gabinete completo (CA5), limpieza de umbrales archivados (UM3),
 vademécum con las 530 filas del listado nacional y su pantalla con páginas (ME6, ME7), buscador de medicamento que solo
