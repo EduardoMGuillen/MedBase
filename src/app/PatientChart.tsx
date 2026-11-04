@@ -311,11 +311,12 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
                   {c.prescriptionId && can('rx.view') && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${c.prescriptionId}`}><FileText size={15} />Receta</Link>}
                   {(() => { const b = (exams ?? []).find((e) => e.consultationId === c.id && !e.noteId && e.status !== 'cancelled')?.batchId
                     return b ? <Link className="btn btn--ghost btn--sm" to={`/app/examenes/orden/${b}`}><Printer size={15} />Exámenes</Link> : null })()}
-                  {can('consult.write') && <Link className="btn btn--ghost btn--sm" to={`/app/constancia/${c.id}`}><FileBadge size={15} />Generar constancia</Link>}
+                  {/* CX5 (ronda 13): dentro de la consulta el expediente es de solo lectura: sin «Generar constancia» ni «Agregar adenda» */}
+                  {can('consult.write') && !embedded && <Link className="btn btn--ghost btn--sm" to={`/app/constancia/${c.id}`}><FileBadge size={15} />Generar constancia</Link>}
                 </div>
               </div>
               <div className="panel__body"><ConsultationBody c={c} vitals={vs.find((v) => v.id === c.vitalsId)} exams={exams ? exams.filter((e) => e.consultationId === c.id) : undefined} />
-                <Addenda list={chart?.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={reload} /></div>
+                <Addenda list={chart?.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor' && !embedded} prescriptionId={c.prescriptionId} onAdded={reload} /></div>
             </article>
           )) : <section className="panel"><div className="empty">Este paciente aún no tiene consultas firmadas.</div></section>}
         </div>

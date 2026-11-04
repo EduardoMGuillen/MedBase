@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DictateField } from '../components/Dictate'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ChevronDown, ClipboardList, FlaskConical, FolderOpen, Pencil, Pill, Plus, Send, X } from 'lucide-react'
+import { Activity, ArrowDown, ArrowUp, BedDouble, CalendarClock, ChevronDown, ChevronUp, ClipboardList, FlaskConical, FolderOpen, Pencil, Pill, Plus, Send, X } from 'lucide-react'
 import { useStore, type FollowupInput } from '../lib/store'
 import { PatientHeader } from '../components/PatientHeader'
 import { date, dxCode, medicationLine, medicationOrder, missingDays, time } from '../lib/format'
@@ -28,6 +28,7 @@ import { RxValidityField } from '../components/RxValidity'
 import { isPrnFrequency } from '../lib/catalogs'
 import { useDraftSync } from '../lib/drafts'
 import { DraftBadge } from '../components/Addenda'
+import { GoToNote } from '../components/GoToNote'
 import { useRxValidity } from '../lib/hooks'
 import { hasBlank, medHasBlank, orderKey, rxToSetMed, setMedToRx } from '../lib/orderSets'
 
@@ -103,6 +104,25 @@ export default function Consultation() {
   const [signing, setSigning] = useState(false)
   // CE2 (ronda 12): el expediente completo (consultas anteriores, exámenes, recetas…) se abre aquí mismo, sin dejar la nota
   const [showChart, setShowChart] = useState(false)
+  // CX5 (ronda 13): el encabezado de la sección queda fijo debajo del encabezado del paciente; al contraer, la página se queda en él
+  const headRef = useRef<HTMLDivElement>(null)
+  const chartRef = useRef<HTMLElement>(null)
+  const [headH, setHeadH] = useState(0)
+  useEffect(() => {
+    const el = headRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setHeadH(el.getBoundingClientRect().height))
+    ro.observe(el)
+    return () => ro.disconnect()
+  })
+  const toggleChart = () => {
+    const closing = showChart
+    setShowChart(!showChart)
+    if (closing) requestAnimationFrame(() => {
+      const sec = chartRef.current
+      if (sec && sec.getBoundingClientRect().top < headH) sec.scrollIntoView({ block: 'start' })
+    })
+  }
   const [validity, setValidity] = useRxValidity()
   const orderInput = useRef<HTMLInputElement>(null)
   const mine = !!appt && appt.doctorId === user?.id
@@ -212,19 +232,25 @@ export default function Consultation() {
 
   return (
     <div className="page page--consult">
-      <div className="sticky-top">
+      <div className="sticky-top" ref={headRef}>
         <PatientHeader p={p} clinical link>
           <DraftBadge savedAt={draft.savedAt} restored={draft.restored || Object.keys(saved).length > 0} offline={draft.offline} />
         </PatientHeader>
       </div>
 
-      <section className={`panel chart-in-consult${showChart ? ' is-open' : ''}`}>
-        <button type="button" className="chart-in-consult__toggle" aria-expanded={showChart} onClick={() => setShowChart(!showChart)}>
+      {/* CX5 (ronda 13): toda la barra contrae o despliega; abierta queda fija debajo del encabezado del paciente y la sección
+          crece en la página (sin barra de desplazamiento propia). «Contraer expediente» también al final. */}
+      <section ref={chartRef} className={`panel chart-in-consult${showChart ? ' is-open' : ''}`} style={{ ['--consult-head' as string]: `${headH}px` }}>
+        <div className="chart-in-consult__toggle" onClick={toggleChart}>
           <FolderOpen size={17} /><span><b>Expediente completo de {p.firstName}</b>
             <small>{chart ? `${chart.consultations.length} consulta${chart.consultations.length === 1 ? '' : 's'} anterior${chart.consultations.length === 1 ? '' : 'es'}${chart.hospitalizations.length ? `, ${chart.hospitalizations.length} hospitalización${chart.hospitalizations.length === 1 ? '' : 'es'}` : ''} · exámenes, recetas, signos y archivos. La nota sigue aquí abajo.` : 'Consultas anteriores, exámenes, recetas, signos y archivos.'}</small></span>
-          <ChevronDown size={18} className="chart-in-consult__chev" /></button>
-        {showChart && <div className="chart-in-consult__body"><PatientChart patientId={p.id} embedded /></div>}
+          <button type="button" className="btn btn--soft btn--sm chart-in-consult__btn" aria-expanded={showChart}>
+            {showChart ? <><ChevronUp size={16} />Contraer expediente</> : <><ChevronDown size={16} />Ver expediente</>}</button>
+        </div>
+        {showChart && <div className="chart-in-consult__body"><PatientChart patientId={p.id} embedded />
+          <button type="button" className="btn btn--soft chart-in-consult__end" onClick={toggleChart}><ChevronUp size={16} />Contraer expediente</button></div>}
       </section>
+      <GoToNote target=".consult2" />
 
       <div className="consult2">
         <div className="consult2__left">
