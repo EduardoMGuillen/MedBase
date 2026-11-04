@@ -396,3 +396,16 @@ export const NOT_DONE_REASONS = ['No hay reactivo', 'El paciente no llegó', 'El
  * resultado de creatinina del paciente.
  */
 export const RENAL_FUNCTION_ANALYTES = ['Creatinina']
+
+/**
+ * IM1 (ronda 13). VALIDAR: Emil. Hoja de todos los documentos impresos (recetas, órdenes, resultados, constancias, referencias,
+ * epicrisis, autorizaciones, nota de consulta y recibo): Carta, 8.5 × 11 pulgadas, con márgenes de 2 cm. La vista previa en
+ * pantalla tiene la misma proporción.
+ */
+export const PRINT_PAGE = { widthIn: 8.5, heightIn: 11, marginCm: 2 } as const
+/** IM1 (ronda 13). VALIDAR: Emil. Alto del espacio en blanco para firmar y sellar en papel (sin raya, sin texto: cabe un sello). */
+export const SIGN_SPACE_CM = 3.5
+/** IM1 (ronda 13). VALIDAR: Emil. Alto del espacio para las firmas de paciente, representante o testigo en las autorizaciones. */
+export const OTHER_SIGN_SPACE_CM = 1.6
+/** IM1 (ronda 13). VALIDAR: Emil. Leyenda fija al pie de todos los documentos. */
+export const DOC_BRAND_LEGEND = 'Emitida con Clinara'

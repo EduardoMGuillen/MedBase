@@ -5,10 +5,9 @@ import { ChevronLeft, Download, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Loading } from '../components/ui'
-import { DocHeader } from '../components/DocHeader'
-import { MarkImage } from '../components/MarkImage'
-import { age, dmyTime, fullName, identityLine, recordNumber } from '../lib/format'
-import { medLabel, yearsOld } from '../lib/inpatient'
+import { ClinicalDoc, guardianRow, patientOf, placeOf } from '../components/ClinicalDoc'
+import { dmyTime } from '../lib/format'
+import { medLabel } from '../lib/inpatient'
 import { SIGN_AND_STAMP_LEGEND } from '../lib/clinicalConfig'
 import { ExamOrderSheet } from './ExamOrder'
 import type { ExamGroup, ExamOrder, InpatientMed, Patient } from '../lib/types'
@@ -19,6 +18,9 @@ interface Job {
   exams: ExamOrder[]; meds: InpatientMed[]; doctors: { doctor: Doctor; items: string[] }[]; printed: { how: string; by: string; at: string }[]
   /** ME12 (ronda 11): días y cantidad a comprar de cada medicamento, solo para esta receta. */
   extras?: Record<string, { days?: number; quantity?: string }>
+  /** IM2 (ronda 13): receta: «Incluir diagnóstico» y los diagnósticos de la estancia cuando se generó. */
+  includeDx?: boolean
+  diagnoses?: string[]
 }
 
 /**
@@ -29,9 +31,10 @@ interface Job {
 export default function PrintJobPage() {
   const { id } = useParams()
   const [params, setParams] = useSearchParams()
-  const { patient, staffById, notify } = useStore()
+  const { patient, staffById, notify, can } = useStore()
   const nav = useNavigate()
   const [job, setJob] = useState<Job | null>(null)
+  const [savingDx, setSavingDx] = useState(false)
   const [how, setHow] = useState<'print' | 'pdf' | null>(null)
   useEffect(() => { if (id) api<Job>(`/print-jobs/${id}`).then(setJob).catch((e: Error) => notify(e.message, 'error')) }, [id, notify])
   useEffect(() => {
@@ -79,6 +82,15 @@ export default function PrintJobPage() {
         </div>
         {job.printed.filter((x) => x.how !== 'view').length > 0 && <small className="muted">{job.printed.filter((x) => x.how !== 'view').map((x) => `${x.how === 'pdf' ? 'Descargado' : 'Impreso'} por ${staffById(x.by)?.name ?? '—'}, ${dmyTime(x.at)}`).join(' · ')}</small>}
         <small className="muted">{job.kind === 'results' ? 'Sin la firma y el sello de los responsables en papel no vale.' : 'Sin la firma y el sello del médico en papel no vale.'}</small>
+        {/* IM2 (ronda 13): solo el médico decide si la receta lleva el diagnóstico; enfermería la imprime como él la dejó */}
+        {job.kind === 'rx' && can('inpatient.orders') && !!job.diagnoses?.length && <label className="check-line" style={{ margin: 0 }}>
+          <input type="checkbox" checked={!!job.includeDx} disabled={savingDx} onChange={async (e) => {
+            const v = e.target.checked
+            setSavingDx(true)
+            try { await api(`/print-jobs/${job.id}/include-dx`, { body: { includeDx: v } }); setJob({ ...job, includeDx: v }) } catch (err) { notify((err as Error).message, 'error') }
+            setSavingDx(false)
+          }} />
+          <span><b>Incluir diagnóstico</b><small>Por privacidad la receta sale sin diagnóstico, salvo que lo decidas. Se guarda con la receta.</small></span></label>}
       </div>
       {job.kind === 'results' ? <ResultSheet exams={job.exams} patient={p} number={number} at={job.printed.filter((x) => x.how !== 'view').at(-1)?.at ?? new Date().toISOString()} />
         : job.kind === 'exams'
@@ -86,34 +98,26 @@ export default function PrintJobPage() {
           const list = job.exams.filter((e) => d.items.includes(e.id))
           return <ExamOrderSheet key={d.doctor.id} group={list[0].group as ExamGroup} exams={list} doctor={d.doctor} number={`${number}${docs > 1 ? `-${job.doctors.indexOf(d) + 1}` : ''}`} patient={p} at={job.createdAt} />
         })
-        : job.doctors.map((d) => <HospRxSheet key={d.doctor.id} meds={job.meds.filter((m) => d.items.includes(m.id))} extras={job.extras ?? {}} doctor={d.doctor} number={`${number}${docs > 1 ? `-${job.doctors.indexOf(d) + 1}` : ''}`} patient={p} at={job.createdAt} />)}
+        : job.doctors.map((d) => <HospRxSheet key={d.doctor.id} meds={job.meds.filter((m) => d.items.includes(m.id))} extras={job.extras ?? {}} doctor={d.doctor} number={`${number}${docs > 1 ? `-${job.doctors.indexOf(d) + 1}` : ''}`} patient={p} at={job.createdAt} diagnoses={job.includeDx ? job.diagnoses : undefined} />)}
     </div>
   )
 }
 
 /**
- * ME10 (ronda 10): receta de lo que la clínica no tiene, con la plantilla de la receta de consulta externa: membrete, paciente,
- * fecha y hora, número, cada medicamento con presentación, dosis, vía, frecuencia, duración y «Cantidad a comprar», el
- * médico que lo indicó con especialidad y colegiado, firma y sello y la leyenda. Sin diagnósticos (privacidad).
+ * ME10 (ronda 10): receta de lo que la clínica no tiene y ME12 (ronda 11): «Generar receta». Cada medicamento con
+ * presentación, dosis, vía, frecuencia, duración y «Cantidad a comprar», el médico que lo indicó, firma y sello y la leyenda.
+ * IM1 (ronda 13): con la plantilla única. IM2 (ronda 13): el diagnóstico solo si el médico marcó «Incluir diagnóstico».
  */
-function HospRxSheet({ meds, extras = {}, doctor, number, patient: p, at }: { meds: InpatientMed[]; extras?: Job['extras'] & object; doctor: Doctor; number: string; patient: Patient; at: string }) {
+function HospRxSheet({ meds, extras = {}, doctor, number, patient: p, at, diagnoses }: { meds: InpatientMed[]; extras?: Job['extras'] & object; doctor: Doctor; number: string; patient: Patient; at: string; diagnoses?: string[] }) {
   const { settings } = useStore()
-  const minor = p.birthDate ? yearsOld(p.birthDate) < 18 : false
   return (
-    <article className="rx-sheet rx-sheet--half hosp-rx" style={{ position: 'relative' }}>
-      <header className="rx-sheet__head">
-        <DocHeader clinic={{ ...settings, office: settings.kind === 'office' }} doctor={{ name: doctor.name, specialty: doctor.specialty, license: doctor.license }} />
-        <div className="rx-sheet__folio">Receta<b>{number}</b>{dmyTime(at)}<br />Medicamentos para comprar</div>
-      </header>
-      <div className="rx-sheet__pt">
-        <div style={{ gridColumn: '1 / -1' }}><span>Nombre completo</span>{fullName(p)}</div>
-        <div><span>Identidad</span>{identityLine(p, minor)}</div>
-        <div><span>Edad</span>{age(p.birthDate)}</div>
-        <div><span>Expediente</span>{recordNumber(p, settings)}</div>
-        {p.allergies.length > 0 && <div><span>Alergias</span>{p.allergies.join(', ')}</div>}
-      </div>
+    <ClinicalDoc kind="Receta" folio={number} at={at} folioNote="Medicamentos para comprar" place={placeOf(settings)} patient={patientOf(p, settings)} className="hosp-rx"
+      rows={[{ label: 'Alergias', value: p.allergies.length ? p.allergies.join(', ') : 'Ninguna conocida' },
+        !!diagnoses?.length && { label: 'Diagnóstico', value: diagnoses.join('; ') }, guardianRow(p)]}
+      signers={[{ name: doctor.name, title: doctor.specialty, license: doctor.license, signatureId: doctor.signatureId, stampId: doctor.stampId }]}
+      legends={[SIGN_AND_STAMP_LEGEND, `Receta ${number}: medicamentos indicados en la estancia.`]}>
       <div className="rx-sheet__rx" aria-hidden="true">Rx</div>
-      <ol>
+      <ol className="rx-items">
         {meds.map((m) => { const x = extras[m.id] ?? {}; const qty = x.quantity || m.buyQuantity; return (
           <li key={m.id}>
             <strong>{m.nebulization || m.loadingDose || m.infusionRate ? medLabel(m) : m.drug}</strong> {!m.nebulization && <span style={{ color: 'var(--muted)' }}>{m.presentation}</span>}
@@ -124,13 +128,6 @@ function HospRxSheet({ meds, extras = {}, doctor, number, patient: p, at }: { me
           </li>
         ) })}
       </ol>
-      <div className="rx-sheet__sign">
-        {doctor.stampId ? <MarkImage id={doctor.stampId} alt="Sello del médico" className="doc-stamp" /> : <div className="exam-sign-box">Sello</div>}
-        <div>{doctor.signatureId ? <MarkImage id={doctor.signatureId} alt={`Firma de ${doctor.name}`} className="doc-signature" /> : <em>&nbsp;</em>}{doctor.name}<br />
-          <span style={{ color: 'var(--muted)' }}>{[doctor.specialty, doctor.license && `Colegiación ${doctor.license}`].filter(Boolean).join(' · ')}</span><br /><span style={{ color: 'var(--muted)' }}>Firma y sello</span></div>
-      </div>
-      <p className="sign-legend">{SIGN_AND_STAMP_LEGEND}</p>
-      <footer className="rx-sheet__foot"><span>Receta {number}: medicamentos indicados en la estancia.</span><span>Emitida con Clinara</span></footer>
-    </article>
+    </ClinicalDoc>
   )
 }

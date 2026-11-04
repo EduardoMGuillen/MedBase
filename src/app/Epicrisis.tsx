@@ -8,7 +8,7 @@ import { date, dxCode, time, whatsappUrl } from '../lib/format'
 import { shortDate } from '../lib/consent'
 import { currentEpicrisis } from '../lib/inpatient'
 import type { Epicrisis, EpicrisisData, Hospitalization, InpatientFile } from '../lib/types'
-import { ClinicLogo } from './Prescriptions'
+import { ClinicalDoc } from '../components/ClinicalDoc'
 
 const STATUS: Record<Epicrisis['status'], { label: string; tone: string }> = {
   draft: { label: 'Borrador sin emitir', tone: 'amber' }, issued: { label: 'Emitida', tone: 'mint' }, voided: { label: 'Anulada', tone: 'red' },
@@ -187,23 +187,16 @@ export function EpicrisisSheet({ e }: { e: Pick<Epicrisis, 'status' | 'version' 
   const dx = (list: EpicrisisData['admissionDx']) => <ol className="note__list">{list.map((x) => <li key={x.code + x.label}>{x.label} <span className="muted">({dxCode(x)})</span></li>)}</ol>
   const blank = (v: string) => (v.trim() ? <p className="epi-text">{v}</p> : <p className="epi-missing">Falta escribirlo.</p>)
   return (
-    <article className={`rx-sheet epi ${e.status !== 'issued' ? 'epi--draft' : ''}`}>
-      {e.status !== 'issued' && <div className="epi__stamp">{e.status === 'voided' ? 'Anulada' : 'Borrador sin emitir'}</div>}
-      <header className="rx-sheet__head">
-        <div className="rx-sheet__doc">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}><ClinicLogo settings={{ ...d.clinic, email: '', currency: 'L', rxValidityDays: 30, reminderTemplate: '', recordUsesDni: false }} /><b>{d.clinic.name}</b></div>
-          <p>{d.clinic.address}{d.clinic.phone ? `, tel. ${d.clinic.phone}` : ''}</p>
-        </div>
-        <div className="rx-sheet__folio">Epicrisis{e.version > 1 ? ` v${e.version}` : ''}<b>{e.issuedAt ? shortDate(e.issuedAt) : 'Sin emitir'}</b>{e.issuedAt ? time(e.issuedAt) : ''}</div>
-      </header>
-      <h1 className="cert__title">Epicrisis</h1>
+    // IM1 (ronda 13): la plantilla única; la epicrisis no tiene folio: a la derecha va la versión y la fecha de emisión
+    <ClinicalDoc kind={`Epicrisis${e.version > 1 ? ` v${e.version}` : ''}`} at={e.issuedAt} folioNote={e.issuedAt ? undefined : 'Sin emitir'} place={d.clinic}
+      patient={{ name: d.patient.name, record: d.patient.record, dni: d.patient.dni, age: d.patient.age, sex: d.patient.sex }}
+      className={`epi ${e.status !== 'issued' ? 'epi--draft' : ''}`} stamp={e.status !== 'issued' ? (e.status === 'voided' ? 'Anulada' : 'Borrador sin emitir') : undefined}
+      heading="Epicrisis" brand="Emitido con Clinara"
+      signers={[d.doctor ? { name: d.doctor.name, license: d.doctor.license ?? 'Colegiación ______', signatureSrc: d.doctor.signature, stampSrc: d.doctor.stamp }
+        : { name: 'Firma y sello del médico', title: 'Se completa al emitir' }]}
+      legends={[`Epicrisis ${e.issuedAt ? `emitida el ${date(e.issuedAt, { day: '2-digit', month: '2-digit', year: 'numeric' })}` : 'sin emitir'}.`]}>
       <section className="epi__sec">
         <dl className="epi__facts">
-          <div><dt>Paciente</dt><dd>{d.patient.name}</dd></div>
-          <div><dt>Identidad</dt><dd>{d.patient.dni ?? 'Sin dato'}</dd></div>
-          <div><dt>Edad</dt><dd>{d.patient.age}</dd></div>
-          <div><dt>Sexo</dt><dd>{d.patient.sex === 'F' ? 'Femenino' : d.patient.sex === 'M' ? 'Masculino' : 'Sin dato'}</dd></div>
-          <div><dt>Expediente</dt><dd>{d.patient.record}</dd></div>
           <div><dt>Ingreso</dt><dd>{dm(d.admittedAt)}</dd></div>
           <div><dt>Egreso</dt><dd>{dm(d.dischargedAt)}</dd></div>
           <div><dt>Días de estancia</dt><dd>{d.stayDays}</dd></div>
@@ -232,16 +225,7 @@ export function EpicrisisSheet({ e }: { e: Pick<Epicrisis, 'status' | 'version' 
       </section>
       {d.dischargeAddenda && d.dischargeAddenda.length > 0 && <section className="epi__sec"><h3>Adendas de la nota de egreso</h3>
         {d.dischargeAddenda.map((a, i) => <p key={i} className="epi-text"><b>Adenda {i + 1} ({a.kind === 'correction' ? 'corrección' : a.kind === 'info' ? 'información adicional' : 'resultado posterior'}, {a.author}, {date(a.at)}):</b>{a.corrects ? ` Se corrige: ${a.corrects}.` : ''} {a.text}</p>)}</section>}
-      <div className="epi__sign">
-        {d.doctor?.stamp && <img src={d.doctor.stamp} alt="Sello del médico" className="doc-stamp epi__stamp" />}
-        {d.doctor?.signature && <img src={d.doctor.signature} alt="" />}
-        <span className="consent__line" />
-        <b>{d.doctor?.name ?? 'Firma y sello del médico'}</b>
-        <small>{d.doctor ? (d.doctor.license ? `Colegiación ${d.doctor.license}` : 'Colegiación ______') : 'Se completa al emitir'}</small>
-        <small>Firma y sello</small>
-      </div>
-      <footer className="rx-sheet__foot"><span>Epicrisis {e.issuedAt ? `emitida el ${date(e.issuedAt, { day: '2-digit', month: '2-digit', year: 'numeric' })}` : 'sin emitir'}.</span><span>Emitido con Clinara</span></footer>
-    </article>
+    </ClinicalDoc>
   )
 }
 

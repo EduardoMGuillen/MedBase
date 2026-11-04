@@ -7,7 +7,7 @@ import { api } from '../lib/api'
 import { Loading, Modal, PageHead } from '../components/ui'
 import { Pagination, usePage } from '../components/Pagination'
 import { PAGE_SIZE } from '../lib/clinicalConfig'
-import { age, date, formatPhone, fullName, identityLine, localISODate, medicationLine, frequencyText, recordNumber, time, whatsappUrl } from '../lib/format'
+import { age, date, formatPhone, fullName, localISODate, medicationLine, frequencyText, time, whatsappUrl } from '../lib/format'
 import { stayPath, yearsOld } from '../lib/inpatient'
 import { useNow } from '../lib/hooks'
 import { features } from '../lib/permissions'
@@ -18,10 +18,10 @@ import { LogoMark } from '../components/Logo'
 import type { ClinicSettings, ExamGroup, GuestPatient, Patient, Prescription, PrescriptionItem } from '../lib/types'
 import { ExamBatchSheets, markBatchPrinted } from './ExamOrder'
 import { DniInput } from '../components/DniInput'
-import { DocHeader } from '../components/DocHeader'
+import { ClinicalDoc, guardianRow, patientOf, placeOf, signerOfStaff, type DocPatient } from '../components/ClinicalDoc'
+import { doseText } from '../lib/doseText'
 import { SimilarPatients } from './NewPatient'
 import { RxValidityField } from '../components/RxValidity'
-import { MarkImage } from '../components/MarkImage'
 import { useRxValidity } from '../lib/hooks'
 import { IdentificationForm, IdentityPrompt } from './PatientForms'
 
@@ -218,7 +218,7 @@ function NewPrescription({ initial, onClose }: { initial: Omit<Draft, 'key'>; on
 
 export function PrescriptionSheet() {
   const { id } = useParams()
-  const { staffById, fetchPrescription, settings, can } = useStore()
+  const { staffById, fetchPrescription, settings, can, notify } = useStore()
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchPrescription>> | null>(null)
   const [missing, setMissing] = useState(false)
   const [voiding, setVoiding] = useState(false)
@@ -226,6 +226,7 @@ export function PrescriptionSheet() {
   // CE1 (ronda 12): las órdenes de exámenes de la misma consulta salen debajo de la receta y se imprimen juntas
   const [examGroups, setExamGroups] = useState<ExamGroup[]>([])
   const [rxOnly, setRxOnly] = useState(false)
+  const [savingDx, setSavingDx] = useState(false)
   const load = useCallback(() => {
     if (id) fetchPrescription(id).then(setData).catch(() => setMissing(true))
   }, [id, fetchPrescription])
@@ -240,8 +241,17 @@ export function PrescriptionSheet() {
     firstName: g?.name ?? '', lastName: '', phone: g?.phone ?? '', dni: g?.dni, birthDate: g?.birthDate ?? '', allergies: [], record: 'Paciente no registrado',
   }
   const name = `${p.firstName}${p.lastName ? ` ${p.lastName}` : ''}`
-  const ageText = g && !patient ? (g.birthDate ? age(g.birthDate) : g.age ?? 'Sin dato') : age(p.birthDate)
+  // IM1 (ronda 13): la cuadrícula fija del paciente; la persona no registrada, con lo que se escribió
+  const grid: DocPatient = patient ? patientOf(patient, settings)
+    : { name, record: 'Paciente no registrado', dni: g?.dni, age: g?.birthDate ? age(g.birthDate) : g?.age || 'Sin dato', sex: g?.sex }
   const dx = c?.diagnoses ?? []
+  // IM2 (ronda 13): el diagnóstico solo si el médico lo marcó (apagado por defecto); las recetas de antes lo traían y lo conservan
+  const withDx = rx.includeDx ?? true
+  const setIncludeDx = async (v: boolean) => {
+    setSavingDx(true)
+    try { const r = await api<Prescription>(`/prescriptions/${rx.id}/include-dx`, { body: { includeDx: v } }); setData({ ...data, prescription: { ...rx, includeDx: r.includeDx } }) } catch (e) { notify((e as Error).message, 'error') }
+    setSavingDx(false)
+  }
   // Indicaciones: las de la receta sin consulta, las que el médico escribió aparte o, en consultas anteriores, las órdenes que no son medicamentos
   const notes = rx.indications ?? c?.indications ?? (c?.orders.length ? c.orders.filter((o) => !rx.items.some((it) => o.startsWith(it.drug))) : c?.plan ? [c.plan] : [])
   // WhatsApp no permite adjuntar el PDF desde un enlace: se envía el texto de la receta
@@ -268,30 +278,28 @@ export function PrescriptionSheet() {
             api(`/prescriptions/${rx.id}/printed`, { body: { how: 'print' } }).catch(() => null)
             if (examBatch && examGroups.length) void markBatchPrinted(examBatch, examGroups)
             window.print()
-          }}><Printer size={16} />{examBatch && examGroups.length ? `Imprimir receta y ${examGroups.length > 1 ? 'órdenes' : 'orden'} de exámenes` : 'Imprimir o guardar PDF (media carta)'}</button>
+          }}><Printer size={16} />{examBatch && examGroups.length ? `Imprimir receta y ${examGroups.length > 1 ? 'órdenes' : 'orden'} de exámenes` : 'Imprimir o guardar PDF'}</button>
         </div>
       </div>
       {examBatch && examGroups.length > 0 && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap' }}>También se ordenaron exámenes: sus órdenes van debajo de la receta, cada una en su hoja, y se imprimen con el mismo botón.
         <Link className="btn btn--ghost btn--sm" to={`/app/examenes/orden/${examBatch}`}>Abrir solo las órdenes</Link></div>}
       {rx.voidedAt && <div className="alert-strip no-print">Receta anulada el {date(rx.voidedAt)}, {time(rx.voidedAt)}{rx.voidedBy ? ` por ${staffById(rx.voidedBy)?.name ?? '—'}` : ''}. Motivo: {rx.voidReason}</div>}
       {voiding && <VoidRx id={rx.id} folio={rx.folio} onClose={() => setVoiding(false)} onDone={() => { setVoiding(false); load() }} />}
-      <article className="rx-sheet rx-sheet--half" style={{ position: 'relative' }}>
-        {rx.voidedAt && <div className="void-stamp">ANULADA</div>}
-        <header className="rx-sheet__head">
-          <DocHeader clinic={{ ...settings, office: settings.kind === 'office' }}
-            doctor={{ name: doc.name, specialty: doc.specialty ?? settings.specialty, license: doc.license ?? settings.license }} />
-          <div className="rx-sheet__folio">Folio<b>{rx.folio}</b>{date(rx.issuedAt)}, {time(rx.issuedAt)}{h && <><br />Receta de egreso</>}{rx.standalone && <><br />Receta sin consulta</>}</div>
-        </header>
-        <div className="rx-sheet__pt">
-          <div style={{ gridColumn: '1 / -1' }}><span>Nombre completo</span>{name}</div>
-          <div style={!p.dni && p.guardianName ? { gridColumn: '1 / -1' } : undefined}><span>Identidad</span>{patient ? identityLine(patient, yearsOld(patient.birthDate) < 18) : p.dni || 'Sin registrar'}</div>
-          <div><span>Edad</span>{ageText}</div>
-          <div><span>Expediente</span>{patient ? recordNumber(patient, settings) : 'Paciente no registrado'}</div>
-          {p.allergies.length > 0 && <div><span>Alergias</span>{p.allergies.join(', ')}</div>}
-          {dx.length > 0 && <div style={{ gridColumn: '1 / -1' }}><span>Diagnóstico</span>{dx.map((d) => d.label).join('; ')}</div>}
-        </div>
+      {/* IM2 (ronda 13): solo el médico ve la casilla; enfermería reimprime la receta como la dejó el médico */}
+      {can('rx.write') && dx.length > 0 && !rx.voidedAt && <label className="check-line no-print rx-dx-toggle">
+        <input type="checkbox" checked={withDx} disabled={savingDx} onChange={(e) => void setIncludeDx(e.target.checked)} />
+        <span><b>Incluir diagnóstico</b><small>Por privacidad la receta sale sin diagnóstico, salvo que lo decidas. Se guarda con la receta: al reimprimirla sale igual.</small></span></label>}
+      <ClinicalDoc kind="Receta" folio={rx.folio} at={rx.issuedAt} folioNote={h ? 'Receta de egreso' : rx.standalone ? 'Receta sin consulta' : undefined}
+        place={placeOf(settings)} patient={grid} stamp={rx.voidedAt ? 'ANULADA' : undefined}
+        rows={[
+          { label: 'Alergias', value: patient ? (p.allergies.length ? p.allergies.join(', ') : 'Ninguna conocida') : 'Sin dato' },
+          withDx && dx.length > 0 && { label: 'Diagnóstico', value: dx.map((d) => d.label).join('; ') },
+          patient && guardianRow(patient),
+        ]}
+        signers={[signerOfStaff(doc, { title: doc.specialty ?? settings.specialty, license: doc.license ?? settings.license, signatureId: rx.signatureId, stampId: rx.stampId })]}
+        legends={[`Receta válida por ${rx.validityDays ?? settings.rxValidityDays} días a partir de su emisión.`]}>
         <div className="rx-sheet__rx" aria-hidden="true">Rx</div>
-        <ol>
+        <ol className="rx-items">
           {rx.items.map((it, i) => (
             <li key={i}>
               {/* ME3 y ME4 (ronda 9): una sola línea con el mismo texto de la nota */}
@@ -300,21 +308,16 @@ export function PrescriptionSheet() {
                 <p>{it.instructions ? `${it.instructions}.` : ''}{it.quantity ? ` Cantidad: ${it.quantity}.` : ''}</p>
               </> : <>
               <strong>{it.drug}</strong> <span style={{ color: 'var(--muted)' }}>{it.presentation}</span>
-              <p>{it.dose}{it.route ? ` vía ${it.route.toLowerCase()}` : ''}, {it.prnCondition ? frequencyText(it) : it.frequency.toLowerCase()}{it.duration ? `, durante ${it.duration}` : ''}.{it.instructions ? ` ${it.instructions}` : ''}{it.quantity ? ` Cantidad: ${it.quantity}.` : ''}</p>
+              <p>{doseText(it.dose)}{it.route ? ` vía ${it.route.toLowerCase()}` : ''}, {it.prnCondition ? frequencyText(it) : it.frequency.toLowerCase()}{it.duration ? `, durante ${it.duration}` : ''}.{it.instructions ? ` ${it.instructions}` : ''}{it.quantity ? ` Cantidad: ${it.quantity}.` : ''}</p>
               </>}
             </li>
           ))}
         </ol>
         {notes.length > 0 && (
-          <div style={{ marginTop: 24, fontSize: 14 }}><b>Indicaciones generales</b>
-            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{notes.map((n, i) => <li key={i}>{n}</li>)}</ul></div>
+          <div className="cdoc__sub"><b>Indicaciones generales</b>
+            <ul>{notes.map((n, i) => <li key={i}>{n}</li>)}</ul></div>
         )}
-        <div className="rx-sheet__sign">
-          {rx.stampId && <MarkImage id={rx.stampId} alt="Sello del médico" className="doc-stamp" />}
-          <div>{rx.signatureId ? <MarkImage id={rx.signatureId} alt={`Firma de ${doc.name}`} className="doc-signature" /> : <em>{doc.name.replace(/^Dra?\.\s*/, '')}</em>}{doc.docName ?? doc.name}<br /><span style={{ color: 'var(--muted)' }}>{doc.license}</span></div>
-        </div>
-        <footer className="rx-sheet__foot"><span>Receta válida por {rx.validityDays ?? settings.rxValidityDays} días a partir de su emisión.</span><span>Emitida con Clinara</span></footer>
-      </article>
+      </ClinicalDoc>
       {examBatch && <div className={rxOnly ? 'print-hide' : undefined}><ExamBatchSheets batch={examBatch} onGroups={setExamGroups} /></div>}
     </div>
   )

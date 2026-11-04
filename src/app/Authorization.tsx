@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Camera, ChevronLeft, FileSignature, FileText, PenLine, Printer, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
-import { date, dateTime, formatPhone, shortStaff, time } from '../lib/format'
+import { dateTime, dmyTime, formatPhone, shortStaff } from '../lib/format'
 import { currentDiagnoses, yearsOld } from '../lib/inpatient'
 import { authStatus, authTitle, consentStatements, FREQUENT_SURGERIES, HOSPITAL_CONSENT, HOSPITAL_DECLARATION, SURGICAL_GENERIC } from '../lib/consent'
 import type { Authorization, AuthorizationData, InpatientFile, Patient } from '../lib/types'
@@ -12,7 +12,7 @@ import { ConsentSigning } from './ConsentSigning'
 import { ScanUpload } from './ScanUpload'
 import { PdfPages } from '../components/PdfPages'
 import { DniInput } from '../components/DniInput'
-import { ClinicLogo } from './Prescriptions'
+import { ClinicalDoc, SignSpace, type DocRow } from '../components/ClinicalDoc'
 
 /**
  * Nueva autorización, sin pestañas: cada botón abre la suya.
@@ -191,31 +191,29 @@ export function AuthorizationEntry({ a, file, p, reload }: { a: Authorization; f
   )
 }
 
-/** Encabezado común de las hojas: clínica, dirección y fecha de la hoja. */
-function SheetHead({ a }: { a: Authorization }) {
+const LINE = '______________________'
+
+/**
+ * IM1 (ronda 13): las autorizaciones con la plantilla única: encabezado de la clínica, cuadrícula del paciente y debajo los
+ * datos propios de la hoja (médico, ingreso, acompañante). Las firmas a mano (paciente, testigo, médico) sin raya.
+ */
+function AuthDoc({ a, title, rows, children }: { a: Authorization; title: string; rows?: (DocRow | false | null | undefined)[]; children: ReactNode }) {
   const d = a.data
   return (
-    <header className="rx-sheet__head">
-      <div className="rx-sheet__doc">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}><ClinicLogo settings={{ ...d.clinic, email: '', currency: 'L', rxValidityDays: 30, reminderTemplate: '', recordUsesDni: false }} /><b>{d.clinic.name}</b></div>
-        <p>{d.clinic.address}{d.clinic.phone ? `, tel. ${d.clinic.phone}` : ''}</p>
-      </div>
-      <div className="rx-sheet__folio">Fecha<b>{date(a.createdAt)}</b>{time(a.createdAt)}</div>
-    </header>
+    <ClinicalDoc kind="Autorización" at={a.createdAt} place={d.clinic} className={`consent${a.template !== 'hospital' && !d.generic ? '' : ' consent--short'}`}
+      patient={{ name: d.patient.name, record: d.patient.record, dni: d.patient.dni, age: d.patient.age, sex: d.patient.sex }}
+      rows={[d.patient.minor && !d.patient.dni && { label: 'Identidad', value: 'Menor de edad' }, ...(rows ?? [])]} heading={title} brand="Emitido con Clinara"
+      legends={[a.data.generic ? 'Texto genérico a validar por la clínica y su asesor legal (Código de Ética del Colegio Médico de Honduras, cap. VIII).' : 'Texto a validar por la clínica y su asesor legal (Código de Ética del Colegio Médico de Honduras, cap. VIII).']}>
+      {children}
+    </ClinicalDoc>
   )
 }
 
-const LINE = '______________________'
+const doctorRow = (d: AuthorizationData): DocRow => ({ label: 'Médico', value: `${d.doctor.name}${d.doctor.license ? `, colegiación ${d.doctor.license}` : ''}` })
 
-/** Datos generales del paciente, como en las dos hojas. */
-function PatientBlock({ d, extra }: { d: AuthorizationData; extra?: ReactNode }) {
-  return (
-    <div className="consent__pt">
-      <span>Paciente: <b>{d.patient.name}</b></span><span>Identidad: <b>{d.patient.dni ?? (d.patient.minor ? 'Menor de edad' : LINE)}</b></span>
-      <span>Edad: <b>{d.patient.age}</b></span><span>Sexo: <b>{d.patient.sex === 'F' ? 'Femenino' : 'Masculino'}</b></span><span>Expediente: <b>{d.patient.record}</b></span>
-      {extra}
-    </div>
-  )
+/** Firma del médico en las autorizaciones: el espacio para firma y sello, nombre y colegiación. */
+function DoctorSign({ d, label = 'Firma y sello del médico' }: { d: AuthorizationData; label?: string }) {
+  return <div><small>{label}</small><SignSpace doctor /><b>{d.doctor.name}</b><br /><small>{d.doctor.license ?? 'Colegiación ______'}</small></div>
 }
 
 /**
@@ -233,10 +231,7 @@ export function AuthorizationSheet({ a }: { a: Authorization }) {
   ]
   const signer = d.representative ? `${d.representative.name}${d.representative.relation ? `, ${d.representative.relation.toLowerCase()}` : ''}` : d.patient.name
   return (
-    <article className="rx-sheet consent">
-      <SheetHead a={a} />
-      <h1 className="cert__title">{general ? 'Autorización general de ingreso y atención' : 'Autorización quirúrgica (consentimiento informado)'}</h1>
-      <PatientBlock d={d} extra={<span>Médico: <b>{d.doctor.name}</b>{d.doctor.license ? `, colegiación ${d.doctor.license}` : ''}</span>} />
+    <AuthDoc a={a} title={general ? 'Autorización general de ingreso y atención' : 'Autorización quirúrgica (consentimiento informado)'} rows={[doctorRow(d)]}>
       {/* Lo que no se escribió al generarla lleva líneas para completarlo a mano con el paciente */}
       <dl className="consent__info">{rows.filter(([, v]) => v || !general).map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v || <span className="consent__blank" />}</dd></div>)}</dl>
       {d.representative && <p className="consent__intro">Representante legal: <b>{d.representative.name}</b>{d.representative.dni ? `, identidad ${d.representative.dni}` : ''}{d.representative.relation ? `, ${d.representative.relation.toLowerCase()}` : ''}.</p>}
@@ -245,15 +240,14 @@ export function AuthorizationSheet({ a }: { a: Authorization }) {
       <ol className="consent__list">{consentStatements(general ? 'general' : 'surgical').map((x) => <li key={x}>{x}</li>)}</ol>
       {d.patient.minor && <p className="consent__intro">Asentimiento del menor (si tiene edad para entender): me explicaron y estoy de acuerdo. Firma: {LINE}</p>}
       <div className="consent__signs">
-        <div><span className="consent__line" />Firma del {d.representative ? 'representante' : 'paciente'}<br /><small>{signer}{d.representative?.dni ? `, identidad ${d.representative.dni}` : ''}</small></div>
+        <div><SignSpace />Firma del {d.representative ? 'representante' : 'paciente'}<br /><small>{signer}{d.representative?.dni ? `, identidad ${d.representative.dni}` : ''}</small></div>
         <div className="consent__print">Huella digital<br /><small>si no sabe firmar</small></div>
-        <div><span className="consent__line" />Testigo<br /><small>{d.witness ? `${d.witness.name}${d.witness.dni ? `, identidad ${d.witness.dni}` : ''}` : `Nombre: ${LINE} Identidad: ${LINE}`}</small></div>
-        <div><span className="consent__line" />Firma y sello del médico<br /><small>{d.doctor.name}{d.doctor.license ? `, colegiación ${d.doctor.license}` : ', colegiación ______'}</small></div>
+        <div><SignSpace />Testigo<br /><small>{d.witness ? `${d.witness.name}${d.witness.dni ? `, identidad ${d.witness.dni}` : ''}` : `Nombre: ${LINE} Identidad: ${LINE}`}</small></div>
+        <DoctorSign d={d} />
       </div>
       <div className="consent__box"><b>☐ No autorizo.</b> Recibí la misma información y decido no autorizar{general ? ' la atención' : ' el procedimiento'}. Entiendo los riesgos de no hacerlo. Firma: {LINE} Fecha y hora: ______________</div>
       <div className="consent__box"><b>Revocación.</b> Revoco la autorización que di en esta hoja. Fecha: ____________ Hora: ________ Firma: {LINE}</div>
-      <footer className="rx-sheet__foot"><span>Texto a validar por la clínica y su asesor legal (Código de Ética del Colegio Médico de Honduras, cap. VIII).</span><span>Emitido con Clinara</span></footer>
-    </article>
+    </AuthDoc>
   )
 }
 
@@ -264,11 +258,8 @@ export function AuthorizationSheet({ a }: { a: Authorization }) {
 function SurgicalSheet({ a }: { a: Authorization }) {
   const d = a.data
   return (
-    <article className="rx-sheet consent consent--short">
-      <SheetHead a={a} />
-      <h1 className="cert__title">Autorización quirúrgica (consentimiento informado)</h1>
-      <PatientBlock d={d} extra={<span>Médico: <b>{d.doctor.name}</b>{d.doctor.license ? `, colegiación ${d.doctor.license}` : ''}</span>} />
-      {d.companion && <div className="consent__pt"><span>Acompañante: <b>{d.companion.name}</b></span>{d.companion.phone && <span>Teléfono: <b>{d.companion.phone}</b></span>}</div>}
+    <AuthDoc a={a} title="Autorización quirúrgica (consentimiento informado)"
+      rows={[doctorRow(d), d.companion && { label: 'Acompañante', value: `${d.companion.name}${d.companion.phone ? ` · Teléfono ${d.companion.phone}` : ''}` }]}>
       <dl className="consent__info">
         <div><dt>Procedimiento</dt><dd>{d.procedure}</dd></div>
         <div><dt>Diagnóstico</dt><dd>{d.diagnosis || <span className="consent__blank" />}</dd></div>
@@ -278,15 +269,14 @@ function SurgicalSheet({ a }: { a: Authorization }) {
       <p className="consent__intro">Representante legal (si el paciente es menor o no puede decidir): nombre {LINE} identidad {LINE} parentesco __________</p>
       {d.patient.minor && <p className="consent__intro">Asentimiento del menor (si tiene edad para entender): me explicaron y estoy de acuerdo. Firma: {LINE}</p>}
       <div className="consent__signs">
-        <div><span className="consent__line" />Firma del paciente o representante</div>
+        <div><SignSpace />Firma del paciente o representante</div>
         <div className="consent__print">Huella digital<br /><small>si no sabe firmar</small></div>
-        <div><span className="consent__line" />Testigo<br /><small>Nombre: {LINE} Identidad: {LINE}</small></div>
-        <div><span className="consent__line" />Firma y sello del médico<br /><small>{d.doctor.name}{d.doctor.license ? `, colegiación ${d.doctor.license}` : ', colegiación ______'}</small></div>
+        <div><SignSpace />Testigo<br /><small>Nombre: {LINE} Identidad: {LINE}</small></div>
+        <DoctorSign d={d} />
       </div>
       <div className="consent__box"><b>☐ No autorizo.</b> Recibí la misma información y decido no autorizar el procedimiento. Entiendo los riesgos de no hacerlo. Firma: {LINE} Fecha y hora: ______________</div>
       <div className="consent__box"><b>Revocación.</b> Revoco la autorización que di en esta hoja. Fecha: ____________ Hora: ________ Firma: {LINE}</div>
-      <footer className="rx-sheet__foot"><span>Texto genérico a validar por la clínica y su asesor legal (Código de Ética del Colegio Médico de Honduras, cap. VIII).</span><span>Emitido con Clinara</span></footer>
-    </article>
+    </AuthDoc>
   )
 }
 
@@ -295,27 +285,20 @@ function HospitalSheet({ a }: { a: Authorization }) {
   const d = a.data
   const signer = d.representative ? `${d.representative.name}${d.representative.relation ? `, ${d.representative.relation.toLowerCase()}` : ''}` : d.patient.name
   return (
-    <article className="rx-sheet consent consent--short">
-      <SheetHead a={a} />
-      <h1 className="cert__title">Autorización de hospitalización</h1>
-      <PatientBlock d={d} extra={<>
-        <span>Ingreso: <b>{d.admission ? `${date(d.admission.at)}, ${time(d.admission.at)}` : LINE}</b></span>
-        <span className="consent__wide">Diagnóstico de ingreso: <b>{d.admission?.diagnosis ?? d.diagnosis ?? LINE}</b></span>
-      </>} />
-      <div className="consent__pt">
-        <span>Acompañante: <b>{d.companion?.name ?? LINE}</b></span><span>Teléfono: <b>{d.companion?.phone ?? LINE}</b></span>
-        <span>Parentesco: <b>{d.companion?.relation ?? '__________'}</b></span>
-      </div>
+    <AuthDoc a={a} title="Autorización de hospitalización" rows={[
+      { label: 'Ingreso', value: d.admission ? dmyTime(d.admission.at) : LINE },
+      { label: 'Diagnóstico de ingreso', value: d.admission?.diagnosis ?? d.diagnosis ?? LINE },
+      { label: 'Acompañante', value: `${d.companion?.name ?? LINE} · Teléfono: ${d.companion?.phone ?? LINE} · Parentesco: ${d.companion?.relation ?? '__________'}` },
+    ]}>
       <p className="consent__intro">Yo, {signer}{d.representative ? `${d.representative.dni ? `, identidad ${d.representative.dni}` : ''}, en representación de ${d.patient.name}` : ''}, autorizo a los médicos y al personal de {d.clinic.name}:</p>
       <ol className="consent__list">{HOSPITAL_CONSENT.map((x) => <li key={x}>{x}</li>)}</ol>
       <p className="consent__intro">{HOSPITAL_DECLARATION}</p>
       <div className="consent__signs">
-        <div><span className="consent__line" />Firma del {d.representative ? 'representante' : 'paciente'}<br /><small>{signer}</small></div>
+        <div><SignSpace />Firma del {d.representative ? 'representante' : 'paciente'}<br /><small>{signer}</small></div>
         <div className="consent__print">Huella digital<br /><small>si no sabe firmar</small></div>
-        <div><span className="consent__line" />Nombre y firma del médico o responsable<br /><small>{d.doctor.name}{d.doctor.license ? `, colegiación ${d.doctor.license}` : ''}</small></div>
+        <DoctorSign d={d} label="Nombre y firma del médico o responsable" />
       </div>
-      <footer className="rx-sheet__foot"><span>Texto a validar por la clínica y su asesor legal (Código de Ética del Colegio Médico de Honduras, cap. VIII).</span><span>Emitido con Clinara</span></footer>
-    </article>
+    </AuthDoc>
   )
 }
 

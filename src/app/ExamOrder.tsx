@@ -4,11 +4,10 @@ import { ChevronLeft, Download, MessageCircle, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Loading } from '../components/ui'
-import { DocHeader } from '../components/DocHeader'
-import { MarkImage } from '../components/MarkImage'
-import { age, dmyTime, fullName, identityLine, recordNumber, whatsappUrl } from '../lib/format'
-import { examLine } from '../lib/exams'
-import { yearsOld } from '../lib/inpatient'
+import { ClinicalDoc, guardianRow, patientOf, placeOf } from '../components/ClinicalDoc'
+import { dmyTime, fullName, whatsappUrl } from '../lib/format'
+import { examCatalog, examLine, orderGroups } from '../lib/exams'
+import { useExamCatalog } from '../lib/useExamCatalog'
 import type { Diagnosis, ExamGroup, ExamOrder, Patient } from '../lib/types'
 import { SIGN_AND_STAMP_LEGEND } from '../lib/clinicalConfig'
 
@@ -117,44 +116,32 @@ export const markBatchPrinted = (batch: string, groups: ExamGroup[], how: 'print
   Promise.all(groups.map((g) => api(`/exams/batch/${batch}/printed`, { body: { group: g, how } }).catch(() => null)))
 
 /**
- * EX2 (ronda 8) y EX5 (ronda 10): la hoja de una orden de exámenes (laboratorio o imagen y gabinete), carta: membrete, número,
- * fecha y hora, paciente, cada estudio como se ordenó (con «Urgente» y su indicación), el médico que lo pidió con especialidad y
- * colegiación, espacio para firma y sello y la leyenda «Válida solo con firma y sello del médico». Sin CIE-11 ni la palabra
- * «Externo» (salvo el diagnóstico si el médico lo marca). La usan la orden del lote y la de los pendientes de la pestaña Exámenes.
+ * EX2 (ronda 8) y EX5 (ronda 10): la hoja de una orden de exámenes (laboratorio o imagen y gabinete) con los datos del médico
+ * que la pidió, «Urgente» y la indicación clínica por estudio, y la leyenda «Válida solo con firma y sello del médico». Sin
+ * CIE-11 ni la palabra «Externo» (salvo el diagnóstico si el médico lo marca). La usan la orden del lote, la de los pendientes
+ * de la pestaña Exámenes, la receta con sus órdenes y «Órdenes impresas».
+ * IM1 (ronda 13): con la plantilla única. IM3 (ronda 13): agrupada como el catálogo, compacta, con la numeración por grupo.
  */
 export function ExamOrderSheet({ group: g, exams: list, doctor, number, patient: p, diagnoses, at }: {
   group: ExamGroup; exams: ExamOrder[]; doctor: Doctor; number: string; patient: Patient; diagnoses?: Diagnosis[]; at?: string
 }) {
   const { settings } = useStore()
-  const minor = p.birthDate ? yearsOld(p.birthDate) < 18 : false
-  const doctorLine = [doctor.specialty, doctor.license && `Colegiación ${doctor.license}`].filter(Boolean).join(' · ')
+  const { exams: clinicExams } = useExamCatalog()
+  const groups = orderGroups(list, examCatalog(clinicExams))
   return (
-    <article className={`rx-sheet exam-order exam-order--${g}`}>
-      <header className="rx-sheet__head">
-        <DocHeader clinic={settings} doctor={doctor} />
-        <div className="rx-sheet__folio">{TITLE[g]}<b>{number}</b>{dmyTime(at ?? list[0].orderedAt)}</div>
-      </header>
-      <div className="rx-sheet__pt">
-        <div style={{ gridColumn: '1 / -1' }}><span>Paciente</span>{fullName(p)}</div>
-        <div><span>Edad</span>{age(p.birthDate)}</div>
-        <div><span>Sexo</span>{p.sex === 'F' ? 'Femenino' : 'Masculino'}</div>
-        <div><span>Expediente</span>{recordNumber(p, settings)}</div>
-        <div><span>Identidad</span>{identityLine(p, minor)}</div>
-        {!!diagnoses?.length && <div style={{ gridColumn: '1 / -1' }}><span>Diagnóstico</span>{diagnoses.map((d) => d.label).join('; ')}</div>}
-      </div>
-      <h2 className="exam-order__title">{g === 'lab' ? 'Exámenes de laboratorio' : 'Estudios de imagen y gabinete'}</h2>
-      <ol className="exam-order__list">{list.map((e) => (
-        <li key={e.id}><b>{examLine(e)}</b>{e.priority === 'urgent' && <span className="exam-order__urgent">Urgente</span>}
-          {e.indication && <p>Indicación clínica: {e.indication}</p>}</li>
-      ))}</ol>
-      <div className="rx-sheet__sign">
-        {doctor.stampId ? <MarkImage id={doctor.stampId} alt="Sello del médico" className="doc-stamp" /> : <div className="exam-sign-box">Sello</div>}
-        <div>{doctor.signatureId ? <MarkImage id={doctor.signatureId} alt={`Firma de ${doctor.name}`} className="doc-signature" /> : <em>&nbsp;</em>}
-          {doctor.name}<br /><span style={{ color: 'var(--muted)' }}>{doctorLine}</span><br /><span style={{ color: 'var(--muted)' }}>Firma y sello</span></div>
-      </div>
-      {/* EX5 y ME10 (ronda 10): también en las órdenes de EX2 */}
-      <p className="sign-legend">{SIGN_AND_STAMP_LEGEND}</p>
-      <footer className="rx-sheet__foot"><span>{TITLE[g]} {number}, separada de la receta.</span><span>Emitida con Clinara</span></footer>
-    </article>
+    <ClinicalDoc kind={TITLE[g]} folio={number} at={at ?? list[0].orderedAt} place={placeOf(settings)} patient={patientOf(p, settings)}
+      className={`exam-order exam-order--${g}`}
+      rows={[!!diagnoses?.length && { label: 'Diagnóstico', value: diagnoses.map((d) => d.label).join('; ') }, guardianRow(p)]}
+      signers={[{ name: doctor.name, title: doctor.specialty, license: doctor.license, signatureId: doctor.signatureId, stampId: doctor.stampId }]}
+      legends={[SIGN_AND_STAMP_LEGEND, `${TITLE[g]} ${number}, separada de la receta.`]}>
+      <div className="order-groups">{groups.map((grp) => (
+        <section key={grp.title} className="order-group"><h3>{grp.title}</h3>
+          <ol>{grp.items.map((e) => (
+            <li key={e.id}><b>{examLine(e)}</b>{e.priority === 'urgent' && <span className="exam-order__urgent">Urgente</span>}
+              {e.indication && <small>Indicación clínica: {e.indication}</small>}</li>
+          ))}</ol>
+        </section>
+      ))}</div>
+    </ClinicalDoc>
   )
 }

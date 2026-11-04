@@ -3,13 +3,13 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ban, ChevronLeft, Download, Printer, Send } from 'lucide-react'
 import { useStore, type ReferralFrom } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
-import { date, dmy, dmyTime, time } from '../lib/format'
+import { dmy, dmyTime } from '../lib/format'
 import { REFERRAL_CONSENT, REFERRAL_FOOTER } from '../lib/clinicalConfig'
 import { stayPath } from '../lib/inpatient'
 import { useDraftSync } from '../lib/drafts'
 import { Addenda, DraftBadge } from '../components/Addenda'
 import type { Referral, ReferralData } from '../lib/types'
-import { DocHeader } from '../components/DocHeader'
+import { ClinicalDoc } from '../components/ClinicalDoc'
 
 type Editable = { reason: string; history: string; exam: string; evolution: string; labs: string; condition: string; destination: string; service: string
   priority: 'routine' | 'urgent'; admissionDiagnosis: string; dischargeDiagnosis: string; treatment: string; vitals: string; consent: boolean }
@@ -124,20 +124,14 @@ export function ReferralSheet({ r }: { r: Referral }) {
   // Referencias de antes de la ronda 8 (consultorio, observación): se imprimen como entonces
   if (!d.source) return <LegacySheet r={r} />
   const priority = d.priority ? (d.priority === 'urgent' ? 'Urgente' : 'Rutina') : d.urgency ? URGENCY[d.urgency] : ''
+  // IM1 (ronda 13): la plantilla única con los datos congelados al firmar la referencia
   return (
-    <article className="rx-sheet consent referral" style={{ position: 'relative' }}>
-      {r.voidedAt && <div className="void-stamp">ANULADA</div>}
-      <header className="rx-sheet__head">
-        <DocHeader clinic={d.place} doctor={d.doctor} />
-        <div className="rx-sheet__folio">Hoja de referencia<b>{r.number}</b>{dmyTime(r.issuedAt)}</div>
-      </header>
-      <h1 className="cert__title">Hoja de referencia</h1>
-      <div className="consent__pt">
-        <span>Paciente: <b>{d.patient.name}</b></span><span>Identidad: <b>{d.patient.dni ?? '________________'}</b></span>
-        <span>Edad: <b>{d.patient.age}</b></span>{d.patient.sex && <span>Sexo: <b>{d.patient.sex === 'F' ? 'Femenino' : 'Masculino'}</b></span>}<span>Expediente: <b>{d.patient.record}</b></span>
-        <span>Alergias: <b>{d.patient.allergies?.length ? d.patient.allergies.join(', ') : d.patient.allergies ? 'Ninguna conocida' : '________________'}</b></span>
-        <span>{SOURCE_LABEL[d.source]}: <b>{d.source !== 'consultation' ? dmyTime(d.admittedAt) : dmy(d.admittedAt)}</b></span>
-      </div>
+    <ClinicalDoc kind="Hoja de referencia" folio={r.number} at={r.issuedAt} place={d.place} className="consent referral" stamp={r.voidedAt ? 'ANULADA' : undefined}
+      patient={{ name: d.patient.name, record: d.patient.record, dni: d.patient.dni, age: d.patient.age, sex: d.patient.sex,
+        third: { label: SOURCE_LABEL[d.source], value: d.source !== 'consultation' ? dmyTime(d.admittedAt) : dmy(d.admittedAt) } }}
+      rows={[{ label: 'Alergias', value: d.patient.allergies?.length ? d.patient.allergies.join(', ') : d.patient.allergies ? 'Ninguna conocida' : '________________' }]}
+      signers={[{ name: d.doctor.name, title: d.doctor.specialty, license: d.doctor.license }]}
+      legends={[REFERRAL_FOOTER, r.voidedAt && `Anulada el ${dmyTime(r.voidedAt)}: ${r.voidReason}`]}>
       <dl className="consent__info">
         <div><dt>Centro o establecimiento al que se refiere</dt><dd>{blank(d.destination)}</dd></div>
         <div><dt>Servicio o especialidad</dt><dd>{blank(d.service)}</dd></div>
@@ -154,30 +148,18 @@ export function ReferralSheet({ r }: { r: Referral }) {
         <div><dt>Condición del paciente</dt><dd>{blank(d.condition)}</dd></div>
       </dl>
       <p className="consent__intro">{d.consentAt || d.informed ? '☒' : '☐'} {REFERRAL_CONSENT}{d.consentAt ? ` (${dmyTime(d.consentAt)})` : ''}</p>
-      <div className="consent__signs" style={{ gridTemplateColumns: '1fr' }}>
-        <div><span className="consent__line" />Firma y sello del médico<br /><small>{d.doctor.name}{d.doctor.specialty ? `, ${d.doctor.specialty}` : ''}{d.doctor.license ? `. Colegiación ${d.doctor.license}` : ''}</small></div>
-      </div>
-      {r.voidedAt && <p className="muted">Anulada el {dmyTime(r.voidedAt)}: {r.voidReason}</p>}
-      <footer className="rx-sheet__foot referral__legal"><span>{REFERRAL_FOOTER}</span><span>Emitida con Clinara</span></footer>
-    </article>
+    </ClinicalDoc>
   )
 }
 
 function LegacySheet({ r }: { r: Referral }) {
   const d = r.data
   return (
-    <article className="rx-sheet consent referral" style={{ position: 'relative' }}>
-      {r.voidedAt && <div className="void-stamp">ANULADA</div>}
-      <header className="rx-sheet__head">
-        <DocHeader clinic={d.place} doctor={d.doctor} />
-        <div className="rx-sheet__folio">Referencia<b>{r.number}</b>{date(r.issuedAt)}, {time(r.issuedAt)}</div>
-      </header>
-      <h1 className="cert__title">Hoja de referencia</h1>
-      <div className="consent__pt">
-        <span>Paciente: <b>{d.patient.name}</b></span><span>Identidad: <b>{d.patient.dni ?? '________________'}</b></span>
-        <span>Edad: <b>{d.patient.age}</b></span>{d.patient.sex && <span>Sexo: <b>{d.patient.sex === 'F' ? 'Femenino' : 'Masculino'}</b></span>}<span>Expediente: <b>{d.patient.record}</b></span>
-        <span>En observación desde: <b>{date(d.admittedAt)}, {time(d.admittedAt)}</b></span>
-      </div>
+    <ClinicalDoc kind="Referencia" folio={r.number} at={r.issuedAt} place={d.place} className="consent referral" stamp={r.voidedAt ? 'ANULADA' : undefined}
+      patient={{ name: d.patient.name, record: d.patient.record, dni: d.patient.dni, age: d.patient.age, sex: d.patient.sex,
+        third: { label: 'En observación desde', value: dmyTime(d.admittedAt) } }}
+      signers={[{ name: d.doctor.name, title: d.doctor.specialty, license: d.doctor.license }, { name: 'Recibido por', title: 'Nombre, firma, fecha y hora', small: true }]}
+      legends={[r.voidedAt && `Anulada: ${r.voidReason}`]}>
       <dl className="consent__info">
         <div><dt>Se refiere a</dt><dd>{blank(d.destination)}</dd></div>
         <div><dt>Motivo de la referencia</dt><dd>{blank(d.reason)}</dd></div>
@@ -190,13 +172,7 @@ function LegacySheet({ r }: { r: Referral }) {
         <div><dt>Laboratorios</dt><dd>{blank(d.labs)}</dd></div>
         <div><dt>Condición al referir</dt><dd>{blank(d.condition)}</dd></div>
       </dl>
-      <div className="consent__signs" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        <div><span className="consent__line" />Firma y sello del médico<br /><small>{d.doctor.name}{d.doctor.license ? `, colegiación ${d.doctor.license}` : ''}</small></div>
-        <div><span className="consent__line" />Recibido por (nombre, firma, fecha y hora)</div>
-      </div>
-      {r.voidedAt && <p className="muted">Anulada: {r.voidReason}</p>}
-      <footer className="rx-sheet__foot"><span>{d.place.address}{d.place.phone ? `, tel. ${d.place.phone}` : ''}</span><span>Emitida con Clinara</span></footer>
-    </article>
+    </ClinicalDoc>
   )
 }
 

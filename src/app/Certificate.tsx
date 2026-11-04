@@ -8,31 +8,24 @@ import { age, date, localISODate, recordNumber, time, whatsappUrl } from '../lib
 import { yearsOld } from '../lib/inpatient'
 import { CERT_KIND, certificateText, plainText } from '../lib/certificates'
 import type { Certificate as Cert, CertificateData } from '../lib/types'
-import { DocHeader } from '../components/DocHeader'
+import { ClinicalDoc, type DocPatient } from '../components/ClinicalDoc'
 import { DniInput } from '../components/DniInput'
-import { MarkImage } from '../components/MarkImage'
 
 type Kind = Cert['kind']
 
 /** Hoja de la constancia, tamaño carta, con espacio para firma y sello. */
 function CertificateSheet({ kind, data, issuedAt, number, voided, signatureId, stampId }: { kind: Kind; data: CertificateData; issuedAt: string; number?: string; voided?: boolean; signatureId?: string; stampId?: string }) {
   const paras = certificateText(kind, data, issuedAt)
+  // IM1 (ronda 13): la plantilla única, con los datos congelados al emitir (mismo contenido; cambia solo el formato)
+  const pt: DocPatient = { name: data.patient.name, record: data.patient.record, dni: data.patient.dni, age: data.patient.age, sex: data.patient.sex }
   return (
-    <article className="rx-sheet cert" style={{ position: 'relative' }}>
-      {voided && <div className="void-stamp">ANULADA</div>}
-      <header className="rx-sheet__head">
-        <DocHeader clinic={data.clinic} doctor={data.doctor} />
-        <div className="rx-sheet__folio">{number ? <>Constancia<b>{number}</b></> : <>Vista previa<b>Sin emitir</b></>}{date(issuedAt)}</div>
-      </header>
-      <h1 className="cert__title">{CERT_KIND[kind].title}</h1>
+    <ClinicalDoc kind="Constancia" folio={number ?? 'Sin emitir'} at={issuedAt} folioNote={number ? undefined : 'Vista previa'} place={data.clinic} patient={pt}
+      className="cert" stamp={voided ? 'ANULADA' : undefined} heading={CERT_KIND[kind].title}
+      rows={[!!data.patient.guardian && !data.patient.dni && { label: 'Responsable del menor', value: data.patient.guardian }]}
+      signers={[{ name: data.doctor.name, title: data.doctor.specialty, license: data.doctor.license, signatureId, stampId }]}>
       <p className="cert__to">{data.to}:</p>
       {paras.map((p, i) => <p key={i} className="cert__body">{p.map((x, j) => (x.b ? <b key={j}>{x.text}</b> : <span key={j}>{x.text}</span>))}</p>)}
-      <div className="cert__sign">
-        {stampId ? <MarkImage id={stampId} alt="Sello del médico" className="doc-stamp" /> : <div className="cert__stamp">Sello</div>}
-        <div className="rx-sheet__sign" style={{ marginTop: 0 }}><div>{signatureId ? <MarkImage id={signatureId} alt={`Firma de ${data.doctor.name}`} className="doc-signature" /> : <em>&nbsp;</em>}{data.doctor.name}<br /><span style={{ color: 'var(--muted)' }}>Colegiación {data.doctor.license}</span></div></div>
-      </div>
-      <footer className="rx-sheet__foot"><span>{data.clinic.office ? '' : data.clinic.name}</span><span>Emitida con Clinara</span></footer>
-    </article>
+    </ClinicalDoc>
   )
 }
 

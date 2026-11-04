@@ -1008,3 +1008,78 @@ button.src-tag--none { cursor: pointer; }
 .dept-home__notes p { margin: 0; }
 .dept-home .panel__head h2 svg { vertical-align: -3px; margin-right: 6px; }
 @media (max-width: 720px) { .dept-home__list li { grid-template-columns: auto 1fr; } .dept-home__wait { text-align: left; } }
+
+/* ---------- IM1 (ronda 13): plantilla única de impresión (Carta, márgenes de 2 cm) ---------- */
+.cdoc { position: relative; box-sizing: border-box; width: min(100%, 8.5in); aspect-ratio: var(--cdoc-ratio, 8.5 / 11); margin: 0 auto; padding: var(--cdoc-margin, 2cm);
+  background: #fff; color: var(--petrol); border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 30px 60px -30px rgba(14, 34, 51, 0.3); font-size: 13px; line-height: 1.45; }
+.cdoc + .cdoc { margin-top: 24px; }
+.cdoc__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding-bottom: 12px; border-bottom: 2px solid var(--petrol); }
+.cdoc__place { min-width: 0; }
+.cdoc__brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.cdoc__brand b { font-family: var(--display); font-size: 17px; color: var(--petrol); }
+.cdoc__logo { height: 42px; max-width: 150px; object-fit: contain; }
+.cdoc__place p { margin: 0; font-size: 12px; color: var(--muted); }
+.cdoc__folio { display: grid; justify-items: end; text-align: right; font-size: 12px; color: var(--muted); flex: none; }
+.cdoc__kind { font-weight: 700; color: var(--petrol); font-size: 12.5px; margin-bottom: 2px; }
+.cdoc__folio b { display: block; font-size: 15px; color: var(--petrol); font-variant-numeric: tabular-nums; }
+.cdoc__pt { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 6px 18px; padding: 10px 0 0; }
+.cdoc__pt > div, .cdoc__rows > div { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.cdoc__pt span, .cdoc__rows span { display: block; font-size: 11px; color: var(--muted); line-height: 1.3; }
+.cdoc__rows { display: grid; gap: 6px; padding-top: 6px; }
+.cdoc__pt + .cdoc__body, .cdoc__rows + .cdoc__body { border-top: 1px solid var(--line); margin-top: 10px; }
+.cdoc__body { padding-top: 12px; }
+.cdoc__heading { font-family: var(--display); font-size: 19px; margin: 4px 0 12px; text-align: center; color: var(--petrol); }
+/* Firma sin raya: firma dibujada (o espacio en blanco para firmar y sellar), nombre, especialidad o cargo y colegiación */
+.cdoc__sign { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px 32px; margin-top: 10px; break-inside: avoid; break-before: avoid; page-break-inside: avoid; }
+.cdoc__sign--many { justify-content: space-between; }
+.cdoc__signer { display: grid; justify-items: center; align-content: start; text-align: center; width: 240px; max-width: 100%; font-size: 12.5px; }
+.cdoc__signer b { font-weight: 600; color: var(--petrol); }
+.cdoc__signer span { color: var(--muted); }
+.cdoc__signer-label { justify-self: stretch; text-align: left; font-size: 11.5px; font-weight: 600; }
+.cdoc__space { position: relative; width: 100%; display: flex; align-items: flex-end; justify-content: center; }
+.cdoc__signature { max-height: 2.4cm; max-width: 220px; object-fit: contain; position: relative; z-index: 1; }
+.cdoc__stamp { position: absolute; left: 0; top: 0; max-height: 2.8cm; max-width: 120px; object-fit: contain; opacity: .92; }
+.cdoc__foot { display: flex; justify-content: space-between; gap: 16px; margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 11px; color: var(--faint); break-inside: avoid; break-before: avoid; }
+.cdoc__foot > span:first-child { display: grid; gap: 1px; }
+.cdoc .sign-legend { display: none; }
+/* Cuerpo de cada documento */
+.cdoc .rx-sheet__rx { font-family: var(--display); font-size: 28px; font-weight: 700; color: var(--ink); margin: 0 0 4px; line-height: 1.1; }
+.cdoc .rx-items { padding-left: 20px; margin: 0; }
+.cdoc .rx-items > li + li { margin-top: 10px; }
+.cdoc .rx-items > li { break-inside: avoid; }
+.cdoc .rx-items strong { font-size: 14.5px; }
+.cdoc .rx-items p { margin: 1px 0 0; font-size: 13px; color: var(--muted); }
+.cdoc__sub { font-size: 13px; margin-top: 14px; }
+.cdoc__sub ul { margin: 4px 0 0; padding-left: 18px; }
+/* IM3 (ronda 13): orden agrupada como el catálogo, compacta; la numeración reinicia en cada grupo */
+/* Bloques (no cuadrícula): la orden larga se parte entre hojas por grupo, sin saltar entera a la siguiente */
+.order-groups { display: block; }
+.order-group + .order-group { margin-top: 8px; }
+.order-group h3 { break-after: avoid; }
+.order-group li { break-inside: avoid; }
+.order-group h3 { font-size: 12px; font-weight: 700; margin: 0 0 2px; color: var(--petrol); text-transform: none; }
+.order-group ol { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.35; }
+.order-group li p { margin: 0; font-size: 11.5px; color: var(--muted); }
+.order-group li small { display: block; font-size: 11.5px; color: var(--muted); }
+@media (max-width: 640px) {
+  .cdoc { padding: 18px 14px; aspect-ratio: auto; font-size: 12.5px; }
+  .cdoc__head { flex-direction: column; gap: 8px; }
+  .cdoc__folio { justify-items: start; text-align: left; }
+  .cdoc__pt { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .cdoc__pt-name { grid-column: 1 / -1; }
+  .cdoc__sign { justify-content: center; }
+}
+@media print {
+  .cdoc { width: auto; max-width: none; aspect-ratio: auto; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; font-size: 10.5pt; color: #000; }
+  .cdoc + .cdoc { margin-top: 0; }
+  .cdoc__place p, .cdoc__folio, .cdoc__pt span, .cdoc__rows span, .cdoc__signer span, .cdoc .rx-items p, .order-group li p, .order-group li small { color: #333; }
+  .cdoc__head { border-bottom-color: #000; }
+  .cdoc__pt { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
+  .cdoc__pt-name { grid-column: auto; }
+  .cdoc .void-stamp { display: block; }
+  html, body, .shell { background: #fff !important; min-height: 0 !important; }
+}
+.cdoc__blank { display: block; }
+.cdoc .consent__signs { margin-top: 14px; break-inside: avoid; }
+.cdoc .epi__facts { margin-bottom: 4px; }
+.cdoc__body > .result-doc__block:first-child { border-top: 0; margin-top: 0; padding-top: 0; }

@@ -1,10 +1,8 @@
 import { useStore } from '../lib/store'
-import { DocHeader } from '../components/DocHeader'
-import { age, dmyTime, fullName, identityLine, recordNumber } from '../lib/format'
+import { ClinicalDoc, DocSigns, guardianRow, patientOf, placeOf, signerOfStaff, type DocSigner } from '../components/ClinicalDoc'
+import { dmyTime } from '../lib/format'
 import { examLine, GROUP_LABEL } from '../lib/exams'
 import { rangeText } from '../lib/labReference'
-import { yearsOld } from '../lib/inpatient'
-import { signerOf } from '../lib/positions'
 import { FileName } from '../components/FilePreview'
 import type { ExamOrder, Patient, Staff } from '../lib/types'
 
@@ -17,28 +15,15 @@ import type { ExamOrder, Patient, Staff } from '../lib/types'
  */
 export function ResultSheet({ exams, patient: p, number, at }: { exams: ExamOrder[]; patient: Patient; number: string; at: string }) {
   const { settings, staffById } = useStore()
-  const minor = p.birthDate ? yearsOld(p.birthDate) < 18 : false
   const groups = [...new Set(exams.map((e) => e.group))]
   const title = groups.length === 1 ? (groups[0] === 'lab' ? 'Resultado de laboratorio' : 'Resultado de imagen y gabinete') : 'Resultados de exámenes'
-  // En un consultorio el membrete es la médica; en una clínica, la clínica
-  const office = settings.kind === 'office'
-  const head = office ? staffById(exams[0].orderedBy) : undefined
+  // IM1 (ronda 13): el encabezado es la clínica o el consultorio (nunca el médico); los responsables firman en cada examen
   return (
-    <article className="rx-sheet exam-order result-doc">
-      <header className="rx-sheet__head">
-        <DocHeader clinic={{ ...settings, office }} doctor={{ name: head ? head.docName ?? head.name : '', specialty: head?.specialty, license: head?.license }} />
-        <div className="rx-sheet__folio">{title}<b>{number}</b>Impreso {dmyTime(at)}</div>
-      </header>
-      <div className="rx-sheet__pt">
-        <div style={{ gridColumn: '1 / -1' }}><span>Paciente</span>{fullName(p)}</div>
-        <div><span>Edad</span>{age(p.birthDate)}</div>
-        <div><span>Sexo</span>{p.sex === 'F' ? 'Femenino' : 'Masculino'}</div>
-        <div><span>Expediente</span>{recordNumber(p, settings)}</div>
-        <div><span>Identidad</span>{identityLine(p, minor)}</div>
-      </div>
+    <ClinicalDoc kind={title} folio={number} at={at} folioNote="Fecha de impresión" place={placeOf(settings)} patient={patientOf(p, settings)}
+      className="exam-order result-doc" rows={[guardianRow(p)]} brand="Emitido con Clinara"
+      legends={[`${title} ${number}. Sin la firma y el sello de los responsables en papel no vale.`]}>
       {exams.map((e) => <ResultBlock key={e.id} e={e} staffById={staffById} showGroup={groups.length > 1} />)}
-      <footer className="rx-sheet__foot"><span>{title} {number}. Sin la firma y el sello de los responsables en papel no vale.</span><span>Emitido con Clinara</span></footer>
-    </article>
+    </ClinicalDoc>
   )
 }
 
@@ -80,11 +65,8 @@ function ResultBlock({ e, staffById, showGroup }: { e: ExamOrder; staffById: (id
       ) : null}
       {r.report && <div className="result-doc__report"><b>Informe</b><p>{r.report}</p></div>}
       {r.fileIds?.map((f) => <p key={f} className="result-doc__file">Archivo adjunto: <FileName id={f} /> (se imprime aparte con «Ver archivo»)</p>)}
-      <div className="result-doc__signs">
-        {people.map(({ label, s }) => { const g = signerOf(s); return (
-          <div key={label} className="result-doc__sign"><span className="result-doc__line" /><b>{label}: {g.name}</b><small>{g.title}</small><small>Firma y sello</small></div>
-        ) })}
-      </div>
+      {/* IM1 (ronda 13): cada responsable con su espacio para firma y sello, sin raya, uno al lado del otro */}
+      <DocSigns signers={people.map(({ label, s }): DocSigner => signerOfStaff(s, { label }))} />
     </section>
   )
 }

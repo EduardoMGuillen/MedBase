@@ -5,8 +5,8 @@ import { ChevronLeft, Download, FileText, MessageCircle, Plus, Printer, Search, 
 import { useStore } from '../lib/store'
 import { Pagination, paginate, usePage } from '../components/Pagination'
 import { Loading, Modal, PageHead } from '../components/ui'
-import { LogoMark } from '../components/Logo'
-import { contactLine, date, fullName, localISODate, METHOD_LABEL, money, time, whatsappUrl } from '../lib/format'
+import { ClinicalDoc, patientOf, placeOf } from '../components/ClinicalDoc'
+import { date, fullName, localISODate, METHOD_LABEL, money, time, whatsappUrl } from '../lib/format'
 import { normalize } from '../lib/patients'
 import { BANKS, cashSuggestions, discountAmount, matchesPayment, receivedIn } from '../lib/billing'
 import type { Appointment, Payment, PaymentMethod } from '../lib/types'
@@ -439,21 +439,12 @@ export function ReceiptSheet() {
           <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir recibo</button>
         </div>
       </div>
-      <article className="rx-sheet receipt">
-        {p.voided && <div className="void-stamp" aria-label="Recibo anulado">Anulado</div>}
-        <header className="rx-sheet__head">
-          <div className="rx-sheet__doc">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}><LogoMark size={26} /><b style={{ fontSize: 18 }}>{settings.name}</b></div>
-            <p>{settings.address}</p><p>Tel. {contactLine(settings)}{settings.email ? `, ${settings.email}` : ''}</p>
-          </div>
-          <div className="rx-sheet__folio">Recibo<b>{p.receiptNo}</b>{date(p.paidAt)}, {time(p.paidAt)}</div>
-        </header>
-        <div className="rx-sheet__pt" style={{ gridTemplateColumns: `repeat(${p.invoiceNo ? 4 : 3}, auto)` }}>
-          <div><span>Paciente</span>{fullName(patient)}</div>
-          <div><span>Expediente</span>{patient.record}</div>
-          <div><span>Forma de pago</span>{METHOD_LABEL[p.method]}{p.bank ? `, ${p.bank}` : ''}{p.reference ? `, ${p.reference}` : ''}</div>
-          {p.invoiceNo && <div><span>Factura</span>{p.invoiceNo}</div>}
-        </div>
+      {/* IM1 (ronda 13): la plantilla única; el recibo no lleva firma */}
+      <ClinicalDoc kind="Recibo" folio={p.receiptNo} at={p.paidAt} place={{ ...placeOf(settings), address: `${settings.address}${settings.email ? ` · ${settings.email}` : ''}` }} className="receipt"
+        stamp={p.voided ? 'Anulado' : undefined} brand="Gracias por su preferencia"
+        patient={{ ...patientOf(patient, settings), third: { label: 'Forma de pago', value: `${METHOD_LABEL[p.method]}${p.bank ? `, ${p.bank}` : ''}${p.reference ? `, ${p.reference}` : ''}` } }}
+        rows={[p.invoiceNo && { label: 'Factura', value: p.invoiceNo }]}
+        legends={[`Atendió: ${staffById(p.receivedBy)?.name ?? '—'}`, 'Comprobante interno de pago. No sustituye la factura.']}>
         <table className="table receipt__items">
           <thead><tr><th>Concepto</th><th style={{ textAlign: 'center' }}>Cant.</th><th style={{ textAlign: 'right' }}>Precio</th><th style={{ textAlign: 'right' }}>Importe</th></tr></thead>
           <tbody>{p.items.map((i, k) => (
@@ -471,9 +462,7 @@ export function ReceiptSheet() {
           </>}
         </div>
         {p.voided && <p className="receipt__void">Anulado{p.voidedAt ? ` el ${date(p.voidedAt)}, ${time(p.voidedAt)}` : ''}{p.voidedBy ? ` por ${staffById(p.voidedBy)?.name ?? '—'}` : ''}{p.voidReason ? `. Motivo: ${p.voidReason}` : ''}</p>}
-        <footer className="rx-sheet__foot"><span>Atendió: {staffById(p.receivedBy)?.name}</span><span>Gracias por su preferencia</span></footer>
-        <p className="receipt__note">Comprobante interno de pago. No sustituye la factura.</p>
-      </article>
+      </ClinicalDoc>
       {abono && <InstallmentModal p={p} onClose={() => setAbono(false)} onDone={() => { setAbono(false); load() }} />}
       {voiding && (
         <Modal title={`Anular ${p.receiptNo}`} onClose={() => setVoiding(false)} footer={<>
