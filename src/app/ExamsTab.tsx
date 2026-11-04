@@ -4,6 +4,7 @@ import { DateTimeField } from '../components/DateTimeField'
 import { Link, useNavigate } from 'react-router-dom'
 import { Camera, CheckCheck, ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, FileText, FlaskConical, Printer, ScanLine, TriangleAlert, Upload, X } from 'lucide-react'
 import { useStore } from '../lib/store'
+import { DateField } from '../components/DateTimeField'
 import { CorrectionReason, GraceButton, VersionTag } from '../components/Grace'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
@@ -15,6 +16,7 @@ import { SourceTag } from '../components/SourceTag'
 import { uploadLarge } from '../lib/files'
 import { FileChip, FileThumb, FileViewer } from '../components/FilePreview'
 import { deptAllows } from '../lib/permissions'
+import { NOT_DONE_REASONS } from '../lib/clinicalConfig'
 import type { ExamGroup, ExamOrder } from '../lib/types'
 
 const TONE: Record<string, string> = { ordered: 'amber', sample: 'ink', done: 'ink', result: 'mint', reviewed: 'done', cancelled: '' }
@@ -44,7 +46,9 @@ const dayKey = (iso: string) => new Date(iso).toDateString()
  * sus botones de acción se usan sin abrirla. Sólo un crítico sin revisar empieza abierto. Arriba: «Buscar examen», orden
  * por fecha (con el día como encabezado), filtros con su conteo y «Expandir todo / Contraer todo». Es sólo presentación.
  */
-export function ExamList({ exams, patientId, hospitalizationId, reload, open = true }: { exams: ExamOrder[]; patientId: string; hospitalizationId?: string; reload: () => void; open?: boolean }) {
+export function ExamList({ exams, patientId, hospitalizationId, reload, open = true, only }: { exams: ExamOrder[]; patientId: string; hospitalizationId?: string; reload: () => void; open?: boolean
+  /** DP4 (ronda 11): solo el tipo del departamento. */
+  only?: ExamGroup }) {
   const { can, staffById, user } = useStore()
   const [uploading, setUploading] = useState<ExamGroup | null>(null)
   const [printing, setPrinting] = useState<ExamGroup | null>(null)
@@ -59,7 +63,7 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
   const [filter, setFilter] = useState<ExamFilter>('all')
   // Abiertos a mano (true) o cerrados a mano (false); lo que no está aquí sigue la regla
   const [shown, setShown] = useState<Record<string, boolean>>({})
-  const groups: ExamGroup[] = ['lab', 'imaging']
+  const groups: ExamGroup[] = only ? [only] : ['lab', 'imaging']
   const batches = [...new Set(exams.filter((e) => e.status !== 'cancelled').map((e) => e.batchId))]
   const startsOpen = (e: ExamOrder) => !!e.critical && e.status === 'result'
   const isOpen = (e: ExamOrder) => shown[e.id] ?? startsOpen(e)
@@ -129,17 +133,21 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
   )
 }
 
-function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload: () => void; open: boolean; expanded: boolean; onToggle: () => void }) {
+export function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload: () => void; open: boolean; expanded: boolean; onToggle: () => void }) {
   const { can, staffById, notify, user } = useStore()
   const [result, setResult] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  // DP2 (ronda 11): el departamento no cancela: «No se realizó» (con motivo) y «Reintentar»
+  const [notDone, setNotDone] = useState(false)
+  const dept = user?.role === 'lab' || user?.role === 'imaging'
+  const imagingTech = user?.role === 'imaging' && user.position !== 'radiologist'
   const act = async (path: string, body?: unknown) => {
     try { await api(`/exams/${e.id}/${path}`, { body: body ?? {} }); reload() } catch (x) { notify((x as Error).message, 'error') }
   }
   const next = NEXT_ACTION[e.group][e.status]
   const optional = reportOptional(e)
   // Ronda 8: una radiografía realizada todavía acepta su informe (opcional)
-  const canResult = open && can('exams.process') && (isPending(e) || (optional && e.status === 'done'))
+  const canResult = open && can('exams.process') && (isPending(e) || (optional && e.status === 'done')) && !(imagingTech && e.status === 'ordered')
   const id = `exam-${e.id}`
   return (
     <div className={`exam-row${e.priority === 'urgent' && isPending(e) ? ' exam-row--urgent' : ''}${e.critical ? ' exam-row--critical' : ''}${expanded ? '' : ' is-folded'}`}>
@@ -152,27 +160,34 @@ function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload
         {expanded && <div id={id} className="exam-row__body">
           <span className="exam-row__trail">{(e.events ?? []).filter((x) => x.status !== 'ordered').map((x) => `${STATUS_LABEL[e.group][x.status]} ${dateTime(x.at)} (${shortStaff(staffById(x.by)?.name)})`).join(' · ')}</span>
           {e.status === 'cancelled' && <span className="muted" style={{ fontSize: 13 }}>Cancelado: {e.cancelReason}</span>}
+          {e.requestedById || e.requestedByName ? <span className="muted" style={{ fontSize: 13 }}>Solicitado por: {e.requestedById ? staffById(e.requestedById)?.name : e.requestedByName}{e.location === 'ambulatory' ? ' · Ambulatorio' : ''}</span> : null}
+          {e.orderFileId && <span style={{ fontSize: 13 }}>Orden en papel: <FileChip id={e.orderFileId} /></span>}
           {optional && e.status === 'done' && <span className="muted" style={{ fontSize: 13 }}>Realizada. El informe (lectura) es opcional en los rayos X.</span>}
           {e.result && <ResultView e={e} />}
         </div>}
       </div>
       <div className="exam-row__side">
         <span className={`badge ${TONE[e.status] ? `badge--${TONE[e.status]}` : ''}`}>{examStatusLabel(e)}</span>
+        {e.notDone && e.status !== 'cancelled' && <span className="badge badge--red" title={`${shortStaff(staffById(e.notDone.by)?.name)}, ${dateTime(e.notDone.at)}`}>No se realizó: {e.notDone.reason}</span>}
         {/* EX1: las acciones se usan sin abrir la fila. EX5 (ronda 10): en una fila horizontal, no apiladas */}
         {<span className="exam-row__acts">
           {open && can('exams.process') && isPending(e) && e.status === 'ordered' && <button className="btn btn--soft btn--sm" onClick={() => act('status', { status: e.group === 'lab' ? 'sample' : 'done' })}>{next}</button>}
-          {canResult && <button className={`btn ${optional ? 'btn--ghost' : 'btn--primary'} btn--sm`} onClick={() => setResult(true)}>{e.group === 'lab' ? 'Cargar resultado' : optional ? 'Agregar informe (opcional)' : 'Cargar informe'}</button>}
+          {canResult && <button className={`btn ${optional ? 'btn--ghost' : 'btn--primary'} btn--sm`} onClick={() => setResult(true)}>{e.group === 'lab' ? 'Cargar resultado' : imagingTech ? 'Subir imágenes' : optional ? 'Agregar informe (opcional)' : 'Cargar informe'}</button>}
           {/* GE4 (ronda 9): quien cargó el resultado lo corrige unos minutos, mientras no se revise */}
           {e.status === 'result' && e.result && <GraceButton record={{ graceUntil: e.resultGraceUntil }} authorId={e.result.by} onCorrect={() => setResult(true)} />}
           <VersionTag version={e.resultVersion} kind="exam_result" id={e.id} render={(x) => <ResultView e={{ ...e, result: x as unknown as NonNullable<ExamOrder['result']> }} />} />
           {/* EX6 (ronda 11): el resultado en PDF (vista previa con Descargar e Imprimir) o directo a imprimir */}
           {e.result && <ResultPrintButtons e={e} />}
           {canReview(e) && can('exams.order') && user?.role === 'doctor' && <button className="btn btn--primary btn--sm" onClick={() => act('review')}><CheckCheck size={14} />Marcar revisado</button>}
-          {open && isPending(e) && (can('exams.process') || can('exams.order')) && <button className="btn btn--ghost btn--sm" onClick={() => setCancelling(true)}>Cancelar</button>}
+          {open && isPending(e) && !dept && (can('exams.process') || can('exams.order')) && <button className="btn btn--ghost btn--sm" onClick={() => setCancelling(true)}>Cancelar</button>}
+          {dept && isPending(e) && can('dept.work') && (e.notDone
+            ? <button className="btn btn--soft btn--sm" onClick={() => act('retry')}>Reintentar</button>
+            : <button className="btn btn--ghost btn--sm" onClick={() => setNotDone(true)}>No se realizó</button>)}
         </span>}
       </div>
       {result && <ResultModal e={e} onClose={() => setResult(false)} onDone={() => { setResult(false); reload() }} />}
       {cancelling && <CancelExam e={e} onClose={() => setCancelling(false)} onDone={() => { setCancelling(false); reload() }} />}
+      {notDone && <NotDoneModal e={e} onClose={() => setNotDone(false)} onDone={() => { setNotDone(false); reload() }} />}
     </div>
   )
 }
@@ -220,8 +235,14 @@ export function ResultView({ e, withFiles = true }: { e: ExamOrder; withFiles?: 
   )
 }
 
-function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => void; onDone: () => void }) {
-  const { notify, patient } = useStore()
+export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => void; onDone: () => void }) {
+  const { notify, patient, user, staffById } = useStore()
+  // DP2 (A25): el técnico en imágenes solo sube las imágenes del estudio realizado; el informe es del radiólogo o del médico
+  const imagesOnly = e.group === 'imaging' && user?.role === 'imaging' && user.position !== 'radiologist'
+  // EX6 (A24): el microbiólogo responsable (el de turno, o se elige si no hay uno solo)
+  const [resp, setResp] = useState<{ microbiologists: { id: string; name: string }[]; needsChoice: boolean; auto?: string } | null>(null)
+  const [responsibleId, setResponsibleId] = useState('')
+  useEffect(() => { if (e.group === 'lab' && !(e.status === 'result' && e.result)) api<NonNullable<typeof resp>>('/dept/responsible').then(setResp).catch(() => setResp(null)) }, [e.group, e.status, e.result])
   // AD4: también si la clínica renombró el examen, sus valores con rango vienen del de la lista fija
   const { exams: clinicExams } = useExamCatalog()
   const found = findExam(e.name, examCatalog(clinicExams))
@@ -241,7 +262,7 @@ function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => void
   const input = useRef<HTMLInputElement>(null)
   const filled = [...analytes.filter((a) => values[a.name]?.trim()).map((a) => ({ analyte: a.name, value: values[a.name].trim(), unit: a.unit || undefined })),
     ...extra.filter((x) => x.analyte.trim() && x.value.trim()).map((x) => ({ analyte: x.analyte.trim(), value: x.value.trim(), unit: x.unit.trim() || undefined }))]
-  const ready = filled.length > 0 || report.trim().length > 0 || !!file || (correcting && !!e.result!.fileIds?.length)
+  const ready = (imagesOnly ? !!file : filled.length > 0 || report.trim().length > 0 || !!file || (correcting && !!e.result!.fileIds?.length)) && (!resp?.needsChoice || !!responsibleId)
   return (
     <Modal title={`${correcting ? 'Corregir: ' : ''}${e.group === 'lab' ? 'Resultado' : 'Informe'}: ${examLine(e)}`} wide onClose={onClose} footer={<>
       {correcting && <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>}
@@ -250,13 +271,22 @@ function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => void
         setBusy(true)
         try {
           const fileIds = file ? [(await uploadLarge(e.patientId, file, { name: file.name, mime: file.type || 'application/pdf', category: e.group, title: e.name, hospitalizationId: e.hospitalizationId })).id] : undefined
-          await api(`/exams/${e.id}/result`, { body: { values: filled.length ? filled : undefined, report: report.trim() || undefined, fileIds: fileIds ?? (correcting ? e.result!.fileIds : undefined),
-            ...(correcting ? { correct: true, version: e.resultVersion ?? 1, why: why.trim() || undefined } : {}) } })
+          const saved = await api<ExamOrder>(`/exams/${e.id}/result`, { body: imagesOnly ? { fileIds, imagesOnly: true } : { values: filled.length ? filled : undefined, report: report.trim() || undefined, fileIds: fileIds ?? (correcting ? e.result!.fileIds : undefined),
+            ...(responsibleId ? { responsibleId } : {}), ...(correcting ? { correct: true, version: e.resultVersion ?? 1, why: why.trim() || undefined } : {}) } })
+          // DP2 (ronda 11): el mismo aviso de siempre; quien carga ve a quién se le avisó
+          if (saved.critical) notify(`Valor crítico: se avisó a ${staffById(e.orderedBy)?.name ?? 'el médico que lo pidió'}.`, 'error')
           onDone()
         } catch (x) { notify((x as Error).message, 'error') }
         setBusy(false)
-      }}>{correcting ? 'Guardar corrección' : `Guardar ${e.group === 'lab' ? 'resultado' : 'informe'}`}</button>
+      }}>{correcting ? 'Guardar corrección' : imagesOnly ? 'Subir imágenes' : `Guardar ${e.group === 'lab' ? 'resultado' : 'informe'}`}</button>
     </>}>
+      {resp && resp.microbiologists.length > 0 && (resp.needsChoice
+        ? <label className="field"><span>Microbiólogo responsable</span>
+          <select className="select" value={responsibleId} onChange={(x) => setResponsibleId(x.target.value)} aria-required="true">
+            <option value="">Elige el microbiólogo responsable</option>{resp.microbiologists.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
+          <small className="muted">No hay un solo microbiólogo de turno: elige quién responde por este resultado (va en el PDF).</small></label>
+        : resp.auto && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Microbiólogo responsable: {resp.microbiologists.find((m) => m.id === resp.auto)?.name} (de turno).</p>)}
+      {imagesOnly && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Sube las imágenes del estudio. El informe lo escribe el radiólogo o un médico.</p>}
       {e.group === 'lab' && (<>
         {analytes.length > 0 && <table className="exam-values exam-values--input"><thead><tr><th>Analito</th><th>Valor</th><th>Referencia</th></tr></thead><tbody>
           {analytes.map((a) => (
@@ -274,8 +304,8 @@ function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => void
         ))}
         <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => setExtra([...extra, { analyte: '', value: '', unit: '' }])}>Agregar otro valor</button>
       </>)}
-      <label className="field"><span>{e.group === 'lab' ? 'Comentario o resultado en texto (opcional)' : 'Informe (conclusión)'}</span>
-        <textarea className="textarea" rows={4} value={report} onChange={(x) => setReport(x.target.value)} placeholder={e.group === 'lab' ? 'Ej. EGO: leucocitos 10-15 por campo, nitritos positivos.' : 'Ej. Vesícula con litos múltiples, pared de 3 mm; vía biliar sin dilatación.'} /></label>
+      {!imagesOnly && <label className="field"><span>{e.group === 'lab' ? 'Comentario o resultado en texto (opcional)' : 'Informe (conclusión)'}</span>
+        <textarea className="textarea" rows={4} value={report} onChange={(x) => setReport(x.target.value)} placeholder={e.group === 'lab' ? 'Ej. EGO: leucocitos 10-15 por campo, nitritos positivos.' : 'Ej. Vesícula con litos múltiples, pared de 3 mm; vía biliar sin dilatación.'} /></label>}
       <div className="field"><span>Foto o PDF del {e.group === 'lab' ? 'resultado' : 'informe o las imágenes'} (opcional)</span>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button type="button" className="btn btn--soft btn--sm" onClick={() => input.current?.click()}><Camera size={15} />{file ? 'Cambiar archivo' : 'Tomar foto o elegir archivo'}</button>
@@ -442,7 +472,7 @@ function PrintResults({ group, exams, onClose }: { group: ExamGroup; exams: Exam
     </>}>
       <div className="exam-tools" style={{ padding: 0 }}>
         <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar examen" aria-label="Buscar examen con resultado" />
-        <input className="input" type="date" value={day} onChange={(e) => setDay(e.target.value)} aria-label="Fecha del resultado" style={{ maxWidth: 190 }} />
+        <DateField value={day} onChange={setDay} label="Fecha del resultado" />
       </div>
       <div className="print-pick">
         {shown.map((e) => (
@@ -454,6 +484,30 @@ function PrintResults({ group, exams, onClose }: { group: ExamGroup; exams: Exam
         {!shown.length && <p className="muted">Ningún examen coincide.</p>}
       </div>
       <small className="muted">Sale un solo documento, con cada examen en su bloque.</small>
+    </Modal>
+  )
+}
+
+/** DP2 (ronda 11, A21): «No se realizó», con motivo obligatorio (lista de configuración y «Otro» escrito). Se avisa al médico. */
+function NotDoneModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => void; onDone: () => void }) {
+  const { notify } = useStore()
+  const [pick, setPick] = useState('')
+  const [other, setOther] = useState('')
+  const [busy, setBusy] = useState(false)
+  const reason = pick === 'Otro' ? other.trim() : pick
+  return (
+    <Modal title={`No se realizó: ${examLine(e)}`} onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={reason.length < 3 || busy} onClick={async () => {
+        setBusy(true)
+        try { await api(`/exams/${e.id}/not-done`, { body: { reason } }); notify('Se avisó al médico que lo pidió. Sigue pendiente.'); onDone() } catch (x) { notify((x as Error).message, 'error'); setBusy(false) }
+      }}>Guardar</button>
+    </>}>
+      <p className="muted" style={{ fontSize: 14, margin: 0 }}>La orden sigue pendiente: el médico decide si la cancela. Con «Reintentar» vuelve a la bandeja.</p>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {[...NOT_DONE_REASONS, 'Otro'].map((r) => <label key={r} className="check-line"><input type="radio" name="nd" checked={pick === r} onChange={() => setPick(r)} /><span><b>{r}</b></span></label>)}
+      </div>
+      {pick === 'Otro' && <label className="field"><span>Motivo</span><input className="input" autoFocus value={other} onChange={(x) => setOther(x.target.value)} /></label>}
     </Modal>
   )
 }

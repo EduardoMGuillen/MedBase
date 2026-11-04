@@ -28,6 +28,7 @@ export const toStaff = (r: Row): Staff => ({
   hasStamp: r.stamp ? true : undefined,
   hasPin: r.pin_hash ? true : undefined,
   docName: s(r.doc_name),
+  position: s(r.position),
 })
 
 export const toPatient = (r: Row, clinical: boolean): Patient => ({

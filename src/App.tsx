@@ -13,7 +13,6 @@ import Dashboard from './app/Dashboard'
 import Agenda from './app/Agenda'
 import WaitingRoom from './app/WaitingRoom'
 import Patients from './app/Patients'
-import PatientChart from './app/PatientChart'
 import Consultation from './app/Consultation'
 import Prescriptions, { PrescriptionSheet } from './app/Prescriptions'
 import Certificate, { CertificateView } from './app/Certificate'
@@ -36,6 +35,8 @@ import OrderSetsPage from './app/OrderSetsPage'
 import EpicrisisPage from './app/Epicrisis'
 import ExamOrderPage from './app/ExamOrder'
 import PrintJobPage from './app/PrintJob'
+import DeptTray from './app/DeptTray'
+import { ChartOrDept, DeptConfig, DeptOnly, DeptRosterPage } from './app/DeptPages'
 
 /** Entra sólo con sesión, con el permiso y, si se pide, con el módulo activo en la cuenta (un consultorio no tiene hospitalización). */
 function Guard({ perm, feature, children }: { perm?: Permission; feature?: 'hospital' | 'observation'; children: ReactNode }) {
@@ -43,7 +44,8 @@ function Guard({ perm, feature, children }: { perm?: Permission; feature?: 'hosp
   if (checking) return <Loading label="Abriendo tu sesión" />
   if (!user) return <Navigate to="/login" replace />
   // AD5: la pantalla es de otro de sus roles: se ofrece cambiar de vista
-  if (perm && !can(perm)) return roleWith(user, perm, settings.kind) ? <SwitchViewOffer perm={perm} /> : <Navigate to="/app" replace />
+  // DP4 (ronda 11): una dirección a la que el rol no tiene acceso dice «Sin permiso» (el servidor también la bloquea)
+  if (perm && !can(perm)) return roleWith(user, perm, settings.kind) ? <SwitchViewOffer perm={perm} /> : <NoPermission />
   if (feature && !features(settings)[feature]) return <Navigate to="/app" replace />
   return children
 }
@@ -53,8 +55,15 @@ function Home() {
   const { settings, can, user } = useStore()
   // MI1: el titular configura su consultorio en la vista de administrador (si está en la de médico, se le ofrece cambiar)
   if (settings.kind === 'office' && (can('settings.manage') || (user && hasRole(user, 'admin'))) && !settings.setupDoneAt) return <Navigate to="/app/bienvenida" replace />
+  // DP1 (ronda 11): Laboratorio e Imágenes empiezan en su bandeja
+  if (user?.role === 'lab') return <Navigate to="/app/laboratorio" replace />
+  if (user?.role === 'imaging') return <Navigate to="/app/imagenes" replace />
   // AD5: quien tiene varios roles elige aquí su vista
   return <><div className="view-bar"><ViewSwitch /></div><Dashboard /></>
+}
+
+function NoPermission() {
+  return <div className="page"><section className="panel"><div className="empty"><b>Sin permiso.</b> Tu rol no tiene acceso a esta pantalla. <a href="/app">Volver al inicio</a></div></section></div>
 }
 
 export default function App() {
@@ -69,6 +78,12 @@ export default function App() {
           <Route path="/app" element={<Guard><AppShell /></Guard>}>
             <Route index element={<Home />} />
             <Route path="bienvenida" element={<Guard perm="settings.manage"><Onboarding /></Guard>} />
+            {/* DP (ronda 11): departamentos de Laboratorio e Imágenes */}
+            <Route path="laboratorio" element={<Guard perm="dept.work"><DeptOnly dept="lab"><DeptTray group="lab" /></DeptOnly></Guard>} />
+            <Route path="imagenes" element={<Guard perm="dept.work"><DeptOnly dept="imaging"><DeptTray group="imaging" /></DeptOnly></Guard>} />
+            <Route path="configuracion-laboratorio" element={<Guard perm="dept.work"><DeptOnly dept="lab"><DeptConfig group="lab" /></DeptOnly></Guard>} />
+            <Route path="configuracion-imagenes" element={<Guard perm="dept.work"><DeptOnly dept="imaging"><DeptConfig group="imaging" /></DeptOnly></Guard>} />
+            <Route path="rol-de-turnos" element={<Guard perm="dept.work"><DeptRosterPage /></Guard>} />
             <Route path="agenda" element={<Guard perm="agenda.view"><Agenda /></Guard>} />
             <Route path="consulta-externa" element={<Guard perm="agenda.view"><WaitingRoom /></Guard>} />
             <Route path="sala" element={<Navigate to="/app/consulta-externa" replace />} />
@@ -83,7 +98,7 @@ export default function App() {
             <Route path="epicrisis/:id" element={<Guard perm="inpatient.view"><EpicrisisPage /></Guard>} />
             <Route path="seguimientos" element={<Guard perm="followups.view"><Followups /></Guard>} />
             <Route path="pacientes" element={<Guard perm="patients.view"><Patients /></Guard>} />
-            <Route path="pacientes/:id" element={<Guard perm="patients.view"><PatientChart /></Guard>} />
+            <Route path="pacientes/:id" element={<Guard perm="patients.view"><ChartOrDept /></Guard>} />
             <Route path="consulta/:apptId" element={<Guard perm="consult.write"><Consultation /></Guard>} />
             <Route path="sets-de-ordenes" element={<Guard perm="consult.write"><OrderSetsPage /></Guard>} />
             <Route path="constancia/:id" element={<Guard perm="consult.write"><Certificate /></Guard>} />

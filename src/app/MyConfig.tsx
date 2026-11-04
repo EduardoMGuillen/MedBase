@@ -330,7 +330,7 @@ function SecurityPanel() {
       </section>
       <section className="panel">
         <div className="panel__head"><h2>Lo que tu {viewsOf(user).length > 1 ? 'vista' : 'rol'} permite</h2></div>
-        <div className="panel__body"><div className="chips">{permissionsFor(user.role, user.clinicKind).map((p) => <span key={p} className="chip">{PERMISSIONS[p]}</span>)}</div></div>
+        <div className="panel__body"><div className="chips">{permissionsFor(user.role, user.clinicKind, user.position).map((p) => <span key={p} className="chip">{PERMISSIONS[p]}</span>)}</div></div>
       </section>
     </div>
   )

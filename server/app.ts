@@ -43,7 +43,9 @@ import { registerRoster } from './routes/roster.js'
 import { registerEpicrisis } from './routes/epicrisis.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { registerPrintJobs } from './routes/printJobs.js'
+import { registerDept } from './routes/dept.js'
 import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permission } from '../src/lib/permissions.js'
+import { positionOf } from '../src/lib/positions.js'
 import { NEB_MAX_COMPONENTS, PAGE_SIZE } from '../src/lib/clinicalConfig.js'
 import { yearsOld } from '../src/lib/inpatient.js'
 import { normalizeDni } from '../src/lib/format.js'
@@ -83,7 +85,7 @@ const PATIENT_FIELD: Record<string, string> = {
 }
 
 const COLORS = ['#2335C9', '#0F8A6E', '#B4407A', '#C27A12', '#6A4BC4', '#2C7DA0', '#5B6472']
-const ROLES = ['admin', 'doctor', 'nurse', 'reception', 'assistant'] as const
+const ROLES = ['admin', 'doctor', 'nurse', 'reception', 'assistant', 'lab', 'imaging'] as const
 
 export function createApp(opts: AppOptions) {
   const { sql } = opts
@@ -205,7 +207,7 @@ export function createApp(opts: AppOptions) {
 
   const session = (row: Row) => {
     const user = toStaff(row)
-    return { user, permissions: permissionsFor(user.role, user.clinicKind), demo: demoMode }
+    return { user, permissions: permissionsFor(user.role, user.clinicKind, user.position), demo: demoMode }
   }
 
   app.post('/api/auth/login', async (req, res) => {
@@ -1237,9 +1239,13 @@ export function createApp(opts: AppOptions) {
       email: z.string().trim().email('El correo no es válido.'),
       specialty: z.string().trim().optional(),
       license: z.string().trim().optional(),
+      // DP1 (ronda 11): cargo dentro de Laboratorio o Imágenes
+      position: z.string().trim().max(40).optional(),
     }), req.body)
+    await assertRoleFits(sql, clinicOf(req), s.role)
+    checkPosition([s.role], s.position, s.license, s.name)
     const { user: created, password } = await createStaffMember(sql, clinicOf(req), s)
-    await audit(userOf(req), `Creó el usuario ${s.name} (${s.role})`)
+    await audit(userOf(req), `Creó el usuario ${s.name} (${ROLE_LABEL[s.role]}${s.position ? `, ${positionOf(s.position)?.label}` : ''})`)
     res.status(201).json({ user: created, password })
   })
 
@@ -1256,6 +1262,7 @@ export function createApp(opts: AppOptions) {
       license: z.string().trim().optional(),
       serviceId: z.string().optional(),
       schedule: scheduleInput.optional(),
+      position: z.string().trim().max(40).nullable().optional(),
     }), req.body)
     const id = String(row!.id)
     const cid = clinicOf(req)
@@ -1268,6 +1275,11 @@ export function createApp(opts: AppOptions) {
     if (b.active === true && !row!.active) for (const r of prev) await assertRoleFits(sql, cid, r, id)
     // Siempre queda al menos una persona activa con Administración en la clínica
     if ((nextRoles && prev.includes('admin') && !nextRoles.includes('admin')) || (b.active === false && prev.includes('admin'))) await assertNotLastAdmin(sql, cid, id)
+    // DP1 (ronda 11): con Laboratorio o Imágenes, el cargo es obligatorio y, para Microbiólogo o Radiólogo, la colegiación
+    const roles = nextRoles ?? prev
+    const position = b.position === undefined ? (row!.position ? String(row!.position) : undefined) : b.position ?? undefined
+    if (roles.some((r) => r === 'lab' || r === 'imaging') || b.position !== undefined) checkPosition(roles, position, b.license ?? (row!.license ? String(row!.license) : undefined), String(row!.name))
+    const keptPosition = roles.some((r) => r === 'lab' || r === 'imaging') ? position : undefined
     const addsDoctor = nextRoles?.includes('doctor') && !prev.includes('doctor')
     if (addsDoctor && !row!.license && !b.license) fail(400, `Para darle el rol de médico a ${row!.name} escribe su número de colegiación.`)
     const changes: string[] = []
@@ -1285,7 +1297,13 @@ export function createApp(opts: AppOptions) {
       if (b.license !== undefined) await q.run('UPDATE staff SET license = ? WHERE id = ?', [b.license || null, id])
       if (b.serviceId !== undefined) await q.run('UPDATE staff SET service_id = ? WHERE id = ?', [b.serviceId || null, id])
       if (b.schedule) { await q.run('UPDATE staff SET schedule = ? WHERE id = ?', [JSON.stringify(cleanSchedule(b.schedule)), id]); changes.push('Actualizó el horario de') }
+      if ((keptPosition ?? null) !== (row!.position ?? null)) {
+        await q.run('UPDATE staff SET position = ? WHERE id = ?', [keptPosition ?? null, id])
+        changes.push(`Cambió el cargo (${positionOf(row!.position ? String(row!.position) : undefined)?.label ?? 'sin cargo'} → ${positionOf(keptPosition)?.label ?? 'sin cargo'}) de`)
+      }
     })
+    // DP1: el cambio de cargo queda en la bitácora aunque cambie otra cosa a la vez
+    if (changes.length > 1) for (const c of changes.slice(1)) await audit(me, `${c} ${row!.name}`)
     await audit(me, `${changes[0] ?? 'Actualizó los datos de'} ${row!.name}`)
     res.json(toStaff((await staffRow(id))!))
   })
@@ -1352,6 +1370,7 @@ export function createApp(opts: AppOptions) {
   registerEpicrisis(app, ctx)
   registerFollowups(app, ctx)
   registerPrintJobs(app, ctx)
+  registerDept(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))
 
@@ -1409,7 +1428,7 @@ const scheduleInput = z.object({
 const cleanSchedule = (s: z.infer<typeof scheduleInput>) => scheduleFromWeek(weekOf({ days: s.days ?? [], start: s.start ?? '', end: s.end ?? '', slot: s.slot, week: s.week }), s.slot)
 
 /** Crea un usuario dentro de una clínica y devuelve su contraseña temporal. */
-export async function createStaffMember(sql: Sql, clinicId: string, s: { name: string; role: (typeof ROLES)[number]; email: string; specialty?: string; license?: string }) {
+export async function createStaffMember(sql: Sql, clinicId: string, s: { name: string; role: (typeof ROLES)[number]; email: string; specialty?: string; license?: string; position?: string }) {
   if (s.role === 'doctor' && !s.license) fail(400, 'Para un médico escribe su número de colegiación.')
   await assertRoleFits(sql, clinicId, s.role)
   if (await sql.one('SELECT 1 FROM staff WHERE lower(email) = lower(?)', [s.email])) fail(409, 'Ya existe un usuario con ese correo.')
@@ -1418,9 +1437,9 @@ export async function createStaffMember(sql: Sql, clinicId: string, s: { name: s
   const count = Number((await sql.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM staff WHERE clinic_id = ?', [clinicId]))!.n)
   const service = s.role === 'doctor' ? await sql.one(`SELECT id FROM services WHERE clinic_id = ? AND active ORDER BY name LIMIT 1`, [clinicId]) : undefined
   const schedule = s.role === 'doctor' ? JSON.stringify(scheduleFromWeek({ 1: [{ start: '08:00', end: '17:00' }], 2: [{ start: '08:00', end: '17:00' }], 3: [{ start: '08:00', end: '17:00' }], 4: [{ start: '08:00', end: '17:00' }], 5: [{ start: '08:00', end: '17:00' }] }, 30)) : null
-  await sql.run(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id,clinic_id,roles) VALUES (?,?,?,?,?,?,?,TRUE,?,?,?,?,?)`,
+  await sql.run(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id,clinic_id,roles,position) VALUES (?,?,?,?,?,?,?,TRUE,?,?,?,?,?,?)`,
     [id, s.name, s.role, s.specialty || null, s.email, s.license || null, COLORS[count % COLORS.length], bcrypt.hashSync(password, 10),
-      schedule, service ? String(service.id) : null, clinicId, JSON.stringify([s.role])])
+      schedule, service ? String(service.id) : null, clinicId, JSON.stringify([s.role]), s.role === 'lab' || s.role === 'imaging' ? s.position ?? null : null])
   return { user: toStaff((await sql.one('SELECT * FROM staff WHERE id = ?', [id]))!), password }
 }
 
@@ -1476,4 +1495,18 @@ async function persistentSecret(sql: Sql) {
   const fresh = randomBytes(48).toString('hex')
   await sql.run(`INSERT INTO meta (key, value) VALUES ('jwt_secret', ?) ON CONFLICT (key) DO NOTHING`, [fresh])
   return String((await sql.one(`SELECT value FROM meta WHERE key = 'jwt_secret'`))!.value)
+}
+
+/**
+ * DP1 (ronda 11): Laboratorio e Imágenes llevan cargo obligatorio, del departamento que corresponde (una persona trabaja en
+ * uno solo), y Microbiólogo o Radiólogo, número de colegiación.
+ */
+function checkPosition(roles: string[], position: string | undefined, license: string | undefined, name: string) {
+  const depts = roles.filter((r) => r === 'lab' || r === 'imaging')
+  if (!depts.length) return
+  if (depts.length > 1) fail(400, 'Una persona trabaja en Laboratorio o en Imágenes, no en los dos.')
+  const pos = positionOf(position)
+  if (!pos) fail(400, `Elige el cargo de ${name} en ${depts[0] === 'lab' ? 'Laboratorio' : 'Imágenes'}.`)
+  if (pos!.dept !== depts[0]) fail(400, `«${pos!.label}» no es un cargo de ${depts[0] === 'lab' ? 'Laboratorio' : 'Imágenes'}.`)
+  if (pos!.license && !license?.trim()) fail(400, `Escribe el número de colegiación de ${name} (${pos!.licenseBody}).`)
 }

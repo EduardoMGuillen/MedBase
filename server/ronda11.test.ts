@@ -246,7 +246,13 @@ describe('EX6 (ronda 11): «Ver PDF» e «Imprimir» en los resultados', () => {
     const ex = (await doc.get(`/api/inpatient/${stay}`)).body.exams.find((e: any) => e.noteId === n.body.id)
     assert.equal((await nurse.post('/api/print-jobs', { kind: 'results', examIds: [ex.id] })).status, 409, 'sin resultado')
     await nurse.post(`/api/exams/${ex.id}/status`, { status: 'sample' })
-    assert.equal((await nurse.post(`/api/exams/${ex.id}/result`, { values: [{ analyte: 'Sodio', value: '140' }] })).status, 200)
+    const resp = (await nurse.get('/api/dept/responsible')).body
+    const body: any = { values: [{ analyte: 'Sodio', value: '140' }] }
+    if (resp.needsChoice) {
+      assert.equal((await nurse.post(`/api/exams/${ex.id}/result`, body)).status, 400, 'sin microbiólogo de turno se elige')
+      body.responsibleId = 's-ordonez'
+    }
+    assert.equal((await nurse.post(`/api/exams/${ex.id}/result`, body)).status, 200)
     assert.equal((await rec.post('/api/print-jobs', { kind: 'results', examIds: [ex.id] })).status, 403)
     const job = await nurse.post('/api/print-jobs', { kind: 'results', examIds: [ex.id] })
     assert.equal(job.status, 201)
@@ -260,5 +266,173 @@ describe('EX6 (ronda 11): «Ver PDF» e «Imprimir» en los resultados', () => {
     const fix = await nurse.post(`/api/exams/${ex.id}/result`, { values: [{ analyte: 'Sodio', value: '141' }], correct: true, version: 1 })
     assert.equal(fix.status, 409)
     assert.match(String(fix.body.error), /Ya se imprimió/)
+  })
+})
+
+describe('DP (ronda 11): departamentos de Laboratorio clínico e Imágenes', () => {
+  const stayOf = async (kind = 'hospital') => String((await sql.one(`SELECT id FROM hospitalizations WHERE status = 'active' AND clinic_id = ? AND kind = ? ORDER BY admitted_at LIMIT 1`, [await mainClinic(), kind]))!.id)
+  test('DM2 y DP1: los cuatro usuarios con su rol y cargo; cada uno entra y ve su menú (permisos); los demás demos siguen', async () => {
+    for (const [email, role, position] of [['gordonez@demo.clinara', 'lab', 'microbiologist'], ['krivera@demo.clinara', 'lab', 'lab_tech'], ['mcastellanos@demo.clinara', 'imaging', 'radiologist'], ['pandino@demo.clinara', 'imaging', 'imaging_tech']]) {
+      const me = (await (await as(email)).get('/api/auth/me')).body
+      assert.equal(me.user.role, role, email)
+      assert.equal(me.user.position, position, email)
+      assert.ok(me.permissions.includes('dept.work'))
+      assert.equal(me.permissions.includes('dept.config'), position === 'microbiologist' || position === 'radiologist', email)
+      assert.equal(me.permissions.includes('chart.view'), position === 'radiologist', email)
+    }
+    for (const email of ['admin@demo.clinara', 'smejia@demo.clinara', 'crios@demo.clinara', 'lherrera@demo.clinara', 'alopez@demo.clinara']) assert.equal((await (await as(email)).get('/api/auth/me')).status, 200)
+  })
+  test('DP1: el cargo es obligatorio y la colegiación del microbiólogo también; el cambio de cargo queda en la bitácora', async () => {
+    const admin = await as('admin@demo.clinara')
+    assert.equal((await admin.post('/api/staff', { name: 'Persona Lab', role: 'lab', email: 'plab@ejemplo.hn' })).status, 400)
+    assert.equal((await admin.post('/api/staff', { name: 'Persona Lab', role: 'lab', email: 'plab@ejemplo.hn', position: 'microbiologist' })).status, 400)
+    assert.equal((await admin.post('/api/staff', { name: 'Persona Lab', role: 'lab', email: 'plab@ejemplo.hn', position: 'radiologist', license: 'X' })).status, 400, 'cargo de otro departamento')
+    const ok = await admin.post('/api/staff', { name: 'Persona Lab', role: 'lab', email: 'plab@ejemplo.hn', position: 'lab_tech' })
+    assert.equal(ok.status, 201, JSON.stringify(ok.body))
+    const ch = await admin.patch(`/api/staff/${ok.body.user.id}`, { roles: ['lab'], position: 'microbiologist', license: 'DEMO-0099' })
+    assert.equal(ch.status, 200, JSON.stringify(ch.body))
+    assert.ok(await sql.one(`SELECT 1 FROM audit WHERE action LIKE 'Cambió el cargo (Técnico(a) de laboratorio → Microbiólogo(a)) de Persona Lab%'`))
+  })
+  test('DP2: en la bandeja lo «En la clínica» de su tipo (no lo externo); la muestra la toma el primero; el otro ve quién', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const tech = await as('krivera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const img = await as('pandino@demo.clinara')
+    const stay = await stayOf()
+    const n = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'DP2', exams: [
+      { group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic', indication: 'Fiebre' },
+      { group: 'lab', name: 'TSH', priority: 'routine', place: 'external' },
+      { group: 'imaging', name: 'Rayos X', subject: 'tórax', projections: ['PA', 'Lateral'], priority: 'urgent', place: 'clinic' },
+      { group: 'imaging', name: 'Tomografía', subject: 'abdomen y pelvis', contrast: 'Contrastada', priority: 'routine', place: 'clinic' }] })
+    assert.equal(n.status, 201)
+    const labTray = (await tech.get('/api/dept/tray')).body
+    const mine = labTray.items.filter((e: any) => e.noteId === n.body.id)
+    assert.deepEqual(mine.map((e: any) => e.name), ['Hemograma'], 'lo externo no entra; imagen tampoco')
+    assert.match(mine[0].locationText, /^Hospitalización/)
+    assert.equal(mine[0].indication, 'Fiebre')
+    assert.equal((await tech.get('/api/dept/tray?group=imaging')).status, 403, 'la bandeja de imágenes no')
+    const hemo = mine[0]
+    assert.equal((await nurse.post(`/api/exams/${hemo.id}/status`, { status: 'sample' })).status, 200, 'enfermería la toma')
+    const second = await tech.post(`/api/exams/${hemo.id}/status`, { status: 'sample' })
+    assert.equal(second.status, 409)
+    assert.match(String(second.body.error), /Muestra tomada por Lic\. Carmen Ríos \d\d:\d\d/)
+    // Imágenes: el Rayos X realizado queda terminado (EX3); la tomografía pasa a «Por informar»; el técnico no informa
+    const it = (await img.get('/api/dept/tray')).body.items.filter((e: any) => e.noteId === n.body.id)
+    const rx = it.find((e: any) => e.name === 'Rayos X'), ct = it.find((e: any) => e.name === 'Tomografía')
+    assert.equal((await img.post(`/api/exams/${rx.id}/status`, { status: 'done' })).status, 200)
+    assert.equal((await img.post(`/api/exams/${ct.id}/status`, { status: 'done' })).status, 200)
+    assert.equal((await img.post(`/api/exams/${ct.id}/result`, { report: 'Informe' })).status, 403, 'el informe es del radiólogo')
+    const rad = await as('mcastellanos@demo.clinara')
+    assert.equal((await rad.post(`/api/exams/${ct.id}/result`, { report: 'Sin alteraciones agudas.' })).status, 200)
+    assert.equal((await rad.post(`/api/exams/${hemo.id}/result`, { values: [{ analyte: 'Hemoglobina', value: '12' }] })).status, 403, 'el laboratorio es de laboratorio')
+  })
+  test('DP2: nadie del departamento cancela; «No se realizó» avisa al médico y sigue pendiente; «Reintentar» lo devuelve', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const tech = await as('krivera@demo.clinara')
+    const stay = await stayOf()
+    const n = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'DP2b', exams: [{ group: 'lab', name: 'Perfil lipídico', priority: 'routine', place: 'clinic' }] })
+    const ex = (await doc.get(`/api/inpatient/${stay}`)).body.exams.find((e: any) => e.noteId === n.body.id)
+    assert.equal((await tech.post(`/api/exams/${ex.id}/cancel`, { reason: 'No hay reactivo' })).status, 403)
+    assert.equal((await tech.post(`/api/exams/${ex.id}/not-done`, { reason: 'No hay reactivo' })).status, 200)
+    const news = (await doc.get('/api/exams/new-results')).body
+    assert.ok(news.some((e: any) => e.id === ex.id && e.notDone?.reason === 'No hay reactivo'), 'el médico recibe el aviso')
+    const tray = (await tech.get('/api/dept/tray')).body.items.find((e: any) => e.id === ex.id)
+    assert.equal(tray.status, 'ordered', 'sigue pendiente')
+    assert.equal((await tech.post(`/api/exams/${ex.id}/retry`)).status, 200)
+    assert.equal((await tech.get('/api/dept/tray')).body.items.find((e: any) => e.id === ex.id).notDone, undefined)
+    assert.equal((await doc.post(`/api/exams/${ex.id}/cancel`, { reason: 'Ya no hace falta' })).status, 200, 'el médico sí cancela')
+  })
+  test('DP3: ambulatorio con solicitante y foto de la orden; entra a la bandeja y queda en el expediente; recepción también; enfermería no', async () => {
+    const tech = await as('krivera@demo.clinara')
+    const rec = await as('smejia@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const p = (await tech.post('/api/patients', { firstName: 'Ambulatorio', lastName: 'De Prueba', birthDate: '1990-05-01', sex: 'F', phone: '9999-0000' }))
+    assert.equal(p.status, 201, JSON.stringify(p.body))
+    const file = await tech.post(`/api/patients/${p.body.id}/attachments`, { name: 'orden.png', mime: 'image/png', category: 'lab', data: Buffer.from('x').toString('base64') })
+    assert.equal(file.status, 201, JSON.stringify(file.body))
+    const r = await tech.post('/api/dept/ambulatory', { patientId: p.body.id, group: 'lab', exams: [{ group: 'lab', name: 'Perfil lipídico', priority: 'routine', place: 'clinic' }], requestedByName: 'Dr. Carlos Medina', fileId: file.body.id })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(r.body.exams[0].location, 'ambulatory')
+    const tray = (await tech.get('/api/dept/tray')).body.items.find((e: any) => e.id === r.body.exams[0].id)
+    assert.equal(tray.locationText, 'Ambulatorio')
+    assert.equal(tray.requestedByName, 'Dr. Carlos Medina')
+    assert.equal((await tech.post('/api/dept/ambulatory', { patientId: p.body.id, group: 'imaging', exams: [{ group: 'imaging', name: 'Ultrasonido', subject: 'abdomen', priority: 'routine', place: 'clinic' }] })).status, 403, 'solo su tipo')
+    const us = await rec.post('/api/dept/ambulatory', { patientId: p.body.id, group: 'imaging', exams: [{ group: 'imaging', name: 'Ultrasonido', subject: 'abdomen', priority: 'routine', place: 'clinic' }] })
+    assert.equal(us.status, 201, JSON.stringify(us.body))
+    assert.equal((await nurse.post('/api/dept/ambulatory', { patientId: p.body.id, group: 'lab', exams: [{ group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' }] })).status, 403)
+    const docExams = (await (await as('lherrera@demo.clinara')).get(`/api/patients/${p.body.id}/exams`)).body
+    assert.equal(docExams.length, 2, 'en el expediente, para cualquier médico')
+  })
+  test('DP4: los técnicos ven datos, alergias y su tipo (imágenes, la creatinina); no notas, diagnósticos ni medicamentos (también por URL); el radiólogo ve todo sin escribir', async () => {
+    const tech = await as('krivera@demo.clinara')
+    const img = await as('pandino@demo.clinara')
+    const rad = await as('mcastellanos@demo.clinara')
+    const stay = await stayOf()
+    const pid = String((await sql.one('SELECT patient_id FROM hospitalizations WHERE id = ?', [stay]))!.patient_id)
+    const v = (await tech.get(`/api/dept/patients/${pid}`)).body
+    assert.ok(Array.isArray(v.patient.allergies))
+    assert.ok(v.exams.every((e: any) => e.group === 'lab'))
+    assert.equal(v.diagnoses, undefined)
+    assert.match(v.location, /^Hospitalización/)
+    assert.ok(await sql.one(`SELECT 1 FROM audit WHERE user_id = 's-rivera' AND action LIKE 'Abrió el expediente%'`))
+    for (const path of [`/api/inpatient/${stay}`, `/api/patients/${pid}/exams`, `/api/patients/${pid}/attachments`]) assert.equal((await tech.get(path)).status, 403, path)
+    const iv = (await img.get(`/api/dept/patients/${pid}`)).body
+    assert.ok(iv.exams.every((e: any) => e.group === 'imaging'))
+    assert.ok(iv.creatinine === undefined || typeof iv.creatinine.value === 'string')
+    const boot = (await tech.get('/api/bootstrap')).body
+    assert.ok(boot.patients.every((p: any) => !p.conditions?.length && !p.allergies?.length), 'sin diagnósticos en la búsqueda')
+    assert.equal((await rad.get(`/api/inpatient/${stay}`)).status, 200, 'el radiólogo ve el expediente')
+    assert.equal((await rad.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'x' })).status, 403, 'no escribe notas')
+  })
+  test('DP5: el microbiólogo agrega un examen con rango y cambia un umbral (bitácora); el radiólogo agrega un estudio con «¿De qué?»; los técnicos no editan', async () => {
+    const micro = await as('gordonez@demo.clinara')
+    const tech = await as('krivera@demo.clinara')
+    const rad = await as('mcastellanos@demo.clinara')
+    const add = await micro.post('/api/exams/catalog', { group: 'lab', name: 'Prueba de laboratorio DP5', subgroup: 'Otros' })
+    assert.equal(add.status, 201, JSON.stringify(add.body))
+    assert.equal((await micro.put(`/api/exams/catalog/${add.body.id}/refs`, { rows: [{ analyte: 'Valor', sex: 'all', unit: 'mg/dL', low: 1, high: 5 }] })).status, 200)
+    assert.equal((await micro.post('/api/exams/catalog', { group: 'imaging', name: 'Estudio de otro departamento' })).status, 403)
+    assert.equal((await tech.post('/api/exams/catalog', { group: 'lab', name: 'Prueba del técnico' })).status, 403)
+    assert.equal((await tech.del(`/api/exams/catalog/${add.body.id}`)).status, 403)
+    const settings = (await micro.get('/api/bootstrap')).body.settings
+    const groups = structuredClone(settings.criticalGroups)
+    const k = groups.flatMap((g: any) => g.analytes).find((a: any) => a.name === 'Potasio')
+    const before = k.low
+    k.low = 3
+    assert.equal((await micro.put('/api/settings/critical-groups', { groups })).status, 200)
+    assert.ok(await sql.one(`SELECT 1 FROM audit WHERE user_id = 's-ordonez' AND action LIKE ?`, [`%Potasio: crítico si es menor de ${before} → 3%`]))
+    assert.equal((await tech.put('/api/settings/critical-groups', { groups })).status, 403)
+    assert.equal((await rad.put('/api/settings/critical-groups', { groups })).status, 403)
+    const st = await rad.post('/api/exams/catalog', { group: 'imaging', name: 'Fluoroscopia especial', subgroup: 'Otros', details: { what: true } })
+    assert.equal(st.status, 201, JSON.stringify(st.body))
+    const doc = await as('lherrera@demo.clinara')
+    const stay = await stayOf()
+    const bad = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'DP5', exams: [{ group: 'imaging', name: 'Fluoroscopia especial', priority: 'routine', place: 'clinic' }] })
+    assert.equal(bad.status, 400, 'pide de qué')
+    assert.equal((await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'DP5', exams: [{ group: 'imaging', name: 'Fluoroscopia especial', subject: 'esófago', priority: 'routine', place: 'clinic' }] })).status, 201)
+  })
+  test('DP6: el microbiólogo asigna la Mañana de lunes a viernes en una operación; el técnico ve sin editar y no ve Imágenes; enfermería no se asigna en Laboratorio', async () => {
+    const micro = await as('gordonez@demo.clinara')
+    const tech = await as('krivera@demo.clinara')
+    const admin = await as('admin@demo.clinara')
+    const today = new Date(); const y = today.getFullYear(), m = today.getMonth()
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const from = iso(today), to = iso(new Date(y, m + 1, 0))
+    const r = await micro.post('/api/roster/bulk', { staffId: 's-rivera', dept: 'lab', shift: 'morning', from, to, weekdays: [1, 2, 3, 4, 5] })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    const list = (await tech.get(`/api/roster?from=${from}&to=${to}&dept=lab`)).body
+    assert.ok(list.some((x: any) => x.staffId === 's-rivera' && x.shift === 'morning'))
+    assert.equal((await tech.post('/api/roster', { day: to, staffId: 's-rivera', dept: 'lab', shift: 'night' })).status, 403)
+    assert.equal((await tech.get(`/api/roster?from=${from}&to=${to}&dept=imaging`)).status, 403)
+    assert.equal((await admin.post('/api/roster', { day: to, staffId: 's-rios', dept: 'lab', shift: 'night' })).status, 400, 'enfermería no va en Laboratorio')
+    assert.equal((await admin.get(`/api/roster?from=${from}&to=${to}&dept=imaging`)).status, 200)
+    assert.ok(await sql.one(`SELECT 1 FROM audit WHERE user_id = 's-ordonez' AND action LIKE 'Rol de turnos (Laboratorio): asignó a Téc. Kevin Rivera%'`))
+  })
+  test('DP: en Consultorio no existen los roles nuevos', async () => {
+    const { ROLES_BY_KIND } = await import('../src/lib/permissions.js')
+    assert.ok(!ROLES_BY_KIND.office.includes('lab' as never))
+    const office = await as('alopez@demo.clinara')
+    const pid = String((await sql.one(`SELECT p.id FROM patients p JOIN staff s ON s.clinic_id = p.clinic_id WHERE s.email = 'alopez@demo.clinara' LIMIT 1`))!.id)
+    assert.equal((await office.post('/api/dept/ambulatory', { patientId: pid, group: 'lab', exams: [{ group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' }] })).status, 403)
   })
 })

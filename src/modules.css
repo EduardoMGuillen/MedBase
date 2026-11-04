@@ -907,3 +907,22 @@ button.src-tag--none { cursor: pointer; }
 @page resultados { size: letter; margin: 14mm 14mm 18mm; @bottom-center { content: "Página " counter(page) " de " counter(pages); font-size: 9pt; color: #555; } }
 @media print { .result-doc__table th, .result-doc__table td { border-color: #999; } .result-doc__sign small { color: #333; } }
 @media (max-width: 600px) { .result-doc__table { font-size: 12px; } .result-doc__table th, .result-doc__table td { padding: 3px; } }
+/* DP2 (ronda 11): bandeja de Laboratorio e Imágenes */
+.dept__tabs { display: flex; flex-wrap: wrap; margin-bottom: 12px; }
+.dept__tabs button { min-height: 44px; }
+.dept__filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.dept__filters > .input, .dept__filters > .select { flex: 1 1 220px; max-width: 360px; }
+.dept__list { display: grid; gap: 10px; }
+.dept__item { padding: 12px 14px 4px; overflow: hidden; }
+.dept__item--urgent { border-left: 4px solid var(--red-ink); }
+.dept__who { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 14px; }
+.dept__name { font-weight: 700; font-size: 15.5px; color: var(--ink-deep); }
+.dept__wait { margin-left: auto; font-size: 13px; }
+.dept__meta { font-size: 13px; margin: 4px 0 6px; }
+.dept__item .exam-row { border-left: 0; padding-left: 0; }
+.dept-pt { display: grid; gap: 8px; }
+.dept-pt__renal { margin: 4px 0 0; font-size: 14px; }
+.dept-pt__flag { color: var(--red-ink); }
+.ro-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.roster__shift { display: grid; gap: 4px; margin-bottom: 8px; }
+@media (max-width: 600px) { .dept__wait { margin-left: 0; width: 100%; } .dept__filters > * { flex: 1 1 100%; max-width: none !important; } .dept__item .btn { min-height: 44px; } }

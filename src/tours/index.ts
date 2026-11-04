@@ -26,5 +26,6 @@ const TOURS: Record<string, TourStep[]> = { recepcion, enfermeria, medico, admin
 export function tourFor(role: Role, kind: ClinicKind = 'clinic', opts: { observationEnabled?: boolean } = {}): TourStep[] {
   const perms = permissionsFor(role, kind)
   const f = features({ kind, observationEnabled: opts.observationEnabled })
-  return TOURS[tourKey(role, kind)].filter((s) => (!s.perm || perms.includes(s.perm)) && (!s.feature || f[s.feature]))
+  // DP1 (ronda 11): Laboratorio e Imágenes todavía no tienen recorrido guiado
+  return (TOURS[tourKey(role, kind)] ?? []).filter((s) => (!s.perm || perms.includes(s.perm)) && (!s.feature || f[s.feature]))
 }

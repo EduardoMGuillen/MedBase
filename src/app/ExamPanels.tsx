@@ -55,15 +55,17 @@ export function NewResults() {
   if (!list?.length) return null
   return (
     <section className="panel" data-tour="resultados-nuevos">
-      <div className="panel__head"><div><h2>Resultados nuevos</h2><p>{list.length} sin revisar. Ábrelos y márcalos como revisados.</p></div></div>
+      <div className="panel__head"><div><h2>Resultados nuevos</h2><p>{list.length} por atender. Ábrelos y márcalos como revisados.</p></div></div>
       <div className="rows">{list.map((e) => {
         const p = patient(e.patientId)
         return (
           <Link key={e.id} to={examPath(e, inpatients)} className={`row${e.critical ? ' tray-row--urgent' : ''}`}>
             <div className="row__who"><strong>{e.critical && <TriangleAlert size={14} style={{ verticalAlign: '-2px', color: 'var(--red-ink)', marginRight: 4 }} />}{examLine(e)} · {p ? fullName(p) : ''}</strong>
-              <span>{GROUP_LABEL[e.group]} · resultado {e.result ? dateTime(e.result.at) : ''} por {shortStaff(staffById(e.result?.by ?? '')?.name)}
-                {e.result?.values?.some((v) => v.flag) ? ` · ${e.result.values.filter((v) => v.flag).map((v) => `${v.analyte} ${v.flag === 'high' ? 'alto' : 'bajo'}`).join(', ')}` : ''}</span></div>
-            <span className={`badge ${e.critical ? 'badge--red' : 'badge--mint'}`}>{e.critical ? 'Crítico' : 'Resultado nuevo'}</span>
+              {/* DP2 (ronda 11): «No se realizó» también avisa al médico que lo pidió */}
+              {e.notDone && e.status !== 'result' ? <span>{GROUP_LABEL[e.group]} · No se realizó: {e.notDone.reason} ({shortStaff(staffById(e.notDone.by)?.name)}, {dateTime(e.notDone.at)}). Sigue pendiente: cancélalo o déjalo para que lo reintenten.</span>
+                : <span>{GROUP_LABEL[e.group]} · resultado {e.result ? dateTime(e.result.at) : ''} por {shortStaff(staffById(e.result?.by ?? '')?.name)}
+                {e.result?.values?.some((v) => v.flag) ? ` · ${e.result.values.filter((v) => v.flag).map((v) => `${v.analyte} ${v.flag === 'high' ? 'alto' : 'bajo'}`).join(', ')}` : ''}</span>}</div>
+            <span className={`badge ${e.critical ? 'badge--red' : e.notDone && e.status !== 'result' ? 'badge--amber' : 'badge--mint'}`}>{e.critical ? 'Crítico' : e.notDone && e.status !== 'result' ? 'No se realizó' : 'Resultado nuevo'}</span>
           </Link>
         )
       })}</div>

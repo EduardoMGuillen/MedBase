@@ -4,7 +4,8 @@ import { z } from 'zod'
 import { assertGrace, graceUntil, saveVersion } from '../grace.js'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import type { Sql } from '../sql.js'
-import { can } from '../../src/lib/permissions.js'
+import { can, deptAllows } from '../../src/lib/permissions.js'
+import { microbiologistsFor, onDutyNow } from '../roster.js'
 import { areaFor, canReview, EXAMS, examKey, findExam, flagOf, FLOW, GROUP_LABEL, isPending, STATUS_LABEL, examLine, missingDetail, hasDetails } from '../../src/lib/exams.js'
 import type { ImagingDetails } from '../../src/lib/imagingCatalog.js'
 import { ensureExamCatalog } from '../db.js'
@@ -12,7 +13,7 @@ import { removeCatalogExams, setChangesText } from '../ronda11.js'
 import { criticalLimitsOf, defaultAnalyte, defaultValues, isCritical, mergeCriticalGroups, type CriticalAnalyte, type CriticalGroup } from '../../src/lib/clinicalConfig.js'
 import { rangeFor, referenceFromRows } from '../../src/lib/labReference.js'
 import { refRowsFor, toRefRow } from '../refLoader.js'
-import type { ClinicExam, ExamInput, ExamOrder, ExamProfile, ExamResultValue, ExamStatus } from '../../src/lib/types.js'
+import type { ClinicExam, ExamGroup, ExamInput, ExamOrder, ExamProfile, ExamResultValue, ExamStatus } from '../../src/lib/types.js'
 
 /** Un examen que se ordena (en la consulta, en una nota o en un set). */
 export const examInput = z.object({
@@ -56,6 +57,11 @@ export const toExamOrder = (r: Row, events: Row[] = []): ExamOrder => ({
   uncatalogued: Boolean(r.uncatalogued) || undefined,
   projections: j<string[] | undefined>(r.projections, undefined), contrast: r.contrast ? String(r.contrast) : undefined, detailed: Boolean(r.detailed) || undefined,
   subject: r.subject ? String(r.subject) : undefined,
+  // DP2/DP3 (ronda 11): ambulatorio, quién lo solicita, la orden en papel y «No se realizó»
+  location: r.location ? String(r.location) as ExamOrder['location'] : undefined,
+  requestedById: r.requested_by_id ? String(r.requested_by_id) : undefined, requestedByName: r.requested_by_name ? String(r.requested_by_name) : undefined,
+  orderFileId: r.order_file_id ? String(r.order_file_id) : undefined,
+  notDone: r.not_done_at ? { reason: String(r.not_done_reason ?? ''), at: String(r.not_done_at), by: String(r.not_done_by ?? '') } : undefined,
   events: events.filter((e) => e.exam_id === r.id).map((e) => ({ status: e.status as ExamStatus, by: String(e.by_id), at: String(e.at), note: e.note ? String(e.note) : undefined })),
 })
 
@@ -119,7 +125,8 @@ async function trayAreas(q: Sql, clinicId: string, role: string) {
   if (role === 'lab') return ['lab']
   if (role === 'imaging') return ['imaging']
   const staffed = async (r: string) => !!(await q.one(`SELECT 1 FROM staff WHERE clinic_id = ? AND active AND COALESCE(roles, '') LIKE ? LIMIT 1`, [clinicId, `%"${r}"%`]))
-  return ['nursing', ...(await staffed('lab') ? [] : ['lab']), ...(await staffed('imaging') ? [] : ['imaging'])]
+  // DP2 (ronda 11): enfermería sigue recibiendo las órdenes de laboratorio (las muestras las toman los dos)
+  return ['nursing', 'lab', ...(await staffed('imaging') ? [] : ['imaging'])]
 }
 
 /**
@@ -132,6 +139,15 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
   const event = (q: Sql, cid: string, examId: string, status: ExamStatus, by: string, at: string, note?: string) =>
     q.run('INSERT INTO exam_events (id, clinic_id, exam_id, status, by_id, at, note) VALUES (?,?,?,?,?,?,?)', [randomUUID(), cid, examId, status, by, at, note ?? null])
   const label = (r: Row) => `${GROUP_LABEL[r.grp as 'lab']}: ${examLine(toExamOrder(r))}`
+  // DP2 (ronda 11): «Muestra tomada por Lic. Ríos 08:15» (lo vio el otro primero)
+  const alreadyText = async (r: Row, q: Sql = sql) => {
+    if (r.status === 'sample' || r.status === 'done') {
+      const by = r.status_by ? await q.one('SELECT name FROM staff WHERE id = ?', [String(r.status_by)]) : undefined
+      const t = r.status_at ? new Date(String(r.status_at)).toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Tegucigalpa' }) : ''
+      return `${STATUS_LABEL[r.grp as ExamGroup][r.status as ExamStatus]} por ${by?.name ?? '—'} ${t}`.trim()
+    }
+    return 'Este examen ya avanzó a otra etapa. Actualiza la página.'
+  }
 
   // AD4 (ronda 5): el catálogo de la clínica es la batería completa (activos y archivados) y los perfiles del médico
   app.get('/api/exams/catalog', auth, async (req, res) => {
@@ -164,9 +180,10 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
       what: z.boolean().optional(), whatHint: z.string().trim().max(80).optional(), sideOptional: z.boolean().optional(), free: z.boolean().optional(),
       again: z.string().trim().max(60).optional() }).nullable().optional() })
   const catalogRow = async (cid: string, id: string) => (await sql.one('SELECT * FROM exam_catalog WHERE id = ? AND clinic_id = ?', [id, cid])) ?? fail(404, 'El examen no está en el catálogo.')
-  app.post('/api/exams/catalog', auth, need('settings.manage'), async (req, res) => {
+  app.post('/api/exams/catalog', auth, need('settings.manage', 'dept.config'), async (req, res) => {
     const b = parse(catalogBody, req.body)
     const cid = clinicOf(req)
+    catalogEditor(userOf(req), b.group)
     await ensureExamCatalog(sql, cid)
     const key = examKey(b.name)
     const existing = await sql.one('SELECT * FROM exam_catalog WHERE clinic_id = ? AND norm_key = ?', [cid, key])
@@ -183,11 +200,13 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     await audit(userOf(req), `Agregó al catálogo de exámenes (${GROUP_LABEL[b.group]}${b.subgroup ? ` · ${b.subgroup}` : ''}): ${b.name}${b.group === 'imaging' && b.details ? ` (pide al ordenar: ${detailsText(b.details)})` : ''}`)
     res.status(201).json(toClinicExam((await catalogRow(cid, id))!))
   })
-  app.patch('/api/exams/catalog/:id', auth, need('settings.manage'), async (req, res) => {
+  app.patch('/api/exams/catalog/:id', auth, need('settings.manage', 'dept.config'), async (req, res) => {
     const b = parse(catalogBody.partial().extend({ active: z.boolean().optional() }), req.body)
     const cid = clinicOf(req)
     const user = userOf(req)
     const r = (await catalogRow(cid, String(req.params.id)))!
+    catalogEditor(user, r.grp as ExamGroup)
+    if (b.group) catalogEditor(user, b.group)
     // CA7 (ronda 11): en el catálogo ya no se archiva; se quita (DELETE)
     if (b.active === false) fail(400, 'En el catálogo de exámenes ya no se archiva: usa «Quitar».')
     const name = b.name ?? String(r.name)
@@ -212,21 +231,23 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
 
   // CA7 (ronda 11): «Quitar» borra el examen del catálogo (con copia previa y la marca de quitado). Las órdenes que ya lo usan
   // guardan su nombre y no cambian; se quita de los sets y perfiles. Queda en la bitácora.
-  app.delete('/api/exams/catalog/:id', auth, need('settings.manage'), async (req, res) => {
+  app.delete('/api/exams/catalog/:id', auth, need('settings.manage', 'dept.config'), async (req, res) => {
     const cid = clinicOf(req)
     const user = userOf(req)
     const r = (await catalogRow(cid, String(req.params.id)))!
+    catalogEditor(user, r.grp as ExamGroup)
     const out = await sql.tx((q) => removeCatalogExams(q, cid, [r], user.id, 'ca7-removed', `Quitado por ${user.name}`))
     await audit(user, `Quitó del catálogo de exámenes (${GROUP_LABEL[r.grp as 'lab']}): ${r.name}. Las órdenes que ya lo usan no cambian${out.sets.length ? `; se quitó de ${setChangesText(out.sets)}` : ''}`)
     res.json({ ok: true, sets: out.sets })
   })
 
   // Perfiles: el médico los suyos; administración los de la clínica
-  app.post('/api/exams/profiles', auth, need('exams.order', 'settings.manage'), async (req, res) => {
+  app.post('/api/exams/profiles', auth, need('exams.order', 'settings.manage', 'dept.config'), async (req, res) => {
     const b = parse(z.object({ name: z.string().trim().min(3, 'Ponle un nombre al perfil.').max(100), items: z.array(z.object({ group: z.enum(['lab', 'imaging']), name: z.string().trim().min(2).max(160) })).min(2, 'Un perfil tiene al menos dos exámenes.').max(30), clinic: z.boolean().default(false) }), req.body)
     const user = userOf(req)
-    const clinicWide = b.clinic && can(user, 'settings.manage')
+    const clinicWide = b.clinic && (can(user, 'settings.manage') || (can(user, 'dept.config') && user.role === 'lab'))
     if (!clinicWide && !can(user, 'exams.order')) fail(403, 'Sólo los médicos crean perfiles propios.')
+    if (b.clinic && !clinicWide) fail(403, 'Los perfiles de la clínica los editan Administración y el microbiólogo.')
     const id = randomUUID()
     await sql.run('INSERT INTO exam_profiles (id, clinic_id, owner_id, name, items, created_by, created_at) VALUES (?,?,?,?,?,?,?)',
       [id, clinicOf(req), clinicWide ? null : user.id, b.name, JSON.stringify(b.items), user.id, new Date().toISOString()])
@@ -236,11 +257,13 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
   // CF6 (ronda 6): perfiles de laboratorio de la clínica. Administración los ve todos (también los archivados), los edita, los
   // archiva y los restaura. El médico no los edita (403): los copia a «Mis sets».
   const profileItems = z.array(z.object({ group: z.enum(['lab', 'imaging']), name: z.string().trim().min(2).max(160) })).min(2, 'Un perfil tiene al menos dos exámenes.').max(40)
-  app.get('/api/exams/profiles/clinic', auth, need('settings.manage'), async (req, res) => {
+  app.get('/api/exams/profiles/clinic', auth, need('settings.manage', 'dept.work'), async (req, res) => {
+    if (!can(userOf(req), 'settings.manage') && userOf(req).role !== 'lab') fail(403, 'Los perfiles de laboratorio son de Laboratorio.')
     const rows = await sql.query('SELECT * FROM exam_profiles WHERE clinic_id = ? AND owner_id IS NULL ORDER BY name', [clinicOf(req)])
     res.json(rows.map((r) => ({ id: String(r.id), name: String(r.name), items: j(r.items, []), note: r.note ? String(r.note) : undefined, archivedAt: r.archived_at ? String(r.archived_at) : undefined })))
   })
-  app.patch('/api/exams/profiles/:id', auth, need('settings.manage'), async (req, res) => {
+  app.patch('/api/exams/profiles/:id', auth, need('settings.manage', 'dept.config'), async (req, res) => {
+    catalogEditor(userOf(req), 'lab')
     const b = parse(z.object({ name: z.string().trim().min(3, 'Ponle un nombre al perfil.').max(100).optional(), items: profileItems.optional(), archived: z.boolean().optional() }), req.body)
     const user = userOf(req)
     const r = (await sql.one('SELECT * FROM exam_profiles WHERE id = ? AND clinic_id = ? AND owner_id IS NULL', [String(req.params.id), clinicOf(req)])) ?? fail(404, 'El perfil no existe.')
@@ -268,7 +291,8 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
   const refInput = z.object({ id: z.string().optional(), analyte: z.string().trim().max(80).optional(), sex: z.enum(['all', 'F', 'M']).default('all'), unit: z.string().trim().max(40).default(''),
     low: z.number().finite().optional(), high: z.number().finite().optional(), highOpen: z.boolean().optional(), expected: z.string().trim().max(1000).optional(), note: z.string().trim().max(2000).optional(),
     archive: z.boolean().optional() })
-  app.put('/api/exams/catalog/:id/refs', auth, need('settings.manage'), async (req, res) => {
+  app.put('/api/exams/catalog/:id/refs', auth, need('settings.manage', 'dept.config'), async (req, res) => {
+    catalogEditor(userOf(req), 'lab')
     const b = parse(z.object({ rows: z.array(refInput).max(80), comment: z.string().trim().max(500).optional() }), req.body)
     const cid = clinicOf(req)
     const user = userOf(req)
@@ -301,7 +325,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
   })
 
   // UM1: historial de los valores de referencia de un examen (lo vigente y lo archivado, con quién y cuándo)
-  app.get('/api/exams/catalog/:id/refs/history', auth, need('settings.manage'), async (req, res) => {
+  app.get('/api/exams/catalog/:id/refs/history', auth, need('settings.manage', 'dept.work'), async (req, res) => {
     const cid = clinicOf(req)
     const ex = (await sql.one('SELECT * FROM exam_catalog WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'El examen no existe.')
     const keys = [String(ex!.norm_key), ...(ex!.base_key ? [String(ex!.base_key)] : [])]
@@ -324,7 +348,8 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     // UM2 (ronda 8): por sexo, y «Restablecer» (vuelve al valor predeterminado de la app)
     f: limitsInput.optional(), m: limitsInput.optional(), reset: z.boolean().optional() }).passthrough()
   const groupInput = z.object({ id: z.string().min(1).max(60), name: z.string().trim().min(2, 'Escribe el nombre del grupo.').max(60), archivedAt: z.string().optional(), analytes: z.array(analyteInput).max(80) })
-  app.put('/api/settings/critical-groups', auth, need('settings.manage'), async (req, res) => {
+  app.put('/api/settings/critical-groups', auth, need('settings.manage', 'dept.config'), async (req, res) => {
+    catalogEditor(userOf(req), 'lab')
     const { groups: input } = parse(z.object({ groups: z.array(groupInput).max(60) }), req.body)
     const cid = clinicOf(req)
     const user = userOf(req)
@@ -465,7 +490,8 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
 
   // Resultados nuevos sin revisar del médico que los pidió
   app.get('/api/exams/new-results', auth, need('exams.order'), async (req, res) => {
-    const list = await examsWhere(sql, `clinic_id = ? AND ordered_by = ? AND status = 'result'`, [clinicOf(req), userOf(req).id])
+    // DP2 (ronda 11): también lo que el departamento marcó «No se realizó» (el médico decide si lo cancela)
+    const list = await examsWhere(sql, `clinic_id = ? AND ordered_by = ? AND (status = 'result' OR (not_done_at IS NOT NULL AND status IN ('ordered','sample','done')))`, [clinicOf(req), userOf(req).id])
     res.json(list.sort((a, b) => Number(!!b.critical) - Number(!!a.critical) || (b.result?.at ?? '').localeCompare(a.result?.at ?? '')))
   })
 
@@ -475,14 +501,18 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     const cid = clinicOf(req)
     const user = userOf(req)
     const r = await examRow(cid, String(req.params.id))
+    if (!deptAllows(user, r!.grp as ExamGroup)) fail(403, 'Ese examen es de otro departamento.')
     const flow = FLOW[r!.grp as 'lab']
     if (!flow.includes(b.status)) fail(400, `Un examen de ${GROUP_LABEL[r!.grp as 'lab'].toLowerCase()} no pasa a «${STATUS_LABEL[r!.grp as 'lab'][b.status]}».`)
-    if (r!.status !== 'ordered') fail(409, 'Este examen ya avanzó a otra etapa. Actualiza la página.')
+    if (r!.status !== 'ordered') fail(409, await alreadyText(r!))
     const at = new Date().toISOString()
     // Fuera de la transacción: con una sola conexión, consultar por fuera de ella la bloquearía
     const who = await patientName(String(r!.patient_id))
     await sql.tx(async (q) => {
-      await q.run('UPDATE exam_orders SET status = ?, status_at = ?, status_by = ? WHERE id = ?', [b.status, at, user.id, String(r!.id)])
+      // DP2 (ronda 11): si dos lo marcan casi a la vez (laboratorio y enfermería), solo el primero queda
+      const locked = await q.one(`SELECT status FROM exam_orders WHERE id = ? FOR UPDATE`, [String(r!.id)])
+      if (locked?.status !== 'ordered') fail(409, await alreadyText((await q.one('SELECT * FROM exam_orders WHERE id = ?', [String(r!.id)]))!, q))
+      await q.run('UPDATE exam_orders SET status = ?, status_at = ?, status_by = ?, not_done_reason = NULL, not_done_at = NULL, not_done_by = NULL WHERE id = ?', [b.status, at, user.id, String(r!.id)])
       await event(q, cid, String(r!.id), b.status, user.id, at, b.note)
       await audit(user, `${STATUS_LABEL[r!.grp as 'lab'][b.status]}: ${label(r!)} de ${who}`, q, String(r!.patient_id))
     })
@@ -498,11 +528,45 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
       fileIds: z.array(z.string()).max(10).optional(),
       // GE4 (ronda 9): corregir el resultado recién cargado (quien lo cargó, en el periodo de gracia, sin revisar todavía)
       correct: z.boolean().optional(), version: z.number().int().optional(), why: z.string().trim().max(300).optional(),
+      // EX6/DP6 (ronda 11): el microbiólogo responsable (si no hay uno solo de turno, se elige)
+      responsibleId: z.string().optional(),
+      // DP2 (A25): el técnico en imágenes sube las imágenes del estudio realizado; el informe lo escribe el radiólogo o un médico
+      imagesOnly: z.boolean().optional(),
     }), req.body)
     if (!b.values?.length && !b.report && !b.fileIds?.length) fail(400, 'Escribe los valores o el informe, o sube el archivo del resultado.')
     const cid = clinicOf(req)
     const user = userOf(req)
     const r = await examRow(cid, String(req.params.id))
+    if (!deptAllows(user, r!.grp as ExamGroup)) fail(403, 'Ese examen es de otro departamento.')
+    const imagingTech = user.role === 'imaging' && user.position !== 'radiologist'
+    if (imagingTech && (b.report || b.values?.length)) fail(403, 'El informe lo escribe el radiólogo o un médico. Puedes subir las imágenes del estudio.')
+    if (b.imagesOnly || imagingTech) {
+      if (r!.grp !== 'imaging' || r!.status !== 'done') fail(409, 'Las imágenes se suben a un estudio ya realizado.')
+      for (const f of b.fileIds ?? []) if (!(await sql.one('SELECT 1 FROM attachments WHERE id = ? AND clinic_id = ? AND patient_id = ?', [f, cid, String(r!.patient_id)]))) fail(400, 'El archivo no corresponde a este paciente.')
+      const prev = r!.result ? JSON.parse(String(r!.result)) as { fileIds?: string[] } : {}
+      const files = [...new Set([...(prev.fileIds ?? []), ...(b.fileIds ?? [])])]
+      const at = new Date().toISOString()
+      const who = await patientName(String(r!.patient_id))
+      await sql.tx(async (q) => {
+        await q.run('UPDATE exam_orders SET result = ? WHERE id = ?', [JSON.stringify({ ...prev, fileIds: files, at, by: user.id, imagesOnly: true }), String(r!.id)])
+        await event(q, cid, String(r!.id), 'done', user.id, at, `Subió ${b.fileIds?.length ?? 0} imagen(es)`)
+        await audit(user, `Subió imágenes de ${label(r!)} de ${who}`, q, String(r!.patient_id))
+      })
+      return res.json((await examsWhere(sql, 'id = ?', [String(r!.id)]))[0])
+    }
+    // Laboratorio: el microbiólogo responsable (A24). Si lo carga él mismo, es él; si hay uno solo de turno, ese; si no,
+    // se elige de la lista (obligatorio). Sin microbiólogos en la clínica, no aplica.
+    let responsibleId: string | undefined
+    if (r!.grp === 'lab' && !b.correct) {
+      const micros = await microbiologistsFor(sql, cid)
+      if (micros.some((m) => m.id === user.id)) responsibleId = user.id
+      else if (micros.length) {
+        const duty = (await onDutyNow(sql, cid, 'lab')).filter((id) => micros.some((m) => m.id === id))
+        if (b.responsibleId) { if (!micros.some((m) => m.id === b.responsibleId)) fail(400, 'Elige un microbiólogo de la lista.'); responsibleId = b.responsibleId }
+        else if (duty.length === 1) responsibleId = duty[0]
+        else fail(400, 'Elige el microbiólogo responsable.')
+      }
+    }
     const before = r!.result ? JSON.parse(String(r!.result)) as { at?: string; by?: string } : undefined
     if (b.correct) {
       if (r!.status !== 'result') fail(409, r!.status === 'reviewed' ? 'El médico ya revisó este resultado: corrígelo con una adenda.' : 'Este examen no tiene resultado que corregir.')
@@ -544,7 +608,11 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
         await audit(user, `Corrigió el resultado de ${label(r!)} de ${who} en el periodo de gracia (versión ${next})${b.why ? `: ${b.why}` : ''}`, q, String(r!.patient_id))
       }
       await q.run('UPDATE exam_orders SET status = ?, status_at = ?, status_by = ?, result = ?, critical = ? WHERE id = ?',
-        ['result', b.correct ? r!.status_at : at, user.id, JSON.stringify({ values: values.length ? values : undefined, report: b.report || undefined, fileIds: b.fileIds?.length ? b.fileIds : undefined, at, by: user.id, correctedAt: b.correct ? new Date().toISOString() : undefined }), critical, String(r!.id)])
+        ['result', b.correct ? r!.status_at : at, user.id, JSON.stringify({ values: values.length ? values : undefined, report: b.report || undefined,
+          // DP2: las imágenes que subió el técnico se conservan con el informe
+          fileIds: [...new Set([...(before && (before as { imagesOnly?: boolean }).imagesOnly ? (before as { fileIds?: string[] }).fileIds ?? [] : []), ...(b.fileIds ?? [])])].filter(Boolean).length
+            ? [...new Set([...(before && (before as { imagesOnly?: boolean }).imagesOnly ? (before as { fileIds?: string[] }).fileIds ?? [] : []), ...(b.fileIds ?? [])])] : undefined,
+          at, by: user.id, responsibleId: responsibleId ?? (b.correct ? (before as { responsibleId?: string } | undefined)?.responsibleId : undefined), correctedAt: b.correct ? new Date().toISOString() : undefined }), critical, String(r!.id)])
       await event(q, cid, String(r!.id), 'result', user.id, at, critical ? 'Valor crítico' : undefined)
       const flagged = values.filter((v) => v.flag).map((v) => `${v.analyte} ${v.value} (${v.flag === 'high' ? 'alto' : 'bajo'})`)
       await audit(user, `Cargó el resultado de ${label(r!)} de ${who}${flagged.length ? `: ${flagged.join(', ')}` : ''}${critical ? '; VALOR CRÍTICO' : ''}`, q, String(r!.patient_id))
@@ -573,6 +641,8 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     const { reason } = parse(z.object({ reason: z.string().trim().min(3, 'Escribe por qué se cancela.').max(300) }), req.body)
     const cid = clinicOf(req)
     const user = userOf(req)
+    // DP2 (A21): Laboratorio e Imágenes no cancelan órdenes del médico; usan «No se realizó»
+    if (user.role === 'lab' || user.role === 'imaging') fail(403, 'El departamento no cancela órdenes del médico: usa «No se realizó».')
     const r = await examRow(cid, String(req.params.id))
     if (['result', 'reviewed', 'cancelled'].includes(String(r!.status))) fail(409, 'Este examen ya tiene resultado o ya está cancelado.')
     const at = new Date().toISOString()
@@ -592,6 +662,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
       takenAt: z.string().optional(), fileIds: z.array(z.string()).min(1).max(10), report: z.string().trim().max(6000).optional() }), req.body)
     const cid = clinicOf(req)
     const user = userOf(req)
+    if (!deptAllows(user, b.group)) fail(403, 'Ese tipo de examen es de otro departamento.')
     if (!(await patientRow(cid, b.patientId))) fail(404, 'El paciente no existe.')
     const at = b.takenAt ?? new Date().toISOString()
     const id = randomUUID()
@@ -614,4 +685,13 @@ function detailsText(d?: ImagingDetails) {
   return [d.what && 'de qué', d.projections?.length && `proyecciones ${d.projections.join(', ')}${d.free ? ' (o escrita)' : ''}`,
     d.contrast && `contraste ${d.contrast.startsWith('mr') ? 'de resonancia' : d.contrast === 'ct-multi' ? 'de tomografía (con doble y triple)' : 'de tomografía'}${d.free ? ' (o escrito)' : ''}`,
     d.side && (d.sideOptional ? 'lado (opcional)' : 'lado'), d.region && 'región'].filter(Boolean).join('; ') || 'sin detalles'
+}
+
+/**
+ * DP5 (ronda 11): el catálogo, los rangos, los perfiles y los umbrales los edita Administración (todo) y, en su departamento, el
+ * Microbiólogo (Laboratorio) y el Radiólogo (Imagen y gabinete). Los técnicos solo ven (también por URL directa).
+ */
+function catalogEditor(u: Parameters<typeof can>[0] & { role: string }, group: ExamGroup) {
+  if (can(u, 'settings.manage')) return
+  if (!can(u, 'dept.config') || !deptAllows(u as { role: never }, group)) fail(403, 'Solo puedes editar la configuración de tu departamento.')
 }

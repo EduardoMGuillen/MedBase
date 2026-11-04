@@ -98,15 +98,17 @@ const writePicked = (list: ExamInput[]) => { try { if (list.length) localStorage
  * Lo que no está en el catálogo se agrega como «No catalogado» eligiendo su tipo (MC3). `catalogOnly`: sólo el catálogo
  * (al armar un set).
  */
-export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes', catalogOnly = false }: {
+export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes', catalogOnly = false, only }: {
   current: ExamInput[]; onClose: () => void; onAdd: (list: ExamInput[]) => void; title?: string; catalogOnly?: boolean
+  /** DP3 (ronda 11): solo la pestaña del departamento (paciente ambulatorio). */
+  only?: ExamGroup
 }) {
   const { notify, can } = useStore()
   const { exams: clinicExams, profiles: allProfiles } = useExamCatalog()
   const { sets, reload: reloadSets } = useOrderSets(!catalogOnly && can('exams.order'), 'exams')
   const [savingSet, setSavingSet] = useState(false)
   const [q, setQ] = useState('')
-  const [group, setGroup] = useState<'' | ExamGroup>('')
+  const [group, setGroup] = useState<'' | ExamGroup>(only ?? '')
   const [picked, setPickedState] = useState<ExamInput[]>(() => (catalogOnly ? [] : readPicked().map(keyed).filter((e) => e.subject !== undefined || !current.some((c) => examKey(c.name) === examKey(e.name)))))
   const setPicked = (list: ExamInput[]) => { setPickedState(list); if (!catalogOnly) writePicked(list) }
   // MC3 (ronda 6): el tipo de lo no catalogado se elige siempre; no hay valor por defecto
@@ -196,11 +198,11 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
       <div className="exam-picker__bar">
         <input className="input" autoFocus value={q} onChange={(e) => { setQ(e.target.value); setAskType(false); setNewGroup(null) }} placeholder="Buscar: hemograma, ultrasonido, EKG…" aria-label="Buscar examen"
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (hits.length === 1) { toggle(hits[0].group, hits[0].name); setQ('') } else if (n && !exact && !catalogOnly) setAskType(true) } }} />
-        <div className="segmented" role="radiogroup" aria-label="Grupo">
+        {!only && <div className="segmented" role="radiogroup" aria-label="Grupo">
           <button type="button" role="radio" aria-checked={group === ''} onClick={() => setGroup('')}>Todos</button>
           <button type="button" role="radio" aria-checked={group === 'lab'} onClick={() => setGroup('lab')}>Laboratorio</button>
           <button type="button" role="radio" aria-checked={group === 'imaging'} onClick={() => setGroup('imaging')}>Imagen y gabinete</button>
-        </div>
+        </div>}
       </div>
       {!catalogOnly && (
         <div className="exam-picker__menus">

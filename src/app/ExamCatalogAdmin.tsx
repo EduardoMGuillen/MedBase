@@ -19,9 +19,11 @@ import type { ClinicExam, ExamGroup } from '../lib/types'
  * quita (archiva) exámenes de Laboratorio o de Imagen y gabinete; lo ya ordenado en notas anteriores no cambia. Empieza
  * con la lista que tenía la app. Cada cambio queda en la bitácora.
  */
-export function ExamCatalogAdmin() {
+export function ExamCatalogAdmin({ only, readOnly = false }: { only?: ExamGroup; readOnly?: boolean } = {}) {
   const { notify } = useStore()
-  const { exams, reload } = useExamCatalog()
+  const { exams: all, reload } = useExamCatalog()
+  // DP5 (ronda 11): en «Configuración de laboratorio / imágenes», solo su tipo; los técnicos solo ven
+  const exams = only ? all.filter((e) => e.group === only) : all
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState<ClinicExam | 'new' | null>(null)
   // CA7 (ronda 11): ya no se archiva: «Quitar» borra el examen del catálogo, tras confirmar
@@ -45,7 +47,7 @@ export function ExamCatalogAdmin() {
   return (
     <section className="panel">
       <SectionHead title="Catálogo de exámenes" sub="Los exámenes que los médicos pueden ordenar. Quitar uno lo borra del catálogo: deja de ofrecerse, pero las notas y órdenes que ya lo tienen no cambian."
-        action={<button className="btn btn--primary btn--sm" onClick={() => setEditing('new')}><Plus size={15} />Agregar examen</button>} />
+        action={readOnly ? undefined : <button className="btn btn--primary btn--sm" onClick={() => setEditing('new')}><Plus size={15} />Agregar examen</button>} />
       <div className="panel__body" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', paddingBottom: 0 }}>
         <input className="input" style={{ maxWidth: 360 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar examen" aria-label="Buscar examen" />
       </div>
@@ -55,7 +57,7 @@ export function ExamCatalogAdmin() {
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => setFold(Object.fromEntries(allKeys.map((k) => [k, true])))}>Expandir todo</button>
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => setFold(Object.fromEntries(allKeys.map((k) => [k, false])))}>Contraer todo</button>
         </div>
-        {(['lab', 'imaging'] as ExamGroup[]).map((g) => {
+        {(['lab', 'imaging'] as ExamGroup[]).filter((g) => !only || g === only).map((g) => {
           const areas = trees[g]
           const count = areas.reduce((a, x) => a + x.count, 0)
           if (n && !count) return null
@@ -70,10 +72,10 @@ export function ExamCatalogAdmin() {
                   {refOpen === e.id && refOf(e) && <RefDetails r={refOf(e)!} />}
                   {/* CA5 (ronda 10): qué pide al ordenarlo */}
                   {e.group === 'imaging' && hasDetails(detailsOf(e)) && <small className="muted" style={{ display: 'block' }}>Pide al ordenar: {detailsSummary(detailsOf(e)!)}</small>}</span>
-                <span className="excat__acts">
+                {!readOnly && <span className="excat__acts">
                   <button className="btn btn--ghost btn--sm" aria-label={`Editar ${e.name}`} title="Editar" onClick={() => setEditing(e)}><Pencil size={13} /><span>Editar</span></button>
                   <button className="btn btn--ghost btn--sm" aria-label={`Quitar ${e.name}`} title="Quitar" onClick={() => setRemoving(e)}><Trash2 size={13} /><span>Quitar</span></button>
-                </span>
+                </span>}
               </li>
             ))}
           </ul>
@@ -108,7 +110,7 @@ export function ExamCatalogAdmin() {
         })}
         {n && !list.length && <p className="muted">Ningún examen coincide.</p>}
       </div>
-      {editing && <ExamForm exam={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}
+      {editing && <ExamForm only={only} exam={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}
       {removing && <Modal title={`¿Quitar ${removing.name}?`} onClose={() => setRemoving(null)} footer={<>
         <button className="btn btn--ghost" onClick={() => setRemoving(null)}>Cancelar</button>
         <button className="btn btn--danger" onClick={() => remove(removing)}><Trash2 size={15} />Quitar</button>
@@ -117,10 +119,10 @@ export function ExamCatalogAdmin() {
   )
 }
 
-function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () => void; onSaved: () => void }) {
+function ExamForm({ exam, onClose, onSaved, only }: { exam?: ClinicExam; onClose: () => void; onSaved: () => void; only?: ExamGroup }) {
   const { notify } = useStore()
   const [name, setName] = useState(exam?.name ?? '')
-  const [group, setGroup] = useState<ExamGroup>(exam?.group ?? 'lab')
+  const [group, setGroup] = useState<ExamGroup>(exam?.group ?? only ?? 'lab')
   // CF3 (ronda 6): subgrupo (el del examen, el de la lista fija u «Otros»)
   const [subgroup, setSubgroup] = useState(exam ? subgroupOf(exam) : 'Otros')
   // CA5 (ronda 10): proyecciones y si pide contraste, lado o región (los de la lista fija si la clínica no los cambió)
@@ -148,7 +150,7 @@ function ExamForm({ exam, onClose, onSaved }: { exam?: ClinicExam; onClose: () =
       <label className="field"><span>Nombre del examen</span><input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Dímero D" /></label>
       <div className="field"><span>Categoría</span>
         <div className="segmented" role="radiogroup" aria-label="Categoría">
-          {(['lab', 'imaging'] as ExamGroup[]).map((g) => <button key={g} type="button" role="radio" aria-checked={group === g} onClick={() => { setGroup(g); if (!SUBGROUPS[g].includes(subgroup)) setSubgroup('Otros') }}>{GROUP_LABEL[g]}</button>)}
+          {(['lab', 'imaging'] as ExamGroup[]).filter((g) => !only || g === only).map((g) => <button key={g} type="button" role="radio" aria-checked={group === g} onClick={() => { setGroup(g); if (!SUBGROUPS[g].includes(subgroup)) setSubgroup('Otros') }}>{GROUP_LABEL[g]}</button>)}
         </div>
         <small className="muted">La categoría decide a quién le llega el pendiente: al laboratorio o a imágenes propios, o a enfermería (Áreas de servicio).</small>
       </div>
@@ -267,7 +269,7 @@ type ClinicProfile = { id: string; name: string; items: { group: ExamGroup; name
  * agrega, edita, archiva y restaura; el médico sólo los usa o los copia a «Mis sets». Un examen archivado en el catálogo
  * sale «no disponible» y no se ordena.
  */
-export function LabProfilesAdmin() {
+export function LabProfilesAdmin({ readOnly = false }: { readOnly?: boolean } = {}) {
   const { notify } = useStore()
   const { exams, reload: reloadCatalog } = useExamCatalog()
   const [list, setList] = useState<ClinicProfile[] | null>(null)
@@ -285,7 +287,7 @@ export function LabProfilesAdmin() {
   return (
     <section className="panel">
       <SectionHead title="Perfiles de laboratorio" sub="Paquetes de exámenes de la clínica. Los médicos los eligen en «Ordenar exámenes» y pueden copiarlos a Mis sets para cambiarlos."
-        action={<button className="btn btn--primary btn--sm" onClick={() => setEditing('new')}><Plus size={15} />Agregar perfil</button>} />
+        action={readOnly ? undefined : <button className="btn btn--primary btn--sm" onClick={() => setEditing('new')}><Plus size={15} />Agregar perfil</button>} />
       <div className="panel__body excat">
         {nArchived > 0 && <label className="check-inline"><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />Ver archivados ({nArchived})</label>}
         {list === null ? <p className="muted">Cargando…</p> : !shown.length ? <p className="muted">La clínica todavía no tiene perfiles de laboratorio.</p> : (
@@ -294,11 +296,11 @@ export function LabProfilesAdmin() {
               <span><b>{p.name}</b>{p.archivedAt && <span className="badge">Archivado</span>}
                 <small className="muted">{p.items.map((e) => (active.has(examKey(e.name)) ? e.name : `${e.name} (no disponible)`)).join(', ')}</small>
                 {p.note && <small className="exam-picker__note">{p.note}</small>}</span>
-              <span className="excat__acts">
+              {!readOnly && <span className="excat__acts">
                 {!p.archivedAt && <button className="btn btn--ghost btn--sm" aria-label={`Editar ${p.name}`} title="Editar" onClick={() => setEditing(p)}><Pencil size={13} /><span>Editar</span></button>}
                 {p.archivedAt ? <button className="btn btn--ghost btn--sm" aria-label={`Restaurar ${p.name}`} title="Restaurar" onClick={() => setArchivedFlag(p, false)}><RotateCcw size={13} /><span>Restaurar</span></button>
                   : <button className="btn btn--ghost btn--sm" aria-label={`Archivar ${p.name}`} title="Archivar" onClick={() => setArchivedFlag(p, true)}><Archive size={13} /><span>Archivar</span></button>}
-              </span>
+              </span>}
             </li>
           ))}</ul>
         )}

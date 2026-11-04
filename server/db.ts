@@ -22,7 +22,7 @@ import { loadRonda11Catalog } from './ronda11.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '77'
+const SCHEMA_VERSION = '79'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1122,6 +1122,24 @@ ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS data TEXT;
 -- v77 (ronda 11). EX6: el resultado de exámenes en PDF o impreso es otro trabajo de impresión («results»)
 ALTER TABLE print_jobs DROP CONSTRAINT IF EXISTS print_jobs_kind_check;
 ALTER TABLE print_jobs ADD CONSTRAINT print_jobs_kind_check CHECK (kind IN ('exams','rx','results'));
+-- v78–v79 (ronda 11). DP1: roles Laboratorio e Imágenes con su cargo (Microbiólogo, Técnico de laboratorio, Radiólogo, Técnico en
+-- imágenes). DP2/DP3: ubicación de la orden («ambulatory»), quién la solicita, la foto de la orden en papel y «No se realizó».
+-- DP6: rol de turnos por departamento (doctors, nursing, lab, imaging) y por turno (Mañana, Tarde, Noche).
+ALTER TABLE staff DROP CONSTRAINT IF EXISTS staff_role_check;
+ALTER TABLE staff ADD CONSTRAINT staff_role_check CHECK (role IN ('superadmin','admin','doctor','nurse','reception','assistant','lab','imaging'));
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS position TEXT;
+ALTER TABLE exam_orders
+  ADD COLUMN IF NOT EXISTS location TEXT,
+  ADD COLUMN IF NOT EXISTS requested_by_id TEXT,
+  ADD COLUMN IF NOT EXISTS requested_by_name TEXT,
+  ADD COLUMN IF NOT EXISTS order_file_id TEXT,
+  ADD COLUMN IF NOT EXISTS not_done_reason TEXT,
+  ADD COLUMN IF NOT EXISTS not_done_at TEXT,
+  ADD COLUMN IF NOT EXISTS not_done_by TEXT;
+ALTER TABLE duty_roster ADD COLUMN IF NOT EXISTS dept TEXT NOT NULL DEFAULT 'doctors';
+ALTER TABLE duty_roster ADD COLUMN IF NOT EXISTS shift TEXT;
+DROP INDEX IF EXISTS duty_roster_active;
+CREATE UNIQUE INDEX IF NOT EXISTS duty_roster_active2 ON duty_roster (clinic_id, dept, day, staff_id, COALESCE(shift, '')) WHERE removed_at IS NULL;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

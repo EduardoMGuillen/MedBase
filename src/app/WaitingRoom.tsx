@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Activity, BedDouble, LogIn, NotebookPen, Stethoscope, UserPlus } from 'lucide-react'
+import { Activity, BedDouble, FlaskConical, LogIn, NotebookPen, Stethoscope, UserPlus } from 'lucide-react'
+import { AmbulatoryModal } from './Ambulatory'
 import { useStore } from '../lib/store'
 import { features, hasRole } from '../lib/permissions'
 import { Modal, PageHead, StatusBadge } from '../components/ui'
@@ -36,6 +37,7 @@ export default function WaitingRoom() {
   // GE4 (ronda 9): quien hizo la preclínica la corrige en el periodo de gracia, con el mismo formulario
   const [fixing, setFixing] = useState<{ appt: Appointment; vitals: Vitals } | null>(null)
   const [walkIn, setWalkIn] = useState(false)
+  const [ambulatory, setAmbulatory] = useState(false)
   const [completing, setCompleting] = useState<Appointment | null>(null)
   // El médico ve "Mis pacientes" por defecto y se recuerda su última elección en este navegador
   const viewKey = `clinara.ce.${user?.id}`
@@ -123,7 +125,10 @@ export default function WaitingRoom() {
             </div>
           )}
           {can('checkin.manage') && <button className="btn btn--primary" data-tour="sin-cita" onClick={() => setWalkIn(true)}><UserPlus size={17} />Paciente sin cita</button>}
+          {/* DP3 (ronda 11): paciente que viene solo a hacerse exámenes (Recepción y Administración; solo en clínicas) */}
+          {multiDoctor && can('ambulatory.register') && <button className="btn btn--soft" onClick={() => setAmbulatory(true)}><FlaskConical size={17} />Paciente ambulatorio</button>}
         </>} />
+      {ambulatory && <AmbulatoryModal onClose={() => setAmbulatory(false)} onDone={() => setAmbulatory(false)} />}
       {grouped && (
         <div className="ce-arrange" role="group" aria-label="Organizar la consulta externa">
           <GroupTools view={view} onView={setView} onExpand={() => fold.setAll(groupKeys, true)} onCollapse={() => fold.setAll(groupKeys, false)} />

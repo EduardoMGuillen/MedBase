@@ -1,5 +1,6 @@
 import type { CriticalGroup } from './clinicalConfig.js'
-export type Role = 'superadmin' | 'admin' | 'doctor' | 'nurse' | 'reception' | 'assistant'
+/** DP1 (ronda 11): «lab» (Laboratorio) e «imaging» (Imágenes), solo en clínicas, con cargo (Staff.position). */
+export type Role = 'superadmin' | 'admin' | 'doctor' | 'nurse' | 'reception' | 'assistant' | 'lab' | 'imaging'
 
 /** Tipo de cuenta: clínica (varios médicos, hospitalización) o consultorio de un médico independiente. */
 export type ClinicKind = 'clinic' | 'office'
@@ -685,6 +686,14 @@ export interface ExamResultValue { analyte: string; value: string; unit?: string
 
 export interface ExamOrder extends ExamInput {
   id: string
+  /** DP3 (ronda 11): paciente que vino solo a hacerse exámenes. */
+  location?: 'ambulatory'
+  /** DP3: «Solicitado por» (persona del sistema o nombre escrito) y la foto o archivo de la orden en papel. */
+  requestedById?: string
+  requestedByName?: string
+  orderFileId?: string
+  /** DP2 (ronda 11): «No se realizó» con su motivo (sigue pendiente; el médico decide si lo cancela). */
+  notDone?: { reason: string; at: string; by: string }
   /** GE4 (ronda 9): versión del resultado (sólo si se corrigió) y hasta cuándo lo puede corregir quien lo cargó. */
   resultVersion?: number
   resultGraceUntil?: string

@@ -32,6 +32,10 @@ export const PERMISSIONS = {
   'exams.order': 'Ordenar exámenes y revisar sus resultados',
   'exams.process': 'Tomar muestras, marcar exámenes realizados y cargar resultados',
   'platform.manage': 'Administrar clínicas y usuarios de la plataforma',
+  // DP (ronda 11): departamentos de Laboratorio e Imágenes
+  'dept.work': 'Bandeja del departamento: muestras, estudios y resultados de su tipo',
+  'dept.config': 'Configurar su departamento (catálogo, rangos, umbrales) y editar su rol de turnos',
+  'ambulatory.register': 'Registrar pacientes que vienen solo a hacerse exámenes',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -44,6 +48,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'staff.manage', 'settings.manage', 'reports.view', 'audit.view', 'schedule.manage', 'drugs.manage',
     // AD5 (ronda 5): ve los crónicos y sus recordatorios, avisa y marca hechos (programar uno nuevo sigue siendo del médico)
     'followups.view',
+    // DP3 (ronda 11): registra pacientes ambulatorios para exámenes
+    'ambulatory.register',
   ],
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',
@@ -53,10 +59,21 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   // AD9: enfermería ya no cobra (los cobros los generan recepción, el médico o administración)
   nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'inpatient.view', 'inpatient.care', 'orders.review', 'followups.view',
     'exams.process'],
-  reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view'],
+  reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view', 'ambulatory.register'],
   // Asistente de consultorio (secretaria o enfermera): recepción, preclínica, caja y aplicar dosis en observación
   assistant: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage',
     'inpatient.view', 'inpatient.care', 'followups.view', 'exams.process'],
+  // DP1 (ronda 11): Laboratorio e Imágenes. Buscan pacientes y registran ambulatorios (DP3); su bandeja y resultados (solo su
+  // tipo, deptAllows); el expediente parcial (DP4). El cargo agrega: Microbiólogo y Radiólogo configuran su departamento; el
+  // Radiólogo además ve todo el expediente en solo lectura (positionPermissions).
+  lab: ['patients.view', 'patients.manage', 'exams.process', 'dept.work', 'ambulatory.register'],
+  imaging: ['patients.view', 'patients.manage', 'exams.process', 'dept.work', 'ambulatory.register'],
+}
+
+/** DP1 y DP4 (ronda 11): lo que el cargo suma a su rol. */
+const POSITION_PERMISSIONS: Record<string, Permission[]> = {
+  microbiologist: ['dept.config'],
+  radiologist: ['dept.config', 'chart.view', 'inpatient.view'],
 }
 
 /**
@@ -71,14 +88,17 @@ const OFFICE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
   assistant: ROLE_PERMISSIONS.assistant,
 }
 
-/** Permisos de un rol según el tipo de cuenta. En una clínica son exactamente los de siempre. */
-export function permissionsFor(role: Role, kind: ClinicKind = 'clinic'): Permission[] {
-  return kind === 'office' ? OFFICE_PERMISSIONS[role] ?? [] : ROLE_PERMISSIONS[role]
+/** Permisos de un rol según el tipo de cuenta (y, en Laboratorio e Imágenes, el cargo). En una clínica son los de siempre. */
+export function permissionsFor(role: Role, kind: ClinicKind = 'clinic', position?: string): Permission[] {
+  if (kind === 'office') return OFFICE_PERMISSIONS[role] ?? []
+  const base = ROLE_PERMISSIONS[role] ?? []
+  const extra = (role === 'lab' || role === 'imaging') && position ? POSITION_PERMISSIONS[position] ?? [] : []
+  return extra.length ? [...new Set([...base, ...extra])] : base
 }
 
 /** Roles que se pueden dar a alguien en cada tipo de cuenta. */
 export const ROLES_BY_KIND: Record<ClinicKind, Exclude<Role, 'superadmin'>[]> = {
-  clinic: ['admin', 'doctor', 'nurse', 'reception'],
+  clinic: ['admin', 'doctor', 'nurse', 'reception', 'lab', 'imaging'],
   office: ['admin', 'doctor', 'nurse', 'assistant'],
 }
 
@@ -89,6 +109,8 @@ export const ROLE_LABEL: Record<Role, string> = {
   nurse: 'Enfermería',
   reception: 'Recepción',
   assistant: 'Asistente',
+  lab: 'Laboratorio',
+  imaging: 'Imágenes',
 }
 
 export const ROLE_SUMMARY: Record<Role, string> = {
@@ -98,18 +120,20 @@ export const ROLE_SUMMARY: Record<Role, string> = {
   nurse: 'Recibe al paciente, lo registra si llega sin expediente, toma la preclínica y, en hospitalización, administra medicamentos y escribe notas de enfermería.',
   reception: 'Agenda citas, registra pacientes, controla la sala de espera y cobra.',
   assistant: 'En el consultorio: agenda citas, recibe y registra al paciente, toma la preclínica, cobra y aplica los medicamentos que el médico indica en observación.',
+  lab: 'Laboratorio clínico: bandeja de órdenes, toma de muestras, resultados, pacientes ambulatorios y, el microbiólogo, la configuración y el rol de turnos del laboratorio.',
+  imaging: 'Imágenes: bandeja de estudios, realizados, informes (el radiólogo), pacientes ambulatorios y, el radiólogo, la configuración y el rol de turnos de imágenes.',
 }
 
 /** ¿Puede este usuario (rol y tipo de cuenta) hacer esto? Con sólo el rol, se asume una clínica. */
-export const can = (who: Role | { role: Role; clinicKind?: ClinicKind }, p: Permission) =>
-  (typeof who === 'string' ? ROLE_PERMISSIONS[who] : permissionsFor(who.role, who.clinicKind)).includes(p)
+export const can = (who: Role | { role: Role; clinicKind?: ClinicKind; position?: string }, p: Permission) =>
+  (typeof who === 'string' ? ROLE_PERMISSIONS[who] : permissionsFor(who.role, who.clinicKind, who.position)).includes(p)
 
 /** AD5: ¿la persona tiene este rol (aunque ahora trabaje con otra vista)? */
 export const hasRole = (s: { role: Role; roles?: Role[] }, r: Role) => (s.roles ?? [s.role]).includes(r)
 
 /** El rol con que se firma una nota: el clínico de la persona (médico antes que administración), no su vista activa. */
 export function mainRole(s: { role: Role; roles?: Role[] }): Role {
-  return (['doctor', 'nurse', 'assistant', 'reception', 'admin', 'superadmin'] as Role[]).find((r) => hasRole(s, r)) ?? s.role
+  return (['doctor', 'nurse', 'lab', 'imaging', 'assistant', 'reception', 'admin', 'superadmin'] as Role[]).find((r) => hasRole(s, r)) ?? s.role
 }
 
 /**
@@ -119,13 +143,13 @@ export const VIEW_LABEL: Record<Role, string> = { ...ROLE_LABEL, superadmin: 'Pl
 
 /** Vistas que puede elegir: sus roles, en el orden del menú (administración primero). */
 export function viewsOf(s: { role: Role; roles?: Role[] }): Role[] {
-  const order: Role[] = ['admin', 'doctor', 'nurse', 'reception', 'assistant', 'superadmin']
+  const order: Role[] = ['admin', 'doctor', 'nurse', 'lab', 'imaging', 'reception', 'assistant', 'superadmin']
   return order.filter((r) => hasRole(s, r))
 }
 
 /** Otro de sus roles que sí tiene este permiso (para ofrecer cambiar de vista), o undefined. */
-export function roleWith(s: { role: Role; roles?: Role[] }, p: Permission, kind: ClinicKind = 'clinic') {
-  return viewsOf(s).find((r) => r !== s.role && permissionsFor(r, kind).includes(p))
+export function roleWith(s: { role: Role; roles?: Role[]; position?: string }, p: Permission, kind: ClinicKind = 'clinic') {
+  return viewsOf(s).find((r) => r !== s.role && permissionsFor(r, kind, s.position).includes(p))
 }
 
 /** Permisos que se muestran en la matriz de una clínica (sin los de plataforma). */

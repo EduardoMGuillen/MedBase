@@ -1,3 +1,5 @@
+import { DEPT_POSITIONS } from '../lib/clinicalConfig'
+import { positionOf } from '../lib/positions'
 import { useState } from 'react'
 import { Check, Minus, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -46,7 +48,7 @@ export default function StaffPage() {
                 <td data-label="Rol" className="tc-full">
                   <div className="role-picks">
                     {s.id === settings.ownerId && <span className="badge badge--ink">Médico titular</span>}
-                    {(s.roles ?? [s.role]).filter((r) => s.id !== settings.ownerId || r !== 'doctor').map((r) => <span key={r} className="badge">{ROLE_LABEL[r]}</span>)}
+                    {(s.roles ?? [s.role]).filter((r) => s.id !== settings.ownerId || r !== 'doctor').map((r) => <span key={r} className="badge">{ROLE_LABEL[r]}{(r === 'lab' || r === 'imaging') && positionOf(s.position) ? ` · ${positionOf(s.position)!.label}` : ''}</span>)}
                     {(!office || s.id !== settings.ownerId) && <button className="btn btn--ghost btn--sm" aria-label={`Cambiar los roles de ${s.name}`} onClick={() => setRolesOf(s)}>Roles</button>}
                   </div>
                 </td>
@@ -114,19 +116,25 @@ function RolesModal({ s, roles, self, onClose }: { s: Staff; roles: Role[]; self
   const [picked, setPicked] = useState<Role[]>(s.roles ?? [s.role])
   const [license, setLicense] = useState(s.license ?? '')
   const [specialty, setSpecialty] = useState(s.specialty ?? '')
+  // DP1 (ronda 11): cargo dentro de Laboratorio o Imágenes
+  const [position, setPosition] = useState(s.position ?? '')
   const [busy, setBusy] = useState(false)
   const was = s.roles ?? [s.role]
   const addsDoctor = picked.includes('doctor') && !was.includes('doctor')
   const lockedAdmin = self && was.includes('admin')
-  const toggle = (r: Role) => setPicked(picked.includes(r) ? picked.filter((x) => x !== r) : roles.filter((x) => x === r || picked.includes(x)))
-  const valid = picked.length > 0 && (!addsDoctor || license.trim().length >= 3)
-  const same = picked.length === was.length && picked.every((r) => was.includes(r))
+  // Laboratorio e Imágenes no van juntos: una persona trabaja en un solo departamento
+  const toggle = (r: Role) => setPicked(picked.includes(r) ? picked.filter((x) => x !== r) : roles.filter((x) => x === r || (picked.includes(x) && !(isDept(r) && isDept(x)))))
+  const dept = picked.find(isDept) as 'lab' | 'imaging' | undefined
+  const deptOk = !dept || positionValid(dept, position, license)
+  const valid = picked.length > 0 && (!addsDoctor || license.trim().length >= 3) && deptOk
+  const same = picked.length === was.length && picked.every((r) => was.includes(r)) && (position || '') === (s.position ?? '') && license === (s.license ?? '')
   return (
     <Modal title={`Roles de ${s.name}`} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!valid || same || busy} onClick={async () => {
         setBusy(true)
-        const ok = await updateStaff(s.id, { roles: picked, ...(addsDoctor ? { license: license.trim(), specialty: specialty.trim() || undefined } : {}) }, 'Roles guardados')
+        const ok = await updateStaff(s.id, { roles: picked, ...(addsDoctor ? { license: license.trim(), specialty: specialty.trim() || undefined } : {}),
+          ...(dept ? { position, license: license.trim() || undefined } : s.position ? { position: null } : {}) }, 'Roles guardados')
         setBusy(false)
         if (ok) onClose()
       }}>Guardar roles</button>
@@ -146,6 +154,7 @@ function RolesModal({ s, roles, self, onClose }: { s: Staff; roles: Role[]; self
           <label className="field"><span>Especialidad</span><input className="input" value={specialty} onChange={(e) => setSpecialty(e.target.value)} /></label>
         </div>
       )}
+      {dept && <PositionFields dept={dept} position={position} license={license} onPosition={setPosition} onLicense={setLicense} />}
       {!picked.length && <p className="field__msg field__msg--error">Asigna al menos un rol.</p>}
     </Modal>
   )
@@ -153,16 +162,16 @@ function RolesModal({ s, roles, self, onClose }: { s: Staff; roles: Role[]; self
 
 function NewStaff({ roles, onClose, onCreated }: { roles: Role[]; onClose: () => void; onCreated: (s: Staff, password: string) => void }) {
   const { createStaff } = useStore()
-  const [f, setF] = useState({ name: '', role: (roles.includes('doctor') ? 'doctor' : roles[0]) as Role, email: '', specialty: '', license: '' })
+  const [f, setF] = useState({ name: '', role: (roles.includes('doctor') ? 'doctor' : roles[0]) as Role, email: '', specialty: '', license: '', position: '' })
   const [busy, setBusy] = useState(false)
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
-  const valid = f.name.trim().length >= 3 && /\S+@\S+\.\S+/.test(f.email) && (f.role !== 'doctor' || f.license.trim())
+  const valid = f.name.trim().length >= 3 && /\S+@\S+\.\S+/.test(f.email) && (f.role !== 'doctor' || f.license.trim()) && (!isDept(f.role) || positionValid(f.role as 'lab' | 'imaging', f.position, f.license))
   return (
     <Modal title={roles.length === 1 && roles[0] === 'assistant' ? 'Nueva asistente' : 'Nuevo usuario'} onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!valid || busy} onClick={async () => {
         setBusy(true)
-        const r = await createStaff({ name: f.name.trim(), role: f.role, email: f.email.trim(), specialty: f.specialty.trim() || undefined, license: f.license.trim() || undefined })
+        const r = await createStaff({ name: f.name.trim(), role: f.role, email: f.email.trim(), specialty: f.specialty.trim() || undefined, license: f.license.trim() || undefined, ...(isDept(f.role) ? { position: f.position } : {}) })
         setBusy(false)
         if (r) onCreated(r.user, r.password)
       }}>Crear usuario</button>
@@ -179,6 +188,31 @@ function NewStaff({ roles, onClose, onCreated }: { roles: Role[]; onClose: () =>
           <label className="field"><span>Número de colegiación</span><input className="input" value={f.license} onChange={set('license')} /></label>
         </div>
       )}
+      {isDept(f.role) && <PositionFields dept={f.role as 'lab' | 'imaging'} position={f.position} license={f.license} onPosition={(v) => setF({ ...f, position: v })} onLicense={(v) => setF({ ...f, license: v })} />}
     </Modal>
+  )
+}
+
+const isDept = (r: Role) => r === 'lab' || r === 'imaging'
+function positionValid(dept: 'lab' | 'imaging', position: string, license: string) {
+  const pos = DEPT_POSITIONS[dept].find((x) => x.key === position)
+  return !!pos && (!pos.license || license.trim().length >= 2)
+}
+
+/**
+ * DP1 (ronda 11): «Cargo» (obligatorio) y, para Microbiólogo o Radiólogo, «N.º de colegiación» (obligatorio). El mismo diseño
+ * de PE1: un rol con cargos.
+ */
+function PositionFields({ dept, position, license, onPosition, onLicense }: { dept: 'lab' | 'imaging'; position: string; license: string; onPosition: (v: string) => void; onLicense: (v: string) => void }) {
+  const pos = DEPT_POSITIONS[dept].find((x) => x.key === position)
+  return (
+    <div className="form-grid">
+      <label className="field"><span>Cargo</span>
+        <select className="select" value={position} onChange={(e) => onPosition(e.target.value)} aria-required="true">
+          <option value="">Elige el cargo</option>{DEPT_POSITIONS[dept].map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}</select>
+        {!pos && <small className="field__msg field__msg--warn">El cargo es obligatorio.</small>}</label>
+      {pos?.license && <label className="field"><span>N.º de colegiación</span><input className="input" value={license} onChange={(e) => onLicense(e.target.value)} aria-required="true" />
+        <small className="muted">{pos.licenseBody}</small></label>}
+    </div>
   )
 }

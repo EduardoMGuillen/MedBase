@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Activity, Globe, Phone, Receipt, Stethoscope } from 'lucide-react'
+import { AmbulatoryModal } from './Ambulatory'
 import { useStore } from '../lib/store'
 import { receivedIn } from '../lib/billing'
 import { ExamTray, NewResults } from './ExamPanels'
@@ -282,7 +283,7 @@ export default function Dashboard() {
   return (
     <div className="page">
       <PageHead title={`${greeting()}, ${first}`} sub="Resumen operativo de la clínica."
-        actions={<Link className="btn btn--primary" to="/app/reportes">Ver reportes</Link>} />
+        actions={<>{settings.kind !== 'office' && can('ambulatory.register') && <AmbulatoryButton />}<Link className="btn btn--primary" to="/app/reportes">Ver reportes</Link></>} />
       <div className="stats">
         <div className="stat"><b>{today.filter((a) => a.status !== 'cancelled').length}</b><span>Citas hoy</span></div>
         <div className="stat"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></div>
@@ -317,4 +318,13 @@ export default function Dashboard() {
       </div>
     </div>
   )
+}
+
+/** DP3 (ronda 11): «Paciente ambulatorio» en la pantalla de Administración (la misma ventana de la bandeja y de Recepción). */
+function AmbulatoryButton() {
+  const [open, setOpen] = useState(false)
+  return <>
+    <button className="btn btn--soft" onClick={() => setOpen(true)}>Paciente ambulatorio</button>
+    {open && <AmbulatoryModal onClose={() => setOpen(false)} onDone={() => setOpen(false)} />}
+  </>
 }

@@ -1,6 +1,8 @@
 import express, { type Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
+import { can } from '../../src/lib/permissions.js'
+import type { Staff } from '../../src/lib/types.js'
 import { type Ctx, fail, parse } from '../http.js'
 import { toAttachment } from '../mappers.js'
 
@@ -20,7 +22,7 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
     res.json(rows.map(toAttachment))
   })
 
-  app.post('/api/patients/:id/attachments', express.json({ limit: '4.4mb' }), auth, need('chart.view'), async (req, res) => {
+  app.post('/api/patients/:id/attachments', express.json({ limit: '4.4mb' }), auth, need('chart.view', 'dept.work', 'ambulatory.register'), async (req, res) => {
     const patientId = String(req.params.id)
     const cid = clinicOf(req)
     ;(await patientRow(cid, patientId)) ?? fail(404, 'El paciente no existe.')
@@ -35,6 +37,7 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
       hospitalizationId: z.string().optional(),
     }), req.body)
     if (!ALLOWED.includes(b.mime)) fail(400, 'Sólo se aceptan PDF e imágenes (PNG, JPG o WEBP).')
+    deptUpload(userOf(req), b.category)
     if (b.hospitalizationId) {
       if (!(await sql.one('SELECT 1 FROM hospitalizations WHERE id = ? AND patient_id = ? AND clinic_id = ?', [b.hospitalizationId, patientId, cid]))) {
         fail(400, 'La hospitalización no corresponde a este paciente.')
@@ -57,13 +60,15 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
    * devuelve más de 4,5 MB por respuesta. Sin rango se devuelve completo (archivos chicos, como siempre).
    */
   // Nombre y tipo de un archivo (sin bajarlo), para decidir cómo mostrarlo
-  app.get('/api/attachments/:id/meta', auth, need('chart.view'), async (req, res) => {
-    const row = (await sql.one('SELECT name, mime, size FROM attachments WHERE id = ? AND clinic_id = ?', [String(req.params.id), clinicOf(req)])) ?? fail(404, 'El archivo no existe.')
+  app.get('/api/attachments/:id/meta', auth, need('chart.view', 'dept.work'), async (req, res) => {
+    const row = (await sql.one('SELECT name, mime, size, category FROM attachments WHERE id = ? AND clinic_id = ?', [String(req.params.id), clinicOf(req)])) ?? fail(404, 'El archivo no existe.')
+    deptView(userOf(req), row!)
     res.json({ name: String(row!.name), mime: String(row!.mime), size: Number(row!.size) })
   })
 
-  app.get('/api/attachments/:id', auth, need('chart.view'), async (req, res) => {
+  app.get('/api/attachments/:id', auth, need('chart.view', 'dept.work'), async (req, res) => {
     const row = (await sql.one('SELECT * FROM attachments WHERE id = ? AND clinic_id = ?', [String(req.params.id), clinicOf(req)])) ?? fail(404, 'El archivo no existe.')
+    deptView(userOf(req), row!)
     const data = Buffer.from(row!.data as Uint8Array)
     const range = /^bytes=(\d+)-(\d*)$/.exec(String(req.headers.range ?? ''))
     // Se registra una vez por apertura: la primera parte o el archivo completo
@@ -82,7 +87,7 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
 
   // ---------- Archivos grandes por partes ----------
   /** Una parte (base64) de un archivo que se sube en varias peticiones. Las partes abandonadas se limpian al día. */
-  app.post('/api/uploads/:uploadId/parts', express.json({ limit: '4.4mb' }), auth, need('chart.view'), async (req, res) => {
+  app.post('/api/uploads/:uploadId/parts', express.json({ limit: '4.4mb' }), auth, need('chart.view', 'dept.work', 'ambulatory.register'), async (req, res) => {
     // Seis partes de 3 MB alcanzan para 15 MB; lo que pase de 15 MB se rechaza al unirlas
     const b = parse(z.object({ index: z.number().int().min(0).max(5), data: z.string().min(1) }), req.body)
     const user = userOf(req)
@@ -97,7 +102,7 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
   })
 
   /** Une las partes en un archivo del expediente, como un adjunto normal. */
-  app.post('/api/patients/:id/attachments/assemble', auth, need('chart.view'), async (req, res) => {
+  app.post('/api/patients/:id/attachments/assemble', auth, need('chart.view', 'dept.work', 'ambulatory.register'), async (req, res) => {
     const patientId = String(req.params.id)
     const cid = clinicOf(req)
     const user = userOf(req)
@@ -108,6 +113,7 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
       title: z.string().trim().max(120).optional(), takenAt: z.string().refine((x) => !Number.isNaN(Date.parse(x))).optional(), hospitalizationId: z.string().optional(),
     }), req.body)
     if (!ALLOWED.includes(b.mime)) fail(400, 'Sólo se aceptan PDF e imágenes (PNG, JPG o WEBP).')
+    deptUpload(user, b.category)
     if (b.hospitalizationId && !(await sql.one('SELECT 1 FROM hospitalizations WHERE id = ? AND patient_id = ? AND clinic_id = ?', [b.hospitalizationId, patientId, cid]))) {
       fail(400, 'La hospitalización no corresponde a este paciente.')
     }
@@ -135,4 +141,19 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
     await audit(user, `Eliminó el archivo "${row!.name}" de ${await patientName(String(row!.patient_id))}`)
     res.json({ ok: true })
   })
+}
+
+/**
+ * DP3/DP4 (ronda 11): sin acceso al expediente (Laboratorio, Imágenes, Recepción) solo se suben archivos de exámenes (la orden en
+ * papel y los resultados), y los departamentos solo abren los de su tipo.
+ */
+function deptUpload(u: Staff, category: string) {
+  if (can(u, 'chart.view')) return
+  const own = u.role === 'lab' ? 'lab' : u.role === 'imaging' ? 'imaging' : undefined
+  if (own ? category !== own : !['lab', 'imaging'].includes(category)) fail(403, 'Solo puedes subir archivos de exámenes de tu tipo.')
+}
+function deptView(u: Staff, row: Record<string, unknown>) {
+  if (can(u, 'chart.view')) return
+  const own = u.role === 'lab' ? 'lab' : u.role === 'imaging' ? 'imaging' : undefined
+  if (!own || row.category !== own) fail(403, 'Sin permiso.')
 }

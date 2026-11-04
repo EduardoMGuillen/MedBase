@@ -111,6 +111,11 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
     out.push({ key: `crit-${e.id}`, level: 'critical', tab: 'labs', text: `Valor crítico en ${examLine(e)}${vals.length ? `: ${list(vals, 3)}` : ''}`, count: 1,
       since: new Date(e.result?.at ?? e.statusAt ?? e.orderedAt).getTime(), action: { label: 'Ver resultado', go: { tab: 'labs' } } })
   }
+  // DP2 (ronda 11): el departamento marcó «No se realizó»: sigue pendiente; el médico decide si lo cancela
+  for (const e of exams.filter((x) => x.notDone && isPending(x))) {
+    out.push({ key: `notdone-${e.id}`, level: 'pending', tab: 'labs', text: `No se realizó ${examLine(e)}: ${e.notDone!.reason}`, count: 1,
+      since: new Date(e.notDone!.at).getTime(), action: { label: 'Ver exámenes', go: { tab: 'labs' } } })
+  }
   for (const g of ['lab', 'imaging'] as ExamGroup[]) {
     // MC5 (ronda 5): lo externo no es un pendiente de la clínica
     const pend = exams.filter((e) => e.group === g && isPending(e) && e.area !== 'none').sort((a, b) => Number(b.priority === 'urgent') - Number(a.priority === 'urgent') || a.orderedAt.localeCompare(b.orderedAt))
