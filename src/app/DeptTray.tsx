@@ -43,7 +43,7 @@ const waitText = (iso: string, now: number) => {
  * pestaña Exámenes (la misma fuente de verdad). Urgentes primero, después los más antiguos. Se actualiza sola.
  */
 export default function DeptTray({ group }: { group: ExamGroup }) {
-  const { staffById, can } = useStore()
+  const { staffById, can, notify } = useStore()
   const [items, setItems] = useState<Item[] | null>(null)
   const [tab, setTab] = useState<TabKey>('todo')
   const [q, setQ] = useState('')
@@ -70,6 +70,15 @@ export default function DeptTray({ group }: { group: ExamGroup }) {
   const [page, setPage] = usePage(`${tab}|${q}|${where}|${urgentOnly}|${day}`)
   const paged = tab === 'done' ? list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : list
   const places = ['Consulta externa', 'Observación', 'Hospitalización', 'Ambulatorio']
+  const sameTodo = (e: Item) => list.filter((x) => x.patientId === e.patientId && x.status === 'ordered' && !x.notDone)
+  const [busyAll, setBusyAll] = useState(false)
+  const takeAll = async (xs: Item[]) => {
+    setBusyAll(true)
+    const errors: string[] = []
+    for (const x of xs) await api(`/exams/${x.id}/status`, { body: { status: 'sample' } }).catch((err: Error) => errors.push(`${x.name}: ${err.message}`))
+    if (errors.length) notify(errors.join(' · '), 'error')
+    setBusyAll(false); load()
+  }
   return (
     <div className="page dept">
       <PageHead title={group === 'lab' ? 'Bandeja de laboratorio' : 'Bandeja de imágenes'} sub={`Órdenes «En la clínica» de ${GROUP_LABEL[group].toLowerCase()}. Lo que hagas aquí se ve al instante en la pestaña Exámenes del paciente.`}
@@ -94,6 +103,9 @@ export default function DeptTray({ group }: { group: ExamGroup }) {
                 <span className="badge badge--ink">{e.locationText}</span>
                 <span className="muted dept__wait">{dateTime(e.orderedAt)} · espera {waitText(e.orderedAt, now)}</span>
               </header>
+              {/* DP2: «Muestra tomada» de una vez para todos los exámenes de este paciente que esperan muestra */}
+              {group === 'lab' && tab === 'todo' && can('exams.process') && sameTodo(e).length > 1 && sameTodo(e)[0].id === e.id && (
+                <button className="btn btn--soft btn--sm dept__all" disabled={busyAll} onClick={() => takeAll(sameTodo(e))}>Muestra tomada de los {sameTodo(e).length} exámenes de este paciente</button>)}
               <p className="muted dept__meta">Pidió {shortStaff(staffById(e.orderedBy)?.name)}{e.requestedById || e.requestedByName ? ` · Solicitado por ${e.requestedById ? staffById(e.requestedById)?.name : e.requestedByName}` : ''}{e.indication ? ` · Indicación: ${e.indication}` : ''}</p>
               <ExamRow e={e} reload={load} open expanded={!!open[e.id]} onToggle={() => setOpen((x) => ({ ...x, [e.id]: !x[e.id] }))} />
             </article>
