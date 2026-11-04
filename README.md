@@ -35,6 +35,10 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
 | Médico (ginecología) | mzuniga@demo.clinara | Igual, con su propia agenda |
 | Enfermería | crios@demo.clinara | Consulta externa, perfil CE (triaje), hospitalizados: hoja de medicamentos y notas de enfermería |
 | Recepción | smejia@demo.clinara | Agenda, pacientes, recordatorios, caja |
+| Laboratorio (microbióloga) | gordonez@demo.clinara | Bandeja de laboratorio, configuración de laboratorio, rol de turnos |
+| Laboratorio (técnico) | krivera@demo.clinara | Bandeja de laboratorio, pacientes ambulatorios (configuración y turnos solo lectura) |
+| Imágenes (radiólogo) | mcastellanos@demo.clinara | Bandeja de imágenes, informes, expediente en solo lectura, configuración de imágenes |
+| Imágenes (técnica) | pandino@demo.clinara | Bandeja de imágenes: realizados e imágenes (sin informes) |
 | Administración | admin@demo.clinara | Reportes, personal, configuración, bitácora |
 | Administración de Clinara | superadmin@demo.clinara | Clínicas y sus usuarios (sin expedientes) |
 | Médico de otra clínica (San Lucas) | erosales@demo.clinara | Sólo los pacientes de su clínica |
@@ -144,6 +148,7 @@ consultorios. Antes de borrar o reemplazar algo, guardan una copia en la tabla `
 | 8 | `docs/ronda8/PEDIDO_RONDA8.md` | `PLAN_RONDA8.md` | `REPORTE_RONDA8.md` | — |
 | 9 | `docs/ronda9/PEDIDO_RONDA9.md` | `PLAN_RONDA9.md` | `REPORTE_RONDA9.md` | — |
 | 10 | `docs/ronda10/PEDIDO_RONDA10.md` | `PLAN_RONDA10.md` | `REPORTE_RONDA10.md` | `docs/ronda10/REGISTRO_RONDA10.md` |
+| 11 | `docs/ronda11/PEDIDO_RONDA11.md` | `PLAN_RONDA11.md` | `REPORTE_RONDA11.md` | — |
 
 Ronda 10 (esquema 69 → 73): catálogo de Imagen y gabinete completo (CA5), limpieza de umbrales archivados (UM3),
 vademécum con las 530 filas del listado nacional y su pantalla con páginas (ME6, ME7), buscador de medicamento que solo
