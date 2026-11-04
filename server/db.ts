@@ -22,7 +22,7 @@ import { loadRonda11Catalog } from './ronda11.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '75'
+const SCHEMA_VERSION = '76'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1115,6 +1115,10 @@ CREATE TABLE IF NOT EXISTS exam_catalog_removed (
 );
 CREATE INDEX IF NOT EXISTS exam_catalog_removed_clinic ON exam_catalog_removed (clinic_id, norm_key);
 ALTER TABLE exam_orders ADD COLUMN IF NOT EXISTS subject TEXT;
+-- v76 (ronda 11). ME12: la receta generada por un médico lleva SUS datos (doctor_id) y, por medicamento, los días y la cantidad
+-- a comprar solo para esa receta (data, JSON); no cambian la orden ni la hoja.
+ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS doctor_id TEXT;
+ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS data TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

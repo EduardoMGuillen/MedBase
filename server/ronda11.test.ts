@@ -201,3 +201,36 @@ describe('ME11 (ronda 11): agregar al vademécum desde el aviso', () => {
     assert.equal((await office.patch(`/api/drugs/${own.body.id}`, { brand: 'Marca' })).status, 200)
   })
 })
+
+describe('ME12 (ronda 11): «Generar receta» con cualquier medicamento activo y días', () => {
+  test('el médico elige uno no marcado, pone días y cantidad: sale con sus datos; la orden no cambia; queda registrada; enfermería solo los marcados', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const rec = await as('smejia@demo.clinara')
+    const id = await mainClinic()
+    const med = (await sql.one(`SELECT * FROM hosp_meds WHERE clinic_id = ? AND stopped_at IS NULL AND buy_outside = FALSE AND hospitalization_id IN (SELECT id FROM hospitalizations WHERE status = 'active') LIMIT 1`, [id]))!
+    const body = { kind: 'rx', chosen: true, medIds: [String(med.id)], extras: { [String(med.id)]: { days: 3, quantity: '9 tabletas' } } }
+    assert.equal((await nurse.post('/api/print-jobs', body)).status, 403, 'enfermería no elige ni pone días')
+    assert.equal((await nurse.post('/api/print-jobs', { kind: 'rx', medIds: [String(med.id)] })).status, 400, 'enfermería: solo lo marcado')
+    assert.equal((await rec.post('/api/print-jobs', body)).status, 403)
+    const job = await doc.post('/api/print-jobs', body)
+    assert.equal(job.status, 201, JSON.stringify(job.body))
+    const got = (await doc.get(`/api/print-jobs/${job.body.id}`)).body
+    assert.equal(got.doctors.length, 1)
+    assert.equal(got.doctors[0].doctor.id, 's-herrera')
+    assert.deepEqual(got.extras[String(med.id)], { days: 3, quantity: '9 tabletas' })
+    assert.equal((await doc.post(`/api/print-jobs/${job.body.id}/printed`, { how: 'pdf' })).status, 200)
+    assert.ok(await sql.one(`SELECT 1 FROM print_log WHERE target_kind = 'hosp_med' AND target_id = ?`, [String(med.id)]), 'cuenta para GE4')
+    const after = (await sql.one('SELECT days, buy_quantity FROM hosp_meds WHERE id = ?', [String(med.id)]))!
+    assert.equal(after.days ?? null, med.days ?? null, 'la orden no cambia')
+    // Recetas emitidas: la ve y la reimprime enfermería
+    const pid = String((await sql.one('SELECT patient_id FROM hospitalizations WHERE id = ?', [String(med.hospitalization_id)]))!.patient_id)
+    const list = (await nurse.get(`/api/patients/${pid}/print-jobs`)).body
+    const r = list.find((x: any) => x.id === job.body.id)
+    assert.deepEqual(r.doctorIds, ['s-herrera'])
+    assert.equal(r.meds[0].days, 3)
+    assert.equal((await nurse.get(`/api/print-jobs/${job.body.id}`)).status, 200)
+    assert.equal((await nurse.post(`/api/print-jobs/${job.body.id}/printed`, { how: 'print' })).status, 200)
+    assert.equal((await rec.get(`/api/print-jobs/${job.body.id}`)).status, 403)
+  })
+})

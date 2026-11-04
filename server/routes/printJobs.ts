@@ -27,12 +27,17 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
     if (!can(u, 'chart.view')) return false
     return kind === 'exams' ? can(u, 'exams.order') || can(u, 'exams.process') : can(u, 'inpatient.orders') || can(u, 'inpatient.care')
   }
-  const medsOf = (cid: string, ids: string[]) => (ids.length ? sql.query(`SELECT * FROM hosp_meds WHERE clinic_id = ? AND id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids]) : Promise.resolve([] as Row[]))
+  // El paciente sale de la estancia: las órdenes sembradas por la demo no traen patient_id (lo arregla la ronda 11)
+  const medsOf = (cid: string, ids: string[]) => (ids.length ? sql.query(`SELECT m.*, COALESCE(m.patient_id, h.patient_id) AS patient_id FROM hosp_meds m JOIN hospitalizations h ON h.id = m.hospitalization_id
+    WHERE m.clinic_id = ? AND m.id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids]) : Promise.resolve([] as Row[]))
 
   const body = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('exams'), examIds: z.array(z.string()).min(1, 'Elige al menos un examen.').max(60) }),
     // Receta: los medicamentos elegidos o, al firmar una nota, los de esa nota marcados «va a receta»
-    z.object({ kind: z.literal('rx'), medIds: z.array(z.string()).max(60).optional(), noteId: z.string().optional() }),
+    z.object({ kind: z.literal('rx'), medIds: z.array(z.string()).max(60).optional(), noteId: z.string().optional(),
+      // ME12 (ronda 11): «Generar receta» del médico: cualquier medicamento activo, con días y cantidad solo para esta receta
+      chosen: z.boolean().optional(),
+      extras: z.record(z.string(), z.object({ days: z.number().int().min(1, 'Los días son al menos 1.').max(365).optional(), quantity: z.string().trim().max(80).optional() })).optional() }),
   ])
   app.post('/api/print-jobs', auth, need('exams.order', 'exams.process', 'inpatient.orders', 'inpatient.care'), async (req, res) => {
     const b = parse(body, req.body)
@@ -41,6 +46,8 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
     let patientId = ''
     let stayId: string | null = null
     let items: string[] = []
+    let doctorId: string | null = null
+    let data: Record<string, { days?: number; quantity?: string }> | null = null
     if (b.kind === 'exams') {
       const list = await examsWhere(sql, `clinic_id = ? AND id IN (${b.examIds.map(() => '?').join(',')})`, [cid, ...b.examIds])
       if (list.length !== new Set(b.examIds).size) fail(404, 'Algún examen no existe.')
@@ -54,20 +61,33 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
       items = list.map((e) => e.id)
     } else {
       let rows: Row[]
-      if (b.noteId) rows = await sql.query(`SELECT * FROM hosp_meds WHERE clinic_id = ? AND source = 'note' AND source_id = ? AND buy_outside = TRUE AND stopped_at IS NULL ORDER BY source_index`, [cid, b.noteId])
+      if (b.noteId) rows = await sql.query(`SELECT m.*, COALESCE(m.patient_id, h.patient_id) AS patient_id FROM hosp_meds m JOIN hospitalizations h ON h.id = m.hospitalization_id
+        WHERE m.clinic_id = ? AND m.source = 'note' AND m.source_id = ? AND m.buy_outside = TRUE AND m.stopped_at IS NULL ORDER BY m.source_index`, [cid, b.noteId])
       else rows = await medsOf(cid, b.medIds ?? [])
-      if (!rows.length) fail(400, 'No hay medicamentos marcados «No hay en la clínica (va a receta)».')
+      if (!rows.length) fail(400, b.chosen ? 'Elige al menos un medicamento.' : 'No hay medicamentos marcados «No hay en la clínica (va a receta)».')
       if (b.medIds && rows.length !== new Set(b.medIds).size) fail(404, 'Algún medicamento no existe.')
-      const off = rows.find((r) => !r.buy_outside)
-      if (off) fail(400, `${off.drug} no está marcado «No hay en la clínica (va a receta)».`)
+      // ME12 (ronda 11): el médico elige cualquier medicamento activo y pone días; enfermería solo imprime los marcados
+      // «No hay en la clínica» (con los datos del médico que indicó) y reimprime las emitidas
+      const user = userOf(req)
+      const extras = Object.entries(b.extras ?? {}).filter(([id, x]) => b.medIds?.includes(id) && (x.days || x.quantity))
+      if ((b.chosen || extras.length) && !can(user, 'inpatient.orders')) fail(403, 'Elegir otros medicamentos o poner días en la receta es del médico.')
+      if (b.chosen) {
+        const stopped = rows.find((r) => r.stopped_at)
+        if (stopped) fail(409, `${stopped.drug} ya no está activo.`)
+        doctorId = user.id
+        data = extras.length ? Object.fromEntries(extras) : null
+      } else {
+        const off = rows.find((r) => !r.buy_outside)
+        if (off) fail(400, `${off.drug} no está marcado «No hay en la clínica (va a receta)».`)
+      }
       if (new Set(rows.map((r) => String(r.patient_id))).size > 1) fail(400, 'Los medicamentos son de pacientes distintos.')
       patientId = String(rows[0].patient_id)
       stayId = String(rows[0].hospitalization_id)
       items = rows.map((r) => String(r.id))
     }
     const id = randomUUID()
-    await sql.run('INSERT INTO print_jobs (id, clinic_id, patient_id, hospitalization_id, kind, items, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)',
-      [id, cid, patientId, stayId, b.kind, JSON.stringify(items), userOf(req).id, new Date().toISOString()])
+    await sql.run('INSERT INTO print_jobs (id, clinic_id, patient_id, hospitalization_id, kind, items, created_by, created_at, doctor_id, data) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      [id, cid, patientId, stayId, b.kind, JSON.stringify(items), userOf(req).id, new Date().toISOString(), doctorId, data ? JSON.stringify(data) : null])
     res.status(201).json({ id })
   })
 
@@ -86,12 +106,14 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
       for (const e of exams) by.set(e.orderedBy, [...(by.get(e.orderedBy) ?? []), e.id])
     } else {
       meds = (await medsOf(cid, ids)).map(toInpatientMed)
-      for (const m of meds) by.set(m.orderedBy, [...(by.get(m.orderedBy) ?? []), m.id])
+      // ME12: la receta que generó un médico lleva SUS datos (una sola); la de los marcados, la del médico que indicó
+      for (const m of meds) { const doc = job!.doctor_id ? String(job!.doctor_id) : m.orderedBy; by.set(doc, [...(by.get(doc) ?? []), m.id]) }
     }
     const doctors = await Promise.all([...by.entries()].map(async ([doctorId, items]) => ({ doctor: await doctorOf(doctorId), items })))
     const printed = await sql.query('SELECT how, by_id, at FROM print_log WHERE target_kind = ? AND target_id = ? ORDER BY at', ['print_job', String(job!.id)])
     res.json({ id: String(job!.id), kind, patientId: String(job!.patient_id), hospitalizationId: job!.hospitalization_id ? String(job!.hospitalization_id) : undefined,
-      createdBy: String(job!.created_by), createdAt: String(job!.created_at), exams, meds, doctors, printed: printed.map((p) => ({ how: String(p.how), by: String(p.by_id), at: String(p.at) })) })
+      createdBy: String(job!.created_by), createdAt: String(job!.created_at), exams, meds, doctors, printed: printed.map((p) => ({ how: String(p.how), by: String(p.by_id), at: String(p.at) })),
+      extras: job!.data ? JSON.parse(String(job!.data)) : undefined })
   })
 
   /** Imprimir o descargar: queda por renglón (GE4) y en la bitácora, con quién lo hizo y de qué médico es. */
@@ -109,7 +131,11 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
     if (kind === 'exams') {
       const list = await examsWhere(sql, `clinic_id = ? AND id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids])
       what = `la orden de ${GROUP_LABEL[(list[0]?.group ?? 'lab') as ExamGroup].toLowerCase()} (${list.map((e) => e.name).join(', ')})`
-    } else what = `la receta de lo que no hay en la clínica (${(await medsOf(cid, ids)).map((r) => String(r.drug)).join(', ')})`
+    } else {
+      const extras = job!.data ? JSON.parse(String(job!.data)) as Record<string, { days?: number; quantity?: string }> : {}
+      const meds = (await medsOf(cid, ids)).map((r) => `${String(r.drug)}${extras[String(r.id)]?.days ? ` por ${extras[String(r.id)].days} días` : ''}${extras[String(r.id)]?.quantity ? `, comprar ${extras[String(r.id)].quantity}` : ''}`)
+      what = job!.doctor_id ? `la receta (${meds.join('; ')})` : `la receta de lo que no hay en la clínica (${meds.join('; ')})`
+    }
     const who = await patientName(String(job!.patient_id))
     await sql.tx(async (q) => {
       await q.run('INSERT INTO print_log (id, clinic_id, target_kind, target_id, how, by_id, at) VALUES (?,?,?,?,?,?,?)', [randomUUID(), cid, 'print_job', String(job!.id), b.how, user.id, at])
@@ -126,7 +152,17 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
     const rows = await sql.query(`SELECT j.*, (SELECT MAX(l.at) FROM print_log l WHERE l.target_kind = 'print_job' AND l.target_id = j.id) AS printed_at,
       (SELECT l.by_id FROM print_log l WHERE l.target_kind = 'print_job' AND l.target_id = j.id ORDER BY l.at DESC LIMIT 1) AS printed_by
       FROM print_jobs j WHERE j.clinic_id = ? AND j.patient_id = ? ORDER BY j.created_at DESC`, [cid, String(req.params.id)])
-    res.json(rows.filter((r) => r.printed_at).map((r) => ({ id: String(r.id), kind: String(r.kind), hospitalizationId: r.hospitalization_id ? String(r.hospitalization_id) : undefined,
-      items: JSON.parse(String(r.items)) as string[], printedAt: String(r.printed_at), printedBy: String(r.printed_by) })))
+    // ME12 (ronda 11): «Recetas emitidas» de Anexos: de quién es la receta (el médico que la generó o el que indicó) y qué lleva
+    const out = []
+    for (const r of rows.filter((x) => x.printed_at)) {
+      const items = JSON.parse(String(r.items)) as string[]
+      const meds = r.kind === 'rx' ? (await medsOf(cid, items)).map(toInpatientMed) : []
+      const extras = r.data ? JSON.parse(String(r.data)) as Record<string, { days?: number; quantity?: string }> : {}
+      out.push({ id: String(r.id), kind: String(r.kind), hospitalizationId: r.hospitalization_id ? String(r.hospitalization_id) : undefined,
+        items, printedAt: String(r.printed_at), printedBy: String(r.printed_by), createdAt: String(r.created_at),
+        doctorIds: r.kind === 'rx' ? [...new Set(r.doctor_id ? [String(r.doctor_id)] : meds.map((m) => m.orderedBy))] : undefined,
+        meds: r.kind === 'rx' ? meds.map((m) => ({ id: m.id, label: m.drug, days: extras[m.id]?.days })) : undefined })
+    }
+    res.json(out)
   })
 }

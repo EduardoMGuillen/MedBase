@@ -53,6 +53,7 @@ import { useVademecum } from '../lib/vademecum'
 import { lnmeRoute } from '../lib/drugProvider'
 import { DrugPickedHint } from '../components/DrugSuggestion'
 import { NotInVademecum } from '../components/AddToVademecum'
+import { GenerateRxModal, RxAnnex } from '../components/GenerateRx'
 import { DrugSearch } from '../components/DrugSearch'
 import type { OrderSet } from '../lib/types'
 import { TabRow } from '../components/TabRow'
@@ -350,7 +351,8 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
       <div className="panel__head medsheet__head">
         <div><h2>Hoja de medicamentos</h2><p>Se llena sola con lo que el médico indica en sus notas. {care ? 'Toca una hora para registrar la dosis; queda con tu nombre y tu rol.' : 'Enfermería registra cada dosis.'}</p>
           {/* ME10 (ronda 10): la receta de lo que no hay en la clínica (médico y enfermería; la marca solo la pone el médico) */}
-          {canRx && buyMeds.length > 0 && <button className="btn btn--soft btn--sm" style={{ marginTop: 8 }} onClick={() => setPrintingRx(true)}><Printer size={15} />Imprimir receta</button>}</div>
+          {/* ME12 (ronda 11): el médico genera la receta con cualquier medicamento activo; enfermería imprime los marcados */}
+          {canRx && (can('inpatient.orders') ? file.meds.some((m) => !m.stoppedAt) : buyMeds.length > 0) && <button className="btn btn--soft btn--sm" style={{ marginTop: 8 }} onClick={() => setPrintingRx(true)}><Printer size={15} />{can('inpatient.orders') ? 'Generar receta' : 'Imprimir receta'}</button>}</div>
         <div className="medsheet__nav">
           <div className="segmented" role="radiogroup" aria-label="Vista">
             <button role="radio" aria-checked={view === 'day'} onClick={() => go({ view: 'day' })}>Día</button>
@@ -466,7 +468,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
       <div className="legend">
         {(['given', 'due', 'late', 'upcoming', 'skipped', 'omitted', 'autoskip'] as SlotState[]).map((s) => <span key={s}><i className={`slot2--${s}`} />{STATE_LABEL[s]}{s === 'autoskip' ? ': cerrada automáticamente por el sistema al llegar la siguiente dosis' : ''}</span>)}
       </div>
-      {printingRx && <PrintRxModal meds={buyMeds} onClose={() => setPrintingRx(false)} />}
+      {printingRx && <GenerateRxModal meds={file.meds} onClose={() => setPrintingRx(false)} />}
       {marking && <DoseModal med={marking.med} at={marking.at} late={marking.late} doses={dosesOf(marking.med)} onClose={() => setMarking(null)} onSaved={() => { setMarking(null); reload() }} />}
       {correcting && <CorrectDoseModal med={correcting.med} dose={correcting.dose} onClose={() => setCorrecting(null)} onSaved={() => { setCorrecting(null); reload() }} />}
       {stopping && <StopModal med={stopping} onClose={() => setStopping(null)} onSaved={() => { setStopping(null); reload() }} />}
@@ -790,7 +792,7 @@ function MedicalNotes({ file, p, reload }: { file: File; p: Patient; reload: () 
         return <SoapNote key={n.id} n={n} file={file} reload={reload} />
       }) : !h.consultationId && <section className="panel"><div className="empty">Todavía no hay notas de evolución.</div></section>}
       {writing === 'note' && <NoteEditor file={file} p={p} kind={hasAdmission ? 'evolution' : 'admission'} onClose={() => setWriting(null)} onSaved={(b, rx) => { setWriting(null); reload(); if (b || rx) setOrdersFor({ batch: b, rxNote: rx }) }} onStale={reload} />}
-      {ordersFor && <ExamOrdersOffer batch={ordersFor.batch} rxNote={ordersFor.rxNote} onClose={() => setOrdersFor(null)} />}
+      {ordersFor && <ExamOrdersOffer batch={ordersFor.batch} rxNote={ordersFor.rxNote} meds={file.meds} onClose={() => setOrdersFor(null)} />}
     </div>
   )
 }
@@ -849,7 +851,7 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
           indications={<>{n.vitals && <p className="note-vitals-line">{vitalsModeText(n.vitals)}<LineTag tag={n.vitals.tag} /></p>}
             {indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : !n.vitals && <p className="muted">Sin indicaciones.</p>}</>}
           exams={<NoteExams list={(file.exams ?? []).filter((e) => e.noteId === n.id)} />}
-          meds={meds.length ? <>{<OrderChecklist n={n} orders={meds} file={file} reload={reload} pill />}{file.meds.some((m) => m.noteId === n.id && m.buyOutside && !m.stoppedAt) && <RxFromNote noteId={n.id} />}</> : <p className="muted">Sin medicamentos.</p>} />
+          meds={meds.length ? <>{<OrderChecklist n={n} orders={meds} file={file} reload={reload} pill />}<RxFromNote noteId={n.id} meds={file.meds} /></> : <p className="muted">Sin medicamentos.</p>} />
         <div className="signed-row">
           <SignedBadge by={author?.name} at={n.at} addenda={(file.addenda ?? []).filter((a) => a.targetId === n.id).length} />
           <VersionTag version={n.version} kind="note" id={n.id} render={(x) => <VersionNote n={n} x={x} />} />
@@ -859,7 +861,7 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
       </div>
       {correcting && p && <NoteEditor file={file} p={p} kind={n.kind === 'admission' ? 'admission' : 'evolution'} variant={n.format === 'postop' ? 'postop' : undefined} correct={n}
         onClose={() => setCorrecting(false)} onSaved={(b, rx) => { setCorrecting(false); reload(); if (b || rx) setOrdersFor({ batch: b, rxNote: rx }) }} onExpired={(t) => { setCorrecting(false); setToAddendum(t) }} />}
-      {ordersFor && <ExamOrdersOffer batch={ordersFor.batch} rxNote={ordersFor.rxNote} onClose={() => setOrdersFor(null)} />}
+      {ordersFor && <ExamOrdersOffer batch={ordersFor.batch} rxNote={ordersFor.rxNote} meds={file.meds} onClose={() => setOrdersFor(null)} />}
     </article>
   )
 }
@@ -1710,9 +1712,11 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
 }
 
 /** EX2 (ronda 8): al firmar una nota con estudios externos: «Órdenes de exámenes: Imprimir / Descargar PDF». */
-function ExamOrdersOffer({ batch, rxNote, onClose }: { batch?: string; rxNote?: string; onClose: () => void }) {
+function ExamOrdersOffer({ batch, rxNote, meds = [], onClose }: { batch?: string; rxNote?: string; meds?: InpatientMed[]; onClose: () => void }) {
   const nav = useNavigate()
-  const { notify } = useStore()
+  const { notify, can } = useStore()
+  // ME12 (ronda 11): «Elegir medicamentos» abre «Generar receta» (médico)
+  const [choosing, setChoosing] = useState(false)
   // ME10 (ronda 10): la receta de lo que no hay en la clínica (de esta nota), con los datos del médico que la firmó
   const rx = async (how: 'imprimir' | 'pdf') => {
     try { const { id } = await api<{ id: string }>('/print-jobs', { body: { kind: 'rx', noteId: rxNote } }); nav(`/app/impresion/${id}?accion=${how}`) } catch (x) { notify((x as Error).message, 'error') }
@@ -1731,8 +1735,10 @@ function ExamOrdersOffer({ batch, rxNote, onClose }: { batch?: string; rxNote?: 
         <span className="offer-row__btns">
           <button className="btn btn--primary btn--sm" onClick={() => rx('imprimir')}><Printer size={15} />Imprimir</button>
           <button className="btn btn--soft btn--sm" onClick={() => rx('pdf')}><FileText size={15} />Descargar PDF</button>
+          {can('inpatient.orders') && <button className="btn btn--ghost btn--sm" onClick={() => setChoosing(true)}><Pill size={15} />Elegir medicamentos</button>}
         </span>
       </div>}
+      {choosing && <GenerateRxModal meds={meds} onClose={() => setChoosing(false)} />}
     </Modal>
   )
 }
@@ -1808,6 +1814,8 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
   const list = [...file.authorizations].sort((a, b) => Number(b.template === 'hospital') - Number(a.template === 'hospital') || a.createdAt.localeCompare(b.createdAt))
   return (
     <div className="hc">
+      {/* ME12 (ronda 11): «Generar receta» y «Recetas emitidas» */}
+      <RxAnnex patientId={p.id} stayId={file.hospitalization.id} meds={file.meds} />
       {write && (
         <section className="panel">
           <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
@@ -1847,50 +1855,28 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
 // ---------- Egreso ----------
 
 
-/** ME10 (ronda 10): desde la tarjeta de la nota: la receta de sus medicamentos que no hay en la clínica. */
-function RxFromNote({ noteId }: { noteId: string }) {
+/**
+ * ME10 (ronda 10): desde la tarjeta de la nota, «Receta: Imprimir / Descargar PDF» de sus medicamentos que no hay en la
+ * clínica. ME12 (ronda 11): y «Elegir medicamentos» (médico), que abre «Generar receta».
+ */
+function RxFromNote({ noteId, meds }: { noteId: string; meds: InpatientMed[] }) {
   const { can, notify } = useStore()
   const nav = useNavigate()
+  const [choosing, setChoosing] = useState(false)
   if (!(can('chart.view') && (can('inpatient.care') || can('inpatient.orders')))) return null
+  const marked = meds.some((m) => m.noteId === noteId && m.buyOutside && !m.stoppedAt)
+  const doctor = can('inpatient.orders') && meds.some((m) => !m.stoppedAt)
+  if (!marked && !doctor) return null
   const go = async (how: 'imprimir' | 'pdf') => {
     try { const { id } = await api<{ id: string }>('/print-jobs', { body: { kind: 'rx', noteId } }); nav(`/app/impresion/${id}?accion=${how}`) } catch (x) { notify((x as Error).message, 'error') }
   }
   return (
     <span className="no-print" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-      <button type="button" className="btn btn--soft btn--sm" onClick={() => go('imprimir')}><Printer size={14} />Receta: Imprimir</button>
-      <button type="button" className="btn btn--ghost btn--sm" onClick={() => go('pdf')}><FileText size={14} />Descargar PDF</button>
+      {marked && <button type="button" className="btn btn--soft btn--sm" onClick={() => go('imprimir')}><Printer size={14} />Receta: Imprimir</button>}
+      {marked && <button type="button" className="btn btn--ghost btn--sm" onClick={() => go('pdf')}><FileText size={14} />Descargar PDF</button>}
+      {doctor && <button type="button" className="btn btn--ghost btn--sm" onClick={() => setChoosing(true)}><Pill size={14} />{marked ? 'Elegir medicamentos' : 'Receta: elegir medicamentos'}</button>}
+      {choosing && <GenerateRxModal meds={meds} onClose={() => setChoosing(false)} />}
     </span>
   )
 }
 
-/** ME10 (ronda 10): «Imprimir receta» de la hoja: los medicamentos activos que van a receta, todos marcados (se pueden quitar). */
-function PrintRxModal({ meds, onClose }: { meds: InpatientMed[]; onClose: () => void }) {
-  const { notify, staffById } = useStore()
-  const nav = useNavigate()
-  const [picked, setPicked] = useState<string[]>(() => meds.map((m) => m.id))
-  const [busy, setBusy] = useState(false)
-  const go = async (how: 'imprimir' | 'pdf') => {
-    setBusy(true)
-    try { const { id } = await api<{ id: string }>('/print-jobs', { body: { kind: 'rx', medIds: picked } }); nav(`/app/impresion/${id}?accion=${how}`) } catch (x) { notify((x as Error).message, 'error'); setBusy(false) }
-  }
-  const doctors = new Set(meds.filter((m) => picked.includes(m.id)).map((m) => m.orderedBy)).size
-  return (
-    <Modal title="Imprimir receta" onClose={onClose} footer={<>
-      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--soft" disabled={!picked.length || busy} onClick={() => go('pdf')}><FileText size={15} />Descargar PDF</button>
-      <button className="btn btn--primary" disabled={!picked.length || busy} onClick={() => go('imprimir')}><Printer size={15} />Imprimir</button>
-    </>}>
-      <p className="muted" style={{ fontSize: 14, margin: 0 }}>Medicamentos activos que la clínica no tiene. La receta sale con los datos del médico que los indicó y sin su firma y sello en papel no vale.</p>
-      <div className="print-pick">
-        {meds.map((m) => (
-          <label key={m.id} className={`exam-row-pick${picked.includes(m.id) ? ' is-on' : ''}`}>
-            <input type="checkbox" checked={picked.includes(m.id)} onChange={() => setPicked(picked.includes(m.id) ? picked.filter((x) => x !== m.id) : [...picked, m.id])} />
-            <span><b>{medLabel(m)}</b>{m.buyQuantity && <small className="muted"> · comprar {m.buyQuantity}</small>}
-              <small className="muted" style={{ display: 'block' }}>Indicado por {shortStaff(staffById(m.orderedBy)?.name)}</small></span>
-          </label>
-        ))}
-      </div>
-      {doctors > 1 && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Los indicaron {doctors} médicos: sale una receta por cada uno.</p>}
-    </Modal>
-  )
-}

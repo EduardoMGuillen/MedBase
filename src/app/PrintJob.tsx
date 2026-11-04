@@ -16,6 +16,8 @@ type Doctor = { id: string; name: string; license?: string; specialty?: string; 
 interface Job {
   id: string; kind: 'exams' | 'rx'; patientId: string; hospitalizationId?: string; createdBy: string; createdAt: string
   exams: ExamOrder[]; meds: InpatientMed[]; doctors: { doctor: Doctor; items: string[] }[]; printed: { how: string; by: string; at: string }[]
+  /** ME12 (ronda 11): días y cantidad a comprar de cada medicamento, solo para esta receta. */
+  extras?: Record<string, { days?: number; quantity?: string }>
 }
 
 /**
@@ -73,7 +75,7 @@ export default function PrintJobPage() {
           const list = job.exams.filter((e) => d.items.includes(e.id))
           return <ExamOrderSheet key={d.doctor.id} group={list[0].group as ExamGroup} exams={list} doctor={d.doctor} number={`${number}${docs > 1 ? `-${job.doctors.indexOf(d) + 1}` : ''}`} patient={p} at={job.createdAt} />
         })
-        : job.doctors.map((d) => <HospRxSheet key={d.doctor.id} meds={job.meds.filter((m) => d.items.includes(m.id))} doctor={d.doctor} number={`${number}${docs > 1 ? `-${job.doctors.indexOf(d) + 1}` : ''}`} patient={p} at={job.createdAt} />)}
+        : job.doctors.map((d) => <HospRxSheet key={d.doctor.id} meds={job.meds.filter((m) => d.items.includes(m.id))} extras={job.extras ?? {}} doctor={d.doctor} number={`${number}${docs > 1 ? `-${job.doctors.indexOf(d) + 1}` : ''}`} patient={p} at={job.createdAt} />)}
     </div>
   )
 }
@@ -83,7 +85,7 @@ export default function PrintJobPage() {
  * fecha y hora, número, cada medicamento con presentación, dosis, vía, frecuencia, duración y «Cantidad a comprar», el
  * médico que lo indicó con especialidad y colegiado, firma y sello y la leyenda. Sin diagnósticos (privacidad).
  */
-function HospRxSheet({ meds, doctor, number, patient: p, at }: { meds: InpatientMed[]; doctor: Doctor; number: string; patient: Patient; at: string }) {
+function HospRxSheet({ meds, extras = {}, doctor, number, patient: p, at }: { meds: InpatientMed[]; extras?: Job['extras'] & object; doctor: Doctor; number: string; patient: Patient; at: string }) {
   const { settings } = useStore()
   const minor = p.birthDate ? yearsOld(p.birthDate) < 18 : false
   return (
@@ -101,14 +103,15 @@ function HospRxSheet({ meds, doctor, number, patient: p, at }: { meds: Inpatient
       </div>
       <div className="rx-sheet__rx" aria-hidden="true">Rx</div>
       <ol>
-        {meds.map((m) => (
+        {meds.map((m) => { const x = extras[m.id] ?? {}; const qty = x.quantity || m.buyQuantity; return (
           <li key={m.id}>
             <strong>{m.nebulization || m.loadingDose || m.infusionRate ? medLabel(m) : m.drug}</strong> {!m.nebulization && <span style={{ color: 'var(--muted)' }}>{m.presentation}</span>}
-            <p>{m.nebulization || m.loadingDose || m.infusionRate ? '' : `${medLabel(m).replace(m.drug, '').trim()}. `}
-              {m.days ? `Durante ${m.days} ${m.days === 1 ? 'día' : 'días'}. ` : ''}{m.instructions ? `${m.instructions}. ` : ''}
-              {m.buyQuantity ? <b>Cantidad a comprar: {m.buyQuantity}.</b> : null}</p>
+            {/* ME12 (ronda 11): «por 3 días» de esta receta (la orden sigue sin días) */}
+            <p>{m.nebulization || m.loadingDose || m.infusionRate ? (x.days ? `Por ${x.days} ${x.days === 1 ? 'día' : 'días'}. ` : '') : `${medLabel(m).replace(m.drug, '').trim()}${x.days ? ` por ${x.days} ${x.days === 1 ? 'día' : 'días'}` : ''}. `}
+              {!x.days && m.days ? `Durante ${m.days} ${m.days === 1 ? 'día' : 'días'}. ` : ''}{m.instructions ? `${m.instructions}. ` : ''}
+              {qty ? <b>Cantidad a comprar: {qty}.</b> : null}</p>
           </li>
-        ))}
+        ) })}
       </ol>
       <div className="rx-sheet__sign">
         {doctor.stampId ? <MarkImage id={doctor.stampId} alt="Sello del médico" className="doc-stamp" /> : <div className="exam-sign-box">Sello</div>}
@@ -116,7 +119,7 @@ function HospRxSheet({ meds, doctor, number, patient: p, at }: { meds: Inpatient
           <span style={{ color: 'var(--muted)' }}>{[doctor.specialty, doctor.license && `Colegiación ${doctor.license}`].filter(Boolean).join(' · ')}</span><br /><span style={{ color: 'var(--muted)' }}>Firma y sello</span></div>
       </div>
       <p className="sign-legend">{SIGN_AND_STAMP_LEGEND}</p>
-      <footer className="rx-sheet__foot"><span>Receta {number}: medicamentos indicados en la estancia que la clínica no tiene.</span><span>Emitida con Clinara</span></footer>
+      <footer className="rx-sheet__foot"><span>Receta {number}: medicamentos indicados en la estancia.</span><span>Emitida con Clinara</span></footer>
     </article>
   )
 }
