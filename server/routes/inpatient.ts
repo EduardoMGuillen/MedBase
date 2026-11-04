@@ -18,6 +18,7 @@ import type { InpatientNote, OrderLine, VitalsSegment } from '../../src/lib/type
 import { VITALS_OTHER_RANGE } from '../../src/lib/clinicalConfig.js'
 import { examLine, isPending } from '../../src/lib/exams.js'
 import { hasBlank, medHasBlank } from '../../src/lib/orderSets.js'
+import { can } from '../../src/lib/permissions.js'
 import { createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrders.js'
 import { authorizationBase, ensureHospitalAuthorization, refreshPendingHospitalAuthorization } from '../authorizations.js'
 import { rxValidityOf, specialtyOf, validityInput } from '../prefs.js'
@@ -485,7 +486,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   })
 
   // Nota de ingreso o de evolución (SOAP). Sus indicaciones de medicamentos van a la hoja de enfermería.
-  app.post('/api/inpatient/:id/notes', auth, need('inpatient.orders'), async (req, res) => {
+  app.post('/api/inpatient/:id/notes', auth, need('inpatient.orders', 'inpatient.notes'), async (req, res) => {
     const text = z.string().trim().max(6000).default('')
     const b = parse(z.object({
       kind: z.enum(['admission', 'evolution']),
@@ -516,6 +517,12 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       // se devuelve la que ya se guardó y no se duplican ni la nota ni sus órdenes de medicamento
       clientId: z.string().uuid().optional(),
     }), req.body)
+    // IM2 (ronda 12): quien solo escribe notas (el radiólogo) no ingresa, no indica medicamentos ni cambia las indicaciones
+    if (!can(userOf(req), 'inpatient.orders')) {
+      if (b.kind !== 'evolution') fail(403, 'La nota de ingreso la escribe el médico tratante.')
+      if (b.meds.length || b.stopMedIds.length || b.orders.length || b.exams.length || b.vitals || b.chain?.decisions.length) fail(403, 'Tu nota no lleva indicaciones, medicamentos ni exámenes: los indica el médico tratante.')
+      b.chain = undefined
+    }
     // SOAP: los cuatro campos, como siempre. Estándar: al menos un campo, una indicación o un medicamento.
     if (b.format === 'soap') {
       const empty = ([['subjective', 'el subjetivo (S)'], ['objective', 'el objetivo (O)'], ['assessment', 'el análisis (A)'], ['plan', 'el plan (P)']] as const).find(([k]) => !b[k])
@@ -814,7 +821,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
    * con la fecha y hora del procedimiento (obligatoria, no futura) y la hora en que se escribe la nota.
    * Sin autorización firmada en las últimas 24 h, sólo se acepta como urgencia con justificación.
    */
-  app.post('/api/inpatient/:id/procedure-notes', auth, need('inpatient.orders'), async (req, res) => {
+  app.post('/api/inpatient/:id/procedure-notes', auth, need('inpatient.orders', 'inpatient.notes'), async (req, res) => {
     const b = parse(z.object({
       name: z.string().trim().min(3, 'Escribe el nombre del procedimiento.').max(200),
       performedAt: when,

@@ -35,7 +35,8 @@ import OrderSetsPage from './app/OrderSetsPage'
 import EpicrisisPage from './app/Epicrisis'
 import ExamOrderPage from './app/ExamOrder'
 import PrintJobPage from './app/PrintJob'
-import DeptTray from './app/DeptTray'
+import DeptTray, { AREA_SLUG } from './app/DeptTray'
+import DeptHome from './app/DeptHome'
 import { ChartOrDept, DeptConfig, DeptOnly, DeptRosterPage } from './app/DeptPages'
 
 /** Entra sólo con sesión, con el permiso y, si se pide, con el módulo activo en la cuenta (un consultorio no tiene hospitalización). */
@@ -55,9 +56,8 @@ function Home() {
   const { settings, can, user } = useStore()
   // MI1: el titular configura su consultorio en la vista de administrador (si está en la de médico, se le ofrece cambiar)
   if (settings.kind === 'office' && (can('settings.manage') || (user && hasRole(user, 'admin'))) && !settings.setupDoneAt) return <Navigate to="/app/bienvenida" replace />
-  // DP1 (ronda 11): Laboratorio e Imágenes empiezan en su bandeja
-  if (user?.role === 'lab') return <Navigate to="/app/laboratorio" replace />
-  if (user?.role === 'imaging') return <Navigate to="/app/imagenes" replace />
+  // LB5 e IM1 (ronda 12): Laboratorio e Imágenes empiezan en su Inicio, con las alarmas de los internados
+  if (user?.role === 'lab' || user?.role === 'imaging') return <DeptHome />
   // AD5: quien tiene varios roles elige aquí su vista
   return <><div className="view-bar"><ViewSwitch /></div><Dashboard /></>
 }
@@ -81,6 +81,9 @@ export default function App() {
             {/* DP (ronda 11): departamentos de Laboratorio e Imágenes */}
             <Route path="laboratorio" element={<Guard perm="dept.work"><DeptOnly dept="lab"><DeptTray group="lab" /></DeptOnly></Guard>} />
             <Route path="imagenes" element={<Guard perm="dept.work"><DeptOnly dept="imaging"><DeptTray group="imaging" /></DeptOnly></Guard>} />
+            {/* LB5 e IM1 (ronda 12): la bandeja por área */}
+            {(['lab', 'imaging'] as const).flatMap((g) => (['outpatient', 'observation', 'hospital'] as const).map((a) => (
+              <Route key={`${g}-${a}`} path={`${g === 'lab' ? 'laboratorio' : 'imagenes'}/${AREA_SLUG[a]}`} element={<Guard perm="dept.work"><DeptOnly dept={g}><DeptTray key={a} group={g} area={a} /></DeptOnly></Guard>} />)))}
             <Route path="configuracion-laboratorio" element={<Guard perm="dept.work"><DeptOnly dept="lab"><DeptConfig group="lab" /></DeptOnly></Guard>} />
             <Route path="configuracion-imagenes" element={<Guard perm="dept.work"><DeptOnly dept="imaging"><DeptConfig group="imaging" /></DeptOnly></Guard>} />
             <Route path="rol-de-turnos" element={<Guard perm="dept.work"><DeptRosterPage /></Guard>} />

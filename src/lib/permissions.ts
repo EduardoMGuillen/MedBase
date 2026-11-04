@@ -36,6 +36,8 @@ export const PERMISSIONS = {
   'dept.work': 'Bandeja del departamento: muestras, estudios y resultados de su tipo',
   'dept.config': 'Configurar su departamento (catálogo, rangos, umbrales) y editar su rol de turnos',
   'ambulatory.register': 'Registrar pacientes que vienen solo a hacerse exámenes',
+  // IM2 (ronda 12): notas de evolución y de procedimiento sin órdenes de medicamentos (radiólogo intervencionista)
+  'inpatient.notes': 'Escribir notas de evolución y de procedimiento (sin indicaciones ni medicamentos)',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -73,7 +75,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 /** DP1 y DP4 (ronda 11): lo que el cargo suma a su rol. */
 const POSITION_PERMISSIONS: Record<string, Permission[]> = {
   microbiologist: ['dept.config'],
-  radiologist: ['dept.config', 'chart.view', 'inpatient.view'],
+  radiologist: ['dept.config', 'chart.view', 'inpatient.view', 'inpatient.notes'],
 }
 
 /**

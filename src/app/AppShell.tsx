@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, BedDouble, BellRing, Building2, CalendarClock, CalendarDays, ChevronDown, CircleHelp, Compass, Eye, FilePen, FlaskConical, House, LibraryBig, LogOut, Menu, Receipt, ScanLine, Search, Settings as SettingsIcon, SlidersHorizontal, Stethoscope, UserCog,
+  BarChart3, BedDouble, BellRing, Building2, CalendarClock, CalendarDays, ChevronDown, CircleHelp, Compass, Eye, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, SlidersHorizontal, Stethoscope, UserCog,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
@@ -26,11 +26,15 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
   { to: '/app/consulta-externa', label: 'Consulta externa', icon: Stethoscope, perm: 'agenda.view', group: 'Pacientes' },
   { to: '/app/observacion', label: 'Observación', icon: Eye, perm: 'inpatient.view', group: 'Pacientes' },
   { to: '/app/hospitalizados', label: 'Hospitalizados', icon: BedDouble, perm: 'inpatient.view', group: 'Pacientes' },
+  // LB5 e IM1 (ronda 12): Laboratorio e Imágenes trabajan por área; la biblioteca va al final del mismo grupo
+  { to: '/app/laboratorio/ambulatorio', label: 'Ambulatorio', icon: Stethoscope, perm: 'dept.work', roles: ['lab'], group: 'Pacientes' },
+  { to: '/app/laboratorio/observacion', label: 'Observación', icon: Eye, perm: 'dept.work', roles: ['lab'], group: 'Pacientes' },
+  { to: '/app/laboratorio/hospitalizacion', label: 'Hospitalización', icon: BedDouble, perm: 'dept.work', roles: ['lab'], group: 'Pacientes' },
+  { to: '/app/imagenes/ambulatorio', label: 'Ambulatorio', icon: Stethoscope, perm: 'dept.work', roles: ['imaging'], group: 'Pacientes' },
+  { to: '/app/imagenes/observacion', label: 'Observación', icon: Eye, perm: 'dept.work', roles: ['imaging'], group: 'Pacientes' },
+  { to: '/app/imagenes/hospitalizacion', label: 'Hospitalización', icon: BedDouble, perm: 'dept.work', roles: ['imaging'], group: 'Pacientes' },
   { to: '/app/pacientes', label: 'Biblioteca de pacientes', icon: LibraryBig, perm: 'patients.view', group: 'Pacientes' },
   { to: '/app/seguimientos', label: 'Crónicos y seguimientos', icon: BellRing, perm: 'followups.view', group: 'Pacientes' },
-  // DP1 (ronda 11): Laboratorio e Imágenes (cada rol solo su menú)
-  { to: '/app/laboratorio', label: 'Bandeja de laboratorio', icon: FlaskConical, perm: 'dept.work', roles: ['lab'] },
-  { to: '/app/imagenes', label: 'Bandeja de imágenes', icon: ScanLine, perm: 'dept.work', roles: ['imaging'] },
   { to: '/app/configuracion-laboratorio', label: 'Configuración de laboratorio', icon: SlidersHorizontal, perm: 'dept.work', roles: ['lab'], group: 'Departamento' },
   { to: '/app/configuracion-imagenes', label: 'Configuración de imágenes', icon: SlidersHorizontal, perm: 'dept.work', roles: ['imaging'], group: 'Departamento' },
   { to: '/app/rol-de-turnos', label: 'Rol de turnos', icon: CalendarClock, perm: 'dept.work', roles: ['lab', 'imaging'], group: 'Departamento' },
@@ -88,11 +92,12 @@ export default function AppShell() {
   const withNote = stays.find((h) => h.consultationId)
   const ctx: TourCtx = { stay: stays[0] ? stayPath(stays[0]) : undefined, consultNote: withNote ? `/app/nota/${withNote.consultationId}` : undefined }
 
-  // DP2 (ronda 11): el conteo de la bandeja del departamento, sin recargar
-  const [deptCount, setDeptCount] = useState(0)
+  // DP2 (ronda 11): el conteo de la bandeja del departamento, sin recargar. Ronda 12: por área, con los urgentes en rojo
+  type AreaCount = { n: number; urgent: number }
+  const [deptCount, setDeptCount] = useState<Record<string, AreaCount>>({})
   useEffect(() => {
     if (user?.role !== 'lab' && user?.role !== 'imaging') return
-    const get = () => api<{ n: number }>('/dept/count').then((r) => setDeptCount(r.n)).catch(() => {})
+    const get = () => api<{ n: number; areas?: Record<string, AreaCount> }>('/dept/count').then((r) => setDeptCount(r.areas ?? {})).catch(() => {})
     void get()
     const t = setInterval(get, 20_000)
     return () => clearInterval(t)
@@ -130,10 +135,10 @@ export default function AppShell() {
       if (n.roles && !n.roles.includes(user.role)) return false
       // MI1: el titular de un consultorio en su vista de administrador ve sólo lo administrativo (lo clínico, en la de médico)
       if (f.office && user.role === 'admin' && n.group === 'Pacientes') return false
-      // DP1: Laboratorio e Imágenes empiezan en su bandeja (sin «Inicio»); «Pacientes» es la búsqueda
-      if (dept && n.to === '/app') return false
+      // LB5 e IM1 (ronda 12): Laboratorio e Imágenes ven sus áreas, no las listas de Observación y Hospitalizados de enfermería
+      if (dept && (n.to === '/app/observacion' || n.to === '/app/hospitalizados')) return false
       return true
-    }).map((n) => (dept && n.to === '/app/pacientes' ? { ...n, label: 'Pacientes', group: undefined } : f.office && n.group === 'Administración'
+    }).map((n) => (f.office && n.group === 'Administración'
       ? { ...n, group: 'Mi consultorio', label: n.to === '/app/personal' ? 'Personal' : n.to === '/app/configuracion' ? 'Configuración del consultorio' : n.label }
       : doctor && n.to === '/app/caja' ? { ...n, label: 'Cobrar' } : n))
     // MC7: Inicio → Agenda → Recetas → Cobrar → Pacientes → Configuración (y en el consultorio, lo administrativo al final)
@@ -145,7 +150,7 @@ export default function AppShell() {
       : to === '/app/seguimientos' ? { n: due, label: `${due} seguimientos vencidos o de hoy` }
           : to === '/app/observacion' ? { n: inObservation, label: `${inObservation} en observación` }
             : to === '/app/hospitalizados' ? { n: newOrders, alert: true, label: `${newOrders} órdenes nuevas sin revisar` }
-              : to === '/app/laboratorio' || to === '/app/imagenes' ? { n: deptCount, label: `${deptCount} pendientes` } : null
+              : /^\/app\/(laboratorio|imagenes)\//.test(to) ? deptBadge(deptCount[to.endsWith('ambulatorio') ? 'outpatient' : to.endsWith('observacion') ? 'observation' : 'hospital']) : null
     return b && b.n > 0 ? b : null
   }
   // Grupos del menú en el orden en que aparecen; las opciones sin grupo van sueltas
@@ -236,6 +241,9 @@ export default function AppShell() {
 }
 
 /** Orden del menú: lo suelto de arriba, los grupos y al final la configuración del médico y la administración. */
+/** Ronda 12: pendientes de un área de la bandeja; en rojo si hay urgentes. */
+const deptBadge = (c?: { n: number; urgent: number }) => (c ? { n: c.n, alert: c.urgent > 0, label: `${c.n} pendientes${c.urgent ? `, ${c.urgent} urgentes` : ''}` } : null)
+
 function navRank(n: { to: string; group?: string }) {
   if (n.group === 'Pacientes') return 20
   if (n.group) return 40

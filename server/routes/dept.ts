@@ -7,7 +7,8 @@ import { can } from '../../src/lib/permissions.js'
 import { isDeptLead } from '../../src/lib/positions.js'
 import { examKey, GROUP_LABEL } from '../../src/lib/exams.js'
 import { RENAL_FUNCTION_ANALYTES } from '../../src/lib/clinicalConfig.js'
-import { localISODate } from '../../src/lib/format.js'
+import { localISODate, normalizeDni } from '../../src/lib/format.js'
+import { createPatient } from '../db.js'
 import { microbiologistsFor, onDutyNow } from '../roster.js'
 import type { ExamGroup, ExamOrder, Staff } from '../../src/lib/types.js'
 
@@ -74,12 +75,47 @@ export function registerDept(app: Express, { sql, auth, need, userOf, clinicOf, 
     res.json({ microbiologists: micros, onDuty: duty, needsChoice: micros.length > 0 && !self && duty.length !== 1 && user.role === 'lab', optional: micros.length > 0 && !self && duty.length !== 1 && user.role !== 'lab', auto: self ? user.id : duty.length === 1 ? duty[0] : undefined })
   })
 
-  /** Conteo para el menú (pendientes del departamento). */
+  /**
+   * Conteo para el menú (pendientes del departamento). LB5/IM1 (ronda 12): también por área: ambulatorio (consulta externa y
+   * pacientes que vienen solo a hacerse exámenes), observación y hospitalización, y cuántos urgentes hay en cada una.
+   */
   app.get('/api/dept/count', auth, need('dept.work'), async (req, res) => {
     const group = groupFor(userOf(req))
-    const r = await sql.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM exam_orders e LEFT JOIN hospitalizations h ON h.id = e.hospitalization_id
-      WHERE e.clinic_id = ? AND e.grp = ? AND e.place = 'clinic' AND e.status IN ('ordered','sample') AND e.not_done_at IS NULL AND (e.hospitalization_id IS NULL OR h.status = 'active')`, [clinicOf(req), group])
-    res.json({ n: Number(r?.n ?? 0) })
+    const rows = await sql.query(`SELECT COALESCE(h.kind, 'outpatient') AS area, COUNT(*)::int AS n, SUM(CASE WHEN e.priority = 'urgent' THEN 1 ELSE 0 END)::int AS urgent
+      FROM exam_orders e LEFT JOIN hospitalizations h ON h.id = e.hospitalization_id
+      WHERE e.clinic_id = ? AND e.grp = ? AND e.place = 'clinic' AND e.status IN ('ordered','sample') AND e.not_done_at IS NULL AND (e.hospitalization_id IS NULL OR h.status = 'active')
+      GROUP BY COALESCE(h.kind, 'outpatient')`, [clinicOf(req), group])
+    const by = (k: string) => rows.find((r) => r.area === k)
+    const area = (k: string) => ({ n: Number(by(k)?.n ?? 0), urgent: Number(by(k)?.urgent ?? 0) })
+    const areas = { outpatient: area('outpatient'), observation: area('observation'), hospital: area('hospital') }
+    res.json({ n: areas.outpatient.n + areas.observation.n + areas.hospital.n, areas })
+  })
+
+  /**
+   * LB6 (ronda 12): paciente que viene solo a hacerse exámenes y no está registrado en la clínica: con lo mínimo para tomar la
+   * muestra y enviarle el resultado (nombres, apellidos, edad, sexo, teléfono o correo e identidad). Si la identidad ya está
+   * registrada, se usa ese expediente. La edad se guarda como fecha de nacimiento aproximada (hoy menos la edad).
+   */
+  app.post('/api/dept/quick-patient', auth, need('ambulatory.register'), async (req, res) => {
+    const b = parse(z.object({
+      firstName: z.string().trim().min(1, 'Escribe los nombres.').max(80), lastName: z.string().trim().min(1, 'Escribe los apellidos.').max(80),
+      age: z.number().int().min(0).max(120), ageUnit: z.enum(['years', 'months']).default('years'), sex: z.enum(['F', 'M']),
+      phone: z.string().trim().max(30).optional(), email: z.string().trim().email('El correo no es válido.').optional().or(z.literal('').transform(() => undefined)),
+      dni: z.string().trim().max(30).optional().transform(normalizeDni),
+    }).refine((x) => (x.phone && x.phone.replace(/\D/g, '').length >= 7) || x.email, { message: 'Escribe un teléfono (al menos 7 dígitos) o un correo para enviarle el resultado.' }), req.body)
+    const cid = clinicOf(req)
+    const user = userOf(req)
+    if (b.dni) {
+      const same = await sql.one('SELECT id, record, first_name, last_name FROM patients WHERE clinic_id = ? AND dni = ? AND merged_into IS NULL', [cid, b.dni])
+      if (same) return res.json({ id: String(same.id), record: String(same.record), existing: `${same.first_name} ${same.last_name}` })
+    }
+    const born = new Date()
+    if (b.ageUnit === 'months') born.setMonth(born.getMonth() - b.age)
+    else born.setFullYear(born.getFullYear() - b.age)
+    const id = await sql.tx((q) => createPatient(q, cid, { firstName: b.firstName, lastName: b.lastName, birthDate: localISODate(born), sex: b.sex, phone: b.phone ?? '', email: b.email, dni: b.dni, allergies: [], conditions: [] }))
+    const record = String((await patientRow(cid, id))!.record)
+    await audit(user, `Registró al paciente ambulatorio ${b.firstName} ${b.lastName} (${record}) con los datos mínimos para sus exámenes`, undefined, id)
+    res.status(201).json({ id, record })
   })
 
   const pendingRow = async (cid: string, id: string) => {

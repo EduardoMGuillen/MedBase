@@ -5,11 +5,10 @@ import { api } from '../lib/api'
 import { Modal } from '../components/ui'
 import { ExamPicker } from '../components/Exams'
 import { PatientPicker } from './Inpatients'
-import { IdentificationForm } from './PatientForms'
 import { uploadLarge } from '../lib/files'
 import { examLine, GROUP_LABEL } from '../lib/exams'
 import { hasRole } from '../lib/permissions'
-import type { ExamGroup, ExamInput, Patient } from '../lib/types'
+import type { ExamGroup, ExamInput } from '../lib/types'
 
 /**
  * DP3 (ronda 11): paciente que viene solo a hacerse exámenes. Tres pasos en una ventana: el paciente (buscar en la Biblioteca o
@@ -17,8 +16,54 @@ import type { ExamGroup, ExamInput, Patient } from '../lib/types'
  * pestaña del departamento; en imágenes, con los campos de CA6) y quién lo solicita (médico del sistema o nombre escrito,
  * opcional) con la foto de la orden en papel (opcional). Recepción y Administración eligen Laboratorio o Imagen y gabinete.
  */
+/**
+ * LB6 (ronda 12): quien viene solo a hacerse exámenes y no está registrado: lo mínimo para tomar la muestra y enviarle el
+ * resultado (nombres, apellidos, edad, sexo, teléfono o correo e identidad). Nada de la ficha completa.
+ */
+function QuickPatient({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+  const { notify, refresh } = useStore()
+  const [f, setF] = useState({ firstName: '', lastName: '', age: '', ageUnit: 'years' as 'years' | 'months', sex: '' as '' | 'F' | 'M', phone: '', email: '', dni: '' })
+  const [busy, setBusy] = useState(false)
+  const set = (patch: Partial<typeof f>) => setF({ ...f, ...patch })
+  const phoneOk = f.phone.replace(/\D/g, '').length >= 7
+  const ready = f.firstName.trim() && f.lastName.trim() && f.age.trim() !== '' && Number(f.age) >= 0 && f.sex && (phoneOk || /\S+@\S+\.\S+/.test(f.email))
+  const save = async () => {
+    setBusy(true)
+    try {
+      const r = await api<{ id: string; record: string; existing?: string }>('/dept/quick-patient', { body: { firstName: f.firstName.trim(), lastName: f.lastName.trim(), age: Number(f.age), ageUnit: f.ageUnit,
+        sex: f.sex, phone: f.phone.trim() || undefined, email: f.email.trim() || undefined, dni: f.dni.trim() || undefined } })
+      await refresh()
+      notify(r.existing ? `Esa identidad ya estaba registrada: se usa el expediente de ${r.existing} (${r.record}).` : `Registrado con el expediente ${r.record}.`)
+      onCreated(r.id)
+    } catch (x) { notify((x as Error).message, 'error'); setBusy(false) }
+  }
+  return (
+    <Modal title="Paciente nuevo (solo exámenes)" onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Volver</button>
+      <button className="btn btn--primary" disabled={!ready || busy} onClick={save}>Registrar y continuar</button>
+    </>}>
+      <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Solo lo necesario para tomar la muestra y enviarle el resultado. Si después pasa a consulta, la ficha se completa en su expediente.</p>
+      <div className="form-grid">
+        <label className="field"><span>Nombres</span><input className="input" autoFocus value={f.firstName} onChange={(e) => set({ firstName: e.target.value })} /></label>
+        <label className="field"><span>Apellidos</span><input className="input" value={f.lastName} onChange={(e) => set({ lastName: e.target.value })} /></label>
+        <div className="field"><span>Edad</span><span style={{ display: 'flex', gap: 6 }}>
+          <input className="input num" inputMode="numeric" value={f.age} onChange={(e) => set({ age: e.target.value.replace(/\D/g, '').slice(0, 3) })} aria-label="Edad" style={{ maxWidth: 90 }} />
+          <select className="select" value={f.ageUnit} onChange={(e) => set({ ageUnit: e.target.value as 'years' | 'months' })} aria-label="Años o meses"><option value="years">años</option><option value="months">meses</option></select></span></div>
+        <div className="field"><span>Sexo</span>
+          <div className="segmented" role="radiogroup" aria-label="Sexo">
+            {(['F', 'M'] as const).map((s) => <button key={s} type="button" role="radio" aria-checked={f.sex === s} onClick={() => set({ sex: s })}>{s === 'F' ? 'Femenino' : 'Masculino'}</button>)}
+          </div></div>
+        <label className="field"><span>Teléfono</span><input className="input" inputMode="tel" value={f.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="Para enviarle el resultado" /></label>
+        <label className="field"><span>o correo</span><input className="input" type="email" value={f.email} onChange={(e) => set({ email: e.target.value })} placeholder="nombre@correo.com" /></label>
+        <label className="field span-2"><span>Número de identidad</span><input className="input" value={f.dni} onChange={(e) => set({ dni: e.target.value })} placeholder="0801-1990-12345" /></label>
+      </div>
+      {!phoneOk && !f.email.trim() && <small className="muted">Falta un teléfono o un correo para enviarle el resultado.</small>}
+    </Modal>
+  )
+}
+
 export function AmbulatoryModal({ group: fixed, onClose, onDone }: { group?: ExamGroup; onClose: () => void; onDone: () => void }) {
-  const { staff, addPatient, can, notify, patient } = useStore()
+  const { staff, can, notify, patient } = useStore()
   const [patientId, setPatientId] = useState('')
   const [registering, setRegistering] = useState(false)
   const [group, setGroup] = useState<ExamGroup | null>(fixed ?? null)
@@ -31,12 +76,7 @@ export function AmbulatoryModal({ group: fixed, onClose, onDone }: { group?: Exa
   const [busy, setBusy] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const doctors = staff.filter((s) => s.active && hasRole(s, 'doctor')).sort((a, b) => a.name.localeCompare(b.name, 'es'))
-  if (registering) {
-    return <IdentificationForm title="Registrar paciente nuevo" submitLabel="Registrar y continuar" withAllergies onClose={() => setRegistering(false)} onSave={async (p) => {
-      const r = await addPatient(p as Omit<Patient, 'id' | 'record' | 'createdAt'>)
-      if (r) { setPatientId(r.id); setRegistering(false) }
-    }} />
-  }
+  if (registering) return <QuickPatient onClose={() => setRegistering(false)} onCreated={(id) => { setPatientId(id); setRegistering(false) }} />
   const save = async () => {
     if (!group) return
     setBusy(true)
@@ -55,7 +95,7 @@ export function AmbulatoryModal({ group: fixed, onClose, onDone }: { group?: Exa
     </>}>
       <fieldset className="fs"><legend>1. Paciente</legend>
         <PatientPicker value={patientId} onChange={setPatientId} />
-        {can('patients.manage') && <button type="button" className="btn btn--soft btn--sm" style={{ justifySelf: 'start' }} onClick={() => setRegistering(true)}><UserPlus size={15} />Registrar paciente nuevo</button>}
+        {can('patients.manage') && <button type="button" className="btn btn--soft btn--sm" style={{ justifySelf: 'start' }} onClick={() => setRegistering(true)}><UserPlus size={15} />No está registrado: registrarlo</button>}
       </fieldset>
       <fieldset className="fs"><legend>2. Estudios</legend>
         {!fixed && <div className="segmented" role="radiogroup" aria-label="Departamento">

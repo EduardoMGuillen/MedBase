@@ -385,7 +385,9 @@ describe('DP (ronda 11): departamentos de Laboratorio clínico e Imágenes', () 
     const boot = (await tech.get('/api/bootstrap')).body
     assert.ok(boot.patients.every((p: any) => !p.conditions?.length && !p.allergies?.length), 'sin diagnósticos en la búsqueda')
     assert.equal((await rad.get(`/api/inpatient/${stay}`)).status, 200, 'el radiólogo ve el expediente')
-    assert.equal((await rad.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'x' })).status, 403, 'no escribe notas')
+    // IM2 (ronda 12): el radiólogo ya escribe notas de evolución (sin medicamentos ni indicaciones); el técnico, no
+    assert.equal((await rad.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'x' })).status, 201, 'escribe su nota')
+    assert.equal((await tech.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'x' })).status, 403, 'el técnico no escribe notas')
   })
   test('DP5: el microbiólogo agrega un examen con rango y cambia un umbral (bitácora); el radiólogo agrega un estudio con «¿De qué?»; los técnicos no editan', async () => {
     const micro = await as('gordonez@demo.clinara')

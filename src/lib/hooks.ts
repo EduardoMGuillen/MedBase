@@ -36,7 +36,9 @@ export function useRxValidity() {
 
 /** EN2: alertas agrupadas de un expediente de hospitalización u observación. */
 export function useFileAlerts(file: InpatientFile | null) {
-  const { settings, staffById } = useStore()
+  const { settings, staffById, user } = useStore()
   const now = useNow()
-  return file ? fileAlerts(file, bandOf(settings), now, { nameOf: (id) => shortStaff(staffById(id)?.name) }) : []
+  // Ronda 12 (IM2): Laboratorio e Imágenes solo ven los avisos de los estudios de su departamento
+  const groups = user?.role === 'lab' ? ['lab' as const] : user?.role === 'imaging' ? ['imaging' as const] : undefined
+  return file ? fileAlerts(file, bandOf(settings), now, { nameOf: (id) => shortStaff(staffById(id)?.name), groups }) : []
 }

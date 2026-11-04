@@ -13,8 +13,16 @@ import { ExamRow } from './ExamsTab'
 import { AmbulatoryModal } from './Ambulatory'
 import type { ExamGroup, ExamOrder } from '../lib/types'
 
-type Item = ExamOrder & { patient: { id: string; name: string; birthDate: string; sex: string; record: string }; locationText: string }
+export type Item = ExamOrder & { patient: { id: string; name: string; birthDate: string; sex: string; record: string }; locationText: string }
 type TabKey = 'todo' | 'process' | 'done' | 'notdone'
+
+/** LB5 e IM1 (ronda 12): las tres áreas de la bandeja (consulta externa va con los ambulatorios: no están internados). */
+export type DeptArea = 'outpatient' | 'observation' | 'hospital'
+export const AREA_LABEL: Record<DeptArea, string> = { outpatient: 'Ambulatorio', observation: 'Observación', hospital: 'Hospitalización' }
+export const AREA_SLUG: Record<DeptArea, string> = { outpatient: 'ambulatorio', observation: 'observacion', hospital: 'hospitalizacion' }
+export const areaOf = (e: Pick<Item, 'locationText'>): DeptArea => (e.locationText.startsWith('Observación') ? 'observation' : e.locationText.startsWith('Hospitalización') ? 'hospital' : 'outpatient')
+/** Dónde abre el paciente: el expediente de la estancia (si lo puede ver) o la página del paciente del departamento. */
+export const patientLink = (e: Item, chart: boolean) => (chart && e.hospitalizationId && areaOf(e) !== 'outpatient' ? `/app/${areaOf(e) === 'observation' ? 'observacion' : 'hospitalizados'}/${e.hospitalizationId}?tab=examenes` : `/app/pacientes/${e.patient.id}`)
 
 const TABS: Record<ExamGroup, { key: TabKey; label: string }[]> = {
   lab: [{ key: 'todo', label: 'Por tomar muestra' }, { key: 'process', label: 'En proceso' }, { key: 'done', label: 'Resultados de hoy' }, { key: 'notdone', label: 'No realizados' }],
@@ -22,7 +30,7 @@ const TABS: Record<ExamGroup, { key: TabKey; label: string }[]> = {
 }
 
 /** En qué pestaña va cada orden. Los Rayos X realizados no esperan informe (EX3): van a «Terminados». */
-function tabOf(e: ExamOrder): TabKey | null {
+export function tabOf(e: ExamOrder): TabKey | null {
   if (e.status === 'cancelled') return null
   if (e.notDone && ['ordered', 'sample', 'done'].includes(e.status)) return 'notdone'
   if (e.status === 'ordered') return 'todo'
@@ -31,7 +39,7 @@ function tabOf(e: ExamOrder): TabKey | null {
   return 'done'
 }
 
-const waitText = (iso: string, now: number) => {
+export const waitText = (iso: string, now: number) => {
   const m = Math.max(0, Math.round((now - new Date(iso).getTime()) / 60_000))
   return m < 60 ? `${m} min` : m < 1440 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${Math.floor(m / 1440)} d`
 }
@@ -42,7 +50,7 @@ const waitText = (iso: string, now: number) => {
  * paciente, ubicación, estudio armado (CA6), quién pidió, indicación, hora del pedido y espera; las acciones son las de la
  * pestaña Exámenes (la misma fuente de verdad). Urgentes primero, después los más antiguos. Se actualiza sola.
  */
-export default function DeptTray({ group }: { group: ExamGroup }) {
+export default function DeptTray({ group, area }: { group: ExamGroup; area?: DeptArea }) {
   const { staffById, can, notify } = useStore()
   const [items, setItems] = useState<Item[] | null>(null)
   const [tab, setTab] = useState<TabKey>('todo')
@@ -62,14 +70,14 @@ export default function DeptTray({ group }: { group: ExamGroup }) {
   const fold = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   const today = localISODate(new Date())
   const inTab = (e: Item, k: TabKey) => tabOf(e) === k && (k !== 'done' || (e.result?.at ?? e.statusAt ?? '').slice(0, 10) === day || (!e.result && (e.statusAt ?? '').slice(0, 10) === day))
-  const filtered = useMemo(() => (items ?? []).filter((e) => (!where || e.locationText.startsWith(where)) && (!urgentOnly || e.priority === 'urgent')
-    && (!q.trim() || fold(`${e.patient.name} ${e.patient.record} ${examLine(e)}`).includes(fold(q.trim())))), [items, where, urgentOnly, q])
+  const filtered = useMemo(() => (items ?? []).filter((e) => (!area || areaOf(e) === area) && (!where || e.locationText.startsWith(where)) && (!urgentOnly || e.priority === 'urgent')
+    && (!q.trim() || fold(`${e.patient.name} ${e.patient.record} ${examLine(e)}`).includes(fold(q.trim())))), [items, where, urgentOnly, q, area])
   const list = filtered.filter((e) => inTab(e, tab))
     .sort((a, b) => (tab === 'done' ? (b.result?.at ?? b.statusAt ?? '').localeCompare(a.result?.at ?? a.statusAt ?? '')
       : Number(b.priority === 'urgent') - Number(a.priority === 'urgent') || a.orderedAt.localeCompare(b.orderedAt)))
-  const [page, setPage] = usePage(`${tab}|${q}|${where}|${urgentOnly}|${day}`)
+  const [page, setPage] = usePage(`${tab}|${q}|${where}|${urgentOnly}|${day}|${area}`)
   const paged = tab === 'done' ? list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : list
-  const places = ['Consulta externa', 'Observación', 'Hospitalización', 'Ambulatorio']
+  const places = area === 'outpatient' ? ['Consulta externa', 'Ambulatorio'] : area ? [] : ['Consulta externa', 'Observación', 'Hospitalización', 'Ambulatorio']
   const sameTodo = (e: Item) => list.filter((x) => x.patientId === e.patientId && x.status === 'ordered' && !x.notDone)
   const [busyAll, setBusyAll] = useState(false)
   const takeAll = async (xs: Item[]) => {
@@ -81,14 +89,15 @@ export default function DeptTray({ group }: { group: ExamGroup }) {
   }
   return (
     <div className="page dept">
-      <PageHead title={group === 'lab' ? 'Bandeja de laboratorio' : 'Bandeja de imágenes'} sub={`Órdenes «En la clínica» de ${GROUP_LABEL[group].toLowerCase()}. Lo que hagas aquí se ve al instante en la pestaña Exámenes del paciente.`}
-        actions={can('ambulatory.register') ? <button className="btn btn--primary" onClick={() => setAmbulatory(true)}><UserPlus size={17} />Paciente ambulatorio</button> : undefined} />
+      <PageHead title={area ? `${AREA_LABEL[area]} · ${group === 'lab' ? 'Laboratorio' : 'Imágenes'}` : group === 'lab' ? 'Bandeja de laboratorio' : 'Bandeja de imágenes'}
+        sub={area === 'outpatient' ? 'Pacientes de consulta externa y los que vienen solo a hacerse exámenes.' : area ? `Pacientes en ${AREA_LABEL[area].toLowerCase()}: toma la muestra o realiza el estudio y sube el resultado; el médico lo ve al instante.` : `Órdenes «En la clínica» de ${GROUP_LABEL[group].toLowerCase()}. Lo que hagas aquí se ve al instante en la pestaña Exámenes del paciente.`}
+        actions={can('ambulatory.register') && (!area || area === 'outpatient') ? <button className="btn btn--primary" onClick={() => setAmbulatory(true)}><UserPlus size={17} />Paciente ambulatorio</button> : undefined} />
       <div className="segmented dept__tabs" role="tablist" aria-label="Bandeja">
         {TABS[group].map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}>{t.label} <span className="num">{filtered.filter((e) => inTab(e, t.key)).length}</span></button>)}
       </div>
       <div className="exam-tools dept__filters" role="search">
         <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar paciente o estudio" aria-label="Buscar paciente o estudio" />
-        <select className="select" value={where} onChange={(e) => setWhere(e.target.value)} aria-label="Ubicación"><option value="">Todas las ubicaciones</option>{places.map((p) => <option key={p}>{p}</option>)}</select>
+        {places.length > 0 && <select className="select" value={where} onChange={(e) => setWhere(e.target.value)} aria-label="Ubicación"><option value="">Todas las ubicaciones</option>{places.map((p) => <option key={p}>{p}</option>)}</select>}
         <label className="check-inline"><input type="checkbox" checked={urgentOnly} onChange={(e) => setUrgentOnly(e.target.checked)} />Solo urgentes</label>
         <DateField value={day} max={today} onChange={(v) => setDay(v || today)} label="Fecha" />
       </div>
@@ -98,7 +107,7 @@ export default function DeptTray({ group }: { group: ExamGroup }) {
             <article key={e.id} className={`panel dept__item${e.priority === 'urgent' ? ' dept__item--urgent' : ''}`}>
               <header className="dept__who">
                 {e.priority === 'urgent' && <span className="badge badge--red">Urgente</span>}
-                <Link to={`/app/pacientes/${e.patient.id}`} className="dept__name">{e.patient.name}</Link>
+                <Link to={patientLink(e, can('chart.view'))} className="dept__name">{e.patient.name}</Link>
                 <span className="muted">{e.patient.birthDate ? age(e.patient.birthDate) : ''}{e.patient.sex ? `, ${e.patient.sex === 'F' ? 'femenino' : 'masculino'}` : ''} · Exp. {e.patient.record}</span>
                 <span className="badge badge--ink">{e.locationText}</span>
                 <span className="muted dept__wait">{dateTime(e.orderedAt)} · espera {waitText(e.orderedAt, now)}</span>
