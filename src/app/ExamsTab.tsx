@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { fromLocalValue } from '../lib/dateInput'
 import { DateTimeField } from '../components/DateTimeField'
 import { Link, useNavigate } from 'react-router-dom'
-import { Camera, CheckCheck, ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, FlaskConical, Printer, ScanLine, TriangleAlert, Upload, X } from 'lucide-react'
+import { Camera, CheckCheck, ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, FileText, FlaskConical, Printer, ScanLine, TriangleAlert, Upload, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { CorrectionReason, GraceButton, VersionTag } from '../components/Grace'
 import { api } from '../lib/api'
@@ -13,7 +13,8 @@ import { useExamCatalog } from '../lib/useExamCatalog'
 import { rangeFor, rangeText, type LabReference } from '../lib/labReference'
 import { SourceTag } from '../components/SourceTag'
 import { uploadLarge } from '../lib/files'
-import { FileChip, FileThumb } from '../components/FilePreview'
+import { FileChip, FileThumb, FileViewer } from '../components/FilePreview'
+import { deptAllows } from '../lib/permissions'
 import type { ExamGroup, ExamOrder } from '../lib/types'
 
 const TONE: Record<string, string> = { ordered: 'amber', sample: 'ink', done: 'ink', result: 'mint', reviewed: 'done', cancelled: '' }
@@ -44,9 +45,12 @@ const dayKey = (iso: string) => new Date(iso).toDateString()
  * por fecha (con el día como encabezado), filtros con su conteo y «Expandir todo / Contraer todo». Es sólo presentación.
  */
 export function ExamList({ exams, patientId, hospitalizationId, reload, open = true }: { exams: ExamOrder[]; patientId: string; hospitalizationId?: string; reload: () => void; open?: boolean }) {
-  const { can, staffById } = useStore()
+  const { can, staffById, user } = useStore()
   const [uploading, setUploading] = useState<ExamGroup | null>(null)
   const [printing, setPrinting] = useState<ExamGroup | null>(null)
+  // EX6 (ronda 11): «Imprimir resultados» de un grupo (varios en un solo PDF)
+  const [results, setResults] = useState<ExamGroup | null>(null)
+  const canResults = (g: ExamGroup) => (can('exams.order') || can('exams.process')) && !!user && deptAllows(user, g)
   const canPrint = can('chart.view') && (can('exams.order') || can('exams.process'))
   // EX5: impresiones hechas desde aquí (con quién y cuándo), para «Órdenes impresas»
   const jobs = usePrintJobs(canPrint ? patientId : undefined, exams.map((e) => e.id))
@@ -92,6 +96,7 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {/* EX5 (ronda 10): la orden de los pendientes, para imprimir o descargar (médico y enfermería) */}
                 {canPrint && all.some(printable) && <button className="btn btn--ghost btn--sm" onClick={() => setPrinting(g)}><Printer size={14} />Imprimir orden</button>}
+                {canResults(g) && all.some((e) => e.result) && <button className="btn btn--ghost btn--sm" onClick={() => setResults(g)}><Printer size={14} />Imprimir resultados</button>}
                 {open && can('exams.process') && <button className="btn btn--ghost btn--sm" onClick={() => setUploading(g)}><Upload size={14} />Subir resultado externo</button>}
               </div></div>
             {list.length ? <div className="rows">{list.map((e, i) => (
@@ -117,6 +122,7 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
           {jobs.map((j) => <Link key={j.id} className="btn btn--ghost btn--sm" to={`/app/impresion/${j.id}`}><Printer size={14} />{dateTime(j.printedAt)} · {shortStaff(staffById(j.printedBy)?.name)}</Link>)}
         </div></section>
       )}
+      {results && <PrintResults group={results} exams={exams.filter((e) => e.group === results && e.result)} onClose={() => setResults(null)} />}
       {printing && <PrintPending group={printing} exams={exams.filter((e) => e.group === printing && printable(e))} onClose={() => setPrinting(null)} />}
       {uploading && <ExternalResult group={uploading} patientId={patientId} hospitalizationId={hospitalizationId} onClose={() => setUploading(null)} onDone={() => { setUploading(null); reload() }} />}
     </div>
@@ -159,6 +165,8 @@ function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload
           {/* GE4 (ronda 9): quien cargó el resultado lo corrige unos minutos, mientras no se revise */}
           {e.status === 'result' && e.result && <GraceButton record={{ graceUntil: e.resultGraceUntil }} authorId={e.result.by} onCorrect={() => setResult(true)} />}
           <VersionTag version={e.resultVersion} kind="exam_result" id={e.id} render={(x) => <ResultView e={{ ...e, result: x as unknown as NonNullable<ExamOrder['result']> }} />} />
+          {/* EX6 (ronda 11): el resultado en PDF (vista previa con Descargar e Imprimir) o directo a imprimir */}
+          {e.result && <ResultPrintButtons e={e} />}
           {canReview(e) && can('exams.order') && user?.role === 'doctor' && <button className="btn btn--primary btn--sm" onClick={() => act('review')}><CheckCheck size={14} />Marcar revisado</button>}
           {open && isPending(e) && (can('exams.process') || can('exams.order')) && <button className="btn btn--ghost btn--sm" onClick={() => setCancelling(true)}>Cancelar</button>}
         </span>}
@@ -382,6 +390,70 @@ function PrintPending({ group, exams, onClose }: { group: ExamGroup; exams: Exam
         ))}
       </div>
       {doctors > 1 && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Los pidieron {doctors} médicos: sale una orden por cada uno.</p>}
+    </Modal>
+  )
+}
+
+/**
+ * EX6 (ronda 11): «Ver PDF» e «Imprimir» de un resultado. El documento es un trabajo de impresión (queda registrado: quién y
+ * cuándo, y bloquea la corrección según GE4). Si el resultado es solo un archivo, se abre (o se imprime) ese archivo (EX4).
+ */
+export function ResultPrintButtons({ e }: { e: ExamOrder }) {
+  const { can, notify, user } = useStore()
+  const nav = useNavigate()
+  const [file, setFile] = useState<{ id: string; print: boolean } | null>(null)
+  if (!(can('exams.order') || can('exams.process')) || !user || !deptAllows(user, e.group)) return null
+  const onlyFile = !!e.result?.fileIds?.length && !e.result.values?.length && !e.result.report
+  const go = async (how: 'view' | 'print') => {
+    try {
+      const { id } = await api<{ id: string }>('/print-jobs', { body: { kind: 'results', examIds: [e.id] } })
+      if (onlyFile) {
+        await api(`/print-jobs/${id}/printed`, { body: { how } })
+        setFile({ id: e.result!.fileIds![0], print: how === 'print' })
+      } else nav(`/app/impresion/${id}${how === 'print' ? '?accion=imprimir' : ''}`)
+    } catch (x) { notify((x as Error).message, 'error') }
+  }
+  return (<>
+    <button className="btn btn--ghost btn--sm" onClick={() => go('view')}><FileText size={14} />Ver PDF</button>
+    <button className="btn btn--ghost btn--sm" onClick={() => go('print')}><Printer size={14} />Imprimir</button>
+    {file && <FileViewer id={file.id} autoPrint={file.print} onClose={() => setFile(null)} />}
+  </>)
+}
+
+/** EX6: «Imprimir resultados»: los exámenes con resultado (ninguno marcado), con buscador y filtro por fecha; un solo PDF. */
+function PrintResults({ group, exams, onClose }: { group: ExamGroup; exams: ExamOrder[]; onClose: () => void }) {
+  const { notify } = useStore()
+  const nav = useNavigate()
+  const [picked, setPicked] = useState<string[]>([])
+  const [q, setQ] = useState('')
+  const [day, setDay] = useState('')
+  const [busy, setBusy] = useState(false)
+  const shown = exams.filter((e) => (!q.trim() || fold(examLine(e)).includes(fold(q.trim()))) && (!day || (e.result?.at ?? e.orderedAt).slice(0, 10) === day))
+    .sort((a, b) => (b.result?.at ?? '').localeCompare(a.result?.at ?? ''))
+  const go = async (how: 'pdf' | 'imprimir') => {
+    setBusy(true)
+    try { const { id } = await api<{ id: string }>('/print-jobs', { body: { kind: 'results', examIds: picked } }); nav(`/app/impresion/${id}?accion=${how}`) } catch (x) { notify((x as Error).message, 'error'); setBusy(false) }
+  }
+  return (
+    <Modal title={`Imprimir resultados de ${GROUP_LABEL[group].toLowerCase()}`} onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--soft" disabled={!picked.length || busy} onClick={() => go('pdf')}><Download size={15} />Descargar PDF</button>
+      <button className="btn btn--primary" disabled={!picked.length || busy} onClick={() => go('imprimir')}><Printer size={15} />Imprimir ({picked.length})</button>
+    </>}>
+      <div className="exam-tools" style={{ padding: 0 }}>
+        <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar examen" aria-label="Buscar examen con resultado" />
+        <input className="input" type="date" value={day} onChange={(e) => setDay(e.target.value)} aria-label="Fecha del resultado" style={{ maxWidth: 190 }} />
+      </div>
+      <div className="print-pick">
+        {shown.map((e) => (
+          <label key={e.id} className={`exam-row-pick${picked.includes(e.id) ? ' is-on' : ''}`}>
+            <input type="checkbox" checked={picked.includes(e.id)} onChange={() => setPicked(picked.includes(e.id) ? picked.filter((x) => x !== e.id) : [...picked, e.id])} />
+            <span><b>{examLine(e)}</b><small className="muted" style={{ display: 'block' }}>Resultado {e.result?.at ? dateTime(e.result.at) : ''}{e.critical ? ' · Valor crítico' : ''}</small></span>
+          </label>
+        ))}
+        {!shown.length && <p className="muted">Ningún examen coincide.</p>}
+      </div>
+      <small className="muted">Sale un solo documento, con cada examen en su bloque.</small>
     </Modal>
   )
 }

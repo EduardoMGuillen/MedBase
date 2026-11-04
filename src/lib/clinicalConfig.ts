@@ -362,3 +362,37 @@ export const IMAGING_SEARCH_SYNONYMS: Record<string, string[]> = {
   angiotac: ['angiotomografia'], angiotc: ['angiotomografia'],
   ekg: ['electrocardiograma'], ecg: ['electrocardiograma'],
 }
+
+/**
+ * DP1 (ronda 11). VALIDAR: Emil. Cargos de los roles Laboratorio e Imágenes (un rol con cargos, como PE1), con el prefijo que
+ * llevan en las firmas y si piden número de colegiación (y de qué colegio).
+ */
+export const DEPT_POSITIONS = {
+  lab: [
+    { key: 'microbiologist', label: 'Microbiólogo(a)', prefix: 'Lic.', license: true, licenseBody: 'Colegio de Microbiólogos y Químicos Clínicos de Honduras', lead: true },
+    { key: 'lab_tech', label: 'Técnico(a) de laboratorio', prefix: 'Téc.', license: false, licenseBody: '', lead: false },
+  ],
+  imaging: [
+    { key: 'radiologist', label: 'Médico(a) radiólogo(a)', prefix: 'Dr./Dra.', license: true, licenseBody: 'Colegio Médico de Honduras', lead: true },
+    { key: 'imaging_tech', label: 'Técnico(a) en imágenes (radiotecnología)', prefix: 'Téc.', license: false, licenseBody: '', lead: false },
+  ],
+} as const
+/** Prefijos que ya puede traer el nombre (no se repiten en la firma). */
+export const NAME_PREFIXES = ['Dr.', 'Dra.', 'Lic.', 'Téc.', 'Aux.', 'Ing.']
+/**
+ * DP6 (ronda 11). VALIDAR: Emil. Turnos de cada departamento en el rol de turnos (por defecto, las de enfermería).
+ */
+export const DEPT_SHIFTS: Record<'nursing' | 'lab' | 'imaging', { key: 'morning' | 'afternoon' | 'night'; label: string; from: string; to: string }[]> = {
+  nursing: [{ key: 'morning', label: 'Mañana', from: '07:00', to: '15:00' }, { key: 'afternoon', label: 'Tarde', from: '15:00', to: '23:00' }, { key: 'night', label: 'Noche', from: '23:00', to: '07:00' }],
+  lab: [{ key: 'morning', label: 'Mañana', from: '07:00', to: '15:00' }, { key: 'afternoon', label: 'Tarde', from: '15:00', to: '23:00' }, { key: 'night', label: 'Noche', from: '23:00', to: '07:00' }],
+  imaging: [{ key: 'morning', label: 'Mañana', from: '07:00', to: '15:00' }, { key: 'afternoon', label: 'Tarde', from: '15:00', to: '23:00' }, { key: 'night', label: 'Noche', from: '23:00', to: '07:00' }],
+}
+/**
+ * DP2 (ronda 11). VALIDAR: Emil. Motivos de «No se realizó» (más «Otro», escrito).
+ */
+export const NOT_DONE_REASONS = ['No hay reactivo', 'El paciente no llegó', 'El paciente se fue', 'Equipo dañado', 'Muestra insuficiente', 'Muestra hemolizada o inadecuada']
+/**
+ * DP4 (ronda 11). VALIDAR: Emil. Exámenes que cuentan como «función renal» para el técnico en imágenes (contraste): el último
+ * resultado de creatinina del paciente.
+ */
+export const RENAL_FUNCTION_ANALYTES = ['Creatinina']

@@ -5,7 +5,8 @@ import { type Ctx, fail, parse, type Row } from '../http.js'
 import { examsWhere } from './exams.js'
 import { toInpatientMed } from '../mappers.js'
 import { can } from '../../src/lib/permissions.js'
-import { GROUP_LABEL, isPending } from '../../src/lib/exams.js'
+import { examLine, GROUP_LABEL, isPending } from '../../src/lib/exams.js'
+import { deptAllows } from '../../src/lib/permissions.js'
 import type { ExamGroup } from '../../src/lib/types.js'
 
 /**
@@ -22,8 +23,12 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
       signatureId: d.signature_id ? String(d.signature_id) : undefined, stampId: d.stamp_id ? String(d.stamp_id) : undefined } : { id, name: '—' }
   }
   // Quién puede: el expediente y, para exámenes, quien los ordena o los procesa; para recetas, quien indica o aplica
-  const allowed = (req: Parameters<Ctx['userOf']>[0], kind: 'exams' | 'rx') => {
+  type Kind = 'exams' | 'rx' | 'results'
+  const allowed = (req: Parameters<Ctx['userOf']>[0], kind: Kind, group?: ExamGroup) => {
     const u = userOf(req)
+    // EX6 (ronda 11): el resultado lo imprimen quien ordena o procesa exámenes (enfermería, médico y los departamentos de
+    // laboratorio e imágenes, cada uno solo los de su tipo); Recepción no
+    if (kind === 'results') return (can(u, 'exams.order') || can(u, 'exams.process')) && (!group || deptAllows(u, group))
     if (!can(u, 'chart.view')) return false
     return kind === 'exams' ? can(u, 'exams.order') || can(u, 'exams.process') : can(u, 'inpatient.orders') || can(u, 'inpatient.care')
   }
@@ -33,6 +38,8 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
 
   const body = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('exams'), examIds: z.array(z.string()).min(1, 'Elige al menos un examen.').max(60) }),
+    // EX6 (ronda 11): resultados (uno o varios) en un solo documento
+    z.object({ kind: z.literal('results'), examIds: z.array(z.string()).min(1, 'Elige al menos un examen.').max(60) }),
     // Receta: los medicamentos elegidos o, al firmar una nota, los de esa nota marcados «va a receta»
     z.object({ kind: z.literal('rx'), medIds: z.array(z.string()).max(60).optional(), noteId: z.string().optional(),
       // ME12 (ronda 11): «Generar receta» del médico: cualquier medicamento activo, con días y cantidad solo para esta receta
@@ -43,6 +50,18 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
     const b = parse(body, req.body)
     if (!allowed(req, b.kind)) fail(403, 'No tienes permiso para imprimir esto.')
     const cid = clinicOf(req)
+    if (b.kind === 'results') {
+      const list = await examsWhere(sql, `clinic_id = ? AND id IN (${b.examIds.map(() => '?').join(',')})`, [cid, ...b.examIds])
+      if (list.length !== new Set(b.examIds).size) fail(404, 'Algún examen no existe.')
+      if (new Set(list.map((e) => e.patientId)).size > 1) fail(400, 'Los exámenes son de pacientes distintos.')
+      const none = list.find((e) => !e.result)
+      if (none) fail(409, `${none.name} todavía no tiene resultado.`)
+      for (const g of new Set(list.map((e) => e.group))) if (!allowed(req, 'results', g)) fail(403, 'No tienes permiso para imprimir esos resultados.')
+      const id = randomUUID()
+      await sql.run('INSERT INTO print_jobs (id, clinic_id, patient_id, hospitalization_id, kind, items, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)',
+        [id, cid, list[0].patientId, list[0].hospitalizationId ?? null, 'results', JSON.stringify(list.map((e) => e.id)), userOf(req).id, new Date().toISOString()])
+      return res.status(201).json({ id })
+    }
     let patientId = ''
     let stayId: string | null = null
     let items: string[] = []
@@ -95,13 +114,16 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
   app.get('/api/print-jobs/:id', auth, need('exams.order', 'exams.process', 'inpatient.orders', 'inpatient.care'), async (req, res) => {
     const cid = clinicOf(req)
     const job = (await sql.one('SELECT * FROM print_jobs WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La impresión no existe.')
-    const kind = String(job!.kind) as 'exams' | 'rx'
+    const kind = String(job!.kind) as Kind
     if (!allowed(req, kind)) fail(403, 'No tienes permiso para ver esto.')
     const ids = JSON.parse(String(job!.items)) as string[]
     const by = new Map<string, string[]>()
     let exams: Awaited<ReturnType<typeof examsWhere>> = []
     let meds: ReturnType<typeof toInpatientMed>[] = []
-    if (kind === 'exams') {
+    if (kind === 'results') {
+      exams = await examsWhere(sql, `clinic_id = ? AND id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids])
+      for (const g of new Set(exams.map((e) => e.group))) if (!allowed(req, 'results', g)) fail(403, 'No tienes permiso para ver esto.')
+    } else if (kind === 'exams') {
       exams = await examsWhere(sql, `clinic_id = ? AND id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids])
       for (const e of exams) by.set(e.orderedBy, [...(by.get(e.orderedBy) ?? []), e.id])
     } else {
@@ -118,17 +140,21 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
 
   /** Imprimir o descargar: queda por renglón (GE4) y en la bitácora, con quién lo hizo y de qué médico es. */
   app.post('/api/print-jobs/:id/printed', auth, need('exams.order', 'exams.process', 'inpatient.orders', 'inpatient.care'), async (req, res) => {
-    const b = parse(z.object({ how: z.enum(['print', 'pdf']) }), req.body)
+    // EX6 (ronda 11): también «view» (se abrió «Ver PDF»): cada vista, impresión o descarga queda registrada
+    const b = parse(z.object({ how: z.enum(['print', 'pdf', 'view']) }), req.body)
     const cid = clinicOf(req)
     const job = (await sql.one('SELECT * FROM print_jobs WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La impresión no existe.')
-    const kind = String(job!.kind) as 'exams' | 'rx'
+    const kind = String(job!.kind) as Kind
     if (!allowed(req, kind)) fail(403, 'No tienes permiso para imprimir esto.')
     const ids = JSON.parse(String(job!.items)) as string[]
     const user = userOf(req)
     const at = new Date().toISOString()
     // Lo que dice la bitácora se arma antes (dentro de la transacción solo se usa su conexión: PGlite tiene una sola)
     let what = ''
-    if (kind === 'exams') {
+    if (kind === 'results') {
+      const list = await examsWhere(sql, `clinic_id = ? AND id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids])
+      what = `el resultado de ${list.map((e) => examLine(e)).join(', ')}`
+    } else if (kind === 'exams') {
       const list = await examsWhere(sql, `clinic_id = ? AND id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids])
       what = `la orden de ${GROUP_LABEL[(list[0]?.group ?? 'lab') as ExamGroup].toLowerCase()} (${list.map((e) => e.name).join(', ')})`
     } else {
@@ -139,8 +165,8 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
     const who = await patientName(String(job!.patient_id))
     await sql.tx(async (q) => {
       await q.run('INSERT INTO print_log (id, clinic_id, target_kind, target_id, how, by_id, at) VALUES (?,?,?,?,?,?,?)', [randomUUID(), cid, 'print_job', String(job!.id), b.how, user.id, at])
-      for (const id of ids) await q.run('INSERT INTO print_log (id, clinic_id, target_kind, target_id, how, by_id, at) VALUES (?,?,?,?,?,?,?)', [randomUUID(), cid, kind === 'exams' ? 'exam_item' : 'hosp_med', id, b.how, user.id, at])
-      await audit(user, `${b.how === 'pdf' ? 'Descargó en PDF' : 'Imprimió'} ${what} de ${who}`, q, String(job!.patient_id))
+      for (const id of ids) await q.run('INSERT INTO print_log (id, clinic_id, target_kind, target_id, how, by_id, at) VALUES (?,?,?,?,?,?,?)', [randomUUID(), cid, kind === 'exams' ? 'exam_item' : kind === 'results' ? 'exam_result' : 'hosp_med', id, b.how, user.id, at])
+      await audit(user, `${b.how === 'pdf' ? 'Descargó en PDF' : b.how === 'view' ? 'Vio en PDF' : 'Imprimió'} ${what} de ${who}`, q, String(job!.patient_id))
     })
     res.json({ ok: true })
   })

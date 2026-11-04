@@ -50,6 +50,12 @@ export function FileChip({ id }: { id: string }) {
   </>)
 }
 
+/** EX6 (ronda 11): el nombre de un archivo, para «Archivo adjunto: [nombre]». */
+export function FileName({ id }: { id: string }) {
+  const meta = useFileMeta(id)
+  return <>{meta?.name ?? 'archivo'}</>
+}
+
 /** EX4: miniatura de un resultado que solo trae archivo (la foto, o la primera página del PDF). */
 export function FileThumb({ id }: { id: string }) {
   const meta = useFileMeta(id)
@@ -63,9 +69,13 @@ export function FileThumb({ id }: { id: string }) {
 }
 
 /** EX4: la vista previa completa, dentro de la app. */
-export function FileViewer({ id, meta, onClose }: { id: string; meta: Meta | null; onClose: () => void }) {
+export function FileViewer({ id, meta: given, onClose, autoPrint = false }: { id: string; meta?: Meta | null; onClose: () => void; autoPrint?: boolean }) {
   const { url, error } = useBlobUrl(id)
+  const own = useFileMeta(id)
+  const meta = given ?? own
   const frame = useRef<HTMLIFrameElement>(null)
+  // EX6 (ronda 11): «Imprimir» de un resultado que solo es archivo abre el diálogo de impresión directamente
+  const printedOnce = useRef(false)
   const print = () => {
     if (!url) return
     if (isPdf(meta) && frame.current?.contentWindow) { frame.current.contentWindow.focus(); frame.current.contentWindow.print(); return }
@@ -79,6 +89,13 @@ export function FileViewer({ id, meta, onClose }: { id: string; meta: Meta | nul
     const go = () => { f.contentWindow?.print(); setTimeout(() => f.remove(), 1000) }
     if (img.complete) go(); else img.onload = go
   }
+  useEffect(() => {
+    if (!autoPrint || !url || printedOnce.current) return
+    printedOnce.current = true
+    const t = setTimeout(print, isPdf(meta) ? 600 : 50)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPrint, url])
   return (
     <Modal title={meta?.name ?? 'Archivo'} wide className="file-viewer" onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cerrar</button>

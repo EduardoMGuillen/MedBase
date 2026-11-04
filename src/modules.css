@@ -890,3 +890,20 @@ button.src-tag--none { cursor: pointer; }
 .rxgen__issued li { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px dashed var(--line-soft); }
 .rxgen__acts { display: flex; gap: 6px; flex-wrap: wrap; }
 @media (max-width: 600px) { .rxgen__fields { padding-left: 8px; } .rxgen__acts .btn { min-height: 44px; } }
+/* EX6 (ronda 11): documento de resultados (carta), cada examen en su bloque; «Crítico» en negrita (se lee sin color) */
+.result-doc { page: resultados; }
+.result-doc__block { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 12px; break-inside: avoid; }
+.result-doc__times { font-size: 12.5px; color: var(--muted); margin: 2px 0 8px; }
+.result-doc__table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.result-doc__table th, .result-doc__table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.result-doc__table th { font-size: 12px; color: var(--muted); font-weight: 600; }
+.result-doc__table td.is-flag { font-weight: 700; }
+.result-doc__report { font-size: 13.5px; } .result-doc__report p { white-space: pre-wrap; margin: 4px 0 0; }
+.result-doc__file { font-size: 12.5px; color: var(--muted); }
+.result-doc__signs { display: flex; flex-wrap: wrap; gap: 16px 32px; margin-top: 18px; }
+.result-doc__sign { display: grid; gap: 1px; min-width: 220px; flex: 1 1 220px; font-size: 13px; }
+.result-doc__line { display: block; height: 42px; border-bottom: 1px solid #555; margin-bottom: 4px; }
+.result-doc__sign small { color: var(--muted); }
+@page resultados { size: letter; margin: 14mm 14mm 18mm; @bottom-center { content: "Página " counter(page) " de " counter(pages); font-size: 9pt; color: #555; } }
+@media print { .result-doc__table th, .result-doc__table td { border-color: #999; } .result-doc__sign small { color: #333; } }
+@media (max-width: 600px) { .result-doc__table { font-size: 12px; } .result-doc__table th, .result-doc__table td { padding: 3px; } }

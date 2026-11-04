@@ -22,7 +22,7 @@ import { loadRonda11Catalog } from './ronda11.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '76'
+const SCHEMA_VERSION = '77'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1119,6 +1119,9 @@ ALTER TABLE exam_orders ADD COLUMN IF NOT EXISTS subject TEXT;
 -- a comprar solo para esa receta (data, JSON); no cambian la orden ni la hoja.
 ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS doctor_id TEXT;
 ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS data TEXT;
+-- v77 (ronda 11). EX6: el resultado de exámenes en PDF o impreso es otro trabajo de impresión («results»)
+ALTER TABLE print_jobs DROP CONSTRAINT IF EXISTS print_jobs_kind_check;
+ALTER TABLE print_jobs ADD CONSTRAINT print_jobs_kind_check CHECK (kind IN ('exams','rx','results'));
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

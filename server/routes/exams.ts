@@ -507,6 +507,8 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     if (b.correct) {
       if (r!.status !== 'result') fail(409, r!.status === 'reviewed' ? 'El médico ya revisó este resultado: corrígelo con una adenda.' : 'Este examen no tiene resultado que corregir.')
       assertGrace(user.id, before?.by, before?.at, 'cargó el resultado')
+      // EX6 (ronda 11): un resultado que ya se vio en PDF, se descargó o se imprimió no se corrige (GE4): se corrige con adenda
+      if (await sql.one(`SELECT 1 FROM print_log WHERE target_kind = 'exam_result' AND target_id = ? LIMIT 1`, [String(r!.id)])) fail(409, 'Ya se imprimió o se descargó este resultado: no se corrige en el periodo de gracia.')
       if (Number(r!.result_version ?? 1) !== (b.version ?? 1)) fail(409, 'El resultado cambió mientras lo corregías. Actualiza la página.')
     } else if (['result', 'reviewed', 'cancelled'].includes(String(r!.status))) fail(409, 'Este examen ya tiene resultado o está cancelado.')
     for (const f of b.fileIds ?? []) if (!(await sql.one('SELECT 1 FROM attachments WHERE id = ? AND clinic_id = ? AND patient_id = ?', [f, cid, String(r!.patient_id)]))) fail(400, 'El archivo no corresponde a este paciente.')

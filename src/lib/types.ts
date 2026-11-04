@@ -49,6 +49,8 @@ export interface Staff {
   hasStamp?: boolean
   hasPin?: boolean
   docName?: string
+  /** DP1 (ronda 11): cargo dentro del rol (Microbiólogo, Técnico de laboratorio, Radiólogo, Técnico en imágenes). */
+  position?: string
 }
 
 /** Una clínica dentro de la plataforma. */
@@ -702,7 +704,8 @@ export interface ExamOrder extends ExamInput {
   statusAt?: string
   statusBy?: string
   cancelReason?: string
-  result?: { values?: ExamResultValue[]; report?: string; fileIds?: string[]; at: string; by: string }
+  /** EX6 (ronda 11): `responsibleId`, el microbiólogo responsable (el de turno o el elegido al cargar). */
+  result?: { values?: ExamResultValue[]; report?: string; fileIds?: string[]; at: string; by: string; responsibleId?: string }
   /** Algún valor fuera del umbral crítico de la clínica. */
   critical?: boolean
   reviewedBy?: string

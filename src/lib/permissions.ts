@@ -147,3 +147,13 @@ export function features(s: { kind?: ClinicKind; observationEnabled?: boolean })
 
 /** "la clínica" o "el consultorio", para los textos. */
 export const placeWord = (s: { kind?: ClinicKind }) => (s.kind === 'office' ? 'consultorio' : 'clínica')
+
+/**
+ * DP (ronda 11): ¿puede esta persona trabajar los exámenes de este tipo? Los roles de Laboratorio e Imágenes solo los de su
+ * departamento; los demás (enfermería, médico), los dos tipos.
+ */
+export function deptAllows(u: { role: Role }, group: 'lab' | 'imaging') {
+  if ((u.role as string) === 'lab') return group === 'lab'
+  if ((u.role as string) === 'imaging') return group === 'imaging'
+  return true
+}

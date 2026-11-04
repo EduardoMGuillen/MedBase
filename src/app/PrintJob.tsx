@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { ResultSheet } from './ResultSheet'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, Download, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -14,7 +15,7 @@ import type { ExamGroup, ExamOrder, InpatientMed, Patient } from '../lib/types'
 
 type Doctor = { id: string; name: string; license?: string; specialty?: string; signatureId?: string; stampId?: string }
 interface Job {
-  id: string; kind: 'exams' | 'rx'; patientId: string; hospitalizationId?: string; createdBy: string; createdAt: string
+  id: string; kind: 'exams' | 'rx' | 'results'; patientId: string; hospitalizationId?: string; createdBy: string; createdAt: string
   exams: ExamOrder[]; meds: InpatientMed[]; doctors: { doctor: Doctor; items: string[] }[]; printed: { how: string; by: string; at: string }[]
   /** ME12 (ronda 11): días y cantidad a comprar de cada medicamento, solo para esta receta. */
   extras?: Record<string, { days?: number; quantity?: string }>
@@ -49,11 +50,20 @@ export default function PrintJobPage() {
     setHow(action === 'pdf' ? 'pdf' : 'print')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job, action])
+  // EX6 (ronda 11): abrir el resultado («Ver PDF») también queda registrado, una vez por visita
+  const viewed = useRef(false)
+  useEffect(() => {
+    if (!job || job.kind !== 'results' || action || viewed.current) return
+    viewed.current = true
+    void api(`/print-jobs/${job.id}/printed`, { body: { how: 'view' } }).catch(() => {})
+  }, [job, action])
   if (!job) return <Loading label="Preparando el documento" />
   const p = patient(job.patientId)
   if (!p) return <Loading />
   const number = job.id.slice(0, 8).toUpperCase()
-  const title = job.kind === 'rx' ? 'Receta' : job.exams[0]?.group === 'imaging' ? 'Orden de imagen y gabinete' : 'Orden de laboratorio'
+  const groups = new Set(job.exams.map((e) => e.group))
+  const title = job.kind === 'rx' ? 'Receta' : job.kind === 'results' ? (groups.size > 1 ? 'Resultados de exámenes' : groups.has('imaging') ? 'Resultado de imagen y gabinete' : 'Resultado de laboratorio')
+    : job.exams[0]?.group === 'imaging' ? 'Orden de imagen y gabinete' : 'Orden de laboratorio'
   const docs = job.doctors.length
   return (
     <div className="page">
@@ -67,10 +77,11 @@ export default function PrintJobPage() {
           <button className="btn btn--primary btn--sm" onClick={() => setHow('print')}><Printer size={15} />Imprimir</button>
           <button className="btn btn--soft btn--sm" onClick={() => setHow('pdf')}><Download size={15} />Descargar PDF</button>
         </div>
-        {job.printed.length > 0 && <small className="muted">{job.printed.map((x) => `${x.how === 'pdf' ? 'Descargada' : 'Impresa'} por ${staffById(x.by)?.name ?? '—'}, ${dmyTime(x.at)}`).join(' · ')}</small>}
-        <small className="muted">Sin la firma y el sello del médico en papel no vale.</small>
+        {job.printed.filter((x) => x.how !== 'view').length > 0 && <small className="muted">{job.printed.filter((x) => x.how !== 'view').map((x) => `${x.how === 'pdf' ? 'Descargado' : 'Impreso'} por ${staffById(x.by)?.name ?? '—'}, ${dmyTime(x.at)}`).join(' · ')}</small>}
+        <small className="muted">{job.kind === 'results' ? 'Sin la firma y el sello de los responsables en papel no vale.' : 'Sin la firma y el sello del médico en papel no vale.'}</small>
       </div>
-      {job.kind === 'exams'
+      {job.kind === 'results' ? <ResultSheet exams={job.exams} patient={p} number={number} at={job.printed.filter((x) => x.how !== 'view').at(-1)?.at ?? new Date().toISOString()} />
+        : job.kind === 'exams'
         ? job.doctors.map((d) => {
           const list = job.exams.filter((e) => d.items.includes(e.id))
           return <ExamOrderSheet key={d.doctor.id} group={list[0].group as ExamGroup} exams={list} doctor={d.doctor} number={`${number}${docs > 1 ? `-${job.doctors.indexOf(d) + 1}` : ''}`} patient={p} at={job.createdAt} />
