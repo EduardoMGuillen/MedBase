@@ -17,11 +17,12 @@ import { loadLabSources, loadRefValues } from './refLoader.js'
 import { forceLnmeOnce, loadLnme } from './lnmeLoader.js'
 import { closeVisitsOfInpatients } from './stayVisits.js'
 import { cleanArchivedThresholds, loadImagingCatalog } from './ronda10.js'
+import { loadRonda11Catalog } from './ronda11.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '73'
+const SCHEMA_VERSION = '74'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1099,6 +1100,21 @@ CREATE TABLE IF NOT EXISTS config_backups (
   data TEXT NOT NULL,
   note TEXT
 );
+-- v74 (ronda 11). CA7: en el catálogo de exámenes ya no se archiva: «Quitar» borra. Queda la marca de lo quitado (quién,
+-- cuándo, por qué) para que ninguna carga lo vuelva a poner. CA6: lo escrito en «¿De qué?» de un estudio genérico.
+CREATE TABLE IF NOT EXISTS exam_catalog_removed (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL,
+  grp TEXT NOT NULL,
+  name TEXT NOT NULL,
+  norm_key TEXT NOT NULL,
+  base_key TEXT,
+  removed_by TEXT NOT NULL,
+  removed_at TEXT NOT NULL,
+  reason TEXT
+);
+CREATE INDEX IF NOT EXISTS exam_catalog_removed_clinic ON exam_catalog_removed (clinic_id, norm_key);
+ALTER TABLE exam_orders ADD COLUMN IF NOT EXISTS subject TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -1164,6 +1180,8 @@ export function ensureDb(sql: Sql) {
       for (const c of await q.query('SELECT id FROM clinics')) await loadLnme(q, String(c.id))
       // v73 (ronda 10, CA5): el catálogo de Imagen y gabinete del Anexo A (los estudios de antes se borran; las órdenes no cambian)
       for (const c of await q.query('SELECT id FROM clinics')) await loadImagingCatalog(q, String(c.id))
+      // v74 (ronda 11): CA6, Imagen y gabinete con estudios genéricos; CA7, los archivados del catálogo se borran
+      for (const c of await q.query('SELECT id FROM clinics')) await loadRonda11Catalog(q, String(c.id))
       // v71 (ronda 10, ME6): las 530 filas del .md, una vez con el .md mandando sobre lo que ya había (clínicas de demostración)
       await forceLnmeOnce(q)
       // v57/v58 (ronda 8, CX2): nadie internado sigue a la vez en la consulta externa (idempotente)
@@ -1566,6 +1584,8 @@ export async function ensureExamCatalog(q: Sql, clinicId: string) {
   await loadLnme(q, clinicId)
   // CA5 (ronda 10): y el catálogo de Imagen y gabinete completo (marca la clínica como al día)
   await loadImagingCatalog(q, clinicId)
+  // CA6 y CA7 (ronda 11)
+  await loadRonda11Catalog(q, clinicId)
 }
 
 /**

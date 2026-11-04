@@ -43,7 +43,8 @@ type LoadData = { catalog: LabCatalogEntry[]; equivalences: Record<string, strin
  */
 export async function loadLabCatalog(q: Sql, clinicId: string, data: LoadData = { catalog: LAB_CATALOG, equivalences: LAB_EQUIVALENCES, profiles: LAB_PROFILES }): Promise<LoadReport> {
   const report: LoadReport = { added: [], skipped: [], profilesAdded: [], profilesSkipped: [], profileExamsAdded: [] }
-  const rows = await q.query('SELECT name FROM exam_catalog WHERE clinic_id = ?', [clinicId])
+  // CA7 (ronda 11): lo que la clínica quitó del catálogo cuenta como existente (no se vuelve a agregar)
+  const rows = await q.query('SELECT name FROM exam_catalog WHERE clinic_id = ? UNION SELECT name FROM exam_catalog_removed WHERE clinic_id = ?', [clinicId, clinicId])
   const byKey = new Map(rows.map((r) => [looseKey(String(r.name)), String(r.name)]))
   const equiv = new Map(Object.entries(data.equivalences).map(([from, to]) => [looseKey(from), to]))
   /** El examen del catálogo que corresponde a un nombre (directo o por equivalencia). */

@@ -8,6 +8,7 @@ import { can } from '../../src/lib/permissions.js'
 import { areaFor, canReview, EXAMS, examKey, findExam, flagOf, FLOW, GROUP_LABEL, isPending, STATUS_LABEL, examLine, missingDetail, hasDetails } from '../../src/lib/exams.js'
 import type { ImagingDetails } from '../../src/lib/imagingCatalog.js'
 import { ensureExamCatalog } from '../db.js'
+import { removeCatalogExams, setChangesText } from '../ronda11.js'
 import { criticalLimitsOf, defaultAnalyte, defaultValues, isCritical, mergeCriticalGroups, type CriticalAnalyte, type CriticalGroup } from '../../src/lib/clinicalConfig.js'
 import { rangeFor, referenceFromRows } from '../../src/lib/labReference.js'
 import { refRowsFor, toRefRow } from '../refLoader.js'
@@ -180,6 +181,8 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     const cid = clinicOf(req)
     const user = userOf(req)
     const r = (await catalogRow(cid, String(req.params.id)))!
+    // CA7 (ronda 11): en el catálogo ya no se archiva; se quita (DELETE)
+    if (b.active === false) fail(400, 'En el catálogo de exámenes ya no se archiva: usa «Quitar».')
     const name = b.name ?? String(r.name)
     const key = examKey(name)
     if (key !== r.norm_key && await sql.one('SELECT 1 FROM exam_catalog WHERE clinic_id = ? AND norm_key = ? AND id <> ?', [cid, key, String(r.id)])) fail(409, `Ya hay un examen «${name}» en el catálogo.`)
@@ -198,6 +201,17 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     if (b.active === false && r.active) await audit(user, `Archivó del catálogo de exámenes: ${name}`)
     if (b.active === true && !r.active) await audit(user, `Restauró en el catálogo de exámenes: ${name}`)
     res.json(toClinicExam((await catalogRow(cid, String(r.id)))!))
+  })
+
+  // CA7 (ronda 11): «Quitar» borra el examen del catálogo (con copia previa y la marca de quitado). Las órdenes que ya lo usan
+  // guardan su nombre y no cambian; se quita de los sets y perfiles. Queda en la bitácora.
+  app.delete('/api/exams/catalog/:id', auth, need('settings.manage'), async (req, res) => {
+    const cid = clinicOf(req)
+    const user = userOf(req)
+    const r = (await catalogRow(cid, String(req.params.id)))!
+    const out = await sql.tx((q) => removeCatalogExams(q, cid, [r], user.id, 'ca7-removed', `Quitado por ${user.name}`))
+    await audit(user, `Quitó del catálogo de exámenes (${GROUP_LABEL[r.grp as 'lab']}): ${r.name}. Las órdenes que ya lo usan no cambian${out.sets.length ? `; se quitó de ${setChangesText(out.sets)}` : ''}`)
+    res.json({ ok: true, sets: out.sets })
   })
 
   // Perfiles: el médico los suyos; administración los de la clínica

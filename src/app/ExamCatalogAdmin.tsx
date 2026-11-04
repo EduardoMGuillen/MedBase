@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Archive, FlaskConical, Pencil, Plus, RotateCcw, ScanLine, X } from 'lucide-react'
+import { Archive, FlaskConical, Pencil, Plus, RotateCcw, ScanLine, Trash2, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { FoldHead, Modal, SectionHead } from '../components/ui'
@@ -23,11 +23,11 @@ export function ExamCatalogAdmin() {
   const { notify } = useStore()
   const { exams, reload } = useExamCatalog()
   const [q, setQ] = useState('')
-  const [archived, setArchived] = useState(false)
   const [editing, setEditing] = useState<ClinicExam | 'new' | null>(null)
+  // CA7 (ronda 11): ya no se archiva: «Quitar» borra el examen del catálogo, tras confirmar
+  const [removing, setRemoving] = useState<ClinicExam | null>(null)
   const n = normalize(q)
-  const list = exams.filter((e) => (archived || e.active) && (!n || normalize(e.name).includes(n))).sort((a, b) => a.name.localeCompare(b.name, 'es'))
-  const nArchived = exams.filter((e) => !e.active).length
+  const list = exams.filter((e) => e.active && (!n || normalize(e.name).includes(n))).sort((a, b) => a.name.localeCompare(b.name, 'es'))
   // CF4 (ronda 6): qué grupos están abiertos. Sin tocarlos, cerrados; al buscar se abren los que coinciden
   const [fold, setFold] = useState<Record<string, boolean>>({})
   const isOpen = (k: string) => fold[k] ?? !!n
@@ -39,16 +39,15 @@ export function ExamCatalogAdmin() {
   const refOf = (e: ClinicExam) => e.group === 'lab' ? referenceOf(e.name) ?? (e.baseKey ? referenceOf(EXAMS.find((b) => examKey(b.name) === e.baseKey)?.name ?? '') : undefined) : undefined
   const analytes = (e: ClinicExam) => refOf(e)?.analytes?.length ?? (e.baseKey ? EXAMS.find((b) => examKey(b.name) === e.baseKey)?.analytes?.length ?? 0 : 0)
   const [refOpen, setRefOpen] = useState<string | null>(null)
-  const setActive = async (e: ClinicExam, active: boolean) => {
-    try { await api(`/exams/catalog/${e.id}`, { method: 'PATCH', body: { active } }); reload(); notify(active ? `${e.name} vuelve al catálogo` : `${e.name} archivado: ya no se ofrece al ordenar`) } catch (x) { notify((x as Error).message, 'error') }
+  const remove = async (e: ClinicExam) => {
+    try { await api(`/exams/catalog/${e.id}`, { method: 'DELETE' }); setRemoving(null); reload(); notify(`${e.name} se quitó del catálogo`) } catch (x) { notify((x as Error).message, 'error') }
   }
   return (
     <section className="panel">
-      <SectionHead title="Catálogo de exámenes" sub="Los exámenes que los médicos pueden ordenar. Quitar uno lo archiva: deja de ofrecerse, pero las notas que ya lo tienen no cambian."
+      <SectionHead title="Catálogo de exámenes" sub="Los exámenes que los médicos pueden ordenar. Quitar uno lo borra del catálogo: deja de ofrecerse, pero las notas y órdenes que ya lo tienen no cambian."
         action={<button className="btn btn--primary btn--sm" onClick={() => setEditing('new')}><Plus size={15} />Agregar examen</button>} />
       <div className="panel__body" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', paddingBottom: 0 }}>
         <input className="input" style={{ maxWidth: 360 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar examen" aria-label="Buscar examen" />
-        {nArchived > 0 && <label className="check-inline"><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />Ver archivados ({nArchived})</label>}
       </div>
       <div className="panel__body excat">
         {/* CF4 (ronda 6): Laboratorio e Imagen y gabinete plegables, cerrados al entrar; dentro, sus subgrupos (CF3) */}
@@ -63,8 +62,8 @@ export function ExamCatalogAdmin() {
           const open = isOpen(g)
           const rows = (items: ClinicExam[], id: string) => <ul id={id} className="excat__list">
             {items.map((e) => (
-              <li key={e.id} className={e.active ? '' : 'is-archived'}>
-                <span><b>{e.name}</b>{!e.active && <span className="badge">Archivado</span>}
+              <li key={e.id}>
+                <span><b>{e.name}</b>
                   {refOf(e) ? <button type="button" className="linklike" style={{ fontSize: 13 }} aria-expanded={refOpen === e.id} onClick={() => setRefOpen(refOpen === e.id ? null : e.id)}>
                     {refOpen === e.id ? 'Ocultar valores de referencia' : `Valores de referencia${analytes(e) ? ` (${analytes(e)})` : ''}`}</button>
                     : e.group === 'lab' && <small className="muted">{analytes(e) > 0 ? `${analytes(e)} ${analytes(e) === 1 ? 'valor' : 'valores'} con rango de referencia` : 'Sin valores de referencia en la lista de Emil'}</small>}
@@ -72,10 +71,8 @@ export function ExamCatalogAdmin() {
                   {/* CA5 (ronda 10): qué pide al ordenarlo */}
                   {e.group === 'imaging' && hasDetails(detailsOf(e)) && <small className="muted" style={{ display: 'block' }}>Pide al ordenar: {detailsSummary(detailsOf(e)!)}</small>}</span>
                 <span className="excat__acts">
-                  {e.active && <button className="btn btn--ghost btn--sm" aria-label={`Editar ${e.name}`} title="Editar" onClick={() => setEditing(e)}><Pencil size={13} /><span>Editar</span></button>}
-                  {e.active
-                    ? <button className="btn btn--ghost btn--sm" aria-label={`Archivar ${e.name}`} title="Archivar" onClick={() => setActive(e, false)}><Archive size={13} /><span>Archivar</span></button>
-                    : <button className="btn btn--ghost btn--sm" aria-label={`Restaurar ${e.name}`} title="Restaurar" onClick={() => setActive(e, true)}><RotateCcw size={13} /><span>Restaurar</span></button>}
+                  <button className="btn btn--ghost btn--sm" aria-label={`Editar ${e.name}`} title="Editar" onClick={() => setEditing(e)}><Pencil size={13} /><span>Editar</span></button>
+                  <button className="btn btn--ghost btn--sm" aria-label={`Quitar ${e.name}`} title="Quitar" onClick={() => setRemoving(e)}><Trash2 size={13} /><span>Quitar</span></button>
                 </span>
               </li>
             ))}
@@ -112,6 +109,10 @@ export function ExamCatalogAdmin() {
         {n && !list.length && <p className="muted">Ningún examen coincide.</p>}
       </div>
       {editing && <ExamForm exam={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}
+      {removing && <Modal title={`¿Quitar ${removing.name}?`} onClose={() => setRemoving(null)} footer={<>
+        <button className="btn btn--ghost" onClick={() => setRemoving(null)}>Cancelar</button>
+        <button className="btn btn--danger" onClick={() => remove(removing)}><Trash2 size={15} />Quitar</button>
+      </>}><p>Se quitará del catálogo. Las órdenes que ya lo usan no cambian.</p></Modal>}
     </section>
   )
 }
