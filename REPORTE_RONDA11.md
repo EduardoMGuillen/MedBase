@@ -108,7 +108,7 @@ enfermería o un médico, es opcional (así lo dice A24: «como hoy, sin departa
 
 ## 3. CA6
 
-- **Borrados del catálogo.** Se borraron 81 estudios: 28 de Rayos X, 17 ultrasonidos, 19 tomografías y 17 resonancias.
+- **Borrados del catálogo.** Se borraron 82 estudios por clínica: 28 de Rayos X, 17 ultrasonidos, 19 tomografías y 18 resonancias.
   - Antes de borrar se guardó una copia en `config_backups` (`ca6-imaging-removed`) y una marca en
     `exam_catalog_removed`, para que ninguna carga los reponga.
   - La lista exacta está en `IMAGING_REMOVED_CA6`, en `src/lib/imagingCatalog.ts`. Incluye «Serie de abdomen agudo»,
@@ -130,9 +130,17 @@ enfermería o un médico, es opcional (así lo dice A24: «como hoy, sin departa
 
 ## 4. Cambios en la base de datos
 
-Todas las migraciones son idempotentes, se probaron en memoria con la demo y en una copia de la base local, y corren solas
+Todas las migraciones son idempotentes y corren solas
 al desplegar en cada clínica y consultorio, incluidos los nuevos (desde `ensureExamCatalog`). **No hace falta ningún paso
 manual en producción.**
+
+**Cómo las probé:**
+- En memoria, con la demo.
+- En una copia de la base local que primero llevé al esquema 73 con el código de la ronda 10, como está producción, y
+  después a 79 con el de ahora.
+  - En esa copia, CA6 borró 82 estudios por clínica y CA7 los 6 archivados.
+  - Un set perdió su estudio borrado y una orden de CA5 conservó su texto.
+  - La segunda corrida no cambió nada.
 
 - **v74 y v75**
   - Tabla `exam_catalog_removed`: lo que se quitó del catálogo, con quién, cuándo y por qué.
@@ -149,7 +157,7 @@ manual en producción.**
   - En `duty_roster`: `dept` y `shift`.
   - Los usuarios y datos demo de DM2.
 - **Lo que se borró:**
-  - Los 81 estudios de CA6.
+  - Los 82 estudios de CA6 (por clínica).
   - Los 6 archivados de CA7, con copia y marca.
   - Ningún registro clínico.
 
