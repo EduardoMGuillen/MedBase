@@ -64,8 +64,8 @@ enfermería o un médico, es opcional (así lo dice A24: «como hoy, sin departa
   sigue como perfil de laboratorio con el mismo nombre. Se borraron del catálogo con copia y quedaron marcados como
   quitados; las órdenes que los usan (como el «Electrolitos» de la captura 4) no cambian.
 
-  Esto lo confirmé en la base local de la demo. No leí producción: al desplegar, la limpieza deja en la bitácora la lista
-  exacta de esa base, en la línea «Catálogo de exámenes (CA7, ronda 11)».
+  **Confirmado en producción** después de desplegar: la bitácora de Santa Brígida dice «Catálogo de exámenes (CA7, ronda
+  11): se borraron 6 examen(es) archivado(s)» con esos mismos 6 nombres. El catálogo de producción ya no tiene archivados.
 - **GE7: los dos números de las pestañas.**
   - El número entre paréntesis es **cuántos hay**: en Exámenes, los exámenes no cancelados; en Anexos, las autorizaciones,
     referencias y epicrisis.
@@ -205,11 +205,20 @@ Usé A1 a A25 tal como vienen. Decisiones mías, para confirmar:
 - **Laboratorio e Imágenes no tienen recorrido guiado.** Tampoco hay pantalla de «Inicio» para ellos: entran a su bandeja.
 - **La bandeja para Administración:** el servidor la deja ver en solo lectura, pero no puse la opción en su menú.
 - **La bandeja se actualiza cada 20 s** (consulta periódica, no en tiempo real).
+- **Pendientes antiguos en la bandeja:** en producción, la bandeja de laboratorio muestra exámenes «En la clínica» de
+  consultas externas anteriores que nadie marcó. Entran porque son pendientes de la clínica (así lo pide DP2). Si no
+  deben aparecer después de cierto tiempo, dime cuánto.
 - **«Muestra tomada» en un examen externo** sigue apareciendo en la pestaña Exámenes (hallazgo de la ronda 10).
 
 ## 8. Verificaciones que no pude hacer
 
-- **Producción:** no leí la base de producción. Los 6 archivados se confirmaron en la base local de la demo.
+- **Producción:** después de desplegar revisé, por la API de producción:
+  - que entran los usuarios nuevos;
+  - la bandeja de laboratorio;
+  - el catálogo de Imagen y gabinete (Rayos X 1, Ultrasonido 5, Tomografía 2, Resonancia 3, sin archivados);
+  - las líneas de CA6 (82 borrados) y CA7 en la bitácora.
+
+  No recorrí producción con el navegador.
 - **Anchos de pantalla**, probados en el navegador:
   - GE7: 1920, 1000 y 390 px.
   - GE8: 1920, 1366, 1280, 1100, 1000 y 390 px.
