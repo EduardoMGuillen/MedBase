@@ -1,6 +1,7 @@
 import { CLINIC_TZ, clinicParts, toLocalValue } from './dateInput.js'
 import { loadingLine, nebulizationLine } from './medExtras.js'
 import { isPrnFrequency } from './catalogs.js'
+import { doseText } from './doseText.js'
 import { ROUTE_ABBR } from './inpatient.js'
 import type { ApptStatus, Background, ClinicContact, Diagnosis, Patient, PrescriptionItem } from './types'
 
@@ -232,7 +233,7 @@ export function medicationOrder(i: PrescriptionItem) {
   if (i.nebulization?.components?.length || i.loadingDose?.trim()) return `${medicationLine(i)}.${i.instructions ? ` ${i.instructions}` : ''}`
   const route = i.route ? ` vía ${i.route.toLowerCase()}` : ''
   const how = /única/i.test(i.frequency) ? '' : i.duration ? ` por ${i.duration}` : ', hasta nueva orden'
-  return `${i.drug}${i.presentation ? ` (${i.presentation.toLowerCase()})` : ''}: ${i.dose}${route} ${i.prnCondition ? frequencyText(i) : i.frequency.toLowerCase()}${how}.${i.instructions ? ` ${i.instructions}` : ''}`
+  return `${i.drug}${i.presentation ? ` (${i.presentation.toLowerCase()})` : ''}: ${doseText(i.dose)}${route} ${i.prnCondition ? frequencyText(i) : i.frequency.toLowerCase()}${how}.${i.instructions ? ` ${i.instructions}` : ''}`
 }
 
 /** Medicamento de la receta (se va a casa) sin el total de días. */
@@ -282,7 +283,7 @@ export function medicationLine(i: PrescriptionItem) {
   // ME3 (ronda 9): primera dosis distinta, el mismo texto de ME2 («Ceftriaxona IM · 2 g STAT y luego 1 g c/12h»)
   const hours = /cada\s+(\d+)\s*h/i.exec(i.frequency)?.[1]
   if (i.loadingDose?.trim() && hours && !isPrnFrequency(i.frequency)) return `${loadingLine(i.drug, ROUTE_ABBR[i.route ?? ''] ?? route, i.loadingDose, i.dose, `c/${hours}h`)}${days}`
-  const how = [i.dose, route, freq, !once ? (i.duration ? `por ${i.duration}` : 'hasta nueva orden') : ''].filter(Boolean).join(' ')
+  const how = [doseText(i.dose), route, freq, !once ? (i.duration ? `por ${i.duration}` : 'hasta nueva orden') : ''].filter(Boolean).join(' ')
   return `${i.drug}${i.presentation ? ` ${presentationShort(i.presentation)}` : ''} — ${how}`
 }
 

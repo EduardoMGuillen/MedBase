@@ -1036,10 +1036,27 @@ export function createApp(opts: AppOptions) {
     const { how } = parse(z.object({ how: z.enum(['print', 'pdf', 'whatsapp']).default('print') }), req.body ?? {})
     const user = userOf(req)
     const cid = clinicOf(req)
-    const row = (await sql.one('SELECT id, folio, patient_id FROM prescriptions WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La receta no existe.')
-    await sql.run('INSERT INTO print_log (id, clinic_id, target_kind, target_id, how, by_id, at) VALUES (?,?,?,?,?,?,?)', [randomUUID(), cid, 'prescription', String(row!.id), how, user.id, new Date().toISOString()])
-    await audit(user, `${how === 'pdf' ? 'Descargó en PDF' : how === 'whatsapp' ? 'Envió por WhatsApp' : 'Imprimió'} la receta ${row!.folio}${row!.patient_id ? ` de ${await patientName(String(row!.patient_id))}` : ''}`)
+    const row = (await sql.one('SELECT id, folio, patient_id, include_dx FROM prescriptions WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La receta no existe.')
+    // IM2 (ronda 13): el registro guarda si la receta llevaba el diagnóstico (las de antes de la v81, sí)
+    const withDx = row!.include_dx == null ? true : Boolean(row!.include_dx)
+    await sql.run('INSERT INTO print_log (id, clinic_id, target_kind, target_id, how, by_id, at, with_dx) VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), cid, 'prescription', String(row!.id), how, user.id, new Date().toISOString(), withDx])
+    await audit(user, `${how === 'pdf' ? 'Descargó en PDF' : how === 'whatsapp' ? 'Envió por WhatsApp' : 'Imprimió'} la receta ${row!.folio}${withDx && how !== 'whatsapp' ? ' (con diagnóstico)' : ''}${row!.patient_id ? ` de ${await patientName(String(row!.patient_id))}` : ''}`)
     res.json({ ok: true })
+  })
+
+  /**
+   * IM2 (ronda 13): «Incluir diagnóstico» en la receta. Lo decide el médico (rx.write); se guarda con la receta, así que al
+   * reimprimirla (también enfermería) sale igual. Una receta anulada no cambia.
+   */
+  app.post('/api/prescriptions/:id/include-dx', auth, need('rx.write'), async (req, res) => {
+    const { includeDx } = parse(z.object({ includeDx: z.boolean() }), req.body ?? {})
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const row = (await sql.one('SELECT id, folio, patient_id, voided_at FROM prescriptions WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La receta no existe.')
+    if (row!.voided_at) fail(409, 'La receta está anulada.')
+    await sql.run('UPDATE prescriptions SET include_dx = ? WHERE id = ?', [includeDx, String(row!.id)])
+    await audit(user, `${includeDx ? 'Incluyó' : 'Quitó'} el diagnóstico en la receta ${row!.folio}${row!.patient_id ? ` de ${await patientName(String(row!.patient_id))}` : ''}`)
+    res.json(toPrescription((await sql.one('SELECT * FROM prescriptions WHERE id = ?', [String(row!.id)]))!))
   })
 
   /**

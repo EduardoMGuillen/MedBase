@@ -84,6 +84,8 @@ export const toPrescription = (r: Row): Prescription => ({
   guest: r.guest == null ? undefined : j<GuestPatient>(r.guest, { name: '' }), linkedAt: s(r.linked_at), validityDays: n(r.validity_days),
   signatureId: s(r.signature_id), stampId: s(r.stamp_id),
   voidedAt: s(r.voided_at), voidedBy: s(r.voided_by), voidReason: s(r.void_reason),
+  // IM2 (ronda 13): sin dato (recetas de antes de la v81) = se imprimía con el diagnóstico
+  includeDx: r.include_dx == null ? undefined : Boolean(r.include_dx),
 })
 
 export const toCertificate = (r: Row): Certificate => ({

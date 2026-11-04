@@ -374,6 +374,8 @@ export interface Prescription {
   voidedAt?: string
   voidedBy?: string
   voidReason?: string
+  /** IM2 (ronda 13): la receta lleva la fila «Diagnóstico». Sin dato: receta de antes, que se imprimía con él. */
+  includeDx?: boolean
 }
 
 /** Datos de una persona no registrada, tal como se escribieron en su receta. */

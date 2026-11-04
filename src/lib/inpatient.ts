@@ -2,6 +2,7 @@ import type { Dose, InpatientFile, InpatientMed, InpatientNote, OrderLine, Order
 import { clinicParts } from './dateInput.js'
 import { loadingLine, nebulizationLine, type Nebulization } from './medExtras.js'
 import { normalize } from './patients.js'
+import { doseText } from './doseText.js'
 
 /**
  * Horario de medicamentos en hospitalización. Lo usan el servidor (para validar que la dosis que
@@ -58,7 +59,7 @@ export function medLabel(m: Labelable) {
     const when = m.loadingStat === false && m.firstAt ? `el ${dmyHm(m.firstAt)}` : 'STAT'
     return loadingLine(m.drug, route, m.loadingDose, m.dose, freq, when)
   }
-  return [m.drug, m.dose, route, freq, prn].filter(Boolean).join(' ')
+  return [m.drug, doseText(m.dose), route, freq, prn].filter(Boolean).join(' ')
 }
 
 /** «5», «2.5» (sin ceros de más). */

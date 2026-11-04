@@ -24,7 +24,7 @@ import { addDeptDemo } from './demoDept.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '80'
+const SCHEMA_VERSION = '81'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1142,6 +1142,13 @@ ALTER TABLE duty_roster ADD COLUMN IF NOT EXISTS dept TEXT NOT NULL DEFAULT 'doc
 ALTER TABLE duty_roster ADD COLUMN IF NOT EXISTS shift TEXT;
 DROP INDEX IF EXISTS duty_roster_active;
 CREATE UNIQUE INDEX IF NOT EXISTS duty_roster_active2 ON duty_roster (clinic_id, dept, day, staff_id, COALESCE(shift, '')) WHERE removed_at IS NULL;
+-- v81 (ronda 13). IM2: «Incluir diagnóstico» se guarda con la receta. Las recetas de antes quedan en NULL: se imprimían con el
+-- diagnóstico de la consulta y así se reimprimen (A8); las nuevas empiezan apagadas. La receta de la estancia (print_jobs)
+-- siempre salía sin diagnóstico: FALSE. El registro de impresiones guarda si la receta lo llevaba. Idempotente.
+ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS include_dx BOOLEAN;
+ALTER TABLE prescriptions ALTER COLUMN include_dx SET DEFAULT FALSE;
+ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS include_dx BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE print_log ADD COLUMN IF NOT EXISTS with_dx BOOLEAN;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

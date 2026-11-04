@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import { examsWhere } from './exams.js'
-import { toInpatientMed } from '../mappers.js'
+import { toInpatientMed, toInpatientNote } from '../mappers.js'
 import { can } from '../../src/lib/permissions.js'
 import { examLine, GROUP_LABEL, isPending } from '../../src/lib/exams.js'
 import { deptAllows } from '../../src/lib/permissions.js'
@@ -135,7 +135,33 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
     const printed = await sql.query('SELECT how, by_id, at FROM print_log WHERE target_kind = ? AND target_id = ? ORDER BY at', ['print_job', String(job!.id)])
     res.json({ id: String(job!.id), kind, patientId: String(job!.patient_id), hospitalizationId: job!.hospitalization_id ? String(job!.hospitalization_id) : undefined,
       createdBy: String(job!.created_by), createdAt: String(job!.created_at), exams, meds, doctors, printed: printed.map((p) => ({ how: String(p.how), by: String(p.by_id), at: String(p.at) })),
-      extras: job!.data ? JSON.parse(String(job!.data)) : undefined })
+      extras: job!.data ? JSON.parse(String(job!.data)) : undefined,
+      // IM2 (ronda 13): la receta de la estancia lleva el diagnóstico solo si el médico lo marcó
+      ...(kind === 'rx' ? { includeDx: Boolean(job!.include_dx), diagnoses: await stayDiagnoses(cid, job!) } : {}) })
+  })
+
+  /**
+   * IM2 (ronda 13): los diagnósticos de la receta de la estancia, tal como estaban cuando se generó: los de la última nota con
+   * diagnósticos hasta ese momento o, si no hay, los del ingreso. Al reimprimirla salen igual.
+   */
+  async function stayDiagnoses(cid: string, job: Row): Promise<string[]> {
+    if (!job.hospitalization_id) return []
+    const h = await sql.one('SELECT diagnoses FROM hospitalizations WHERE id = ? AND clinic_id = ?', [String(job.hospitalization_id), cid])
+    const notes = (await sql.query('SELECT * FROM hosp_notes WHERE hospitalization_id = ? AND clinic_id = ? AND at <= ? ORDER BY at DESC', [String(job.hospitalization_id), cid, String(job.created_at)]))
+      .map(toInpatientNote).filter((n) => n.diagnoses?.length)
+    const list = (notes[0]?.diagnoses ?? (h ? JSON.parse(String(h.diagnoses ?? '[]')) : [])) as { label: string }[]
+    return list.map((d) => d.label)
+  }
+
+  /** IM2 (ronda 13): «Incluir diagnóstico» en la receta de la estancia; solo el médico (inpatient.orders). */
+  app.post('/api/print-jobs/:id/include-dx', auth, need('inpatient.orders'), async (req, res) => {
+    const { includeDx } = parse(z.object({ includeDx: z.boolean() }), req.body ?? {})
+    const cid = clinicOf(req)
+    const job = (await sql.one('SELECT * FROM print_jobs WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La receta no existe.')
+    if (String(job!.kind) !== 'rx') fail(400, 'Solo la receta lleva el diagnóstico.')
+    await sql.run('UPDATE print_jobs SET include_dx = ? WHERE id = ?', [includeDx, String(job!.id)])
+    await audit(userOf(req), `${includeDx ? 'Incluyó' : 'Quitó'} el diagnóstico en la receta de ${await patientName(String(job!.patient_id))}`, undefined, String(job!.patient_id))
+    res.json({ ok: true, includeDx })
   })
 
   /** Imprimir o descargar: queda por renglón (GE4) y en la bitácora, con quién lo hizo y de qué médico es. */
@@ -160,11 +186,11 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
     } else {
       const extras = job!.data ? JSON.parse(String(job!.data)) as Record<string, { days?: number; quantity?: string }> : {}
       const meds = (await medsOf(cid, ids)).map((r) => `${String(r.drug)}${extras[String(r.id)]?.days ? ` por ${extras[String(r.id)].days} días` : ''}${extras[String(r.id)]?.quantity ? `, comprar ${extras[String(r.id)].quantity}` : ''}`)
-      what = job!.doctor_id ? `la receta (${meds.join('; ')})` : `la receta de lo que no hay en la clínica (${meds.join('; ')})`
+      what = `${job!.doctor_id ? `la receta (${meds.join('; ')})` : `la receta de lo que no hay en la clínica (${meds.join('; ')})`}${job!.include_dx ? ' con diagnóstico' : ''}`
     }
     const who = await patientName(String(job!.patient_id))
     await sql.tx(async (q) => {
-      await q.run('INSERT INTO print_log (id, clinic_id, target_kind, target_id, how, by_id, at) VALUES (?,?,?,?,?,?,?)', [randomUUID(), cid, 'print_job', String(job!.id), b.how, user.id, at])
+      await q.run('INSERT INTO print_log (id, clinic_id, target_kind, target_id, how, by_id, at, with_dx) VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), cid, 'print_job', String(job!.id), b.how, user.id, at, kind === 'rx' ? Boolean(job!.include_dx) : null])
       for (const id of ids) await q.run('INSERT INTO print_log (id, clinic_id, target_kind, target_id, how, by_id, at) VALUES (?,?,?,?,?,?,?)', [randomUUID(), cid, kind === 'exams' ? 'exam_item' : kind === 'results' ? 'exam_result' : 'hosp_med', id, b.how, user.id, at])
       await audit(user, `${b.how === 'pdf' ? 'Descargó en PDF' : b.how === 'view' ? 'Vio en PDF' : 'Imprimió'} ${what} de ${who}`, q, String(job!.patient_id))
     })
