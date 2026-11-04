@@ -18,6 +18,7 @@ import { forceLnmeOnce, loadLnme } from './lnmeLoader.js'
 import { closeVisitsOfInpatients } from './stayVisits.js'
 import { cleanArchivedThresholds, loadImagingCatalog } from './ronda10.js'
 import { loadRonda11Catalog } from './ronda11.js'
+import { addDeptDemo } from './demoDept.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
@@ -1207,6 +1208,8 @@ export function ensureDb(sql: Sql) {
       for (const c of await q.query('SELECT id FROM clinics')) await loadImagingCatalog(q, String(c.id))
       // v74 (ronda 11): CA6, Imagen y gabinete con estudios genéricos; CA7, los archivados del catálogo se borran
       for (const c of await q.query('SELECT id FROM clinics')) await loadRonda11Catalog(q, String(c.id))
+      // v78 (ronda 11, DM2): usuarios demo de Laboratorio e Imágenes, turnos y órdenes de ejemplo (solo la clínica demo)
+      await addDeptDemo(q)
       // v71 (ronda 10, ME6): las 530 filas del .md, una vez con el .md mandando sobre lo que ya había (clínicas de demostración)
       await forceLnmeOnce(q)
       // v57/v58 (ronda 8, CX2): nadie internado sigue a la vez en la consulta externa (idempotente)

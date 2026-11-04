@@ -1,3 +1,4 @@
+import { addDeptDemo } from './demoDept.js'
 import { closeVisitsOfInpatients } from './stayVisits.js'
 import { randomUUID } from 'node:crypto'
 import bcrypt from 'bcryptjs'
@@ -343,6 +344,8 @@ export async function seedDemo(sql: Sql, opts: { now?: Date; by?: string; onBack
     }
     // Ronda 8: nadie internado queda a la vez en la consulta externa de hoy
     await closeVisitsOfInpatients(q, now)
+    // DM2 (ronda 11): los usuarios y órdenes de ejemplo de Laboratorio e Imágenes, con los pacientes nuevos
+    await addDeptDemo(q, now)
     await q.run(`INSERT INTO meta (key, value) VALUES ('demo_seeded_on', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [isoDate(now)])
     summary.after = await demoCounts(q, ids)
     await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?,?,?,?)', [new Date().toISOString(), opts.by ?? 'sistema',
