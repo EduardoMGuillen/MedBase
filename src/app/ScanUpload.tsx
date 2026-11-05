@@ -15,18 +15,17 @@ const TITLE: Record<Mode, string> = { signed: 'Subir hoja firmada', refused: 'No
 const PICK_MAX = 60 * 1024 * 1024
 
 /**
- * Hoja firmada en papel (A1, A2): fotos sueltas, la cámara del celular o un PDF de escáner de varias páginas. Todo se
- * une en un solo PDF en el orden de la lista (se puede reordenar), las fotos se comprimen y se ve la vista previa
- * antes de confirmar. Máximo 15 MB. Reemplazar guarda el escaneo anterior en el historial.
+ * Fotos sueltas, la cámara del celular o un PDF de escáner de varias páginas, unidos en un solo PDF en el orden de la lista (se
+ * puede reordenar), con las fotos comprimidas y la vista previa antes de confirmar. Máximo 15 MB. La usan la hoja firmada de
+ * las autorizaciones y, PQ3 (ronda 14), la hoja de anestesia en papel.
  */
-export function ScanUpload({ a, mode, onClose, onDone }: { a: Authorization; mode: Mode; onClose: () => void; onDone: () => void }) {
+// eslint-disable-next-line react-refresh/only-export-components
+export function useScanPicker() {
   const { notify } = useStore()
   const [files, setFiles] = useState<File[]>([])
   const [thumbs, setThumbs] = useState<Map<File, string>>(new Map())
   const [preview, setPreview] = useState<{ blob: Blob; pages: string[] } | null>(null)
   const [building, setBuilding] = useState(false)
-  const [progress, setProgress] = useState<number | null>(null)
-  const [note, setNote] = useState('')
   const camera = useRef<HTMLInputElement>(null)
   const picker = useRef<HTMLInputElement>(null)
 
@@ -71,6 +70,50 @@ export function ScanUpload({ a, mode, onClose, onDone }: { a: Authorization; mod
   }
 
   const tooBig = !!preview && preview.blob.size > MAX_SCAN_BYTES
+  const ui = <>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" className="btn btn--soft" onClick={() => camera.current?.click()}><Camera size={16} />Tomar foto</button>
+        <button type="button" className="btn btn--soft" onClick={() => picker.current?.click()}><Images size={16} />Elegir fotos o PDF</button>
+        <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { add(e.target.files); e.target.value = '' }} />
+        <input ref={picker} type="file" accept="image/*,application/pdf" multiple hidden onChange={(e) => { add(e.target.files); e.target.value = '' }} />
+      </div>
+      {files.length > 0 && (
+        <ol className="scan-list">
+          {files.map((f, i) => (
+            <li key={`${f.name}-${f.size}-${i}`}>
+              {thumbs.get(f) ? <img src={thumbs.get(f)} alt="" /> : <span className="scan-list__pdf"><FileText size={22} /></span>}
+              <span className="scan-list__name"><b>{i + 1}. {f.name}</b><small>{f.type === 'application/pdf' ? 'PDF' : 'Foto'}, {fileSize(f.size)}</small></span>
+              <span className="scan-list__tools">
+                <button type="button" className="icon-btn" aria-label={`Subir ${f.name}`} disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp size={15} /></button>
+                <button type="button" className="icon-btn" aria-label={`Bajar ${f.name}`} disabled={i === files.length - 1} onClick={() => move(i, 1)}><ArrowDown size={15} /></button>
+                <button type="button" className="icon-btn" aria-label={`Quitar ${f.name}`} onClick={() => { setFiles(files.filter((_, j) => j !== i)); setPreview(null) }}><X size={15} /></button>
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {preview && (<>
+        <p className={tooBig ? 'field__msg field__msg--error' : 'muted'} style={{ fontSize: 14 }}>
+          {preview.pages.length} página{preview.pages.length === 1 ? '' : 's'}, {fileSize(preview.blob.size)}.
+          {tooBig ? ' Pesa más de 15 MB: quita páginas o toma las fotos con menor resolución.' : ' Revisa que estén todas las páginas, en orden y legibles.'}
+        </p>
+        <div className="scan-preview">{preview.pages.map((u, i) => <figure key={u}><img src={u} alt={`Página ${i + 1}`} /><figcaption>Página {i + 1}</figcaption></figure>)}</div>
+      </>)}
+  </>
+  return { files, preview, building, build, tooBig, ui }
+}
+
+/**
+ * Hoja firmada en papel (A1, A2): fotos sueltas, la cámara del celular o un PDF de escáner de varias páginas. Todo se
+ * une en un solo PDF en el orden de la lista (se puede reordenar), las fotos se comprimen y se ve la vista previa
+ * antes de confirmar. Máximo 15 MB. Reemplazar guarda el escaneo anterior en el historial.
+ */
+export function ScanUpload({ a, mode, onClose, onDone }: { a: Authorization; mode: Mode; onClose: () => void; onDone: () => void }) {
+  const { notify } = useStore()
+  const { files, preview, building, build, tooBig, ui } = useScanPicker()
+  const [progress, setProgress] = useState<number | null>(null)
+  const [note, setNote] = useState('')
+
   const needsNote = mode === 'replace'
   const confirm = async () => {
     if (!preview) return
@@ -100,34 +143,7 @@ export function ScanUpload({ a, mode, onClose, onDone }: { a: Authorization; mod
           {progress !== null ? `Subiendo ${Math.round(progress * 100)} %` : 'Confirmar y guardar'}</button>}
     </>}>
       <p className="muted" style={{ fontSize: 14 }}>Toma una foto de cada página, elige varias fotos o el PDF del escáner. Todo se une en un solo documento, en este orden. Máximo 15 MB.</p>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" className="btn btn--soft" onClick={() => camera.current?.click()}><Camera size={16} />Tomar foto</button>
-        <button type="button" className="btn btn--soft" onClick={() => picker.current?.click()}><Images size={16} />Elegir fotos o PDF</button>
-        <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { add(e.target.files); e.target.value = '' }} />
-        <input ref={picker} type="file" accept="image/*,application/pdf" multiple hidden onChange={(e) => { add(e.target.files); e.target.value = '' }} />
-      </div>
-      {files.length > 0 && (
-        <ol className="scan-list">
-          {files.map((f, i) => (
-            <li key={`${f.name}-${f.size}-${i}`}>
-              {thumbs.get(f) ? <img src={thumbs.get(f)} alt="" /> : <span className="scan-list__pdf"><FileText size={22} /></span>}
-              <span className="scan-list__name"><b>{i + 1}. {f.name}</b><small>{f.type === 'application/pdf' ? 'PDF' : 'Foto'}, {fileSize(f.size)}</small></span>
-              <span className="scan-list__tools">
-                <button type="button" className="icon-btn" aria-label={`Subir ${f.name}`} disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp size={15} /></button>
-                <button type="button" className="icon-btn" aria-label={`Bajar ${f.name}`} disabled={i === files.length - 1} onClick={() => move(i, 1)}><ArrowDown size={15} /></button>
-                <button type="button" className="icon-btn" aria-label={`Quitar ${f.name}`} onClick={() => { setFiles(files.filter((_, j) => j !== i)); setPreview(null) }}><X size={15} /></button>
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
-      {preview && (<>
-        <p className={tooBig ? 'field__msg field__msg--error' : 'muted'} style={{ fontSize: 14 }}>
-          {preview.pages.length} página{preview.pages.length === 1 ? '' : 's'}, {fileSize(preview.blob.size)}.
-          {tooBig ? ' Pesa más de 15 MB: quita páginas o toma las fotos con menor resolución.' : ' Revisa que estén todas las páginas, en orden y legibles.'}
-        </p>
-        <div className="scan-preview">{preview.pages.map((u, i) => <figure key={u}><img src={u} alt={`Página ${i + 1}`} /><figcaption>Página {i + 1}</figcaption></figure>)}</div>
-      </>)}
+      {ui}
       {mode !== 'signed' && mode !== 'attach' && (
         <label className="field"><span>{needsNote ? 'Por qué se reemplaza' : 'Nota (opcional)'}</span>
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={needsNote ? 'Ej. Se subió la hoja de otro paciente' : ''} /></label>

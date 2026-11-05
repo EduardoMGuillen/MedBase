@@ -180,12 +180,16 @@ export interface Attachment {
   name: string
   mime: string
   size: number
-  category: 'lab' | 'imaging' | 'document' | 'other'
+  /** PQ3 (ronda 14): 'anesthesia', la hoja de anestesia en papel (se sube desde la tarjeta de la nota postquirúrgica). */
+  category: 'lab' | 'imaging' | 'document' | 'other' | 'anesthesia'
   uploadedBy: string
   uploadedAt: string
   title?: string // qué examen es, p. ej. "Hemograma"
   takenAt?: string // fecha y hora del examen
   hospitalizationId?: string
+  /** PQ3 (ronda 14): hoja de anestesia reemplazada: queda anulada, visible y sin borrarse. */
+  voidedAt?: string
+  voidReason?: string
 }
 
 /** Antecedentes en el orden de la historia clínica. Todos son texto libre opcional. */
@@ -743,7 +747,8 @@ export interface ClinicExam { id: string; group: ExamGroup; name: string; active
 /** AN1: adenda (addendum) de una nota firmada: corrección, información adicional o resultado posterior. Inmutable. */
 export interface Addendum {
   id: string
-  targetKind: 'consultation' | 'note' | 'referral'
+  /** 'anesthesia' (PQ3, ronda 14): la hoja de anestesia llenada en el sistema. */
+  targetKind: 'consultation' | 'note' | 'referral' | 'anesthesia'
   targetId: string
   kind: 'correction' | 'info' | 'result'
   /** Si es corrección: qué se corrige ("Dosis de amoxicilina mal escrita"). */

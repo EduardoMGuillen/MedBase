@@ -10,7 +10,7 @@ import type { Sql } from './sql.js'
  * La hora es la del servidor.
  */
 export const GRACE_MS = GRACE_MINUTES * 60_000
-export type VersionKind = 'note' | 'dose' | 'vitals' | 'consultation' | 'exam_result' | 'material_use'
+export type VersionKind = 'note' | 'dose' | 'vitals' | 'consultation' | 'exam_result' | 'material_use' | 'anesthesia'
 
 /** Hasta cuándo se puede corregir (ISO), o undefined si el registro es de antes de GE4. */
 export const graceUntil = (firstAt?: unknown) => (firstAt ? new Date(new Date(String(firstAt)).getTime() + GRACE_MS).toISOString() : undefined)

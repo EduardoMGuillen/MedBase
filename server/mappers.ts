@@ -124,6 +124,7 @@ export const toAttachment = (r: Row): Attachment => ({
   id: String(r.id), patientId: String(r.patient_id), name: String(r.name), mime: String(r.mime), size: Number(r.size),
   category: r.category as Attachment['category'], uploadedBy: String(r.uploaded_by), uploadedAt: String(r.uploaded_at),
   title: s(r.title), takenAt: s(r.taken_at), hospitalizationId: s(r.hospitalization_id),
+  voidedAt: s(r.voided_at), voidReason: s(r.void_reason),
 })
 
 // AD3: la cama ya no tiene especialidad (la que tenía queda archivada en la base)

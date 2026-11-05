@@ -1232,6 +1232,46 @@ CREATE TABLE IF NOT EXISTS material_uses (
 );
 CREATE INDEX IF NOT EXISTS material_uses_period ON material_uses (clinic_id, period_start);
 CREATE INDEX IF NOT EXISTS consult_applications_clinic ON consult_applications (clinic_id, ordered_at);
+-- v82 (ronda 14). PQ3: hoja de anestesia ligada a la nota postquirúrgica. Una vigente por nota: subida en papel (un PDF hecho
+-- con las fotos o el escaneo, en attachments con categoría 'anesthesia') o llenada y firmada en el sistema por el anestesiólogo
+-- de la nota (data en JSON y su firma copiada en signer). Nada se borra: reemplazar una hoja subida la deja anulada (voided_*)
+-- con motivo y apunta a la nueva (replaced_by); su archivo también queda anulado y visible. La llenada en el sistema se corrige
+-- en el periodo de gracia (GE4, record_versions con target_kind 'anesthesia') o con adenda (addenda.target_kind 'anesthesia').
+-- No es obligatoria: no genera avisos ni bloquea el egreso. Idempotente.
+CREATE TABLE IF NOT EXISTS anesthesia_sheets (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  hospitalization_id TEXT NOT NULL REFERENCES hospitalizations(id),
+  note_id TEXT NOT NULL REFERENCES hosp_notes(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  mode TEXT NOT NULL CHECK (mode IN ('upload','system')),
+  performed_by_name TEXT NOT NULL,
+  performed_by_id TEXT REFERENCES staff(id),
+  observation TEXT,
+  file_id TEXT,
+  data TEXT,
+  signer TEXT,
+  created_by TEXT NOT NULL REFERENCES staff(id),
+  created_at TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  voided_at TEXT,
+  voided_by TEXT REFERENCES staff(id),
+  void_reason TEXT,
+  replaced_by TEXT
+);
+CREATE INDEX IF NOT EXISTS anesthesia_sheets_stay ON anesthesia_sheets (clinic_id, hospitalization_id);
+CREATE UNIQUE INDEX IF NOT EXISTS anesthesia_sheets_active ON anesthesia_sheets (note_id) WHERE voided_at IS NULL;
+CREATE OR REPLACE FUNCTION anesthesia_no_delete() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  IF current_setting('clinara.note_maintenance', true) = 'on' THEN RETURN OLD; END IF;
+  RAISE EXCEPTION 'La hoja de anestesia no se borra: se reemplaza con motivo o se corrige con adenda.';
+END $fn$;
+DROP TRIGGER IF EXISTS anesthesia_sheets_no_delete ON anesthesia_sheets;
+CREATE TRIGGER anesthesia_sheets_no_delete BEFORE DELETE ON anesthesia_sheets FOR EACH ROW EXECUTE FUNCTION anesthesia_no_delete();
+ALTER TABLE attachments ADD COLUMN IF NOT EXISTS voided_at TEXT;
+ALTER TABLE attachments ADD COLUMN IF NOT EXISTS void_reason TEXT;
+ALTER TABLE addenda DROP CONSTRAINT IF EXISTS addenda_target_kind_check;
+ALTER TABLE addenda ADD CONSTRAINT addenda_target_kind_check CHECK (target_kind IN ('consultation','note','referral','anesthesia'));
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

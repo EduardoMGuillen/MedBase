@@ -13,7 +13,7 @@ export const MAX_SCAN_BYTES = 15 * 1024 * 1024
 /** Cada parte, y cada trozo que se devuelve al leer un archivo grande, cabe en una petición de Vercel. */
 export const PART_BYTES = 3 * 1024 * 1024
 const ALLOWED = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp']
-const META = 'id, patient_id, name, mime, size, category, uploaded_by, uploaded_at, title, taken_at, hospitalization_id'
+const META = 'id, patient_id, name, mime, size, category, uploaded_by, uploaded_at, title, taken_at, hospitalization_id, voided_at, void_reason'
 
 /** Archivos del expediente (laboratorios, imágenes, documentos). Se guardan dentro de la base de datos. */
 export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf, audit, patientRow, patientName }: Ctx) {
@@ -135,7 +135,9 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
 
   app.delete('/api/attachments/:id', auth, need('chart.view'), async (req, res) => {
     const user = userOf(req)
-    const row = (await sql.one('SELECT id, name, patient_id, uploaded_by FROM attachments WHERE id = ? AND clinic_id = ?', [String(req.params.id), clinicOf(req)])) ?? fail(404, 'El archivo no existe.')
+    const row = (await sql.one('SELECT id, name, patient_id, uploaded_by, category FROM attachments WHERE id = ? AND clinic_id = ?', [String(req.params.id), clinicOf(req)])) ?? fail(404, 'El archivo no existe.')
+    // PQ3 (ronda 14): la hoja de anestesia no se borra (ni la vigente ni la ya reemplazada): se reemplaza con motivo
+    if (row!.category === 'anesthesia' || await sql.one('SELECT 1 FROM anesthesia_sheets WHERE file_id = ?', [String(row!.id)])) fail(409, 'La hoja de anestesia no se elimina. Para cambiarla, reemplázala con el motivo desde la nota postquirúrgica.')
     if (row!.uploaded_by !== user.id && user.role !== 'doctor') fail(403, 'Sólo quien subió el archivo o un médico puede eliminarlo.')
     await sql.run('DELETE FROM attachments WHERE id = ?', [String(row!.id)])
     await audit(user, `Eliminó el archivo "${row!.name}" de ${await patientName(String(row!.patient_id))}`)
