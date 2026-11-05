@@ -1183,6 +1183,51 @@ CREATE TABLE IF NOT EXISTS supply_settings (
   updated_by TEXT,
   updated_at TEXT
 );
+-- v82 (ronda 14). RU2: aplicaciones de consulta externa (ME13; contrato de la otra rama: misma tabla, se deduplica al unir) y
+-- registros de material por paciente o «Uso general del servicio», con su periodo (turno, día o semana), sus materiales
+-- (copia de material, variante y unidad al registrar), la corrección en el periodo de gracia (GE4, record_versions) y la
+-- anulación con motivo. Nada se borra; un registro anulado no suma.
+CREATE TABLE IF NOT EXISTS consult_applications (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL,
+  patient_id TEXT NOT NULL,
+  consultation_id TEXT NOT NULL,
+  item_index INTEGER NOT NULL,
+  drug TEXT NOT NULL,
+  order_text TEXT NOT NULL,
+  ordered_by TEXT NOT NULL,
+  ordered_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','applied','not_applied')),
+  applied_at TEXT,
+  reason TEXT,
+  recorded_by TEXT,
+  recorded_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS consult_applications_item ON consult_applications (consultation_id, item_index);
+CREATE TABLE IF NOT EXISTS material_uses (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  patient_id TEXT REFERENCES patients(id),
+  general BOOLEAN NOT NULL DEFAULT FALSE,
+  area TEXT,
+  location TEXT,
+  period_kind TEXT NOT NULL CHECK (period_kind IN ('shift','day','week')),
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  period_label TEXT NOT NULL,
+  shift_key TEXT,
+  items TEXT NOT NULL,
+  recorded_by TEXT NOT NULL REFERENCES staff(id),
+  recorded_at TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  corrected_at TEXT,
+  corrected_by TEXT,
+  voided_at TEXT,
+  voided_by TEXT,
+  void_reason TEXT,
+  CHECK ((general AND patient_id IS NULL) OR (NOT general AND patient_id IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS material_uses_period ON material_uses (clinic_id, period_start);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

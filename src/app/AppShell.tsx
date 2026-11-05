@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, BedDouble, BellRing, Building2, CalendarClock, CalendarDays, ChevronDown, CircleHelp, Compass, Eye, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, SlidersHorizontal, Stethoscope, UserCog,
+  BarChart3, BedDouble, BellRing, Building2, CalendarClock, CalendarDays, ChevronDown, ClipboardList, CircleHelp, Compass, Eye, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, SlidersHorizontal, Stethoscope, UserCog,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
@@ -35,6 +35,8 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
   { to: '/app/imagenes/hospitalizacion', label: 'Hospitalización', icon: BedDouble, perm: 'dept.work', roles: ['imaging'], group: 'Pacientes' },
   { to: '/app/pacientes', label: 'Biblioteca de pacientes', icon: LibraryBig, perm: 'patients.view', group: 'Pacientes' },
   { to: '/app/seguimientos', label: 'Crónicos y seguimientos', icon: BellRing, perm: 'followups.view', group: 'Pacientes' },
+  // RU2 (ronda 14): registro administrativo de enfermería (en Administración, dentro de su grupo)
+  { to: '/app/uso-medicamentos-material', label: 'Uso de medicamentos y material', icon: ClipboardList, perm: 'usage.view', group: 'Pacientes' },
   { to: '/app/configuracion-laboratorio', label: 'Configuración de laboratorio', icon: SlidersHorizontal, perm: 'dept.work', roles: ['lab'], group: 'Departamento' },
   { to: '/app/configuracion-imagenes', label: 'Configuración de imágenes', icon: SlidersHorizontal, perm: 'dept.work', roles: ['imaging'], group: 'Departamento' },
   { to: '/app/rol-de-turnos', label: 'Rol de turnos', icon: CalendarClock, perm: 'dept.work', roles: ['lab', 'imaging'], group: 'Departamento' },
@@ -134,11 +136,12 @@ export default function AppShell() {
       if (quietBilling && n.to === '/app/caja') return false
       if (n.roles && !n.roles.includes(user.role)) return false
       // MI1: el titular de un consultorio en su vista de administrador ve sólo lo administrativo (lo clínico, en la de médico)
-      if (f.office && user.role === 'admin' && n.group === 'Pacientes') return false
+      if (f.office && user.role === 'admin' && n.group === 'Pacientes' && n.to !== '/app/uso-medicamentos-material') return false
       // LB5 e IM1 (ronda 12): Laboratorio e Imágenes ven sus áreas, no las listas de Observación y Hospitalizados de enfermería
       if (dept && (n.to === '/app/observacion' || n.to === '/app/hospitalizados')) return false
       return true
-    }).map((n) => (f.office && n.group === 'Administración'
+    }).map((n) => (n.to === '/app/uso-medicamentos-material' && user.role === 'admin' ? { ...n, group: 'Administración' } : n))
+    .map((n) => (f.office && n.group === 'Administración'
       ? { ...n, group: 'Mi consultorio', label: n.to === '/app/personal' ? 'Personal' : n.to === '/app/configuracion' ? 'Configuración del consultorio' : n.label }
       : doctor && n.to === '/app/caja' ? { ...n, label: 'Cobrar' } : n))
     // MC7: Inicio → Agenda → Recetas → Cobrar → Pacientes → Configuración (y en el consultorio, lo administrativo al final)

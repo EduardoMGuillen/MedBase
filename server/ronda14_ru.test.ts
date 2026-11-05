@@ -8,7 +8,8 @@ import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { loadSupplyCatalog } from './supplies.js'
 import { SUPPLY_MD } from '../src/lib/supplyMd/generated.js'
-import { matchesSupply, parseSupplyMd, stripLength, supplyLabel } from '../src/lib/supplies.js'
+import { addDays, currentPeriod, DEFAULT_SUPPLY_SETTINGS, matchesSupply, parseSupplyMd, stripLength, supplyLabel } from '../src/lib/supplies.js'
+import { byPatient, materialSums, materialTotals, medSummary, summaryText, type MaterialRecord } from '../src/lib/usage.js'
 
 // Ronda 14, grupo RU (registro de uso de medicamentos y material): con la base y la API (copia en memoria de la demo)
 let server: Server
@@ -202,5 +203,221 @@ describe('RU1 (ronda 14): permisos del catálogo (en el servidor)', () => {
     assert.equal(ok.body.period, 'day')
     assert.ok(await sql.one(`SELECT 1 FROM audit WHERE action LIKE '%cambió el periodo de registro del material%Por turno%Por día%'`))
     await admin.put('/api/supplies/settings', { period: 'shift', shifts: ok.body.shifts })
+  })
+})
+
+// ---------- RU2 ----------
+const MAIN = 'c-sb'
+const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString()
+/** Ventana de las últimas 6 horas (para no depender del turno en que corren las pruebas). */
+const win = () => `from=${encodeURIComponent(ago(360))}&to=${encodeURIComponent(new Date(Date.now() + 60_000).toISOString())}`
+async function insertMed(hospId: string, patientId: string, m: Record<string, unknown>) {
+  const id = `ru-med-${Math.random().toString(36).slice(2, 8)}`
+  await sql.run(`INSERT INTO hosp_meds (id, clinic_id, hospitalization_id, patient_id, drug, presentation, dose, route, every_hours, prn, first_at, ordered_by, ordered_at, infusion_rate, infusion_unit, nebulization)
+    VALUES (?,?,?,?,?,?,?,?,?,FALSE,?,?,?,?,?,?)`, [id, MAIN, hospId, patientId, m.drug, m.presentation ?? null, m.dose, m.route, m.every ?? null, ago(400), 's-herrera', ago(400),
+    m.rate ?? null, m.rate ? 'ml/h' : null, m.neb ? JSON.stringify(m.neb) : null])
+  return id
+}
+async function insertDose(medId: string, minAgo: number, status = 'given', dose?: string) {
+  await sql.run(`INSERT INTO hosp_doses (id, clinic_id, med_id, scheduled_at, given_at, given_by, status, note, dose, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [`ru-dose-${Math.random().toString(36).slice(2, 10)}`, MAIN, medId, ago(minAgo), ago(minAgo), 's-rios', status, status === 'given' ? null : 'Paciente en ayuno', dose ?? null, ago(minAgo)])
+}
+
+describe('RU2 (ronda 14): pestaña «Medicamentos»', () => {
+  let hosp: { id: string; patient_id: string }
+  let outpatient = ''
+  before(async () => {
+    hosp = (await sql.one(`SELECT id, patient_id FROM hospitalizations WHERE clinic_id = ? AND status = 'active' AND kind = 'hospital' LIMIT 1`, [MAIN])) as typeof hosp
+    const ceftri = await insertMed(hosp.id, hosp.patient_id, { drug: 'Ceftriaxona RU', presentation: 'Vial 1 g', dose: '1 g', route: 'Intravenosa', every: 12 })
+    await insertDose(ceftri, 120, 'given', '1 g')
+    await insertDose(ceftri, 60, 'given', '1 g')
+    await insertDose(ceftri, 30, 'skipped')
+    await insertDose(ceftri, 20, 'omitted')
+    const neb = await insertMed(hosp.id, hosp.patient_id, { drug: 'Nebulización', dose: '1 sesión', route: 'Nebulización', every: 6, neb: { components: [{ drug: 'Salbutamol RU', amount: '0.5 mL' }, { drug: 'Bromuro de ipratropio RU', amount: '1 mL' }], diluent: 'SSN 0.9%', diluentVolume: '3 mL' } })
+    await insertDose(neb, 90)
+    const inf = await insertMed(hosp.id, hosp.patient_id, { drug: 'Oxitocina RU', dose: '20 UI', route: 'Intravenosa', rate: 20 })
+    await insertDose(inf, 100)
+    await insertDose(inf, 50)
+    outpatient = String((await sql.one(`SELECT id FROM patients WHERE clinic_id = ? AND id <> ? AND id NOT IN (SELECT patient_id FROM hospitalizations WHERE status = 'active') LIMIT 1`, [MAIN, hosp.patient_id]))!.id)
+    const app = (i: number, status: string, at: string | null, drug: string) => sql.run(`INSERT INTO consult_applications (id, clinic_id, patient_id, consultation_id, item_index, drug, order_text, ordered_by, ordered_at, status, applied_at, reason, recorded_by, recorded_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [`ru-app-${i}`, MAIN, outpatient, 'ru-consulta', i, drug, `${drug} (ampolla 75 mg/3 mL): 1 ampolla vía intramuscular dosis única.`, 's-paz', ago(200), status, at,
+      status === 'not_applied' ? 'El paciente se retiró' : null, status === 'pending' ? null : 's-rios', at])
+    await app(0, 'applied', ago(45), 'Diclofenaco RU')
+    await app(1, 'not_applied', null, 'Ketorolaco RU')
+    await app(2, 'pending', null, 'Dexametasona RU')
+  })
+
+  test('Enfermería ve cada aplicación por paciente con hora, quién la aplicó y el médico que la indicó', async () => {
+    const nurse = await as('crios@demo.clinara')
+    const r = await nurse.get(`/api/usage/meds?${win()}`)
+    assert.equal(r.status, 200)
+    const mine = (r.body.rows as any[]).filter((x) => / RU/.test(x.drug))
+    const ceftri = mine.filter((x) => x.drug === 'Ceftriaxona RU')
+    assert.equal(ceftri.length, 2, '«No aplicada» y «Omitida» no salen')
+    assert.equal(ceftri[0].appliedBy, 'Lic. Carmen Ríos')
+    assert.equal(ceftri[0].appliedByTitle, 'Enfermería')
+    assert.equal(ceftri[0].orderedBy, 'Dra. Lucía Herrera')
+    assert.match(ceftri[0].medication, /^Ceftriaxona RU \(vial 1 g\) 1 g vía intravenosa$/)
+    assert.match(ceftri[0].location, /^Hospitalización · Cuarto /)
+    // Nebulización: una línea por componente; infusión: una línea al iniciar
+    assert.deepEqual(mine.filter((x) => /Salbutamol|ipratropio/.test(x.drug)).map((x) => x.medication).sort(), ['Bromuro de ipratropio RU 1 mL · nebulización', 'Salbutamol RU 0.5 mL · nebulización'])
+    assert.equal(mine.filter((x) => x.drug === 'Oxitocina RU').length, 1)
+    // Consulta externa (ME13): solo «Aplicado»
+    const diclo = mine.filter((x) => x.source === 'consult')
+    assert.deepEqual(diclo.map((x) => [x.drug, x.location, x.appliedBy, x.orderedBy]), [['Diclofenaco RU', 'Consulta externa', 'Lic. Carmen Ríos', 'Dr. Andrés Paz']])
+    // Área y búsqueda
+    const out = await nurse.get(`/api/usage/meds?${win()}&area=outpatient`)
+    assert.ok((out.body.rows as any[]).every((x) => x.area === 'outpatient'))
+    const q = await nurse.get(`/api/usage/meds?${win()}&q=${encodeURIComponent('ceftriaxona ru')}`)
+    assert.deepEqual([...new Set((q.body.rows as any[]).map((x) => x.drug))], ['Ceftriaxona RU'])
+  })
+
+  test('el resumen cuenta aplicaciones y suma solo con la misma unidad', async () => {
+    const nurse = await as('crios@demo.clinara')
+    const rows = ((await nurse.get(`/api/usage/meds?${win()}`)).body.rows as any[]).filter((x) => / RU/.test(x.drug))
+    const s = medSummary(rows)
+    assert.equal(summaryText(s.find((x) => x.drug === 'Ceftriaxona RU')!), 'Ceftriaxona RU vial 1 g · 2 aplicaciones · 2 g')
+    const mixed = medSummary([{ ...rows[0], dose: '1 g' }, { ...rows[0], dose: '500 mg' }])
+    assert.equal(mixed[0].total, undefined, 'unidades distintas: sin total')
+  })
+
+  test('Recepción y Administración ven; el médico no (también por URL directa)', async () => {
+    for (const email of ['smejia@demo.clinara', 'admin@demo.clinara']) assert.equal((await (await as(email)).get(`/api/usage/meds?${win()}`)).status, 200, email)
+    const doc = await as('lherrera@demo.clinara')
+    assert.equal((await doc.get(`/api/usage/meds?${win()}`)).status, 403)
+    assert.equal((await doc.get(`/api/usage/material?${win()}`)).status, 403)
+  })
+})
+
+describe('RU2 (ronda 14): pestaña «Material»', () => {
+  let p1 = ''
+  let p2 = ''
+  const ids: Record<string, string> = {}
+  let today = ''
+  let shift = ''
+  before(async () => {
+    const [a, b] = await sql.query(`SELECT id FROM patients WHERE clinic_id = ? ORDER BY record LIMIT 2`, [MAIN])
+    p1 = String(a.id); p2 = String(b.id)
+    for (const [k, m, v] of [['gasa', 'Gasa hospitalaria', 'Rollo 36" × 100 yd'], ['guante', 'Guante estéril', 'No. 7.5'], ['seda', 'Seda', '4/0, aguja cortante'], ['jeringa', 'Jeringa descartable', '5 mL, aguja 21 G'],
+      ['alcohol', 'Alcohol al 70 %', 'Frasco'], ['n95', 'Mascarilla N95', '']]) ids[k] = String((await byLabel(MAIN, m, v)).id)
+    const p = currentPeriod({ period: 'shift', shifts: DEFAULT_SUPPLY_SETTINGS.shifts })
+    today = p.day; shift = p.shiftKey!
+  })
+  const body = (patientId: string | undefined, items: [string, number][]) =>
+    ({ patientId, general: !patientId, day: today, shiftKey: shift, items: items.map(([k, quantity]) => ({ itemId: ids[k], quantity })) })
+  const material = async (u: Awaited<ReturnType<typeof as>>) =>
+    (await u.get(`/api/usage/material?from=${encodeURIComponent(ago(60 * 30))}&to=${encodeURIComponent(new Date(Date.now() + 86_400_000).toISOString())}`)).body.records as MaterialRecord[]
+
+  test('modo suma por paciente, uso general y total del periodo; sin paciente no se guarda', async () => {
+    const nurse = await as('crios@demo.clinara')
+    const r1 = await nurse.post('/api/usage/material', body(p1, [['gasa', 1], ['guante', 2], ['seda', 1], ['jeringa', 3]]))
+    assert.equal(r1.status, 201)
+    assert.equal(r1.body.periodKind, 'shift')
+    assert.equal((await nurse.post('/api/usage/material', body(p1, [['guante', 2]]))).status, 201)
+    assert.equal((await nurse.post('/api/usage/material', body(p2, [['jeringa', 2]]))).status, 201)
+    const gen = await nurse.post('/api/usage/material', body(undefined, [['alcohol', 1]]))
+    assert.equal(gen.status, 201)
+    assert.equal(gen.body.general, true)
+    const none = await nurse.post('/api/usage/material', { general: false, day: today, shiftKey: shift, items: [{ itemId: ids.gasa, quantity: 1 }] })
+    assert.equal(none.status, 400)
+    assert.equal((await nurse.post('/api/usage/material', body(p1, []))).status, 400, 'sin cantidades no se guarda')
+    assert.equal((await nurse.post('/api/usage/material', body(p1, [['gasa', 0]]))).status, 400)
+    const recs = await material(nurse)
+    const blocks = byPatient(recs)
+    const b1 = blocks.find((b) => b.patientId === p1)!
+    assert.equal(materialSums(b1.rows).find((s) => s.itemId === ids.guante)!.quantity, 4, 'Guante estéril 7.5 = 4')
+    assert.equal(blocks[blocks.length - 1].name, 'Uso general del servicio', 'el uso general va al final')
+    assert.equal(materialTotals(recs).find((s) => s.itemId === ids.jeringa)!.quantity, 5, 'Jeringa 5 mL = 5')
+  })
+
+  test('anular con motivo: deja de sumar y queda tachado; Administración anula, Recepción y Administración no registran', async () => {
+    const nurse = await as('crios@demo.clinara')
+    const admin = await as('admin@demo.clinara')
+    const recep = await as('smejia@demo.clinara')
+    const r = await nurse.post('/api/usage/material', body(p2, [['jeringa', 10]]))
+    assert.equal(r.status, 201)
+    assert.equal((await admin.post(`/api/usage/material/${r.body.id}/void`, { reason: '' })).status, 400, 'el motivo es obligatorio')
+    assert.equal((await recep.post(`/api/usage/material/${r.body.id}/void`, { reason: 'Registro duplicado' })).status, 403)
+    const v = await admin.post(`/api/usage/material/${r.body.id}/void`, { reason: 'Registro duplicado' })
+    assert.equal(v.status, 200)
+    assert.ok(v.body.voidedAt)
+    assert.equal(materialTotals(await material(nurse)).find((s) => s.itemId === ids.jeringa)!.quantity, 5, 'el anulado no suma')
+    for (const u of [admin, recep]) {
+      assert.equal((await u.get(`/api/usage/material?${win()}`)).status, 200)
+      assert.equal((await u.post('/api/usage/material', body(p1, [['gasa', 1]]))).status, 403)
+    }
+    assert.ok(await sql.one(`SELECT 1 FROM audit WHERE action LIKE 'Registro de uso de material: anuló%Motivo: Registro duplicado'`))
+  })
+
+  test('el autor corrige en el periodo de gracia; otro no; el archivado ya no se registra pero los registros viejos lo muestran', async () => {
+    const nurse = await as('crios@demo.clinara')
+    const admin = await as('admin@demo.clinara')
+    const r = await nurse.post('/api/usage/material', body(p1, [['n95', 1]]))
+    assert.equal(r.status, 201)
+    const fix = await nurse.patch(`/api/usage/material/${r.body.id}`, body(p1, [['n95', 2]]))
+    assert.equal(fix.status, 200)
+    assert.equal(fix.body.version, 2)
+    assert.equal(fix.body.items[0].quantity, 2)
+    assert.ok(await sql.one(`SELECT 1 FROM record_versions WHERE target_kind = 'material_use' AND target_id = ?`, [r.body.id]))
+    assert.equal((await admin.patch(`/api/usage/material/${r.body.id}`, body(p1, [['n95', 3]]))).status, 403)
+    // Pasado el periodo de gracia, ya no
+    await sql.run('UPDATE material_uses SET recorded_at = ? WHERE id = ?', [ago(60), r.body.id])
+    assert.equal((await nurse.patch(`/api/usage/material/${r.body.id}`, body(p1, [['n95', 3]]))).status, 409)
+    // Archivar «Mascarilla N95»: no se registra más; el registro viejo la sigue mostrando
+    assert.equal((await admin.post(`/api/supplies/${ids.n95}/archive`)).status, 200)
+    assert.equal((await nurse.post('/api/usage/material', body(p1, [['n95', 1]]))).status, 409)
+    assert.ok((await material(nurse)).some((x) => x.id === r.body.id && x.items[0].material === 'Mascarilla N95'))
+    await admin.post(`/api/supplies/${ids.n95}/restore`)
+  })
+
+  test('«Por día» deja de pedir turno; «Por semana» agrupa de lunes a domingo', async () => {
+    const admin = await as('admin@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const shifts = (await admin.get('/api/supplies/settings')).body.shifts
+    await admin.put('/api/supplies/settings', { period: 'day', shifts })
+    const d = await nurse.post('/api/usage/material', { patientId: p2, day: today, items: [{ itemId: ids.gasa, quantity: 1 }] })
+    assert.equal(d.status, 201)
+    assert.equal(d.body.periodKind, 'day')
+    assert.equal(d.body.shiftKey, undefined)
+    await admin.put('/api/supplies/settings', { period: 'week', shifts })
+    const w = await nurse.post('/api/usage/material', { patientId: p2, day: today, items: [{ itemId: ids.gasa, quantity: 1 }] })
+    assert.equal(w.body.periodKind, 'week')
+    assert.match(w.body.periodLabel, /^Semana del \d{2}\/\d{2}\/\d{4} al \d{2}\/\d{2}\/\d{4}$/)
+    assert.equal(new Date(w.body.periodStart).getUTCDay(), 1, 'empieza el lunes (00:00 en Honduras = 06:00 UTC del lunes)')
+    await admin.put('/api/supplies/settings', { period: 'shift', shifts })
+    assert.equal((await nurse.post('/api/usage/material', { patientId: p2, day: addDays(today, 2), items: [{ itemId: ids.gasa, quantity: 1 }] })).status, 400, 'fecha en el futuro')
+  })
+
+  test('el material no aparece en el expediente ni en la estancia (hoja de medicamentos, notas, recetas)', async () => {
+    const doc = await as('lherrera@demo.clinara')
+    const chart = await doc.get(`/api/patients/${p1}/chart`)
+    assert.equal(chart.status, 200)
+    assert.ok(!/Guante estéril|Mascarilla N95|Uso general del servicio/.test(JSON.stringify(chart.body)))
+    const hosp = await sql.one(`SELECT id FROM hospitalizations WHERE status = 'active' LIMIT 1`)
+    const file = await doc.get(`/api/inpatient/${hosp!.id}`)
+    assert.equal(file.status, 200)
+    assert.ok(!/Guante estéril|Uso general del servicio/.test(JSON.stringify(file.body)))
+  })
+
+  test('sugerencias de pacientes: solo quien registra', async () => {
+    const s = await (await as('crios@demo.clinara')).get(`/api/usage/suggest?${win()}`)
+    assert.equal(s.status, 200)
+    assert.ok(Array.isArray(s.body))
+    assert.equal((await (await as('smejia@demo.clinara')).get(`/api/usage/suggest?${win()}`)).status, 403)
+  })
+})
+
+describe('RU2 (ronda 14): Consultorio', () => {
+  test('la titular registra material, ve el registro y marca su lista de turno; la asistente registra', async () => {
+    const ana = await as('alopez@demo.clinara')
+    const cid = await clinicOf('alopez@demo.clinara')
+    const pt = await sql.one('SELECT id FROM patients WHERE clinic_id = ? LIMIT 1', [cid])
+    const gasa = await byLabel(cid, 'Gasa hospitalaria', 'Rollo 36" × 100 yd')
+    const p = currentPeriod({ period: 'shift', shifts: DEFAULT_SUPPLY_SETTINGS.shifts })
+    assert.equal((await ana.post('/api/usage/material', { patientId: pt!.id, day: p.day, shiftKey: p.shiftKey, items: [{ itemId: gasa.id, quantity: 1 }] })).status, 201)
+    assert.equal((await ana.get(`/api/usage/material?${win()}`)).status, 200)
+    assert.equal((await ana.post(`/api/supplies/${gasa.id}/shift-list`, { on: false })).status, 200)
+    const asis = await as('asistente@demo.clinara')
+    assert.equal((await asis.post('/api/usage/material', { general: true, day: p.day, shiftKey: p.shiftKey, items: [{ itemId: gasa.id, quantity: 1 }] })).status, 201)
   })
 })
