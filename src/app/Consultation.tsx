@@ -20,7 +20,7 @@ import { emptyFollowup, FollowupFields } from './Followups'
 import type { Diagnosis, ExamInput, PrescriptionItem, VitalsMode } from '../lib/types'
 import { VitalsFrequency } from '../components/VitalsFrequency'
 import { ExamsBlock } from '../components/Exams'
-import { examCatalog, typedExam } from '../lib/exams'
+import { defaultPlace, examCatalog, typedExam } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import type { OrderSet } from '../lib/types'
 import { OrderSetPicker, SaveSetButton } from '../components/OrderSets'
@@ -115,10 +115,33 @@ export default function Consultation() {
     ro.observe(el)
     return () => ro.disconnect()
   })
+  // CX6 (ronda 14): abierto, la barra queda fija en toda la página (no solo mientras se ve la sección). Al contraer desde abajo
+  // (ya se está en la nota), el expediente se cierra arriba y la nota no salta: se compensa lo que medía (A16). Desde dentro
+  // del expediente, como en CX5: la página queda en el encabezado de la sección.
+  const noteRef = useRef<HTMLDivElement>(null)
+  // Con la barra fija, el navegador deja el campo que recibe el foco debajo de ella (no lo tapa)
+  useEffect(() => {
+    if (!showChart) return
+    const root = document.documentElement
+    root.style.scrollPaddingTop = `${headH + 72}px`
+    return () => { root.style.scrollPaddingTop = '' }
+  }, [showChart, headH])
   const toggleChart = () => {
     const closing = showChart
+    const note = noteRef.current
+    const bar = chartRef.current?.querySelector('.chart-in-consult__toggle')
+    const below = closing && !!note && note.getBoundingClientRect().top < headH + (bar?.getBoundingClientRect().height ?? 0)
+    const before = note?.getBoundingClientRect().top ?? 0
+    // El ajuste lo hace la página, no el navegador (su «anclaje» del desplazamiento lo haría dos veces)
+    const root = document.documentElement
+    if (below) root.style.overflowAnchor = 'none'
     setShowChart(!showChart)
     if (closing) requestAnimationFrame(() => {
+      if (below && note) {
+        window.scrollBy({ top: note.getBoundingClientRect().top - before, behavior: 'instant' as ScrollBehavior })
+        requestAnimationFrame(() => { root.style.overflowAnchor = '' })
+        return
+      }
       const sec = chartRef.current
       if (sec && sec.getBoundingClientRect().top < headH) sec.scrollIntoView({ block: 'start' })
     })
@@ -183,7 +206,8 @@ export default function Consultation() {
     const added = set.items.flatMap((it) => (it.med ? [setMedToRx(it.med)] : []))
     // EX1: los exámenes del set van a la sección Exámenes, no como texto
     const fromSet = set.items.flatMap((it) => (it.exam ? [it.exam] : []))
-    setExams((x) => [...x, ...fromSet.filter((e) => !x.some((y) => y.name === e.name))])
+    // EX8 (ronda 14): con el lugar por defecto según dónde está el paciente (lo guardado en el set no manda)
+    setExams((x) => [...x, ...fromSet.filter((e) => !x.some((y) => y.name === e.name)).map((e) => ({ ...e, place: defaultPlace(e.group, admitting, store.settings) }))])
     const repeated = [
       ...texts.filter((t) => indications.some((x) => orderKey(x) === orderKey(t))),
       ...added.filter((m) => meds.some((x) => orderKey(medicationOrder(x)) === orderKey(medicationOrder(m)))).map((m) => m.drug),
@@ -245,14 +269,14 @@ export default function Consultation() {
           <FolderOpen size={17} /><span><b>Expediente completo de {p.firstName}</b>
             <small>{chart ? `${chart.consultations.length} consulta${chart.consultations.length === 1 ? '' : 's'} anterior${chart.consultations.length === 1 ? '' : 'es'}${chart.hospitalizations.length ? `, ${chart.hospitalizations.length} hospitalización${chart.hospitalizations.length === 1 ? '' : 'es'}` : ''} · exámenes, recetas, signos y archivos. La nota sigue aquí abajo.` : 'Consultas anteriores, exámenes, recetas, signos y archivos.'}</small></span>
           <button type="button" className="btn btn--soft btn--sm chart-in-consult__btn" aria-expanded={showChart}>
-            {showChart ? <><ChevronUp size={16} />Contraer expediente</> : <><ChevronDown size={16} />Ver expediente</>}</button>
+            {showChart ? <><ChevronUp size={16} />Contraer<span className="chart-in-consult__long">expediente</span></> : <><ChevronDown size={16} />Ver expediente</>}</button>
         </div>
         {showChart && <div className="chart-in-consult__body"><PatientChart patientId={p.id} embedded />
           <button type="button" className="btn btn--soft chart-in-consult__end" onClick={toggleChart}><ChevronUp size={16} />Contraer expediente</button></div>}
       </section>
       <GoToNote target=".consult2" />
 
-      <div className="consult2">
+      <div className="consult2" ref={noteRef}>
         <div className="consult2__left">
           <section className="panel csec">
             <div className="panel__head"><h2>Antecedentes patológicos</h2>
@@ -358,7 +382,7 @@ export default function Consultation() {
                 {typedExamHit && !typedDrug && (
                   <div className="suggest-med" role="status">
                     <FlaskConical size={15} />¿Agregar «{typedExamHit.name}» como examen? Así se imprime en su orden y se le da seguimiento.
-                    <button className="btn btn--soft btn--sm" onClick={() => { setExams([...exams, { group: typedExamHit.group, name: typedExamHit.name, priority: 'routine', place: 'clinic' }]); setOrderText('') }}>Sí, agregarlo</button>
+                    <button className="btn btn--soft btn--sm" onClick={() => { setExams([...exams, { group: typedExamHit.group, name: typedExamHit.name, priority: 'routine', place: defaultPlace(typedExamHit.group, admitting, store.settings) }]); setOrderText('') }}>Sí, agregarlo</button>
                   </div>
                 )}
                 {typedDrug && (
