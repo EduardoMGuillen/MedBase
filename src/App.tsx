@@ -35,6 +35,8 @@ import OrderSetsPage from './app/OrderSetsPage'
 import EpicrisisPage from './app/Epicrisis'
 import ExamOrderPage from './app/ExamOrder'
 import PrintJobPage from './app/PrintJob'
+import AnesthesiaSheetPage, { AnesthesiaBlankPage } from './app/AnesthesiaDoc'
+import AnesthesiaFormPage from './app/AnesthesiaForm'
 import DeptTray, { AREA_SLUG } from './app/DeptTray'
 import DeptHome from './app/DeptHome'
 import { ChartOrDept, DeptConfig, DeptOnly, DeptRosterPage } from './app/DeptPages'
@@ -110,6 +112,10 @@ export default function App() {
             <Route path="examenes/orden/:batch" element={<Guard perm="chart.view"><ExamOrderPage /></Guard>} />
             {/* EX5 y ME10 (ronda 10): órdenes de los pendientes y recetas de lo que no hay en la clínica */}
             <Route path="impresion/:id" element={<Guard perm="chart.view"><PrintJobPage /></Guard>} />
+            {/* PQ3 (ronda 14): hoja de anestesia (en blanco, llenar en el sistema, ver e imprimir); el servidor comprueba el resto */}
+            <Route path="anestesia/blanco/:stayId" element={<Guard perm="chart.view"><AnesthesiaBlankPage /></Guard>} />
+            <Route path="anestesia/nota/:noteId" element={<Guard perm="chart.view"><AnesthesiaFormPage /></Guard>} />
+            <Route path="anestesia/:id" element={<Guard perm="chart.view"><AnesthesiaSheetPage /></Guard>} />
             <Route path="recetas" element={<Guard perm="rx.view"><Prescriptions /></Guard>} />
             <Route path="recetas/:id" element={<Guard perm="rx.view"><PrescriptionSheet /></Guard>} />
             <Route path="caja" element={<Guard perm="billing.manage"><Billing /></Guard>} />

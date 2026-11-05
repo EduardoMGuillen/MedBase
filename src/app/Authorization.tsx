@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { dateTime, dmyTime, formatPhone, shortStaff } from '../lib/format'
 import { currentDiagnoses, yearsOld } from '../lib/inpatient'
-import { authStatus, authTitle, consentStatements, FREQUENT_SURGERIES, HOSPITAL_CONSENT, HOSPITAL_DECLARATION, SURGICAL_GENERIC } from '../lib/consent'
+import { authStatus, authTitle, consentStatements, isSurgical, FREQUENT_SURGERIES, HOSPITAL_CONSENT, HOSPITAL_DECLARATION, SURGICAL_GENERIC } from '../lib/consent'
 import type { Authorization, AuthorizationData, InpatientFile, Patient } from '../lib/types'
 import { openFile } from '../lib/files'
 import { ConsentSigning } from './ConsentSigning'
@@ -13,6 +13,7 @@ import { ScanUpload } from './ScanUpload'
 import { PdfPages } from '../components/PdfPages'
 import { DniInput } from '../components/DniInput'
 import { ClinicalDoc, SignSpace, type DocRow } from '../components/ClinicalDoc'
+import { BlankAnesthesiaButton } from '../components/AnesthesiaSheet'
 
 /**
  * Nueva autorización, sin pestañas: cada botón abre la suya.
@@ -134,6 +135,8 @@ export function AuthorizationEntry({ a, file, p, reload }: { a: Authorization; f
           <p>Generada {dateTime(a.createdAt)} por {staffById(a.createdBy)?.name}{a.statusAt && a.statusBy ? ` · registrada por ${who(a.statusBy)} ${dateTime(a.statusAt)}` : ''}</p></div>
         <div className="auth-actions">
           <Link className="btn btn--ghost btn--sm" to={`/app/autorizaciones/${a.id}`}><Printer size={14} />Ver e imprimir</Link>
+          {/* PQ3 (ronda 14): la hoja de anestesia para llenarla a mano en sala */}
+          {isSurgical(a) && <BlankAnesthesiaButton stayId={a.hospitalizationId} authorizationId={a.id} />}
           {a.pdfId && <button className="btn btn--ghost btn--sm" onClick={() => view(a.pdfId!)}><FileText size={14} />PDF firmado</button>}
           {a.fileId && <button className="btn btn--ghost btn--sm" onClick={() => view(a.fileId!)}><FileText size={14} />Hoja escaneada</button>}
           {manage && a.status === 'pending' && (waitingDoctor

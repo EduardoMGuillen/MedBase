@@ -17,6 +17,7 @@ import { VitalsModal } from './WaitingRoom'
 import { ArrivalsPanel } from './Arrivals'
 import { CompleteRegistration } from './NewPatient'
 import { pendingArrivals } from '../lib/arrivals'
+import { AnesthesiaPending } from '../components/AnesthesiaSheet'
 
 /** Recepción llama el día del control. Los avisos de la semana y de la víspera ya salieron solos. */
 function FollowupCalls() {
@@ -152,6 +153,8 @@ export default function Dashboard() {
             <div className="panel__body"><strong>{fullName(nextPatient)}</strong><p className="muted" style={{ marginTop: 4 }}>{nextPatient.record}</p></div>
           </section>
         )}
+        {/* PQ3 (ronda 14): solo si figura como anestesiólogo con usuario */}
+        <AnesthesiaPending />
         <NewResults />
         {office && <ExamTray />}
         <ArrivalsPanel doctorId={user.id} onArrive={office ? arrive : undefined} />

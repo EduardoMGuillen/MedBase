@@ -1,0 +1,107 @@
+/* PQ3 (ronda 14): hoja de anestesia. Tarjeta en la nota postquirúrgica, formulario «Llenar en el sistema» e impresión (Anexo B). */
+
+/* ---------- Tarjeta de la nota ---------- */
+.anes-card { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--r-md); background: var(--ward); display: grid; gap: 6px; min-width: 0; }
+.anes-card--focus { border-style: solid; border-color: var(--ink); box-shadow: 0 0 0 3px var(--ink-soft); }
+.anes-card__line { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; color: var(--petrol); overflow-wrap: anywhere; }
+.anes-card__line svg { flex: none; margin-top: 2px; color: var(--ink); }
+.anes-card__none { color: var(--muted); }
+.anes-card__meta { margin: 0; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.anes-card__acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.anes-card__old { font-size: 13px; }
+.anes-card__old ul { margin: 4px 0 0; padding-left: 18px; }
+.anes-card .addenda { margin-top: 2px; }
+.anes-row { grid-template-columns: minmax(0, 1fr) auto; }
+.anes-row--link { color: inherit; }
+.anes-row--link:hover { background: var(--ward); }
+.choice:disabled { opacity: .6; cursor: not-allowed; }
+@media (max-width: 600px) {
+  .anes-btn, .anes-card .btn { min-height: 44px; }
+  .anes-row { grid-template-columns: minmax(0, 1fr); padding: 12px 14px; }
+  .anes-card__acts .anes-btn { flex: 1 1 auto; justify-content: center; }
+}
+
+/* ---------- Formulario «Llenar en el sistema» ---------- */
+.anes-form { display: grid; gap: 16px; max-width: 1100px; }
+.anes-form .panel__body { display: grid; gap: 14px; }
+.anes-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.anes-opt { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); cursor: pointer; font-size: 14px; }
+.anes-opt:has(input:checked) { border-color: var(--ink); background: var(--ink-soft); color: var(--ink-deep); font-weight: 600; }
+.anes-opt input { margin: 0; }
+.anes-group { display: grid; gap: 6px; min-width: 0; }
+.anes-group > span { font-size: 13px; font-weight: 600; color: var(--petrol); }
+.anes-calc { font-size: 15px; padding: 8px 12px; border-radius: 10px; background: var(--ink-soft); color: var(--ink-deep); }
+.anes-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.anes-table th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 4px 6px; }
+.anes-table td { padding: 4px 6px; vertical-align: top; }
+.anes-table .input, .anes-table .select { min-width: 0; width: 100%; }
+.anes-table td.anes-table__x { width: 44px; }
+.anes-table .dtf { display: flex; flex-wrap: nowrap; min-width: 150px; }
+.anes-table .dtf .input { min-width: 0; }
+.anes-foot { position: sticky; bottom: 0; z-index: 5; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: flex-end; padding: 12px 16px; background: var(--paper);
+  border-top: 1px solid var(--line); border-radius: var(--r-md); box-shadow: 0 -8px 20px -14px rgba(14, 34, 51, .35); }
+.anes-foot .draft-badge { margin-right: auto; }
+@media (max-width: 760px) {
+  /* Cada registro de la tabla, en una tarjeta */
+  .anes-table thead { display: none; }
+  .anes-table, .anes-table tbody, .anes-table tr, .anes-table td { display: block; width: 100%; }
+  .anes-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; }
+  .anes-table td { padding: 0; }
+  .anes-table td[data-label]::before { content: attr(data-label); display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .anes-table td.anes-table__wide { grid-column: 1 / -1; }
+  .anes-table td.anes-table__x { width: auto; grid-column: 1 / -1; }
+  .anes-table td.anes-table__x .btn { width: 100%; justify-content: center; }
+  .anes-opt { min-height: 44px; }
+  .anes-foot .btn { min-height: 44px; flex: 1 1 auto; justify-content: center; }
+}
+
+/* ---------- Hoja impresa (Anexo B, Carta, plantilla de IM1) ---------- */
+.anes-doc .cdoc__body { padding-top: 6px; }
+.anes-doc .cdoc__heading { font-size: 15px; margin: 0 0 6px; }
+.anes-sec { border: 1px solid #b9c2cc; border-radius: 4px; margin-bottom: 5px; break-inside: avoid; page-break-inside: avoid; }
+.anes-sec > h3 { margin: 0; padding: 2px 6px; font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; background: #eef1f4; border-bottom: 1px solid #b9c2cc; color: #1d2b36; }
+.anes-sec__body { padding: 4px 6px; display: grid; gap: 3px 10px; font-size: 10px; line-height: 1.35; }
+.anes-sec__body--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.anes-sec__body--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.anes-sec__body--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.anes-sec__body--6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.anes-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 5px; }
+.anes-f { min-width: 0; overflow-wrap: anywhere; }
+.anes-f > i { font-style: normal; color: #555; margin-right: 3px; }
+.anes-f--wide { grid-column: 1 / -1; }
+.anes-v { font-weight: 600; color: #000; }
+.anes-blank { display: inline-block; min-width: 2.2cm; border-bottom: 1px dotted #8a96a1; height: 1em; vertical-align: bottom; }
+.anes-blank--long { min-width: 5cm; }
+.anes-blank--area { display: block; width: 100%; height: 2.2em; border-bottom: 1px dotted #8a96a1; }
+.anes-box { display: inline-flex; align-items: center; gap: 2px; margin-right: 7px; white-space: nowrap; }
+.anes-box b { font-weight: 400; font-size: 11px; line-height: 1; }
+.anes-box--on { font-weight: 700; }
+.anes-grid { width: 100%; height: auto; display: block; }
+.anes-grid text { font-family: inherit; }
+.anes-legend { display: flex; flex-wrap: wrap; gap: 3px 12px; font-size: 9px; color: #333; padding: 2px 6px 4px; }
+.anes-tbl { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+.anes-tbl th, .anes-tbl td { border: 1px solid #c9d0d7; padding: 1px 4px; text-align: left; height: 13px; }
+.anes-tbl th { background: #f4f6f8; font-weight: 600; }
+.anes-addenda { font-size: 10px; }
+.anes-addenda p { margin: 2px 0; }
+.anes-doc .cdoc__sign { gap: 8px 18px; }
+.anes-doc .cdoc__signer { width: 200px; font-size: 11px; }
+@media (max-width: 760px) {
+  .anes-sec__body--3, .anes-sec__body--4, .anes-sec__body--6, .anes-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .anes-scroll { overflow-x: auto; }
+  .anes-sec__body > * { min-width: 0; }
+  .anes-tbl { table-layout: fixed; }
+  .anes-tbl th, .anes-tbl td { overflow-wrap: anywhere; font-size: 9px; padding: 1px 2px; }
+  .anes-blank { min-width: 1.2cm; }
+  .anes-blank--long { min-width: 0; width: 45%; }
+  .anes-box { white-space: normal; }
+}
+@media print {
+  .anes-doc { font-size: 9.5pt; }
+  .anes-sec > h3 { background: #eef1f4 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .anes-sec__body--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .anes-sec__body--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .anes-sec__body--6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .anes-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .anes-page-break { break-before: page; page-break-before: always; }
+}
