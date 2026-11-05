@@ -38,6 +38,7 @@ import PrintJobPage from './app/PrintJob'
 import DeptTray, { AREA_SLUG } from './app/DeptTray'
 import DeptHome from './app/DeptHome'
 import { ChartOrDept, DeptConfig, DeptOnly, DeptRosterPage } from './app/DeptPages'
+import SupplyCatalogPage from './app/SupplyCatalog'
 
 /** Entra sólo con sesión, con el permiso y, si se pide, con el módulo activo en la cuenta (un consultorio no tiene hospitalización). */
 function Guard({ perm, feature, children }: { perm?: Permission; feature?: 'hospital' | 'observation'; children: ReactNode }) {
@@ -117,6 +118,8 @@ export default function App() {
             <Route path="reportes" element={<Guard perm="reports.view"><Reports /></Guard>} />
             <Route path="personal" element={<Guard perm="staff.manage"><StaffPage /></Guard>} />
             <Route path="configuracion" element={<Guard perm="settings.manage"><Settings /></Guard>} />
+            {/* RU1 (ronda 14): el catálogo de material y la lista de turno, para quien no entra a Configuración (Enfermería) */}
+            <Route path="material-medico-quirurgico" element={<Guard perm="supplies.view"><SupplyCatalogPage /></Guard>} />
             <Route path="cuenta" element={<MyConfig />} />
             <Route path="mi-configuracion" element={<MyConfig />} />
             <Route path="plataforma" element={<Guard perm="platform.manage"><Platform /></Guard>} />

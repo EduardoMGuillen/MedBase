@@ -409,3 +409,26 @@ export const SIGN_SPACE_CM = 3.5
 export const OTHER_SIGN_SPACE_CM = 1.6
 /** IM1 (ronda 13). VALIDAR: Emil. Leyenda fija al pie de todos los documentos. */
 export const DOC_BRAND_LEGEND = 'Emitida con Clinara'
+
+/**
+ * RU1 (ronda 14). VALIDAR: Emil. Unidades en que se cuenta el material médico quirúrgico (singular → plural).
+ */
+export const SUPPLY_UNITS = { unidad: 'unidades', par: 'pares', sobre: 'sobres', rollo: 'rollos', frasco: 'frascos', hoja: 'hojas' } as const
+/**
+ * RU1 (ronda 14). VALIDAR: Emil. Materiales que se distinguen solo por calibre (G), nunca por longitud: agujas, jeringas,
+ * catéteres y mariposas. Si al agregar o editar uno se escribe una longitud, se quita.
+ */
+export const SUPPLY_GAUGE_ONLY = /aguja|jeringa|cat[eé]ter|mariposa|scalp/i
+/** RU1 (ronda 14). VALIDAR: Emil. Cómo agrupa la clínica el registro de material (A10). «Por turno» por defecto. */
+export const SUPPLY_PERIODS = { shift: 'Por turno', day: 'Por día', week: 'Por semana' } as const
+/**
+ * RU1 (ronda 14). VALIDAR: Emil. Turnos por defecto del «Periodo de registro del material»: los de enfermería que ya existen
+ * (DP6, `DEPT_SHIFTS.nursing`: Mañana 07–15, Tarde 15–23, Noche 23–07). Cada clínica los edita en su configuración.
+ */
+export const SUPPLY_DEFAULT_SHIFTS = DEPT_SHIFTS.nursing.map((s) => ({ key: s.key as string, label: s.label, from: s.from, to: s.to }))
+/** RU1 (ronda 14). Hasta cuántos turnos puede tener la clínica. */
+export const SUPPLY_MAX_SHIFTS = 6
+/** RU2 (ronda 14). VALIDAR: Emil. Áreas del registro de uso (A9). */
+export const USAGE_AREAS = { outpatient: 'Consulta externa', observation: 'Observación', hospital: 'Hospitalización' } as const
+/** RU2 (ronda 14). VALIDAR: Emil. Lo que no se gasta en un paciente concreto (alcohol, gorros), A13. */
+export const GENERAL_USE_LABEL = 'Uso general del servicio'

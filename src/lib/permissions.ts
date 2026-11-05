@@ -38,6 +38,14 @@ export const PERMISSIONS = {
   'ambulatory.register': 'Registrar pacientes que vienen solo a hacerse exámenes',
   // IM2 (ronda 12): notas de evolución y de procedimiento sin órdenes de medicamentos (radiólogo intervencionista)
   'inpatient.notes': 'Escribir notas de evolución y de procedimiento (sin indicaciones ni medicamentos)',
+  // RU1–RU3 (ronda 14): catálogo de material médico quirúrgico y registro de uso de medicamentos y material
+  'supplies.view': 'Ver el catálogo de material médico quirúrgico y el periodo de registro',
+  'supplies.manage': 'Agregar, editar y archivar material del catálogo y configurar el periodo de registro',
+  'supplies.shiftlist': 'Marcar y desmarcar la lista de turno del material',
+  'usage.view': 'Ver el registro de uso de medicamentos y material',
+  'usage.record': 'Registrar el material médico quirúrgico que se usó',
+  'usage.export': 'Imprimir y exportar a Excel el registro de uso',
+  'usage.void': 'Anular registros de material de cualquier persona',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -52,6 +60,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'followups.view',
     // DP3 (ronda 11): registra pacientes ambulatorios para exámenes
     'ambulatory.register',
+    // RU1–RU3 (ronda 14): el catálogo de material y su periodo; ve, imprime y exporta el registro de uso y anula registros
+    'supplies.view', 'supplies.manage', 'supplies.shiftlist', 'usage.view', 'usage.export', 'usage.void',
   ],
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',
@@ -60,11 +70,15 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ],
   // AD9: enfermería ya no cobra (los cobros los generan recepción, el médico o administración)
   nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'inpatient.view', 'inpatient.care', 'orders.review', 'followups.view',
-    'exams.process'],
-  reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view', 'ambulatory.register'],
-  // Asistente de consultorio (secretaria o enfermera): recepción, preclínica, caja y aplicar dosis en observación
+    'exams.process',
+    // RU1–RU3 (ronda 14): ve el catálogo y arma la lista de turno; registra material; ve, imprime y exporta el registro
+    'supplies.view', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export'],
+  // RU2 y RU3 (ronda 14): ve el registro de uso, lo imprime y lo exporta (no registra material)
+  reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view', 'ambulatory.register', 'usage.view', 'usage.export'],
+  // Asistente de consultorio (secretaria o enfermera): recepción, preclínica, caja y aplicar dosis en observación. RU (ronda 14):
+  // como enfermería en el registro de uso de material.
   assistant: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage',
-    'inpatient.view', 'inpatient.care', 'followups.view', 'exams.process'],
+    'inpatient.view', 'inpatient.care', 'followups.view', 'exams.process', 'supplies.view', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export'],
   // DP1 (ronda 11): Laboratorio e Imágenes. Buscan pacientes y registran ambulatorios (DP3); su bandeja y resultados (solo su
   // tipo, deptAllows); el expediente parcial (DP4). El cargo agrega: Microbiólogo y Radiólogo configuran su departamento; el
   // Radiólogo además ve todo el expediente en solo lectura (positionPermissions).
@@ -83,9 +97,11 @@ const POSITION_PERMISSIONS: Record<string, Permission[]> = {
  * médico, lo clínico (y registrar llegadas y aplicar dosis en observación, porque puede no tener personal); en la de
  * administrador, reportes, personal, configuración, servicios y formas de pago. Puede sumar asistentes y enfermería.
  */
+/** RU1–RU3 (ronda 14): en el consultorio la médica titular tiene los permisos de médico, enfermería y administración. */
+const USAGE_ALL: Permission[] = ['supplies.view', 'supplies.manage', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export', 'usage.void']
 const OFFICE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
-  doctor: [...new Set<Permission>([...ROLE_PERMISSIONS.doctor, 'checkin.manage', 'inpatient.care'])],
-  admin: ROLE_PERMISSIONS.admin,
+  doctor: [...new Set<Permission>([...ROLE_PERMISSIONS.doctor, 'checkin.manage', 'inpatient.care', ...USAGE_ALL])],
+  admin: [...new Set<Permission>([...ROLE_PERMISSIONS.admin, ...USAGE_ALL])],
   nurse: ROLE_PERMISSIONS.nurse,
   assistant: ROLE_PERMISSIONS.assistant,
 }

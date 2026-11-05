@@ -20,11 +20,12 @@ import { closeVisitsOfInpatients } from './stayVisits.js'
 import { cleanArchivedThresholds, loadImagingCatalog } from './ronda10.js'
 import { loadRonda11Catalog } from './ronda11.js'
 import { addDeptDemo } from './demoDept.js'
+import { loadSupplyCatalog } from './supplies.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '81'
+const SCHEMA_VERSION = '82'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1149,6 +1150,39 @@ ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS include_dx BOOLEAN;
 ALTER TABLE prescriptions ALTER COLUMN include_dx SET DEFAULT FALSE;
 ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS include_dx BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE print_log ADD COLUMN IF NOT EXISTS with_dx BOOLEAN;
+-- v82 (ronda 14). RU1: catálogo de material médico quirúrgico por clínica (carga del .md en server/supplies.ts: md_key es la
+-- clave de la línea del .md; edited_at, archived_at y list_set_at marcan lo que la clínica cambió y ninguna carga vuelve a
+-- tocar) y su periodo de registro («Por turno», «Por día», «Por semana») con los turnos editables. Nada se borra: se archiva.
+CREATE TABLE IF NOT EXISTS supply_items (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  category TEXT NOT NULL,
+  material TEXT NOT NULL,
+  variant TEXT NOT NULL DEFAULT '',
+  unit TEXT NOT NULL CHECK (unit IN ('unidad','par','sobre','rollo','frasco','hoja')),
+  on_shift_list BOOLEAN NOT NULL DEFAULT FALSE,
+  sort INTEGER NOT NULL DEFAULT 0,
+  origin TEXT NOT NULL DEFAULT 'clinic' CHECK (origin IN ('catalog','clinic')),
+  md_key TEXT,
+  md_no INTEGER,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  edited_at TEXT,
+  edited_by TEXT,
+  list_set_at TEXT,
+  list_set_by TEXT,
+  archived_at TEXT,
+  archived_by TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS supply_items_md ON supply_items (clinic_id, md_key) WHERE md_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS supply_items_clinic ON supply_items (clinic_id);
+CREATE TABLE IF NOT EXISTS supply_settings (
+  clinic_id TEXT PRIMARY KEY REFERENCES clinics(id),
+  period TEXT NOT NULL DEFAULT 'shift' CHECK (period IN ('shift','day','week')),
+  shifts TEXT NOT NULL,
+  updated_by TEXT,
+  updated_at TEXT
+);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -1224,6 +1258,8 @@ export function ensureDb(sql: Sql) {
       await clearCriticalFlags(q)
       // v57/v58 (ronda 8, CX2): nadie internado sigue a la vez en la consulta externa (idempotente)
       await closeVisitsOfInpatients(q)
+      // v82 (ronda 14, RU1): el catálogo base de material médico quirúrgico y su periodo de registro en cada clínica y consultorio
+      for (const c of await q.query('SELECT id FROM clinics')) await loadSupplyCatalog(q, String(c.id))
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -1624,6 +1660,8 @@ export async function ensureExamCatalog(q: Sql, clinicId: string) {
   await loadImagingCatalog(q, clinicId)
   // CA6 y CA7 (ronda 11)
   await loadRonda11Catalog(q, clinicId)
+  // RU1 (ronda 14): y el catálogo de material médico quirúrgico con su lista de turno
+  await loadSupplyCatalog(q, clinicId)
 }
 
 /**
@@ -1815,6 +1853,8 @@ export async function resetDemo(sql: Sql) {
     await migrateCriticalDefaults(q)
     // ME5 (ronda 9): el LNME en el vademécum de cada clínica de la demo
     for (const c of await q.query('SELECT id FROM clinics')) await loadLnme(q, String(c.id))
+    // RU1 (ronda 14): el catálogo de material médico quirúrgico
+    for (const c of await q.query('SELECT id FROM clinics')) await loadSupplyCatalog(q, String(c.id))
   })
 }
 
