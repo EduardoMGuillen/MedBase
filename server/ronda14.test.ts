@@ -6,6 +6,7 @@ import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { capFirst } from '../src/lib/autocap.js'
+import { defaultPlace } from '../src/lib/exams.js'
 
 // Ronda 14: con la base y la API (copia en memoria de la demo)
 let server: Server
@@ -42,5 +43,18 @@ describe('GE10 (ronda 14): mayúscula inicial', () => {
     assert.equal(capFirst('PH'), 'PH')
     assert.equal(capFirst('500 mg'), '500 mg', 'un número no cambia')
     assert.equal(capFirst(''), '')
+  })
+})
+
+describe('EX8 (ronda 14): «Externo» o «En la clínica» por defecto', () => {
+  test('consulta externa: Externo; estancia: En la clínica si hay laboratorio o imágenes; Consultorio: Externo', () => {
+    const clinic = { kind: 'clinic', hasLab: true, hasImaging: true }
+    assert.equal(defaultPlace('lab', false, clinic), 'external')
+    assert.equal(defaultPlace('imaging', false, clinic), 'external')
+    assert.equal(defaultPlace('lab', true, clinic), 'clinic')
+    assert.equal(defaultPlace('imaging', true, clinic), 'clinic')
+    assert.equal(defaultPlace('lab', true, { kind: 'clinic', hasLab: false, hasImaging: true }), 'external', 'sin laboratorio')
+    assert.equal(defaultPlace('imaging', true, { kind: 'clinic', hasLab: true, hasImaging: false }), 'external', 'sin imágenes')
+    assert.equal(defaultPlace('lab', true, { kind: 'office', hasLab: true, hasImaging: true }), 'external', 'consultorio')
   })
 })

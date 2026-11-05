@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { FoldHead, Modal } from './ui'
-import { byArea, contrastOptions, examCatalog, examKey, examLine, examMatches, findExam, GROUP_LABEL, hasDetails, missingDetail, type CatalogExam } from '../lib/exams'
+import { byArea, contrastOptions, defaultPlace, examCatalog, examKey, examLine, examMatches, findExam, GROUP_LABEL, hasDetails, missingDetail, orderGroups, type CatalogExam } from '../lib/exams'
 import { IMAGING_SIDES } from '../lib/clinicalConfig'
 import type { ImagingDetails } from '../lib/imagingCatalog'
 import { useOrderSets } from '../lib/useOrderSets'
@@ -26,61 +26,82 @@ export const setExam = (e: ExamInput): ExamInput => ({ group: e.group, name: e.n
  */
 export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInput[]; onChange: (v: ExamInput[]) => void; inStay?: boolean }) {
   const [picking, setPicking] = useState(false)
+  const { settings } = useStore()
   const { exams: clinicExams } = useExamCatalog()
   const catalog = useMemo(() => examCatalog(clinicExams), [clinicExams])
+  // EX9 (ronda 14): la indicación clínica se abre por fila, debajo de ella
+  const [openInd, setOpenInd] = useState<number | null>(null)
   const set = (i: number, patch: Partial<ExamInput>) => onChange(value.map((e, j) => (j === i ? { ...e, ...patch } : e)))
+  // EX8 (ronda 14): lo que se agrega (también desde un set o un perfil) viene en «Externo» o «En la clínica» según dónde está el
+  // paciente y si la clínica tiene laboratorio o imágenes. Es solo el valor inicial: lo ya agregado no cambia (A3).
+  const withPlace = (list: ExamInput[]) => list.map((e) => ({ ...e, place: defaultPlace(e.group, inStay, settings) }))
   const groups: ExamGroup[] = ['lab', 'imaging']
   return (
     <div className="exams-block" data-tour="examenes">
       {groups.map((g) => {
-        const list = value.map((e, i) => ({ e, i })).filter(({ e }) => e.group === g)
+        const list = value.map((e, i) => ({ ...e, i })).filter((e) => e.group === g)
         if (!list.length) return null
+        const ext = list.filter((e) => e.place === 'external').length
+        // EX9: agrupados como el catálogo (los mismos grupos de la orden impresa, IM3): Hematología, Coagulación, Química en sangre…
+        const parts = orderGroups(list, catalog)
         return (
           <div key={g} className="exams-group">
-            <h4>{g === 'lab' ? <FlaskConical size={15} /> : <ScanLine size={15} />}{GROUP_LABEL[g]} <span className="muted">({list.length})</span></h4>
-            <ol className="exam-items">{list.map(({ e, i }) => {
-              const cat = findExam(e.name, catalog)
-              // MC3 (ronda 6): lo que no está en el catálogo va con su tipo y la etiqueta «No catalogado»; se hace aquí o fuera
-              const outside = !catalog.some((c) => examKey(c.name) === examKey(e.name))
-              const needsRegion = !e.detailed && (cat?.region || (g === 'imaging' && !cat))
-              return (
-                <li key={i} className={`exam-item${e.priority === 'urgent' ? ' exam-item--urgent' : ''}`}>
-                  <div className="exam-item__head">
-                    <b>{examLine(e)}</b>{e.place === 'external' && <span className="badge badge--amber">Externo</span>}{outside && <span className="badge badge--neutral">No catalogado</span>}
-                    <button type="button" className="icon-btn" aria-label={`Quitar ${e.name}`} onClick={() => onChange(value.filter((_, j) => j !== i))}><X size={15} /></button>
-                  </div>
-                  <div className="exam-item__fields">
-                    {needsRegion && <input className="input" value={e.region ?? ''} onChange={(x) => set(i, { region: x.target.value || undefined })} placeholder="Región (ej. rodilla)" aria-label={`Región de ${e.name}`} />}
-                    {!e.detailed && (cat?.side || needsRegion) && (
-                      <select className="select" value={e.side ?? ''} onChange={(x) => set(i, { side: (x.target.value || undefined) as ExamInput['side'] })} aria-label={`Lado de ${e.name}`}>
-                        <option value="">Sin lado</option><option value="right">Derecha</option><option value="left">Izquierda</option><option value="both">Bilateral</option>
-                      </select>
-                    )}
-                    <input className="input exam-item__ind" value={e.indication ?? ''} onChange={(x) => set(i, { indication: x.target.value || undefined })}
-                      placeholder={g === 'imaging' ? 'Indicación clínica (ej. dolor en hipocondrio derecho, descartar colelitiasis)' : 'Indicación clínica (opcional)'} aria-label={`Indicación de ${e.name}`} />
-                    <div className="segmented segmented--sm" role="radiogroup" aria-label={`Prioridad de ${e.name}`}>
-                      <button type="button" role="radio" aria-checked={e.priority === 'routine'} onClick={() => set(i, { priority: 'routine' })}>Rutina</button>
-                      <button type="button" role="radio" aria-checked={e.priority === 'urgent'} onClick={() => set(i, { priority: 'urgent' })}>Urgente</button>
-                    </div>
-                    {(
-                      <div className="segmented segmented--sm" role="radiogroup" aria-label={`Dónde se realiza ${e.name}`}>
+            <h4>{g === 'lab' ? <FlaskConical size={15} /> : <ScanLine size={15} />}{GROUP_LABEL[g]} <span className="muted">({list.length})</span>
+              <span className="exams-group__count">· {ext} externo{ext === 1 ? '' : 's'} · {list.length - ext} en la clínica</span></h4>
+            {parts.map((part) => (
+              <div key={part.title} className="xrows">
+                {parts.length > 1 || part.title !== GROUP_LABEL[g] ? <h5 className="xrows__title">{part.title}</h5> : null}
+                <ol className="xrows__list">{part.items.map((e) => {
+                  const i = e.i
+                  const cat = findExam(e.name, catalog)
+                  // MC3 (ronda 6): lo que no está en el catálogo va con su tipo y la etiqueta «No catalogado»; se hace aquí o fuera
+                  const outside = !catalog.some((c) => examKey(c.name) === examKey(e.name))
+                  const needsRegion = !e.detailed && (cat?.region || (g === 'imaging' && !cat))
+                  const showInd = openInd === i
+                  return (
+                    <li key={e.key ?? i} className={`xrow${e.priority === 'urgent' ? ' xrow--urgent' : ''}`}>
+                      <div className="xrow__name">
+                        <b>{examLine(e)}</b>{outside && <span className="badge badge--neutral">No catalogado</span>}
+                        {e.indication && !showInd && <button type="button" className="xrow__ind" onClick={() => setOpenInd(i)} title="Toca para editar">{e.indication}</button>}
+                      </div>
+                      <button type="button" className={`btn btn--sm xrow__indbtn ${g === 'imaging' && !e.indication?.trim() ? 'btn--soft' : 'btn--ghost'}`} aria-expanded={showInd}
+                        title={g === 'imaging' && !e.indication?.trim() ? 'Sugerido: escribe la indicación clínica para quien realiza el estudio.' : undefined}
+                        onClick={() => setOpenInd(showInd ? null : i)}>Indicación</button>
+                      <div className="segmented segmented--sm xrow__prio" role="radiogroup" aria-label={`Prioridad de ${e.name}`}>
+                        <button type="button" role="radio" aria-checked={e.priority === 'routine'} onClick={() => set(i, { priority: 'routine' })}>Rutina</button>
+                        <button type="button" role="radio" aria-checked={e.priority === 'urgent'} onClick={() => set(i, { priority: 'urgent' })}>Urgente</button>
+                      </div>
+                      <div className="segmented segmented--sm xrow__place" role="radiogroup" aria-label={`Dónde se realiza ${e.name}`}>
                         <button type="button" role="radio" aria-checked={e.place === 'clinic'} onClick={() => set(i, { place: 'clinic' })}>En la clínica</button>
                         <button type="button" role="radio" aria-checked={e.place === 'external'} onClick={() => set(i, { place: 'external' })}>Externo</button>
                       </div>
-                    )}
-                  </div>
-                  {/* CA5 (ronda 10): proyección, contraste, lado y región, los mismos botones de «Ordenar exámenes» */}
-                  {e.detailed && hasDetails(cat?.details) && <ExamDetailChips exam={e} details={cat!.details!} onChange={(patch) => set(i, patch)} />}
-                  {g === 'imaging' && !e.indication?.trim() && <small className="muted">Sugerido: escribe la indicación clínica para quien realiza el estudio.</small>}
-                </li>
-              )
-            })}</ol>
+                      <button type="button" className="icon-btn xrow__x" aria-label={`Quitar ${e.name}`} onClick={() => { onChange(value.filter((_, j) => j !== i)); setOpenInd(null) }}><X size={15} /></button>
+                      {(needsRegion || (!e.detailed && cat?.side) || (e.detailed && hasDetails(cat?.details)) || showInd) && (
+                        <div className="xrow__more">
+                          {needsRegion && <input className="input" value={e.region ?? ''} onChange={(x) => set(i, { region: x.target.value || undefined })} placeholder="Región (ej. rodilla)" aria-label={`Región de ${e.name}`} />}
+                          {!e.detailed && (needsRegion || cat?.side) && (
+                            <select className="select" value={e.side ?? ''} onChange={(x) => set(i, { side: (x.target.value || undefined) as ExamInput['side'] })} aria-label={`Lado de ${e.name}`}>
+                              <option value="">Sin lado</option><option value="right">Derecha</option><option value="left">Izquierda</option><option value="both">Bilateral</option>
+                            </select>
+                          )}
+                          {/* CA5 (ronda 10): proyección, contraste, lado y región, los mismos botones de «Ordenar exámenes» */}
+                          {e.detailed && hasDetails(cat?.details) && <ExamDetailChips exam={e} details={cat!.details!} onChange={(patch) => set(i, patch)} />}
+                          {showInd && <input className="input xrow__indinput" autoFocus value={e.indication ?? ''} onChange={(x) => set(i, { indication: x.target.value || undefined })}
+                            onKeyDown={(x) => { if (x.key === 'Enter' || x.key === 'Escape') { x.preventDefault(); setOpenInd(null) } }}
+                            placeholder={g === 'imaging' ? 'Indicación clínica (ej. dolor en hipocondrio derecho, descartar colelitiasis)' : 'Indicación clínica (opcional)'} aria-label={`Indicación de ${e.name}`} />}
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}</ol>
+              </div>
+            ))}
           </div>
         )
       })}
       {!value.length && <p className="muted" style={{ fontSize: 14 }}>Sin exámenes. {inStay ? 'Enfermería recibe los pendientes en su bandeja (los externos no).' : 'Se imprimen aparte de la receta: una orden de laboratorio y otra de imagen y gabinete.'}</p>}
       <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setPicking(true)}><Plus size={16} />Ordenar exámenes</button>
-      {picking && <ExamPicker current={value} onClose={() => setPicking(false)} onAdd={(list) => { onChange([...value, ...list]); setPicking(false) }} />}
+      {picking && <ExamPicker current={value} onClose={() => setPicking(false)} onAdd={(list) => { onChange([...value, ...withPlace(list)]); setPicking(false) }} />}
     </div>
   )
 }

@@ -355,6 +355,37 @@ tr.clickable { cursor: pointer; }
 .exam-item__fields { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .exam-item__fields .input, .exam-item__fields .select { height: 34px; font-size: 13.5px; width: auto; }
 .exam-item__ind { flex: 1 1 220px; }
+/* EX9 (ronda 14): una fila por examen (~44 px): nombre, «Indicación», Rutina | Urgente, En la clínica | Externo y ✕. La
+   indicación escrita se ve en gris debajo del nombre; el campo se abre debajo de la fila. Agrupados como el catálogo. */
+.exams-block { container-type: inline-size; }
+.exams-group__count { font-weight: 500; color: var(--muted); font-size: 13px; }
+.xrows + .xrows { margin-top: 6px; }
+.xrows__title { margin: 6px 0 2px; font-size: 12px; font-weight: 650; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); }
+.xrows__list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); overflow: hidden; }
+.xrow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; grid-template-areas: 'name ind prio place x' 'more more more more more'; align-items: center; column-gap: 8px; min-height: 44px; padding: 3px 6px 3px 10px; }
+.xrow + .xrow { border-top: 1px solid var(--line-soft); }
+.xrow--urgent { box-shadow: inset 3px 0 0 var(--red-ink); }
+.xrow__name { grid-area: name; display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.xrow__ind { flex-basis: 100%; border: 0; background: none; padding: 0; text-align: left; font: inherit; font-size: 12.5px; color: var(--muted); cursor: pointer; overflow-wrap: anywhere; }
+.xrow__ind:hover { color: var(--ink); text-decoration: underline; }
+.xrow__indbtn { grid-area: ind; }
+.xrow__prio { grid-area: prio; flex-wrap: nowrap; }
+.xrow__place { grid-area: place; flex-wrap: nowrap; }
+.xrow__x { grid-area: x; }
+.xrow__more { grid-area: more; display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 6px; }
+.xrow__more:empty { display: none; }
+.xrow__more .input, .xrow__more .select { height: 36px; font-size: 13.5px; }
+.xrow__indinput { flex: 1 1 100%; }
+.xrow__more > .input:not(.xrow__indinput) { flex: 1 1 200px; width: auto; }
+.xrow__more > .select { width: auto; flex: 0 1 auto; }
+/* Angosto (celular o columna estrecha): nombre y ✕ arriba; Indicación y los dos controles abajo, de al menos 44 px */
+@container (max-width: 620px) {
+  .xrow { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: 'name name ind x' 'prio place place place' 'more more more more'; row-gap: 2px; padding: 4px 4px 6px 10px; }
+  .xrow__indbtn, .xrow__x { min-height: 44px; }
+  .xrow__x { width: 44px; }
+  .xrow .segmented--sm button { min-height: 38px; white-space: nowrap; padding: 4px 7px; }
+  .xrow__place { justify-self: start; }
+}
 .segmented--sm button { font-size: 12.5px; padding: 4px 8px; }
 .exam-picker__bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .exam-picker__bar .input { flex: 1 1 240px; }

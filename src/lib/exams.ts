@@ -236,6 +236,17 @@ export function areaFor(group: ExamGroup, place: 'clinic' | 'external', _inStay:
   return s.hasImaging ? 'imaging' : 'nursing'
 }
 
+/**
+ * EX8 (ronda 14): valor inicial de «En la clínica | Externo» al agregar un examen. En consulta externa el paciente se va a su
+ * casa: «Externo». En observación y hospitalización (y en la nota de consulta que lleva el ingreso marcado) lo hace la
+ * clínica, si tiene ese departamento («Áreas de servicio» de Configuración: laboratorio propio, imágenes propias). Sin ese
+ * departamento, y en Consultorio, «Externo» en todos lados (A1). El médico lo cambia por examen.
+ */
+export function defaultPlace(group: ExamGroup, inStay: boolean, s: { kind?: string; hasLab?: boolean; hasImaging?: boolean }): 'clinic' | 'external' {
+  if (!inStay || s.kind === 'office') return 'external'
+  return (group === 'lab' ? s.hasLab : s.hasImaging) ? 'clinic' : 'external'
+}
+
 /** Alto, bajo o normal según el rango de referencia. */
 export function flagOf(value: number, low?: number, high?: number, highOpen?: boolean): 'high' | 'low' | undefined {
   if (low != null && value < low) return 'low'

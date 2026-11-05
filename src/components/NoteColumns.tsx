@@ -66,7 +66,7 @@ export function NoteExams({ list, empty = 'Sin exámenes.' }: { list: ExamOrder[
     <ul className="note-exam-list">{list.map((e) => (
       <li key={e.id} className={e.status === 'cancelled' ? 'is-cancelled' : ''}>
         <span>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red">Urgente</span>}</span>
-        <small>{GROUP_LABEL[e.group]}{e.place === 'external' ? ' · Externo' : ''}{e.uncatalogued ? ' · No catalogado' : ''} · <b>{noteExamStatus(e)}</b></small>
+        <small>{GROUP_LABEL[e.group]}{e.place === 'external' ? ' · Externo' : ' · En la clínica'}{e.uncatalogued ? ' · No catalogado' : ''} · <b>{noteExamStatus(e)}</b></small>
       </li>
     ))}</ul>
     {batches.map((b) => (

@@ -29,7 +29,7 @@ import { AdmitBedStep, ConsentChoice } from './ConsentFlow'
 import { ExamList } from './ExamsTab'
 import { DischargeView, DischargeWriter } from './DischargeNote'
 import { ExamsBlock } from '../components/Exams'
-import { examCatalog, examKey, typedExam } from '../lib/exams'
+import { defaultPlace, examCatalog, examKey, typedExam } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { Addenda, DraftBadge, SignedBadge } from '../components/Addenda'
 import { useDraftSync } from '../lib/drafts'
@@ -1263,7 +1263,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   variant?: 'postop'; onAuthorize?: (procedure: string) => void; seed?: Partial<PostopDraft>
   /** GE4 (ronda 9): «Corregir»: la misma ventana, ya llenada, con «Guardar corrección». `onExpired` pasa lo escrito a una adenda. */
   correct?: InpatientNote; onExpired?: (text: string) => void }) {
-  const { addInpatientNote, staffById } = useStore()
+  const { addInpatientNote, staffById, settings } = useStore()
   // Una nota, un identificador: si se guarda dos veces no se duplica (ni sus medicamentos en la hoja)
   const [clientId] = useState(() => crypto.randomUUID())
   const [n, setN] = useState(() => correct ? { subjective: correct.subjective, objective: correct.objective, assessment: correct.assessment, plan: correct.plan }
@@ -1355,7 +1355,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
     const added: NewMed[] = set.items.flatMap((it) => (it.med ? [{ ...it.med, instructions: it.med.instructions ?? '', firstAt: it.med.prn ? undefined : new Date().toISOString() }] : []))
     // EX1: los exámenes del set van a la sección Exámenes, no como texto en la columna de órdenes
     const fromSet = set.items.flatMap((it) => (it.exam ? [it.exam] : []))
-    setExams((x) => [...x, ...fromSet.filter((e) => !x.some((y) => y.name === e.name))])
+    // EX8 (ronda 14): con el lugar por defecto de una estancia (lo guardado en el set no manda)
+    setExams((x) => [...x, ...fromSet.filter((e) => !x.some((y) => y.name === e.name)).map((e) => ({ ...e, place: defaultPlace(e.group, true, settings) }))])
     const repeated = [
       ...texts.filter((t) => extra.some((x) => orderKey(x) === orderKey(t))),
       ...added.filter((m) => [...meds, ...active].some((x) => orderKey(medLabel(x)) === orderKey(medLabel(m)))).map((m) => medLabel(m)),
@@ -1379,7 +1380,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   const examList = useMemo(() => examCatalog(clinicExams), [clinicExams])
   const typedExamHit = typedExam(extraText, examList)
   const toExam = (hit: { group: ExamInput['group']; name: string }) =>
-    setExams((x) => (x.some((y) => examKey(y.name) === examKey(hit.name)) ? x : [...x, { group: hit.group, name: hit.name, priority: 'routine', place: 'clinic' }]))
+    setExams((x) => (x.some((y) => examKey(y.name) === examKey(hit.name)) ? x : [...x, { group: hit.group, name: hit.name, priority: 'routine', place: defaultPlace(hit.group, true, settings) }]))
   const dxField = (<>
     <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label="Diagnósticos (CIE-11)" />
     {carried.length > 0 && !correct && <small className="muted" style={{ marginTop: -6 }}>{dxChanged ? 'Cambiaste los diagnósticos de la nota anterior.' : 'Vienen de la nota anterior. Agrega, quita o cambia lo que haga falta.'}</small>}
