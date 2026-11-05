@@ -154,7 +154,8 @@ describe('ME14 (ronda 14): receta al firmar con ingreso y desde la nota', () => 
     const { id } = await consultFor(1)
     const doc = await as('lherrera@demo.clinara')
     const r = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor', diagnoses: dx, observe: true,
-      items: [oral('Acetaminofén'), oral('Ibuprofeno'), { drug: 'Ceftriaxona', presentation: 'Vial 1 g', dose: '1 g', route: 'Intravenosa', frequency: 'Cada 12 horas', duration: '', applyInClinic: true }],
+      // Con ingreso, lo que va a la receta se desmarca a propósito (sin la casilla, se aplica en la clínica, como antes)
+      items: [{ ...oral('Acetaminofén'), applyInClinic: false }, { ...oral('Ibuprofeno'), applyInClinic: false }, { drug: 'Ceftriaxona', presentation: 'Vial 1 g', dose: '1 g', route: 'Intravenosa', frequency: 'Cada 12 horas', duration: '', applyInClinic: true }],
       exams: [{ group: 'lab', name: 'Hemograma', priority: 'routine', place: 'external' }] })
     assert.equal(r.status, 201, JSON.stringify(r.body))
     assert.equal(r.body.stayKind, 'observation')
