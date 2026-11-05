@@ -41,7 +41,7 @@ export function DrugForm({ drug, initialName = '', onClose }: { drug?: ClinicDru
         <label className="field"><span>Presentación</span><input className="input" value={f.presentation} onChange={set('presentation')} placeholder="Ej. Tabletas" /></label>
         <label className="field"><span>Concentración</span><input className="input" value={f.concentration} onChange={set('concentration')} placeholder="Ej. 400 mg" /></label>
         <label className="field"><span>Vía</span><select className="select" value={f.route} onChange={set('route')}>{f.route === '' && <option value="">—</option>}{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
-        <label className="field"><span>Dosis habitual (opcional)</span><input className="input" value={f.usualDose} onChange={set('usualDose')} placeholder="Ej. 1 tableta cada 12 horas" /></label>
+        <label className="field"><span>Dosis habitual (opcional)</span><input className="input" data-nocap value={f.usualDose} onChange={set('usualDose')} placeholder="Ej. 1 tableta cada 12 horas" /></label>
         <label className="field span-2"><span>Indicaciones de uso habitual (opcional)</span><input className="input" value={f.usualUse} onChange={set('usualUse')} placeholder="Ej. Colestasis intrahepática" /></label>
       </div>
     </Modal>

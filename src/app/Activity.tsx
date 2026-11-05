@@ -65,7 +65,7 @@ export function AuditLog({ mine = false }: { mine?: boolean }) {
           <option value="">Todas</option>{(Object.keys(AUDIT_KINDS) as AuditKind[]).map((k) => <option key={k} value={k}>{AUDIT_KINDS[k]}</option>)}</select></label>
         <div className="field"><span>Desde</span><DateField value={f.from} max={f.to || undefined} onChange={(v) => set('from')(v)} label="Desde" /></div>
         <div className="field"><span>Hasta</span><DateField value={f.to} min={f.from || undefined} onChange={(v) => set('to')(v)} label="Hasta" /></div>
-        <label className="field audit-filters__q"><span>Buscar en la acción</span><input className="input" value={f.q} onChange={(e) => set('q')(e.target.value)} placeholder="Ej. receta, cobro, constancia" /></label>
+        <label className="field audit-filters__q"><span>Buscar en la acción</span><input className="input" data-nocap value={f.q} onChange={(e) => set('q')(e.target.value)} placeholder="Ej. receta, cobro, constancia" /></label>
         <div className="audit-filters__patient"><PatientPicker value={f.patientId} onChange={set('patientId')} autoFocus={false} /></div>
       </div>
       {!rows ? <Loading /> : (<>

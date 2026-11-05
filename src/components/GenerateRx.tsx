@@ -61,7 +61,7 @@ export function GenerateRxModal({ meds, onClose, only }: { meds: InpatientMed[];
               {doctor && on && (
                 <div className="rxgen__fields">
                   <label className="field"><span>Días</span><input className="input num" inputMode="numeric" value={extras[m.id]?.days ?? ''} onChange={(e) => set(m.id, { days: e.target.value.replace(/[^0-9]/g, '') })} placeholder="Ej. 3" aria-label={`Días de ${m.drug} en la receta`} /></label>
-                  <label className="field"><span>Cantidad a comprar</span><input className="input" value={extras[m.id]?.quantity ?? ''} onChange={(e) => set(m.id, { quantity: e.target.value })} placeholder="Ej. 9 tabletas" aria-label={`Cantidad a comprar de ${m.drug}`} /></label>
+                  <label className="field"><span>Cantidad a comprar</span><input className="input" value={extras[m.id]?.quantity ?? ''} onChange={(e) => set(m.id, { quantity: e.target.value })} placeholder="Ej. 9 tabletas" data-nocap aria-label={`Cantidad a comprar de ${m.drug}`} /></label>
                 </div>
               )}
             </div>

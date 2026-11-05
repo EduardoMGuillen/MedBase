@@ -131,7 +131,7 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
       {!neb && <NotInVademecum drugs={drugs} name={m.drug} presentation={m.presentation} route={m.route} onLinked={pick} />}
       <div className="form-grid">
         {!neb && <label className="field"><span>Presentación y concentración</span><input className="input" value={m.presentation} onChange={(e) => setM({ ...m, presentation: e.target.value })} placeholder="Ej. Tableta 500 mg" /><DrugPickedHint drugs={drugs} name={m.drug} presentation={m.presentation} /></label>}
-        {!neb && <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g, 1 tableta, 5 ml" /></label>}
+        {!neb && <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" data-nocap value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g, 1 tableta, 5 ml" /></label>}
         <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => { const r = e.target.value; setM({ ...m, route: r, nebulization: isNebulization(r) ? m.nebulization ?? structuredClone(EMPTY_NEB) : m.nebulization }) }}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
         {neb && <NebulizerFields value={nebValue} onChange={(n) => setM({ ...m, nebulization: n })} allergies={patient.allergies} firstName={patient.firstName} />}
         <label className="field"><span>Frecuencia</span><select className="select" value={m.frequency} onChange={(e) => setM({ ...m, frequency: e.target.value })}>{freqs.map((f) => <option key={f}>{f}</option>)}</select></label>
@@ -141,10 +141,10 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
           <input className={`input ${!m.prnCondition?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.prnCondition ?? ''} onChange={(e) => setM({ ...m, prnCondition: e.target.value })} placeholder="Ej. si dolor, si fiebre" aria-required="true" />
           {!m.prnCondition?.trim() && <small className="field__msg field__msg--warn">Obligatoria en un PRN: cuándo se da.</small>}</label>}
         <label className="field"><span>{needsDays ? 'Total de días' : 'Total de días (opcional)'}</span>
-          <input className={`input ${needsDays && !m.duration.trim() && m.drug.trim() && m.dose.trim() ? 'input--warn' : ''}`} value={m.duration} onChange={(e) => setM({ ...m, duration: e.target.value })}
+          <input className={`input ${needsDays && !m.duration.trim() && m.drug.trim() && m.dose.trim() ? 'input--warn' : ''}`} data-nocap value={m.duration} onChange={(e) => setM({ ...m, duration: e.target.value })}
             placeholder={/única/i.test(m.frequency) ? 'No aplica' : needsDays ? 'Ej. 3 días' : 'Hasta nueva orden'} />
           {needsDays && !m.duration.trim() && m.drug.trim() && m.dose.trim() && <small className="field__msg field__msg--warn">La receta lleva los días: el paciente se va a su casa.</small>}</label>
-        <label className="field"><span>{buy ? 'Cantidad a comprar (opcional)' : 'Cantidad total (opcional)'}</span><input className="input" value={m.quantity ?? ''} onChange={(e) => setM({ ...m, quantity: e.target.value })} placeholder={computed ? `Se calcula: ${computed}` : 'Ej. 20 tabletas'} /></label>
+        <label className="field"><span>{buy ? 'Cantidad a comprar (opcional)' : 'Cantidad total (opcional)'}</span><input className="input" data-nocap value={m.quantity ?? ''} onChange={(e) => setM({ ...m, quantity: e.target.value })} placeholder={computed ? `Se calcula: ${computed}` : 'Ej. 20 tabletas'} /></label>
         <label className="field span-2"><span>Indicaciones especiales (opcional)</span><input className="input" value={m.instructions ?? ''} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder="Ej. Con los alimentos" /></label>
       </div>
       {clinicOption && (

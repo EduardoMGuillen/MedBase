@@ -265,7 +265,7 @@ function ChargeModal({ appt, onClose, onPaid }: { appt?: Appointment; onClose: (
       ) : (
         <div className="field suggest">
           <span>Paciente</span>
-          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre o número de expediente" autoFocus />
+          <input className="input" data-nocap value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre o número de expediente" autoFocus />
           {matches.length > 0 && <div className="suggest__list">{matches.map((p) => (
             <button key={p.id} onClick={() => { setPatientId(p.id); setQ(''); const v = appointments.find((a) => a.patientId === p.id && a.start.startsWith(todayKey) && !['cancelled', 'no_show'].includes(a.status)); setVisitId(v?.id ?? '') }}>
               <code>{p.record.slice(4)}</code>{fullName(p)}</button>

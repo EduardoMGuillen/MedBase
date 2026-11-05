@@ -164,7 +164,7 @@ function SetMedForm({ initial, onSave, onCancel }: { initial: SetMed; onSave: (m
         onChange={(t) => setM({ ...m, drug: t })} onPick={(d) => setM({ ...m, drug: d.name, presentation: d.presentation })}
         below={m.drug.trim() && !known ? <small className="field__msg field__msg--warn">No está en el vademécum de la clínica. Se puede guardar igual.</small> : null} />
       <div className="form-grid">
-        <label className="field"><span>Dosis</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g o ___ mg" /></label>
+        <label className="field"><span>Dosis</span><input className="input" data-nocap value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g o ___ mg" /></label>
         <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => setM({ ...m, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
         <label className="field"><span>Frecuencia</span>
           <select className="select" value={freq} onChange={(e) => setFreq(e.target.value)}>

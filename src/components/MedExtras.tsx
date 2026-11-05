@@ -42,7 +42,7 @@ export function BuyOutsideFields({ checked, onChecked, quantity, onQuantity }: {
       {checked && <small className="muted">Sigue en la hoja de medicamentos; se imprime una receta para que la familia lo compre.</small>}
     </div>
     {checked && quantity !== undefined && onQuantity && <label className="field"><span>Cantidad a comprar</span>
-      <input className="input" value={quantity} onChange={(e) => onQuantity(e.target.value)} placeholder="Ej. 10 viales" /></label>}
+      <input className="input" data-nocap value={quantity} onChange={(e) => onQuantity(e.target.value)} placeholder="Ej. 10 viales" /></label>}
   </>)
 }
 

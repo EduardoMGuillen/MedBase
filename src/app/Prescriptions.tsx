@@ -87,7 +87,7 @@ export default function Prescriptions() {
           )}
         </div>
         <div className="panel__body rx-filters">
-          <label className="field"><span>Paciente</span><input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre o expediente" /></label>
+          <label className="field"><span>Paciente</span><input className="input" data-nocap value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre o expediente" /></label>
           <div className="field"><span>Desde</span><DateField value={from} onChange={setFrom} label="Desde" /></div>
           <div className="field"><span>Hasta</span><DateField value={to} onChange={setTo} label="Hasta" /></div>
         </div>
