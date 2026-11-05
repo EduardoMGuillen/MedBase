@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
-import type { ActiveStay, ExamOrder, VitalsMode,
+import type { ConsultApplication, ActiveStay, ExamOrder, VitalsMode,
   Addendum, Appointment, ExamInput, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Referral, ReferralData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
 } from './types'
@@ -30,7 +30,7 @@ interface Data {
 
 interface Session { user: Staff; permissions: Permission[]; demo: boolean }
 
-export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescriptions: Prescription[]; hospitalizations: Hospitalization[]; addenda?: Addendum[] }
+export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescriptions: Prescription[]; hospitalizations: Hospitalization[]; addenda?: Addendum[]; applications?: ConsultApplication[] }
 
 /** Medicamento que el médico indica en una nota de hospitalización. */
 /** Ronda 8: de dónde sale una referencia. */
@@ -149,7 +149,7 @@ function useStoreValue() {
     api<{ prescription: Prescription; consultation: Consultation | null; hospitalization: Hospitalization | null; patient: Patient | null }>(`/prescriptions/${id}`), [])
   const fetchInpatient = useCallback((id: string) => api<InpatientFile>(`/inpatient/${id}`), [])
   const fetchConsultation = useCallback((id: string, purpose: 'note' | 'certificate' = 'note') =>
-    api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null; addenda?: Addendum[]; exams?: ExamOrder[]; referrals?: Referral[] }>(`/consultations/${id}?purpose=${purpose}`), [])
+    api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null; addenda?: Addendum[]; exams?: ExamOrder[]; referrals?: Referral[]; applications?: ConsultApplication[] }>(`/consultations/${id}?purpose=${purpose}`), [])
   const fetchAppointments = useCallback((from: string, to: string) => api<Appointment[]>(`/appointments?from=${from}&to=${to}`), [])
   const fetchPayments = useCallback((from: string, to: string) => api<Payment[]>(`/payments?from=${from}&to=${to}`), [])
   const fetchBalances = useCallback((patientId?: string) => api<Payment[]>(`/payments/balances${patientId ? `?patientId=${patientId}` : ''}`), [])
@@ -271,11 +271,13 @@ function useStoreValue() {
       run(() => api<Vitals>('/vitals', { body: v }), 'Preclínica guardada'),
     finishConsult: async (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[]; observe?: boolean; admit?: boolean; validityDays?: number; exams?: ExamInput[]; vitalsPlan?: VitalsMode }, items: PrescriptionItem[]) => {
       const r = await run(() => api<{ consultationId: string; prescriptionId: string | null; folio: string | null; observationId: string | null; examBatch: string | null
-        hospitalizationId: string | null; stayKind: Hospitalization['kind'] | null; medOrders: number }>('/consultations', { body: { ...c, items } }))
+        hospitalizationId: string | null; stayKind: Hospitalization['kind'] | null; medOrders: number; clinicBatch?: string | null; applications?: number }>('/consultations', { body: { ...c, items } }))
       // Se dice en voz alta qué pasó con los medicamentos: a la receta, a la hoja de medicamentos o a las dos
       if (r) notify([r.folio ? `Consulta y receta ${r.folio} firmadas` : 'Consulta firmada',
         r.hospitalizationId && (r.stayKind === 'hospital' ? 'ingresado a hospitalización con esta nota como nota de ingreso' : 'ingresado a observación'),
-        r.medOrders ? `${r.medOrders} medicamento${r.medOrders > 1 ? 's' : ''} en la hoja de medicamentos` : ''].filter(Boolean).join('; ') + '.')
+        r.medOrders ? `${r.medOrders} medicamento${r.medOrders > 1 ? 's' : ''} en la hoja de medicamentos` : '',
+        // ME13 (ronda 14): sin ingreso, lo que se aplica en la clínica queda para enfermería
+        r.applications ? `${r.applications} medicamento${r.applications > 1 ? 's' : ''} por aplicar en la clínica (enfermería lo ve en Consulta externa)` : ''].filter(Boolean).join('; ') + '.')
       return r
     },
 

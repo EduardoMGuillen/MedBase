@@ -4,7 +4,7 @@ import { BuyOutsideFields, EMPTY_NEB, LoadingDoseFields, LoadingDropped, Nebuliz
 import { frequencyHours } from '../lib/inpatient'
 import { useStore } from '../lib/store'
 import { Pencil, Pill, Plus, TriangleAlert, X } from 'lucide-react'
-import { allergyConflict, EMPTY_MED, FREQUENCIES, isPrnFrequency, type Drug } from '../lib/catalogs'
+import { allergyConflict, EMPTY_MED, FREQUENCIES, isPrnFrequency, STAT_FREQUENCY, type Drug } from '../lib/catalogs'
 import { autoQuantity, defaultRoute, medicationLine, missingDays, ROUTES } from '../lib/format'
 import { normalize } from '../lib/patients'
 import { useVademecum } from '../lib/vademecum'
@@ -16,10 +16,12 @@ import { medHasBlank } from '../lib/orderSets'
 import type { Patient, PrescriptionItem } from '../lib/types'
 
 /** Medicamentos indicados: cada uno como fila legible, editable y eliminable antes de firmar. */
-export function MedicationList({ items, patient, onEdit, onRemove, editing, requireDuration = false }: {
+export function MedicationList({ items, patient, onEdit, onRemove, editing, requireDuration = false, warn }: {
   items: PrescriptionItem[]; patient: Pick<Patient, 'allergies'>; onEdit?: (i: number) => void; onRemove?: (i: number) => void; editing?: number | null
   /** Ambulatorio: marca los que no tienen días (la receta los necesita). */
   requireDuration?: boolean
+  /** ME13 (ronda 14): un aviso propio de la fila (p. ej. «Sin ingreso solo se permite dosis STAT…»). */
+  warn?: (it: PrescriptionItem) => string | undefined
 }) {
   const vademecum = useVademecum()
   if (!items.length) return null
@@ -31,14 +33,15 @@ export function MedicationList({ items, patient, onEdit, onRemove, editing, requ
         // De un set: huecos "___" por llenar y medicamentos que ya no están en el vademécum de la clínica
         const blank = medHasBlank(it)
         const outside = !vademecum.some((d) => normalize(d.name) === normalize(it.drug) || d.aliases?.some((a) => normalize(a) === normalize(it.drug)))
+        const own = warn?.(it)
         return (
-          <li key={i} className={`${allergy || noDays || blank ? 'is-warn' : ''} ${editing === i ? 'is-editing' : ''}`}>
+          <li key={i} className={`${allergy || noDays || blank || own ? 'is-warn' : ''} ${editing === i ? 'is-editing' : ''}`}>
             <span className="orders__n">{i + 1}.</span>
             <div>
               <span className="meds-list__line"><Pill size={13} className="orders__pill" aria-hidden="true" />{medicationLine(it)}</span>
-              {(it.instructions || it.quantity || allergy || it.applyInClinic || noDays || blank || outside) && (
+              {(it.instructions || it.quantity || allergy || it.applyInClinic || noDays || blank || outside || own) && (
                 <small>{[it.applyInClinic && (it.buyOutside ? 'Se aplica en la clínica · Receta (no hay en la clínica)' : 'Se aplica en la clínica'), it.instructions, it.quantity && `Cantidad: ${it.quantity}`, allergy && `Alergia a ${allergy}`,
-                  noDays && 'Falta el total de días para la receta', blank && 'Completa los espacios ___', outside && 'No está en el vademécum de la clínica'].filter(Boolean).join(' · ')}</small>
+                  noDays && 'Falta el total de días para la receta', blank && 'Completa los espacios ___', outside && 'No está en el vademécum de la clínica', own].filter(Boolean).join(' · ')}</small>
               )}
             </div>
             <span className="orders__tools">
@@ -62,15 +65,24 @@ export function MedicationList({ items, patient, onEdit, onRemove, editing, requ
  * hospitalización u observación (`requireDuration` falso), sin días el medicamento queda "hasta nueva orden".
  * `clinicOption` muestra "Aplicar en la clínica" para la consulta ambulatoria.
  */
-export function MedicationForm({ patient, current, initial, onSave, onCancel, submitLabel, requireDuration = true, clinicOption = false }: {
+export function MedicationForm({ patient, current, initial, onSave, onCancel, submitLabel, requireDuration = true, clinicOption = false, clinicMode = 'ambulatory' }: {
   patient: Pick<Patient, 'firstName' | 'allergies'>; current: PrescriptionItem[]; initial?: PrescriptionItem
   onSave: (item: PrescriptionItem) => void; onCancel: () => void; submitLabel?: string; requireDuration?: boolean; clinicOption?: boolean
+  /**
+   * ME13 y ME14 (ronda 14): «ambulatory» (sin ingreso): «Aplicar en la clínica» es una sola dosis (STAT) que aplica enfermería y
+   * el paciente se va. «stay» (con ingreso marcado): la casilla viene marcada y manda a la hoja; sin marcar, va a la receta.
+   */
+  clinicMode?: 'ambulatory' | 'stay'
 }) {
   const drugs = useVademecum()
   const { can } = useStore()
   const canAdd = can('rx.write') || can('drugs.manage')
   const [newDrug, setNewDrug] = useState<string | null>(null)
-  const [m, setM] = useState<PrescriptionItem>({ ...EMPTY_MED, ...initial })
+  // ME14 (ronda 14): con ingreso, la casilla viene marcada salvo que se haya desmarcado a propósito (false)
+  const [m, setM] = useState<PrescriptionItem>(() => {
+    const x = { ...EMPTY_MED, ...initial }
+    return clinicOption && clinicMode === 'stay' ? { ...x, applyInClinic: x.applyInClinic !== false } : x
+  })
   const [overrideAllergy, setOverrideAllergy] = useState(false)
   const [overrideDup, setOverrideDup] = useState(false)
   const q = normalize(m.drug)
@@ -86,6 +98,9 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
     }))
     setOverrideAllergy(false); setOverrideDup(false)
   }
+  // ME13 (ronda 14, A6): sin ingreso, lo que se aplica en la clínica es solo «Dosis única (STAT)» (nunca se cambia sola una
+  // frecuencia que ya estaba: se muestra y el formulario no deja guardarla)
+  const statOnly = clinicOption && clinicMode === 'ambulatory' && !!m.applyInClinic
   // Ambulatorio: la receta necesita los días (salvo dosis única o si se aplica aquí en la clínica)
   const needsDays = requireDuration && !m.applyInClinic && !/única/i.test(m.frequency)
   // MC2 (ronda 6): un PRN no se agrega sin su condición
@@ -100,7 +115,7 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
   // ME9 (ronda 10): marcada y la vía ya no es intravenosa: no se guarda y se avisa (lo escrito vuelve si se regresa a IV)
   const dropped = loadingDroppedByRoute(loading, { everyHours: frequencyHours(m.frequency), prn, route: m.route })
   const ready = (neb ? nebulizationReady(nebValue) && (!nebConflict || overrideAllergy) : m.drug.trim() && m.dose.trim() && (!conflict || overrideAllergy) && (!duplicate || overrideDup))
-    && m.frequency && (!prn || m.prnCondition?.trim()) && (m.duration.trim() || !needsDays) && (!withLoading || m.loadingDose?.trim())
+    && m.frequency && (!prn || m.prnCondition?.trim()) && (m.duration.trim() || !needsDays) && (!withLoading || m.loadingDose?.trim()) && (!statOnly || /única/i.test(m.frequency))
   // Con primera dosis distinta o nebulización la cantidad no se calcula sola (texto libre)
   const computed = needsDays && !withLoading && !neb ? autoQuantity(m) : undefined
   const submit = (e?: FormEvent) => {
@@ -110,13 +125,15 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
       const clean = { components: nebValue.components.filter((c) => c.drug.trim()).map((c) => ({ drug: c.drug.trim(), amount: c.amount.trim() })),
         diluentVolume: nebValue.diluentVolume?.trim() || undefined, diluent: nebValue.diluent?.trim() || undefined }
       return onSave({ ...m, drug: 'Nebulización', presentation: '', dose: nebulizationBody(clean), nebulization: clean, loadingDose: undefined, duration: m.duration.trim(),
-        instructions: m.instructions?.trim() || undefined, quantity: m.quantity?.trim() || undefined, applyInClinic: clinicOption && m.applyInClinic ? true : undefined, buyOutside: buy || undefined, prnCondition: prn ? m.prnCondition?.trim() : undefined })
+        instructions: m.instructions?.trim() || undefined, quantity: m.quantity?.trim() || undefined, applyInClinic: clinicOption ? (m.applyInClinic ? true : clinicMode === 'stay' ? false : undefined) : undefined, buyOutside: buy || undefined, prnCondition: prn ? m.prnCondition?.trim() : undefined })
     }
     onSave({ ...m, drug: m.drug.trim(), presentation: m.presentation.trim(), dose: m.dose.trim(), duration: m.duration.trim(), nebulization: undefined, loadingDose: withLoading ? m.loadingDose!.trim() : undefined,
       instructions: m.instructions?.trim() || undefined, quantity: m.quantity?.trim() || computed || undefined,
-      applyInClinic: clinicOption && m.applyInClinic ? true : undefined, buyOutside: buy || undefined, prnCondition: prn ? m.prnCondition?.trim() : undefined })
+      applyInClinic: clinicOption ? (m.applyInClinic ? true : clinicMode === 'stay' ? false : undefined) : undefined, buyOutside: buy || undefined, prnCondition: prn ? m.prnCondition?.trim() : undefined })
   }
-  const freqs = FREQUENCIES.includes(m.frequency) ? FREQUENCIES : [m.frequency, ...FREQUENCIES]
+  const freqs = statOnly ? [...new Set([STAT_FREQUENCY, m.frequency])] : FREQUENCIES.includes(m.frequency) ? FREQUENCIES : [m.frequency, ...FREQUENCIES]
+  const statBad = statOnly && !/única/i.test(m.frequency)
+  const freqLabel = (f: string) => (statOnly && f === STAT_FREQUENCY ? 'Dosis única (STAT)' : f)
   // ME10 (ronda 10): con «Aplicar en la clínica», «No hay en la clínica (va a receta)»; la cantidad es la que se compra
   const buy = clinicOption && !!m.applyInClinic && !!m.buyOutside
   return (<>
@@ -134,8 +151,9 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
         {!neb && <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" data-nocap value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g, 1 tableta, 5 ml" /></label>}
         <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => { const r = e.target.value; setM({ ...m, route: r, nebulization: isNebulization(r) ? m.nebulization ?? structuredClone(EMPTY_NEB) : m.nebulization }) }}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
         {neb && <NebulizerFields value={nebValue} onChange={(n) => setM({ ...m, nebulization: n })} allergies={patient.allergies} firstName={patient.firstName} />}
-        <label className="field"><span>Frecuencia</span><select className="select" value={m.frequency} onChange={(e) => setM({ ...m, frequency: e.target.value })}>{freqs.map((f) => <option key={f}>{f}</option>)}</select></label>
-        {repeating && <LoadingDoseFields checked={loading} onChecked={setLoading} value={m.loadingDose ?? ''} onValue={(v) => setM({ ...m, loadingDose: v })} warn={!!m.drug.trim()} />}
+        <label className="field"><span>Frecuencia</span><select className={`select ${statBad ? 'input--warn' : ''}`} value={m.frequency} onChange={(e) => setM({ ...m, frequency: e.target.value })}>{freqs.map((f) => <option key={f} value={f}>{freqLabel(f)}</option>)}</select>
+          {statBad && <small className="field__msg field__msg--warn">Sin ingreso solo se permite dosis STAT. Cámbiala o marca el ingreso.</small>}</label>
+        {repeating && !statOnly && <LoadingDoseFields checked={loading} onChecked={setLoading} value={m.loadingDose ?? ''} onValue={(v) => setM({ ...m, loadingDose: v })} warn={!!m.drug.trim()} />}
         <LoadingDropped show={dropped && !neb} />
         {prn && <label className="field"><span>Condición</span>
           <input className={`input ${!m.prnCondition?.trim() && m.drug.trim() ? 'input--warn' : ''}`} value={m.prnCondition ?? ''} onChange={(e) => setM({ ...m, prnCondition: e.target.value })} placeholder="Ej. si dolor, si fiebre" aria-required="true" />
@@ -148,9 +166,13 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
         <label className="field span-2"><span>Indicaciones especiales (opcional)</span><input className="input" value={m.instructions ?? ''} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder="Ej. Con los alimentos" /></label>
       </div>
       {clinicOption && (
-        <label className="check-line"><input type="checkbox" checked={!!m.applyInClinic} onChange={(e) => setM({ ...m, applyInClinic: e.target.checked })} />
-          <span><b>Aplicar en la clínica</b><small>No va a la receta: pasa a la hoja de medicamentos para que enfermería o el médico lo apliquen. El paciente queda en observación mientras se aplica.</small></span></label>
+        <label className="check-line"><input type="checkbox" checked={!!m.applyInClinic}
+          onChange={(e) => setM(e.target.checked && clinicMode === 'ambulatory' ? { ...m, applyInClinic: true, frequency: STAT_FREQUENCY, loadingDose: undefined } : { ...m, applyInClinic: e.target.checked })} />
+          <span><b>Aplicar en la clínica</b><small>{clinicMode === 'stay'
+            ? 'Pasa a la hoja de medicamentos. Sin marcar, va a la receta para la casa.'
+            : 'No va a la receta: enfermería o el médico lo aplican aquí y el paciente se va a su casa (no queda en observación).'}</small></span></label>
       )}
+      {statOnly && <p className="muted" style={{ fontSize: 13, margin: 0 }}>Sin ingreso se aplica una sola dosis en la clínica. Si debe seguir en casa, agrégalo también a la receta.</p>}
       {clinicOption && m.applyInClinic && <div className="form-grid"><BuyOutsideFields checked={!!m.buyOutside} onChecked={(v) => setM({ ...m, buyOutside: v })} /></div>}
       {(neb ? nebulizationReady(nebValue) : m.drug.trim() && m.dose.trim()) && <p className="muted" style={{ fontSize: 13.5, overflowWrap: 'anywhere' }}>Se verá así: <b>{medicationLine(neb
         ? { ...m, drug: 'Nebulización', nebulization: nebValue } : { ...m, loadingDose: withLoading ? m.loadingDose : undefined })}</b></p>}

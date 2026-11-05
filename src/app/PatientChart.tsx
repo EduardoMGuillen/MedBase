@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { BedDouble, FileBadge, FileText, Lock, NotebookPen, Pencil, Printer } from 'lucide-react'
+import { BedDouble, FileBadge, FileText, Lock, NotebookPen, Pencil, Printer, Syringe } from 'lucide-react'
 import { AlertBar } from './MedAlerts'
 import { alertQuery } from '../lib/alerts'
 import { useFileAlerts } from '../lib/hooks'
@@ -17,7 +17,8 @@ import { PatientHeader } from '../components/PatientHeader'
 import { age, BACKGROUND_GROUPS, backgroundValue, RETIRED_BACKGROUND, bmi, date, dxCode, examText, time, money } from '../lib/format'
 import { Attachments } from './Attachments'
 import { AllergiesForm, BackgroundForm, IdentificationForm } from './PatientForms'
-import type { Certificate, Consultation, Patient, Referral, Vitals } from '../lib/types'
+import type { Certificate, ConsultApplication, Consultation, Patient, Referral, Vitals } from '../lib/types'
+import { ApplyModal, applicationText, canApply } from '../components/ApplyMeds'
 import { ReferralActions } from './Referral'
 import { CERT_KIND } from '../lib/certificates'
 import { vitalLevel, type VitalKey } from '../lib/vitals'
@@ -131,7 +132,13 @@ export function BackgroundView({ p, compact = false, only }: { p: Patient; compa
  * texto clínico; a la derecha las indicaciones y debajo los medicamentos.
  */
 /** MC5 (ronda 6): con `exams` (los de esta consulta) la columna de órdenes lleva Indicaciones y plan → Exámenes → Medicamentos. */
-export function ConsultationBody({ c, vitals, exams, vitalsLine }: { c: Consultation; vitals?: Vitals | null; exams?: ExamOrder[]; vitalsLine?: string }) {
+export function ConsultationBody({ c, vitals, exams, vitalsLine, applications, medsExtra }: { c: Consultation; vitals?: Vitals | null; exams?: ExamOrder[]; vitalsLine?: string
+  /** ME13 (ronda 14): lo que se aplicó en la clínica (quién y cuándo), debajo de cada medicamento. */
+  applications?: ConsultApplication[]
+  /** ME13 y ME14 (ronda 14): botones debajo de los medicamentos («Aplicar», «Receta»). */
+  medsExtra?: ReactNode }) {
+  const { staffById } = useStore()
+  const appOf = (i: number) => { const a = applications?.find((x) => x.itemIndex === i); return a ? applicationText(a, (id) => staffById(id)?.name) : undefined }
   const examBlock = exams ? <NoteExams list={exams.filter((e) => !e.noteId)} /> : undefined
   const exam = examText(c.exam)
   const left = (<>
@@ -161,7 +168,7 @@ export function ConsultationBody({ c, vitals, exams, vitalsLine }: { c: Consulta
   }
   // MC6 (ronda 6): con ingreso, la frecuencia de signos vitales que indicó la consulta va como primera indicación
   return <NoteColumns left={left} indicationsTitle="Indicaciones y plan" indications={<>{vitalsLine && <p className="note-vitals-line">{vitalsLine}</p>}<IndicationList items={c.indications} empty={vitalsLine ? '' : undefined} /></>} exams={examBlock}
-    meds={<MedLines items={c.orders.slice(c.indications.length)} />} />
+    meds={<><MedLines items={c.orders.slice(c.indications.length)} sub={applications?.length ? appOf : undefined} />{medsExtra}</>} />
 }
 
 type Tab = 'history' | 'consults' | 'hosp' | 'vitals' | 'exams' | 'rx' | 'certs' | 'refs' | 'files'
@@ -182,6 +189,8 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
     fetchBalances(id).then(setOwed).catch(() => null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, fetchBalances])
+  // ME13 (ronda 14): «Aplicar» desde la tarjeta de la consulta (el médico que atendió, por si él mismo pone la inyección)
+  const [applying, setApplying] = useState<ConsultApplication[] | null>(null)
   const [tab, setTab] = useState<Tab>(() => (embedded ? 'consults' : new URLSearchParams(window.location.search).get('tab') === 'examenes' ? 'exams' : 'history'))
   // EX1: exámenes del paciente (de consulta externa y de sus estancias), con sus resultados
   const [exams, setExams] = useState<ExamOrder[] | null>(null)
@@ -224,6 +233,7 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
 
   return (
     <div className={embedded ? 'chart-embed' : 'page page--chart'}>
+      {applying && <ApplyModal list={applying} onClose={() => setApplying(null)} onSaved={() => { setApplying(null); reload() }} />}
       <div className={embedded ? 'chart-embed__tabs' : 'sticky-top'}>
         {!embedded && <PatientHeader p={p} clinical={clinical}>
           {hospitalized && <Link className="btn btn--soft btn--sm" to={stayPath(hospitalized)}><BedDouble size={15} />{hospitalized.kind === 'observation' ? 'En observación' : `Hospitalizado, ${bedLabel(bed(hospitalized.bedId))}`}</Link>}
@@ -309,13 +319,21 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
                 <div className="page-head__actions">
                   <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}><NotebookPen size={15} />Nota</Link>
                   {c.prescriptionId && can('rx.view') && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${c.prescriptionId}`}><FileText size={15} />Receta</Link>}
-                  {(() => { const b = (exams ?? []).find((e) => e.consultationId === c.id && !e.noteId && e.status !== 'cancelled')?.batchId
-                    return b ? <Link className="btn btn--ghost btn--sm" to={`/app/examenes/orden/${b}`}><Printer size={15} />Exámenes</Link> : null })()}
+                  {(() => {
+                    // EX10 (ronda 14): la orden de los externos y, aparte, la de los «En la clínica»
+                    const mine = (exams ?? []).filter((e) => e.consultationId === c.id && !e.noteId && e.status !== 'cancelled')
+                    const ext = mine.find((e) => e.place === 'external')?.batchId
+                    const inClinic = mine.find((e) => e.place !== 'external' && e.batchId !== ext)?.batchId
+                    const b = ext ?? inClinic
+                    return b ? <Link className="btn btn--ghost btn--sm" to={`/app/examenes/orden/${b}${ext && inClinic ? `?clinica=${inClinic}` : ''}`}><Printer size={15} />Exámenes</Link> : null })()}
                   {/* CX5 (ronda 13): dentro de la consulta el expediente es de solo lectura: sin «Generar constancia» ni «Agregar adenda» */}
                   {can('consult.write') && !embedded && <Link className="btn btn--ghost btn--sm" to={`/app/constancia/${c.id}`}><FileBadge size={15} />Generar constancia</Link>}
                 </div>
               </div>
-              <div className="panel__body"><ConsultationBody c={c} vitals={vs.find((v) => v.id === c.vitalsId)} exams={exams ? exams.filter((e) => e.consultationId === c.id) : undefined} />
+              <div className="panel__body"><ConsultationBody c={c} vitals={vs.find((v) => v.id === c.vitalsId)} exams={exams ? exams.filter((e) => e.consultationId === c.id) : undefined}
+                applications={(chart.applications ?? []).filter((a) => a.consultationId === c.id)}
+                medsExtra={!embedded && canApply(can) && (chart.applications ?? []).some((a) => a.consultationId === c.id && a.status === 'pending')
+                  ? <span className="note-actions no-print"><button type="button" className="btn btn--primary btn--sm" onClick={() => setApplying((chart.applications ?? []).filter((a) => a.consultationId === c.id))}><Syringe size={14} />Aplicar</button></span> : undefined} />
                 <Addenda list={chart?.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor' && !embedded} prescriptionId={c.prescriptionId} onAdded={reload} /></div>
             </article>
           )) : <section className="panel"><div className="empty">Este paciente aún no tiene consultas firmadas.</div></section>}

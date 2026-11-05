@@ -1,3 +1,4 @@
+import { PendingApplications } from '../components/ApplyMeds'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Activity, Globe, Phone, Receipt, Stethoscope } from 'lucide-react'
@@ -189,6 +190,8 @@ export default function Dashboard() {
             )
           }) : <div className="empty">Cuando un paciente llegue a sala, aparecerá aquí.</div>}
         </section>
+        {/* ME13 (ronda 14): lo que el médico indicó aplicar en la clínica sin ingreso */}
+        <PendingApplications />
         {/* EN2: reemplaza «Órdenes nuevas»: las órdenes sin revisar van aquí, junto con dosis, signos y exámenes */}
         <WardAlerts />
         <ExamTray />

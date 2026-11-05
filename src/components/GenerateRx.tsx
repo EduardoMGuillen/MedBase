@@ -55,7 +55,7 @@ export function GenerateRxModal({ meds, onClose, only }: { meds: InpatientMed[];
             <div key={m.id} className={`rxgen__row${on ? ' is-on' : ''}`}>
               <label className={`exam-row-pick${on ? ' is-on' : ''}`}>
                 <input type="checkbox" checked={on} onChange={() => setPicked(on ? picked.filter((x) => x !== m.id) : [...picked, m.id])} />
-                <span><b>{medLabel(m)}</b>{m.buyOutside && <span className="badge badge--amber rx-tag">Receta</span>}
+                <span><b>{medLabel(m)}</b>{(m.buyOutside || m.id.startsWith('c:')) && <span className="badge badge--amber rx-tag">Receta</span>}
                   <small className="muted" style={{ display: 'block' }}>Indicado por {shortStaff(staffById(m.orderedBy)?.name)}</small></span>
               </label>
               {doctor && on && (

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import { examsWhere } from './exams.js'
 import { toInpatientMed, toInpatientNote } from '../mappers.js'
+import { CONSULT_MED_PREFIX, consultRxRows } from '../medOrders.js'
 import { can } from '../../src/lib/permissions.js'
 import { examLine, GROUP_LABEL } from '../../src/lib/exams.js'
 import { deptAllows } from '../../src/lib/permissions.js'
@@ -33,8 +34,19 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
     return kind === 'exams' ? can(u, 'exams.order') || can(u, 'exams.process') : can(u, 'inpatient.orders') || can(u, 'inpatient.care')
   }
   // El paciente sale de la estancia: las órdenes sembradas por la demo no traen patient_id (lo arregla la ronda 11)
-  const medsOf = (cid: string, ids: string[]) => (ids.length ? sql.query(`SELECT m.*, COALESCE(m.patient_id, h.patient_id) AS patient_id FROM hosp_meds m JOIN hospitalizations h ON h.id = m.hospitalization_id
+  const sheetOf = (cid: string, ids: string[]) => (ids.length ? sql.query(`SELECT m.*, COALESCE(m.patient_id, h.patient_id) AS patient_id FROM hosp_meds m JOIN hospitalizations h ON h.id = m.hospitalization_id
     WHERE m.clinic_id = ? AND m.id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids]) : Promise.resolve([] as Row[]))
+  // ME14 (ronda 14): también los medicamentos de la consulta de ingreso que fueron a la receta y no están en la hoja
+  const medsOf = async (cid: string, ids: string[]) => {
+    const virtual = ids.filter((x) => x.startsWith(CONSULT_MED_PREFIX))
+    const rows = await sheetOf(cid, ids.filter((x) => !x.startsWith(CONSULT_MED_PREFIX)))
+    for (const consultId of new Set(virtual.map((x) => x.split(':')[1]))) {
+      const h = await sql.one('SELECT * FROM hospitalizations WHERE clinic_id = ? AND consultation_id = ? ORDER BY admitted_at DESC LIMIT 1', [cid, consultId])
+      if (h) rows.push(...(await consultRxRows(sql, h)).filter((r) => virtual.includes(String(r.id))))
+    }
+    const order = new Map(ids.map((x, i) => [x, i]))
+    return rows.sort((a, b) => (order.get(String(a.id)) ?? 0) - (order.get(String(b.id)) ?? 0))
+  }
 
   const body = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('exams'), examIds: z.array(z.string()).min(1, 'Elige al menos un examen.').max(60) }),

@@ -186,9 +186,16 @@ export default function Consultation() {
   // Un borrador guardado antes puede traer una casilla que esta cuenta no usa
   const admitting = !hospitalized && ((admit && place.hospital) || (observe && place.observation))
   const ambulatory = !admitting
-  const rxCount = ambulatory ? meds.filter((m) => !m.applyInClinic).length : 0
-  const inClinic = ambulatory ? meds.filter((m) => m.applyInClinic) : admitting ? meds : []
-  const noDays = ambulatory ? meds.filter(missingDays) : []
+  // ME13 y ME14 (ronda 14): con o sin ingreso, «Aplicar en la clínica» decide: marcado se aplica aquí (con ingreso, a la hoja;
+  // sin ingreso, una sola dosis que aplica enfermería); sin marcar, a la receta. Los «No hay en la clínica», a los dos lados.
+  // Con ingreso, lo que no se desmarcó a propósito se aplica en la clínica (como el servidor)
+  const applied = (m: PrescriptionItem) => (admitting ? m.applyInClinic !== false : !!m.applyInClinic)
+  const rxCount = meds.filter((m) => !applied(m) || m.buyOutside).length
+  const inClinic = meds.filter(applied)
+  const noDays = meds.filter((m) => !applied(m) && missingDays({ ...m, applyInClinic: false }))
+  // Sin ingreso, lo que se aplica en la clínica es solo dosis STAT: «Terminar consulta» no deja firmar otra frecuencia
+  const statWarn = (m: PrescriptionItem) => (!admitting && m.applyInClinic && (!/única/i.test(m.frequency) || m.loadingDose) ? 'Sin ingreso solo se permite dosis STAT. Cámbiala o marca el ingreso.' : undefined)
+  const notStat = meds.filter((m) => statWarn(m))
   // Huecos "___" que trajo un set: no se firma hasta llenarlos
   const blanks = [...indications.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : [])),
     // MC2 (ronda 6): un PRN que vino de un set sin condición
@@ -198,7 +205,8 @@ export default function Consultation() {
   const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !indications.length && !meds.length && !exams.length && 'al menos una indicación, un medicamento o un examen',
     noDays.length > 0 && `el total de días de ${noDays.map((m) => m.drug).join(', ')} (va a la receta)`,
     needsDni && 'el número de identidad para la receta',
-    blanks.length > 0 && `los espacios ___ de ${blanks.join(', ')}`].filter(Boolean)
+    blanks.length > 0 && `los espacios ___ de ${blanks.join(', ')}`,
+    notStat.length > 0 && `cambiar a dosis STAT ${notStat.map((m) => m.drug).join(', ')} (sin ingreso solo se permite dosis STAT) o marcar el ingreso`].filter(Boolean)
 
   /** Un set agrega sus indicaciones al bloque Indicaciones y sus medicamentos al bloque Medicamentos, al final. */
   const applySet = (set: OrderSet) => {
@@ -246,11 +254,18 @@ export default function Consultation() {
     if (r) {
       draft.clear()
       // Con ingreso la estancia ya quedó creada al firmar, con esta nota como nota de ingreso y sus medicamentos en la hoja
-      if (r.hospitalizationId && r.stayKind === 'hospital') nav(`/app/hospitalizados/${r.hospitalizationId}?completar=1`)
-      else if (r.hospitalizationId) nav(`/app/observacion/${r.hospitalizationId}`)
-      // EX1: las órdenes de exámenes se imprimen aparte de la receta
-      else if (r.prescriptionId) nav(`/app/recetas/${r.prescriptionId}${r.examBatch ? `?examenes=${r.examBatch}` : ''}`)
-      else nav(r.examBatch ? `/app/examenes/orden/${r.examBatch}` : `/app/pacientes/${p.id}`)
+      const stay = r.hospitalizationId ? (r.stayKind === 'hospital' ? `/app/hospitalizados/${r.hospitalizationId}?completar=1` : `/app/observacion/${r.hospitalizationId}`) : null
+      // ME14 (ronda 14): con ingreso y receta, la misma pantalla final (receta y órdenes); después, a la estancia.
+      // EX1 y EX10 (ronda 14): las órdenes de exámenes van aparte de la receta; la de los «En la clínica», al final con su botón
+      const q = new URLSearchParams()
+      if (r.examBatch) q.set('examenes', r.examBatch)
+      if (r.clinicBatch) q.set('clinica', r.clinicBatch)
+      if (stay) q.set('siguiente', stay)
+      const qs = q.toString() ? `?${q}` : ''
+      if (r.prescriptionId) nav(`/app/recetas/${r.prescriptionId}${qs}`)
+      else if (stay) nav(stay)
+      else if (r.examBatch) nav(`/app/examenes/orden/${r.examBatch}${r.clinicBatch ? `?clinica=${r.clinicBatch}` : ''}`)
+      else nav(r.clinicBatch ? `/app/examenes/orden/${r.clinicBatch}` : `/app/pacientes/${p.id}`)
     }
   }
 
@@ -398,13 +413,13 @@ export default function Consultation() {
                 <ExamsBlock value={exams} onChange={setExams} inStay={admitting} />
               </div>
               <div className="plan-block" data-tour="medicamentos">
-                <h3 className="plan-block__title">Medicamentos <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'van a la hoja de medicamentos' : 'van a la receta'}</span></h3>
-                {admitting && <p className="muted" style={{ fontSize: 13.5 }}>Con ingreso, los días son opcionales: sin días el medicamento queda «hasta nueva orden».</p>}
-                <MedicationList items={meds} patient={p} editing={medForm?.index ?? null} requireDuration={ambulatory}
+                <h3 className="plan-block__title">Medicamentos <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'los que se aplican en la clínica van a la hoja; los demás, a la receta' : 'van a la receta'}</span></h3>
+                {admitting && <p className="muted" style={{ fontSize: 13.5 }}>Con ingreso, lo que se aplica en la clínica no necesita días: sin días queda «hasta nueva orden».</p>}
+                <MedicationList items={admitting ? meds.map((m) => ({ ...m, applyInClinic: applied(m) })) : meds} patient={p} editing={medForm?.index ?? null} requireDuration warn={statWarn}
                   onEdit={(i) => setMedForm({ index: i, initial: meds[i] })} onRemove={(i) => { setMeds(meds.filter((_, j) => j !== i)); setMedForm(null) }} />
                 {!meds.length && !medForm && <p className="muted" style={{ fontSize: 14 }}>Sin medicamentos indicados.</p>}
                 {medForm ? (
-                  <MedicationForm key={medForm.index} patient={p} current={meds} initial={medForm.initial} requireDuration={ambulatory} clinicOption={ambulatory && store.can('inpatient.orders') && place.observation}
+                  <MedicationForm key={medForm.index} patient={p} current={meds} initial={medForm.initial} requireDuration clinicOption={store.can('inpatient.orders')} clinicMode={admitting ? 'stay' : 'ambulatory'}
                     submitLabel={medForm.index >= 0 ? 'Guardar cambios' : 'Agregar medicamento'}
                     onSave={(item) => { setMeds(medForm.index >= 0 ? meds.map((x, j) => (j === medForm.index ? item : x)) : [...meds, item]); setMedForm(null) }}
                     onCancel={() => setMedForm(null)} />
@@ -450,9 +465,9 @@ export default function Consultation() {
                     {/* Son excluyentes: marcar una desmarca la otra */}
                     {/* Un consultorio no hospitaliza y puede no usar observación */}
                     {place.observation && <label className="check-line"><input type="checkbox" checked={observe} onChange={(e) => { setObserve(e.target.checked); if (e.target.checked) setAdmit(false) }} />
-                      <span><b>Ingreso a observación</b><small>Observación corta (hidratar, nebulizar, vigilar). Esta nota es la primera nota y sus medicamentos pasan a la hoja.</small></span></label>}
+                      <span><b>Ingreso a observación</b><small>Observación corta (hidratar, nebulizar, vigilar). Esta nota es la primera nota; lo que se aplica en la clínica pasa a la hoja y lo demás va a la receta.</small></span></label>}
                     {place.hospital && <label className="check-line"><input type="checkbox" checked={admit} onChange={(e) => { setAdmit(e.target.checked); if (e.target.checked) setObserve(false) }} />
-                      <span><b>Ingreso a hospitalización</b><small>Esta nota queda como nota de ingreso y sus medicamentos pasan a la hoja. Al firmar eliges la cama.</small></span></label>}
+                      <span><b>Ingreso a hospitalización</b><small>Esta nota queda como nota de ingreso; lo que se aplica en la clínica pasa a la hoja y lo demás va a la receta. Al firmar eliges la cama.</small></span></label>}
                   </div>
               )}
               {/* RF1 (ronda 8): referir a otro centro con la nota todavía en borrador (también desde la nota firmada) */}
@@ -461,7 +476,7 @@ export default function Consultation() {
               )}
               {rxCount > 0 && <RxValidityField value={validity} onChange={setValidity} />}
               <p style={{ fontSize: 14, color: 'var(--muted)' }}>
-                {missing.length ? `Para firmar falta ${missing.join(', ')}.` : `Al firmar se cierra la cita${rxCount ? ` y se emite una receta con ${rxCount} medicamento${rxCount > 1 ? 's' : ''}` : ''}${admit && !hospitalized ? ', se ingresa a hospitalización' : observe && !hospitalized ? ' e ingresa a observación' : ''}${inClinic.length ? `${ambulatory ? ', queda en observación para aplicarle ' : '; pasan a la hoja de medicamentos: '}${inClinic.map((m) => m.drug).join(', ')}` : ''}.`}
+                {missing.length ? `Para firmar falta ${missing.join(', ')}.` : `Al firmar se cierra la cita${rxCount ? ` y se emite una receta con ${rxCount} medicamento${rxCount > 1 ? 's' : ''}` : ''}${admit && !hospitalized ? ', se ingresa a hospitalización' : observe && !hospitalized ? ' e ingresa a observación' : ''}${inClinic.length ? `${ambulatory ? '; enfermería aplica en la clínica (sin ingreso): ' : '; pasan a la hoja de medicamentos: '}${inClinic.map((m) => m.drug).join(', ')}` : ''}.`}
               </p>
               <button className="btn btn--primary btn--lg" data-tour="firmar" disabled={missing.length > 0 || signing} onClick={sign}>Firmar consulta{rxCount ? ' y receta' : ''}</button>
             </div>

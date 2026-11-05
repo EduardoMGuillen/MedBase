@@ -88,16 +88,17 @@ describe('ME3 y ME4: primera dosis distinta y nebulización en todos los formula
     const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-herrera', reason: 'Neumonía' })
     const items = [
       { drug: 'Ceftriaxona', presentation: 'Vial 1 g', dose: '1 g', route: 'Intramuscular', frequency: 'Cada 12 horas', duration: '5 días', loadingDose: '2 g', applyInClinic: true },
-      { drug: 'Nebulización', presentation: '', dose: 'Salbutamol 3 mL + Bromuro de ipratropio 1 mL', route: 'Nebulización', frequency: 'Cada 6 horas', duration: '3 días', nebulization: NEB },
+      { drug: 'Nebulización', presentation: '', dose: 'Salbutamol 3 mL + Bromuro de ipratropio 1 mL', route: 'Nebulización', frequency: 'Cada 6 horas', duration: '3 días', nebulization: NEB, applyInClinic: false },
     ]
+    // ME13 (ronda 14): una dosis repetida (con primera dosis distinta) en la clínica necesita el ingreso marcado
     const r = await doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Tos', symptoms: [], history: 'Tos', exam: 'Crépitos', observations: '',
-      diagnoses: [{ code: 'CA40', label: 'Neumonía' }], orders: ['Reposo.'], indications: ['Reposo.'], plan: '', items, exams: [] })
+      diagnoses: [{ code: 'CA40', label: 'Neumonía' }], orders: ['Reposo.'], indications: ['Reposo.'], plan: '', items, exams: [], observe: true })
     assert.equal(r.status, 201, JSON.stringify(r.body))
     const rx = (await doc.get(`/api/prescriptions/${r.body.prescriptionId}`)).body
     const neb = (rx.items ?? rx.prescription?.items).find((x: any) => x.route === 'Nebulización')
     assert.deepEqual(neb.nebulization.components.map((c: any) => c.drug), ['Salbutamol', 'Bromuro de ipratropio'])
     const stay = r.body.hospitalizationId
-    assert.ok(stay, 'aplicar en la clínica deja al paciente en observación')
+    assert.ok(stay, 'con ingreso a observación')
     const cef = (await doc.get(`/api/inpatient/${stay}`)).body.meds.find((m: any) => m.drug === 'Ceftriaxona')
     assert.equal(cef.loadingDose, '2 g')
     // Validaciones

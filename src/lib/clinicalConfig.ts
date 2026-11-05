@@ -390,7 +390,14 @@ export const DEPT_SHIFTS: Record<'nursing' | 'lab' | 'imaging', { key: 'morning'
 /**
  * DP2 (ronda 11). VALIDAR: Emil. Motivos de «No se realizó» (más «Otro», escrito).
  */
-export const NOT_DONE_REASONS = ['No hay reactivo', 'El paciente no llegó', 'El paciente se fue', 'Equipo dañado', 'Muestra insuficiente', 'Muestra hemolizada o inadecuada']
+/**
+ * EX10 (ronda 14). VALIDAR: Emil. Motivo nuevo de «No se realizó» para cuando el paciente cambia de opinión y se hace el examen
+ * afuera (se avisa al médico, que decide si lo cancela: regla de DP2).
+ */
+export const NOT_DONE_ELSEWHERE: Record<'lab' | 'imaging', string> = { lab: 'El paciente se lo hará en otro laboratorio', imaging: 'El paciente se lo hará en otro centro' }
+/** ME13 (ronda 14). VALIDAR: Emil. Motivos de «No aplicado» de un medicamento de consulta externa (más «Otro» escrito). */
+export const NOT_APPLIED_REASONS = ['El paciente se retiró', 'El paciente lo rechazó', 'No hay en la clínica']
+export const NOT_DONE_REASONS =['No hay reactivo', 'El paciente no llegó', 'El paciente se fue', 'Equipo dañado', 'Muestra insuficiente', 'Muestra hemolizada o inadecuada']
 /**
  * DP4 (ronda 11). VALIDAR: Emil. Exámenes que cuentan como «función renal» para el técnico en imágenes (contraste): el último
  * resultado de creatinina del paciente.

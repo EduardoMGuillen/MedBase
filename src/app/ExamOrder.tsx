@@ -44,6 +44,7 @@ export default function ExamOrderPage() {
   const groups = (['lab', 'imaging'] as ExamGroup[]).filter((g) => shown.some((e) => e.group === g))
   // Al firmar la nota se ofrece «Imprimir / Descargar PDF»: llega aquí con la acción elegida (una sola vez)
   const action = params.get('accion')
+  const clinicBatch = params.get('clinica')
   useEffect(() => {
     if (!data || !groups.length || (action !== 'imprimir' && action !== 'pdf')) return
     const q = new URLSearchParams(params); q.delete('accion'); setParams(q, { replace: true })
@@ -78,10 +79,12 @@ export default function ExamOrderPage() {
         ))}
       </div>
       {groups.length > 1 && <p className="muted no-print" style={{ fontSize: 14 }}>Son dos órdenes: el paciente lleva la de laboratorio y la de imagen y gabinete a lugares distintos.</p>}
-      {live.length > shown.length && <p className="muted no-print" style={{ fontSize: 14 }}>Los estudios que se hacen en la clínica no van en esta orden: siguen su flujo de siempre en la pestaña Exámenes.</p>}
+      {/* EX10 (ronda 14): la orden de los «En la clínica» de una consulta externa: ya le llegó al departamento */}
+      {shown.length > 0 && shown.every((e) => e.place !== 'external' && !e.hospitalizationId && e.consultationId) && <div className="alert-strip alert-strip--calm no-print">{clinicNotice(shown, settings)}</div>}
       {groups.map((g) => (
         <ExamOrderSheet key={g} group={g} exams={shown.filter((e) => e.group === g)} doctor={data.doctor} number={number} patient={p} />
       ))}
+      {clinicBatch && clinicBatch !== batch && <ClinicOrderBlock batch={clinicBatch} />}
     </div>
   )
 }
@@ -106,6 +109,49 @@ export function ExamBatchSheets({ batch, onGroups }: { batch: string; onGroups?:
   if (!data || !p || !shown.length) return null
   const number = data.exams[0].orderNo ?? data.exams[0].batchId.slice(0, 8).toUpperCase()
   return <div className="batch-sheets">{groups.map((g) => <ExamOrderSheet key={g} group={g} exams={shown.filter((e) => e.group === g)} doctor={data.doctor} number={number} patient={p} />)}</div>
+}
+
+/** EX10 (ronda 14): el aviso de la orden de los exámenes «En la clínica»: ya le llegó al departamento que los hace. */
+export function clinicNotice(list: Pick<ExamOrder, 'group'>[], s: { hasLab?: boolean; hasImaging?: boolean }) {
+  const who = [...new Set(list.map((e) => (e.group === 'lab' ? (s.hasLab ? 'al laboratorio' : 'a enfermería') : (s.hasImaging ? 'a imágenes' : 'a enfermería'))))]
+  return `Esta orden ya le llegó ${who.join(' y ')} de la clínica. Imprímala solo si el paciente la quiere llevar.`
+}
+
+/**
+ * EX10 (ronda 14): al terminar la consulta externa, la orden de los exámenes «En la clínica» va aparte, debajo de lo demás: con
+ * la misma plantilla (IM1, IM3), el mismo título y su propio folio, su aviso y su botón «Imprimir esta orden» (y «Descargar
+ * PDF»). No sale con el botón principal. Se imprima o no, los exámenes ya están en la bandeja del laboratorio o de imágenes.
+ */
+export function ClinicOrderBlock({ batch }: { batch: string }) {
+  const { patient, settings, notify } = useStore()
+  const [data, setData] = useState<Batch | null>(null)
+  useEffect(() => { api<Batch>(`/exams/batch/${batch}`).then(setData).catch(() => setData(null)) }, [batch])
+  const live = data ? data.exams.filter((e) => e.status !== 'cancelled') : []
+  const groups = (['lab', 'imaging'] as ExamGroup[]).filter((g) => live.some((e) => e.group === g))
+  const p = data && data.exams[0] ? patient(data.exams[0].patientId) : undefined
+  if (!data || !p || !live.length) return null
+  const number = data.exams[0].orderNo ?? data.exams[0].batchId.slice(0, 8).toUpperCase()
+  const print = (how: 'print' | 'pdf') => {
+    void markBatchPrinted(batch, groups, how)
+    if (how === 'pdf') notify('En la ventana de impresión elige «Guardar como PDF».')
+    // Solo esta orden: lo demás de la página se oculta al imprimir mientras dure
+    document.body.classList.add('print-clinic-only')
+    const done = () => { document.body.classList.remove('print-clinic-only'); window.removeEventListener('afterprint', done) }
+    window.addEventListener('afterprint', done)
+    setTimeout(() => window.print(), 60)
+  }
+  return (
+    <div className="clinic-order">
+      <div className="alert-strip alert-strip--calm no-print clinic-order__bar">
+        <span>{clinicNotice(live, settings)}</span>
+        <span className="clinic-order__btns">
+          <button className="btn btn--primary btn--sm" onClick={() => print('print')}><Printer size={15} />Imprimir esta orden</button>
+          <button className="btn btn--soft btn--sm" onClick={() => print('pdf')}><Download size={15} />Descargar PDF</button>
+        </span>
+      </div>
+      {groups.map((g) => <ExamOrderSheet key={g} group={g} exams={live.filter((e) => e.group === g)} doctor={data.doctor} number={number} patient={p} />)}
+    </div>
+  )
 }
 
 /** CE1: deja en la bitácora que se imprimieron las órdenes del lote (la impresión no depende del registro). */

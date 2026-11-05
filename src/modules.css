@@ -1117,3 +1117,17 @@ button.src-tag--none { cursor: pointer; }
 /* EX11 y ME14 (ronda 14): botones de la tarjeta de la nota («Órdenes de exámenes», «Receta») y secciones de la ventana */
 .note-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .print-pick__title { margin: 4px 0 0; font-size: 13px; font-weight: 650; color: var(--petrol); }
+/* EX10 (ronda 14): la orden de los exámenes «En la clínica» va aparte: no sale con el botón principal, solo con el suyo */
+.clinic-order { display: grid; gap: 16px; }
+.clinic-order__bar { flex-wrap: wrap; justify-content: space-between; }
+.clinic-order__btns { display: flex; gap: 8px; flex-wrap: wrap; }
+@media print {
+  body:not(.print-clinic-only) .clinic-order { display: none !important; }
+  body.print-clinic-only .page > :not(.clinic-order) { display: none !important; }
+}
+/* ME13 (ronda 14): debajo del medicamento, quién lo aplicó y cuándo; la ventana «Aplicar» */
+.med-lines__sub { display: block; font-size: 12.5px; color: var(--muted); margin-left: 18px; }
+.apply-med { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; gap: 10px; }
+.apply-med legend { display: flex; gap: 6px; align-items: center; font-size: 14.5px; padding: 0 4px; overflow-wrap: anywhere; }
+.apply-med .segmented button { min-height: 40px; }
+.apply-med__reasons { display: grid; gap: 4px; }

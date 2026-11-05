@@ -24,7 +24,7 @@ import { addDeptDemo } from './demoDept.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '81'
+const SCHEMA_VERSION = '82'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1149,6 +1149,27 @@ ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS include_dx BOOLEAN;
 ALTER TABLE prescriptions ALTER COLUMN include_dx SET DEFAULT FALSE;
 ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS include_dx BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE print_log ADD COLUMN IF NOT EXISTS with_dx BOOLEAN;
+-- v82 (ronda 14). ME13: un medicamento «Aplicar en la clínica» de la consulta externa sin ingreso ya no crea una observación:
+-- queda «Por aplicar» para enfermería (o el médico), que registra «Aplicado» (hora y quién) o «No aplicado» (motivo). Una fila
+-- por medicamento de la consulta (consultation_id + item_index). Lo lee el registro de uso (RU2).
+CREATE TABLE IF NOT EXISTS consult_applications (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL,
+  patient_id TEXT NOT NULL,
+  consultation_id TEXT NOT NULL,
+  item_index INTEGER NOT NULL,
+  drug TEXT NOT NULL,
+  order_text TEXT NOT NULL,
+  ordered_by TEXT NOT NULL,
+  ordered_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','applied','not_applied')),
+  applied_at TEXT,
+  reason TEXT,
+  recorded_by TEXT,
+  recorded_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS consult_applications_item ON consult_applications (consultation_id, item_index);
+CREATE INDEX IF NOT EXISTS consult_applications_clinic ON consult_applications (clinic_id, ordered_at);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

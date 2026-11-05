@@ -16,7 +16,7 @@ import { MedicationForm, MedicationList } from '../components/Medications'
 import { PatientPicker } from './Inpatients'
 import { LogoMark } from '../components/Logo'
 import type { ClinicSettings, ExamGroup, GuestPatient, Patient, Prescription, PrescriptionItem } from '../lib/types'
-import { ExamBatchSheets, markBatchPrinted } from './ExamOrder'
+import { ClinicOrderBlock, ExamBatchSheets, markBatchPrinted } from './ExamOrder'
 import { DniInput } from '../components/DniInput'
 import { ClinicalDoc, guardianRow, patientOf, placeOf, signerOfStaff, type DocPatient } from '../components/ClinicalDoc'
 import { doseText } from '../lib/doseText'
@@ -222,7 +222,11 @@ export function PrescriptionSheet() {
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchPrescription>> | null>(null)
   const [missing, setMissing] = useState(false)
   const [voiding, setVoiding] = useState(false)
-  const examBatch = new URLSearchParams(useLocation().search).get('examenes')
+  const search = new URLSearchParams(useLocation().search)
+  const examBatch = search.get('examenes')
+  // EX10 (ronda 14): la orden de los exámenes «En la clínica», aparte; ME14: con ingreso, después se sigue a la estancia
+  const clinicBatch = search.get('clinica')
+  const next = search.get('siguiente')
   // CE1 (ronda 12): las órdenes de exámenes de la misma consulta salen debajo de la receta y se imprimen juntas
   const [examGroups, setExamGroups] = useState<ExamGroup[]>([])
   const [rxOnly, setRxOnly] = useState(false)
@@ -281,8 +285,12 @@ export function PrescriptionSheet() {
           }}><Printer size={16} />{examBatch && examGroups.length ? `Imprimir receta y ${examGroups.length > 1 ? 'órdenes' : 'orden'} de exámenes` : 'Imprimir o guardar PDF'}</button>
         </div>
       </div>
-      {examBatch && examGroups.length > 0 && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap' }}>También se ordenaron exámenes: sus órdenes van debajo de la receta, cada una en su hoja, y se imprimen con el mismo botón.
-        <Link className="btn btn--ghost btn--sm" to={`/app/examenes/orden/${examBatch}`}>Abrir solo las órdenes</Link></div>}
+      {next && next.startsWith('/app/') && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap', justifyContent: 'space-between' }}>
+        <span>El paciente quedó {next.includes('/observacion/') ? 'en observación' : 'hospitalizado'}. Imprime la receta y las órdenes y sigue a su expediente.</span>
+        <Link className="btn btn--primary btn--sm" to={next}>{next.includes('/observacion/') ? 'Ir a observación' : 'Ir a hospitalización'}</Link></div>}
+      {((examBatch && examGroups.length > 0) || clinicBatch) && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap' }}>
+        {`También se ordenaron exámenes: ${[examBatch && examGroups.length > 0 && 'sus órdenes van debajo de la receta, cada una en su hoja, y se imprimen con el mismo botón', clinicBatch && 'la orden de los que se hacen en la clínica va aparte, al final, con su propio botón'].filter(Boolean).join('; ')}.`}
+        <Link className="btn btn--ghost btn--sm" to={`/app/examenes/orden/${examBatch ?? clinicBatch}${examBatch && clinicBatch ? `?clinica=${clinicBatch}` : ''}`}>Abrir solo las órdenes</Link></div>}
       {rx.voidedAt && <div className="alert-strip no-print">Receta anulada el {date(rx.voidedAt)}, {time(rx.voidedAt)}{rx.voidedBy ? ` por ${staffById(rx.voidedBy)?.name ?? '—'}` : ''}. Motivo: {rx.voidReason}</div>}
       {voiding && <VoidRx id={rx.id} folio={rx.folio} onClose={() => setVoiding(false)} onDone={() => { setVoiding(false); load() }} />}
       {/* IM2 (ronda 13): solo el médico ve la casilla; enfermería reimprime la receta como la dejó el médico */}
@@ -319,6 +327,7 @@ export function PrescriptionSheet() {
         )}
       </ClinicalDoc>
       {examBatch && <div className={rxOnly ? 'print-hide' : undefined}><ExamBatchSheets batch={examBatch} onGroups={setExamGroups} /></div>}
+      {clinicBatch && <ClinicOrderBlock batch={clinicBatch} />}
     </div>
   )
 }

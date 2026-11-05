@@ -40,6 +40,7 @@ import { registerReferrals } from './routes/referrals.js'
 import { registerConsent } from './routes/consent.js'
 import { registerOrderSets } from './routes/orderSets.js'
 import { registerRoster } from './routes/roster.js'
+import { applicationsOf, registerApplications } from './routes/applications.js'
 import { registerEpicrisis } from './routes/epicrisis.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { registerPrintJobs } from './routes/printJobs.js'
@@ -48,7 +49,7 @@ import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permis
 import { positionOf } from '../src/lib/positions.js'
 import { NEB_MAX_COMPONENTS, PAGE_SIZE } from '../src/lib/clinicalConfig.js'
 import { yearsOld } from '../src/lib/inpatient.js'
-import { normalizeDni } from '../src/lib/format.js'
+import { medicationLine, normalizeDni } from '../src/lib/format.js'
 import { normalize } from '../src/lib/patients.js'
 import { AUDIT_KINDS, auditKind, type AuditKind } from '../src/lib/audit.js'
 import { hasBlank, medHasBlank } from '../src/lib/orderSets.js'
@@ -599,7 +600,9 @@ export function createApp(opts: AppOptions) {
     ])
     await audit(userOf(req), `Consultó el expediente de ${await patientName(id)}`)
     res.json({ vitals: vitals.map(toVitals), consultations: consultations.map(toConsultation), prescriptions: prescriptions.map(toPrescription),
-      hospitalizations: hospitalizations.map(toHospitalization), addenda: await addendaFor(sql, cid, consultations.map((c) => String(c.id))) })
+      hospitalizations: hospitalizations.map(toHospitalization), addenda: await addendaFor(sql, cid, consultations.map((c) => String(c.id))),
+      // ME13 (ronda 14): lo que se aplicó en la clínica en cada consulta (quién y cuándo)
+      applications: await applicationsOf(sql, cid, consultations.map((c) => String(c.id))) })
   })
 
   // ---------- Citas ----------
@@ -882,21 +885,30 @@ export function createApp(opts: AppOptions) {
     // Un set de órdenes puede traer espacios "___": se llenan antes de firmar
     if (c.orders.some(hasBlank) || c.items.some(medHasBlank)) fail(400, 'Completa los espacios ___ de las órdenes antes de firmar.')
     if (c.admit && c.observe) fail(400, 'Elige ingreso a hospitalización o a observación, no los dos.')
-    // Con ingreso, todos los medicamentos se aplican en la clínica (van a la hoja, sin receta). Ambulatorio: van a la
-    // receta, salvo los marcados "Aplicar en la clínica", que dejan al paciente en observación mientras se aplican.
-    const admitted = c.admit || c.observe
-    const items = admitted ? c.items.map((it) => ({ ...it, applyInClinic: true })) : c.items
-    const rxItems = items.filter((it) => !it.applyInClinic)
-    const stayKind = c.admit ? 'hospital' : c.observe || items.some((it) => it.applyInClinic) ? 'observation' : null
-    // La receta necesita el total de días; con ingreso el medicamento queda "hasta nueva orden"
-    const noDays = rxItems.find((it) => !it.duration && !/única/i.test(it.frequency))
+    // ME13 y ME14 (ronda 14): solo las casillas «Ingreso a observación» e «Ingreso a hospitalización» ingresan al paciente;
+    // un medicamento «Aplicar en la clínica» nunca crea una estancia (antes, ME3 de la ronda 9, sí: bastaba uno marcado).
+    // La casilla decide, con o sin ingreso: marcado, se aplica aquí (con ingreso, a la hoja; sin ingreso, queda «Por
+    // aplicar» para enfermería); sin marcar, va a la receta. Los «No hay en la clínica» van a los dos lados (ME10).
+    // Se guarda explícita (true/false): así se distinguen de las consultas de antes, que con ingreso iban todas a la hoja.
+    // Con ingreso, lo que no trae la casilla se aplica en la clínica (como hasta ahora: va a la hoja); solo lo desmarcado a
+    // propósito (false) va a la receta. Sin ingreso, solo lo marcado se aplica aquí.
+    const stayKind = c.admit ? 'hospital' : c.observe ? 'observation' : null
+    const items = c.items.map((it) => ({ ...it, applyInClinic: stayKind ? it.applyInClinic !== false : !!it.applyInClinic }))
+    const rxItems = items.filter((it) => !it.applyInClinic || it.buyOutside)
+    // ME13: sin ingreso, lo que se aplica en la clínica es una sola dosis (STAT): no se programan dosis siguientes (A6)
+    if (!stayKind) {
+      const repeat = items.find((it) => it.applyInClinic && (!/única/i.test(it.frequency) || it.loadingDose))
+      if (repeat) fail(400, `${repeat.drug}: sin ingreso solo se permite dosis STAT. Cámbiala o marca el ingreso.`)
+    }
+    // La receta necesita el total de días; lo que se aplica en la clínica (con ingreso, «hasta nueva orden») no
+    const noDays = rxItems.find((it) => !it.applyInClinic && !it.duration && !/única/i.test(it.frequency))
     if (noDays) fail(400, `Escribe el total de días de ${noDays.drug}: va a la receta.`)
     const cid = clinicOf(req)
     // Un consultorio no hospitaliza; la observación la puede tener apagada
     const place = (await sql.one('SELECT kind, observation_enabled FROM clinics WHERE id = ?', [cid]))!
     if (place.kind === 'office' && c.admit) fail(400, 'Un consultorio no tiene hospitalización. Usa observación o refiere al paciente.')
     if (place.kind === 'office' && stayKind === 'observation' && !place.observation_enabled) {
-      fail(400, 'Este consultorio no usa observación. Actívala en Configuración o quita «Aplicar en la clínica».')
+      fail(400, 'Este consultorio no usa observación. Actívala en Configuración.')
     }
     const appt = (await apptRow(cid, c.appointmentId)) ?? fail(404, 'La cita no existe.')
     if (appt!.doctor_id !== user.id) fail(403, 'Sólo el médico asignado puede firmar esta consulta.')
@@ -914,6 +926,8 @@ export function createApp(opts: AppOptions) {
     const now = new Date()
     let folio: string | null = null
     let examBatch: string | null = null
+    let clinicBatch: string | null = null
+    let applications = 0
     if (rxId) await assertRxIdentity(cid, patientId)
     await sql.tx(async (q) => {
       // El candado del folio también evita que la misma cita se firme dos veces al mismo tiempo
@@ -937,7 +951,24 @@ export function createApp(opts: AppOptions) {
       await q.run('UPDATE referrals SET consultation_id = ? WHERE appointment_id = ? AND consultation_id IS NULL AND clinic_id = ?', [consultId, c.appointmentId, cid])
       for (const f of c.followups) await insertFollowup(q, cid, user.id, { ...f, patientId }, consultId)
       // Con ingreso, los exámenes son de la estancia (enfermería los gestiona); si no, de la consulta externa
-      examBatch = await insertExams(q, { clinicId: cid, patientId, consultationId: consultId, hospitalizationId: stayId ?? undefined, by: user.id, at: now.toISOString() }, c.exams)
+      const examCtx = { clinicId: cid, patientId, consultationId: consultId, hospitalizationId: stayId ?? undefined, by: user.id, at: now.toISOString() }
+      if (stayKind) examBatch = await insertExams(q, examCtx, c.exams)
+      else {
+        // EX10 (ronda 14): sin ingreso, dos órdenes, cada una con su folio: la de los «Externo» (se imprime con la receta) y la
+        // de los «En la clínica» (le llega al laboratorio o a imágenes; se imprime aparte solo si el paciente la quiere llevar)
+        examBatch = await insertExams(q, examCtx, c.exams.filter((e) => e.place === 'external'))
+        clinicBatch = await insertExams(q, examCtx, c.exams.filter((e) => e.place !== 'external'))
+      }
+      // ME13 (ronda 14): sin ingreso, cada «Aplicar en la clínica» queda «Por aplicar» para enfermería o el médico
+      if (!stayKind) {
+        for (const [index, it] of items.entries()) {
+          if (!it.applyInClinic) continue
+          await q.run(`INSERT INTO consult_applications (id, clinic_id, patient_id, consultation_id, item_index, drug, order_text, ordered_by, ordered_at, status)
+            VALUES (?,?,?,?,?,?,?,?,?,'pending') ON CONFLICT DO NOTHING`, [randomUUID(), cid, patientId, consultId, index, it.drug, medicationLine(it), user.id, now.toISOString()])
+          applications++
+        }
+        if (applications) await audit(user, `Indicó ${applications} medicamento(s) para aplicar en la clínica a ${name}, sin ingreso`, q)
+      }
       await audit(user, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
       if (stayId) {
         // La hospitalización se crea sin cama: el médico la elige al terminar de firmar (o la corrige después)
@@ -954,7 +985,7 @@ export function createApp(opts: AppOptions) {
         await audit(user, `Ingresó a ${name} a ${stayKind === 'hospital' ? 'hospitalización' : 'observación'} desde la consulta externa${medOrders ? ` (${medOrders} medicamento(s) a la hoja)` : ''}`, q)
       }
     })
-    res.status(201).json({ consultationId: consultId, prescriptionId: rxId, folio, hospitalizationId: stayId, stayKind, medOrders, examBatch,
+    res.status(201).json({ consultationId: consultId, prescriptionId: rxId, folio, hospitalizationId: stayId, stayKind, medOrders, examBatch, clinicBatch, applications,
       observationId: stayKind === 'observation' ? stayId : null })
   })
 
@@ -969,7 +1000,8 @@ export function createApp(opts: AppOptions) {
     const exams = await examsWhere(sql, 'clinic_id = ? AND consultation_id = ? AND note_id IS NULL', [cid, c.id])
     // Ronda 8: las referencias emitidas desde esta consulta
     const referrals = (await sql.query('SELECT * FROM referrals WHERE clinic_id = ? AND consultation_id = ? ORDER BY issued_at', [cid, c.id])).map(toReferral)
-    res.json({ consultation: c, patient: toPatient((await patientRow(cid, c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null, addenda: await addendaFor(sql, cid, [c.id]), exams, referrals })
+    res.json({ consultation: c, patient: toPatient((await patientRow(cid, c.patientId))!, true), vitals: vitals ? toVitals(vitals) : null, addenda: await addendaFor(sql, cid, [c.id]), exams, referrals,
+      applications: await applicationsOf(sql, cid, [c.id]) })
   })
 
   /**
@@ -1387,6 +1419,7 @@ export function createApp(opts: AppOptions) {
   registerEpicrisis(app, ctx)
   registerFollowups(app, ctx)
   registerPrintJobs(app, ctx)
+  registerApplications(app, ctx)
   registerDept(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))

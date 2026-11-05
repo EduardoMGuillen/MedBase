@@ -20,7 +20,8 @@
     "check:dates": "node scripts/check-dates.mjs",
     "me5:build": "tsx scripts/me5-build.ts",
     "me6:compare": "tsx scripts/me6-compare.ts",
-    "um3:diagnose": "tsx scripts/um3-diagnose.ts"
+    "um3:diagnose": "tsx scripts/um3-diagnose.ts",
+    "me13:diagnose": "tsx scripts/me13-diagnose.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",

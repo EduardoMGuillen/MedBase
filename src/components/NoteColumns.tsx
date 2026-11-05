@@ -39,9 +39,11 @@ export function IndicationList({ items, empty = 'Sin indicaciones.' }: { items: 
 }
 
 /** Medicamentos: un guion por línea, en el orden en que se indicaron. */
-export function MedLines({ items, empty = 'Sin medicamentos.' }: { items: string[]; empty?: string }) {
+export function MedLines({ items, empty = 'Sin medicamentos.', sub }: { items: string[]; empty?: string
+  /** ME13 (ronda 14): una línea debajo del medicamento (p. ej. «Aplicado 05/11/2026 08:40 por Lic. Ríos»). */
+  sub?: (i: number) => ReactNode }) {
   return items.length
-    ? <ul className="med-lines">{items.map((m, i) => <li key={i}><Pill size={12} className="orders__pill" aria-hidden="true" />{m}</li>)}</ul>
+    ? <ul className="med-lines">{items.map((m, i) => { const extra = sub?.(i); return <li key={i}><Pill size={12} className="orders__pill" aria-hidden="true" />{m}{extra && <small className="med-lines__sub">{extra}</small>}</li> })}</ul>
     : <p className="muted">{empty}</p>
 }
 

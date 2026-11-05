@@ -153,10 +153,11 @@ describe('M1 orden médica → hoja de medicamentos (regresión)', () => {
     assert.equal(hosp.doses.length, 1)
   })
 
-  test('ambulatorio: sólo lo marcado "Aplicar en la clínica" va a la hoja; lo demás a la receta', async () => {
+  // ME13 y ME14 (ronda 14): «Aplicar en la clínica» ya no crea la observación; con «Ingreso a observación», lo desmarcado va a la receta
+  test('con ingreso a observación: sólo lo marcado "Aplicar en la clínica" va a la hoja; lo desmarcado a la receta', async () => {
     const { doc, apptId } = await openConsult('p9')
-    const home = { drug: 'Acetaminofén', presentation: 'Tableta 500 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 8 horas', duration: '3 días' }
-    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Fiebre', diagnoses: DX, orders: [], items: [home, { ...SALINA, applyInClinic: true }] })
+    const home = { drug: 'Acetaminofén', presentation: 'Tableta 500 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 8 horas', duration: '3 días', applyInClinic: false }
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Fiebre', diagnoses: DX, orders: [], observe: true, items: [home, { ...SALINA, applyInClinic: true }] })
     assert.equal(c.status, 201, JSON.stringify(c.body))
     assert.equal(c.body.stayKind, 'observation')
     const rx = (await doc.get(`/api/prescriptions/${c.body.prescriptionId}`)).body

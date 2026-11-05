@@ -264,7 +264,8 @@ function ConsultEntry({ consultationId, file }: { consultationId: string; file: 
           <p>{author?.name}{author ? `, ${ROLE_LABEL[mainRole(author)].toLowerCase()}` : ''} · {date(c.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, {time(c.date)}</p></div>
         <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}>Ver nota completa</Link>
       </div>
-      <div className="panel__body"><ConsultationBody c={c} vitals={data.vitals} exams={data.exams ?? []} vitalsLine={(() => { const s = file.hospitalization.vitalsPlan?.find((x) => x.noteId === c.id); return s ? vitalsModeText(s) : undefined })()} />
+      <div className="panel__body"><ConsultationBody c={c} vitals={data.vitals} exams={data.exams ?? []} vitalsLine={(() => { const s = file.hospitalization.vitalsPlan?.find((x) => x.noteId === c.id); return s ? vitalsModeText(s) : undefined })()}
+        medsExtra={<RxFromNote meds={[...file.meds.filter((m) => m.source === 'consultation' && m.sourceId === c.id), ...(file.consultRxMeds ?? [])]} />} />
         <SignedBadge by={author?.name} at={c.date} addenda={(data.addenda ?? []).length} />
         <Addenda list={data.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={load} /></div>
     </article>
@@ -887,7 +888,7 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
           indications={<>{n.vitals && <p className="note-vitals-line">{vitalsModeText(n.vitals)}<LineTag tag={n.vitals.tag} /></p>}
             {indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : !n.vitals && <p className="muted">Sin indicaciones.</p>}</>}
           exams={<NoteExams list={(file.exams ?? []).filter((e) => e.noteId === n.id)} />}
-          meds={meds.length ? <>{<OrderChecklist n={n} orders={meds} file={file} reload={reload} pill />}<RxFromNote noteId={n.id} meds={file.meds} /></> : <p className="muted">Sin medicamentos.</p>} />
+          meds={meds.length ? <>{<OrderChecklist n={n} orders={meds} file={file} reload={reload} pill />}<RxFromNote meds={file.meds.filter((m) => m.noteId === n.id)} /></> : <p className="muted">Sin medicamentos.</p>} />
         <div className="signed-row">
           <SignedBadge by={author?.name} at={n.at} addenda={(file.addenda ?? []).filter((a) => a.targetId === n.id).length} />
           <VersionTag version={n.version} kind="note" id={n.id} render={(x) => <VersionNote n={n} x={x} />} />
@@ -1856,7 +1857,8 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
   return (
     <div className="hc">
       {/* ME12 (ronda 11): «Generar receta» y «Recetas emitidas» */}
-      <RxAnnex patientId={p.id} stayId={file.hospitalization.id} meds={file.meds} />
+      {/* ME14 (ronda 14): también lo que la consulta de ingreso mandó a la receta (no está en la hoja), sin repetidos */}
+      <RxAnnex patientId={p.id} stayId={file.hospitalization.id} meds={[...file.meds, ...(file.consultRxMeds ?? [])]} />
       {write && (
         <section className="panel">
           <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
@@ -1897,26 +1899,23 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
 
 
 /**
- * ME10 (ronda 10): desde la tarjeta de la nota, «Receta: Imprimir / Descargar PDF» de sus medicamentos que no hay en la
- * clínica. ME12 (ronda 11): y «Elegir medicamentos» (médico), que abre «Generar receta».
+ * ME10 (ronda 10), ME12 (ronda 11) y ME14 (ronda 14): «Receta» en la tarjeta de cada nota con medicamentos (consulta de
+ * ingreso, evolución, procedimiento, postquirúrgica). Abre «Generar receta» (ME12) con los medicamentos DE ESA NOTA: vienen
+ * marcados los que van a receta (los de la consulta que no se aplican en la clínica) y los «No hay en la clínica». Enfermería,
+ * como en ME12: solo los «No hay en la clínica», con los datos del médico que los indicó.
  */
-function RxFromNote({ noteId, meds }: { noteId: string; meds: InpatientMed[] }) {
-  const { can, notify } = useStore()
-  const nav = useNavigate()
-  const [choosing, setChoosing] = useState(false)
+function RxFromNote({ meds }: { meds: InpatientMed[] }) {
+  const { can } = useStore()
+  const [open, setOpen] = useState(false)
   if (!(can('chart.view') && (can('inpatient.care') || can('inpatient.orders')))) return null
-  const marked = meds.some((m) => m.noteId === noteId && m.buyOutside && !m.stoppedAt)
-  const doctor = can('inpatient.orders') && meds.some((m) => !m.stoppedAt)
-  if (!marked && !doctor) return null
-  const go = async (how: 'imprimir' | 'pdf') => {
-    try { const { id } = await api<{ id: string }>('/print-jobs', { body: { kind: 'rx', noteId } }); nav(`/app/impresion/${id}?accion=${how}`) } catch (x) { notify((x as Error).message, 'error') }
-  }
+  const live = meds.filter((m) => !m.stoppedAt)
+  const doctor = can('inpatient.orders')
+  if (!live.length || (!doctor && !live.some((m) => m.buyOutside))) return null
+  const forRx = live.filter((m) => m.id.startsWith('c:') || m.buyOutside).map((m) => m.id)
   return (
-    <span className="no-print" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-      {marked && <button type="button" className="btn btn--soft btn--sm" onClick={() => go('imprimir')}><Printer size={14} />Receta: Imprimir</button>}
-      {marked && <button type="button" className="btn btn--ghost btn--sm" onClick={() => go('pdf')}><FileText size={14} />Descargar PDF</button>}
-      {doctor && <button type="button" className="btn btn--ghost btn--sm" onClick={() => setChoosing(true)}><Pill size={14} />{marked ? 'Elegir medicamentos' : 'Receta: elegir medicamentos'}</button>}
-      {choosing && <GenerateRxModal meds={meds} onClose={() => setChoosing(false)} />}
+    <span className="note-actions no-print">
+      <button type="button" className={`btn ${forRx.length ? 'btn--soft' : 'btn--ghost'} btn--sm`} onClick={() => setOpen(true)}><Pill size={14} />Receta</button>
+      {open && <GenerateRxModal meds={live} only={forRx} onClose={() => setOpen(false)} />}
     </span>
   )
 }

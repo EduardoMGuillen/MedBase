@@ -496,12 +496,13 @@ describe('EX1 (ronda 4) exámenes: Laboratorio e Imagen y gabinete', () => {
     const { doc, apptId } = await walkIn('Exámenes')
     const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Control', diagnoses: DX, exams: EXAMS3 })
     assert.equal(c.status, 201, JSON.stringify(c.body))
-    const batch = (await doc.get(`/api/exams/batch/${c.body.examBatch}`)).body
+    // EX10 (ronda 14): sin ingreso, los «En la clínica» van en su propio lote (los externos, en examBatch)
+    const batch = (await doc.get(`/api/exams/batch/${c.body.examBatch ?? c.body.clinicBatch}`)).body
     assert.equal(batch.exams.length, 3)
     assert.deepEqual([...new Set(batch.exams.map((e: any) => e.group))].sort(), ['imaging', 'lab'])
     assert.ok(batch.exams.every((e: any) => e.area === 'nursing' && e.status === 'ordered'))
     // Recepción no ordena exámenes
-    assert.equal((await (await as('smejia@demo.clinara')).get(`/api/exams/batch/${c.body.examBatch}`)).status, 403)
+    assert.equal((await (await as('smejia@demo.clinara')).get(`/api/exams/batch/${c.body.examBatch ?? c.body.clinicBatch}`)).status, 403)
   })
 
   test('con laboratorio propio, el área destino es Laboratorio; los externos de consulta no van a ninguna bandeja', async () => {
@@ -510,7 +511,8 @@ describe('EX1 (ronda 4) exámenes: Laboratorio e Imagen y gabinete', () => {
     const { doc, apptId } = await walkIn('Laboratorio Propio')
     const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Control', diagnoses: DX,
       exams: [{ group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' }, { group: 'imaging', name: 'Ultrasonido abdominal', priority: 'routine', place: 'external' }] })
-    const exams = (await doc.get(`/api/exams/batch/${c.body.examBatch}`)).body.exams
+    // EX10 (ronda 14): dos órdenes, la de los externos y la de los de la clínica
+    const exams = [...(await doc.get(`/api/exams/batch/${c.body.examBatch}`)).body.exams, ...(await doc.get(`/api/exams/batch/${c.body.clinicBatch}`)).body.exams]
     assert.equal(exams.find((e: any) => e.group === 'lab').area, 'lab')
     assert.equal(exams.find((e: any) => e.group === 'imaging').area, 'none')
     await admin.put('/api/settings/exam-areas', { hasLab: false, hasImaging: false })

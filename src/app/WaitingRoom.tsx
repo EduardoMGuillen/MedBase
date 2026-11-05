@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Activity, BedDouble, FlaskConical, LogIn, NotebookPen, Stethoscope, UserPlus } from 'lucide-react'
+import { Activity, BedDouble, FlaskConical, LogIn, NotebookPen, Stethoscope, Syringe, UserPlus } from 'lucide-react'
 import { AmbulatoryModal } from './Ambulatory'
 import { useStore } from '../lib/store'
 import { features, hasRole } from '../lib/permissions'
 import { Modal, PageHead, StatusBadge } from '../components/ui'
 import { age, fullName, sameDay, time } from '../lib/format'
-import type { ActiveStay, Appointment, Patient, Vitals } from '../lib/types'
+import type { ActiveStay, Appointment, ConsultApplication, Patient, Vitals } from '../lib/types'
+import { ApplyModal, applyBadge, canApply } from '../components/ApplyMeds'
 import { api, ApiError } from '../lib/api'
 import { GRACE_EXPIRED_TEXT } from '../lib/grace'
 import { CorrectionReason, GraceButton } from '../components/Grace'
@@ -37,6 +38,22 @@ export default function WaitingRoom() {
   // GE4 (ronda 9): quien hizo la preclínica la corrige en el periodo de gracia, con el mismo formulario
   const [fixing, setFixing] = useState<{ appt: Appointment; vitals: Vitals } | null>(null)
   const [walkIn, setWalkIn] = useState(false)
+  // ME13 (ronda 14): los medicamentos «Aplicar en la clínica» de las consultas de hoy sin ingreso; enfermería (o el médico) los aplica
+  const mayApply = canApply(can)
+  const [apps, setApps] = useState<ConsultApplication[]>([])
+  const [applying, setApplying] = useState<ConsultApplication[] | null>(null)
+  const doneToday = appointments.filter((a) => a.status === 'done' && sameDay(a.start, new Date())).length
+  const loadApps = useCallback(() => {
+    const from = new Date(); from.setHours(0, 0, 0, 0)
+    const to = new Date(from); to.setDate(to.getDate() + 1)
+    api<ConsultApplication[]>(`/applications?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`).then(setApps).catch(() => null)
+  }, [])
+  useEffect(() => {
+    if (!mayApply) return
+    loadApps()
+    const t = setInterval(loadApps, 60_000)
+    return () => clearInterval(t)
+  }, [mayApply, loadApps, doneToday])
   const [ambulatory, setAmbulatory] = useState(false)
   const [completing, setCompleting] = useState<Appointment | null>(null)
   // El médico ve "Mis pacientes" por defecto y se recuerda su última elección en este navegador
@@ -88,6 +105,7 @@ export default function WaitingRoom() {
                 : stay && <span className="badge badge--ink"><BedDouble size={12} />{stay.kind === 'observation' ? 'En observación' : 'Hospitalizado'}</span>}
             {a.reassignedFrom && <span className="badge badge--amber">{takenFromMe ? `Lo atiende ${staffById(a.doctorId)?.name}` : `Atendido por ${staffById(a.doctorId)?.name}, estaba con ${staffById(a.reassignedFrom)?.name}`}</span>}
             {wait !== null && <span className="wait">{wait} min esperando</span>}
+            {(() => { const b = a.status === 'done' && applyBadge(apps.filter((x) => x.appointmentId === a.id)); return b && <span className={`badge badge--${b.tone}`}><Syringe size={12} />{b.text}</span> })()}
           </div>
         </div>
         <div style={{ display: 'grid', gap: 6, alignContent: 'start' }}>
@@ -106,6 +124,8 @@ export default function WaitingRoom() {
             <button className="btn btn--primary btn--sm" onClick={() => nav(`/app/consulta/${a.id}`)}><Stethoscope size={15} />{a.status === 'in_consult' ? 'Continuar' : 'Atender'}</button>}
           {a.status === 'triaged' && !interned && !own && multiDoctor && user?.role === 'doctor' && can('consult.write') &&
             <button className="btn btn--ghost btn--sm" onClick={() => setTaking(a)}><Stethoscope size={15} />Atender</button>}
+          {a.status === 'done' && mayApply && apps.some((x) => x.appointmentId === a.id && x.status === 'pending') &&
+            <button className="btn btn--primary btn--sm" onClick={() => setApplying(apps.filter((x) => x.appointmentId === a.id))}><Syringe size={15} />Aplicar</button>}
           {a.status === 'done' && can('chart.view') &&
             <Link className="btn btn--ghost btn--sm" to={`/app/pacientes/${p.id}`}><NotebookPen size={15} />Expediente</Link>}
         </div>
@@ -129,6 +149,7 @@ export default function WaitingRoom() {
           {multiDoctor && can('ambulatory.register') && <button className="btn btn--soft" onClick={() => setAmbulatory(true)}><FlaskConical size={17} />Paciente ambulatorio</button>}
         </>} />
       {ambulatory && <AmbulatoryModal onClose={() => setAmbulatory(false)} onDone={() => setAmbulatory(false)} />}
+      {applying && <ApplyModal list={applying} onClose={() => setApplying(null)} onSaved={() => { setApplying(null); loadApps() }} />}
       {grouped && (
         <div className="ce-arrange" role="group" aria-label="Organizar la consulta externa">
           <GroupTools view={view} onView={setView} onExpand={() => fold.setAll(groupKeys, true)} onCollapse={() => fold.setAll(groupKeys, false)} />

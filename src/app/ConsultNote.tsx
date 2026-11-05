@@ -51,7 +51,7 @@ export default function ConsultNote() {
         <h3 className="cn__h">III. Antecedentes</h3>
         <BackgroundView p={p} compact />
         <h3 className="cn__h">IV. Consulta</h3>
-        <ConsultationBody c={c} vitals={vitals} exams={data.exams ?? []} />
+        <ConsultationBody c={c} vitals={vitals} exams={data.exams ?? []} applications={data.applications} />
         <div className="signed-row">
           <SignedBadge by={doc.name} at={c.date} addenda={(data.addenda ?? []).length} />
           {/* GE4 (ronda 9): periodo de gracia y versiones */}

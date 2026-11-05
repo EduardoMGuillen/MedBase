@@ -93,6 +93,9 @@ export async function createMedOrders(q: Sql, o: {
 export function stayItemsOf(c: { meds?: unknown }, rxItems: PrescriptionItem[], stayKind: string): (PrescriptionItem | null)[] {
   if (!c.meds) return rxItems
   const items = JSON.parse(String(c.meds)) as PrescriptionItem[]
+  // ME14 (ronda 14): desde la v82 la consulta guarda la casilla explícita (true/false) y manda, también con hospitalización:
+  // los que no se aplican en la clínica van a la receta, no a la hoja. Las de antes no guardaban `false`: regla de siempre.
+  if (items.some((it) => it.applyInClinic === false)) return items.map((it) => (it.applyInClinic ? it : null))
   return items.map((it) => (stayKind === 'hospital' || it.applyInClinic ? it : null))
 }
 
@@ -171,3 +174,30 @@ export async function backfillMissingOrders(q: Sql, o: { dryRun: boolean; now?: 
 
 /** Comprobación: para cada estancia activa, los medicamentos de su consulta de origen que no están en la hoja. Vacío = todo en orden. */
 export const checkStayOrders = (q: Sql) => backfillMissingOrders(q, { dryRun: true })
+
+/** ME14 (ronda 14): prefijo del id de un medicamento de la consulta de ingreso que no está en la hoja («c:<consulta>:<índice>»). */
+export const CONSULT_MED_PREFIX = 'c:'
+
+/**
+ * ME14 (ronda 14): los medicamentos que la consulta de ingreso indicó para la receta y que no están en la hoja (los que no se
+ * aplican en la clínica; también los de las observaciones que nacieron de «Aplicar en la clínica» antes de esta ronda). Se
+ * devuelven con la forma de una fila de hosp_meds y un id propio, para que «Generar receta» los liste junto con los activos de
+ * la hoja (sin repetir un fármaco que ya está activo). No se guardan en la hoja: solo sirven para la receta.
+ */
+export async function consultRxRows(q: Sql, h: Row): Promise<Row[]> {
+  if (!h.consultation_id) return []
+  const c = await q.one('SELECT * FROM consultations WHERE id = ? AND clinic_id = ?', [String(h.consultation_id), String(h.clinic_id)])
+  if (!c?.meds) return []
+  const items = JSON.parse(String(c.meds)) as PrescriptionItem[]
+  const have = await q.query('SELECT source_id, source_index, drug, stopped_at FROM hosp_meds WHERE hospitalization_id = ?', [String(h.id)])
+  const onSheet = new Set(have.filter((m) => m.source_id === c.id).map((m) => Number(m.source_index)))
+  const active = new Set(have.filter((m) => !m.stopped_at).map((m) => normalize(String(m.drug))))
+  return items.flatMap((it, index) => (onSheet.has(index) || active.has(normalize(it.drug)) ? [] : [{
+    id: `${CONSULT_MED_PREFIX}${String(c.id)}:${index}`, clinic_id: h.clinic_id, hospitalization_id: h.id, patient_id: h.patient_id, note_id: null,
+    source: 'consultation', source_id: c.id, source_index: index, drug: it.drug, presentation: it.presentation || null, dose: it.dose, route: it.route || 'Oral',
+    every_hours: frequencyHours(it.frequency) ?? null, prn: /necesidad|necesario|\bprn\b/i.test(it.frequency), first_at: c.date, instructions: it.instructions || null,
+    days: durationDays(it.duration) ?? null, ordered_by: c.doctor_id, ordered_at: c.date, prn_condition: it.prnCondition || null, loading_dose: it.loadingDose || null,
+    nebulization: it.nebulization ? JSON.stringify(it.nebulization) : null, buy_outside: !!it.buyOutside, buy_quantity: it.buyOutside ? it.quantity || null : null,
+    stopped_at: null,
+  } as Row]))
+}

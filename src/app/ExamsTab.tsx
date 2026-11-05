@@ -17,7 +17,7 @@ import { SourceTag } from '../components/SourceTag'
 import { uploadLarge } from '../lib/files'
 import { FileChip, FileThumb, FileViewer } from '../components/FilePreview'
 import { deptAllows } from '../lib/permissions'
-import { NOT_DONE_REASONS } from '../lib/clinicalConfig'
+import { NOT_DONE_ELSEWHERE, NOT_DONE_REASONS } from '../lib/clinicalConfig'
 import type { ExamGroup, ExamOrder } from '../lib/types'
 
 const TONE: Record<string, string> = { ordered: 'amber', sample: 'ink', done: 'ink', result: 'mint', reviewed: 'done', cancelled: '' }
@@ -512,7 +512,8 @@ function NotDoneModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => voi
     </>}>
       <p className="muted" style={{ fontSize: 14, margin: 0 }}>La orden sigue pendiente: el médico decide si la cancela. Con «Reintentar» vuelve a la bandeja.</p>
       <div style={{ display: 'grid', gap: 6 }}>
-        {[...NOT_DONE_REASONS, 'Otro'].map((r) => <label key={r} className="check-line"><input type="radio" name="nd" checked={pick === r} onChange={() => setPick(r)} /><span><b>{r}</b></span></label>)}
+        {/* EX10 (ronda 14): «El paciente se lo hará en otro laboratorio» (en imágenes, «…en otro centro») */}
+        {[...NOT_DONE_REASONS, NOT_DONE_ELSEWHERE[e.group], 'Otro'].map((r) => <label key={r} className="check-line"><input type="radio" name="nd" checked={pick === r} onChange={() => setPick(r)} /><span><b>{r}</b></span></label>)}
       </div>
       {pick === 'Otro' && <label className="field"><span>Motivo</span><input className="input" autoFocus value={other} onChange={(x) => setOther(x.target.value)} /></label>}
     </Modal>

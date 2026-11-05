@@ -215,7 +215,8 @@ describe('C7 observación opcional en el consultorio', () => {
     }
     const dx = [{ code: '1A40.Z', label: 'Gastroenteritis o colitis infecciosa sin especificación del agente infeccioso', system: 'icd11' }]
     const shot = { drug: 'Dimenhidrinato', presentation: 'Ampolla 50 mg', dose: '50 mg', route: 'Intramuscular', frequency: 'Dosis única', duration: '', applyInClinic: true }
-    const c = await o.doc.post('/api/consultations', { appointmentId: await visit(), reason: 'Vómitos', diagnoses: dx, orders: [], items: [shot] })
+    // ME13 (ronda 14): «Aplicar en la clínica» ya no ingresa a observación; la observación es la casilla
+    const c = await o.doc.post('/api/consultations', { appointmentId: await visit(), reason: 'Vómitos', diagnoses: dx, orders: [], items: [shot], observe: true })
     assert.equal(c.status, 201, JSON.stringify(c.body))
     assert.equal(c.body.stayKind, 'observation')
     const med = (await o.asi.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds[0]
@@ -228,9 +229,12 @@ describe('C7 observación opcional en el consultorio', () => {
     assert.equal((await o.doc.put('/api/settings', { ...s, address: 'Col. Kennedy', phone: '2222-0000', observationEnabled: false })).status, 200)
     await o.view('doctor')
     const appt = await visit()
-    assert.equal((await o.doc.post('/api/consultations', { appointmentId: appt, reason: 'Vómitos', diagnoses: dx, orders: [], items: [shot] })).status, 400)
     assert.equal((await o.doc.post('/api/consultations', { appointmentId: appt, reason: 'Vómitos', diagnoses: dx, orders: ['Reposo.'], observe: true })).status, 400)
-    assert.equal((await o.doc.post('/api/consultations', { appointmentId: appt, reason: 'Vómitos', diagnoses: dx, orders: ['Reposo.'] })).status, 201)
+    // ME13 (ronda 14): sin observación, la inyección se aplica igual (por aplicar, sin estancia)
+    const shotOnly = await o.doc.post('/api/consultations', { appointmentId: appt, reason: 'Vómitos', diagnoses: dx, orders: [], items: [shot] })
+    assert.equal(shotOnly.status, 201, JSON.stringify(shotOnly.body))
+    assert.equal(shotOnly.body.hospitalizationId, null)
+    assert.equal(shotOnly.body.applications, 1)
   })
 })
 

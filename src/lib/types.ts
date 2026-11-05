@@ -1118,6 +1118,8 @@ export interface InpatientFile {
   consultIndications?: string[]
   /** AN1: adendas de las notas de la estancia y de la consulta de ingreso. */
   addenda?: Addendum[]
+  /** ME14 (ronda 14): medicamentos que la consulta de ingreso indicó para la receta y no están en la hoja (id «c:…»). */
+  consultRxMeds?: InpatientMed[]
   /** EX1: exámenes de la estancia (y de la consulta que lo ingresó). */
   exams?: ExamOrder[]
 }
@@ -1143,4 +1145,23 @@ export interface Followup {
   remindedEve?: string
   remindedDay?: string
   active: boolean
+}
+
+/** ME13 (ronda 14): un medicamento «Aplicar en la clínica» de una consulta externa sin ingreso: por aplicar, aplicado o no aplicado. */
+export interface ConsultApplication {
+  id: string
+  consultationId: string
+  appointmentId?: string
+  patientId: string
+  itemIndex: number
+  drug: string
+  /** Texto completo de la orden (nombre, presentación, dosis, vía). */
+  orderText: string
+  orderedBy: string
+  orderedAt: string
+  status: 'pending' | 'applied' | 'not_applied'
+  appliedAt?: string
+  reason?: string
+  recordedBy?: string
+  recordedAt?: string
 }

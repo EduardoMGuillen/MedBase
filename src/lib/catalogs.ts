@@ -152,6 +152,8 @@ export const EMPTY_MED: PrescriptionItem = { drug: '', presentation: '', dose: '
 
 /** MC2 (ronda 6): la frecuencia PRN de la receta. Las recetas de antes decían «Según necesidad». */
 export const PRN_FREQUENCY = 'PRN (si es necesario)'
+/** ME13 (ronda 14): la frecuencia de una sola dosis (en la consulta sin ingreso se muestra «Dosis única (STAT)»). */
+export const STAT_FREQUENCY = 'Dosis única'
 export const FREQUENCIES = ['Cada 4 horas', 'Cada 6 horas', 'Cada 8 horas', 'Cada 12 horas', 'Cada 24 horas', 'Dosis única', PRN_FREQUENCY]
 /** ¿La frecuencia escrita es PRN? («PRN (si es necesario)», «Según necesidad», «Cada 8 horas si es necesario»). */
 export const isPrnFrequency = (f: string) => /necesidad|necesario|\bprn\b/i.test(f)

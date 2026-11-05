@@ -103,15 +103,19 @@ describe('P3 cada ruta de la tabla', () => {
     assert.equal(file.meds[0].id, med.id)
     assert.equal(file.doses.length, 1, 'conserva la dosis ya aplicada')
   })
-  test('consulta ambulatoria con "Aplicar en la clínica" → observación sólo con ese; al hospitalizar pasan todos', async () => {
+  // ME13 y ME14 (ronda 14): «Aplicar en la clínica» ya no crea la observación (la crea la casilla); con ingreso, lo desmarcado a
+  // propósito va a la receta y no a la hoja, tampoco al pasar a hospitalización
+  test('consulta con ingreso a observación: a la hoja solo lo marcado; lo desmarcado va a la receta y no pasa al hospitalizar', async () => {
     const { doc, apptId } = await openConsult('p16')
     const shot = { drug: 'Metoclopramida', presentation: 'Ampolla 10 mg', dose: '10 mg', route: 'Intramuscular', frequency: 'Dosis única', duration: '', applyInClinic: true }
-    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Vómitos', diagnoses: DX, orders: [], items: [ACETAMINOFEN, shot] })
+    const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Vómitos', diagnoses: DX, orders: [], observe: true, items: [{ ...ACETAMINOFEN, duration: '3 días', applyInClinic: false }, shot] })
+    assert.equal(c.status, 201, JSON.stringify(c.body))
     assert.equal(c.body.stayKind, 'observation')
+    assert.ok(c.body.prescriptionId)
     assert.deepEqual((await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds.map((m: any) => m.drug), ['Metoclopramida'])
     const conv = await doc.post(`/api/inpatient/${c.body.hospitalizationId}/convert`, { bedId: await freeBed() })
-    assert.equal(conv.body.medOrders, 1)
-    assert.deepEqual((await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds.map((m: any) => m.drug).sort(), ['Acetaminofén', 'Metoclopramida'])
+    assert.equal(conv.body.medOrders, 0)
+    assert.deepEqual((await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds.map((m: any) => m.drug), ['Metoclopramida'])
   })
   test('consulta con medicamento + ingreso directo a hospitalización → hoja', async () => {
     const { doc, apptId } = await openConsult('p10')

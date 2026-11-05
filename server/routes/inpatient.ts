@@ -19,7 +19,7 @@ import { VITALS_OTHER_RANGE } from '../../src/lib/clinicalConfig.js'
 import { examLine, isPending } from '../../src/lib/exams.js'
 import { hasBlank, medHasBlank } from '../../src/lib/orderSets.js'
 import { can } from '../../src/lib/permissions.js'
-import { createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrders.js'
+import { consultRxRows, createMedOrders, findAdmissionConsult, syncStayOrders } from '../medOrders.js'
 import { authorizationBase, ensureHospitalAuthorization, refreshPendingHospitalAuthorization } from '../authorizations.js'
 import { rxValidityOf, specialtyOf, validityInput } from '../prefs.js'
 import { currentMarks, docName } from './me.js'
@@ -455,6 +455,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       consultIndications: await consultIndications(h),
       // AN1: adendas de las notas y de la consulta que lo ingresó
       addenda: await addendaFor(sql, cid, [...notes.map((n) => String(n.id)), ...(h.consultation_id ? [String(h.consultation_id)] : [])]),
+      // ME14 (ronda 14): lo que la consulta de ingreso indicó para la receta y no está en la hoja («Generar receta», «Receta»)
+      consultRxMeds: (await consultRxRows(sql, h)).map(toInpatientMed),
       // EX1: exámenes de la estancia (y los que pidió la consulta que lo ingresó)
       exams: await examsWhere(sql, 'clinic_id = ? AND (hospitalization_id = ? OR (consultation_id IS NOT NULL AND consultation_id = ?))', [cid, id, String(h.consultation_id ?? '')]),
     }
