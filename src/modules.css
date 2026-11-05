@@ -1131,3 +1131,120 @@ button.src-tag--none { cursor: pointer; }
 .apply-med legend { display: flex; gap: 6px; align-items: center; font-size: 14.5px; padding: 0 4px; overflow-wrap: anywhere; }
 .apply-med .segmented button { min-height: 40px; }
 .apply-med__reasons { display: grid; gap: 4px; }
+
+/* RU1 (ronda 14): Configuración › Material médico quirúrgico y periodo de registro */
+.supply-tools { display: flex; gap: 12px 18px; flex-wrap: wrap; align-items: center; padding-bottom: 0; }
+.supply-tools > .input { flex: 1 1 260px; max-width: 420px; }
+.supply-tools__count { font-size: 13px; }
+.supply-table__cat th { background: var(--ward); color: var(--petrol); font-size: 13px; text-align: left; padding: 8px 22px; text-transform: none; letter-spacing: 0; }
+.supply-table .supply-origin { display: block; font-size: 12px; }
+.supply-table tr.is-archived td { color: var(--muted); }
+.supply-check { min-height: 44px; }
+.supply-check input { width: 20px; height: 20px; }
+.supply-period { margin-top: 16px; }
+.supply-period__hint { font-size: 13px; margin: 8px 0 0; }
+.supply-shifts { display: grid; gap: 8px; margin-top: 14px; max-width: 640px; }
+.supply-shifts__head, .supply-shifts__row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 44px; gap: 8px; align-items: center; }
+.supply-shifts__head span { font-size: 12px; font-weight: 600; color: var(--muted); }
+.supply-shifts > .btn { justify-self: start; }
+.supply-period__acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+@media (max-width: 860px) {
+  .supply-table__cat { display: block !important; padding: 0; }
+  .supply-table__cat th { display: block; padding: 8px 16px; }
+  .supply-shifts__head { display: none; }
+  .supply-shifts__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; }
+  .supply-shifts__row > .input { grid-column: 1 / -1; }
+}
+
+/* RU2 (ronda 14): registro de uso de medicamentos y material */
+.usage-filters { margin-bottom: 12px; }
+.usage-filters__row { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; padding-bottom: 8px; }
+.usage-filters__row > .segmented { align-self: flex-end; }
+.usage-filters__q { flex: 1 1 220px; }
+.usage-filters__period { margin: 0; padding: 0 22px 14px; font-size: 14px; color: var(--petrol); }
+.usage-tab .section-head__action .segmented { flex-wrap: nowrap; }
+.usage-block { border-top: 1px solid var(--line); padding: 14px 22px; }
+.usage-block--general { background: var(--ward); }
+.usage-block__head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 8px; }
+.usage-block__head b { font-size: 15px; color: var(--petrol); }
+.usage-block__head .chip { margin-left: auto; }
+.usage-table td, .usage-table th { padding-left: 10px; padding-right: 10px; }
+.usage-table .usage-sub { display: block; font-size: 12px; }
+.usage-mat .usage-qty { white-space: nowrap; font-weight: 600; }
+.usage-mat tr.is-void td, .usage-records li.is-void .usage-records__text, .usage-parts li.is-void { text-decoration: line-through; color: var(--muted); }
+.usage-parts td { background: var(--ward); font-size: 13px; }
+.usage-parts ul { margin: 0; padding-left: 18px; display: grid; gap: 2px; }
+.usage-records-btn { margin-top: 6px; }
+.usage-records { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.usage-records li { display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: space-between; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 10px; font-size: 13.5px; background: var(--paper); }
+.usage-records__items { margin-top: 2px; }
+.usage-records__void { display: block; color: var(--red-ink); text-decoration: none; font-size: 12.5px; }
+li.is-void .usage-records__void { text-decoration: none; }
+.usage-records__acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.usage-total { margin: 0 22px 12px; border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px 10px; background: var(--ward); }
+.usage-total__head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; border: 0; background: transparent; cursor: pointer; text-align: left; font: inherit; color: var(--petrol); flex-wrap: wrap; }
+.usage-total__head .muted { font-size: 12.5px; }
+.usage-total__cat h4 { margin: 8px 0 4px; font-size: 12.5px; color: var(--muted); }
+.usage-total__cat ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 18px; }
+.usage-total__cat li { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; border-bottom: 1px dotted var(--line); padding: 2px 0; }
+.usage-note { padding: 0 22px 14px; font-size: 12.5px; }
+.usage-add { min-height: 44px; }
+/* Formulario «Registrar material» */
+.mat-form__head { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.mat-form__period { font-size: 14px; color: var(--petrol); padding-top: 8px; }
+.mat-form__who { display: grid; gap: 8px; margin-top: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.mat-general { min-height: 44px; flex-wrap: wrap; }
+.mat-suggest__list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.mat-chip { border: 1px solid var(--line); background: var(--paper); border-radius: 999px; padding: 6px 12px; min-height: 40px; font: inherit; font-size: 13.5px; color: var(--petrol); cursor: pointer; }
+.mat-chip:hover { border-color: var(--ink); }
+.mat-form__title { font-size: 15px; margin: 14px 0 4px; }
+.mat-cat h4 { margin: 10px 0 4px; font-size: 12.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.mat-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 12px; padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+.mat-row.is-on .mat-row__name b { color: var(--ink-deep); }
+.mat-row__name { flex: 1 1 220px; min-width: 0; font-size: 14px; }
+.mat-row__list { display: flex; font-size: 12.5px; margin-top: 2px; min-height: 32px; }
+.mat-row__qty { display: flex; align-items: center; gap: 6px; }
+.mat-step { width: 44px; height: 44px; border: 1px solid var(--line); background: var(--paper); border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: var(--petrol); }
+.mat-step:disabled { opacity: .4; cursor: default; }
+.mat-qty { width: 64px; height: 44px; text-align: center; font-size: 16px; }
+.mat-row__unit { width: 64px; font-size: 12.5px; color: var(--muted); }
+.mat-find { margin-top: 14px; }
+.mat-form__err { margin-right: auto; }
+@media (max-width: 640px) {
+  .usage-block { padding: 12px 16px; }
+  .usage-total { margin: 0 16px 12px; }
+  .usage-filters__period { padding: 0 16px 12px; }
+  .usage-filters__row .field--inline { flex: 1 1 100%; }
+  .mat-row__name { flex-basis: 100%; }
+  .mat-row__qty { margin-left: auto; }
+  .usage-tab .section-head__action { width: 100%; }
+}
+.mat-row__name .mat-row__list { display: flex; width: fit-content; }
+.usage-table:not(.usage-mat) { table-layout: fixed; }
+.usage-table:not(.usage-mat) th:nth-child(1) { width: 17%; }
+.usage-table:not(.usage-mat) th:nth-child(3), .usage-table:not(.usage-mat) th:nth-child(4) { width: 20%; }
+.usage-mat { table-layout: fixed; }
+.usage-mat th:nth-child(2) { width: 22%; }
+.usage-mat th:nth-child(3) { width: 110px; }
+@media (max-width: 860px) { .usage-table:not(.usage-mat) { table-layout: auto; } }
+
+/* RU3 (ronda 14): registro de uso impreso (plantilla IM1, Carta) */
+.usage-out { min-height: 44px; }
+.usage-tab .section-head__action { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.usage-print { display: none; }
+.usage-print__table { width: 100%; border-collapse: collapse; font-size: 9.5pt; table-layout: fixed; }
+.usage-print__table thead { display: table-header-group; }
+.usage-print__table th, .usage-print__table td { text-align: left; vertical-align: top; padding: 3px 5px; border-bottom: 1px solid #c9d1da; overflow-wrap: anywhere; }
+.usage-print__table thead th { font-size: 8.5pt; border-bottom: 1.5px solid #000; }
+.usage-print__table tbody { break-inside: avoid; page-break-inside: avoid; }
+.usage-print__table tr { break-inside: avoid; page-break-inside: avoid; }
+.usage-print__table small { color: #444; }
+.usage-print__pt th { background: #eef2f6; font-weight: 700; padding-top: 6px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.usage-print__pt th span { font-weight: 400; margin-left: 10px; color: #333; }
+.usage-print__h { font-size: 12pt; margin: 14px 0 6px; break-after: avoid; }
+@media print {
+  body.usage-printing #root { display: none !important; }
+  body.usage-printing .usage-print { display: block; }
+}
+.usage-print__table td.num { white-space: nowrap; }
+.usage-total__cat li b { white-space: nowrap; }

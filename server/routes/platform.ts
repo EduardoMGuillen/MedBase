@@ -8,6 +8,7 @@ import { rolesOf, toAudit, toClinic, toStaff } from '../mappers.js'
 import { assertNotLastAdmin, assertRoleFits, CLINIC_ROLES, createStaffMember, tempPassword } from '../app.js'
 import { DEFAULT_SETTINGS } from '../../src/lib/seed.js'
 import { loadLnme } from '../lnmeLoader.js'
+import { loadSupplyCatalog } from '../supplies.js'
 
 const CLINIC_STATS = `
   (SELECT COUNT(*)::int FROM staff s WHERE s.clinic_id = c.id) AS staff_count,
@@ -75,6 +76,8 @@ export function registerPlatform(app: Express, { sql, auth, need, userOf, audit 
       for (const [name, price] of office ? OFFICE_SERVICES : STARTER_SERVICES) await q.run('INSERT INTO services (id, name, price, active, clinic_id) VALUES (?,?,?,TRUE,?)', [randomUUID(), name, price, id])
       // ME5 (ronda 9): toda clínica o consultorio nuevo nace con el LNME Honduras 2023 en su vademécum
       await loadLnme(q, id)
+      // RU1 (ronda 14): y con el catálogo de material médico quirúrgico (73 líneas, 15 en la lista de turno)
+      await loadSupplyCatalog(q, id)
     })
     const { user, password } = office
       ? await createStaffMember(sql, id, { name: b.owner!.name, role: 'doctor', email: b.owner!.email, license: b.owner!.license, specialty: b.owner!.specialty })

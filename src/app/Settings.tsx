@@ -16,8 +16,9 @@ import { ScheduleEditor } from './ScheduleEditor'
 import { Roster } from './Roster'
 import { features, hasRole } from '../lib/permissions'
 import { TabRow } from '../components/TabRow'
+import { SupplyCatalog } from './SupplyCatalog'
 
-type Tab = 'clinic' | 'services' | 'payments' | 'areas' | 'exams' | 'schedules' | 'roster' | 'beds' | 'drugs'
+type Tab = 'clinic' | 'services' | 'payments' | 'areas' | 'exams' | 'schedules' | 'roster' | 'beds' | 'drugs' | 'supplies'
 
 export default function Settings() {
   const [tab, setTab] = useState<Tab>('clinic')
@@ -38,6 +39,8 @@ export default function Settings() {
         {!f.office && <button className="tab" role="tab" data-tour="tab:turnos" aria-selected={tab === 'roster'} onClick={() => setTab('roster')}>Rol de turnos</button>}
         {f.hospital && <button className="tab" role="tab" data-tour="tab:camas" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}>Camas</button>}
         <button className="tab" role="tab" data-tour="tab:vademecum" aria-selected={tab === 'drugs'} onClick={() => setTab('drugs')}>Vademécum</button>
+        {/* RU1 (ronda 14): catálogo de material médico quirúrgico, lista de turno y periodo de registro */}
+        <button className="tab" role="tab" data-tour="tab:material" aria-selected={tab === 'supplies'} onClick={() => setTab('supplies')}>Material médico quirúrgico</button>
       </TabRow>
       {tab === 'clinic' && <ClinicForm />}
       {tab === 'services' && <Services />}
@@ -48,6 +51,7 @@ export default function Settings() {
       {tab === 'roster' && !f.office && <Roster />}
       {tab === 'beds' && f.hospital && <Beds />}
       {tab === 'drugs' && <ClinicDrugs />}
+      {tab === 'supplies' && <SupplyCatalog />}
     </div>
   )
 }

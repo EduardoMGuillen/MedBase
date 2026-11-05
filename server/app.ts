@@ -45,6 +45,8 @@ import { registerEpicrisis } from './routes/epicrisis.js'
 import { followupInput, insertFollowup, registerFollowups, sweepFollowupReminders } from './routes/followups.js'
 import { registerPrintJobs } from './routes/printJobs.js'
 import { registerDept } from './routes/dept.js'
+import { registerSupplies } from './routes/supplies.js'
+import { registerUsage } from './routes/usage.js'
 import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permission } from '../src/lib/permissions.js'
 import { positionOf } from '../src/lib/positions.js'
 import { NEB_MAX_COMPONENTS, PAGE_SIZE } from '../src/lib/clinicalConfig.js'
@@ -1421,6 +1423,8 @@ export function createApp(opts: AppOptions) {
   registerPrintJobs(app, ctx)
   registerApplications(app, ctx)
   registerDept(app, ctx)
+  registerSupplies(app, ctx)
+  registerUsage(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))
 

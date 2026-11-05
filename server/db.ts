@@ -20,6 +20,7 @@ import { closeVisitsOfInpatients } from './stayVisits.js'
 import { cleanArchivedThresholds, loadImagingCatalog } from './ronda10.js'
 import { loadRonda11Catalog } from './ronda11.js'
 import { addDeptDemo } from './demoDept.js'
+import { loadSupplyCatalog } from './supplies.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
@@ -1149,6 +1150,43 @@ ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS include_dx BOOLEAN;
 ALTER TABLE prescriptions ALTER COLUMN include_dx SET DEFAULT FALSE;
 ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS include_dx BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE print_log ADD COLUMN IF NOT EXISTS with_dx BOOLEAN;
+-- v82 (ronda 14). RU1: catálogo de material médico quirúrgico por clínica (carga del .md en server/supplies.ts: md_key es la
+-- clave de la línea del .md; edited_at, archived_at y list_set_at marcan lo que la clínica cambió y ninguna carga vuelve a
+-- tocar) y su periodo de registro («Por turno», «Por día», «Por semana») con los turnos editables. Nada se borra: se archiva.
+CREATE TABLE IF NOT EXISTS supply_items (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  category TEXT NOT NULL,
+  material TEXT NOT NULL,
+  variant TEXT NOT NULL DEFAULT '',
+  unit TEXT NOT NULL CHECK (unit IN ('unidad','par','sobre','rollo','frasco','hoja')),
+  on_shift_list BOOLEAN NOT NULL DEFAULT FALSE,
+  sort INTEGER NOT NULL DEFAULT 0,
+  origin TEXT NOT NULL DEFAULT 'clinic' CHECK (origin IN ('catalog','clinic')),
+  md_key TEXT,
+  md_no INTEGER,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  edited_at TEXT,
+  edited_by TEXT,
+  list_set_at TEXT,
+  list_set_by TEXT,
+  archived_at TEXT,
+  archived_by TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS supply_items_md ON supply_items (clinic_id, md_key) WHERE md_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS supply_items_clinic ON supply_items (clinic_id);
+CREATE TABLE IF NOT EXISTS supply_settings (
+  clinic_id TEXT PRIMARY KEY REFERENCES clinics(id),
+  period TEXT NOT NULL DEFAULT 'shift' CHECK (period IN ('shift','day','week')),
+  shifts TEXT NOT NULL,
+  updated_by TEXT,
+  updated_at TEXT
+);
+-- v82 (ronda 14). RU2: aplicaciones de consulta externa (ME13; contrato de la otra rama: misma tabla, se deduplica al unir) y
+-- registros de material por paciente o «Uso general del servicio», con su periodo (turno, día o semana), sus materiales
+-- (copia de material, variante y unidad al registrar), la corrección en el periodo de gracia (GE4, record_versions) y la
+-- anulación con motivo. Nada se borra; un registro anulado no suma.
 -- v82 (ronda 14). ME13: un medicamento «Aplicar en la clínica» de la consulta externa sin ingreso ya no crea una observación:
 -- queda «Por aplicar» para enfermería (o el médico), que registra «Aplicado» (hora y quién) o «No aplicado» (motivo). Una fila
 -- por medicamento de la consulta (consultation_id + item_index). Lo lee el registro de uso (RU2).
@@ -1169,6 +1207,30 @@ CREATE TABLE IF NOT EXISTS consult_applications (
   recorded_at TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS consult_applications_item ON consult_applications (consultation_id, item_index);
+CREATE TABLE IF NOT EXISTS material_uses (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  patient_id TEXT REFERENCES patients(id),
+  general BOOLEAN NOT NULL DEFAULT FALSE,
+  area TEXT,
+  location TEXT,
+  period_kind TEXT NOT NULL CHECK (period_kind IN ('shift','day','week')),
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  period_label TEXT NOT NULL,
+  shift_key TEXT,
+  items TEXT NOT NULL,
+  recorded_by TEXT NOT NULL REFERENCES staff(id),
+  recorded_at TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  corrected_at TEXT,
+  corrected_by TEXT,
+  voided_at TEXT,
+  voided_by TEXT,
+  void_reason TEXT,
+  CHECK ((general AND patient_id IS NULL) OR (NOT general AND patient_id IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS material_uses_period ON material_uses (clinic_id, period_start);
 CREATE INDEX IF NOT EXISTS consult_applications_clinic ON consult_applications (clinic_id, ordered_at);
 `
 
@@ -1245,6 +1307,8 @@ export function ensureDb(sql: Sql) {
       await clearCriticalFlags(q)
       // v57/v58 (ronda 8, CX2): nadie internado sigue a la vez en la consulta externa (idempotente)
       await closeVisitsOfInpatients(q)
+      // v82 (ronda 14, RU1): el catálogo base de material médico quirúrgico y su periodo de registro en cada clínica y consultorio
+      for (const c of await q.query('SELECT id FROM clinics')) await loadSupplyCatalog(q, String(c.id))
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -1645,6 +1709,8 @@ export async function ensureExamCatalog(q: Sql, clinicId: string) {
   await loadImagingCatalog(q, clinicId)
   // CA6 y CA7 (ronda 11)
   await loadRonda11Catalog(q, clinicId)
+  // RU1 (ronda 14): y el catálogo de material médico quirúrgico con su lista de turno
+  await loadSupplyCatalog(q, clinicId)
 }
 
 /**
@@ -1836,6 +1902,8 @@ export async function resetDemo(sql: Sql) {
     await migrateCriticalDefaults(q)
     // ME5 (ronda 9): el LNME en el vademécum de cada clínica de la demo
     for (const c of await q.query('SELECT id FROM clinics')) await loadLnme(q, String(c.id))
+    // RU1 (ronda 14): el catálogo de material médico quirúrgico
+    for (const c of await q.query('SELECT id FROM clinics')) await loadSupplyCatalog(q, String(c.id))
   })
 }
 
