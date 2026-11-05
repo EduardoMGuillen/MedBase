@@ -151,6 +151,14 @@ consultorios. Antes de borrar o reemplazar algo, guardan una copia en la tabla `
 | 11 | `docs/ronda11/PEDIDO_RONDA11.md` | `PLAN_RONDA11.md` | `REPORTE_RONDA11.md` | — |
 | 12 | `docs/ronda12/PEDIDO_RONDA12.md` | `PLAN_RONDA12.md` | `REPORTE_RONDA12.md` | — |
 | 13 | `docs/ronda13/PEDIDO_RONDA13.md` | `PLAN_RONDA13.md` | `REPORTE_RONDA13.md` | `docs/ronda13/despues/` |
+| 14 | `docs/ronda14/PEDIDO_RONDA14.md` | `PLAN_RONDA14.md` | `REPORTE_RONDA14.md` | `docs/ronda14/despues/` |
+
+Ronda 14 (esquema 81 → 82): «Aplicar en la clínica» sin ingreso ya no crea una observación: queda «Por aplicar» para
+enfermería (ME13); receta al firmar con ingreso y desde la tarjeta de la nota (ME14); exámenes en «Externo» o «En la clínica»
+según dónde está el paciente (EX8), en una lista compacta (EX9), con la orden de los de la clínica aparte (EX10) y la ventana
+con casillas también desde la nota (EX11); catálogo de material médico quirúrgico y «Uso de medicamentos y material» con
+impresión y Excel (RU1–RU3); hoja de anestesia de la nota postquirúrgica (PQ3); barra fija del expediente (CX6) y mayúscula
+inicial (GE10). Detalle en `REPORTE_RONDA14.md`.
 
 Ronda 13 (esquema 80 → 81): una sola plantilla de impresión para todos los documentos, en Carta (IM1), «Incluir
 diagnóstico» guardado con la receta (IM2), órdenes agrupadas como el catálogo (IM3), antecedentes sin «Transfusionales» (AP3,
