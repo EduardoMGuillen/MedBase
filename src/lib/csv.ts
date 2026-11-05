@@ -35,7 +35,7 @@ export function toCsv(rows: (string | number | undefined | null)[][]) {
 }
 
 /** Descarga un archivo de texto generado en el navegador. */
-export function download(name: string, text: string, type = 'text/csv;charset=utf-8') {
+export function download(name: string, text: BlobPart, type = 'text/csv;charset=utf-8') {
   const a = document.createElement('a')
   a.href = URL.createObjectURL(new Blob([text], { type }))
   a.download = name

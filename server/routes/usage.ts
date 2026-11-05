@@ -238,6 +238,17 @@ export function registerUsage(app: Express, { sql, auth, need, userOf, clinicOf,
     res.json(toRecord((await recordRow(cid, String(r.id)))!, await staffMap(cid)))
   })
 
+  // RU3: cada impresión y exportación a Excel queda en la bitácora (quién, cuándo, qué periodo, área y búsqueda)
+  app.post('/api/usage/log', auth, need('usage.export'), async (req, res) => {
+    const b = parse(z.object({
+      tab: z.enum(['meds', 'material']), how: z.enum(['print', 'excel']), period: z.string().trim().min(1).max(120),
+      area: z.string().trim().max(40).default('Todas'), q: z.string().trim().max(80).default(''), rows: z.number().int().min(0).max(100_000), file: z.string().trim().max(120).optional(),
+    }), req.body)
+    const what = b.tab === 'meds' ? 'el registro de uso de medicamentos' : 'el registro de uso de material'
+    await audit(userOf(req), `${b.how === 'print' ? 'Imprimió' : 'Exportó a Excel'} ${what} (periodo ${b.period}; área ${b.area}${b.q ? `; búsqueda «${b.q}»` : ''}; ${b.rows} filas)${b.file ? `: ${b.file}` : ''}`)
+    res.json({ ok: true })
+  })
+
   /** Pacientes para sugerir primero: atendidos (cita o consulta) o internados en ese periodo. */
   app.get('/api/usage/suggest', auth, need('usage.record'), async (req, res) => {
     const f = parse(z.object({ from: iso, to: iso }), req.query, 'Elige el periodo.')

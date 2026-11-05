@@ -1179,3 +1179,24 @@ li.is-void .usage-records__void { text-decoration: none; }
 .usage-mat th:nth-child(2) { width: 22%; }
 .usage-mat th:nth-child(3) { width: 110px; }
 @media (max-width: 860px) { .usage-table:not(.usage-mat) { table-layout: auto; } }
+
+/* RU3 (ronda 14): registro de uso impreso (plantilla IM1, Carta) */
+.usage-out { min-height: 44px; }
+.usage-tab .section-head__action { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.usage-print { display: none; }
+.usage-print__table { width: 100%; border-collapse: collapse; font-size: 9.5pt; table-layout: fixed; }
+.usage-print__table thead { display: table-header-group; }
+.usage-print__table th, .usage-print__table td { text-align: left; vertical-align: top; padding: 3px 5px; border-bottom: 1px solid #c9d1da; overflow-wrap: anywhere; }
+.usage-print__table thead th { font-size: 8.5pt; border-bottom: 1.5px solid #000; }
+.usage-print__table tbody { break-inside: avoid; page-break-inside: avoid; }
+.usage-print__table tr { break-inside: avoid; page-break-inside: avoid; }
+.usage-print__table small { color: #444; }
+.usage-print__pt th { background: #eef2f6; font-weight: 700; padding-top: 6px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.usage-print__pt th span { font-weight: 400; margin-left: 10px; color: #333; }
+.usage-print__h { font-size: 12pt; margin: 14px 0 6px; break-after: avoid; }
+@media print {
+  body.usage-printing #root { display: none !important; }
+  body.usage-printing .usage-print { display: block; }
+}
+.usage-print__table td.num { white-space: nowrap; }
+.usage-total__cat li b { white-space: nowrap; }

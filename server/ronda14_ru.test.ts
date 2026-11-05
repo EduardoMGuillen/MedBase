@@ -8,8 +8,10 @@ import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { loadSupplyCatalog } from './supplies.js'
 import { SUPPLY_MD } from '../src/lib/supplyMd/generated.js'
-import { addDays, currentPeriod, DEFAULT_SUPPLY_SETTINGS, matchesSupply, parseSupplyMd, stripLength, supplyLabel } from '../src/lib/supplies.js'
-import { byPatient, materialSums, materialTotals, medSummary, summaryText, type MaterialRecord } from '../src/lib/usage.js'
+import { addDays, currentPeriod, DEFAULT_SUPPLY_SETTINGS, matchesSupply, parseSupplyMd, stripLength, supplyLabel, usageFileName } from '../src/lib/supplies.js'
+import { byPatient, materialSums, materialTotals, medSummary, summaryText, type MaterialRecord, type MedUse } from '../src/lib/usage.js'
+import { buildMaterialWorkbook, buildMedsWorkbook } from '../src/lib/usageExcel.js'
+import ExcelJS from 'exceljs'
 
 // Ronda 14, grupo RU (registro de uso de medicamentos y material): con la base y la API (copia en memoria de la demo)
 let server: Server
@@ -419,5 +421,88 @@ describe('RU2 (ronda 14): Consultorio', () => {
     assert.equal((await ana.post(`/api/supplies/${gasa.id}/shift-list`, { on: false })).status, 200)
     const asis = await as('asistente@demo.clinara')
     assert.equal((await asis.post('/api/usage/material', { general: true, day: p.day, shiftKey: p.shiftKey, items: [{ itemId: gasa.id, quantity: 1 }] })).status, 201)
+  })
+})
+
+// ---------- RU3 ----------
+describe('RU3 (ronda 14): Excel e impresión del registro de uso', () => {
+  const info = { title: 'Registro de uso de material', periodLabel: 'Del 30/10/2026 al 05/11/2026', areaLabel: 'Todas', by: 'Lic. Carmen Ríos', at: new Date('2026-11-05T20:00:00Z'), clinic: 'Clínica Santa Brígida' }
+  const reread = async (wb: { xlsx: { writeBuffer: () => Promise<unknown> } }) => {
+    const back = new ExcelJS.Workbook()
+    await back.xlsx.load((await wb.xlsx.writeBuffer()) as ArrayBuffer)
+    return back
+  }
+  const dataRows = (ws: ExcelJS.Worksheet) => { const out: ExcelJS.Row[] = []; ws.eachRow((r, n) => { if (n > 5) out.push(r) }); return out }
+
+  test('Material: dos hojas, encabezado en negrita con fondo, fijo y con filtros; fechas de Excel y cantidades numéricas; trae todas las filas', async () => {
+    // 7 días y más de 25 filas (la pantalla muestra 25 por página; el Excel, todas)
+    const records: MaterialRecord[] = []
+    for (let d = 0; d < 7; d++) {
+      for (let p = 0; p < 5; p++) {
+        const start = new Date(Date.UTC(2026, 9, 30 + d, 13)).toISOString()
+        records.push({ id: `r${d}-${p}`, patientId: `p${p}`, general: false, patientName: `Paciente ${p}`, record: `EXP-0${p}`, location: 'Consulta externa', periodKind: 'shift', periodStart: start, periodEnd: start,
+          periodLabel: `Mañana ${d}`, items: [{ itemId: 'g', category: 'Protección personal', material: 'Guante estéril', variant: 'No. 7.5', unit: 'par', quantity: 2 }, { itemId: 'j', category: 'Agujas y jeringas', material: 'Jeringa descartable', variant: '5 mL, aguja 21 G', unit: 'unidad', quantity: 1 }],
+          recordedBy: 's-rios', recordedByName: 'Lic. Carmen Ríos', recordedAt: start, version: 1 })
+      }
+    }
+    records.push({ ...records[0], id: 'void', voidedAt: records[0].recordedAt, items: [{ ...records[0].items[0], quantity: 50 }] })
+    const wb = await reread(buildMaterialWorkbook(ExcelJS, info, records))
+    assert.deepEqual(wb.worksheets.map((w) => w.name), ['Por paciente', 'Total del periodo'])
+    const ws = wb.getWorksheet('Por paciente')!
+    assert.match(String(ws.getCell('A1').value), /Registro de uso de material/)
+    assert.equal(ws.getCell('A1').font?.bold, true)
+    assert.match(String(ws.getCell('A2').value), /Periodo: Del 30\/10\/2026 al 05\/11\/2026/)
+    const head = ws.getRow(5)
+    assert.deepEqual((head.values as unknown[]).slice(1), ['Fecha', 'Periodo', 'Paciente', 'Expediente', 'Categoría', 'Material', 'Variante', 'Unidad', 'Cantidad', 'Registrado por'])
+    assert.equal(head.getCell(1).font?.bold, true)
+    assert.equal((head.getCell(1).fill as ExcelJS.FillPattern).pattern, 'solid')
+    assert.equal(ws.views[0].state, 'frozen')
+    assert.equal((ws.views[0] as ExcelJS.WorksheetViewFrozen).ySplit, 5)
+    assert.ok(ws.autoFilter)
+    assert.ok((ws.getColumn(3).width ?? 0) >= 10)
+    const rows = dataRows(ws)
+    assert.equal(rows.length, 70, '35 registros × 2 materiales: todas las filas, no solo una página')
+    const first = rows[0]
+    assert.ok(first.getCell(1).value instanceof Date)
+    assert.equal(first.getCell(1).numFmt, 'dd/mm/yyyy')
+    assert.equal(typeof first.getCell(9).value, 'number')
+    const sumRows = rows.reduce((s, r) => s + Number(r.getCell(9).value), 0)
+    const totals = dataRows(wb.getWorksheet('Total del periodo')!)
+    const sumTotal = totals.reduce((s, r) => s + Number(r.getCell(5).value), 0)
+    assert.equal(sumRows, sumTotal, 'la suma en Excel coincide con el «Total del periodo»')
+    assert.equal(sumTotal, 35 * 3, 'el anulado no suma')
+  })
+
+  test('Medicamentos: «Aplicaciones» y «Resumen», fecha y hora como valores de Excel', async () => {
+    const at = '2026-11-05T14:30:00.000Z'
+    const rows: MedUse[] = [1, 2, 3].map((n) => ({ id: `m${n}`, source: 'dose', patientId: 'p1', patientName: 'Paciente 1', record: 'EXP-1', area: 'hospital', location: 'Hospitalización · Cuarto 201', at,
+      medication: 'Ceftriaxona (vial 1 g) 1 g vía intravenosa', drug: 'Ceftriaxona', presentation: 'Vial 1 g', dose: '1 g', appliedBy: 'Lic. Carmen Ríos', appliedByTitle: 'Enfermería', orderedBy: 'Dra. Lucía Herrera' }))
+    const wb = await reread(buildMedsWorkbook(ExcelJS, { ...info, title: 'Registro de uso de medicamentos' }, rows))
+    assert.deepEqual(wb.worksheets.map((w) => w.name), ['Aplicaciones', 'Resumen'])
+    const ws = wb.getWorksheet('Aplicaciones')!
+    const r = ws.getRow(6)
+    const date = r.getCell(1).value as Date
+    assert.equal(date.toISOString().slice(0, 10), '2026-11-05')
+    assert.equal(r.getCell(2).numFmt, 'hh:mm')
+    assert.equal((r.getCell(2).value as Date).getUTCHours(), 8, '14:30 UTC = 08:30 en Honduras')
+    const s = wb.getWorksheet('Resumen')!.getRow(6)
+    assert.deepEqual([s.getCell(1).value, s.getCell(3).value, s.getCell(4).value, s.getCell(5).value], ['Ceftriaxona', 3, 3, 'g'])
+  })
+
+  test('nombres de archivo', () => {
+    const shift = { kind: 'shift' as const, start: '', end: '', label: '', day: '2026-11-05', shiftKey: 'morning', shiftLabel: 'Mañana' }
+    assert.equal(usageFileName('material', shift), 'Uso_material_2026-11-05_Mañana.xlsx')
+    assert.equal(usageFileName('meds', shift), 'Uso_medicamentos_2026-11-05.xlsx')
+    assert.equal(usageFileName('material', { ...shift, kind: 'range', shiftKey: undefined, shiftLabel: undefined, day: '2026-10-30' }, '2026-11-05'), 'Uso_material_2026-10-30_a_2026-11-05.xlsx')
+  })
+
+  test('imprimir y exportar: Enfermería, Recepción y Administración (queda en la bitácora); el médico no', async () => {
+    const body = { tab: 'material', how: 'excel', period: 'Mañana 05/11/2026 (07:00–15:00)', area: 'Todas', rows: 12, file: 'Uso_material_2026-11-05_Mañana.xlsx' }
+    for (const email of ['crios@demo.clinara', 'smejia@demo.clinara', 'admin@demo.clinara']) assert.equal((await (await as(email)).post('/api/usage/log', body)).status, 200, email)
+    assert.equal((await (await as('crios@demo.clinara')).post('/api/usage/log', { ...body, tab: 'meds', how: 'print' })).status, 200)
+    assert.equal((await (await as('lherrera@demo.clinara')).post('/api/usage/log', body)).status, 403)
+    const log = await sql.query(`SELECT a.action, s.email FROM audit a JOIN staff s ON s.id = a.user_id WHERE a.action LIKE 'Exportó a Excel el registro de uso de material%' OR a.action LIKE 'Imprimió el registro de uso de medicamentos%'`)
+    assert.ok(log.some((l) => l.email === 'smejia@demo.clinara' && /periodo Mañana 05\/11\/2026 \(07:00–15:00\); área Todas; 12 filas\): Uso_material_2026-11-05_Mañana\.xlsx/.test(String(l.action))))
+    assert.ok(log.some((l) => /^Imprimió el registro de uso de medicamentos/.test(String(l.action))))
   })
 })

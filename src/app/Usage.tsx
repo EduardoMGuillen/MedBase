@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ChevronDown, ChevronRight, ListChecks, PencilLine, Plus, Ban } from 'lucide-react'
+import { Ban, ChevronDown, ChevronRight, FileSpreadsheet, ListChecks, PencilLine, Plus, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Loading, Modal, PageHead, SectionHead } from '../components/ui'
@@ -10,8 +10,10 @@ import { Pagination, paginate, usePage } from '../components/Pagination'
 import { useGrace } from '../components/Grace'
 import { dmyTime, time } from '../lib/format'
 import { GENERAL_USE_LABEL, SUPPLY_PERIODS, USAGE_AREAS } from '../lib/clinicalConfig'
-import { byCategory, currentPeriod, periodOf, rangeOf, unitText, type SupplySettings, type UsagePeriod } from '../lib/supplies'
-import { areaText, byPatient, materialSums, materialTotals, medSummary, totalText, USAGE_AREA_LIST, type MaterialRecord, type MaterialSum, type MedUse, type PatientBlock, type UsageArea } from '../lib/usage'
+import { byCategory, currentPeriod, periodOf, rangeOf, unitText, usageFileName, type SupplySettings, type UsagePeriod } from '../lib/supplies'
+import { download } from '../lib/csv'
+import { UsagePrint } from './UsagePrint'
+import { areaText, byPatient, materialRows, materialSums, materialTotals, medSummary, totalText, USAGE_AREA_LIST, type MaterialRecord, type MaterialSum, type MedUse, type PatientBlock, type UsageArea } from '../lib/usage'
 import { MaterialForm } from './MaterialForm'
 
 type Tab = 'meds' | 'material'
@@ -132,10 +134,13 @@ function MedsTab({ filter, reloadKey }: { filter: UsageFilter; reloadKey: number
   return (
     <section className="panel usage-tab">
       <SectionHead title="Medicamentos aplicados" sub={`${data.length} ${data.length === 1 ? 'aplicación' : 'aplicaciones'} de ${blocks.length} ${blocks.length === 1 ? 'paciente' : 'pacientes'}. Se llena solo con las dosis «Administrado» de la hoja de medicamentos y lo aplicado en consulta externa. Las correcciones se hacen donde se registró.`}
-        action={<div className="segmented" role="radiogroup" aria-label="Vista">
-          <button type="button" role="radio" aria-checked={view === 'patients'} onClick={() => setView('patients')}>Por paciente</button>
-          <button type="button" role="radio" aria-checked={view === 'summary'} onClick={() => setView('summary')}>Resumen</button>
-        </div>} />
+        action={<>
+          <div className="segmented" role="radiogroup" aria-label="Vista">
+            <button type="button" role="radio" aria-checked={view === 'patients'} onClick={() => setView('patients')}>Por paciente</button>
+            <button type="button" role="radio" aria-checked={view === 'summary'} onClick={() => setView('summary')}>Resumen</button>
+          </div>
+          <OutputButtons tab="meds" filter={filter} meds={data} />
+        </>} />
       {!data.length && <div className="empty">No se aplicaron medicamentos en este periodo{filter.area !== 'all' ? ` en ${areaText(filter.area)}` : ''}.</div>}
       {view === 'patients' && pg.rows.map((b) => (
         <div key={b.key} className="usage-block">
@@ -183,7 +188,10 @@ function MaterialTab({ filter, reloadKey, onChanged }: { filter: UsageFilter; re
   return (
     <section className="panel usage-tab">
       <SectionHead title="Material médico quirúrgico" sub="Por paciente, en modo suma: lo que se registra varias veces en el periodo se suma. Un registro anulado se ve tachado y no suma."
-        action={can('usage.record') ? <button className="btn btn--primary usage-add" onClick={() => setForm('new')}><Plus size={16} />Registrar material</button> : undefined} />
+        action={<>
+          {data && <OutputButtons tab="material" filter={filter} records={data} />}
+          {can('usage.record') && <button className="btn btn--primary usage-add" onClick={() => setForm('new')}><Plus size={16} />Registrar material</button>}
+        </>} />
       {!data ? <Loading label="Buscando el material registrado" /> : (<>
         {totals.length > 0 && (
           <div className="usage-total">
@@ -281,4 +289,46 @@ function VoidRecord({ r, onClose, onDone }: { r: MaterialRecord; onClose: () => 
         <input className="input" value={reason} maxLength={300} autoFocus onChange={(e) => setReason(e.target.value)} placeholder="Ej. se registró al paciente equivocado" /></label>
     </Modal>
   )
+}
+
+/**
+ * RU3 (ronda 14): «Imprimir» y «Exportar a Excel» lo filtrado en pantalla, completo (no solo la página de GE5). El Excel se arma
+ * en el navegador con ExcelJS, que se carga recién al pulsar el botón. Cada impresión y exportación queda en la bitácora.
+ */
+function OutputButtons({ tab, filter, meds = [], records = [] }: { tab: Tab; filter: UsageFilter; meds?: MedUse[]; records?: MaterialRecord[] }) {
+  const { can, notify, user, settings } = useStore()
+  const [printAt, setPrintAt] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const rows = tab === 'meds' ? meds.length : materialRows(records).length
+  const log = useCallback((how: 'print' | 'excel', file?: string) =>
+    api('/usage/log', { body: { tab, how, period: filter.period.label, area: areaText(filter.area), q: filter.q, rows, file } }).catch(() => null), [tab, filter, rows])
+  useEffect(() => {
+    if (!printAt) return
+    document.body.classList.add('usage-printing')
+    const done = () => { document.body.classList.remove('usage-printing'); setPrintAt(null) }
+    window.addEventListener('afterprint', done, { once: true })
+    const t = setTimeout(() => window.print(), 200)
+    return () => { clearTimeout(t); window.removeEventListener('afterprint', done); document.body.classList.remove('usage-printing') }
+  }, [printAt])
+  if (!can('usage.export')) return null
+  const print = () => { void log('print'); setPrintAt(new Date().toISOString()) }
+  const exportExcel = async () => {
+    setBusy(true)
+    try {
+      const [mod, x] = await Promise.all([import('exceljs'), import('../lib/usageExcel')])
+      const ExcelJS = ((mod as unknown as { default?: unknown }).default ?? mod) as Parameters<typeof x.buildMedsWorkbook>[0]
+      const info = { title: tab === 'meds' ? 'Registro de uso de medicamentos' : 'Registro de uso de material', periodLabel: filter.period.label, areaLabel: areaText(filter.area),
+        q: filter.q, by: user?.name ?? '', at: new Date(), clinic: settings.name }
+      const wb = tab === 'meds' ? x.buildMedsWorkbook(ExcelJS, info, meds) : x.buildMaterialWorkbook(ExcelJS, info, records)
+      const file = usageFileName(tab, filter.period, filter.endDay)
+      const buf = await wb.xlsx.writeBuffer()
+      await log('excel', file)
+      download(file, buf as ArrayBuffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    } catch (e) { notify(`No se pudo generar el Excel: ${(e as Error).message}`, 'error') } finally { setBusy(false) }
+  }
+  return (<>
+    <button type="button" className="btn btn--ghost usage-out" onClick={print}><Printer size={16} />Imprimir</button>
+    <button type="button" className="btn btn--ghost usage-out" disabled={busy} onClick={() => void exportExcel()}><FileSpreadsheet size={16} />{busy ? 'Generando…' : 'Exportar a Excel'}</button>
+    {printAt && <UsagePrint tab={tab} meds={meds} records={records} periodLabel={filter.period.label} areaLabel={areaText(filter.area)} q={filter.q} at={printAt} />}
+  </>)
 }
