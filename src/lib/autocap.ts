@@ -74,6 +74,12 @@ export function installAutoCapitalize(doc: Document = document) {
     if (!el.hasAttribute('autocapitalize')) el.setAttribute('autocapitalize', 'sentences')
     before.set(el, el.value)
   }, true)
+  // Justo antes de cada escritura, lo que tenía el campo (la pantalla puede haberlo vaciado sin escribir, p. ej. al agregar
+  // una indicación con Enter: la siguiente vuelve a empezar en mayúscula). Mientras se arma una palabra no se toca.
+  doc.addEventListener('beforeinput', (ev) => {
+    const el = ev.target
+    if (capEligible(el) && !(ev as InputEvent).isComposing) before.set(el, el.value)
+  }, true)
   // En la fase de captura, antes que React: su onChange ya recibe el texto con la mayúscula
   doc.addEventListener('input', (ev) => {
     const el = ev.target
