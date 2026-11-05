@@ -409,3 +409,46 @@ export const SIGN_SPACE_CM = 3.5
 export const OTHER_SIGN_SPACE_CM = 1.6
 /** IM1 (ronda 13). VALIDAR: Emil. Leyenda fija al pie de todos los documentos. */
 export const DOC_BRAND_LEGEND = 'Emitida con Clinara'
+
+/**
+ * PQ3 (ronda 14). VALIDAR: Emil. Listas de la hoja de anestesia (Anexo B del pedido): formulario «Llenar en el sistema», hoja
+ * en blanco e impresión. Ningún campo es obligatorio salvo «Anestesia realizada por» y la técnica.
+ */
+export const ANESTHESIA_SHEET = {
+  asa: ['I', 'II', 'III', 'IV', 'V'],
+  mallampati: ['I', 'II', 'III', 'IV'],
+  cormack: ['I', 'II', 'III', 'IV'],
+  /** Lista de verificación quirúrgica de la OMS. */
+  who: ['Entrada', 'Pausa', 'Salida'],
+  checks: ['Consentimiento', 'Máquina verificada', 'Succión', 'Equipo de vía aérea difícil'],
+  techniques: ['General balanceada', 'TIVA', 'Sedación', 'Subaracnoidea', 'Epidural', 'Bloqueo periférico', 'Combinada'],
+  times: [
+    { key: 'roomIn', label: 'Entrada a sala' }, { key: 'anesthesiaStart', label: 'Inicio de anestesia' }, { key: 'surgeryStart', label: 'Inicio de cirugía' },
+    { key: 'surgeryEnd', label: 'Fin de cirugía' }, { key: 'anesthesiaEnd', label: 'Fin de anestesia' }, { key: 'roomOut', label: 'Salida de sala' },
+  ],
+  drugCategories: ['Premedicación', 'Inductor', 'Opioide', 'Relajante neuromuscular', 'Antibiótico', 'Antiemético', 'Analgésico', 'Reversión', 'Otro'],
+  airway: ['Mascarilla', 'Mascarilla laríngea', 'Tubo endotraqueal oral', 'Tubo endotraqueal nasal'],
+  ventilation: ['Espontánea', 'Controlada'],
+  monitors: ['ECG', 'PANI', 'SpO₂', 'EtCO₂', 'Temperatura', 'TOF', 'Sonda vesical'],
+  destinations: ['Recuperación', 'UCI', 'Sala'],
+  scheduled: ['Programada', 'Urgencia'],
+  /** Escala de Aldrete: cada parámetro de 0 a 2; el total suma solo (máximo 10). */
+  aldrete: [
+    { key: 'activity', label: 'Actividad', options: ['Ninguna extremidad', 'Mueve 2 extremidades', 'Mueve 4 extremidades'] },
+    { key: 'respiration', label: 'Respiración', options: ['Apnea', 'Disnea o respiración limitada', 'Respira y tose sin dificultad'] },
+    { key: 'circulation', label: 'Circulación', options: ['PA ± 50 % de la basal', 'PA ± 20–50 % de la basal', 'PA ± 20 % de la basal'] },
+    { key: 'consciousness', label: 'Conciencia', options: ['No responde', 'Responde al llamado', 'Despierto'] },
+    { key: 'saturation', label: 'Saturación', options: ['SpO₂ < 90 % con O₂', 'SpO₂ > 90 % con O₂', 'SpO₂ > 92 % al aire'] },
+  ],
+  /** Bandas debajo de la cuadrícula del monitoreo (se llenan a mano en la hoja impresa; SpO₂, EtCO₂ y temperatura salen de la tabla). */
+  bands: ['SpO₂ %', 'EtCO₂', 'Temperatura °C', 'O₂ L/min', 'N₂O L/min', 'Sevoflurano / Isoflurano %', 'Diuresis', 'Sangrado'],
+} as const
+/** PQ3 (ronda 14). VALIDAR: Emil. Técnica que se marca sola en la hoja según el tipo de anestesia de la nota postquirúrgica (PQ1). */
+export const ANESTHESIA_TECHNIQUE_OF: Record<string, string> = {
+  General: 'General balanceada', Raquídea: 'Subaracnoidea', Epidural: 'Epidural', 'Bloqueo regional': 'Bloqueo periférico', Sedación: 'Sedación',
+}
+/**
+ * PQ3 (ronda 14). VALIDAR: Emil. Cuadrícula del monitoreo transanestésico al imprimir: de 0 a 240 minutos con una columna cada
+ * 5 minutos; escala de 0 a 220 para PA y FC. Si el registro pasa de 240 minutos se dibuja otra cuadrícula a continuación.
+ */
+export const ANESTHESIA_GRID = { minutes: 240, step: 5, max: 220, lines: 20 } as const

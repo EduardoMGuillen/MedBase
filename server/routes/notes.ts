@@ -6,7 +6,7 @@ import { can } from '../../src/lib/permissions.js'
 import type { Addendum } from '../../src/lib/types.js'
 
 /** Qué se guarda como borrador mientras se escribe (una consulta, una nota de evolución, de procedimiento, de egreso o de enfermería). */
-const SCOPES = ['consulta', 'evolucion', 'procedimiento', 'egreso', 'enfermeria', 'referencia'] as const
+const SCOPES = ['consulta', 'evolucion', 'procedimiento', 'egreso', 'enfermeria', 'referencia', 'anestesia'] as const
 const KIND_LABEL = { correction: 'corrección', info: 'información adicional', result: 'resultado posterior' } as const
 
 export const toAddendum = (r: Row): Addendum => ({
@@ -72,9 +72,9 @@ export function registerNotes(app: Express, { sql, auth, need, userOf, clinicOf,
    * Adenda. Notas médicas (consulta, ingreso, evolución, procedimiento, egreso): cualquier médico de la clínica (queda su
    * nombre). Notas de enfermería: enfermería (cualquier enfermera); un médico sólo como «Información adicional».
    */
-  app.post('/api/addenda', auth, need('consult.write', 'inpatient.orders', 'inpatient.care'), async (req, res) => {
+  app.post('/api/addenda', auth, need('consult.write', 'inpatient.orders', 'inpatient.care', 'inpatient.notes'), async (req, res) => {
     const b = parse(z.object({
-      targetKind: z.enum(['consultation', 'note', 'referral']),
+      targetKind: z.enum(['consultation', 'note', 'referral', 'anesthesia']),
       targetId: z.string().min(1),
       kind: z.enum(['correction', 'info', 'result'], { error: 'Elige el tipo de adenda.' }),
       corrects: z.string().trim().max(200).optional(),
@@ -85,7 +85,13 @@ export function registerNotes(app: Express, { sql, auth, need, userOf, clinicOf,
     const cid = clinicOf(req)
     let patientId = ''
     let what = ''
-    if (b.targetKind === 'referral') {
+    if (b.targetKind === 'anesthesia') {
+      // PQ3 (ronda 14): la hoja llenada en el sistema se corrige con adenda de quien la firmó (el anestesiólogo)
+      const a = (await sql.one('SELECT patient_id, mode, created_by, voided_at FROM anesthesia_sheets WHERE id = ? AND clinic_id = ?', [b.targetId, cid])) ?? fail(404, 'La hoja de anestesia no existe.')
+      if (a!.mode !== 'system' || a!.voided_at) fail(409, 'Solo la hoja de anestesia llenada en el sistema lleva adenda.')
+      if (String(a!.created_by) !== user.id) fail(403, 'La adenda de la hoja de anestesia la agrega quien la firmó.')
+      patientId = String(a!.patient_id); what = 'la hoja de anestesia'
+    } else if (b.targetKind === 'referral') {
       // RF1 (ronda 8): sólo el médico
       const r = (await sql.one('SELECT patient_id, number, voided_at FROM referrals WHERE id = ? AND clinic_id = ?', [b.targetId, cid])) ?? fail(404, 'La referencia no existe.')
       if (user.role !== 'doctor') fail(403, 'Sólo un médico agrega adendas a una referencia.')

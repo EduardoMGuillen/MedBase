@@ -38,6 +38,7 @@ import { registerDrugs } from './routes/drugs.js'
 import { registerCertificates } from './routes/certificates.js'
 import { registerReferrals } from './routes/referrals.js'
 import { registerConsent } from './routes/consent.js'
+import { registerAnesthesia } from './routes/anesthesia.js'
 import { registerOrderSets } from './routes/orderSets.js'
 import { registerRoster } from './routes/roster.js'
 import { registerEpicrisis } from './routes/epicrisis.js'
@@ -1157,7 +1158,7 @@ export function createApp(opts: AppOptions) {
   })
 
   /** GE4 (ronda 9): «Ver versiones»: las anteriores, en solo lectura, para quien ya ve ese registro (clínico). */
-  const VERSION_TABLE = { note: 'hosp_notes', dose: 'hosp_doses', vitals: 'vitals', consultation: 'consultations', exam_result: 'exam_orders' } as const
+  const VERSION_TABLE = { note: 'hosp_notes', dose: 'hosp_doses', vitals: 'vitals', consultation: 'consultations', exam_result: 'exam_orders', anesthesia: 'anesthesia_sheets' } as const
   app.get('/api/versions/:kind/:id', auth, need('chart.view'), async (req, res) => {
     const kind = String(req.params.kind) as keyof typeof VERSION_TABLE
     if (!VERSION_TABLE[kind]) fail(404, 'No hay versiones de ese registro.')
@@ -1388,6 +1389,7 @@ export function createApp(opts: AppOptions) {
   registerFollowups(app, ctx)
   registerPrintJobs(app, ctx)
   registerDept(app, ctx)
+  registerAnesthesia(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))
 
