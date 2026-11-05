@@ -30,7 +30,6 @@ export default function ExamOrderPage() {
   const nav = useNavigate()
   const [data, setData] = useState<Batch | null>(null)
   const [only, setOnly] = useState<{ g: ExamGroup; how: 'print' | 'pdf' } | null>(null)
-  const [withDx, setWithDx] = useState(false)
   useEffect(() => { if (batch) api<Batch>(`/exams/batch/${batch}`).then(setData).catch((e: Error) => notify(e.message, 'error')) }, [batch, notify])
   // Imprimir (o guardar en PDF) sólo una de las dos órdenes; queda registrado
   useEffect(() => {
@@ -77,13 +76,11 @@ export default function ExamOrderPage() {
             {p.phone && <a className="btn btn--ghost btn--sm" target="_blank" rel="noreferrer" href={whatsappUrl(p.phone, text(g))}><MessageCircle size={15} />Enviar por WhatsApp</a>}
           </div>
         ))}
-        {data.diagnoses.length > 0 && <label className="check-line" style={{ margin: 0 }}><input type="checkbox" checked={withDx} onChange={(e) => setWithDx(e.target.checked)} />
-          <span><b>Incluir el diagnóstico en la orden</b><small>Por privacidad no sale, salvo que lo decidas.</small></span></label>}
       </div>
       {groups.length > 1 && <p className="muted no-print" style={{ fontSize: 14 }}>Son dos órdenes: el paciente lleva la de laboratorio y la de imagen y gabinete a lugares distintos.</p>}
       {live.length > shown.length && <p className="muted no-print" style={{ fontSize: 14 }}>Los estudios que se hacen en la clínica no van en esta orden: siguen su flujo de siempre en la pestaña Exámenes.</p>}
       {groups.map((g) => (
-        <ExamOrderSheet key={g} group={g} exams={shown.filter((e) => e.group === g)} doctor={data.doctor} number={number} patient={p} diagnoses={withDx ? data.diagnoses : undefined} />
+        <ExamOrderSheet key={g} group={g} exams={shown.filter((e) => e.group === g)} doctor={data.doctor} number={number} patient={p} />
       ))}
     </div>
   )

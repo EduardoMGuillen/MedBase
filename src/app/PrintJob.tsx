@@ -66,8 +66,9 @@ export default function PrintJobPage() {
   const number = job.id.slice(0, 8).toUpperCase()
   const groups = new Set(job.exams.map((e) => e.group))
   const title = job.kind === 'rx' ? 'Receta' : job.kind === 'results' ? (groups.size > 1 ? 'Resultados de exámenes' : groups.has('imaging') ? 'Resultado de imagen y gabinete' : 'Resultado de laboratorio')
-    : job.exams[0]?.group === 'imaging' ? 'Orden de imagen y gabinete' : 'Orden de laboratorio'
+    : groups.size > 1 ? 'Órdenes de exámenes' : job.exams[0]?.group === 'imaging' ? 'Orden de imagen y gabinete' : 'Orden de laboratorio'
   const docs = job.doctors.length
+  const sheets = job.kind === 'exams' ? job.doctors.flatMap((d) => (['lab', 'imaging'] as ExamGroup[]).map((g) => ({ d, g, list: job.exams.filter((e) => d.items.includes(e.id) && e.group === g) })).filter((x) => x.list.length)) : []
   return (
     <div className="page">
       <div className="page-head no-print">
@@ -76,7 +77,7 @@ export default function PrintJobPage() {
       </div>
       <div className="exam-order__bar no-print">
         <div className="exam-order__acts">
-          <b>{title}{docs > 1 ? ` (${docs}: una por médico)` : ''}</b>
+          <b>{title}{job.kind === 'exams' ? (sheets.length > 1 ? ` (${sheets.length} documentos${docs > 1 ? ': uno por médico' : ''}${groups.size > 1 ? ' y por tipo' : ''})` : '') : docs > 1 ? ` (${docs}: una por médico)` : ''}</b>
           <button className="btn btn--primary btn--sm" onClick={() => setHow('print')}><Printer size={15} />Imprimir</button>
           <button className="btn btn--soft btn--sm" onClick={() => setHow('pdf')}><Download size={15} />Descargar PDF</button>
         </div>
@@ -94,10 +95,8 @@ export default function PrintJobPage() {
       </div>
       {job.kind === 'results' ? <ResultSheet exams={job.exams} patient={p} number={number} at={job.printed.filter((x) => x.how !== 'view').at(-1)?.at ?? new Date().toISOString()} />
         : job.kind === 'exams'
-        ? job.doctors.map((d) => {
-          const list = job.exams.filter((e) => d.items.includes(e.id))
-          return <ExamOrderSheet key={d.doctor.id} group={list[0].group as ExamGroup} exams={list} doctor={d.doctor} number={`${number}${docs > 1 ? `-${job.doctors.indexOf(d) + 1}` : ''}`} patient={p} at={job.createdAt} />
-        })
+        // EX11 (ronda 14): un documento por médico y, si van laboratorio e imagen juntos, uno por tipo
+        ? sheets.map(({ d, g, list }, n) => <ExamOrderSheet key={`${d.doctor.id}-${g}`} group={g} exams={list} doctor={d.doctor} number={`${number}${sheets.length > 1 ? `-${n + 1}` : ''}`} patient={p} at={job.createdAt} />)
         : job.doctors.map((d) => <HospRxSheet key={d.doctor.id} meds={job.meds.filter((m) => d.items.includes(m.id))} extras={job.extras ?? {}} doctor={d.doctor} number={`${number}${docs > 1 ? `-${job.doctors.indexOf(d) + 1}` : ''}`} patient={p} at={job.createdAt} diagnoses={job.includeDx ? job.diagnoses : undefined} />)}
     </div>
   )

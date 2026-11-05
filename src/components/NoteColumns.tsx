@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Pill, Printer } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { useStore } from '../lib/store'
+import { canPrintExamOrders, ExamPrintModal } from './ExamPrintModal'
 import type { Diagnosis, ExamOrder, InpatientNote, PostopData, Vitals } from '../lib/types'
 import { vitalLevel, type VitalKey } from '../lib/vitals'
 import { examLine, GROUP_LABEL } from '../lib/exams'
@@ -58,10 +59,11 @@ export function noteExamStatus(e: Pick<ExamOrder, 'group' | 'status'>) {
  * Pertenecen a la nota donde se pidieron: no bajan a la siguiente.
  */
 export function NoteExams({ list, empty = 'Sin exámenes.' }: { list: ExamOrder[]; empty?: string }) {
+  const { can } = useStore()
+  const [printing, setPrinting] = useState(false)
   if (!list.length) return <p className="muted">{empty}</p>
-  // Ronda 8: la orden de los exámenes de la nota se imprime desde aquí (sobre todo los externos: el paciente la lleva)
-  const batches = [...new Set(list.filter((e) => e.status !== 'cancelled').map((e) => e.batchId))]
-  const external = list.some((e) => e.place === 'external' && e.status !== 'cancelled')
+  // EX11 (ronda 14): «Órdenes de exámenes» abre la misma ventana con casillas de la pestaña Exámenes (EX5), con los de esta nota
+  const live = list.filter((e) => e.status !== 'cancelled')
   return (<>
     <ul className="note-exam-list">{list.map((e) => (
       <li key={e.id} className={e.status === 'cancelled' ? 'is-cancelled' : ''}>
@@ -69,10 +71,11 @@ export function NoteExams({ list, empty = 'Sin exámenes.' }: { list: ExamOrder[
         <small>{GROUP_LABEL[e.group]}{e.place === 'external' ? ' · Externo' : ' · En la clínica'}{e.uncatalogued ? ' · No catalogado' : ''} · <b>{noteExamStatus(e)}</b></small>
       </li>
     ))}</ul>
-    {batches.map((b) => (
-      <Link key={b} to={`/app/examenes/orden/${b}`} className={`btn ${external ? 'btn--soft' : 'btn--ghost'} btn--sm no-print`} style={{ justifySelf: 'start', marginTop: 6 }}>
-        <Printer size={14} />{external ? 'Órdenes de exámenes: Imprimir / Descargar PDF' : 'Imprimir orden'}</Link>
-    ))}
+    {live.length > 0 && canPrintExamOrders(can) && <span className="note-actions no-print">
+      <button type="button" className={`btn ${live.some((e) => e.place === 'external') ? 'btn--soft' : 'btn--ghost'} btn--sm`} onClick={() => setPrinting(true)}>
+        <Printer size={14} />Órdenes de exámenes</button>
+    </span>}
+    {printing && <ExamPrintModal exams={live} onClose={() => setPrinting(false)} />}
   </>)
 }
 

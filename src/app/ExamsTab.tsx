@@ -8,6 +8,7 @@ import { DateField } from '../components/DateTimeField'
 import { CorrectionReason, GraceButton, VersionTag } from '../components/Grace'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
+import { ExamPrintModal } from '../components/ExamPrintModal'
 import { age, cap, date, dateTime, inputDateTime, shortStaff } from '../lib/format'
 import { canReview, examCatalog, examLine, examStatusLabel, findExam, flagOf, GROUP_LABEL, isPending, NEXT_ACTION, reportOptional, STATUS_LABEL } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
@@ -126,7 +127,8 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
         </div></section>
       )}
       {results && <PrintResults group={results} exams={exams.filter((e) => e.group === results && e.result)} onClose={() => setResults(null)} />}
-      {printing && <PrintPending group={printing} exams={exams.filter((e) => e.group === printing && printable(e))} onClose={() => setPrinting(null)} />}
+      {/* EX5 y EX11 (ronda 14): la misma ventana que la tarjeta de la nota */}
+      {printing && <ExamPrintModal exams={exams.filter((e) => e.group === printing && printable(e))} onClose={() => setPrinting(null)} />}
       {uploading && <ExternalResult group={uploading} patientId={patientId} hospitalizationId={hospitalizationId} onClose={() => setUploading(null)} onDone={() => { setUploading(null); reload() }} />}
     </div>
   )
@@ -427,44 +429,6 @@ export function usePrintJobs(patientId: string | undefined, ids: string[], kind:
   }, [patientId, key])
   const set = new Set(ids)
   return jobs.filter((j) => j.kind === kind && j.items.some((x) => set.has(x)))
-}
-
-/**
- * EX5 (ronda 10): «Imprimir orden» de una sección: los exámenes pendientes con casillas (los «Externo» marcados y los de la
- * clínica sin marcar). Sale la misma orden de EX2, una por médico que los pidió, con la leyenda de firma y sello.
- */
-function PrintPending({ group, exams, onClose }: { group: ExamGroup; exams: ExamOrder[]; onClose: () => void }) {
-  const { notify, staffById } = useStore()
-  const nav = useNavigate()
-  const [picked, setPicked] = useState<string[]>(() => exams.filter((e) => e.place === 'external').map((e) => e.id))
-  const [busy, setBusy] = useState(false)
-  const go = async (how: 'imprimir' | 'pdf') => {
-    setBusy(true)
-    try {
-      const { id } = await api<{ id: string }>('/print-jobs', { body: { kind: 'exams', examIds: picked } })
-      nav(`/app/impresion/${id}?accion=${how}`)
-    } catch (x) { notify((x as Error).message, 'error'); setBusy(false) }
-  }
-  const doctors = new Set(exams.filter((e) => picked.includes(e.id)).map((e) => e.orderedBy)).size
-  return (
-    <Modal title={`Imprimir orden de ${GROUP_LABEL[group].toLowerCase()}`} onClose={onClose} footer={<>
-      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--soft" disabled={!picked.length || busy} onClick={() => go('pdf')}><Download size={15} />Descargar PDF</button>
-      <button className="btn btn--primary" disabled={!picked.length || busy} onClick={() => go('imprimir')}><Printer size={15} />Imprimir</button>
-    </>}>
-      <p className="muted" style={{ fontSize: 14, margin: 0 }}>Los exámenes pendientes; los externos ya van marcados. Sale con los datos del médico que los pidió y sin su firma y sello en papel no vale.</p>
-      <div className="print-pick">
-        {exams.map((e) => (
-          <label key={e.id} className={`exam-row-pick${picked.includes(e.id) ? ' is-on' : ''}`}>
-            <input type="checkbox" checked={picked.includes(e.id)} onChange={() => setPicked(picked.includes(e.id) ? picked.filter((x) => x !== e.id) : [...picked, e.id])} />
-            <span><b>{examLine(e)}</b>{e.place === 'external' && <span className="badge" style={{ marginLeft: 6 }}>Externo</span>}{e.priority === 'urgent' && <span className="badge badge--red" style={{ marginLeft: 6 }}>Urgente</span>}
-              <small className="muted" style={{ display: 'block' }}>Pedido {dateTime(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)}</small></span>
-          </label>
-        ))}
-      </div>
-      {doctors > 1 && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Los pidieron {doctors} médicos: sale una orden por cada uno.</p>}
-    </Modal>
-  )
 }
 
 /**

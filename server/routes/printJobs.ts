@@ -5,7 +5,7 @@ import { type Ctx, fail, parse, type Row } from '../http.js'
 import { examsWhere } from './exams.js'
 import { toInpatientMed, toInpatientNote } from '../mappers.js'
 import { can } from '../../src/lib/permissions.js'
-import { examLine, GROUP_LABEL, isPending } from '../../src/lib/exams.js'
+import { examLine, GROUP_LABEL } from '../../src/lib/exams.js'
 import { deptAllows } from '../../src/lib/permissions.js'
 import type { ExamGroup } from '../../src/lib/types.js'
 
@@ -71,10 +71,10 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
       const list = await examsWhere(sql, `clinic_id = ? AND id IN (${b.examIds.map(() => '?').join(',')})`, [cid, ...b.examIds])
       if (list.length !== new Set(b.examIds).size) fail(404, 'Algún examen no existe.')
       if (new Set(list.map((e) => e.patientId)).size > 1) fail(400, 'Los exámenes son de pacientes distintos.')
-      if (new Set(list.map((e) => e.group)).size > 1) fail(400, 'La orden es de laboratorio o de imagen y gabinete, no de los dos.')
-      // Solo los pendientes (sin resultado ni cancelados)
-      const done = list.find((e) => e.status === 'cancelled' || !isPending(e))
-      if (done) fail(409, `${done.name} ya no está pendiente.`)
+      // EX11 (ronda 14): desde la nota pueden ir laboratorio e imagen juntos (sale un documento por tipo) y también los que ya
+      // tienen resultado (vienen sin marcar); los cancelados no
+      const cancelled = list.find((e) => e.status === 'cancelled')
+      if (cancelled) fail(409, `${cancelled.name} está cancelado.`)
       patientId = list[0].patientId
       stayId = list[0].hospitalizationId ?? null
       items = list.map((e) => e.id)
@@ -182,7 +182,7 @@ export function registerPrintJobs(app: Express, { sql, auth, need, userOf, clini
       what = `el resultado de ${list.map((e) => examLine(e)).join(', ')}`
     } else if (kind === 'exams') {
       const list = await examsWhere(sql, `clinic_id = ? AND id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids])
-      what = `la orden de ${GROUP_LABEL[(list[0]?.group ?? 'lab') as ExamGroup].toLowerCase()} (${list.map((e) => e.name).join(', ')})`
+      what = [...new Set(list.map((e) => e.group))].map((g) => `la orden de ${GROUP_LABEL[g as ExamGroup].toLowerCase()} (${list.filter((e) => e.group === g).map((e) => e.name).join(', ')})`).join(' y ')
     } else {
       const extras = job!.data ? JSON.parse(String(job!.data)) as Record<string, { days?: number; quantity?: string }> : {}
       const meds = (await medsOf(cid, ids)).map((r) => `${String(r.drug)}${extras[String(r.id)]?.days ? ` por ${extras[String(r.id)].days} días` : ''}${extras[String(r.id)]?.quantity ? `, comprar ${extras[String(r.id)].quantity}` : ''}`)

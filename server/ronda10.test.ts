@@ -306,10 +306,10 @@ describe('EX5 y ME10 (ronda 10): órdenes de pendientes y receta de lo que no ha
     assert.equal((await nurse.post(`/api/print-jobs/${job.body.id}/printed`, { how: 'print' })).status, 200)
     const { examLock, PRINTED_EXAMS } = await import('./correctionLocks.js')
     assert.equal(await examLock(sql, (await sql.one('SELECT * FROM exam_orders WHERE id = ?', [String(ex[0].id)]))!), PRINTED_EXAMS)
-    // Uno con resultado ya no está pendiente
+    // Uno con resultado ya no está pendiente. EX11 (ronda 14): la ventana lo muestra sin marcar, pero si se marca se imprime
     const done = String(ex.find((e) => e.name === 'Creatinina')!.id)
     await sql.run(`UPDATE exam_orders SET status = 'result', result = ? WHERE id = ?`, [JSON.stringify({ report: 'ok', at: new Date().toISOString(), by: 's-rios' }), done])
-    assert.equal((await nurse.post('/api/print-jobs', { kind: 'exams', examIds: [done] })).status, 409)
+    assert.equal((await nurse.post('/api/print-jobs', { kind: 'exams', examIds: [done] })).status, 201)
     // Recepción no
     assert.equal((await (await as('smejia@demo.clinara')).post('/api/print-jobs', { kind: 'exams', examIds: [String(ex[0].id)] })).status, 403)
   })
