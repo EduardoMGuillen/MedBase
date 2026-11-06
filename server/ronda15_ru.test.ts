@@ -8,7 +8,7 @@ import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { loadSupplyCatalog } from './supplies.js'
 import { SUPPLY_MD } from '../src/lib/supplyMd/generated.js'
-import { currentPeriod, DEFAULT_SUPPLY_SETTINGS, localDay, parseSupplyMd, periodOf } from '../src/lib/supplies.js'
+import { applySet, currentPeriod, DEFAULT_SUPPLY_SETTINGS, localDay, parseSupplyMd, periodOf, undoSet, type SupplySetView } from '../src/lib/supplies.js'
 import { sortSuggestions } from '../src/lib/usage.js'
 import { fromLocalValue } from '../src/lib/dateInput.js'
 
@@ -252,5 +252,99 @@ describe('RU7 (ronda 15): «¿Para quién?» con los atendidos e internados del 
       { name: 'G', area: 'observation', bed: 'Cuarto 101-A' },
     ] as Parameters<typeof sortSuggestions>[0])
     assert.deepEqual(list.map((x) => x.name), ['E', 'A', 'G', 'D', 'C', 'F', 'B'])
+  })
+})
+
+describe('RU8 (ronda 15): sets de material', () => {
+  const setOf = async (cid: string, name: string) => (await sql.one('SELECT * FROM supply_sets WHERE clinic_id = ? AND name = ?', [cid, name]))!
+  type Line = SupplySetView['lines'][number]
+
+  test('enfermería ve los 6 sets iniciales; «Parto vaginal» trae 17 materiales', async () => {
+    const r = await (await as('crios@demo.clinara')).get('/api/supply-sets')
+    assert.equal(r.status, 200)
+    assert.deepEqual(r.body.sets.map((s: { name: string }) => s.name).sort(), ['Canalización de vía periférica', 'Curación de herida', 'Parto vaginal', 'Sondaje vesical', 'Sutura de herida simple', 'Toma de muestra venosa'])
+    const parto = r.body.sets.find((s: { name: string }) => s.name === 'Parto vaginal')
+    assert.equal(parto.lines.length, 17)
+    assert.ok(parto.lines.every((l: Line) => l.material && l.quantity >= 1))
+  })
+
+  test('registrar con dos sets: se suman los guantes, «Deshacer» deja lo de antes, el registro guarda los sets y editar el set no lo cambia', async () => {
+    const cid = await clinicOfUser('crios@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const sets = (await nurse.get('/api/supply-sets')).body.sets as SupplySetView[]
+    const parto = sets.find((s) => s.name === 'Parto vaginal')!
+    const cana = sets.find((s) => s.name === 'Canalización de vía periférica')!
+    const active = new Set((await sql.query('SELECT id FROM supply_items WHERE clinic_id = ? AND archived_at IS NULL', [cid])).map((r) => String(r.id)))
+    // Lo que la persona ya había puesto se queda (A12)
+    const seda = await lineOf(cid, 'Seda', '2/0, aguja cortante')
+    const one = applySet({ [String(seda.id)]: '1' }, parto, { dest: 'patient', active })
+    const two = applySet(one.qty, cana, { dest: 'patient', active })
+    const shared = parto.lines.filter((l) => cana.lines.some((c) => c.itemId === l.itemId))
+    assert.ok(shared.length > 0, 'los dos sets comparten guantes')
+    for (const l of shared) assert.equal(Number(two.qty[l.itemId]), l.quantity + cana.lines.find((c) => c.itemId === l.itemId)!.quantity, `${l.material} se suma`)
+    assert.equal(two.qty[String(seda.id)], '1')
+    assert.deepEqual(undoSet(two.qty, two.added), one.qty)
+    assert.deepEqual(undoSet(one.qty, one.added), { [String(seda.id)]: '1' })
+    // Con «Uso general del servicio», lo que va por paciente no entra y se dice
+    const gen = applySet({}, parto, { dest: 'general', active })
+    assert.equal(gen.skipped.length, parto.lines.filter((l) => l.scope === 'patient').length)
+    const pt = (await sql.one('SELECT id FROM patients WHERE clinic_id = ? ORDER BY record LIMIT 1', [cid]))!
+    const items = Object.entries(two.qty).map(([itemId, q]) => ({ itemId, quantity: Number(q) }))
+    const r = await nurse.post('/api/usage/material', { patientId: String(pt.id), day: nowPeriod().day, shiftKey: nowPeriod().shiftKey, items, sets: [parto.id, cana.id] })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.deepEqual(r.body.sets.map((s: { name: string }) => s.name), ['Parto vaginal', 'Canalización de vía periférica'])
+    const log = await sql.one(`SELECT action FROM audit WHERE clinic_id = ? AND action LIKE 'Registro de uso%' AND action LIKE '%Parto vaginal%'`, [cid])
+    assert.ok(log, 'la bitácora dice qué sets se usaron')
+    // Editar el set después (quitarle un material) no cambia el registro hecho
+    const e = await nurse.patch(`/api/supply-sets/${parto.id}`, { name: 'Parto vaginal', description: parto.description, items: parto.lines.slice(1).map((l) => ({ itemId: l.itemId, quantity: l.quantity })) })
+    assert.equal(e.status, 200, JSON.stringify(e.body))
+    assert.equal(e.body.lines.length, 16)
+    const rec = await sql.one('SELECT items, sets FROM material_uses WHERE id = ?', [r.body.id])
+    assert.equal(JSON.parse(String(rec!.items)).length, items.length)
+    assert.equal(JSON.parse(String(rec!.sets))[0].name, 'Parto vaginal')
+    assert.ok((await setOf(cid, 'Parto vaginal')).edited_at, 'lo editado ya no lo toca la carga')
+    // Un set archivado no se usa en un registro nuevo
+    assert.equal((await nurse.post(`/api/supply-sets/${cana.id}/archive`)).status, 200)
+    const late = await nurse.post('/api/usage/material', { patientId: String(pt.id), day: nowPeriod().day, shiftKey: nowPeriod().shiftKey, items: items.slice(0, 1), sets: [cana.id] })
+    assert.equal(late.status, 409)
+    assert.equal((await nurse.post(`/api/supply-sets/${cana.id}/restore`)).status, 200)
+  })
+
+  test('«Guardar como set» crea «Cesárea»; nombre único sin importar tildes; se duplica y se archiva; todo en la bitácora', async () => {
+    const cid = await clinicOfUser('crios@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const gasa = await lineOf(cid, 'Gasa estéril', '10 × 10 cm')
+    const c = await nurse.post('/api/supply-sets', { name: 'Cesárea', items: [{ itemId: String(gasa.id), quantity: 20 }] })
+    assert.equal(c.status, 201, JSON.stringify(c.body))
+    assert.equal((await nurse.post('/api/supply-sets', { name: 'cesarea', items: [{ itemId: String(gasa.id), quantity: 1 }] })).status, 409)
+    assert.equal((await nurse.post('/api/supply-sets', { name: 'Vacío', items: [] })).status, 400)
+    assert.equal((await nurse.post('/api/supply-sets', { name: 'Doble', items: [{ itemId: String(gasa.id), quantity: 1 }, { itemId: String(gasa.id), quantity: 2 }] })).status, 400)
+    const dup = await nurse.post('/api/supply-sets', { name: 'Cesárea (copia)', items: [{ itemId: String(gasa.id), quantity: 20 }] })
+    assert.equal(dup.status, 201)
+    assert.equal((await nurse.post(`/api/supply-sets/${dup.body.id}/archive`)).status, 200)
+    assert.ok(!(await nurse.get('/api/supply-sets')).body.sets.some((s: { id: string }) => s.id === dup.body.id), 'el archivado no sale en «Usar set»')
+    assert.ok((await nurse.get('/api/supply-sets?archived=1')).body.sets.some((s: { id: string }) => s.id === dup.body.id))
+    const log = (await sql.query(`SELECT action FROM audit WHERE clinic_id = ? AND action LIKE '%Sets:%'`, [cid])).map((r) => String(r.action))
+    assert.ok(log.some((a) => a.includes('creó el set «Cesárea»')), log.join(' | '))
+    assert.ok(log.some((a) => a.includes('archivó el set «Cesárea (copia)»')), log.join(' | '))
+  })
+
+  test('recepción no crea, edita ni archiva sets (por URL directa); en el consultorio, la titular sí', async () => {
+    const rec = await as('smejia@demo.clinara')
+    const cid = await clinicOfUser('smejia@demo.clinara')
+    const gasa = await lineOf(cid, 'Gasa estéril', '10 × 10 cm')
+    const parto = await setOf(cid, 'Parto vaginal')
+    assert.equal((await rec.post('/api/supply-sets', { name: 'De recepción', items: [{ itemId: String(gasa.id), quantity: 1 }] })).status, 403)
+    assert.equal((await rec.patch(`/api/supply-sets/${parto.id}`, { name: 'X', items: [{ itemId: String(gasa.id), quantity: 1 }] })).status, 403)
+    assert.equal((await rec.post(`/api/supply-sets/${parto.id}/archive`)).status, 403)
+    const doc = await as('alopez@demo.clinara')
+    const sets = await doc.get('/api/supply-sets')
+    assert.equal(sets.status, 200)
+    assert.equal(sets.body.sets.length, 6)
+    const kcid = await clinicOfUser('alopez@demo.clinara')
+    const kgasa = await lineOf(kcid, 'Gasa estéril', '10 × 10 cm')
+    assert.equal((await doc.post('/api/supply-sets', { name: 'Curación de consultorio', items: [{ itemId: String(kgasa.id), quantity: 4 }] })).status, 201)
+    // Un set de otra clínica no existe para ella
+    assert.equal((await doc.post(`/api/supply-sets/${parto.id}/archive`)).status, 404)
   })
 })

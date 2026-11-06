@@ -7,6 +7,7 @@ import { Modal, PageHead, SectionHead } from '../components/ui'
 import { TimeField } from '../components/DateTimeField'
 import { TabRow } from '../components/TabRow'
 import { Highlight, SupplySearch, supplyMatches } from '../components/SupplySearch'
+import { SupplySetsTab } from './SupplySets'
 import { dmyTime } from '../lib/format'
 import { SUPPLY_GAUGE_HINT, SUPPLY_MAX_SHIFTS, SUPPLY_PERIODS, SUPPLY_SCOPES } from '../lib/clinicalConfig'
 import {
@@ -14,11 +15,11 @@ import {
   type SupplySettings, type SupplyShift, type SupplyUnit,
 } from '../lib/supplies'
 
-type CatalogTab = 'materials' | 'period'
+type CatalogTab = 'materials' | 'sets' | 'period'
 
 /**
  * RU1 (ronda 14) y RU4 (ronda 15): Configuración › «Material médico quirúrgico» (y «Catálogo de material y lista de turno» para
- * enfermería). Pestañas «Materiales» y «Periodo de registro».
+ * enfermería). Pestañas «Materiales», «Sets» (RU8) y «Periodo de registro».
  */
 export function SupplyCatalog() {
   const [tab, setTab] = useState<CatalogTab>('materials')
@@ -26,9 +27,11 @@ export function SupplyCatalog() {
   return (<>
     <TabRow className="supply-tabs" label="Catálogo de material">
       <button className="tab" role="tab" aria-selected={tab === 'materials'} onClick={() => setTab('materials')}>Materiales</button>
+      <button className="tab" role="tab" aria-selected={tab === 'sets'} onClick={() => setTab('sets')}>Sets</button>
       <button className="tab" role="tab" aria-selected={tab === 'period'} onClick={() => setTab('period')}>Periodo de registro</button>
     </TabRow>
     {tab === 'materials' && <SupplyMaterials items={items} error={error} reload={reload} setItems={setItems} archived={archived} setArchived={setArchived} />}
+    {tab === 'sets' && <SupplySetsTab />}
     {tab === 'period' && <SupplyPeriodSettings settings={settings} onSaved={reload} />}
   </>)
 }

@@ -1399,3 +1399,36 @@ li.is-void .usage-records__void { text-decoration: none; }
   .mat-col .mat-row__name { flex-basis: auto; }
   .mat-tools { flex-wrap: wrap; }
 }
+
+/* ---------- RU8 (ronda 15): sets de material ---------- */
+.set-list { list-style: none; margin: 0; padding: 0 16px 12px; }
+.set-list__row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-height: 52px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
+.set-list__row:last-child { border-bottom: 0; }
+.set-list__name { display: grid; gap: 1px; flex: 1 1 240px; min-width: 0; }
+.set-list__name small { font-size: 13px; }
+.set-list__who { flex: 0 1 220px; font-size: 13px; }
+.set-list__acts { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.set-editor .modal__top { padding: 8px 24px 0; }
+.set-editor .modal__foot { flex-wrap: wrap; }
+.set-editor__msg { flex: 1 1 200px; font-size: 13.5px; }
+.set-editor__cols { margin-top: 14px; }
+@media (min-width: 1100px) { .set-editor__cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.set-picker { position: relative; flex: none; }
+.set-picker__btn { min-height: 44px; }
+.set-picker__pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 6; min-width: 260px; max-height: 320px; overflow-y: auto; background: var(--paper);
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-lift); padding: 4px; }
+.set-picker__pop button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 6px 10px; border: 0;
+  border-radius: 8px; background: none; font: inherit; font-size: 14px; text-align: left; cursor: pointer; color: var(--petrol); }
+.set-picker__pop button:hover { background: var(--ward); }
+.set-picker__pop p { margin: 8px 10px; }
+.set-notice { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-radius: 10px; background: var(--ink-soft); color: var(--ink-deep); font-size: 13.5px; }
+.set-notice > span { flex: 1 1 auto; min-width: 0; }
+.mat-sets { margin: 0; font-size: 13px; }
+@media (max-width: 640px) {
+  .set-list { padding: 0 12px 8px; }
+  .set-list__acts { margin-left: 0; width: 100%; }
+  .set-picker { width: 100%; }
+  .set-picker__btn { width: 100%; justify-content: center; }
+  .set-picker__pop { left: 0; right: 0; min-width: 0; }
+  .set-notice { flex-wrap: wrap; }
+}

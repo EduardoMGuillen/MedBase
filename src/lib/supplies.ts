@@ -59,6 +59,41 @@ export interface SupplySet {
   archivedBy?: string
 }
 
+/** RU8: un set listo para mostrar: cada línea con su material, variante, unidad, «Registro» y si está archivada. */
+export interface SupplySetView extends SupplySet {
+  lines: { itemId: string; quantity: number; material: string; variant: string; unit: SupplyUnit; scope: SupplyScope; category: string; archived: boolean }[]
+}
+
+/**
+ * RU8 (ronda 15): «Usar set». Suma las cantidades del set a lo que ya había (A12; varios sets se suman entre sí). No agrega lo
+ * archivado ni, con destino elegido, lo que no se le registra a ese destino (RU5). Devuelve las cantidades nuevas, lo que sumó
+ * (para «Deshacer») y lo que no entró.
+ */
+export function applySet(qty: Record<string, string>, set: Pick<SupplySetView, 'lines'>, opts: { dest?: 'patient' | 'general'; active: Set<string> }) {
+  const next = { ...qty }
+  const added: Record<string, number> = {}
+  const skipped: { label: string; why: 'archived' | 'scope' }[] = []
+  for (const l of set.lines) {
+    if (l.archived || !opts.active.has(l.itemId)) { skipped.push({ label: supplyLabel(l), why: 'archived' }); continue }
+    if (opts.dest && !scopeFits(l.scope, opts.dest === 'general')) { skipped.push({ label: supplyLabel(l), why: 'scope' }); continue }
+    const had = Number.parseInt(next[l.itemId] ?? '', 10) || 0
+    next[l.itemId] = String(Math.min(999, had + l.quantity))
+    added[l.itemId] = (added[l.itemId] ?? 0) + l.quantity
+  }
+  return { qty: next, added, skipped }
+}
+
+/** RU8: «Deshacer» un set: le resta lo que sumó (lo que la persona había puesto antes, o después, se queda). */
+export function undoSet(qty: Record<string, string>, added: Record<string, number>) {
+  const next = { ...qty }
+  for (const [id, n] of Object.entries(added)) {
+    const left = (Number.parseInt(next[id] ?? '', 10) || 0) - n
+    if (left > 0) next[id] = String(left)
+    else delete next[id]
+  }
+  return next
+}
+
 /** «Aguja hipodérmica 21 G», «Seda 4/0, aguja cortante», «Gorro descartable». */
 export const supplyLabel = (i: Pick<SupplyItem, 'material' | 'variant'>) => (i.variant ? `${i.material} ${i.variant}` : i.material)
 

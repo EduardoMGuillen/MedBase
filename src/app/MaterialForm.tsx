@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp, Users, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Layers, Users, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
@@ -8,16 +8,22 @@ import { DraftBadge } from '../components/Addenda'
 import { QtyStepper, qtyOf } from '../components/QtyStepper'
 import { Highlight, SupplySearch } from '../components/SupplySearch'
 import { bedLabel, PatientPicker } from './Inpatients'
+import { SetPicker } from './SupplySets'
 import { useDraftSync } from '../lib/drafts'
 import { setShiftList, useSupplies } from '../lib/useSupplies'
 import { fullName } from '../lib/format'
 import { GENERAL_USE_LABEL, USAGE_AREAS } from '../lib/clinicalConfig'
-import { byCategory, currentPeriod, localDay, periodOf, scopeFits, scopeHint, supplyLabel, unitText, type SupplyItem } from '../lib/supplies'
+import { applySet, byCategory, currentPeriod, localDay, periodOf, scopeFits, scopeHint, supplyLabel, undoSet, unitText, type SupplyItem, type SupplySetView } from '../lib/supplies'
 import { USAGE_AREA_LIST, type MaterialRecord, type UsageArea, type UsageSuggestion } from '../lib/usage'
 
-/** El borrador («Se guarda solo»). `extra` queda por los borradores de la ronda 14 (ya no se usa: lo que tiene cantidad entra). */
-interface Draft { day: string; shiftKey: string; patientId: string; general: boolean; qty: Record<string, string>; extra?: string[]; addToList: string[] }
-const blankDraft = (day: string, shiftKey: string): Draft => ({ day, shiftKey, patientId: '', general: false, qty: {}, addToList: [] })
+/**
+ * El borrador («Se guarda solo»). `extra` queda por los borradores de la ronda 14 (ya no se usa: lo que tiene cantidad entra).
+ * `sets` (RU8): los sets usados, con su nombre en ese momento.
+ */
+interface Draft { day: string; shiftKey: string; patientId: string; general: boolean; qty: Record<string, string>; extra?: string[]; addToList: string[]; sets?: { id: string; name: string }[] }
+const blankDraft = (day: string, shiftKey: string): Draft => ({ day, shiftKey, patientId: '', general: false, qty: {}, addToList: [], sets: [] })
+/** El aviso de «Usar set», con lo que sumó (para «Deshacer») y lo que no entró. */
+interface SetNotice { id: string; name: string; added: Record<string, number>; skipped: { label: string; why: 'archived' | 'scope' }[] }
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
 /**
@@ -34,7 +40,7 @@ export function MaterialForm({ editing, onClose, onSaved }: { editing?: Material
   const now = currentPeriod(settings)
   const initial = (): Draft => editing
     ? { day: localDay(new Date(editing.periodStart)), shiftKey: editing.shiftKey ?? '', patientId: editing.patientId ?? '', general: editing.general,
-      qty: Object.fromEntries(editing.items.map((i) => [i.itemId, String(i.quantity)])), addToList: [] }
+      qty: Object.fromEntries(editing.items.map((i) => [i.itemId, String(i.quantity)])), addToList: [], sets: editing.sets ?? [] }
     : blankDraft(now.day, now.shiftKey ?? '')
   const [d, setD] = useState<Draft>(initial)
   // Al llegar la configuración de la clínica, el turno actual (si el formulario sigue en blanco)
@@ -48,6 +54,8 @@ export function MaterialForm({ editing, onClose, onSaved }: { editing?: Material
   const [showChosen, setShowChosen] = useState(false)
   const [closedAreas, setClosedAreas] = useState<Set<UsageArea>>(new Set())
   const [closedCats, setClosedCats] = useState<Set<string>>(new Set())
+  const [setNotice, setSetNotice] = useState<SetNotice | null>(null)
+  const [asSet, setAsSet] = useState(false)
   const filled = Object.values(d.qty).some((v) => qtyOf(v) > 0)
   const blank = !filled && !d.patientId && !d.general
   const draft = useDraftSync<Draft>('material', editing ? editing.id : 'nuevo', d, (x) => setD({ ...blankDraft(x.day, x.shiftKey), ...x }), blank)
@@ -92,6 +100,7 @@ export function MaterialForm({ editing, onClose, onSaved }: { editing?: Material
     for (const i of out) delete qty[i.id]
     setD({ ...d, ...next, qty })
     setWho('')
+    setSetNotice(null)
     if (out.length) notify(`${plural(out.length, 'material no se registra', 'materiales no se registran')} ${general ? `en ${GENERAL_USE_LABEL}` : 'a un paciente'} y se quitó: ${out.map(supplyLabel).join(', ')}.`, 'error')
   }
 
@@ -103,13 +112,30 @@ export function MaterialForm({ editing, onClose, onSaved }: { editing?: Material
     try {
       // «Agregar a la lista de turno» desde el formulario (Enfermería y Administración)
       for (const id of d.addToList) if (qtyOf(d.qty[id]) > 0 && can('supplies.shiftlist') && !byId.get(id)?.onShiftList) await setShiftList(id, true)
-      const body = { patientId: d.general ? undefined : d.patientId, general: d.general, day: d.day, shiftKey: settings.period === 'shift' ? d.shiftKey || undefined : undefined, items: lines }
+      const body = { patientId: d.general ? undefined : d.patientId, general: d.general, day: d.day, shiftKey: settings.period === 'shift' ? d.shiftKey || undefined : undefined, items: lines,
+        sets: [...new Set((d.sets ?? []).map((x) => x.id))] }
       const r = await api<MaterialRecord>(editing ? `/usage/material/${editing.id}` : '/usage/material', { method: editing ? 'PATCH' : 'POST', body })
       draft.clear()
       notify(editing ? 'Registro corregido' : `Material registrado: ${r.general ? GENERAL_USE_LABEL : r.patientName}`)
       onSaved(r)
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
+
+  /** RU8: «Usar set»: suma sus cantidades (A12); lo archivado o lo que no corresponde al destino no entra (lo dice el aviso). */
+  const pickSet = (s: SupplySetView) => {
+    const r = applySet(d.qty, s, { dest: d.general ? 'general' : d.patientId ? 'patient' : undefined, active: new Set(byId.keys()) })
+    const used = d.sets ?? []
+    setD({ ...d, qty: r.qty, sets: Object.keys(r.added).length && !used.some((x) => x.id === s.id) ? [...used, { id: s.id, name: s.name }] : used })
+    setSetNotice({ id: s.id, name: s.name, added: r.added, skipped: r.skipped })
+    setFind('')
+  }
+  /** «Deshacer»: quita lo que sumó el set y deja lo que la persona había puesto. */
+  const undo = () => {
+    if (!setNotice) return
+    setD({ ...d, qty: undoSet(d.qty, setNotice.added), sets: (d.sets ?? []).filter((x) => x.id !== setNotice.id) })
+    setSetNotice(null)
+  }
+  const skippedWhy = (why: 'archived' | 'scope') => (why === 'archived' ? 'archivado' : d.general ? 'se registra por paciente' : `se registra en ${GENERAL_USE_LABEL}`)
 
   /** Fila de material (~44 px): nombre, variante y unidad pegada; a la derecha [−] [cantidad] [+]. */
   const row = (i: SupplyItem, q = '') => {
@@ -162,6 +188,7 @@ export function MaterialForm({ editing, onClose, onSaved }: { editing?: Material
             </button>
             {(error || missing) && <span className={`mat-foot__msg${error ? ' field__msg field__msg--error' : ' muted'}`} role={error ? 'alert' : 'status'}>{error || missing}</span>}
             <span className="mat-foot__acts">
+              {can('sets.manage') && !editing && <button type="button" className="btn btn--ghost" disabled={!chosenCount} onClick={() => setAsSet(true)}><Layers size={15} />Guardar como set</button>}
               <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
               <button className="btn btn--primary" disabled={busy || !!missing} onClick={() => void save()}>{busy ? 'Guardando…' : 'Guardar'}</button>
             </span>
@@ -223,7 +250,21 @@ export function MaterialForm({ editing, onClose, onSaved }: { editing?: Material
             <div className="mat-tools">
               <SupplySearch items={active} value={find} onChange={setFind} label="Buscar material" max={30}
                 results={(found, q) => <div className="mat-results">{found.map((i) => row(i, q))}</div>} />
+              <SetPicker onPick={pickSet} />
             </div>
+            {setNotice && (
+              <div className="set-notice" role="status">
+                <span>
+                  {Object.keys(setNotice.added).length
+                    ? <>Se agregó el set «{setNotice.name}» ({plural(Object.keys(setNotice.added).length, 'material', 'materiales')}). Puedes cambiar las cantidades o agregar más.</>
+                    : <>El set «{setNotice.name}» no agregó nada.</>}
+                  {setNotice.skipped.length > 0 && <> {plural(setNotice.skipped.length, 'material no se agregó', 'materiales no se agregaron')}: {setNotice.skipped.map((x) => `${x.label} (${skippedWhy(x.why)})`).join(', ')}.</>}
+                </span>
+                {Object.keys(setNotice.added).length > 0 && <button type="button" className="btn btn--ghost btn--sm" onClick={undo}>Deshacer</button>}
+                <button type="button" className="icon-btn" aria-label="Cerrar el aviso" onClick={() => setSetNotice(null)}><X size={15} /></button>
+              </div>
+            )}
+            {(d.sets ?? []).length > 0 && <p className="muted mat-sets">Sets usados: {(d.sets ?? []).map((x) => `«${x.name}»`).join(', ')}</p>}
             {find.trim().length < 2 && (<>
               {others.length > 0 && (
                 <section className="mat-cat"><h4 className="mat-cat__plain">Fuera de la lista de turno</h4>{others.map((i) => row(i))}</section>
@@ -249,6 +290,36 @@ export function MaterialForm({ editing, onClose, onSaved }: { editing?: Material
           </>)}
         </section>
       </div>
+      {asSet && <SaveAsSet lines={chosenLines.map((i) => ({ itemId: i.id, quantity: qtyOf(d.qty[i.id]) }))} onClose={() => setAsSet(false)} />}
+    </Modal>
+  )
+}
+
+/** RU8: «Guardar como set»: lo seleccionado como un set nuevo; pide el nombre. Para cambiar un set existente, «Editar» en «Sets». */
+function SaveAsSet({ lines, onClose }: { lines: { itemId: string; quantity: number }[]; onClose: () => void }) {
+  const { notify } = useStore()
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const save = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const r = await api<SupplySetView>('/supply-sets', { body: { name: name.trim(), description: '', items: lines } })
+      notify(`El set «${r.name}» se guardó (${plural(r.lines.length, 'material', 'materiales')})`)
+      onClose()
+    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+  return (
+    <Modal title="Guardar como set" onClose={onClose} footer={<>
+      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
+      <button className="btn btn--primary" disabled={busy || name.trim().length < 2} onClick={() => void save()}>{busy ? 'Guardando…' : 'Guardar set'}</button>
+    </>}>
+      <p style={{ marginTop: 0 }}>Se guarda lo seleccionado ({plural(lines.length, 'material', 'materiales')}) con sus cantidades. El registro no cambia.</p>
+      <label className="field"><span>Nombre del set</span>
+        <input className="input" value={name} maxLength={60} autoFocus placeholder="Ej. Cesárea" onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && name.trim().length >= 2) void save() }} /></label>
+      {error && <p className="field__msg field__msg--error" role="alert">{error}</p>}
     </Modal>
   )
 }
