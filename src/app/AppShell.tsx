@@ -36,7 +36,8 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
   { to: '/app/pacientes', label: 'Biblioteca de pacientes', icon: LibraryBig, perm: 'patients.view', group: 'Pacientes' },
   { to: '/app/seguimientos', label: 'Crónicos y seguimientos', icon: BellRing, perm: 'followups.view', group: 'Pacientes' },
   // RU2 (ronda 14): registro administrativo de enfermería (en Administración, dentro de su grupo)
-  { to: '/app/uso-medicamentos-material', label: 'Uso de medicamentos y material', icon: ClipboardList, perm: 'usage.view', group: 'Pacientes' },
+  // RU6 (ronda 15): registro administrativo de enfermería, fuera de «Pacientes»: entrada propia bajo el encabezado «Registros»
+  { to: '/app/uso-medicamentos-material', label: 'Uso de medicamentos y material', icon: ClipboardList, perm: 'usage.view', group: 'Registros' },
   { to: '/app/configuracion-laboratorio', label: 'Configuración de laboratorio', icon: SlidersHorizontal, perm: 'dept.work', roles: ['lab'], group: 'Departamento' },
   { to: '/app/configuracion-imagenes', label: 'Configuración de imágenes', icon: SlidersHorizontal, perm: 'dept.work', roles: ['imaging'], group: 'Departamento' },
   { to: '/app/rol-de-turnos', label: 'Rol de turnos', icon: CalendarClock, perm: 'dept.work', roles: ['lab', 'imaging'], group: 'Departamento' },
@@ -136,12 +137,11 @@ export default function AppShell() {
       if (quietBilling && n.to === '/app/caja') return false
       if (n.roles && !n.roles.includes(user.role)) return false
       // MI1: el titular de un consultorio en su vista de administrador ve sólo lo administrativo (lo clínico, en la de médico)
-      if (f.office && user.role === 'admin' && n.group === 'Pacientes' && n.to !== '/app/uso-medicamentos-material') return false
+      if (f.office && user.role === 'admin' && n.group === 'Pacientes') return false
       // LB5 e IM1 (ronda 12): Laboratorio e Imágenes ven sus áreas, no las listas de Observación y Hospitalizados de enfermería
       if (dept && (n.to === '/app/observacion' || n.to === '/app/hospitalizados')) return false
       return true
-    }).map((n) => (n.to === '/app/uso-medicamentos-material' && user.role === 'admin' ? { ...n, group: 'Administración' } : n))
-    .map((n) => (f.office && n.group === 'Administración'
+    }).map((n) => (f.office && n.group === 'Administración'
       ? { ...n, group: 'Mi consultorio', label: n.to === '/app/personal' ? 'Personal' : n.to === '/app/configuracion' ? 'Configuración del consultorio' : n.label }
       : doctor && n.to === '/app/caja' ? { ...n, label: 'Cobrar' } : n))
     // MC7: Inicio → Agenda → Recetas → Cobrar → Pacientes → Configuración (y en el consultorio, lo administrativo al final)
@@ -186,6 +186,8 @@ export default function AppShell() {
               )
             })
             if (!b.group) return <Fragment key={b.items[0].to}>{links}</Fragment>
+            // RU6 (ronda 15): «Registros» es un encabezado fijo (no se contrae); si el rol no tiene ninguna entrada, no aparece
+            if (STATIC_GROUPS.has(b.group)) return <div key={b.group} className="side__grp side__grp--static" role="group" aria-label={b.group}><div className="side__group">{b.group}</div><div className="side__grp-list">{links}</div></div>
             return <NavGroup key={b.group} title={b.group} userId={user.id} paths={b.items.map((n) => n.to)} badges={b.items.map((n) => badge(n.to)).filter((x) => x !== null)} forceOpen={touring}>{links}</NavGroup>
           })}
           {quietBilling && can('billing.manage') && (
@@ -247,8 +249,12 @@ export default function AppShell() {
 /** Ronda 12: pendientes de un área de la bandeja; en rojo si hay urgentes. */
 const deptBadge = (c?: { n: number; urgent: number }) => (c ? { n: c.n, alert: c.urgent > 0, label: `${c.n} pendientes${c.urgent ? `, ${c.urgent} urgentes` : ''}` } : null)
 
+/** RU6 (ronda 15): grupos que son solo un encabezado (siempre abiertos). */
+const STATIC_GROUPS = new Set(['Registros'])
+
 function navRank(n: { to: string; group?: string }) {
   if (n.group === 'Pacientes') return 20
+  if (n.group === 'Registros') return 30
   if (n.group) return 40
   return 10
 }
