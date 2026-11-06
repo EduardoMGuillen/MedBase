@@ -52,7 +52,7 @@ async function office(slug: string) {
 describe('C1 permisos por tipo de cuenta', () => {
   test('en una clínica cada rol conserva exactamente sus permisos', async () => {
     for (const role of ['admin', 'doctor', 'nurse', 'reception'] as Role[]) assert.deepEqual(permissionsFor(role, 'clinic'), ROLE_PERMISSIONS[role])
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     assert.deepEqual(nurse.login.permissions, ROLE_PERMISSIONS.nurse)
     assert.equal(nurse.login.user.clinicKind, 'clinic')
   })
@@ -99,13 +99,13 @@ describe('C1 permisos por tipo de cuenta', () => {
     // El titular no se queda sin la administración
     assert.equal((await o.doc.patch(`/api/staff/${'of-c1b-doc'}`, { roles: ['doctor'] })).status, 400)
     // Una clínica no recibe asistentes
-    assert.equal((await (await as('admin@demo.clinara')).post('/api/staff', { name: 'Asistente X', role: 'assistant', email: 'ax@test.hn' })).status, 400)
+    assert.equal((await (await as('rmoncada@demo.clinara')).post('/api/staff', { name: 'Asistente X', role: 'assistant', email: 'ax@test.hn' })).status, 400)
   })
 })
 
 describe('C2 crear un consultorio', () => {
   test('Administración de Clinara lo crea con su médico titular, que entra y lo administra', async () => {
-    const sa = await as('superadmin@demo.clinara')
+    const sa = await as('dcerrato@demo.clinara')
     const r = await sa.post('/api/platform/clinics', { kind: 'office', name: 'Consultorio Dra. Ana Rivera', address: 'Col. Palmira', phone: '2232-0000',
       owner: { name: 'Dra. Ana Rivera', email: 'arivera@test.hn', license: 'CMH-777', specialty: 'Medicina general' } })
     assert.equal(r.status, 201, JSON.stringify(r.body))
@@ -122,7 +122,7 @@ describe('C2 crear un consultorio', () => {
     assert.deepEqual(boot.services.map((s: any) => s.name).sort(), ['Aplicación de inyección', 'Consulta', 'Control o reconsulta', 'Curación'])
     // Sin datos del médico no se crea; el correo de alguien de una clínica no se repite
     assert.equal((await sa.post('/api/platform/clinics', { kind: 'office', name: 'Consultorio X' })).status, 400)
-    assert.equal((await sa.post('/api/platform/clinics', { kind: 'office', name: 'Consultorio Y', owner: { name: 'Dra. Lucía Herrera', email: 'lherrera@demo.clinara', license: 'CMH-1' } })).status, 409)
+    assert.equal((await sa.post('/api/platform/clinics', { kind: 'office', name: 'Consultorio Y', owner: { name: 'Dra. Valeria Solórzano', email: 'vsolorzano@demo.clinara', license: 'CMH-1' } })).status, 409)
     // Desde la plataforma tampoco se le agrega un segundo médico
     assert.equal((await sa.post(`/api/platform/clinics/${r.body.clinic.id}/staff`, { name: 'Otro Médico', role: 'doctor', email: 'om@test.hn', license: 'CMH-9' })).status, 400)
     assert.equal((await sa.post(`/api/platform/clinics/${r.body.clinic.id}/staff`, { name: 'Asistente Rivera', role: 'assistant', email: 'asr@test.hn' })).status, 201)
@@ -175,7 +175,7 @@ describe('C5 documentos con el nombre del médico', () => {
     const c = await o.doc.post('/api/certificates', { patientId: p.body.id, kind: 'attention', to: 'A quien corresponda', visitDate: '2026-10-26', fromTime: '08:00', toTime: '09:00' })
     assert.equal(c.status, 201, JSON.stringify(c.body))
     assert.equal(c.body.data.clinic.office, true)
-    const clinic = await (await as('lherrera@demo.clinara')).post('/api/certificates', { patientId: 'p2', kind: 'attention', to: 'A quien corresponda', visitDate: '2026-10-26', fromTime: '08:00', toTime: '09:00' })
+    const clinic = await (await as('vsolorzano@demo.clinara')).post('/api/certificates', { patientId: 'p2', kind: 'attention', to: 'A quien corresponda', visitDate: '2026-10-26', fromTime: '08:00', toTime: '09:00' })
     assert.equal(clinic.body.data.clinic.office, undefined, 'una clínica no cambia')
   })
 })
@@ -241,9 +241,9 @@ describe('C7 observación opcional en el consultorio', () => {
 describe('C8 consultorio de demostración', () => {
   test('la demo trae el consultorio con su médico, su asistente, agenda, recetas y una paciente en observación', async () => {
     const accounts = (await (await fetch(`${base}/api/demo-accounts`)).json() as any).accounts
-    assert.ok(accounts.some((a: any) => a.email === 'alopez@demo.clinara' && a.clinicName === 'Consultorio Dra. Ana López'))
-    assert.ok(accounts.some((a: any) => a.email === 'asistente@demo.clinara' && a.role === 'assistant'))
-    const doc = await as('alopez@demo.clinara')
+    assert.ok(accounts.some((a: any) => a.email === 'ipacheco@demo.clinara' && a.clinicName === 'Consultorio Dra. Isabel Pacheco'))
+    assert.ok(accounts.some((a: any) => a.email === 'lcardona@demo.clinara' && a.role === 'assistant'))
+    const doc = await as('ipacheco@demo.clinara')
     assert.equal(doc.login.user.clinicKind, 'office')
     const boot = (await doc.get('/api/bootstrap')).body
     assert.ok(boot.settings.setupDoneAt, 'sin asistente de primer ingreso en la demo')

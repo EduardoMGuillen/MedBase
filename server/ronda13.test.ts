@@ -37,7 +37,7 @@ async function as(email: string, password = DEMO_PASSWORD) {
   }
   return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b) }
 }
-const mainClinic = async () => String((await sql.one(`SELECT clinic_id FROM staff WHERE email = 'admin@demo.clinara'`))!.clinic_id)
+const mainClinic = async () => String((await sql.one(`SELECT clinic_id FROM staff WHERE email = 'rmoncada@demo.clinara'`))!.clinic_id)
 
 describe('AP3 y AP4 (ronda 13): antecedentes', () => {
   test('la ventana ya no pide «Transfusionales»; lo escrito se ve como campo retirado', () => {
@@ -110,8 +110,8 @@ describe('IM2 (ronda 13): «Incluir diagnóstico» se guarda con la receta', () 
 
   test('una receta nueva sale sin diagnóstico; el médico lo marca, enfermería no puede; el registro guarda si lo llevaba', async () => {
     const cid = await mainClinic()
-    const doctor = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doctor = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const pid = String((await sql.one(`SELECT id FROM patients WHERE clinic_id = ? AND pending IS NOT TRUE AND dni IS NOT NULL ORDER BY record LIMIT 1`, [cid]))!.id)
     const issued = await doctor.post('/api/prescriptions', { patientId: pid, items: [{ drug: 'Amoxicilina', presentation: 'Cápsula 500 mg', dose: '2 cápsula', route: 'Oral', frequency: 'Cada 8 horas', duration: '7 días' }] })
     assert.equal(issued.status, 201, JSON.stringify(issued.body))
@@ -134,7 +134,7 @@ describe('IM2 (ronda 13): «Incluir diagnóstico» se guarda con la receta', () 
   })
 
   test('una receta de antes (sin dato) conserva el diagnóstico con que se imprimía', async () => {
-    const doctor = await as('lherrera@demo.clinara')
+    const doctor = await as('vsolorzano@demo.clinara')
     const row = await sql.one(`SELECT id FROM prescriptions WHERE consultation_id IS NOT NULL AND consultation_id <> '' AND voided_at IS NULL ORDER BY issued_at LIMIT 1`)
     await sql.run('UPDATE prescriptions SET include_dx = NULL WHERE id = ?', [String(row!.id)])
     const got = await doctor.get(`/api/prescriptions/${row!.id}`)
@@ -146,8 +146,8 @@ describe('IM2 (ronda 13): «Incluir diagnóstico» se guarda con la receta', () 
 
   test('«Generar receta» de la estancia: la casilla es del médico y la receta trae los diagnósticos de la estancia', async () => {
     const cid = await mainClinic()
-    const doctor = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doctor = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const med = await sql.one(`SELECT m.id FROM hosp_meds m JOIN hospitalizations h ON h.id = m.hospitalization_id WHERE m.clinic_id = ? AND m.stopped_at IS NULL AND h.status = 'active' LIMIT 1`, [cid])
     const job = await doctor.post('/api/print-jobs', { kind: 'rx', medIds: [String(med!.id)], chosen: true })
     assert.equal(job.status, 201, JSON.stringify(job.body))

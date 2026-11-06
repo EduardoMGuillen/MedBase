@@ -149,7 +149,7 @@ function NewClinic({ onClose, onCreated, create }: {
         <fieldset className="fs"><legend>Médico titular</legend>
           <p style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: -4 }}>Entra con este correo y una contraseña temporal que verás al crear el consultorio. Si también trabaja en una clínica, usa otro correo.</p>
           <div className="form-grid">
-            <label className="field"><span>Nombre como sale en la receta</span><input className="input" value={f.adminName} onChange={set('adminName')} placeholder="Ej. Dra. Ana López" autoFocus /></label>
+            <label className="field"><span>Nombre como sale en la receta</span><input className="input" value={f.adminName} onChange={set('adminName')} placeholder="Ej. Dra. Isabel Pacheco" autoFocus /></label>
             <label className="field"><span>Correo de acceso</span><input className="input" type="email" value={f.adminEmail} onChange={set('adminEmail')} /></label>
             <label className="field"><span>Número de colegiación</span><input className="input" value={f.license} onChange={set('license')} placeholder="Ej. CMH-12345" /></label>
             <label className="field"><span>Especialidad</span><input className="input" value={f.specialty} onChange={set('specialty')} /></label>
@@ -158,7 +158,7 @@ function NewClinic({ onClose, onCreated, create }: {
       )}
       <fieldset className="fs"><legend>{office ? 'Consultorio' : 'Clínica'}</legend>
         <div className="form-grid">
-          <label className="field span-2"><span>Nombre</span><input className="input" value={f.name} onChange={set('name')} placeholder={office ? 'Ej. Consultorio Dra. Ana López' : 'Ej. Clínica Médica La Esperanza'} autoFocus={!office} /></label>
+          <label className="field span-2"><span>Nombre</span><input className="input" value={f.name} onChange={set('name')} placeholder={office ? 'Ej. Consultorio Dra. Isabel Pacheco' : 'Ej. Clínica Médica La Esperanza'} autoFocus={!office} /></label>
           <label className="field span-2"><span>Dirección de reserva en línea</span>
             <div className="slug-input"><span>/reservar/</span><input className="input" value={f.slug} onChange={(e) => { setTouched({ ...touched, slug: true }); setF({ ...f, slug: slugify(e.target.value) || e.target.value.toLowerCase() }) }} /></div></label>
           <label className="field span-2"><span>Dirección</span><input className="input" value={f.address} onChange={set('address')} /></label>
@@ -303,7 +303,7 @@ function NewMember({ clinicName, roles, onClose, onCreate }: { clinicName: strin
         setBusy(false)
       }}>Crear usuario</button>
     </>}>
-      <label className="field"><span>Nombre completo, con título si aplica</span><input className="input" value={f.name} onChange={set('name')} placeholder="Ej. Dra. Ana López" autoFocus /></label>
+      <label className="field"><span>Nombre completo, con título si aplica</span><input className="input" value={f.name} onChange={set('name')} placeholder="Ej. Dra. Isabel Pacheco" autoFocus /></label>
       <label className="field"><span>Rol</span><select className="select" value={f.role} onChange={set('role')}>{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></label>
       <p style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: -6 }}>{ROLE_SUMMARY[f.role]}</p>
       <label className="field"><span>Correo de acceso</span><input className="input" type="email" value={f.email} onChange={set('email')} /></label>

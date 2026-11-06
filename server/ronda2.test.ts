@@ -20,9 +20,9 @@ before(async () => {
   const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
   await new Promise<void>((r) => { server = app.listen(0, () => r()) })
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-  const admin = await as('admin@demo.clinara')
+  const admin = await as('rmoncada@demo.clinara')
   const all = Object.fromEntries(['0', '1', '2', '3', '4', '5', '6'].map((d) => [d, [{ start: '00:00', end: '23:45' }]]))
-  await admin.patch('/api/staff/s-herrera/schedule', { slot: 15, week: all })
+  await admin.patch('/api/staff/s-solorzano/schedule', { slot: 15, week: all })
 })
 after(async () => { server.close(); await sql.close() })
 
@@ -48,17 +48,17 @@ async function as(email: string) {
 
 const DX = [{ code: 'CA40', label: 'Neumonía', system: 'icd11' }]
 const freeBed = async () => {
-  const boot = (await (await as('lherrera@demo.clinara')).get('/api/bootstrap')).body
+  const boot = (await (await as('vsolorzano@demo.clinara')).get('/api/bootstrap')).body
   const used = new Set(boot.inpatients.map((h: any) => h.bedId))
   return boot.beds.find((b: any) => b.active && !used.has(b.id)).id as string
 }
-/** Un paciente nuevo en observación, ingresado desde una consulta de la Dra. Herrera. */
+/** Un paciente nuevo en observación, ingresado desde una consulta de la Dra. Solórzano. */
 async function observation(name = 'Prueba') {
-  const nurse = await as('crios@demo.clinara')
-  const doc = await as('lherrera@demo.clinara')
+  const nurse = await as('murbina@demo.clinara')
+  const doc = await as('vsolorzano@demo.clinara')
   const p = await nurse.post('/api/patients', { firstName: name, lastName: 'Ronda Dos', birthDate: '1980-01-01', sex: 'M', phone: '9999-1111', dni: `0801-1980-${String(Math.floor(Math.random() * 99999)).padStart(5, '0')}` })
   assert.equal(p.status, 201, JSON.stringify(p.body))
-  const w = await nurse.post('/api/appointments/walk-in', { patientId: p.body.id, doctorId: 's-herrera', reason: 'Fiebre' })
+  const w = await nurse.post('/api/appointments/walk-in', { patientId: p.body.id, doctorId: 's-solorzano', reason: 'Fiebre' })
   await doc.post(`/api/appointments/${w.body.id}/status`, { status: 'in_consult' })
   const c = await doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Fiebre y tos', history: 'Tres días con fiebre y tos productiva.', diagnoses: DX, orders: ['Signos vitales cada 8 horas.'], observe: true })
   assert.equal(c.status, 201, JSON.stringify(c.body))
@@ -81,9 +81,9 @@ describe('A3 la autorización de hospitalización no va en observación', () => 
     const old = 'auth-legacy-na'
     const h = (await sql.one('SELECT * FROM hospitalizations WHERE id = ?', [stayId]))!
     await sql.run(`INSERT INTO authorizations (id, clinic_id, hospitalization_id, patient_id, template, data, status, created_by, created_at, status_note)
-      VALUES (?,?,?,?,'hospital','{}','not_applicable','s-herrera',?, 'La observación no lleva autorización de hospitalización.')`,
+      VALUES (?,?,?,?,'hospital','{}','not_applicable','s-solorzano',?, 'La observación no lleva autorización de hospitalización.')`,
     [old, String(h.clinic_id), stayId, String(h.patient_id), new Date().toISOString()])
-    await sql.run(`UPDATE hospitalizations SET kind = 'hospital', bed_id = ?, observation_at = admitted_at, converted_by = 's-herrera' WHERE id = ?`, [await freeBed(), stayId])
+    await sql.run(`UPDATE hospitalizations SET kind = 'hospital', bed_id = ?, observation_at = admitted_at, converted_by = 's-solorzano' WHERE id = ?`, [await freeBed(), stayId])
     // Antes de migrar, la tarjeta "No aplica" se vería
     assert.equal((await sql.query(`SELECT * FROM authorizations WHERE hospitalization_id = ?`, [stayId])).length, 1)
 
@@ -252,8 +252,8 @@ describe('O1 sets de órdenes', () => {
   })
 
   test('personales por defecto; compartido: los demás lo aplican o lo duplican, sólo el autor lo edita; eliminar archiva', async () => {
-    const herrera = await as('lherrera@demo.clinara')
-    const paz = await as('apaz@demo.clinara')
+    const herrera = await as('vsolorzano@demo.clinara')
+    const paz = await as('tbogran@demo.clinara')
     const own = (await herrera.post('/api/order-sets', { name: 'Fractura cerrada sin complicaciones', items: [{ text: 'Reposo.' }, { text: 'Elevar el miembro.' }] })).body
     assert.ok(!(await paz.get('/api/order-sets')).body.some((s: any) => s.id === own.id), 'personal: el otro médico no lo ve')
     assert.equal((await herrera.patch(`/api/order-sets/${own.id}`, { shared: true })).status, 200)
@@ -262,7 +262,7 @@ describe('O1 sets de órdenes', () => {
     assert.equal((await paz.del(`/api/order-sets/${own.id}`)).status, 403)
     const copy = await paz.post(`/api/order-sets/${own.id}/duplicate`)
     assert.equal(copy.status, 201)
-    assert.equal(copy.body.ownerId, 's-paz')
+    assert.equal(copy.body.ownerId, 's-bogran')
     assert.equal(copy.body.shared, false)
     assert.equal((await paz.patch(`/api/order-sets/${copy.body.id}`, { items: [{ text: 'Reposo absoluto.' }] })).status, 200, 'la copia es suya')
     assert.equal((await herrera.del(`/api/order-sets/${own.id}`)).status, 200)
@@ -271,7 +271,7 @@ describe('O1 sets de órdenes', () => {
   })
 
   test('en un consultorio no se comparte; los más usados van primero', async () => {
-    const lopez = await as('alopez@demo.clinara')
+    const lopez = await as('ipacheco@demo.clinara')
     assert.equal((await lopez.post('/api/order-sets', { name: 'Compartido', items: [{ text: 'Reposo.' }], shared: true })).status, 400)
     const a = (await lopez.post('/api/order-sets', { name: 'A poco usado', items: [{ text: 'Reposo.' }] })).body
     const b = (await lopez.post('/api/order-sets', { name: 'B muy usado', items: [{ text: 'Líquidos.' }] })).body
@@ -326,12 +326,12 @@ describe('P1 epicrisis', () => {
     assert.equal((await nurse.post(`/api/epicrisis/${e.id}/issue`)).status, 403, 'enfermería no emite')
     e = (await doc.post(`/api/epicrisis/${e.id}/issue`)).body
     assert.equal(e.status, 'issued')
-    assert.equal(e.data.doctor.name, 'Dra. Lucía Herrera')
-    assert.equal(e.data.doctor.license, 'CMH-08812')
+    assert.equal(e.data.doctor.name, 'Dra. Valeria Solórzano')
+    assert.equal(e.data.doctor.license, 'CMH-20118')
     assert.equal((await doc.patch(`/api/epicrisis/${e.id}`, { hea: 'otra' })).status, 409, 'emitida no se edita')
     // Enfermería la ve y la reimprime; recepción no
     assert.equal((await nurse.get(`/api/epicrisis/${e.id}`)).status, 200)
-    assert.equal((await (await as('smejia@demo.clinara')).get(`/api/epicrisis/${e.id}`)).status, 403)
+    assert.equal((await (await as('aquiroz@demo.clinara')).get(`/api/epicrisis/${e.id}`)).status, 403)
     // Anular con motivo abre la versión 2 como borrador
     assert.equal((await doc.post(`/api/epicrisis/${e.id}/void`, { reason: 'no' })).status, 400)
     const v2 = (await doc.post(`/api/epicrisis/${e.id}/void`, { reason: 'Faltaba un medicamento al alta' })).body
@@ -369,10 +369,10 @@ describe('P1 epicrisis', () => {
 
 describe('S1 hoja de signos vitales', () => {
   test('la preclínica de la consulta es la primera toma; enfermería registra sólo la temperatura; se anula con motivo; el médico cambia la frecuencia', async () => {
-    const nurse = await as('crios@demo.clinara')
-    const doc = await as('lherrera@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const p = await nurse.post('/api/patients', { firstName: 'Signos', lastName: 'Vitales Prueba', birthDate: '1975-03-03', sex: 'F', phone: '9999-2222', dni: '0801-1975-33333' })
-    const w = await nurse.post('/api/appointments/walk-in', { patientId: p.body.id, doctorId: 's-herrera', reason: 'Fiebre' })
+    const w = await nurse.post('/api/appointments/walk-in', { patientId: p.body.id, doctorId: 's-solorzano', reason: 'Fiebre' })
     const pre = await nurse.post('/api/vitals', { patientId: p.body.id, appointmentId: w.body.id, temperature: 38.9, heartRate: 104, systolic: 118, diastolic: 76, chiefComplaint: 'Fiebre' })
     assert.equal(pre.status, 201)
     await doc.post(`/api/appointments/${w.body.id}/status`, { status: 'in_consult' })
@@ -385,14 +385,14 @@ describe('S1 hoja de signos vitales', () => {
     assert.equal((await nurse.post(`/api/inpatient/${stay}/vitals`, {})).status, 400, 'al menos un signo')
     assert.equal((await nurse.post(`/api/inpatient/${stay}/vitals`, { temperature: 37, takenAt: new Date(Date.now() + 3_600_000).toISOString() })).status, 400, 'no en el futuro')
     assert.equal((await nurse.post(`/api/inpatient/${stay}/vitals`, { systolic: 120 })).status, 400, 'la PA lleva las dos')
-    assert.equal((await (await as('smejia@demo.clinara')).post(`/api/inpatient/${stay}/vitals`, { temperature: 37 })).status, 403, 'recepción no')
+    assert.equal((await (await as('aquiroz@demo.clinara')).post(`/api/inpatient/${stay}/vitals`, { temperature: 37 })).status, 403, 'recepción no')
     const takenAt = new Date(Date.now() - 20 * 60_000).toISOString()
     const t = await nurse.post(`/api/inpatient/${stay}/vitals`, { temperature: 37.84, takenAt })
     assert.equal(t.status, 201, JSON.stringify(t.body))
     assert.equal(t.body.temperature, 37.8, 'un decimal')
     assert.equal(t.body.takenAt, takenAt)
     assert.ok(t.body.recordedAt > takenAt, 'se guarda también la hora de registro')
-    assert.equal(t.body.takenBy, 's-rios')
+    assert.equal(t.body.takenBy, 's-urbina')
     assert.equal((await nurse.post(`/api/vitals/${t.body.id}/void`, { reason: 'x' })).status, 400)
     const voided = await nurse.post(`/api/vitals/${t.body.id}/void`, { reason: 'Se anotó en el paciente equivocado' })
     assert.equal(voided.status, 200)
@@ -416,7 +416,7 @@ describe('S1 hoja de signos vitales', () => {
       const at = new Date(start); at.setHours(8 * (i + 1), 5, 0, 0)
       if (at > now) break
       if (i === 10) continue // falta la toma de esa hora
-      vitals.push({ id: `v${i}`, takenAt: at.toISOString(), takenBy: 's-rios', temperature: i === 3 ? 38.6 : i === 6 ? 35.4 : 36.8, patientId: 'x' })
+      vitals.push({ id: `v${i}`, takenAt: at.toISOString(), takenBy: 's-urbina', temperature: i === 3 ? 38.6 : i === 6 ? 35.4 : 36.8, patientId: 'x' })
     }
     const file: any = { hospitalization: { admittedAt: start.toISOString(), status: 'active' }, notes: [], vitals, meds: [], doses: [], marks: [], authorizations: [] }
     const band = bandOf({})
@@ -428,7 +428,7 @@ describe('S1 hoja de signos vitales', () => {
     const alerts = fileAlerts(file, band, now).map((a) => a.text)
     assert.ok(alerts.some((a) => a.startsWith('Signos vitales: 1 toma pendiente')), alerts.join(' | '))
     // Con una fiebre en las últimas 24 h, aparece en las alertas
-    vitals.push({ id: 'vf', takenAt: new Date(now.getTime() - 3_600_000).toISOString(), takenBy: 's-rios', temperature: 38.6, patientId: 'x' })
+    vitals.push({ id: 'vf', takenAt: new Date(now.getTime() - 3_600_000).toISOString(), takenBy: 's-urbina', temperature: 38.6, patientId: 'x' })
     assert.ok(fileAlerts(file, band, now).some((a) => a.level === 'critical' && a.text.startsWith('Fiebre: 38.6 °C')))
     // Cada 4 h: el doble de horas esperadas; las de en medio quedan cubiertas por la toma siguiente (EN2, ronda 6)
     file.hospitalization.vitalsEveryHours = 4
@@ -444,6 +444,6 @@ describe('Restablecer demo', () => {
     for (const t of ['order_sets', 'order_set_uses', 'epicrises', 'upload_parts']) {
       assert.equal(Number((await sql.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM ${t}`))!.n), 0, t)
     }
-    assert.ok(await sql.one(`SELECT 1 FROM staff WHERE id = 's-herrera'`), 'la demo se vuelve a cargar')
+    assert.ok(await sql.one(`SELECT 1 FROM staff WHERE id = 's-solorzano'`), 'la demo se vuelve a cargar')
   })
 })

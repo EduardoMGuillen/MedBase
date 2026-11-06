@@ -139,7 +139,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
   const event = (q: Sql, cid: string, examId: string, status: ExamStatus, by: string, at: string, note?: string) =>
     q.run('INSERT INTO exam_events (id, clinic_id, exam_id, status, by_id, at, note) VALUES (?,?,?,?,?,?,?)', [randomUUID(), cid, examId, status, by, at, note ?? null])
   const label = (r: Row) => `${GROUP_LABEL[r.grp as 'lab']}: ${examLine(toExamOrder(r))}`
-  // DP2 (ronda 11): «Muestra tomada por Lic. Ríos 08:15» (lo vio el otro primero)
+  // DP2 (ronda 11): «Muestra tomada por Lic. Urbina 08:15» (lo vio el otro primero)
   const alreadyText = async (r: Row, q: Sql = sql) => {
     if (r.status === 'sample' || r.status === 'done') {
       const by = r.status_by ? await q.one('SELECT name FROM staff WHERE id = ?', [String(r.status_by)]) : undefined

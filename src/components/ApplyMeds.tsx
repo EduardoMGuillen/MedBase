@@ -21,7 +21,7 @@ export function applyBadge(list: ConsultApplication[]) {
   return { text: list.length > 1 ? 'Medicamentos aplicados' : 'Medicamento aplicado', tone: 'mint' as const }
 }
 
-/** Debajo del medicamento, en la tarjeta de la consulta: «Aplicado 05/11/2026 08:40 por Lic. Ríos» o «No aplicado: motivo». */
+/** Debajo del medicamento, en la tarjeta de la consulta: «Aplicado 05/11/2026 08:40 por Lic. Urbina» o «No aplicado: motivo». */
 export function applicationText(a: ConsultApplication, name: (id: string) => string | undefined) {
   if (a.status === 'applied') return `Aplicado ${dmyTime(a.appliedAt!)} por ${shortStaff(name(a.recordedBy!))}`
   if (a.status === 'not_applied') return `No aplicado: ${a.reason} (${shortStaff(name(a.recordedBy!))}, ${dmyTime(a.recordedAt!)})`

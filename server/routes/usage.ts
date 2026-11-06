@@ -32,7 +32,7 @@ const whenOf = (s: unknown) => {
   return Number.isNaN(d.getTime()) ? undefined : d
 }
 
-/** «Lic. Carmen Ríos» y su cargo («Enfermería», «Médico · Medicina general», «Microbiólogo(a)»). */
+/** «Lic. Marta Urbina» y su cargo («Enfermería», «Médico · Medicina general», «Microbiólogo(a)»). */
 function staffWho(r: Row | undefined) {
   if (!r) return { name: '—', title: undefined as string | undefined }
   const roles = (r.roles ? JSON.parse(String(r.roles)) : [r.role]) as Role[]

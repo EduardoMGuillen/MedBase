@@ -17,7 +17,7 @@ export function positionOf(key?: string) {
 /** ¿Es jefe de su departamento (Microbiólogo o Radiólogo: configura y edita turnos)? */
 export const isDeptLead = (s?: { position?: string }) => !!positionOf(s?.position)?.lead
 
-/** Nombre con el prefijo del cargo («Lic. Gabriela Ordóñez», «Téc. Kevin Rivera»), sin repetirlo si ya lo trae. */
+/** Nombre con el prefijo del cargo («Lic. Paula Suazo», «Téc. Bryan Erazo»), sin repetirlo si ya lo trae. */
 export function signedName(s: { name: string; docName?: string; position?: string }) {
   const name = s.docName || s.name
   const pos = positionOf(s.position)

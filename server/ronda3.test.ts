@@ -21,9 +21,9 @@ before(async () => {
   const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
   await new Promise<void>((r) => { server = app.listen(0, () => r()) })
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-  const admin = await as('admin@demo.clinara')
+  const admin = await as('rmoncada@demo.clinara')
   const all = Object.fromEntries(['0', '1', '2', '3', '4', '5', '6'].map((d) => [d, [{ start: '00:00', end: '23:45' }]]))
-  await admin.patch('/api/staff/s-herrera/schedule', { slot: 15, week: all })
+  await admin.patch('/api/staff/s-solorzano/schedule', { slot: 15, week: all })
 })
 after(async () => { server.close(); await sql.close() })
 
@@ -47,14 +47,14 @@ const as = (email: string) => login(base, email)
 
 const DX = [{ code: 'CA40', label: 'Neumonía', system: 'icd11' }]
 let seq = 0
-/** Paciente nuevo, con identidad, en la consulta externa de hoy de la Dra. Herrera y ya en consulta. */
+/** Paciente nuevo, con identidad, en la consulta externa de hoy de la Dra. Solórzano y ya en consulta. */
 async function walkIn(name = 'Prueba') {
-  const nurse = await as('crios@demo.clinara')
-  const doc = await as('lherrera@demo.clinara')
+  const nurse = await as('murbina@demo.clinara')
+  const doc = await as('vsolorzano@demo.clinara')
   const p = await nurse.post('/api/patients', { firstName: name, lastName: 'Ronda Tres', birthDate: '1980-01-01', sex: 'M', phone: '9999-1111',
     dni: `0801-1980-${String(++seq * 37 + 1000).padStart(5, '0')}` })
   assert.equal(p.status, 201, JSON.stringify(p.body))
-  const w = await nurse.post('/api/appointments/walk-in', { patientId: p.body.id, doctorId: 's-herrera', reason: 'Control' })
+  const w = await nurse.post('/api/appointments/walk-in', { patientId: p.body.id, doctorId: 's-solorzano', reason: 'Control' })
   await doc.post(`/api/appointments/${w.body.id}/status`, { status: 'in_consult' })
   return { doc, nurse, apptId: String(w.body.id), patientId: String(p.body.id) }
 }
@@ -62,7 +62,7 @@ const RX = [{ drug: 'Amoxicilina', presentation: 'Cápsulas 500 mg', dose: '1 c�
 
 describe('AD2 vigencia de recetas por médico', () => {
   test('la configuración de la clínica ya no la cambia; cada médico tiene la suya y cada receta la guarda', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const cfg = (await admin.get('/api/bootstrap')).body.settings
     const saved = await admin.put('/api/settings', { ...cfg, rxValidityDays: 90 })
     assert.equal(saved.status, 200, JSON.stringify(saved.body))
@@ -80,19 +80,19 @@ describe('AD2 vigencia de recetas por médico', () => {
     const r = await doc.post('/api/prescriptions', { patientId: p2, items: RX, validityDays: 60 })
     assert.equal((await doc.get(`/api/prescriptions/${r.body.prescriptionId}`)).body.prescription.validityDays, 60)
     // Enfermería no tiene vigencia propia
-    assert.equal((await (await as('crios@demo.clinara')).patch('/api/me', { rxValidityDays: 10 })).status, 403)
+    assert.equal((await (await as('murbina@demo.clinara')).patch('/api/me', { rxValidityDays: 10 })).status, 403)
   })
 
   test('migración: las recetas viejas guardan la vigencia de su clínica y no se pisa la del médico', async () => {
     await sql.run(`UPDATE prescriptions SET validity_days = NULL WHERE id IN (SELECT id FROM prescriptions LIMIT 3)`)
     await migrateRxValidity(sql)
     assert.equal(Number((await sql.one('SELECT COUNT(*)::int AS n FROM prescriptions WHERE validity_days IS NULL'))!.n), 0)
-    const prefs = JSON.parse(String((await sql.one(`SELECT prefs FROM staff WHERE id = 's-herrera'`))!.prefs))
+    const prefs = JSON.parse(String((await sql.one(`SELECT prefs FROM staff WHERE id = 's-solorzano'`))!.prefs))
     assert.equal(prefs.rxValidityDays, 15)
   })
 })
 
-/** Paciente nuevo ingresado a hospitalización desde una consulta de la Dra. Herrera (sin cama todavía). */
+/** Paciente nuevo ingresado a hospitalización desde una consulta de la Dra. Solórzano (sin cama todavía). */
 async function admitted(name = 'Ingreso') {
   const w = await walkIn(name)
   const c = await w.doc.post('/api/consultations', { appointmentId: w.apptId, reason: 'Dolor abdominal', history: 'Dos días con dolor en fosa ilíaca derecha.', diagnoses: DX,
@@ -116,13 +116,13 @@ describe('MC3 nota de procedimiento', () => {
 })
 
 describe('AD5 varios roles y vista activa', () => {
-  test('la Dra. Herrera recibe Administración y cambia de vista; los permisos son los de la vista activa', async () => {
-    const admin = await as('admin@demo.clinara')
-    const r = await admin.patch('/api/staff/s-herrera', { roles: ['doctor', 'admin'] })
+  test('la Dra. Solórzano recibe Administración y cambia de vista; los permisos son los de la vista activa', async () => {
+    const admin = await as('rmoncada@demo.clinara')
+    const r = await admin.patch('/api/staff/s-solorzano', { roles: ['doctor', 'admin'] })
     assert.equal(r.status, 200, JSON.stringify(r.body))
     assert.deepEqual(r.body.roles, ['doctor', 'admin'])
     assert.equal(r.body.role, 'doctor')
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     let me = (await doc.get('/api/auth/me')).body
     assert.ok(!me.permissions.includes('staff.manage'))
     assert.equal((await doc.get('/api/reports?from=2026-01-01&to=2026-01-31')).status, 403)
@@ -131,32 +131,32 @@ describe('AD5 varios roles y vista activa', () => {
     assert.ok(me.permissions.includes('staff.manage') && !me.permissions.includes('consult.write'))
     assert.equal((await doc.get('/api/reports?from=2026-01-01&to=2026-01-31')).status, 200)
     // La vista se recuerda en la cuenta: una sesión nueva entra en la misma vista
-    assert.equal((await (await as('lherrera@demo.clinara')).get('/api/auth/me')).body.user.role, 'admin')
+    assert.equal((await (await as('vsolorzano@demo.clinara')).get('/api/auth/me')).body.user.role, 'admin')
     // La bitácora guarda el cambio y el rol de cada acción
-    const row = await sql.one(`SELECT role FROM audit WHERE user_id = 's-herrera' AND action LIKE 'Cambió de rol a Administración%' ORDER BY id DESC LIMIT 1`)
+    const row = await sql.one(`SELECT role FROM audit WHERE user_id = 's-solorzano' AND action LIKE 'Cambió de rol a Administración%' ORDER BY id DESC LIMIT 1`)
     assert.equal(row?.role, 'admin')
     // No puede elegir un rol que no tiene
     assert.equal((await doc.post('/api/me/view', { role: 'nurse' })).status, 403)
     // Sigue en la lista de médicos aunque esté en la vista de administrador (agenda pública)
     const slug = (await sql.one(`SELECT slug FROM clinics WHERE id = 'c-sb'`))!.slug
     const pub = (await fetch(`${base}/api/public/${slug}/clinic`).then((x) => x.json())) as { doctors: { id: string }[] }
-    assert.ok(pub.doctors.some((d) => d.id === 's-herrera'))
+    assert.ok(pub.doctors.some((d) => d.id === 's-solorzano'))
     await doc.post('/api/me/view', { role: 'doctor' })
   })
 
   test('siempre queda al menos una persona con Administración; nadie se quita a sí mismo ese rol', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const self = (await admin.get('/api/auth/me')).body.user
     assert.equal((await admin.patch(`/api/staff/${self.id}`, { roles: ['reception'] })).status, 400)
-    // Con la Dra. Herrera como segunda administradora, a Roberto se le puede quitar; luego a ella ya no
-    const doc = await as('lherrera@demo.clinara')
+    // Con la Dra. Solórzano como segunda administradora, a Roberto se le puede quitar; luego a ella ya no
+    const doc = await as('vsolorzano@demo.clinara')
     await doc.post('/api/me/view', { role: 'admin' })
     assert.equal((await doc.patch(`/api/staff/${self.id}`, { roles: ['reception'] })).status, 200)
-    assert.equal((await doc.patch('/api/staff/s-herrera', { roles: ['doctor'] })).status, 400)
+    assert.equal((await doc.patch('/api/staff/s-solorzano', { roles: ['doctor'] })).status, 400)
     assert.equal((await doc.patch(`/api/staff/${self.id}`, { roles: ['admin'] })).status, 200)
-    assert.equal((await admin.patch('/api/staff/s-herrera', { roles: ['doctor'] })).status, 200)
+    assert.equal((await admin.patch('/api/staff/s-solorzano', { roles: ['doctor'] })).status, 200)
     // Dar el rol de médico pide la colegiación
-    const nurse = (await sql.one(`SELECT id FROM staff WHERE email = 'crios@demo.clinara'`))!.id
+    const nurse = (await sql.one(`SELECT id FROM staff WHERE email = 'murbina@demo.clinara'`))!.id
     assert.equal((await admin.patch(`/api/staff/${nurse}`, { roles: ['nurse', 'doctor'] })).status, 400)
   })
 })
@@ -165,20 +165,20 @@ const PNG = (c: string) => `data:image/png;base64,iVBORw0KGgo${c}AAAANSUhEUgAAAA
 
 describe('MC6 Mi configuración', () => {
   test('datos profesionales, sello y preferencias se guardan por separado; enfermería no los tiene', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    assert.equal((await doc.patch('/api/me', { docName: 'Dra. Lucía Herrera Mejía', specialty: 'Medicina interna', stamp: PNG('s1') })).status, 200)
+    const doc = await as('vsolorzano@demo.clinara')
+    assert.equal((await doc.patch('/api/me', { docName: 'Dra. Valeria Solórzano Mejía', specialty: 'Medicina interna', stamp: PNG('s1') })).status, 200)
     assert.equal((await doc.patch('/api/me', { noteFormat: 'soap' })).status, 200)
     const me = (await doc.get('/api/auth/me')).body.user
-    assert.equal(me.docName, 'Dra. Lucía Herrera Mejía')
+    assert.equal(me.docName, 'Dra. Valeria Solórzano Mejía')
     assert.equal(me.hasStamp, true)
     assert.equal(me.prefs.noteFormat, 'soap')
     assert.equal((await doc.get('/api/me/marks')).body.stamp, PNG('s1'))
-    assert.equal((await (await as('crios@demo.clinara')).patch('/api/me', { docName: 'X' })).status, 403)
+    assert.equal((await (await as('murbina@demo.clinara')).patch('/api/me', { docName: 'X' })).status, 403)
     await doc.patch('/api/me', { noteFormat: 'dx' })
   })
 
   test('cambiar la firma no altera la receta ya emitida (guardó su versión)', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     assert.equal((await doc.put('/api/me/signature', { signature: PNG('a'), password: 'mala' })).status, 400)
     assert.equal((await doc.put('/api/me/signature', { signature: PNG('a'), password: DEMO_PASSWORD })).status, 200)
     const p = (await walkIn('Firma')).patientId
@@ -192,15 +192,15 @@ describe('MC6 Mi configuración', () => {
     assert.equal((await doc.get(`/api/marks/${rx1.signatureId}`)).body.image, PNG('a'))
     assert.equal((await doc.get(`/api/marks/${rx2.signatureId}`)).body.image, PNG('b'))
     // Otra clínica no la ve
-    assert.equal((await (await as('erosales@demo.clinara')).get(`/api/marks/${rx1.signatureId}`)).status, 404)
+    assert.equal((await (await as('slobo@demo.clinara')).get(`/api/marks/${rx1.signatureId}`)).status, 404)
   })
 
   test('PIN para confirmar firmas y cerrar las demás sesiones', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     assert.equal((await doc.put('/api/me/pin', { password: DEMO_PASSWORD, pin: '12' })).status, 400)
     assert.equal((await doc.put('/api/me/pin', { password: DEMO_PASSWORD, pin: '4321' })).status, 200)
     assert.equal((await doc.get('/api/auth/me')).body.user.hasPin, true)
-    const other = await as('lherrera@demo.clinara')
+    const other = await as('vsolorzano@demo.clinara')
     assert.equal((await doc.post('/api/me/sessions/close')).status, 200)
     assert.equal((await other.get('/api/bootstrap')).status, 401)
     await doc.put('/api/me/pin', { password: DEMO_PASSWORD, pin: '' })
@@ -209,7 +209,7 @@ describe('MC6 Mi configuración', () => {
 
 describe('AD1 teléfonos y WhatsApp de la clínica', () => {
   test('varios contactos: uno principal (el de los documentos) y uno de WhatsApp; el paciente los ve en la reserva', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const cfg = (await admin.get('/api/bootstrap')).body.settings
     // Migración: el teléfono que tenía es el contacto principal
     assert.deepEqual(cfg.contacts.map((c: any) => [c.number, !!c.primary]), [[cfg.phone, true]])
@@ -226,7 +226,7 @@ describe('AD1 teléfonos y WhatsApp de la clínica', () => {
     const pub = await fetch(`${base}/api/public/${(await sql.one(`SELECT slug FROM clinics WHERE id = 'c-sb'`))!.slug}/clinic`).then((x) => x.json()) as { contacts: { number: string }[] }
     assert.deepEqual(pub.contacts.map((c) => c.number), ['2232-7710', '9876-5432'])
     // Recepción ve los contactos pero no los edita
-    const rec = await as('smejia@demo.clinara')
+    const rec = await as('aquiroz@demo.clinara')
     assert.equal((await rec.get('/api/bootstrap')).body.settings.contacts.length, 2)
     assert.equal((await rec.put('/api/settings', { ...cfg, contacts })).status, 403)
   })
@@ -234,7 +234,7 @@ describe('AD1 teléfonos y WhatsApp de la clínica', () => {
 
 describe('AD3 camas libres u ocupadas; la especialidad es del ingreso', () => {
   test('el ingreso toma la especialidad del médico (editable); la cama no tiene especialidad y se libera al alta', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const bed = await admin.post('/api/beds', { room: '301', label: 'A' })
     assert.equal(bed.status, 201, JSON.stringify(bed.body))
     assert.equal(bed.body.specialty, undefined)
@@ -255,7 +255,7 @@ describe('AD3 camas libres u ocupadas; la especialidad es del ingreso', () => {
     assert.equal(off.body.outOfServiceNote, 'Mantenimiento')
     assert.equal((await admin.patch(`/api/beds/${bed.body.id}`, { room: '302' })).body.room, '302')
     // Recepción ve el estado de las camas, pero no las edita
-    const rec = await as('smejia@demo.clinara')
+    const rec = await as('aquiroz@demo.clinara')
     assert.ok((await rec.get('/api/bootstrap')).body.beds.some((b: any) => b.id === bed.body.id))
     assert.equal((await rec.patch(`/api/beds/${bed.body.id}`, { active: true })).status, 403)
   })
@@ -263,22 +263,22 @@ describe('AD3 camas libres u ocupadas; la especialidad es del ingreso', () => {
 
 describe('AD4 vademécum', () => {
   test('administración y médicos agregan; lo edita administración (ME11, ronda 11); enfermería no', async () => {
-    const admin = await as('admin@demo.clinara')
-    const doc = await as('apaz@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
+    const doc = await as('tbogran@demo.clinara')
     const a = await doc.post('/api/drugs', { name: 'Ademetionina', brand: 'Heptral', presentation: 'Tabletas', concentration: '400 mg', route: 'Oral', usualDose: '1 tableta cada 12 horas', usualUse: 'Colestasis' })
     assert.equal(a.status, 201, JSON.stringify(a.body))
     assert.equal(a.body.usualDose, '1 tableta cada 12 horas')
-    assert.equal((await (await as('mzuniga@demo.clinara')).patch(`/api/drugs/${a.body.id}`, { brand: 'X' })).status, 403)
+    assert.equal((await (await as('nescoto@demo.clinara')).patch(`/api/drugs/${a.body.id}`, { brand: 'X' })).status, 403)
     // ME11 (ronda 11): en Clínica el médico solo agrega; editar es de Administración
     assert.equal((await doc.patch(`/api/drugs/${a.body.id}`, { usualUse: 'Colestasis intrahepática' })).status, 403)
     assert.equal((await admin.patch(`/api/drugs/${a.body.id}`, { usualUse: 'Colestasis intrahepática' })).body.usualUse, 'Colestasis intrahepática')
     assert.equal((await admin.patch(`/api/drugs/${a.body.id}`, { active: false })).body.active, false)
     assert.equal((await admin.post('/api/drugs', { name: 'Silimarina', presentation: 'Cápsulas', concentration: '140 mg' })).status, 201)
-    assert.equal((await (await as('crios@demo.clinara')).post('/api/drugs', { name: 'Otra cosa' })).status, 403)
+    assert.equal((await (await as('murbina@demo.clinara')).post('/api/drugs', { name: 'Otra cosa' })).status, 403)
   })
 
   test('importar una lista salta duplicados por nombre normalizado y lo que ya está en el catálogo base', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const r = await admin.post('/api/drugs/import', { rows: [
       { name: 'Ácido ursodesoxicólico', presentation: 'Tabletas', concentration: '250 mg', route: 'Oral' },
       { name: 'ACIDO URSODESOXICOLICO ', presentation: 'tabletas', concentration: '250 mg' },
@@ -303,7 +303,7 @@ describe('AD7 bitácora propia y de todos', () => {
     assert.equal(reg.role, 'nurse')
     assert.equal(reg.kind, 'patients')
     assert.equal((await nurse.get('/api/audit')).status, 403)
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const byPatient = (await admin.get(`/api/audit?patientId=${patientId}`)).body
     assert.ok(byPatient.length >= 2 && byPatient.every((r: any) => r.patientId === patientId || r.action.includes('Bitácora')))
     const byPerson = (await admin.get(`/api/audit?userId=${nurseId}&kind=agenda`)).body
@@ -334,12 +334,12 @@ describe('AD8 filtros de la biblioteca', () => {
 
 describe('AD9 cobros en el momento', () => {
   test('recepción cobra un servicio nuevo con transferencia; queda guardado; sólo formas de pago habilitadas', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const set = await admin.put('/api/settings/payment-methods', { methods: ['cash', 'transfer'] })
     assert.equal(set.status, 200, JSON.stringify(set.body))
     assert.deepEqual(set.body.paymentMethods, ['cash', 'transfer'])
     assert.equal((await admin.put('/api/settings/payment-methods', { methods: [] })).status, 400)
-    const rec = await as('smejia@demo.clinara')
+    const rec = await as('aquiroz@demo.clinara')
     const { patientId } = await walkIn('Sutura')
     assert.equal((await rec.post('/api/payments', { patientId, items: [{ name: 'Consulta', price: 100, qty: 1 }], method: 'card', reference: '1234' })).status, 400)
     const r = await rec.post('/api/payments', { patientId, items: [{ name: 'Sutura', price: 400, qty: 1, save: true }], method: 'transfer', bank: 'Banco Atlántida', reference: 'TR-889' })
@@ -350,11 +350,11 @@ describe('AD9 cobros en el momento', () => {
     assert.ok(svc && svc.price === 400 && svc.createdBy)
     assert.equal(r.body.items[0].serviceId, svc.id)
     // Enfermería ya no cobra
-    assert.equal((await (await as('crios@demo.clinara')).post('/api/payments', { patientId, items: [{ name: 'Consulta', price: 1, qty: 1 }], method: 'cash' })).status, 403)
+    assert.equal((await (await as('murbina@demo.clinara')).post('/api/payments', { patientId, items: [{ name: 'Consulta', price: 1, qty: 1 }], method: 'cash' })).status, 403)
   })
 
   test('abono: queda saldo pendiente visible y se completa después; el reporte cuenta lo recibido por forma de pago y servicio', async () => {
-    const rec = await as('smejia@demo.clinara')
+    const rec = await as('aquiroz@demo.clinara')
     const { patientId } = await walkIn('Abono')
     const r = await rec.post('/api/payments', { patientId, items: [{ name: 'Curación', price: 300, qty: 1, save: true }], method: 'cash', amountPaid: 100 })
     assert.equal(r.status, 201, JSON.stringify(r.body))
@@ -367,7 +367,7 @@ describe('AD9 cobros en el momento', () => {
     assert.equal(a.body.balance, 0)
     assert.equal((await rec.get(`/api/payments/balances?patientId=${patientId}`)).body.length, 0)
     const today = new Date().toLocaleDateString('en-CA')
-    const rep = (await (await as('admin@demo.clinara')).get(`/api/reports?from=${today}&to=${today}`)).body
+    const rep = (await (await as('rmoncada@demo.clinara')).get(`/api/reports?from=${today}&to=${today}`)).body
     assert.ok(rep.byService.some((s: any) => s.name === 'Curación' && s.total === 300))
     assert.ok(rep.byMethod.find((m: any) => m.method === 'transfer').total >= 200)
   })
@@ -434,7 +434,7 @@ describe('AN1 (ronda 4) borrador, nota firmada inmutable y adenda', () => {
     assert.equal(put.status, 200)
     assert.equal((await doc.get(`/api/drafts/consulta/${apptId}`)).body.data.history, 'Tres días con tos seca.')
     // Otra persona no ve ese borrador
-    assert.equal((await (await as('apaz@demo.clinara')).get(`/api/drafts/consulta/${apptId}`)).body, null)
+    assert.equal((await (await as('tbogran@demo.clinara')).get(`/api/drafts/consulta/${apptId}`)).body, null)
     assert.equal((await doc.del(`/api/drafts/consulta/${apptId}`)).status, 200)
     assert.equal((await doc.get(`/api/drafts/consulta/${apptId}`)).body, null)
   })
@@ -445,14 +445,14 @@ describe('AN1 (ronda 4) borrador, nota firmada inmutable y adenda', () => {
     const id = c.body.consultationId
     const tryEdit = await doc.patch(`/api/consultations/${id}`, { history: 'Cambiado' })
     assert.equal(tryEdit.status, 409)
-    assert.ok((await sql.one(`SELECT 1 FROM audit WHERE user_id = 's-herrera' AND action LIKE 'Intentó editar una consulta firmada%' LIMIT 1`)))
+    assert.ok((await sql.one(`SELECT 1 FROM audit WHERE user_id = 's-solorzano' AND action LIKE 'Intentó editar una consulta firmada%' LIMIT 1`)))
     await assert.rejects(sql.run('UPDATE consultations SET history = ? WHERE id = ?', ['Cambiado', id]))
     await assert.rejects(sql.run('DELETE FROM consultations WHERE id = ?', [id]))
     // Adenda: la corrección pide qué se corrige; enfermería no agrega adendas a una consulta
     assert.equal((await doc.post('/api/addenda', { targetKind: 'consultation', targetId: id, kind: 'correction', text: 'Era amoxicilina 875 mg.' })).status, 400)
     const a = await doc.post('/api/addenda', { targetKind: 'consultation', targetId: id, kind: 'correction', corrects: 'Dosis de amoxicilina mal escrita', text: 'La dosis correcta es 875 mg cada 12 horas.' })
     assert.equal(a.status, 201, JSON.stringify(a.body))
-    assert.equal((await (await as('crios@demo.clinara')).post('/api/addenda', { targetKind: 'consultation', targetId: id, kind: 'info', text: 'Nada' })).status, 403)
+    assert.equal((await (await as('murbina@demo.clinara')).post('/api/addenda', { targetKind: 'consultation', targetId: id, kind: 'info', text: 'Nada' })).status, 403)
     const note = (await doc.get(`/api/consultations/${id}`)).body
     assert.equal(note.consultation.history, '')
     assert.deepEqual(note.addenda.map((x: any) => x.corrects), ['Dosis de amoxicilina mal escrita'])
@@ -492,7 +492,7 @@ const EXAMS3 = [
 describe('EX1 (ronda 4) exámenes: Laboratorio e Imagen y gabinete', () => {
   test('en una consulta: dos grupos en el mismo lote (dos órdenes impresas), área enfermería si no hay laboratorio propio', async () => {
     // DM2 (ronda 11): la demo tiene laboratorio e imágenes propios; esta prueba es sin ellos (se restablecen al final del grupo)
-    await (await as('admin@demo.clinara')).put('/api/settings/exam-areas', { hasLab: false, hasImaging: false })
+    await (await as('rmoncada@demo.clinara')).put('/api/settings/exam-areas', { hasLab: false, hasImaging: false })
     const { doc, apptId } = await walkIn('Exámenes')
     const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Control', diagnoses: DX, exams: EXAMS3 })
     assert.equal(c.status, 201, JSON.stringify(c.body))
@@ -502,11 +502,11 @@ describe('EX1 (ronda 4) exámenes: Laboratorio e Imagen y gabinete', () => {
     assert.deepEqual([...new Set(batch.exams.map((e: any) => e.group))].sort(), ['imaging', 'lab'])
     assert.ok(batch.exams.every((e: any) => e.area === 'nursing' && e.status === 'ordered'))
     // Recepción no ordena exámenes
-    assert.equal((await (await as('smejia@demo.clinara')).get(`/api/exams/batch/${c.body.examBatch ?? c.body.clinicBatch}`)).status, 403)
+    assert.equal((await (await as('aquiroz@demo.clinara')).get(`/api/exams/batch/${c.body.examBatch ?? c.body.clinicBatch}`)).status, 403)
   })
 
   test('con laboratorio propio, el área destino es Laboratorio; los externos de consulta no van a ninguna bandeja', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     assert.equal((await admin.put('/api/settings/exam-areas', { hasLab: true, hasImaging: false })).status, 200)
     const { doc, apptId } = await walkIn('Laboratorio Propio')
     const c = await doc.post('/api/consultations', { appointmentId: apptId, reason: 'Control', diagnoses: DX,
@@ -559,7 +559,7 @@ describe('EX1 (ronda 4) exámenes: Laboratorio e Imagen y gabinete', () => {
   })
 
   test('un set con exámenes los guarda como exámenes; los resultados que se subían como archivos se migran a exámenes', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const s = await doc.post('/api/order-sets', { name: 'Neumonía', items: [{ text: 'Oxígeno por cánula a 2 L/min.' }, { exam: EXAMS3[0] }, { exam: EXAMS3[2] }] })
     assert.equal(s.status, 201, JSON.stringify(s.body))
     assert.equal(s.body.items.filter((i: any) => i.exam).length, 2)
@@ -615,7 +615,7 @@ describe('EN2 alertas agrupadas por nivel', () => {
     const auth = fileAlerts(f, bandOf({}), new Date()).find((a) => a.key.startsWith('auth-'))
     assert.equal(auth?.level, 'pending')
     assert.equal(auth?.action.label, 'Firmar ahora')
-    assert.equal((await (await as('smejia@demo.clinara')).get('/api/inpatient/alerts')).status, 403)
+    assert.equal((await (await as('aquiroz@demo.clinara')).get('/api/inpatient/alerts')).status, 403)
   })
 })
 
@@ -651,7 +651,7 @@ describe('MC5 nota de egreso en la hoja de la epicrisis', () => {
 
 describe('Correcciones de la revisión contra el pedido', () => {
   test('AD5: la plataforma no deja a una clínica sin Administración y, al cambiar el rol activo, conserva los demás', async () => {
-    const sa = await as('superadmin@demo.clinara')
+    const sa = await as('dcerrato@demo.clinara')
     const created = await sa.post('/api/platform/clinics', { name: 'Clínica Último Admin', address: 'Choluteca', phone: '2780-0000', admin: { name: 'Única Admin', email: 'unica@ultimo.test' } })
     assert.equal(created.status, 201, JSON.stringify(created.body))
     const cid = created.body.clinic.id
@@ -700,12 +700,12 @@ describe('Correcciones de la revisión contra el pedido', () => {
 
   test('DM1: el inicio de sesión sólo ofrece cuentas de las clínicas demo que se regeneran cada día', async () => {
     const accounts = (await (await fetch(`${base}/api/demo-accounts`)).json() as any).accounts
-    assert.ok(accounts.some((a: any) => a.email === 'lherrera@demo.clinara'))
-    assert.ok(accounts.some((a: any) => a.email === 'alopez@demo.clinara'))
-    assert.ok(accounts.some((a: any) => a.email === 'superadmin@demo.clinara'))
-    assert.ok(!accounts.some((a: any) => a.email.endsWith('sanlucas@demo.clinara') || a.email === 'erosales@demo.clinara'))
+    assert.ok(accounts.some((a: any) => a.email === 'vsolorzano@demo.clinara'))
+    assert.ok(accounts.some((a: any) => a.email === 'ipacheco@demo.clinara'))
+    assert.ok(accounts.some((a: any) => a.email === 'dcerrato@demo.clinara'))
+    assert.ok(!accounts.some((a: any) => a.email.endsWith('sanlucas@demo.clinara') || a.email === 'slobo@demo.clinara'))
     // Las cuentas de San Lucas siguen entrando (sirven para probar el aislamiento entre clínicas)
-    const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'erosales@demo.clinara', password: DEMO_PASSWORD }) })
+    const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'slobo@demo.clinara', password: DEMO_PASSWORD }) })
     assert.equal(res.status, 200)
   })
 })

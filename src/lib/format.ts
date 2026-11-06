@@ -40,7 +40,7 @@ export const sameDay = (iso: string, d: Date) => {
 }
 
 /**
- * «Dra. Lucía Herrera» → «Dra. Herrera», «Dr. Daniel Fúnez Castillo» → «Dr. Fúnez»: el título y el primer apellido
+ * «Dra. Valeria Solórzano» → «Dra. Solórzano», «Dr. Joaquín Membreño Sierra» → «Dr. Membreño»: el título y el primer apellido
  * (en Honduras se usa el primero). Sin título, el primer nombre y el primer apellido si hay dos nombres y dos apellidos.
  */
 export function shortStaff(name = '') {

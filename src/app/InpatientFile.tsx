@@ -537,7 +537,7 @@ function WeekGrid({ meds, start, today, admitted, dosesOf, by, doseTitle, onDay 
   )
 }
 
-/** "Indicado en nota de consulta externa, Dra. Herrera, 22/10 17:40". */
+/** "Indicado en nota de consulta externa, Dra. Solórzano, 22/10 17:40". */
 function medOrigin(m: InpatientMed, file: File, who?: string) {
   const note = m.noteId ? file.notes.find((n) => n.id === m.noteId) : undefined
   const where = m.source === 'consultation' ? 'nota de consulta externa'

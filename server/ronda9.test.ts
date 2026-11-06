@@ -82,10 +82,10 @@ describe('ME3 y ME4: primera dosis distinta y nebulización en todos los formula
   })
 
   test('consulta externa: receta con STAT y nebulización; «Aplicar en la clínica» pasa a la hoja con la dosis inicial', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const reception = await as('smejia@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const reception = await as('aquiroz@demo.clinara')
     const p = await freePatient(doc)
-    const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-herrera', reason: 'Neumonía' })
+    const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-solorzano', reason: 'Neumonía' })
     const items = [
       { drug: 'Ceftriaxona', presentation: 'Vial 1 g', dose: '1 g', route: 'Intramuscular', frequency: 'Cada 12 horas', duration: '5 días', loadingDose: '2 g', applyInClinic: true },
       { drug: 'Nebulización', presentation: '', dose: 'Salbutamol 3 mL + Bromuro de ipratropio 1 mL', route: 'Nebulización', frequency: 'Cada 6 horas', duration: '3 días', nebulization: NEB, applyInClinic: false },
@@ -107,8 +107,8 @@ describe('ME3 y ME4: primera dosis distinta y nebulización en todos los formula
   })
 
   test('nota de evolución: una nebulización es una orden; la sesión se registra una vez con su composición', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     const first = new Date(Date.now() - 60_000).toISOString()
     const n = await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', observations: 'Sibilancias', meds: [
@@ -130,10 +130,10 @@ describe('PQ1 y PQ2: nota postquirúrgica con equipo quirúrgico', () => {
   const postop = (x: Record<string, unknown> = {}) => {
     const start = new Date(Date.now() - 90 * 60_000).toISOString(); const end = new Date(Date.now() - 20 * 60_000).toISOString()
     return { preDiagnoses: pre, startAt: start, endAt: end, anesthesia: 'General', procedureName: 'Apendicectomía', description: 'Sin complicaciones, sangrado mínimo.',
-      team: { surgeon: { staffId: 's-herrera', name: 'Dra. Lucía Herrera' }, scrub: { name: 'Enf. Externa' } }, ...x }
+      team: { surgeon: { staffId: 's-solorzano', name: 'Dra. Valeria Solórzano' }, scrub: { name: 'Enf. Externa' } }, ...x }
   }
   test('sin autorización ni urgencia: 409 con el mismo mensaje del procedimiento mayor; con urgencia se firma y entra en la cadena', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     const body = { kind: 'evolution', format: 'postop', diagnoses: [{ code: 'DB10.0', label: 'Apendicitis perforada' }] }
     const no = await doc.post(`/api/inpatient/${stay.id}/notes`, { ...body, postop: postop() })
@@ -146,11 +146,11 @@ describe('PQ1 y PQ2: nota postquirúrgica con equipo quirúrgico', () => {
     assert.equal(n.kind, 'evolution'); assert.equal(n.format, 'postop')
     assert.deepEqual(n.diagnoses.map((d: any) => d.code), ['DB10.0'])
     assert.equal(n.postop.team.scrub.name, 'Enf. Externa'); assert.equal(n.postop.urgent, true)
-    const audit = (await (await as('admin@demo.clinara')).get('/api/audit')).body
+    const audit = (await (await as('rmoncada@demo.clinara')).get('/api/audit')).body
     assert.ok(JSON.stringify(audit).includes('Equipo quirúrgico de «Apendicectomía»'))
   })
   test('validaciones: cirujano obligatorio, cierre después del inicio, nada en el futuro, «Otra» se especifica', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     const post = (x: Record<string, unknown>) => doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'postop', diagnoses: pre, postop: postop({ urgent: true, justification: 'Abdomen agudo, sin familiar', ...x }) })
     assert.equal((await post({ team: { assistant1: { name: 'Dr. X' } } })).status, 400)
@@ -164,7 +164,7 @@ describe('PQ1 y PQ2: nota postquirúrgica con equipo quirúrgico', () => {
 
 describe('GE4: periodo de gracia con versiones', () => {
   test('nota de evolución: v2 y v3 del autor; otro médico 403; vencido 409 con la adenda; versiones intactas', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     const n = await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', diagnoses: [{ code: 'CA40', label: 'Neumonía' }], observations: 'Afebril desde ayer.' })
     assert.equal(n.status, 201, JSON.stringify(n.body))
@@ -176,10 +176,10 @@ describe('GE4: periodo de gracia con versiones', () => {
     const c2 = await doc.post(`/api/inpatient/notes/${n.body.id}/correct`, { version: 2, diagnoses: [{ code: 'CA40', label: 'Neumonía' }], observations: 'Afebril.' })
     assert.equal(c2.body.version, 3)
     assert.equal(c2.body.graceUntil, n.body.graceUntil, 'el plazo no se reinicia')
-    const other = await as('apaz@demo.clinara')
+    const other = await as('tbogran@demo.clinara')
     const o = await other.post(`/api/inpatient/notes/${n.body.id}/correct`, { version: 3, diagnoses: [], observations: 'x' })
     assert.equal(o.status, 403)
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     assert.equal((await admin.post(`/api/inpatient/notes/${n.body.id}/correct`, { version: 3, diagnoses: [], observations: 'x' })).status, 403)
     const v = await doc.get(`/api/versions/note/${n.body.id}`)
     assert.deepEqual(v.body.map((x: any) => x.version), [1, 2])
@@ -196,8 +196,8 @@ describe('GE4: periodo de gracia con versiones', () => {
   })
 
   test('administración: enfermería corrige la hora de su registro; otra persona no; la versión anterior queda', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     const first = new Date(Date.now() - 30 * 60_000).toISOString()
     await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', observations: 'x', meds: [{ drug: 'Omeprazol', dose: '40 mg', route: 'Intravenosa', everyHours: 24, prn: false, firstAt: first }] })
@@ -212,10 +212,10 @@ describe('GE4: periodo de gracia con versiones', () => {
   })
 
   test('consulta: receta sin imprimir se corrige; impresa, sus medicamentos quedan bloqueados', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const reception = await as('smejia@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const reception = await as('aquiroz@demo.clinara')
     const p = await freePatient(doc)
-    const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-herrera', reason: 'Dolor' })
+    const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-solorzano', reason: 'Dolor' })
     const item = { drug: 'Ibuprofeno', presentation: 'Tableta 400 mg', dose: '400 mg', route: 'Oral', frequency: 'Cada 8 horas', duration: '3 días' }
     const r = await doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Dolor', history: 'Dolor lumbar', exam: 'Normal', diagnoses: [{ code: 'ME84', label: 'Lumbago' }], orders: ['Reposo.'], items: [item] })
     assert.equal(r.status, 201, JSON.stringify(r.body))
@@ -232,8 +232,8 @@ describe('GE4: periodo de gracia con versiones', () => {
   })
 
   test('órdenes de la nota: lo no cumplido se corrige en la hoja y en Exámenes; lo cumplido o impreso queda bloqueado', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     const file0 = (await doc.get(`/api/inpatient/${stay.id}`)).body
     const last = [...file0.notes].filter((x: any) => x.kind === 'admission' || x.kind === 'evolution').sort((a: any, b: any) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id)).at(-1)
@@ -300,10 +300,10 @@ describe('GE4: periodo de gracia con versiones', () => {
   })
 
   test('consulta: los exámenes sin muestra se cancelan y los seguimientos sin aviso enviado se ajustan', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const reception = await as('smejia@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const reception = await as('aquiroz@demo.clinara')
     const p = await freePatient(doc)
-    const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-herrera', reason: 'Control' })
+    const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-solorzano', reason: 'Control' })
     const due = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10)
     const r = await doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Control', history: 'Control', exam: 'Normal', diagnoses: [{ code: 'BA00', label: 'Hipertensión' }], orders: [],
       exams: [{ group: 'lab', name: 'Perfil lipídico', priority: 'routine', place: 'clinic' }, { group: 'lab', name: 'Creatinina', priority: 'routine', place: 'clinic' }],
@@ -326,8 +326,8 @@ describe('GE4: periodo de gracia con versiones', () => {
   })
 
   test('signos vitales: sólo quien los registró', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     const v = await nurse.post(`/api/inpatient/${stay.id}/vitals`, { systolic: 120, diastolic: 80, heartRate: 80, temperature: 37, spo2: 97 })
     assert.equal(v.status, 201, JSON.stringify(v.body))

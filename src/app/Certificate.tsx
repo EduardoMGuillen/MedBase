@@ -40,7 +40,7 @@ function LicensePrompt({ onDone }: { onDone: () => void }) {
       <button className="btn btn--primary" disabled={v.trim().length < 3} onClick={async () => { if (await saveMyLicense(v.trim())) onDone() }}>Guardar</button>
     </>}>
       <p>Las constancias llevan tu número de colegiación del Colegio Médico de Honduras. Escríbelo una vez y queda guardado en tu perfil.</p>
-      <label className="field"><span>Número de colegiación</span><input className="input" autoFocus value={v} onChange={(e) => setV(e.target.value)} placeholder="Ej. CMH-08812" /></label>
+      <label className="field"><span>Número de colegiación</span><input className="input" autoFocus value={v} onChange={(e) => setV(e.target.value)} placeholder="Ej. CMH-20118" /></label>
     </Modal>
   )
 }

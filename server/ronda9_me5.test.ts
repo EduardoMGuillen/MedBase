@@ -112,7 +112,7 @@ describe('ME5: carga en la base de cada clínica', () => {
   })
 
   test('una clínica y un consultorio nuevos nacen con el listado', async () => {
-    const sa = await as('superadmin@demo.clinara')
+    const sa = await as('dcerrato@demo.clinara')
     const clinic = await sa.post('/api/platform/clinics', { kind: 'clinic', name: 'Clínica ME5', admin: { name: 'Admin ME5', email: 'admin-me5@test.hn' } })
     assert.equal(clinic.status, 201, JSON.stringify(clinic.body))
     assert.equal(await countLnme(clinic.body.clinic.id), EXPECTED_CREATED)
@@ -131,7 +131,7 @@ describe('ME5: carga en la base de cada clínica', () => {
       [id, id, 'Clínica con vademécum propio', '', '', '', 'HNL', 30, 'Recordatorio', new Date().toISOString(), 'clinic'])
     const add = (name: string, presentation: string, extra: Record<string, string> = {}) => sql.run(
       `INSERT INTO clinic_drugs (id, clinic_id, name, brand, presentation, route, usual_dose, norm_key, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [randomUUID(), id, name, extra.brand ?? null, presentation, extra.route ?? null, extra.dose ?? null, `${name}|${presentation}`.toLowerCase(), 's-herrera', '2026-01-01T00:00:00Z'])
+      [randomUUID(), id, name, extra.brand ?? null, presentation, extra.route ?? null, extra.dose ?? null, `${name}|${presentation}`.toLowerCase(), 's-solorzano', '2026-01-01T00:00:00Z'])
     await add('Aciclovir', 'Tableta 400 mg', { brand: 'Zovirax', route: 'Oral', dose: '1 tableta cada 4 horas' })
     await add('Paracetamol', 'Frasco 120 ml (120 mg/5 ml)', { route: 'Oral', dose: '5 ml' })
     await add('Ondansetrón', 'Ampolla 4 mg/2 ml')
@@ -143,7 +143,7 @@ describe('ME5: carga en la base de cada clínica', () => {
     assert.equal(acic.brand, 'Zovirax')
     assert.equal(acic.usual_dose, '1 tableta cada 4 horas')
     assert.equal(acic.route, 'Oral')
-    assert.equal(acic.created_by, 's-herrera')
+    assert.equal(acic.created_by, 's-solorzano')
     assert.equal(acic.origin, 'clinic')
     assert.equal(Number(acic.lnme_no), 169)
     const para = (await sql.one(`SELECT * FROM clinic_drugs WHERE clinic_id = ? AND name = 'Paracetamol'`, [id]))!
@@ -163,7 +163,7 @@ describe('ME5: carga en la base de cada clínica', () => {
 
 describe('ME5: lo que ve el médico', () => {
   test('Aciclovir: las tres presentaciones; Paracetamol y Acetaminofén encuentran el mismo, sin duplicados', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const drugs = catalogOf((await doc.get('/api/bootstrap')).body.clinicDrugs)
     const acic = searchDrugs(drugs, 'Aciclovir', 8)
     assert.deepEqual(acic.map((d) => d.presentation).sort(), ['Frasco 125 ml (200 mg/5 ml)', 'Tableta 400 mg', 'Vial 250 mg'])
@@ -182,7 +182,7 @@ describe('ME5: lo que ve el médico', () => {
   })
 
   test('⚠️ y Lista complementaria; la restricción es ayuda; «También: …»; la vía del listado', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const drugs = catalogOf((await doc.get('/api/bootstrap')).body.clinicDrugs)
     const lido = drugs.find((d) => d.lnme?.no === 9)!
     assert.equal(lido.lnme!.unconfirmed, true)
@@ -208,8 +208,8 @@ describe('ME5: lo que ve el médico', () => {
   })
 
   test('Administración archiva uno del listado: deja de salir, no se borra y la carga no lo reactiva; el médico no puede (URL)', async () => {
-    const admin = await as('admin@demo.clinara')
-    const doc = await as('lherrera@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const row = (await sql.one(`SELECT id FROM clinic_drugs WHERE clinic_id = 'c-sb' AND lnme_no = 22`))!
     const denied = await doc.patch(`/api/drugs/${row.id}`, { active: false })
     assert.equal(denied.status, 403)

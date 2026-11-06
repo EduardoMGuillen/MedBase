@@ -34,13 +34,13 @@ async function as(email: string, password = DEMO_PASSWORD) {
   return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), patch: (p: string, b?: unknown) => call('PATCH', p, b), put: (p: string, b?: unknown) => call('PUT', p, b) }
 }
 
-/** Una cita de la Dra. Herrera en consulta, con un paciente adulto con identidad y sin estancia activa (copia de una cita suya). */
+/** Una cita de la Dra. Solórzano en consulta, con un paciente adulto con identidad y sin estancia activa (copia de una cita suya). */
 async function consultFor(n: number) {
-  const cid = String((await sql.one(`SELECT clinic_id FROM staff WHERE email = 'lherrera@demo.clinara'`))!.clinic_id)
+  const cid = String((await sql.one(`SELECT clinic_id FROM staff WHERE email = 'vsolorzano@demo.clinara'`))!.clinic_id)
   const pts = await sql.query(`SELECT p.id FROM patients p WHERE p.clinic_id = ? AND p.dni IS NOT NULL AND p.dni <> '' AND p.birth_date < '2000-01-01'
     AND NOT EXISTS (SELECT 1 FROM hospitalizations h WHERE h.patient_id = p.id AND h.status = 'active') ORDER BY p.id DESC`, [cid])
   const pid = String(pts[n].id)
-  const appt = (await sql.one(`SELECT * FROM appointments WHERE doctor_id = 's-herrera' ORDER BY start DESC LIMIT 1`))!
+  const appt = (await sql.one(`SELECT * FROM appointments WHERE doctor_id = 's-solorzano' ORDER BY start DESC LIMIT 1`))!
   const id = `r15-${n}-${Date.now()}`
   const row = { ...appt, id, patient_id: pid, status: 'in_consult', start: new Date().toISOString().slice(0, 16) }
   const cols = Object.keys(row)
@@ -74,7 +74,7 @@ describe('ME15 (ronda 15): los medicamentos «Aplicar en la clínica» también 
 
   test('sin ingreso: la receta trae los tres, la Ceftriaxona con su leyenda y su cantidad; no entra a observación y queda «Por aplicar»', async () => {
     const { id, pid } = await consultFor(0)
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const r = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor', diagnoses: dx, items: [oral('Acetaminofén'), oral('Ibuprofeno'), ceftriaxona],
       exams: [{ group: 'lab', name: 'Perfil lipídico', priority: 'routine', place: 'external' }, { group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' }] })
     assert.equal(r.status, 201, JSON.stringify(r.body))
@@ -96,7 +96,7 @@ describe('ME15 (ronda 15): los medicamentos «Aplicar en la clínica» también 
 
   test('con «No hay en la clínica (va a receta)»: «Comprar y traer a la clínica para su aplicación.» y la cantidad a comprar', async () => {
     const { id } = await consultFor(1)
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const r = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor', diagnoses: dx, items: [oral('Acetaminofén'), { ...ceftriaxona, buyOutside: true, quantity: '1 vial y 1 jeringa' }] })
     assert.equal(r.status, 201, JSON.stringify(r.body))
     const items = await rxItems(r.body.prescriptionId)
@@ -106,7 +106,7 @@ describe('ME15 (ronda 15): los medicamentos «Aplicar en la clínica» también 
 
   test('con «Ingreso a observación»: la receta también trae los tres; a la hoja, lo que se aplica en la clínica', async () => {
     const { id } = await consultFor(2)
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const r = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor', diagnoses: dx, observe: true,
       items: [{ ...oral('Acetaminofén'), applyInClinic: false }, { ...oral('Ibuprofeno'), applyInClinic: false }, { ...ceftriaxona, frequency: 'Cada 12 horas' }],
       exams: [{ group: 'lab', name: 'Hemograma', priority: 'routine', place: 'external' }] })
@@ -124,7 +124,7 @@ describe('ME15 (ronda 15): los medicamentos «Aplicar en la clínica» también 
   test('adulto sin identidad y todo se aplica en la clínica: se firma sin receta, como antes (no se bloquea la atención)', async () => {
     const { id, pid } = await consultFor(4)
     await sql.run('UPDATE patients SET dni = NULL WHERE id = ?', [pid])
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const r = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor', diagnoses: dx, items: [ceftriaxona] })
     assert.equal(r.status, 201, JSON.stringify(r.body))
     assert.equal(r.body.prescriptionId, null)
@@ -137,7 +137,7 @@ describe('ME15 (ronda 15): los medicamentos «Aplicar en la clínica» también 
 
   test('una receta de antes (sin el «Aplicar en la clínica»): no cambia; el médico genera la completa desde «Receta»', async () => {
     const { id } = await consultFor(3)
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const r = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor', diagnoses: dx, items: [oral('Acetaminofén'), oral('Ibuprofeno'), ceftriaxona] })
     assert.equal(r.status, 201, JSON.stringify(r.body))
     // Como se emitía antes de esta ronda: sin la Ceftriaxona
@@ -145,8 +145,8 @@ describe('ME15 (ronda 15): los medicamentos «Aplicar en la clínica» también 
     await sql.run('UPDATE prescriptions SET items = ? WHERE id = ?', [JSON.stringify(old), r.body.prescriptionId])
     const before = await doc.get(`/api/prescriptions/${r.body.prescriptionId}`)
     assert.deepEqual(before.body.missingFromConsult.map((m: { drug: string }) => m.drug), ['Ceftriaxona'])
-    assert.equal((await (await as('crios@demo.clinara')).post(`/api/consultations/${r.body.consultationId}/full-rx`)).status, 403, 'enfermería no emite recetas')
-    assert.equal((await (await as('smejia@demo.clinara')).post(`/api/consultations/${r.body.consultationId}/full-rx`)).status, 403)
+    assert.equal((await (await as('murbina@demo.clinara')).post(`/api/consultations/${r.body.consultationId}/full-rx`)).status, 403, 'enfermería no emite recetas')
+    assert.equal((await (await as('aquiroz@demo.clinara')).post(`/api/consultations/${r.body.consultationId}/full-rx`)).status, 403)
     const full = await doc.post(`/api/consultations/${r.body.consultationId}/full-rx`)
     assert.equal(full.status, 201, JSON.stringify(full.body))
     assert.notEqual(full.body.prescriptionId, r.body.prescriptionId)

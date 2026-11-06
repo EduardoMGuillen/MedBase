@@ -12,7 +12,7 @@ import type { Diagnosis, Patient, PrescriptionItem, ReferralData } from '../src/
  * aplicación (órdenes con `syncStayOrders`/`createMedOrders`, autorizaciones con `ensureHospitalAuthorization`,
  * referencia con su borrador). Los pacientes son ficticios y los diagnósticos usan códigos de la CIE-11 MMS.
  *
- * Clínica Santa Brígida (Dr. Herrera):
+ * Clínica Santa Brígida (Dra. Solórzano):
  * - Rosa Funes: en observación desde hace 3 horas, suero hasta nueva orden, ondansetrón por 1 día y acetaminofén
  *   PRN; nota en formato Diagnóstico · Examen · Observaciones. Lista para "Pasar a hospitalización".
  * - Mario Velásquez: observación que pasó a hospitalización hace 2 días. Autorización de hospitalización pendiente,
@@ -21,18 +21,18 @@ import type { Diagnosis, Patient, PrescriptionItem, ReferralData } from '../src/
  * - Karen Cruz: ingreso directo desde la consulta externa, autorización de hospitalización firmada, autorización
  *   quirúrgica genérica pendiente y colecistectomía programada para mañana.
  *
- * Consultorio Dra. Ana López:
+ * Consultorio Dra. Isabel Pacheco:
  * - Luis Amaya: en observación por crisis hipertensiva, con la dosis aplicada y su nota; listo para "Referencia".
- * - Sofía Mejía: observación de ayer cerrada con una referencia emitida al hospital (queda en Anexos).
+ * - Andrea Quiroz: observación de ayer cerrada con una referencia emitida al hospital (queda en Anexos).
  */
 
 export const SCENARIO_PATIENT_IDS = ['pe1', 'pe2', 'pe3', 're1', 're2']
 
 const HOUR = 3_600_000
-const DOCTOR = 's-herrera'
-const NURSE = 's-rios'
-const OFFICE_DOCTOR = 's3-lopez'
-const OFFICE_ASSISTANT = 's3-asistente'
+const DOCTOR = 's-solorzano'
+const NURSE = 's-urbina'
+const OFFICE_DOCTOR = 's3-pacheco'
+const OFFICE_ASSISTANT = 's3-cardona'
 
 /** Hora del día `dayOffset` (0 = hoy) en la hora local del servidor (Honduras). */
 const dayAt = (dayOffset: number, h: number, m = 0) => { const d = new Date(); d.setDate(d.getDate() + dayOffset); d.setHours(h, m, 0, 0); return d }

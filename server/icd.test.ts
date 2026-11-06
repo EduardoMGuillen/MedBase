@@ -104,14 +104,14 @@ describe('K1 rutas de la CIE-11', () => {
   }
 
   test('busca en la API de la OMS si está configurada; si no, o si falla, en el archivo oficial', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const r = await doc('GET', '/api/icd/search?q=faringitis')
     assert.equal(r.status, 200)
     assert.equal(r.body.source, 'api')
     assert.deepEqual(r.body.results.map((x: any) => x.code), ['CA02'])
     const failed = await doc('GET', '/api/icd/search?q=error faringitis')
     assert.equal(failed.body.source, 'file')
-    assert.equal((await (await as('smejia@demo.clinara'))('GET', '/api/icd/search?q=faringitis')).status, 403)
+    assert.equal((await (await as('aquiroz@demo.clinara'))('GET', '/api/icd/search?q=faringitis')).status, 403)
     online = false
     const off = await doc('GET', '/api/icd/search?q=faringitis aguda')
     assert.equal(off.body.source, 'file')
@@ -121,12 +121,12 @@ describe('K1 rutas de la CIE-11', () => {
     online = true
   })
   test('el diagnóstico CIE-11 se guarda con su clasificación y queda en los frecuentes de la clínica', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const all = Object.fromEntries(['0', '1', '2', '3', '4', '5', '6'].map((d) => [d, [{ start: '00:00', end: '23:45' }]]))
-    await admin('PATCH', '/api/staff/s-herrera/schedule', { slot: 15, week: all })
-    const nurse = await as('crios@demo.clinara')
-    const doc = await as('lherrera@demo.clinara')
-    const w = await nurse('POST', '/api/appointments/walk-in', { patientId: 'p18', doctorId: 's-herrera', reason: 'Dolor de garganta' })
+    await admin('PATCH', '/api/staff/s-solorzano/schedule', { slot: 15, week: all })
+    const nurse = await as('murbina@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const w = await nurse('POST', '/api/appointments/walk-in', { patientId: 'p18', doctorId: 's-solorzano', reason: 'Dolor de garganta' })
     await doc('POST', `/api/appointments/${w.body.id}/status`, { status: 'in_consult' })
     const dx = { code: 'CA02', label: 'Faringitis aguda', system: 'icd11', uri: 'http://id.who.int/icd/entity/1' }
     const c = await doc('POST', '/api/consultations', { appointmentId: w.body.id, reason: 'Dolor de garganta', diagnoses: [dx], orders: ['Abundantes líquidos.'] })
@@ -135,11 +135,11 @@ describe('K1 rutas de la CIE-11', () => {
     const freq = (await doc('GET', '/api/icd/frequent')).body
     assert.ok(freq.some((x: any) => x.code === 'CA02' && x.system === 'icd11'))
     // Los de otras clínicas no aparecen
-    assert.ok(!(await (await as('erosales@demo.clinara'))('GET', '/api/icd/frequent')).body.some((x: any) => x.code === 'CA02'))
+    assert.ok(!(await (await as('slobo@demo.clinara'))('GET', '/api/icd/frequent')).body.some((x: any) => x.code === 'CA02'))
   })
   test('K3: los reportes cuentan aparte CIE-11, CIE-10 de antes y los escritos sin código', async () => {
     const d = new Date(); const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    const r = await (await as('admin@demo.clinara'))('GET', `/api/reports?from=${day}&to=${day}`)
+    const r = await (await as('rmoncada@demo.clinara'))('GET', `/api/reports?from=${day}&to=${day}`)
     const top = r.body.topDiagnoses as { code: string; system?: string }[]
     assert.ok(top.some((x) => x.code === 'CA02' && x.system === 'icd11'))
     assert.ok(top.every((x) => x.system === 'icd11' || x.system === undefined))

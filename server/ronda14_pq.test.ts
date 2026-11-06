@@ -7,7 +7,7 @@ import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import bcrypt from 'bcryptjs'
-import { FUNEZ } from './demoData.js'
+import { MEMBRENO } from './demoData.js'
 import { aldreteTotal, blankAnesthesia, fluidBalance, gridPoints, prefillAnesthesia } from '../src/lib/anesthesia.js'
 
 // PQ3 (ronda 14): hoja de anestesia ligada a la nota postquirúrgica (copia en memoria de la demo)
@@ -20,10 +20,10 @@ before(async () => {
   const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
   await new Promise<void>((r) => { server = app.listen(0, () => r()) })
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-  // Dr. Daniel Fúnez (lo agrega la demo diaria): médico de la clínica principal
-  if (!(await sql.one('SELECT 1 FROM staff WHERE id = ?', [FUNEZ.id]))) {
+  // Dr. Joaquín Membreño (lo agrega la demo diaria): médico de la clínica principal
+  if (!(await sql.one('SELECT 1 FROM staff WHERE id = ?', [MEMBRENO.id]))) {
     await sql.run(`INSERT INTO staff (id, name, role, roles, specialty, email, license, color, active, password_hash, clinic_id) VALUES (?,?,'doctor',?,?,?,?,?,TRUE,?,?)`,
-      [FUNEZ.id, FUNEZ.name, JSON.stringify(['doctor']), FUNEZ.specialty, FUNEZ.email, FUNEZ.license, '#9A5B13', bcrypt.hashSync(DEMO_PASSWORD, 10), 'c-sb'])
+      [MEMBRENO.id, MEMBRENO.name, JSON.stringify(['doctor']), MEMBRENO.specialty, MEMBRENO.email, MEMBRENO.license, '#9A5B13', bcrypt.hashSync(DEMO_PASSWORD, 10), 'c-sb'])
   }
 })
 after(async () => { server.close(); await sql.close() })
@@ -45,7 +45,7 @@ type Client = Awaited<ReturnType<typeof as>>
 const pre = [{ code: 'DB10', label: 'Apendicitis aguda' }]
 const postop = (team: Record<string, { name: string; staffId?: string }>, anesthesia = 'Raquídea') => ({
   preDiagnoses: pre, startAt: new Date(Date.now() - 90 * 60_000).toISOString(), endAt: new Date(Date.now() - 20 * 60_000).toISOString(), anesthesia,
-  procedureName: 'Apendicectomía', description: 'Sin complicaciones, sangrado mínimo.', team: { surgeon: { staffId: 's-zuniga', name: 'Dra. Mariela Zúñiga' }, ...team },
+  procedureName: 'Apendicectomía', description: 'Sin complicaciones, sangrado mínimo.', team: { surgeon: { staffId: 's-escoto', name: 'Dra. Natalia Escoto' }, ...team },
   urgent: true, justification: 'Abdomen agudo, sin familiar presente',
 })
 async function postopNote(doc: Client, stayId: string, team: Record<string, { name: string; staffId?: string }>, anesthesia?: string) {
@@ -74,8 +74,8 @@ describe('PQ3 (ronda 14): hoja de anestesia', () => {
   let stay: { id: string; patientId: string }
   let zuniga: Client; let rios: Client; let mejia: Client; let herrera: Client; let funez: Client
   before(async () => {
-    zuniga = await as('mzuniga@demo.clinara'); rios = await as('crios@demo.clinara'); mejia = await as('smejia@demo.clinara')
-    herrera = await as('lherrera@demo.clinara'); funez = await as('dfunez@demo.clinara')
+    zuniga = await as('nescoto@demo.clinara'); rios = await as('murbina@demo.clinara'); mejia = await as('aquiroz@demo.clinara')
+    herrera = await as('vsolorzano@demo.clinara'); funez = await as('jmembreno@demo.clinara')
     stay = (await zuniga.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     assert.ok(stay)
   })
@@ -87,25 +87,25 @@ describe('PQ3 (ronda 14): hoja de anestesia', () => {
     assert.ok(Array.isArray(a.body.prefill.patient.allergies))
     assert.equal((await rios.get(`/api/inpatient/${stay.id}/anesthesia/blank`)).status, 200)
     assert.equal((await mejia.get(`/api/inpatient/${stay.id}/anesthesia/blank`)).status, 403)
-    const audit = JSON.stringify((await (await as('admin@demo.clinara')).get('/api/audit')).body)
+    const audit = JSON.stringify((await (await as('rmoncada@demo.clinara')).get('/api/audit')).body)
     assert.ok(audit.includes('Imprimió la hoja de anestesia en blanco'))
   })
 
-  test('nota con anestesiólogo escrito a mano: «Sin agregar»; Carmen Ríos sube la hoja en papel; no se borra; se reemplaza con motivo', async () => {
+  test('nota con anestesiólogo escrito a mano: «Sin agregar»; Marta Urbina sube la hoja en papel; no se borra; se reemplaza con motivo', async () => {
     const noteId = await postopNote(zuniga, stay.id, { anesthesiologist: { name: 'Dr. Visitante Externo' } })
     const card = await zuniga.get(`/api/anesthesia/notes/${noteId}`)
     assert.equal(card.status, 200)
     assert.deepEqual(card.body.sheets, [])
     assert.equal(card.body.canFill, false, 'nadie la llena en el sistema: el anestesiólogo no tiene usuario')
     assert.equal(card.body.anesthesiologist.name, 'Dr. Visitante Externo')
-    // Sofía Mejía (recepción): nada, también por URL directa
+    // Andrea Quiroz (recepción): nada, también por URL directa
     assert.equal((await mejia.get(`/api/anesthesia/notes/${noteId}`)).status, 403)
     assert.equal((await mejia.post(`/api/anesthesia/notes/${noteId}/upload`, { fileId: 'x', performedBy: { name: 'Dr. Visitante Externo' } })).status, 403)
-    // Lic. Carmen Ríos sube la hoja (dos fotos unidas en un PDF)
+    // Lic. Marta Urbina sube la hoja (dos fotos unidas en un PDF)
     const fileId = await uploadPdf(rios, stay.patientId, stay.id)
     const up = await rios.post(`/api/anesthesia/notes/${noteId}/upload`, { fileId, performedBy: { name: 'Dr. Visitante Externo' }, observation: 'La trajo la circulante' })
     assert.equal(up.status, 201, JSON.stringify(up.body))
-    assert.equal(up.body.mode, 'upload'); assert.equal(up.body.createdBy, 's-rios'); assert.ok(up.body.createdAt)
+    assert.equal(up.body.mode, 'upload'); assert.equal(up.body.createdBy, 's-urbina'); assert.ok(up.body.createdAt)
     const files = (await zuniga.get(`/api/patients/${stay.patientId}/attachments`)).body
     assert.equal(files.find((f: any) => f.id === fileId).category, 'anesthesia', 'se ve en Anexos con la categoría «Hoja de anestesia»')
     // Nada se borra
@@ -124,30 +124,30 @@ describe('PQ3 (ronda 14): hoja de anestesia', () => {
     assert.ok(oldFile.voidedAt, 'el archivo anterior queda anulado, sin borrarse')
     assert.equal((await sql.one('SELECT COUNT(*)::int AS n FROM anesthesia_sheets WHERE note_id = ?', [noteId]))!.n, 2)
     await assert.rejects(sql.run('DELETE FROM anesthesia_sheets WHERE id = ?', [up.body.id]), /no se borra/)
-    const audit = JSON.stringify((await (await as('admin@demo.clinara')).get('/api/audit')).body)
+    const audit = JSON.stringify((await (await as('rmoncada@demo.clinara')).get('/api/audit')).body)
     assert.ok(audit.includes('Subió la hoja de anestesia de «Apendicectomía»'))
     assert.ok(audit.includes('Motivo: Faltaba la segunda página'))
   })
 
-  test('anestesióloga del sistema (Dra. Herrera): ve el pendiente, su borrador sigue, firma con tres registros; Fúnez no firma pero sí sube', async () => {
-    const noteId = await postopNote(zuniga, stay.id, { anesthesiologist: { staffId: 's-herrera', name: 'Dra. Lucía Herrera' } }, 'Sedación')
+  test('anestesióloga del sistema (Dra. Solórzano): ve el pendiente, su borrador sigue, firma con tres registros; Membreño no firma pero sí sube', async () => {
+    const noteId = await postopNote(zuniga, stay.id, { anesthesiologist: { staffId: 's-solorzano', name: 'Dra. Valeria Solórzano' } }, 'Sedación')
     const pending = (await herrera.get('/api/anesthesia/pending')).body
     const mine = pending.find((x: any) => x.noteId === noteId)
     assert.ok(mine, 'le aparece el pendiente')
     assert.equal(mine.procedure, 'Apendicectomía'); assert.ok(mine.patient); assert.equal(mine.hospitalizationId, stay.id)
     assert.ok(!(await zuniga.get('/api/anesthesia/pending')).body.some((x: any) => x.noteId === noteId), 'a la cirujana no')
     assert.ok(!(await rios.get('/api/anesthesia/pending')).body.length, 'a enfermería no')
-    // Fúnez: no la llena ni la firma (tampoco por URL directa)
+    // Membreño: no la llena ni la firma (tampoco por URL directa)
     assert.equal((await funez.get(`/api/anesthesia/notes/${noteId}`)).body.canFill, false)
     assert.equal((await funez.get(`/api/anesthesia/notes/${noteId}/prefill`)).status, 403)
     assert.equal((await funez.post(`/api/anesthesia/notes/${noteId}/sign`, { data: signData() })).status, 403)
     assert.equal((await rios.post(`/api/anesthesia/notes/${noteId}/sign`, { data: signData() })).status, 403)
-    // Herrera: lo que trae lleno, su borrador «Se guarda solo»
+    // Solórzano: lo que trae lleno, su borrador «Se guarda solo»
     const pf = await herrera.get(`/api/anesthesia/notes/${noteId}/prefill`)
     assert.equal(pf.status, 200, JSON.stringify(pf.body))
     const filled = prefillAnesthesia(pf.body.prefill)
     assert.deepEqual(filled.techniques, ['Sedación'])
-    assert.equal(filled.anesthesiologist, 'Dra. Lucía Herrera'); assert.equal(filled.operation, 'Apendicectomía'); assert.equal(filled.preDiagnosis, 'Apendicitis aguda')
+    assert.equal(filled.anesthesiologist, 'Dra. Valeria Solórzano'); assert.equal(filled.operation, 'Apendicectomía'); assert.equal(filled.preDiagnosis, 'Apendicitis aguda')
     assert.equal((await herrera.put(`/api/drafts/anestesia/${noteId}`, { data: { d: { ...filled, room: 'Sala 2' } } })).status, 200)
     assert.equal((await herrera.get(`/api/drafts/anestesia/${noteId}`)).body.data.d.room, 'Sala 2', 'el borrador sigue al volver')
     // Sin técnica no se firma
@@ -155,7 +155,7 @@ describe('PQ3 (ronda 14): hoja de anestesia', () => {
     const s = await herrera.post(`/api/anesthesia/notes/${noteId}/sign`, { data: signData(3) })
     assert.equal(s.status, 201, JSON.stringify(s.body))
     assert.equal(s.body.mode, 'system'); assert.equal(s.body.data.monitoring.length, 3)
-    assert.equal(s.body.signer.license, 'CMH-08812'); assert.equal(s.body.signer.title, 'Medicina interna'); assert.match(s.body.signer.name, /Herrera/)
+    assert.equal(s.body.signer.license, 'CMH-20118'); assert.equal(s.body.signer.title, 'Medicina interna'); assert.match(s.body.signer.name, /Solórzano/)
     assert.equal((await herrera.get(`/api/drafts/anestesia/${noteId}`)).body, null, 'al firmar, el borrador ya no hace falta')
     assert.ok(!(await herrera.get('/api/anesthesia/pending')).body.some((x: any) => x.noteId === noteId), 'ya no está pendiente')
     assert.equal((await herrera.post(`/api/anesthesia/notes/${noteId}/sign`, { data: signData() })).status, 409)
@@ -168,22 +168,22 @@ describe('PQ3 (ronda 14): hoja de anestesia', () => {
     assert.equal((await zuniga.post('/api/addenda', { targetKind: 'anesthesia', targetId: s.body.id, kind: 'info', text: 'Otra cosa.' })).status, 403)
     // La llenada en el sistema no se reemplaza por una en papel
     const f = await uploadPdf(funez, stay.patientId, stay.id)
-    assert.equal((await funez.post(`/api/anesthesia/notes/${noteId}/upload`, { fileId: f, performedBy: { name: 'Dra. Lucía Herrera' }, replaces: { sheetId: s.body.id, reason: 'Probar reemplazo' } })).status, 409)
+    assert.equal((await funez.post(`/api/anesthesia/notes/${noteId}/upload`, { fileId: f, performedBy: { name: 'Dra. Valeria Solórzano' }, replaces: { sheetId: s.body.id, reason: 'Probar reemplazo' } })).status, 409)
     // Ver la hoja queda en la bitácora
     assert.equal((await rios.get(`/api/anesthesia/sheets/${s.body.id}`)).status, 200)
     assert.equal((await mejia.get(`/api/anesthesia/sheets/${s.body.id}`)).status, 403)
   })
 
-  test('Fúnez sube la hoja en papel de una cirugía donde no fue anestesiólogo; el radiólogo también ve la hoja', async () => {
-    const noteId = await postopNote(zuniga, stay.id, { anesthesiologist: { staffId: 's-herrera', name: 'Dra. Lucía Herrera' } }, 'General')
+  test('Membreño sube la hoja en papel de una cirugía donde no fue anestesiólogo; el radiólogo también ve la hoja', async () => {
+    const noteId = await postopNote(zuniga, stay.id, { anesthesiologist: { staffId: 's-solorzano', name: 'Dra. Valeria Solórzano' } }, 'General')
     const f = await uploadPdf(funez, stay.patientId, stay.id)
-    const up = await funez.post(`/api/anesthesia/notes/${noteId}/upload`, { fileId: f, performedBy: { staffId: 's-herrera', name: 'Dra. Lucía Herrera' } })
+    const up = await funez.post(`/api/anesthesia/notes/${noteId}/upload`, { fileId: f, performedBy: { staffId: 's-solorzano', name: 'Dra. Valeria Solórzano' } })
     assert.equal(up.status, 201, JSON.stringify(up.body))
-    assert.equal(up.body.performedBy.staffId, 's-herrera')
+    assert.equal(up.body.performedBy.staffId, 's-solorzano')
     assert.ok(!(await herrera.get('/api/anesthesia/pending')).body.some((x: any) => x.noteId === noteId), 'con la hoja subida ya no está pendiente')
-    const radiologist = await as('mcastellanos@demo.clinara')
+    const radiologist = await as('rzepeda@demo.clinara')
     assert.equal((await radiologist.get(`/api/anesthesia/notes/${noteId}`)).status, 200)
-    assert.equal((await (await as('admin@demo.clinara')).get(`/api/anesthesia/notes/${noteId}`)).status, 403, 'administración no')
+    assert.equal((await (await as('rmoncada@demo.clinara')).get(`/api/anesthesia/notes/${noteId}`)).status, 403, 'administración no')
   })
 
   test('egreso sin hoja de anestesia: ningún aviso ni bloqueo', async () => {
@@ -198,12 +198,12 @@ describe('PQ3 (ronda 14): hoja de anestesia', () => {
     assert.equal((await rios.post(`/api/anesthesia/notes/${noteId}/upload`, { fileId: f, performedBy: { name: 'Dr. Sin Usuario' } })).status, 201)
   })
 
-  test('Consultorio: la titular (Dra. Ana López) sube la hoja en papel en observación', async () => {
-    const lopez = await as('alopez@demo.clinara')
+  test('Consultorio: la titular (Dra. Isabel Pacheco) sube la hoja en papel en observación', async () => {
+    const lopez = await as('ipacheco@demo.clinara')
     const obs = (await lopez.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'observation' && h.status === 'active')
     assert.ok(obs)
     const n = await lopez.post(`/api/inpatient/${obs.id}/notes`, { kind: 'evolution', format: 'postop', diagnoses: pre,
-      postop: { ...postop({ anesthesiologist: { name: 'Dr. Visitante' } }), team: { surgeon: { name: 'Dra. Ana López' }, anesthesiologist: { name: 'Dr. Visitante' } } } })
+      postop: { ...postop({ anesthesiologist: { name: 'Dr. Visitante' } }), team: { surgeon: { name: 'Dra. Isabel Pacheco' }, anesthesiologist: { name: 'Dr. Visitante' } } } })
     assert.equal(n.status, 201, JSON.stringify(n.body))
     const f = await uploadPdf(lopez, obs.patientId, obs.id)
     assert.equal((await lopez.post(`/api/anesthesia/notes/${n.body.id}/upload`, { fileId: f, performedBy: { name: 'Dr. Visitante' } })).status, 201)

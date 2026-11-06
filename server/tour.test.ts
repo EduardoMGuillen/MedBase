@@ -36,8 +36,8 @@ const targets = (...a: Parameters<typeof tourFor>) => tourFor(...a).map((s) => s
 
 describe('recorrido de primer ingreso', () => {
   test('al terminarlo queda guardado en el usuario y no borra sus otras preferencias', async () => {
-    await sql.run(`UPDATE staff SET prefs = '{"noteFormat":"dx"}' WHERE email = 'lherrera@demo.clinara'`)
-    const doc = await as('lherrera@demo.clinara')
+    await sql.run(`UPDATE staff SET prefs = '{"noteFormat":"dx"}' WHERE email = 'vsolorzano@demo.clinara'`)
+    const doc = await as('vsolorzano@demo.clinara')
     assert.equal((await doc.get('/api/auth/me')).body.user.prefs?.tourDoneAt, undefined)
     assert.equal((await doc.post('/api/me/tour')).status, 200)
     const prefs = (await doc.get('/api/auth/me')).body.user.prefs
@@ -46,7 +46,7 @@ describe('recorrido de primer ingreso', () => {
   })
 
   test('también lo guarda quien no tiene preferencias ni clínica', async () => {
-    const sa = await as('superadmin@demo.clinara')
+    const sa = await as('dcerrato@demo.clinara')
     assert.equal((await sa.post('/api/me/tour')).status, 200)
     assert.ok((await sa.get('/api/auth/me')).body.user.prefs.tourDoneAt)
   })
@@ -112,7 +112,7 @@ describe('RG1 recorridos por rol', () => {
   })
 
   test('el servidor recuerda por recorrido si lo terminó, lo saltó o en qué paso lo pausó', async () => {
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     assert.equal((await nurse.post('/api/me/tour', { key: 'enfermeria', state: 'paused', step: 4 })).status, 200)
     assert.deepEqual(pick((await nurse.get('/api/auth/me')).body.user.prefs.tours.enfermeria), { state: 'paused', step: 4 })
     await nurse.post('/api/me/tour', { key: 'medico', state: 'skipped', step: 2 })

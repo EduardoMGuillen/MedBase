@@ -61,38 +61,38 @@ describe('EX8 (ronda 14): «Externo» o «En la clínica» por defecto', () => {
 
 describe('EX11 (ronda 14): la ventana de órdenes también desde la nota', () => {
   test('laboratorio e imagen juntos salen en un solo trabajo (un documento por tipo); enfermería sí, recepción no', async () => {
-    const cid = String((await sql.one(`SELECT clinic_id FROM staff WHERE email = 'lherrera@demo.clinara'`))!.clinic_id)
+    const cid = String((await sql.one(`SELECT clinic_id FROM staff WHERE email = 'vsolorzano@demo.clinara'`))!.clinic_id)
     const pair = await sql.one(`SELECT a.id AS lab, b.id AS img FROM exam_orders a JOIN exam_orders b ON b.patient_id = a.patient_id AND b.grp = 'imaging' AND b.status <> 'cancelled'
       WHERE a.clinic_id = ? AND a.grp = 'lab' AND a.status <> 'cancelled' LIMIT 1`, [cid])
     assert.ok(pair, 'la demo tiene un paciente con laboratorio e imagen')
     const ids = [String(pair!.lab), String(pair!.img)]
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const r = await doc.post('/api/print-jobs', { kind: 'exams', examIds: ids })
     assert.equal(r.status, 201, JSON.stringify(r.body))
     const job = await doc.get(`/api/print-jobs/${r.body.id}`)
     assert.deepEqual(new Set(job.body.exams.map((e: { group: string }) => e.group)), new Set(['lab', 'imaging']))
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     assert.equal((await nurse.post('/api/print-jobs', { kind: 'exams', examIds: ids })).status, 201)
-    const reception = await as('smejia@demo.clinara')
+    const reception = await as('aquiroz@demo.clinara')
     assert.equal((await reception.post('/api/print-jobs', { kind: 'exams', examIds: ids })).status, 403)
     assert.equal((await reception.get(`/api/print-jobs/${r.body.id}`)).status, 403)
   })
   test('un examen cancelado no se imprime', async () => {
     const e = await sql.one(`SELECT id FROM exam_orders WHERE status = 'cancelled' LIMIT 1`)
     if (!e) return
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const r = await doc.post('/api/print-jobs', { kind: 'exams', examIds: [String(e.id)] })
     assert.ok(r.status === 409 || r.status === 404, String(r.status))
   })
 })
 
-/** Una cita de la Dra. Herrera en consulta, con un paciente adulto con identidad y sin estancia activa (copia de una cita suya). */
+/** Una cita de la Dra. Solórzano en consulta, con un paciente adulto con identidad y sin estancia activa (copia de una cita suya). */
 async function consultFor(n: number) {
-  const cid = String((await sql.one(`SELECT clinic_id FROM staff WHERE email = 'lherrera@demo.clinara'`))!.clinic_id)
+  const cid = String((await sql.one(`SELECT clinic_id FROM staff WHERE email = 'vsolorzano@demo.clinara'`))!.clinic_id)
   const pts = await sql.query(`SELECT p.id FROM patients p WHERE p.clinic_id = ? AND p.dni IS NOT NULL AND p.dni <> '' AND p.birth_date < '2000-01-01'
     AND NOT EXISTS (SELECT 1 FROM hospitalizations h WHERE h.patient_id = p.id AND h.status = 'active') ORDER BY p.id`, [cid])
   const pid = String(pts[n].id)
-  const base = (await sql.one(`SELECT * FROM appointments WHERE doctor_id = 's-herrera' ORDER BY start DESC LIMIT 1`))!
+  const base = (await sql.one(`SELECT * FROM appointments WHERE doctor_id = 's-solorzano' ORDER BY start DESC LIMIT 1`))!
   const id = `r14-${n}-${Date.now()}`
   const row = { ...base, id, patient_id: pid, status: 'in_consult', start: new Date().toISOString().slice(0, 16) }
   const cols = Object.keys(row)
@@ -105,7 +105,7 @@ const dx = [{ code: 'CA00', label: 'Rinofaringitis aguda' }]
 describe('ME13 y EX10 (ronda 14): «Aplicar en la clínica» sin ingreso y la orden de los exámenes «En la clínica»', () => {
   test('no entra a observación; queda por aplicar; dos órdenes con su folio; enfermería registra', async () => {
     const { id, pid } = await consultFor(0)
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     // Con una frecuencia repetida, sin ingreso no se firma
     const bad = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor', diagnoses: dx,
       items: [{ drug: 'Diclofenaco', presentation: 'Ampolla 75 mg', dose: '75 mg', route: 'Intramuscular', frequency: 'Cada 12 horas', duration: '', applyInClinic: true }] })
@@ -134,8 +134,8 @@ describe('ME13 y EX10 (ronda 14): «Aplicar en la clínica» sin ingreso y la or
     assert.equal(apps[0].status, 'pending')
     assert.match(String(apps[0].order_text), /Diclofenaco/)
     const appId = String(apps[0].id)
-    assert.equal((await (await as('smejia@demo.clinara')).post(`/api/applications/${appId}`, { status: 'applied' })).status, 403, 'recepción no')
-    const nurse = await as('crios@demo.clinara')
+    assert.equal((await (await as('aquiroz@demo.clinara')).post(`/api/applications/${appId}`, { status: 'applied' })).status, 403, 'recepción no')
+    const nurse = await as('murbina@demo.clinara')
     assert.equal((await nurse.post(`/api/applications/${appId}`, { status: 'not_applied' })).status, 400, 'sin motivo no')
     const ok = await nurse.post(`/api/applications/${appId}`, { status: 'applied' })
     assert.equal(ok.status, 200, JSON.stringify(ok.body))
@@ -153,7 +153,7 @@ describe('ME13 y EX10 (ronda 14): «Aplicar en la clínica» sin ingreso y la or
 describe('ME14 (ronda 14): receta al firmar con ingreso y desde la nota', () => {
   test('con «Ingreso a observación»: receta de lo que no se aplica en la clínica, hoja con lo demás y «Generar receta» con los tres', async () => {
     const { id } = await consultFor(1)
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const r = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor', diagnoses: dx, observe: true,
       // Con ingreso, lo que va a la receta se desmarca a propósito (sin la casilla, se aplica en la clínica, como antes)
       items: [{ ...oral('Acetaminofén'), applyInClinic: false }, { ...oral('Ibuprofeno'), applyInClinic: false }, { drug: 'Ceftriaxona', presentation: 'Vial 1 g', dose: '1 g', route: 'Intravenosa', frequency: 'Cada 12 horas', duration: '', applyInClinic: true }],
@@ -178,7 +178,7 @@ describe('ME14 (ronda 14): receta al firmar con ingreso y desde la nota', () => 
     const j = await doc.get(`/api/print-jobs/${job.body.id}`)
     assert.deepEqual(j.body.meds.map((m: { drug: string }) => m.drug).sort(), ['Acetaminofén', 'Ceftriaxona', 'Ibuprofeno'])
     // Enfermería no elige otros medicamentos (tampoco por URL directa)
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     assert.equal((await nurse.post('/api/print-jobs', { kind: 'rx', chosen: true, medIds: [extra[0].id] })).status, 403)
     assert.equal((await nurse.post('/api/print-jobs', { kind: 'rx', medIds: [extra[0].id] })).status, 400)
   })

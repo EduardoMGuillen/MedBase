@@ -72,7 +72,7 @@ describe('RU5 (ronda 15): catálogo v2 con «Registro»', () => {
       assert.equal(rows.filter((r) => r.on_shift_list).length, 17)
       assert.equal((await sql.query('SELECT 1 FROM supply_sets WHERE clinic_id = ?', [String(c.id)])).length, 6)
     }
-    const cid = await clinicOfUser('admin@demo.clinara')
+    const cid = await clinicOfUser('rmoncada@demo.clinara')
     const before = JSON.stringify(await sql.query('SELECT * FROM supply_items WHERE clinic_id = ? ORDER BY id', [cid]))
     const sets = JSON.stringify(await sql.query('SELECT * FROM supply_sets WHERE clinic_id = ? ORDER BY id', [cid]))
     const r = await loadSupplyCatalog(sql, cid)
@@ -83,7 +83,7 @@ describe('RU5 (ronda 15): catálogo v2 con «Registro»', () => {
 
   test('una clínica de la ronda 14: Categoría y Registro al día en lo no editado; lo editado, archivado y lo propio no se toca; se agregan las nuevas', async () => {
     // Una clínica nueva que se deja como quedó con la ronda 14: sin las 135 nuevas ni sets, las de la ronda 14 en «Ambos»
-    const sa = await as('superadmin@demo.clinara')
+    const sa = await as('dcerrato@demo.clinara')
     const c = await sa.post('/api/platform/clinics', { name: 'Clínica Ronda 14', admin: { name: 'Admin R14', email: 'admin@r14.test' } })
     assert.equal(c.status, 201, JSON.stringify(c.body))
     const cid = String(c.body.clinic.id)
@@ -117,8 +117,8 @@ describe('RU5 (ronda 15): catálogo v2 con «Registro»', () => {
   })
 
   test('a un paciente no se le suma un rollo ni un frasco; al uso general sí; la gasa estéril va por unidad a un paciente', async () => {
-    const cid = await clinicOfUser('crios@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const cid = await clinicOfUser('murbina@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const p = nowPeriod()
     const pt = String((await sql.one('SELECT id FROM patients WHERE clinic_id = ? ORDER BY record LIMIT 1', [cid]))!.id)
     for (const [m, v] of [['Gasa hospitalaria', ROLLO], ['Algodón', 'Rollo'], ['Esparadrapo', 'Hospitalario'], ['Alcohol al 70 %', 'Frasco']]) {
@@ -140,8 +140,8 @@ describe('RU5 (ronda 15): catálogo v2 con «Registro»', () => {
   })
 
   test('un registro viejo de un rollo de gasa a un paciente se sigue viendo igual', async () => {
-    const cid = await clinicOfUser('crios@demo.clinara')
-    const nurseId = String((await sql.one(`SELECT id FROM staff WHERE email = 'crios@demo.clinara'`))!.id)
+    const cid = await clinicOfUser('murbina@demo.clinara')
+    const nurseId = String((await sql.one(`SELECT id FROM staff WHERE email = 'murbina@demo.clinara'`))!.id)
     const pt = String((await sql.one('SELECT id FROM patients WHERE clinic_id = ? ORDER BY record LIMIT 1 OFFSET 1', [cid]))!.id)
     const gasa = await lineOf(cid, 'Gasa hospitalaria', ROLLO)
     const p = nowPeriod()
@@ -149,7 +149,7 @@ describe('RU5 (ronda 15): catálogo v2 con «Registro»', () => {
     const id = `old-${Date.now()}`
     await sql.run(`INSERT INTO material_uses (id, clinic_id, patient_id, general, area, location, period_kind, period_start, period_end, period_label, shift_key, items, recorded_by, recorded_at)
       VALUES (?,?,?,FALSE,'outpatient','Consulta externa','shift',?,?,?,?,?,?,?)`, [id, cid, pt, p.start, p.end, p.label, p.shiftKey, JSON.stringify(items), nurseId, new Date().toISOString()])
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const list = await nurse.get(`/api/usage/material?from=${encodeURIComponent(p.start)}&to=${encodeURIComponent(p.end)}`)
     const rec = list.body.records.find((r: { id: string }) => r.id === id)
     assert.deepEqual(rec.items.map((i: { material: string; variant: string; unit: string; quantity: number }) => [i.material, i.variant, i.unit, i.quantity]), [['Gasa hospitalaria', ROLLO, 'rollo', 1]])
@@ -158,7 +158,7 @@ describe('RU5 (ronda 15): catálogo v2 con «Registro»', () => {
 
 describe('RU4 (ronda 15): «Agregar material» para Administración y Enfermería; editar y archivar, solo Administración', () => {
   test('enfermería agrega «Nylon 7/0, aguja cortante» en la lista de turno; no edita ni archiva (por URL directa)', async () => {
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const r = await nurse.post('/api/supplies', { category: 'Suturas', material: 'Nylon', variant: '7/0, aguja cortante', unit: 'sobre', scope: 'patient', onShiftList: true })
     assert.equal(r.status, 201, JSON.stringify(r.body))
     assert.deepEqual([r.body.scope, r.body.onShiftList, r.body.origin], ['patient', true, 'clinic'])
@@ -174,8 +174,8 @@ describe('RU4 (ronda 15): «Agregar material» para Administración y Enfermerí
   })
 
   test('si la que existe está archivada, lo dice y devuelve cuál (para «Restaurar»); recepción no agrega', async () => {
-    const admin = await as('admin@demo.clinara')
-    const cid = await clinicOfUser('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
+    const cid = await clinicOfUser('rmoncada@demo.clinara')
     const line = await lineOf(cid, 'Bata descartable')
     assert.equal((await admin.post(`/api/supplies/${line.id}/archive`)).status, 200)
     const dup = await admin.post('/api/supplies', { category: 'Ropa', material: 'Bata descartable', variant: '', unit: 'unidad' })
@@ -183,13 +183,13 @@ describe('RU4 (ronda 15): «Agregar material» para Administración y Enfermerí
     assert.match(dup.body.error, /\(archivado\)/)
     assert.equal(dup.body.existing.id, line.id)
     assert.equal((await admin.post(`/api/supplies/${line.id}/restore`)).status, 200)
-    const rec = await as('smejia@demo.clinara')
+    const rec = await as('aquiroz@demo.clinara')
     assert.equal((await rec.post('/api/supplies', { category: 'Suturas', material: 'Nylon', variant: '8/0', unit: 'sobre' })).status, 403)
   })
 
   test('Administración edita y archiva una línea y queda en la bitácora', async () => {
-    const admin = await as('admin@demo.clinara')
-    const cid = await clinicOfUser('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
+    const cid = await clinicOfUser('rmoncada@demo.clinara')
     const line = await lineOf(cid, 'Baja lengua (depresor)', 'Adulto')
     const e = await admin.patch(`/api/supplies/${line.id}`, { category: String(line.category), material: 'Baja lengua (depresor)', variant: 'Adulto, de madera', unit: 'unidad', scope: 'both' })
     assert.equal(e.status, 200, JSON.stringify(e.body))
@@ -200,7 +200,7 @@ describe('RU4 (ronda 15): «Agregar material» para Administración y Enfermerí
   })
 
   test('en el consultorio, la titular agrega materiales', async () => {
-    const doc = await as('alopez@demo.clinara')
+    const doc = await as('ipacheco@demo.clinara')
     const r = await doc.post('/api/supplies', { category: 'Suturas', material: 'Nylon', variant: '7/0, aguja cortante', unit: 'sobre', scope: 'patient' })
     assert.equal(r.status, 201, JSON.stringify(r.body))
   })
@@ -208,8 +208,8 @@ describe('RU4 (ronda 15): «Agregar material» para Administración y Enfermerí
 
 describe('RU7 (ronda 15): «¿Para quién?» con los atendidos e internados del periodo', () => {
   test('una consulta externa de la tarde (guardada en UTC) sale en el turno de la tarde; agrupados y con «Ya tiene registro»', async () => {
-    const cid = await clinicOfUser('crios@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const cid = await clinicOfUser('murbina@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const shifts = DEFAULT_SUPPLY_SETTINGS.shifts
     const tarde = shifts.find((s) => s.from === '15:00')!
     const today = localDay(new Date())
@@ -219,7 +219,7 @@ describe('RU7 (ronda 15): «¿Para quién?» con los atendidos e internados del 
       ORDER BY p.record DESC LIMIT 1`, [cid]))!
     const at = fromLocalValue(`${today}T17:14`).toISOString()
     assert.match(at, /Z$/)
-    await sql.run(`INSERT INTO consultations (id, patient_id, doctor_id, date, reason, diagnoses, plan, orders, clinic_id) VALUES (?,?, 's-herrera', ?, 'Fiebre', '[]', '', '[]', ?)`,
+    await sql.run(`INSERT INTO consultations (id, patient_id, doctor_id, date, reason, diagnoses, plan, orders, clinic_id) VALUES (?,?, 's-solorzano', ?, 'Fiebre', '[]', '', '[]', ?)`,
       [`c-ru7-${Date.now()}`, String(pt.id), at, cid])
     const q = (x: { start: string; end: string }) => `from=${encodeURIComponent(x.start)}&to=${encodeURIComponent(x.end)}`
     const s = await nurse.get(`/api/usage/suggest?${q(p)}`)
@@ -260,7 +260,7 @@ describe('RU8 (ronda 15): sets de material', () => {
   type Line = SupplySetView['lines'][number]
 
   test('enfermería ve los 6 sets iniciales; «Parto vaginal» trae 17 materiales', async () => {
-    const r = await (await as('crios@demo.clinara')).get('/api/supply-sets')
+    const r = await (await as('murbina@demo.clinara')).get('/api/supply-sets')
     assert.equal(r.status, 200)
     assert.deepEqual(r.body.sets.map((s: { name: string }) => s.name).sort(), ['Canalización de vía periférica', 'Curación de herida', 'Parto vaginal', 'Sondaje vesical', 'Sutura de herida simple', 'Toma de muestra venosa'])
     const parto = r.body.sets.find((s: { name: string }) => s.name === 'Parto vaginal')
@@ -269,8 +269,8 @@ describe('RU8 (ronda 15): sets de material', () => {
   })
 
   test('registrar con dos sets: se suman los guantes, «Deshacer» deja lo de antes, el registro guarda los sets y editar el set no lo cambia', async () => {
-    const cid = await clinicOfUser('crios@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const cid = await clinicOfUser('murbina@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const sets = (await nurse.get('/api/supply-sets')).body.sets as SupplySetView[]
     const parto = sets.find((s) => s.name === 'Parto vaginal')!
     const cana = sets.find((s) => s.name === 'Canalización de vía periférica')!
@@ -311,8 +311,8 @@ describe('RU8 (ronda 15): sets de material', () => {
   })
 
   test('«Guardar como set» crea «Cesárea»; nombre único sin importar tildes; se duplica y se archiva; todo en la bitácora', async () => {
-    const cid = await clinicOfUser('crios@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const cid = await clinicOfUser('murbina@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const gasa = await lineOf(cid, 'Gasa estéril', '10 × 10 cm')
     const c = await nurse.post('/api/supply-sets', { name: 'Cesárea', items: [{ itemId: String(gasa.id), quantity: 20 }] })
     assert.equal(c.status, 201, JSON.stringify(c.body))
@@ -330,18 +330,18 @@ describe('RU8 (ronda 15): sets de material', () => {
   })
 
   test('recepción no crea, edita ni archiva sets (por URL directa); en el consultorio, la titular sí', async () => {
-    const rec = await as('smejia@demo.clinara')
-    const cid = await clinicOfUser('smejia@demo.clinara')
+    const rec = await as('aquiroz@demo.clinara')
+    const cid = await clinicOfUser('aquiroz@demo.clinara')
     const gasa = await lineOf(cid, 'Gasa estéril', '10 × 10 cm')
     const parto = await setOf(cid, 'Parto vaginal')
     assert.equal((await rec.post('/api/supply-sets', { name: 'De recepción', items: [{ itemId: String(gasa.id), quantity: 1 }] })).status, 403)
     assert.equal((await rec.patch(`/api/supply-sets/${parto.id}`, { name: 'X', items: [{ itemId: String(gasa.id), quantity: 1 }] })).status, 403)
     assert.equal((await rec.post(`/api/supply-sets/${parto.id}/archive`)).status, 403)
-    const doc = await as('alopez@demo.clinara')
+    const doc = await as('ipacheco@demo.clinara')
     const sets = await doc.get('/api/supply-sets')
     assert.equal(sets.status, 200)
     assert.equal(sets.body.sets.length, 6)
-    const kcid = await clinicOfUser('alopez@demo.clinara')
+    const kcid = await clinicOfUser('ipacheco@demo.clinara')
     const kgasa = await lineOf(kcid, 'Gasa estéril', '10 × 10 cm')
     assert.equal((await doc.post('/api/supply-sets', { name: 'Curación de consultorio', items: [{ itemId: String(kgasa.id), quantity: 4 }] })).status, 201)
     // Un set de otra clínica no existe para ella
@@ -352,7 +352,7 @@ describe('RU8 (ronda 15): sets de material', () => {
 describe('RU9 (ronda 15): vista del registro compacta y ordenada por paciente', () => {
   const rec = (o: Partial<MaterialRecord> & { id: string }): MaterialRecord => ({
     general: false, patientName: 'X', record: '', location: '', periodKind: 'shift', periodStart: '2026-11-06T13:00:00.000Z', periodEnd: '2026-11-06T21:00:00.000Z',
-    periodLabel: 'Mañana', items: [], recordedBy: 's', recordedByName: 'Lic. Carmen Ríos', recordedAt: '2026-11-06T14:00:00.000Z', version: 1, ...o,
+    periodLabel: 'Mañana', items: [], recordedBy: 's', recordedByName: 'Lic. Marta Urbina', recordedAt: '2026-11-06T14:00:00.000Z', version: 1, ...o,
   })
   const line = (itemId: string, quantity: number, category = 'Curación', material = itemId) => ({ itemId, quantity, category, material, variant: '', unit: 'unidad' as const })
 
@@ -382,7 +382,7 @@ describe('RU9 (ronda 15): vista del registro compacta y ordenada por paciente', 
   })
 
   test('la API trae el orden del catálogo para el total y el set de cada registro', async () => {
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const p = nowPeriod()
     const r = await nurse.get(`/api/usage/material?from=${encodeURIComponent(p.start)}&to=${encodeURIComponent(p.end)}&area=all&q=`)
     assert.equal(r.status, 200)
@@ -391,6 +391,6 @@ describe('RU9 (ronda 15): vista del registro compacta y ordenada por paciente', 
     assert.equal(r.body.order.length, used.size)
     assert.ok(r.body.records.some((x: MaterialRecord) => x.sets?.some((s) => s.name === 'Parto vaginal')), 'el registro con set lo dice')
     // Recepción ve las dos vistas (solo lectura)
-    assert.equal((await (await as('smejia@demo.clinara')).get(`/api/usage/material?from=${encodeURIComponent(p.start)}&to=${encodeURIComponent(p.end)}&area=all&q=`)).status, 200)
+    assert.equal((await (await as('aquiroz@demo.clinara')).get(`/api/usage/material?from=${encodeURIComponent(p.start)}&to=${encodeURIComponent(p.end)}&area=all&q=`)).status, 200)
   })
 })

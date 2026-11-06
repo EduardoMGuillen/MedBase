@@ -83,7 +83,7 @@ describe('CA1 catálogo de exámenes individuales', () => {
   })
 
   test('buscar hepatitis, colesterol, TGO, PCR, dengue y VPH encuentra exámenes', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const { exams } = (await doc.get('/api/exams/catalog')).body
     const catalog = examCatalog(exams)
     for (const q of ['hepatitis', 'colesterol', 'TGO', 'PCR', 'dengue', 'VPH']) {
@@ -99,7 +99,7 @@ describe('CA1 catálogo de exámenes individuales', () => {
   })
 
   test('el árbol sigue el orden del formulario: áreas, secciones y exámenes', async () => {
-    const { exams } = (await (await as('lherrera@demo.clinara')).get('/api/exams/catalog')).body
+    const { exams } = (await (await as('vsolorzano@demo.clinara')).get('/api/exams/catalog')).body
     const tree = byArea(examCatalog(exams), 'lab')
     assert.deepEqual(tree.slice(0, 5).map((a) => a.title), ['Hematología', 'Coagulación', 'Química en sangre', 'Química en orina', 'Hormonas'])
     const horm = tree.find((a) => a.title === 'Hormonas')!
@@ -145,7 +145,7 @@ describe('CA2 y CA3 paquetes y perfiles', () => {
   test('un set con paquetes se actualiza con sus exámenes sueltos, sin duplicar, con bitácora; Química sanguínea no se toca', async () => {
     const id = randomUUID()
     const exam = (name: string) => ({ exam: { group: 'lab', name, priority: 'routine', place: 'clinic' } })
-    await sql.run(`INSERT INTO order_sets (id, clinic_id, owner_id, name, items, shared, created_at, kind) VALUES (?, 'c-sb', 's-herrera', 'Set viejo de prueba', ?, FALSE, ?, 'exams')`,
+    await sql.run(`INSERT INTO order_sets (id, clinic_id, owner_id, name, items, shared, created_at, kind) VALUES (?, 'c-sb', 's-solorzano', 'Set viejo de prueba', ?, FALSE, ?, 'exams')`,
       [id, JSON.stringify([exam('Hemograma'), exam('Perfil lipídico'), exam('Triglicéridos'), exam('Electrolitos'), exam('Química sanguínea')]), new Date().toISOString()])
     const orders = await sql.query(`SELECT id, name FROM exam_orders ORDER BY id`)
     const r = await convertPackages(sql, 'c-sb')
@@ -170,7 +170,7 @@ describe('CA2 y CA3 paquetes y perfiles', () => {
   })
 
   test('los sets iniciales de un médico ya traen los exámenes sueltos', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const sets = (await doc.get('/api/order-sets?kind=exams')).body as { name: string; items: { exam?: { name: string } }[] }[]
     const dm = sets.find((s) => s.name === 'Control de diabetes')!
     const names = dm.items.map((i) => i.exam?.name)
@@ -179,21 +179,21 @@ describe('CA2 y CA3 paquetes y perfiles', () => {
   })
 
   test('permisos: el médico usa los perfiles pero no los edita (también por URL directa); Administración sí', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const { profiles } = (await doc.get('/api/exams/catalog')).body
     const clinic = profiles.filter((p: any) => !p.ownerId)
     assert.equal(clinic.length, 27)
     assert.equal((await doc.get('/api/exams/profiles/clinic')).status, 403)
     assert.equal((await doc.patch(`/api/exams/profiles/${clinic[0].id}`, { name: 'Cambio no permitido' })).status, 403)
     assert.equal((await doc.post('/api/exams/catalog', { group: 'lab', name: 'Examen no permitido' })).status, 403)
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const list = (await admin.get('/api/exams/profiles/clinic')).body
     assert.equal(list.length, 27)
     assert.equal((await admin.patch(`/api/exams/profiles/${list[0].id}`, { name: list[0].name })).status, 200)
     // La titular del consultorio también, en su vista de administradora (CF6)
-    const titular = await as('alopez@demo.clinara')
+    const titular = await as('ipacheco@demo.clinara')
     assert.equal((await titular.post('/api/me/view', { role: 'admin' })).status, 200)
-    const t = await as('alopez@demo.clinara')
+    const t = await as('ipacheco@demo.clinara')
     const own = (await t.get('/api/exams/profiles/clinic')).body
     assert.equal(own.length, 27)
     assert.equal((await t.patch(`/api/exams/profiles/${own[0].id}`, { name: own[0].name })).status, 200)

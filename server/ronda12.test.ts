@@ -36,7 +36,7 @@ async function as(email: string, password = DEMO_PASSWORD) {
   }
   return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), put: (p: string, b: unknown) => call('PUT', p, b) }
 }
-const mainClinic = async () => String((await sql.one(`SELECT clinic_id FROM staff WHERE email = 'admin@demo.clinara'`))!.clinic_id)
+const mainClinic = async () => String((await sql.one(`SELECT clinic_id FROM staff WHERE email = 'rmoncada@demo.clinara'`))!.clinic_id)
 const EGO = 'Examen general de orina (EGO)'
 
 describe('LB2 (ronda 12): todos los exámenes del documento tienen sus analitos', () => {
@@ -94,11 +94,11 @@ describe('LB2 (ronda 12): todos los exámenes del documento tienen sus analitos'
   })
   test('cargar un EGO por parámetro: texto en los cualitativos, Alto en el numérico; sin «crítico»', async () => {
     const id = await mainClinic()
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const p = String((await sql.one(`SELECT id FROM patients WHERE clinic_id = ? ORDER BY record LIMIT 1`, [id]))!.id)
     const at = new Date().toISOString()
-    await sql.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, batch_id, grp, name, priority, place, area, status, ordered_by, ordered_at, critical) VALUES ('r12-ego', ?, ?, 'r12-b', 'lab', ?, 'routine', 'clinic', 'lab', 'sample', 's-herrera', ?, FALSE)`, [id, p, EGO, at])
-    const lab = await as('gordonez@demo.clinara')
+    await sql.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, batch_id, grp, name, priority, place, area, status, ordered_by, ordered_at, critical) VALUES ('r12-ego', ?, ?, 'r12-b', 'lab', ?, 'routine', 'clinic', 'lab', 'sample', 's-solorzano', ?, FALSE)`, [id, p, EGO, at])
+    const lab = await as('psuazo@demo.clinara')
     const r = await lab.post('/api/exams/r12-ego/result', { values: [{ analyte: 'Color', value: 'Amarillo' }, { analyte: 'Nitritos', value: 'Positivos' }, { analyte: 'Leucocitos', value: '12' }, { analyte: 'Densidad', value: '1.020' }] })
     assert.equal(r.status, 200, JSON.stringify(r.body))
     const v = Object.fromEntries((r.body.result.values as { analyte: string; flag?: string; critical?: boolean }[]).map((x) => [x.analyte, x]))
@@ -116,8 +116,8 @@ describe('LB3 (ronda 12): sin umbrales críticos', () => {
     assert.equal((await sql.query('SELECT 1 FROM exam_orders WHERE critical = TRUE')).length, 0)
     const id = await mainClinic()
     const p = String((await sql.one(`SELECT id FROM patients WHERE clinic_id = ? ORDER BY record LIMIT 1`, [id]))!.id)
-    await sql.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, batch_id, grp, name, priority, place, area, status, ordered_by, ordered_at, critical) VALUES ('r12-k', ?, ?, 'r12-bk', 'lab', 'Potasio (K)', 'routine', 'clinic', 'lab', 'sample', 's-herrera', ?, FALSE)`, [id, p, new Date().toISOString()])
-    const lab = await as('gordonez@demo.clinara')
+    await sql.run(`INSERT INTO exam_orders (id, clinic_id, patient_id, batch_id, grp, name, priority, place, area, status, ordered_by, ordered_at, critical) VALUES ('r12-k', ?, ?, 'r12-bk', 'lab', 'Potasio (K)', 'routine', 'clinic', 'lab', 'sample', 's-solorzano', ?, FALSE)`, [id, p, new Date().toISOString()])
+    const lab = await as('psuazo@demo.clinara')
     const r = await lab.post('/api/exams/r12-k/result', { values: [{ analyte: 'Potasio', value: '7' }] })
     assert.equal(r.status, 200, JSON.stringify(r.body))
     assert.equal(r.body.result.values[0].flag, 'high')
@@ -146,7 +146,7 @@ describe('IM2 (ronda 12): el radiólogo', () => {
     assert.ok(!can({ role: 'imaging', position: 'radiologist' }, 'inpatient.orders'))
     assert.ok(!permissionsFor('imaging', 'clinic', 'imaging_tech').includes('inpatient.notes'))
     const stay = String((await sql.one(`SELECT id FROM hospitalizations WHERE status = 'active' AND clinic_id = ? AND kind = 'hospital' ORDER BY admitted_at LIMIT 1`, [await mainClinic()]))!.id)
-    const rad = await as('mcastellanos@demo.clinara')
+    const rad = await as('rzepeda@demo.clinara')
     const soap = { subjective: 'Paciente tolera el procedimiento', objective: 'Sin hematoma en el sitio de punción', assessment: 'Drenaje guiado por ultrasonido sin complicaciones', plan: 'Control de imagen en 48 horas' }
     const ok = await rad.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'soap', ...soap })
     assert.equal(ok.status, 201, JSON.stringify(ok.body))
@@ -154,7 +154,7 @@ describe('IM2 (ronda 12): el radiólogo', () => {
     assert.equal(meds.status, 403)
     const adm = await rad.post(`/api/inpatient/${stay}/notes`, { kind: 'admission', format: 'soap', ...soap })
     assert.equal(adm.status, 403)
-    const tech = await as('pandino@demo.clinara')
+    const tech = await as('echinchilla@demo.clinara')
     assert.equal((await tech.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'soap', ...soap })).status, 403)
   })
   test('en el expediente solo ve los avisos de sus estudios', () => {
@@ -176,14 +176,14 @@ describe('IM2 (ronda 12): el radiólogo', () => {
 
 describe('LB5–LB7 (ronda 12): Laboratorio e Imágenes', () => {
   test('el conteo del menú viene por área', async () => {
-    const tech = await as('krivera@demo.clinara')
+    const tech = await as('berazo@demo.clinara')
     const r = await tech.get('/api/dept/count')
     assert.equal(r.status, 200)
     assert.deepEqual(Object.keys(r.body.areas).sort(), ['hospital', 'observation', 'outpatient'])
     assert.equal(r.body.n, r.body.areas.outpatient.n + r.body.areas.observation.n + r.body.areas.hospital.n)
   })
   test('paciente ambulatorio con lo mínimo: nombre, edad, sexo, teléfono o correo e identidad', async () => {
-    const tech = await as('krivera@demo.clinara')
+    const tech = await as('berazo@demo.clinara')
     const none = await tech.post('/api/dept/quick-patient', { firstName: 'Ana', lastName: 'Ruiz', age: 30, sex: 'F' })
     assert.equal(none.status, 400, 'sin teléfono ni correo no se registra')
     const r = await tech.post('/api/dept/quick-patient', { firstName: 'Ana', lastName: 'Ruiz Flores', age: 30, sex: 'F', email: 'ana@correo.com', dni: '0801-1996-55555' })
@@ -195,7 +195,7 @@ describe('LB5–LB7 (ronda 12): Laboratorio e Imágenes', () => {
     assert.equal(again.body.id, r.body.id, 'la misma identidad usa el mismo expediente')
     const baby = await tech.post('/api/dept/quick-patient', { firstName: 'Luis', lastName: 'Mejía', age: 8, ageUnit: 'months', sex: 'M', phone: '3333-4444' })
     assert.equal(baby.status, 201)
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     assert.equal((await nurse.post('/api/dept/quick-patient', { firstName: 'X', lastName: 'Y', age: 1, sex: 'M', phone: '12345678' })).status, 403)
   })
 })

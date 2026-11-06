@@ -60,24 +60,24 @@ describe('horario de medicamentos', () => {
 
 describe('hospitalización', () => {
   test('la demo trae camas (sin especialidad fija desde la ronda 3 de Emil) y hospitalizados que ve el personal clínico', async () => {
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const boot = (await nurse.get('/api/bootstrap')).body
     assert.equal(boot.beds.length, 15)
     assert.ok(boot.beds.every((b: any) => b.specialty === undefined))
     // La especialidad es del ingreso
     assert.ok(boot.inpatients.filter((h: any) => h.kind === 'hospital').every((h: any) => h.specialty))
     assert.ok(boot.inpatients.length >= 4)
-    const rec = await as('smejia@demo.clinara')
+    const rec = await as('aquiroz@demo.clinara')
     assert.equal((await rec.get('/api/bootstrap')).body.inpatients.length, 0)
     assert.equal((await rec.get('/api/inpatient/hz1')).status, 403)
     // Otra clínica no ve los hospitalizados de ésta
-    const other = await as('erosales@demo.clinara')
+    const other = await as('slobo@demo.clinara')
     assert.equal((await other.get('/api/inpatient/hz1')).status, 404)
   })
 
   test('ingreso, nota con medicamentos, dosis de enfermería, laboratorio y egreso con receta', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
 
     const bad = await nurse.post('/api/inpatient', { patientId: 'p10', bedId: 'bed-205', reason: 'x', diagnoses: [{ code: 'R10.4', label: 'Dolor abdominal' }] })
     assert.equal(bad.status, 403)
@@ -161,7 +161,7 @@ describe('hospitalización', () => {
   })
 
   test('administración configura camas y no puede desactivar una ocupada', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     assert.equal((await admin.patch('/api/beds/bed-203', { active: false })).status, 409)
     const created = await admin.post('/api/beds', { room: '211', specialty: 'Cirugía' })
     assert.equal(created.status, 201)
@@ -172,17 +172,17 @@ describe('hospitalización', () => {
 
 describe('consulta externa y seguimientos', () => {
   test('enfermería registra a un paciente sin cita y queda en sala', async () => {
-    const nurse = await as('crios@demo.clinara')
-    const r = await nurse.post('/api/appointments/walk-in', { patientId: 'p7', doctorId: 's-herrera', reason: 'Fiebre' })
+    const nurse = await as('murbina@demo.clinara')
+    const r = await nurse.post('/api/appointments/walk-in', { patientId: 'p7', doctorId: 's-solorzano', reason: 'Fiebre' })
     assert.equal(r.status, 201)
     assert.equal(r.body.status, 'arrived')
     assert.equal(r.body.source, 'walkin')
   })
 
   test('la receta exige la identidad de un adulto; la consulta guarda observaciones y seguimientos', async () => {
-    const rec = await as('smejia@demo.clinara')
-    const doc = await as('lherrera@demo.clinara')
-    const appt = (await rec.post('/api/appointments/walk-in', { patientId: 'p7', doctorId: 's-herrera', reason: 'Cefalea' })).body
+    const rec = await as('aquiroz@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const appt = (await rec.post('/api/appointments/walk-in', { patientId: 'p7', doctorId: 's-solorzano', reason: 'Cefalea' })).body
     const body = {
       appointmentId: appt.id, reason: 'Cefalea', diagnoses: [{ code: 'R51', label: 'Cefalea' }], orders: ['Paracetamol.'], observations: 'Acude sola.',
       items: [{ drug: 'Paracetamol', presentation: 'Tableta 500 mg', dose: '1 tableta', frequency: 'Cada 8 horas', duration: '3 días' }],
@@ -201,8 +201,8 @@ describe('consulta externa y seguimientos', () => {
   })
 
   test('el médico programa un crónico; recepción simula el aviso y registra el control', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const rec = await as('smejia@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const rec = await as('aquiroz@demo.clinara')
     assert.equal((await rec.post('/api/followups', { patientId: 'p4', kind: 'chronic', title: 'Hipertensión arterial', dueDate: '2030-01-01', everyDays: 90 })).status, 403)
     assert.equal((await doc.post('/api/followups', { patientId: 'p4', kind: 'chronic', title: 'Hipertensión arterial', dueDate: '2030-01-01' })).status, 400)
     const f = await doc.post('/api/followups', { patientId: 'p4', kind: 'chronic', title: 'Hipertensión arterial', dueDate: '2030-01-01', everyDays: 90 })
@@ -213,7 +213,7 @@ describe('consulta externa y seguimientos', () => {
     assert.equal(done.body.active, true)
     assert.equal(done.body.notifiedAt, undefined)
     assert.notEqual(done.body.dueDate, '2030-01-01')
-    const audit = (await (await as('admin@demo.clinara')).get('/api/bootstrap')).body.audit
+    const audit = (await (await as('rmoncada@demo.clinara')).get('/api/bootstrap')).body.audit
     assert.ok(audit.some((e: any) => /Simuló el envío por WhatsApp/.test(e.action)))
   })
 })

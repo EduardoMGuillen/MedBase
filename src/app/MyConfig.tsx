@@ -100,7 +100,7 @@ function ProfessionalPanel() {
       <div className="panel__head"><div><h2>Datos profesionales</h2><p>Así apareces en tus recetas, constancias, autorizaciones y epicrisis.</p></div></div>
       <div className="panel__body" style={{ display: 'grid', gap: 14 }}>
         <div className="form-grid">
-          <label className="field span-2"><span>Nombre como aparece en documentos</span><input className="input" value={f.docName} onChange={(e) => setF({ ...f, docName: e.target.value })} placeholder="Ej. Dra. Lucía Herrera Mejía" /></label>
+          <label className="field span-2"><span>Nombre como aparece en documentos</span><input className="input" value={f.docName} onChange={(e) => setF({ ...f, docName: e.target.value })} placeholder="Ej. Dra. Valeria Solórzano Mejía" /></label>
           <label className="field"><span>Especialidad</span><input className="input" value={f.specialty} onChange={(e) => setF({ ...f, specialty: e.target.value })} /></label>
           <label className="field"><span>Número de colegiado (CMH)</span><input className="input" value={f.license} onChange={(e) => setF({ ...f, license: e.target.value })} placeholder="CMH-00000" /></label>
         </div>

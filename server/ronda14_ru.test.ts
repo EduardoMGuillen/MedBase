@@ -91,7 +91,7 @@ describe('RU1 (ronda 14): carga del catálogo desde el .md', () => {
   })
 
   test('correr la carga dos veces no cambia nada', async () => {
-    const cid = await clinicOf('admin@demo.clinara')
+    const cid = await clinicOf('rmoncada@demo.clinara')
     const before = JSON.stringify(await itemsOf(cid))
     const r1 = await loadSupplyCatalog(sql, cid)
     const r2 = await loadSupplyCatalog(sql, cid)
@@ -101,8 +101,8 @@ describe('RU1 (ronda 14): carga del catálogo desde el .md', () => {
   })
 
   test('lo editado, archivado, marcado o desmarcado por la clínica no se pisa; lo demás se pone al día con el .md', async () => {
-    const admin = await as('admin@demo.clinara')
-    const cid = await clinicOf('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
+    const cid = await clinicOf('rmoncada@demo.clinara')
     const algodon = await byLabel(cid, 'Algodón', 'Rollo')
     const n95 = await byLabel(cid, 'Mascarilla N95')
     const bata = await byLabel(cid, 'Bata descartable')
@@ -129,7 +129,7 @@ describe('RU1 (ronda 14): carga del catálogo desde el .md', () => {
   })
 
   test('una clínica y un consultorio nuevos nacen con el catálogo (v2: 208 líneas, 17 en su lista de turno)', async () => {
-    const sa = await as('superadmin@demo.clinara')
+    const sa = await as('dcerrato@demo.clinara')
     const c = await sa.post('/api/platform/clinics', { name: 'Clínica Material Nuevo', admin: { name: 'Admin Material', email: 'admin@material.test' } })
     assert.equal(c.status, 201)
     const o = await sa.post('/api/platform/clinics', { name: 'Consultorio Dr. Nuevo', kind: 'office', owner: { name: 'Dr. Nuevo Titular', email: 'titular@material.test', license: 'CMH-9' } })
@@ -155,7 +155,7 @@ describe('RU1 (ronda 14): carga del catálogo desde el .md', () => {
 
 describe('RU1 (ronda 14): permisos del catálogo (en el servidor)', () => {
   test('Administración agrega, edita y archiva; quita la longitud de una aguja', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const nylon = await admin.post('/api/supplies', { category: 'Suturas', material: 'Nylon', variant: '8/0, aguja cortante', unit: 'sobre', onShiftList: true })
     assert.equal(nylon.status, 201)
     assert.equal(nylon.body.onShiftList, true)
@@ -166,8 +166,8 @@ describe('RU1 (ronda 14): permisos del catálogo (en el servidor)', () => {
   })
 
   test('Enfermería marca la lista de turno y agrega (RU4, ronda 15), pero no edita, archiva ni cambia el periodo', async () => {
-    const nurse = await as('crios@demo.clinara')
-    const cid = await clinicOf('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
+    const cid = await clinicOf('murbina@demo.clinara')
     const n95 = await byLabel(cid, 'Mascarilla N95')
     assert.equal((await nurse.get('/api/supplies')).status, 200)
     const on = await nurse.post(`/api/supplies/${n95.id}/shift-list`, { on: true })
@@ -182,7 +182,7 @@ describe('RU1 (ronda 14): permisos del catálogo (en el servidor)', () => {
   })
 
   test('Recepción y el médico no ven el catálogo', async () => {
-    for (const email of ['smejia@demo.clinara', 'lherrera@demo.clinara']) {
+    for (const email of ['aquiroz@demo.clinara', 'vsolorzano@demo.clinara']) {
       const u = await as(email)
       assert.equal((await u.get('/api/supplies')).status, 403, email)
       const cid = await clinicOf(email)
@@ -192,7 +192,7 @@ describe('RU1 (ronda 14): permisos del catálogo (en el servidor)', () => {
   })
 
   test('el periodo: turnos válidos y sin cruzarse; queda en la bitácora', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const bad = await admin.put('/api/supplies/settings', { period: 'shift', shifts: [{ label: 'Mañana', from: '07:00', to: '15:00' }, { label: 'Tarde', from: '14:00', to: '23:00' }] })
     assert.equal(bad.status, 400)
     assert.match(bad.body.error ?? bad.body.message ?? JSON.stringify(bad.body), /se cruza/)
@@ -212,13 +212,13 @@ const win = () => `from=${encodeURIComponent(ago(360))}&to=${encodeURIComponent(
 async function insertMed(hospId: string, patientId: string, m: Record<string, unknown>) {
   const id = `ru-med-${Math.random().toString(36).slice(2, 8)}`
   await sql.run(`INSERT INTO hosp_meds (id, clinic_id, hospitalization_id, patient_id, drug, presentation, dose, route, every_hours, prn, first_at, ordered_by, ordered_at, infusion_rate, infusion_unit, nebulization)
-    VALUES (?,?,?,?,?,?,?,?,?,FALSE,?,?,?,?,?,?)`, [id, MAIN, hospId, patientId, m.drug, m.presentation ?? null, m.dose, m.route, m.every ?? null, ago(400), 's-herrera', ago(400),
+    VALUES (?,?,?,?,?,?,?,?,?,FALSE,?,?,?,?,?,?)`, [id, MAIN, hospId, patientId, m.drug, m.presentation ?? null, m.dose, m.route, m.every ?? null, ago(400), 's-solorzano', ago(400),
     m.rate ?? null, m.rate ? 'ml/h' : null, m.neb ? JSON.stringify(m.neb) : null])
   return id
 }
 async function insertDose(medId: string, minAgo: number, status = 'given', dose?: string) {
   await sql.run(`INSERT INTO hosp_doses (id, clinic_id, med_id, scheduled_at, given_at, given_by, status, note, dose, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [`ru-dose-${Math.random().toString(36).slice(2, 10)}`, MAIN, medId, ago(minAgo), ago(minAgo), 's-rios', status, status === 'given' ? null : 'Paciente en ayuno', dose ?? null, ago(minAgo)])
+    [`ru-dose-${Math.random().toString(36).slice(2, 10)}`, MAIN, medId, ago(minAgo), ago(minAgo), 's-urbina', status, status === 'given' ? null : 'Paciente en ayuno', dose ?? null, ago(minAgo)])
 }
 
 describe('RU2 (ronda 14): pestaña «Medicamentos»', () => {
@@ -238,23 +238,23 @@ describe('RU2 (ronda 14): pestaña «Medicamentos»', () => {
     await insertDose(inf, 50)
     outpatient = String((await sql.one(`SELECT id FROM patients WHERE clinic_id = ? AND id <> ? AND id NOT IN (SELECT patient_id FROM hospitalizations WHERE status = 'active') LIMIT 1`, [MAIN, hosp.patient_id]))!.id)
     const app = (i: number, status: string, at: string | null, drug: string) => sql.run(`INSERT INTO consult_applications (id, clinic_id, patient_id, consultation_id, item_index, drug, order_text, ordered_by, ordered_at, status, applied_at, reason, recorded_by, recorded_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [`ru-app-${i}`, MAIN, outpatient, 'ru-consulta', i, drug, `${drug} (ampolla 75 mg/3 mL): 1 ampolla vía intramuscular dosis única.`, 's-paz', ago(200), status, at,
-      status === 'not_applied' ? 'El paciente se retiró' : null, status === 'pending' ? null : 's-rios', at])
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [`ru-app-${i}`, MAIN, outpatient, 'ru-consulta', i, drug, `${drug} (ampolla 75 mg/3 mL): 1 ampolla vía intramuscular dosis única.`, 's-bogran', ago(200), status, at,
+      status === 'not_applied' ? 'El paciente se retiró' : null, status === 'pending' ? null : 's-urbina', at])
     await app(0, 'applied', ago(45), 'Diclofenaco RU')
     await app(1, 'not_applied', null, 'Ketorolaco RU')
     await app(2, 'pending', null, 'Dexametasona RU')
   })
 
   test('Enfermería ve cada aplicación por paciente con hora, quién la aplicó y el médico que la indicó', async () => {
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const r = await nurse.get(`/api/usage/meds?${win()}`)
     assert.equal(r.status, 200)
     const mine = (r.body.rows as any[]).filter((x) => / RU/.test(x.drug))
     const ceftri = mine.filter((x) => x.drug === 'Ceftriaxona RU')
     assert.equal(ceftri.length, 2, '«No aplicada» y «Omitida» no salen')
-    assert.equal(ceftri[0].appliedBy, 'Lic. Carmen Ríos')
+    assert.equal(ceftri[0].appliedBy, 'Lic. Marta Urbina')
     assert.equal(ceftri[0].appliedByTitle, 'Enfermería')
-    assert.equal(ceftri[0].orderedBy, 'Dra. Lucía Herrera')
+    assert.equal(ceftri[0].orderedBy, 'Dra. Valeria Solórzano')
     assert.match(ceftri[0].medication, /^Ceftriaxona RU \(vial 1 g\) 1 g vía intravenosa$/)
     assert.match(ceftri[0].location, /^Hospitalización · Cuarto /)
     // Nebulización: una línea por componente; infusión: una línea al iniciar
@@ -262,7 +262,7 @@ describe('RU2 (ronda 14): pestaña «Medicamentos»', () => {
     assert.equal(mine.filter((x) => x.drug === 'Oxitocina RU').length, 1)
     // Consulta externa (ME13): solo «Aplicado»
     const diclo = mine.filter((x) => x.source === 'consult')
-    assert.deepEqual(diclo.map((x) => [x.drug, x.location, x.appliedBy, x.orderedBy]), [['Diclofenaco RU', 'Consulta externa', 'Lic. Carmen Ríos', 'Dr. Andrés Paz']])
+    assert.deepEqual(diclo.map((x) => [x.drug, x.location, x.appliedBy, x.orderedBy]), [['Diclofenaco RU', 'Consulta externa', 'Lic. Marta Urbina', 'Dr. Tomás Bográn']])
     // Área y búsqueda
     const out = await nurse.get(`/api/usage/meds?${win()}&area=outpatient`)
     assert.ok((out.body.rows as any[]).every((x) => x.area === 'outpatient'))
@@ -271,7 +271,7 @@ describe('RU2 (ronda 14): pestaña «Medicamentos»', () => {
   })
 
   test('el resumen cuenta aplicaciones y suma solo con la misma unidad', async () => {
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const rows = ((await nurse.get(`/api/usage/meds?${win()}`)).body.rows as any[]).filter((x) => / RU/.test(x.drug))
     const s = medSummary(rows)
     assert.equal(summaryText(s.find((x) => x.drug === 'Ceftriaxona RU')!), 'Ceftriaxona RU vial 1 g · 2 aplicaciones · 2 g')
@@ -280,8 +280,8 @@ describe('RU2 (ronda 14): pestaña «Medicamentos»', () => {
   })
 
   test('Recepción y Administración ven; el médico no (también por URL directa)', async () => {
-    for (const email of ['smejia@demo.clinara', 'admin@demo.clinara']) assert.equal((await (await as(email)).get(`/api/usage/meds?${win()}`)).status, 200, email)
-    const doc = await as('lherrera@demo.clinara')
+    for (const email of ['aquiroz@demo.clinara', 'rmoncada@demo.clinara']) assert.equal((await (await as(email)).get(`/api/usage/meds?${win()}`)).status, 200, email)
+    const doc = await as('vsolorzano@demo.clinara')
     assert.equal((await doc.get(`/api/usage/meds?${win()}`)).status, 403)
     assert.equal((await doc.get(`/api/usage/material?${win()}`)).status, 403)
   })
@@ -307,7 +307,7 @@ describe('RU2 (ronda 14): pestaña «Material»', () => {
     (await u.get(`/api/usage/material?from=${encodeURIComponent(ago(60 * 30))}&to=${encodeURIComponent(new Date(Date.now() + 86_400_000).toISOString())}`)).body.records as MaterialRecord[]
 
   test('modo suma por paciente, uso general y total del periodo; sin paciente no se guarda', async () => {
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const r1 = await nurse.post('/api/usage/material', body(p1, [['gasa', 1], ['guante', 2], ['seda', 1], ['jeringa', 3]]))
     assert.equal(r1.status, 201)
     assert.equal(r1.body.periodKind, 'shift')
@@ -330,9 +330,9 @@ describe('RU2 (ronda 14): pestaña «Material»', () => {
   })
 
   test('anular con motivo: deja de sumar y queda tachado; Administración anula, Recepción y Administración no registran', async () => {
-    const nurse = await as('crios@demo.clinara')
-    const admin = await as('admin@demo.clinara')
-    const recep = await as('smejia@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
+    const recep = await as('aquiroz@demo.clinara')
     const r = await nurse.post('/api/usage/material', body(p2, [['jeringa', 10]]))
     assert.equal(r.status, 201)
     assert.equal((await admin.post(`/api/usage/material/${r.body.id}/void`, { reason: '' })).status, 400, 'el motivo es obligatorio')
@@ -349,8 +349,8 @@ describe('RU2 (ronda 14): pestaña «Material»', () => {
   })
 
   test('el autor corrige en el periodo de gracia; otro no; el archivado ya no se registra pero los registros viejos lo muestran', async () => {
-    const nurse = await as('crios@demo.clinara')
-    const admin = await as('admin@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const r = await nurse.post('/api/usage/material', body(p1, [['n95', 1]]))
     assert.equal(r.status, 201)
     const fix = await nurse.patch(`/api/usage/material/${r.body.id}`, body(p1, [['n95', 2]]))
@@ -370,8 +370,8 @@ describe('RU2 (ronda 14): pestaña «Material»', () => {
   })
 
   test('«Por día» deja de pedir turno; «Por semana» agrupa de lunes a domingo', async () => {
-    const admin = await as('admin@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const shifts = (await admin.get('/api/supplies/settings')).body.shifts
     await admin.put('/api/supplies/settings', { period: 'day', shifts })
     const d = await nurse.post('/api/usage/material', { patientId: p2, day: today, items: [{ itemId: ids.gasa, quantity: 1 }] })
@@ -388,7 +388,7 @@ describe('RU2 (ronda 14): pestaña «Material»', () => {
   })
 
   test('el material no aparece en el expediente ni en la estancia (hoja de medicamentos, notas, recetas)', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const chart = await doc.get(`/api/patients/${p1}/chart`)
     assert.equal(chart.status, 200)
     assert.ok(!/Guante estéril|Mascarilla N95|Uso general del servicio/.test(JSON.stringify(chart.body)))
@@ -399,25 +399,25 @@ describe('RU2 (ronda 14): pestaña «Material»', () => {
   })
 
   test('sugerencias de pacientes: solo quien registra', async () => {
-    const s = await (await as('crios@demo.clinara')).get(`/api/usage/suggest?${win()}`)
+    const s = await (await as('murbina@demo.clinara')).get(`/api/usage/suggest?${win()}`)
     assert.equal(s.status, 200)
     // RU7 (ronda 15): { patients, general }
     assert.ok(Array.isArray(s.body.patients))
-    assert.equal((await (await as('smejia@demo.clinara')).get(`/api/usage/suggest?${win()}`)).status, 403)
+    assert.equal((await (await as('aquiroz@demo.clinara')).get(`/api/usage/suggest?${win()}`)).status, 403)
   })
 })
 
 describe('RU2 (ronda 14): Consultorio', () => {
   test('la titular registra material, ve el registro y marca su lista de turno; la asistente registra', async () => {
-    const ana = await as('alopez@demo.clinara')
-    const cid = await clinicOf('alopez@demo.clinara')
+    const ana = await as('ipacheco@demo.clinara')
+    const cid = await clinicOf('ipacheco@demo.clinara')
     const pt = await sql.one('SELECT id FROM patients WHERE clinic_id = ? LIMIT 1', [cid])
     const gasa = await byLabel(cid, 'Gasa estéril', '10 × 10 cm')
     const p = currentPeriod({ period: 'shift', shifts: DEFAULT_SUPPLY_SETTINGS.shifts })
     assert.equal((await ana.post('/api/usage/material', { patientId: pt!.id, day: p.day, shiftKey: p.shiftKey, items: [{ itemId: gasa.id, quantity: 1 }] })).status, 201)
     assert.equal((await ana.get(`/api/usage/material?${win()}`)).status, 200)
     assert.equal((await ana.post(`/api/supplies/${gasa.id}/shift-list`, { on: false })).status, 200)
-    const asis = await as('asistente@demo.clinara')
+    const asis = await as('lcardona@demo.clinara')
     // RU5 (ronda 15): al uso general del servicio, lo de «Uso general» o «Ambos» (el alcohol)
     const alcohol = await byLabel(cid, 'Alcohol al 70 %', 'Frasco')
     assert.equal((await asis.post('/api/usage/material', { general: true, day: p.day, shiftKey: p.shiftKey, items: [{ itemId: alcohol.id, quantity: 1 }] })).status, 201)
@@ -426,7 +426,7 @@ describe('RU2 (ronda 14): Consultorio', () => {
 
 // ---------- RU3 ----------
 describe('RU3 (ronda 14): Excel e impresión del registro de uso', () => {
-  const info = { title: 'Registro de uso de material', periodLabel: 'Del 30/10/2026 al 05/11/2026', areaLabel: 'Todas', by: 'Lic. Carmen Ríos', at: new Date('2026-11-05T20:00:00Z'), clinic: 'Clínica Santa Brígida' }
+  const info = { title: 'Registro de uso de material', periodLabel: 'Del 30/10/2026 al 05/11/2026', areaLabel: 'Todas', by: 'Lic. Marta Urbina', at: new Date('2026-11-05T20:00:00Z'), clinic: 'Clínica Santa Brígida' }
   const reread = async (wb: { xlsx: { writeBuffer: () => Promise<unknown> } }) => {
     const back = new ExcelJS.Workbook()
     await back.xlsx.load((await wb.xlsx.writeBuffer()) as ArrayBuffer)
@@ -442,7 +442,7 @@ describe('RU3 (ronda 14): Excel e impresión del registro de uso', () => {
         const start = new Date(Date.UTC(2026, 9, 30 + d, 13)).toISOString()
         records.push({ id: `r${d}-${p}`, patientId: `p${p}`, general: false, patientName: `Paciente ${p}`, record: `EXP-0${p}`, location: 'Consulta externa', periodKind: 'shift', periodStart: start, periodEnd: start,
           periodLabel: `Mañana ${d}`, items: [{ itemId: 'g', category: 'Protección personal', material: 'Guante estéril', variant: 'No. 7.5', unit: 'par', quantity: 2 }, { itemId: 'j', category: 'Agujas y jeringas', material: 'Jeringa descartable', variant: '5 mL, aguja 21 G', unit: 'unidad', quantity: 1 }],
-          recordedBy: 's-rios', recordedByName: 'Lic. Carmen Ríos', recordedAt: start, version: 1 })
+          recordedBy: 's-urbina', recordedByName: 'Lic. Marta Urbina', recordedAt: start, version: 1 })
       }
     }
     records.push({ ...records[0], id: 'void', voidedAt: records[0].recordedAt, items: [{ ...records[0].items[0], quantity: 50 }] })
@@ -476,7 +476,7 @@ describe('RU3 (ronda 14): Excel e impresión del registro de uso', () => {
   test('Medicamentos: «Aplicaciones» y «Resumen», fecha y hora como valores de Excel', async () => {
     const at = '2026-11-05T14:30:00.000Z'
     const rows: MedUse[] = [1, 2, 3].map((n) => ({ id: `m${n}`, source: 'dose', patientId: 'p1', patientName: 'Paciente 1', record: 'EXP-1', area: 'hospital', location: 'Hospitalización · Cuarto 201', at,
-      medication: 'Ceftriaxona (vial 1 g) 1 g vía intravenosa', drug: 'Ceftriaxona', presentation: 'Vial 1 g', dose: '1 g', appliedBy: 'Lic. Carmen Ríos', appliedByTitle: 'Enfermería', orderedBy: 'Dra. Lucía Herrera' }))
+      medication: 'Ceftriaxona (vial 1 g) 1 g vía intravenosa', drug: 'Ceftriaxona', presentation: 'Vial 1 g', dose: '1 g', appliedBy: 'Lic. Marta Urbina', appliedByTitle: 'Enfermería', orderedBy: 'Dra. Valeria Solórzano' }))
     const wb = await reread(buildMedsWorkbook(ExcelJS, { ...info, title: 'Registro de uso de medicamentos' }, rows))
     assert.deepEqual(wb.worksheets.map((w) => w.name), ['Aplicaciones', 'Resumen'])
     const ws = wb.getWorksheet('Aplicaciones')!
@@ -498,11 +498,11 @@ describe('RU3 (ronda 14): Excel e impresión del registro de uso', () => {
 
   test('imprimir y exportar: Enfermería, Recepción y Administración (queda en la bitácora); el médico no', async () => {
     const body = { tab: 'material', how: 'excel', period: 'Mañana 05/11/2026 (07:00–15:00)', area: 'Todas', rows: 12, file: 'Uso_material_2026-11-05_Mañana.xlsx' }
-    for (const email of ['crios@demo.clinara', 'smejia@demo.clinara', 'admin@demo.clinara']) assert.equal((await (await as(email)).post('/api/usage/log', body)).status, 200, email)
-    assert.equal((await (await as('crios@demo.clinara')).post('/api/usage/log', { ...body, tab: 'meds', how: 'print' })).status, 200)
-    assert.equal((await (await as('lherrera@demo.clinara')).post('/api/usage/log', body)).status, 403)
+    for (const email of ['murbina@demo.clinara', 'aquiroz@demo.clinara', 'rmoncada@demo.clinara']) assert.equal((await (await as(email)).post('/api/usage/log', body)).status, 200, email)
+    assert.equal((await (await as('murbina@demo.clinara')).post('/api/usage/log', { ...body, tab: 'meds', how: 'print' })).status, 200)
+    assert.equal((await (await as('vsolorzano@demo.clinara')).post('/api/usage/log', body)).status, 403)
     const log = await sql.query(`SELECT a.action, s.email FROM audit a JOIN staff s ON s.id = a.user_id WHERE a.action LIKE 'Exportó a Excel el registro de uso de material%' OR a.action LIKE 'Imprimió el registro de uso de medicamentos%'`)
-    assert.ok(log.some((l) => l.email === 'smejia@demo.clinara' && /periodo Mañana 05\/11\/2026 \(07:00–15:00\); área Todas; 12 filas\): Uso_material_2026-11-05_Mañana\.xlsx/.test(String(l.action))))
+    assert.ok(log.some((l) => l.email === 'aquiroz@demo.clinara' && /periodo Mañana 05\/11\/2026 \(07:00–15:00\); área Todas; 12 filas\): Uso_material_2026-11-05_Mañana\.xlsx/.test(String(l.action))))
     assert.ok(log.some((l) => /^Imprimió el registro de uso de medicamentos/.test(String(l.action))))
   })
 })

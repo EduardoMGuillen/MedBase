@@ -5,7 +5,7 @@ import type { Server } from 'node:http'
 import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
-import { FUNEZ, seedDemo } from './demoData.js'
+import { MEMBRENO, seedDemo } from './demoData.js'
 import { fileAlerts } from '../src/lib/alerts.js'
 import { bandOf } from '../src/lib/vitalsSheet.js'
 import { slotsOn } from '../src/lib/schedule.js'
@@ -37,7 +37,7 @@ describe('DM1 datos demo', () => {
     assert.equal(await n(`SELECT COUNT(*)::int AS n FROM patients WHERE clinic_id = 'c-sl'`), other)
     assert.equal(await n(`SELECT COUNT(*)::int AS n FROM appointments WHERE clinic_id = 'c-sl'`), otherAppts)
     // Usuarios, camas, servicios y vademécum siguen
-    assert.ok(await n(`SELECT COUNT(*)::int AS n FROM staff WHERE email = 'lherrera@demo.clinara'`))
+    assert.ok(await n(`SELECT COUNT(*)::int AS n FROM staff WHERE email = 'vsolorzano@demo.clinara'`))
     assert.equal(await n(`SELECT COUNT(*)::int AS n FROM beds WHERE clinic_id = 'c-sb'`), 15)
     assert.ok(await n(`SELECT COUNT(*)::int AS n FROM demo_backups`) >= 1, 'respaldo antes de borrar')
   })
@@ -75,14 +75,14 @@ describe('DM1 datos demo', () => {
     assert.ok(await n(`SELECT COUNT(*)::int AS n FROM appointments WHERE clinic_id = 'c-sb' AND start LIKE ?`, [`${day(last)}%`]) > 0)
   })
 
-  test('el Dr. Daniel Fúnez entra con su correo y tiene agenda, pacientes y horario de fin de semana', async () => {
-    const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: FUNEZ.email, password: DEMO_PASSWORD }) })
+  test('el Dr. Joaquín Membreño entra con su correo y tiene agenda, pacientes y horario de fin de semana', async () => {
+    const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: MEMBRENO.email, password: DEMO_PASSWORD }) })
     assert.equal(res.status, 200)
     const login = await res.json() as any
-    assert.equal(login.user.name, FUNEZ.name)
-    assert.equal(login.user.license, 'CMH-10457')
+    assert.equal(login.user.name, MEMBRENO.name)
+    assert.equal(login.user.license, 'CMH-20679')
     assert.ok(login.user.schedule.week['0']?.length && login.user.schedule.week['6']?.length)
-    assert.ok(await n(`SELECT COUNT(*)::int AS n FROM appointments WHERE doctor_id = ? AND start LIKE ?`, [FUNEZ.id, `${day(SUNDAY)}%`]) > 0)
+    assert.ok(await n(`SELECT COUNT(*)::int AS n FROM appointments WHERE doctor_id = ? AND start LIKE ?`, [MEMBRENO.id, `${day(SUNDAY)}%`]) > 0)
   })
 
   test('correrlo dos veces no duplica nada', async () => {
@@ -90,7 +90,7 @@ describe('DM1 datos demo', () => {
     const first = await count()
     await seedDemo(sql, { now: SUNDAY })
     assert.deepEqual(await count(), first)
-    assert.equal(await n(`SELECT COUNT(*)::int AS n FROM staff WHERE email = ?`, [FUNEZ.email]), 1)
+    assert.equal(await n(`SELECT COUNT(*)::int AS n FROM staff WHERE email = ?`, [MEMBRENO.email]), 1)
   })
 
   test('la tarea diaria pide el secreto', async () => {
@@ -99,7 +99,7 @@ describe('DM1 datos demo', () => {
 })
 
 describe('DM1 ronda 5: los mínimos del pedido', () => {
-  test('conteos de la clínica y del consultorio, casos de OB1, OB2 y MC6, Dr. Fúnez, expedientes desde EXP-00001 y la bitácora', async () => {
+  test('conteos de la clínica y del consultorio, casos de OB1, OB2 y MC6, Dr. Membreño, expedientes desde EXP-00001 y la bitácora', async () => {
     const now = new Date()
     const sum = await seedDemo(sql, { now })
     const today = day(now)
@@ -131,7 +131,7 @@ describe('DM1 ronda 5: los mínimos del pedido', () => {
     assert.ok(await n(`SELECT COUNT(*)::int AS n FROM followups WHERE clinic_id = 'c-sb' AND kind = 'chronic'`) >= 12)
     assert.ok(await n(`SELECT COUNT(*)::int AS n FROM followups WHERE clinic_id = 'c-sb' AND notified_at IS NULL`) > 0, 'recordatorios pendientes sin enviar')
     // OB1: una observación con dosis atrasada de ayer y una no aplicada con aviso; otra con todo al día; las dos con tomas pendientes
-    const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'crios@demo.clinara', password: DEMO_PASSWORD }) })
+    const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'murbina@demo.clinara', password: DEMO_PASSWORD }) })
     const cookie = login.headers.get('set-cookie')!.split(';')[0]
     const file = async (id: string) => (await (await fetch(`${base}/api/inpatient/${id}`, { headers: { cookie } })).json()) as any
     const startToday = new Date(now); startToday.setHours(0, 0, 0, 0)
@@ -164,12 +164,12 @@ describe('DM1 ronda 5: los mínimos del pedido', () => {
     assert.ok(await auth(`a.file_id IS NOT NULL`) >= 1, 'con hoja de papel')
     // Camas: una por hospitalizado
     assert.equal(await n(`SELECT COUNT(DISTINCT bed_id)::int AS n FROM hospitalizations WHERE clinic_id = 'c-sb' AND kind = 'hospital' AND status = 'active'`), hosp.length)
-    // Dr. Fúnez: una vez, de lunes a domingo 08 a 12 y 13 a 17, con turno todos los días del mes
-    assert.equal(await n(`SELECT COUNT(*)::int AS n FROM staff WHERE email = ?`, [FUNEZ.email]), 1)
-    const sched = JSON.parse(String((await sql.one('SELECT schedule FROM staff WHERE id = ?', [FUNEZ.id]))!.schedule))
+    // Dr. Membreño: una vez, de lunes a domingo 08 a 12 y 13 a 17, con turno todos los días del mes
+    assert.equal(await n(`SELECT COUNT(*)::int AS n FROM staff WHERE email = ?`, [MEMBRENO.email]), 1)
+    const sched = JSON.parse(String((await sql.one('SELECT schedule FROM staff WHERE id = ?', [MEMBRENO.id]))!.schedule))
     for (const d of ['0', '1', '2', '3', '4', '5', '6']) assert.deepEqual(sched.week[d], [{ start: '08:00', end: '12:00' }, { start: '13:00', end: '17:00' }], `día ${d}`)
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-    assert.equal(await n(`SELECT COUNT(DISTINCT day)::int AS n FROM duty_roster WHERE staff_id = ? AND removed_at IS NULL AND day LIKE ?`, [FUNEZ.id, `${day(now).slice(0, 7)}%`]), daysInMonth)
+    assert.equal(await n(`SELECT COUNT(DISTINCT day)::int AS n FROM duty_roster WHERE staff_id = ? AND removed_at IS NULL AND day LIKE ?`, [MEMBRENO.id, `${day(now).slice(0, 7)}%`]), daysInMonth)
     // Expedientes desde EXP-00001, sin duplicados
     for (const c of ['c-sb', 'c-al']) {
       assert.equal(await n(`SELECT COUNT(*)::int AS n FROM patients WHERE clinic_id = ? AND record = 'EXP-00001'`, [c]), 1)

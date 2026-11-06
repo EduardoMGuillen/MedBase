@@ -30,20 +30,20 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
 
 | Rol | Correo | Qué ve |
 |---|---|---|
-| Médico (medicina interna) | lherrera@demo.clinara | Su agenda, consultas, recetas, constancias, expediente |
-| Médico (pediatría) | apaz@demo.clinara | Igual, con su propia agenda |
-| Médico (ginecología) | mzuniga@demo.clinara | Igual, con su propia agenda |
-| Enfermería | crios@demo.clinara | Consulta externa, perfil CE (triaje), hospitalizados: hoja de medicamentos y notas de enfermería |
-| Recepción | smejia@demo.clinara | Agenda, pacientes, recordatorios, caja |
-| Laboratorio (microbióloga) | gordonez@demo.clinara | Bandeja de laboratorio, configuración de laboratorio, rol de turnos |
-| Laboratorio (técnico) | krivera@demo.clinara | Bandeja de laboratorio, pacientes ambulatorios (configuración y turnos solo lectura) |
-| Imágenes (radiólogo) | mcastellanos@demo.clinara | Bandeja de imágenes, informes, expediente en solo lectura, configuración de imágenes |
-| Imágenes (técnica) | pandino@demo.clinara | Bandeja de imágenes: realizados e imágenes (sin informes) |
-| Administración | admin@demo.clinara | Reportes, personal, configuración, bitácora |
-| Administración de Clinara | superadmin@demo.clinara | Clínicas y sus usuarios (sin expedientes) |
-| Médico de otra clínica (San Lucas) | erosales@demo.clinara | Sólo los pacientes de su clínica |
-| Consultorio: médico titular | alopez@demo.clinara | La Dra. Ana López en su propio consultorio: atiende, cobra, configura y ve sus reportes |
-| Consultorio: asistente | asistente@demo.clinara | Agenda, llegadas, preclínica, caja y aplicar medicamentos en observación |
+| Médico (medicina interna) | vsolorzano@demo.clinara | Su agenda, consultas, recetas, constancias, expediente |
+| Médico (pediatría) | tbogran@demo.clinara | Igual, con su propia agenda |
+| Médico (ginecología) | nescoto@demo.clinara | Igual, con su propia agenda |
+| Enfermería | murbina@demo.clinara | Consulta externa, perfil CE (triaje), hospitalizados: hoja de medicamentos y notas de enfermería |
+| Recepción | aquiroz@demo.clinara | Agenda, pacientes, recordatorios, caja |
+| Laboratorio (microbióloga) | psuazo@demo.clinara | Bandeja de laboratorio, configuración de laboratorio, rol de turnos |
+| Laboratorio (técnico) | berazo@demo.clinara | Bandeja de laboratorio, pacientes ambulatorios (configuración y turnos solo lectura) |
+| Imágenes (radiólogo) | rzepeda@demo.clinara | Bandeja de imágenes, informes, expediente en solo lectura, configuración de imágenes |
+| Imágenes (técnica) | echinchilla@demo.clinara | Bandeja de imágenes: realizados e imágenes (sin informes) |
+| Administración | rmoncada@demo.clinara | Reportes, personal, configuración, bitácora |
+| Administración de Clinara | dcerrato@demo.clinara | Clínicas y sus usuarios (sin expedientes) |
+| Médico de otra clínica (San Lucas) | slobo@demo.clinara | Sólo los pacientes de su clínica |
+| Consultorio: médico titular | ipacheco@demo.clinara | La Dra. Isabel Pacheco en su propio consultorio: atiende, cobra, configura y ve sus reportes |
+| Consultorio: asistente | lcardona@demo.clinara | Agenda, llegadas, preclínica, caja y aplicar medicamentos en observación |
 
 ## Recorrido sugerido (15 minutos)
 
@@ -55,13 +55,13 @@ Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes 
 3. **Enfermería**:
    - Toma los signos de Fernando. Escribe una presión de 150/95 para ver la alerta.
    - En el expediente de María José Castillo, pestaña *Archivos*, arrastra un PDF o una imagen.
-4. **Dra. Herrera**:
+4. **Dra. Solórzano**:
    - Atiende a María José. Agrega *Amoxicilina* y verás la alerta por su alergia a la penicilina.
    - Recarga la página a mitad de la consulta: el borrador se recupera.
    - Firma la consulta y, en el expediente, emite una *Constancia médica* con días de reposo.
    - En *Mi cuenta* (clic en tu nombre), activa la verificación en dos pasos con Google o Microsoft Authenticator.
    - Prueba `Ctrl + K` para buscar pacientes desde cualquier pantalla.
-5. **Hospitalización** (Dra. Herrera y Lic. Ríos):
+5. **Hospitalización** (Dra. Solórzano y Lic. Urbina):
    - En *Hospitalizados* abre a Marcos Antonio Velásquez, cuarto 203. En *Medicamentos* verás el ondansetrón cada 8 horas, el acetaminofén PRN y el tramadol omitido.
    - Como enfermería, toca una hora pendiente para registrar la dosis.
    - Como médico, escribe una nota de evolución: agrega un medicamento y marca *OMITIR* en otro; la hoja se actualiza sola.
@@ -81,7 +81,7 @@ Además de clínicas, Clinara tiene cuentas de **consultorio** para un médico q
 - Recetas y constancias salen con el médico como encabezado.
 - Si contrata a otro médico, *Configuración, Convertir en clínica* lo vuelve clínica sin mover datos.
 
-Recorrido: entra como `alopez@demo.clinara`, atiende a Daniela Ordóñez (ya tiene preclínica), emite la receta y revisa a Gabriela Matamoros en Observación. Como `asistente@demo.clinara`, marca la llegada de Héctor Zelaya, toma su preclínica y cobra.
+Recorrido: entra como `ipacheco@demo.clinara`, atiende a Daniela Ordóñez (ya tiene preclínica), emite la receta y revisa a Gabriela Matamoros en Observación. Como `lcardona@demo.clinara`, marca la llegada de Héctor Zelaya, toma su preclínica y cobra.
 
 ## Diagnósticos CIE-11
 
@@ -130,7 +130,7 @@ Clinara funciona como plataforma: una sola instalación atiende a varias clínic
 
 ### Cuenta de Administración de Clinara
 
-- En la demo: `superadmin@demo.clinara` / `demo1234`.
+- En la demo: `dcerrato@demo.clinara` / `demo1234`.
 - Para uso real, crea tu propia cuenta (genera una contraseña temporal):
   ```bash
   npm run superadmin -- tu-correo@dominio.com "Tu Nombre"

@@ -1463,7 +1463,7 @@ export async function seed(q: Sql) {
     const a = today.find((x) => x.id === apptId)!
     const sv = SERVICES.find((x) => x.id === svc)!
     payments.push({ id: `tp-${apptId}`, receiptNo: `R-${String(++n).padStart(6, '0')}`, appointmentId: apptId, patientId: a.patientId,
-      items: [{ serviceId: sv.id, name: sv.name, price: sv.price, qty: 1 }], discount: 0, total: sv.price, method: 'card', reference: 'DEMO', receivedBy: 's-mejia',
+      items: [{ serviceId: sv.id, name: sv.name, price: sv.price, qty: 1 }], discount: 0, total: sv.price, method: 'card', reference: 'DEMO', receivedBy: 's-quiroz',
       paidAt: new Date(new Date(a.start).getTime() + 40 * 60000).toISOString() })
   }
   await insertMany(q, 'payments', ['id', 'receipt_no', 'appointment_id', 'patient_id', 'items', 'discount', 'total', 'method', 'reference', 'received_by', 'paid_at', 'clinic_id'],
@@ -1507,7 +1507,7 @@ async function insertInpatients(q: Sql) {
   for (const l of d.labs) {
     const pdf = textPdf(`${l.title} - Laboratorio de demostracion`, [`Fecha de toma: ${dmyTime(l.takenAt)}`, '', ...l.lines])
     await q.run('INSERT INTO attachments (id, patient_id, name, mime, size, category, data, uploaded_by, uploaded_at, clinic_id, title, taken_at, hospitalization_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-      [l.id, l.patientId, `${l.title}.pdf`, 'application/pdf', pdf.length, 'lab', new Uint8Array(pdf), 's-rios', l.takenAt, A, l.title, l.takenAt, l.hospitalizationId])
+      [l.id, l.patientId, `${l.title}.pdf`, 'application/pdf', pdf.length, 'lab', new Uint8Array(pdf), 's-urbina', l.takenAt, A, l.title, l.takenAt, l.hospitalizationId])
   }
   await insertMany(q, 'followups', ['id', 'clinic_id', 'patient_id', 'kind', 'title', 'due_date', 'every_days', 'notes', 'created_by', 'created_at', 'notified_at', 'active'],
     d.followups.map((f) => [f.id, A, f.patientId, f.kind, f.title, f.dueDate, f.everyDays ?? null, f.notes ?? null, f.createdBy, f.createdAt, f.notifiedAt ?? null, f.active]))
@@ -1519,7 +1519,7 @@ async function insertInpatients(q: Sql) {
  */
 async function addDemoInpatients(q: Sql) {
   if (!(await q.one(`SELECT 1 FROM clinics WHERE id = ?`, [MAIN_CLINIC]))) return
-  if (!(await q.one(`SELECT 1 FROM staff WHERE id = 's-herrera' AND email LIKE '%@demo.clinara'`))) return
+  if (!(await q.one(`SELECT 1 FROM staff WHERE id = 's-solorzano' AND email LIKE '%@demo.clinara'`))) return
   if (await q.one('SELECT 1 FROM beds LIMIT 1')) return
   if (await q.one(`SELECT 1 FROM patients WHERE id IN (${INPATIENT_PATIENTS.map(() => '?').join(',')}) LIMIT 1`, INPATIENT_PATIENTS.map((p) => p.id))) return
   await insertInpatients(q)
@@ -1572,7 +1572,7 @@ async function insertCases(q: Sql) {
   for (const l of d.labs) {
     const pdf = textPdf(`${l.title} - Estudio de demostracion`, [`Fecha de toma: ${dmyTime(l.takenAt)}`, '', ...l.lines])
     await q.run('INSERT INTO attachments (id, patient_id, name, mime, size, category, data, uploaded_by, uploaded_at, clinic_id, title, taken_at, hospitalization_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-      [l.id, l.patientId, `${l.title}.pdf`, 'application/pdf', pdf.length, l.category, new Uint8Array(pdf), 's-rios', l.takenAt, A, l.title, l.takenAt, l.hospitalizationId ?? null])
+      [l.id, l.patientId, `${l.title}.pdf`, 'application/pdf', pdf.length, l.category, new Uint8Array(pdf), 's-urbina', l.takenAt, A, l.title, l.takenAt, l.hospitalizationId ?? null])
   }
   await insertMany(q, 'followups', ['id', 'clinic_id', 'patient_id', 'kind', 'title', 'due_date', 'every_days', 'notes', 'created_by', 'created_at', 'notified_at', 'active'],
     d.followups.map((f) => [f.id, A, f.patientId, f.kind, f.title, f.dueDate, f.everyDays ?? null, f.notes ?? null, f.createdBy, f.createdAt, f.notifiedAt ?? null, f.active]))
@@ -1592,7 +1592,7 @@ async function addDemoCases(q: Sql) {
   await insertCases(q)
 }
 
-/** Consultorio de demostración: la Dra. Ana López con su asistente, agenda de hoy, recetas y una paciente en observación. */
+/** Consultorio de demostración: la Dra. Isabel Pacheco con su asistente, agenda de hoy, recetas y una paciente en observación. */
 async function insertOffice(q: Sql) {
   const d = seedOffice()
   const c = d.clinic
@@ -1613,7 +1613,7 @@ async function insertOffice(q: Sql) {
   // Signos de la paciente que ya pasó por preclínica
   const triaged = d.appointments.find((a) => a.status === 'triaged')!
   await q.run(`INSERT INTO vitals (id, patient_id, appointment_id, taken_by, taken_at, systolic, diastolic, heart_rate, temperature, spo2, weight_kg, height_cm, resp_rate, chief_complaint, clinic_id)
-    VALUES ('v-al-1', ?, ?, 's3-asistente', ?, 112, 72, 96, 38.4, 98, 61, 160, 18, 'Dolor de garganta y fiebre desde ayer', ?)`, [triaged.patientId, triaged.id, new Date(Date.now() - 5 * 60_000).toISOString(), c.id])
+    VALUES ('v-al-1', ?, ?, 's3-cardona', ?, 112, 72, 96, 38.4, 98, 61, 160, 18, 'Dolor de garganta y fiebre desde ayer', ?)`, [triaged.patientId, triaged.id, new Date(Date.now() - 5 * 60_000).toISOString(), c.id])
   for (const k of d.consultations) {
     const date = new Date(k.appt.start).toISOString()
     const rx = d.prescriptions.find((r) => r.consultationId === k.id)
@@ -1680,9 +1680,9 @@ async function backfillOrders(q: Sql) {
 /** Una base de demostración que ya existía recibe el consultorio de demostración sin reiniciar sus datos. */
 async function addDemoOffice(q: Sql) {
   if (!(await q.one(`SELECT 1 FROM clinics WHERE id = ?`, [MAIN_CLINIC]))) return
-  if (!(await q.one(`SELECT 1 FROM staff WHERE id = 's-herrera' AND email LIKE '%@demo.clinara'`))) return
+  if (!(await q.one(`SELECT 1 FROM staff WHERE id = 's-solorzano' AND email LIKE '%@demo.clinara'`))) return
   if (await q.one(`SELECT 1 FROM clinics WHERE id = ?`, [OFFICE_CLINIC])) return
-  if (await q.one(`SELECT 1 FROM staff WHERE lower(email) IN ('alopez@demo.clinara', 'asistente@demo.clinara')`)) return
+  if (await q.one(`SELECT 1 FROM staff WHERE lower(email) IN ('ipacheco@demo.clinara', 'lcardona@demo.clinara')`)) return
   await insertOffice(q)
 }
 
@@ -1855,7 +1855,7 @@ export async function migrateMarks(q: Sql) {
  * médico incluía lo administrativo). Una sola vez: si después se le quita, no se vuelve a poner.
  */
 /**
- * v43 (DM1): marca como demo la Clínica Santa Brígida y el Consultorio Dra. Ana López, sólo si su personal es el de
+ * v43 (DM1): marca como demo la Clínica Santa Brígida y el Consultorio Dra. Isabel Pacheco, sólo si su personal es el de
  * demostración (@demo.clinara). Una clínica real nunca queda marcada.
  */
 export async function markDemoClinics(q: Sql) {
@@ -1893,8 +1893,8 @@ async function addDemoScenarios(q: Sql) {
   if (await q.one(`SELECT 1 FROM patients WHERE id IN (${SCENARIO_PATIENT_IDS.map(() => '?').join(',')}) LIMIT 1`, SCENARIO_PATIENT_IDS)) return
   const demo = async (clinicId: string, ids: string[]) =>
     (await q.query(`SELECT id FROM staff WHERE clinic_id = ? AND id IN (${ids.map(() => '?').join(',')}) AND email LIKE '%@demo.clinara'`, [clinicId, ...ids])).length === ids.length
-  if (await demo(MAIN_CLINIC, ['s-herrera', 's-rios'])) await insertClinicScenarios(q, MAIN_CLINIC, textPdf)
-  if (await demo(OFFICE_CLINIC, ['s3-lopez', 's3-asistente'])) await insertOfficeScenarios(q, OFFICE_CLINIC)
+  if (await demo(MAIN_CLINIC, ['s-solorzano', 's-urbina'])) await insertClinicScenarios(q, MAIN_CLINIC, textPdf)
+  if (await demo(OFFICE_CLINIC, ['s3-pacheco', 's3-cardona'])) await insertOfficeScenarios(q, OFFICE_CLINIC)
 }
 
 /**

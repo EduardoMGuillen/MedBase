@@ -176,7 +176,7 @@ function NewStaff({ roles, onClose, onCreated }: { roles: Role[]; onClose: () =>
         if (r) onCreated(r.user, r.password)
       }}>Crear usuario</button>
     </>}>
-      <label className="field"><span>Nombre completo, con título si aplica</span><input className="input" value={f.name} onChange={set('name')} placeholder="Ej. Dra. Ana López" /></label>
+      <label className="field"><span>Nombre completo, con título si aplica</span><input className="input" value={f.name} onChange={set('name')} placeholder="Ej. Dra. Isabel Pacheco" /></label>
       {roles.length > 1 && <label className="field"><span>Rol</span>
         <select className="select" value={f.role} onChange={set('role')}>{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
       </label>}

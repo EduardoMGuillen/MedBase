@@ -18,13 +18,13 @@ import type { Diagnosis, PrescriptionItem, Schedule } from '../src/lib/types.js'
  * DM1: datos de demostración relativos a hoy (30 días atrás y 60 adelante), para que cualquier día de la semana,
  * incluido el domingo, haya citas, sala de espera, preclínicas, consultas, observados y hospitalizados.
  *
- * Sólo trabaja sobre las clínicas marcadas con `clinics.is_demo` (Clínica Santa Brígida y Consultorio Dra. Ana López).
+ * Sólo trabaja sobre las clínicas marcadas con `clinics.is_demo` (Clínica Santa Brígida y Consultorio Dra. Isabel Pacheco).
  * Antes de borrar guarda un respaldo de todo lo que va a quitar (tabla `demo_backups`). Borra únicamente los pacientes
  * de esas clínicas y lo que cuelga de ellos; no toca usuarios, configuración, camas, servicios, horarios ni catálogos.
  * Es idempotente: correrlo dos veces deja lo mismo (borra lo anterior y vuelve a generar con la misma semilla).
  *
  * Ronda 5: cada médico con al menos 8 citas hoy (en todos los estados) y 3 diarias en los próximos 14 días; el
- * Dr. Daniel Fúnez trabaja de lunes a domingo y tiene turno todos los días del mes; los casos para probar OB1
+ * Dr. Joaquín Membreño trabaja de lunes a domingo y tiene turno todos los días del mes; los casos para probar OB1
  * (dosis atrasada de ayer y no aplicada con aviso), OB2 (signos de varios días) y MC6 (autorizaciones en todos los
  * estados), y un resultado crítico. La bitácora de los pacientes borrados se descarta y queda un solo evento
  * «Reinicio de datos demo» con los conteos de antes y después.
@@ -34,7 +34,7 @@ import type { Diagnosis, PrescriptionItem, Schedule } from '../src/lib/types.js'
 
 const HOUR = 3_600_000
 const MAIN = 'c-sb'
-export const FUNEZ = { id: 's-funez', name: 'Dr. Daniel Fúnez Castillo', email: 'dfunez@demo.clinara', license: 'CMH-10457', specialty: 'Medicina general' }
+export const MEMBRENO = { id: 's-membreno', name: 'Dr. Joaquín Membreño Sierra', email: 'jmembreno@demo.clinara', license: 'CMH-20679', specialty: 'Medicina general' }
 
 /** Generador pseudoaleatorio con semilla: el mismo día da los mismos datos. */
 function rng(seed: number) {
@@ -273,28 +273,28 @@ async function wipeDemoPatients(q: Sql, clinicIds: string[]) {
 
 // ---------- Personal y horarios ----------
 
-/** Dr. Daniel Fúnez (Medicina general) y horario de fin de semana para los médicos demo que no lo tienen. */
+/** Dr. Joaquín Membreño (Medicina general) y horario de fin de semana para los médicos demo que no lo tienen. */
 async function ensureDemoStaff(q: Sql, clinicIds: string[]) {
   // Ronda 5: todos los días, de 08:00 a 12:00 y de 13:00 a 17:00 (si ya existía con otro horario, se le pone éste)
   const funezWeek: Week = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [d, [{ start: '08:00', end: '12:00' }, { start: '13:00', end: '17:00' }]]))
-  const funez = clinicIds.includes(MAIN) ? await q.one('SELECT id FROM staff WHERE lower(email) = ?', [FUNEZ.email]) : undefined
+  const funez = clinicIds.includes(MAIN) ? await q.one('SELECT id FROM staff WHERE lower(email) = ?', [MEMBRENO.email]) : undefined
   if (funez) await q.run('UPDATE staff SET schedule = ? WHERE id = ?', [JSON.stringify(scheduleFromWeek(funezWeek, 30)), String(funez.id)])
   if (clinicIds.includes(MAIN) && !funez) {
     const week = funezWeek
     const svc = await q.one(`SELECT id FROM services WHERE clinic_id = ? AND id = 'svc-gen'`, [MAIN]) ?? await q.one(`SELECT id FROM services WHERE clinic_id = ? AND active ORDER BY name LIMIT 1`, [MAIN])
     await q.run(`INSERT INTO staff (id, name, role, roles, specialty, email, license, color, active, password_hash, schedule, service_id, clinic_id, prefs) VALUES (?,?,'doctor',?,?,?,?,?,TRUE,?,?,?,?,?)`,
-      [FUNEZ.id, FUNEZ.name, JSON.stringify(['doctor']), FUNEZ.specialty, FUNEZ.email, FUNEZ.license, '#9A5B13', bcrypt.hashSync(DEMO_PASSWORD, 10),
+      [MEMBRENO.id, MEMBRENO.name, JSON.stringify(['doctor']), MEMBRENO.specialty, MEMBRENO.email, MEMBRENO.license, '#9A5B13', bcrypt.hashSync(DEMO_PASSWORD, 10),
         JSON.stringify(scheduleFromWeek(week, 30)), svc ? String(svc.id) : null, MAIN, JSON.stringify({ rxValidityDays: 30, noteFormat: 'dx' })])
   }
-  // AD3: el Dr. Fúnez tiene turno todos los días del mes en curso (lo que ya estaba asignado no se toca)
+  // AD3: el Dr. Membreño tiene turno todos los días del mes en curso (lo que ya estaba asignado no se toca)
   if (clinicIds.includes(MAIN)) {
-    const by = String((await q.one(`SELECT id FROM staff WHERE clinic_id = ? AND roles LIKE '%admin%' AND email LIKE '%@demo.clinara' ORDER BY id LIMIT 1`, [MAIN]))?.id ?? FUNEZ.id)
+    const by = String((await q.one(`SELECT id FROM staff WHERE clinic_id = ? AND roles LIKE '%admin%' AND email LIKE '%@demo.clinara' ORDER BY id LIMIT 1`, [MAIN]))?.id ?? MEMBRENO.id)
     const now = new Date()
     const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
     for (let n = 1; n <= days; n++) {
       const day = isoDate(new Date(now.getFullYear(), now.getMonth(), n))
-      if (await q.one('SELECT 1 FROM duty_roster WHERE clinic_id = ? AND day = ? AND staff_id = ? AND removed_at IS NULL', [MAIN, day, FUNEZ.id])) continue
-      await q.run('INSERT INTO duty_roster (id, clinic_id, day, staff_id, assigned_by, assigned_at) VALUES (?,?,?,?,?,?)', [randomUUID(), MAIN, day, FUNEZ.id, by, now.toISOString()])
+      if (await q.one('SELECT 1 FROM duty_roster WHERE clinic_id = ? AND day = ? AND staff_id = ? AND removed_at IS NULL', [MAIN, day, MEMBRENO.id])) continue
+      await q.run('INSERT INTO duty_roster (id, clinic_id, day, staff_id, assigned_by, assigned_at) VALUES (?,?,?,?,?,?)', [randomUUID(), MAIN, day, MEMBRENO.id, by, now.toISOString()])
     }
   }
   // Fines de semana con citas: a quien no tiene sábado o domingo se le agrega una mañana (lo demás de su horario no cambia)

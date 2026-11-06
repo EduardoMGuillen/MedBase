@@ -267,7 +267,7 @@ function ClinicForm() {
   const office = features(settings).office
   const set = <K extends keyof ClinicSettings>(k: K, v: ClinicSettings[K]) => setF({ ...f, [k]: v })
   const preview = fillTemplate(f.reminderTemplate, {
-    paciente: 'María José', clinica: f.name, medico: 'Dra. Lucía Herrera', fecha: 'martes 20 de octubre', hora: '09:30', telefono: clinicWhatsapp(f),
+    paciente: 'María José', clinica: f.name, medico: 'Dra. Valeria Solórzano', fecha: 'martes 20 de octubre', hora: '09:30', telefono: clinicWhatsapp(f),
   })
   const dirty = JSON.stringify(f) !== JSON.stringify(settings)
   return (

@@ -173,7 +173,7 @@ export default function Landing() {
                 <div className="mod__demo rx-mini">
                   <b>Receta RX-2026-1101</b>
                   <span>Paracetamol 500 mg — 1 tableta cada 8 horas por 5 días</span>
-                  <span className="rx-mini__sig">L. Herrera</span>
+                  <span className="rx-mini__sig">V. Solórzano</span>
                 </div>
               </article>
               <article className="mod mod--half">

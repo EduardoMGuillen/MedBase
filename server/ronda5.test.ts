@@ -44,9 +44,9 @@ async function as(email: string, password = DEMO_PASSWORD) {
 }
 
 describe('AD5 crónicos y seguimientos para administración', () => {
-  test('Roberto Aguilar ve los mismos seguimientos que el médico, los opera y queda en la bitácora con su nombre', async () => {
-    const admin = await as('admin@demo.clinara')
-    const doc = await as('lherrera@demo.clinara')
+  test('Ricardo Moncada ve los mismos seguimientos que el médico, los opera y queda en la bitácora con su nombre', async () => {
+    const admin = await as('rmoncada@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const mine = (await admin.get('/api/bootstrap')).body.followups
     const theirs = (await doc.get('/api/bootstrap')).body.followups
     assert.ok(mine.length > 0, 'la demo trae seguimientos')
@@ -54,7 +54,7 @@ describe('AD5 crónicos y seguimientos para administración', () => {
     const r = await admin.post(`/api/followups/${mine[0].id}/notify`)
     assert.equal(r.status, 200, JSON.stringify(r.body))
     const log = (await admin.get('/api/audit/mine')).body
-    assert.ok((log.rows ?? log).some((e: any) => e.userId === 's-admin' && /WhatsApp del seguimiento/.test(e.action)), JSON.stringify((log.rows ?? log).slice(0, 3)))
+    assert.ok((log.rows ?? log).some((e: any) => e.userId === 's-moncada' && /WhatsApp del seguimiento/.test(e.action)), JSON.stringify((log.rows ?? log).slice(0, 3)))
     // Programar uno nuevo sigue siendo del médico
     assert.equal((await admin.post('/api/followups', { patientId: mine[0].patientId, kind: 'control', title: 'Control', dueDate: '2030-01-01' })).status, 403)
   })
@@ -62,9 +62,9 @@ describe('AD5 crónicos y seguimientos para administración', () => {
 
 describe('MC6 eliminar una autorización sin firmar', () => {
   test('el médico elimina la pendiente (queda en la bitácora); la firmada, la de «No autoriza» y la que tiene hoja en papel no se eliminan', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
-    const reception = await as('smejia@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
+    const reception = await as('aquiroz@demo.clinara')
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     const make = async (procedure: string) => {
       const r = await doc.post(`/api/inpatient/${stay.id}/authorizations`, { template: 'surgical', procedure })
@@ -80,7 +80,7 @@ describe('MC6 eliminar una autorización sin firmar', () => {
     assert.ok(!(await listed()).includes(wrong), 'sale de la lista')
     const row = await sql.one('SELECT archived_at, archived_by, archived_reason FROM authorizations WHERE id = ?', [wrong])
     assert.ok(row?.archived_at, 'no se borra: queda archivada')
-    assert.equal(row?.archived_by, 's-herrera')
+    assert.equal(row?.archived_by, 's-solorzano')
     const log = (await doc.get('/api/audit/mine')).body
     assert.ok((log.rows ?? log).some((e: any) => /Eliminó la autorización quirúrgica "Colecistectomía laparoscópica"/.test(e.action)))
     // «No autoriza» y la hospitalaria no se eliminan
@@ -97,12 +97,12 @@ describe('MC6 eliminar una autorización sin firmar', () => {
 })
 
 describe('RE1 Mi configuración de recepción', () => {
-  test('Sofía Mejía guarda su nombre en documentos y su preferencia de agenda (queda en la bitácora); lo clínico y la configuración de la clínica le siguen cerrados', async () => {
-    const rec = await as('smejia@demo.clinara')
-    assert.equal((await rec.patch('/api/me', { agendaView: 'week', docName: 'Sofía Mejía Ruiz' })).status, 200)
+  test('Andrea Quiroz guarda su nombre en documentos y su preferencia de agenda (queda en la bitácora); lo clínico y la configuración de la clínica le siguen cerrados', async () => {
+    const rec = await as('aquiroz@demo.clinara')
+    assert.equal((await rec.patch('/api/me', { agendaView: 'week', docName: 'Andrea Quiroz Ruiz' })).status, 200)
     const me = (await rec.get('/api/auth/me')).body.user
     assert.equal(me.prefs.agendaView, 'week')
-    assert.equal(me.docName, 'Sofía Mejía Ruiz')
+    assert.equal(me.docName, 'Andrea Quiroz Ruiz')
     const log = (await rec.get('/api/audit/mine')).body
     assert.ok((log.rows ?? log).some((e: any) => /vista de la agenda/.test(e.action)))
     assert.equal((await rec.patch('/api/me', { license: 'CMH-1' })).status, 403)
@@ -114,8 +114,8 @@ describe('RE1 Mi configuración de recepción', () => {
 
 describe('OB1 pendientes que se resuelven al registrar la dosis', () => {
   test('la dosis de ayer se registra tarde (administrada con retraso u omitida con motivo) y queda en la hoja; sólo la última atrasada está en el aviso (EN3, ronda 6)', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     // Solución c/8h que empezó hace 30 h: dosis de hace 30, 22, 14 y 6 h. EN3 (ronda 6): las tres primeras ya se cerraron solas
     // (llegó la siguiente); sólo la de hace 6 h sigue atrasada. Las cerradas solas todavía se pueden registrar
@@ -147,7 +147,7 @@ describe('OB1 pendientes que se resuelven al registrar la dosis', () => {
     // Nada se borra: queda en la hoja con autor y hora
     const recorded = f.doses.filter((d: any) => d.medId === med.id)
     assert.deepEqual(recorded.map((d: any) => d.status).sort(), ['given', 'omitted'])
-    assert.ok(recorded.every((d: any) => d.givenBy === 's-rios' && d.givenAt))
+    assert.ok(recorded.every((d: any) => d.givenBy === 's-urbina' && d.givenAt))
     const log = (await nurse.get('/api/audit/mine')).body
     assert.ok((log.rows ?? log).some((e: any) => /Administró Solución Hartmann.*con retraso/.test(e.action)))
     assert.ok((log.rows ?? log).some((e: any) => /Marcó como omitida Solución Hartmann/.test(e.action)))
@@ -160,18 +160,18 @@ describe('OB1 pendientes que se resuelven al registrar la dosis', () => {
 
 describe('AD3 rol de turnos', () => {
   test('administración asigna un médico por día (o dos), quita uno, cambia de mes sin perder nada y todo queda en la bitácora; los demás no entran', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const y = new Date().getFullYear() + 1
     const d = (n: number) => `${y}-11-${String(n).padStart(2, '0')}`
-    for (const [day, id] of [[3, 's-herrera'], [4, 's-paz'], [5, 's-zuniga'], [5, 's-herrera']] as const) {
+    for (const [day, id] of [[3, 's-solorzano'], [4, 's-bogran'], [5, 's-escoto'], [5, 's-solorzano']] as const) {
       const r = await admin.post('/api/roster', { day: d(day), staffId: id })
       assert.equal(r.status, 201, JSON.stringify(r.body))
     }
-    assert.equal((await admin.post('/api/roster', { day: d(3), staffId: 's-herrera' })).status, 409, 'no se repite')
-    assert.equal((await admin.post('/api/roster', { day: d(6), staffId: 's-rios' })).status, 400, 'sólo médicos')
+    assert.equal((await admin.post('/api/roster', { day: d(3), staffId: 's-solorzano' })).status, 409, 'no se repite')
+    assert.equal((await admin.post('/api/roster', { day: d(6), staffId: 's-urbina' })).status, 400, 'sólo médicos')
     let month = (await admin.get(`/api/roster?from=${d(1)}&to=${d(30)}`)).body
-    assert.deepEqual(month.map((s: any) => `${s.day.slice(8)}:${s.staffId}`), ['03:s-herrera', '04:s-paz', '05:s-zuniga', '05:s-herrera'])
-    const del = await admin.del(`/api/roster/${month.find((s: any) => s.day === d(5) && s.staffId === 's-herrera').id}`)
+    assert.deepEqual(month.map((s: any) => `${s.day.slice(8)}:${s.staffId}`), ['03:s-solorzano', '04:s-bogran', '05:s-escoto', '05:s-solorzano'])
+    const del = await admin.del(`/api/roster/${month.find((s: any) => s.day === d(5) && s.staffId === 's-solorzano').id}`)
     assert.equal(del.status, 200)
     // Otro mes y de vuelta: lo guardado sigue ahí
     assert.equal((await admin.get(`/api/roster?from=${y}-12-01&to=${y}-12-31`)).body.length, 0)
@@ -179,15 +179,15 @@ describe('AD3 rol de turnos', () => {
     assert.equal(month.length, 3)
     assert.equal((await sql.one(`SELECT COUNT(*)::int AS n FROM duty_roster WHERE removed_at IS NOT NULL`))!.n, 1, 'quitar no borra la fila')
     const log = ((await admin.get('/api/audit/mine')).body.rows ?? (await admin.get('/api/audit/mine')).body) as any[]
-    assert.ok(log.some((e) => /Rol de turnos: asignó a Dra\. Lucía Herrera/.test(e.action)))
-    assert.ok(log.some((e) => /Rol de turnos: quitó a Dra\. Lucía Herrera/.test(e.action)))
-    for (const email of ['lherrera@demo.clinara', 'smejia@demo.clinara', 'crios@demo.clinara']) {
+    assert.ok(log.some((e) => /Rol de turnos: asignó a Dra\. Valeria Solórzano/.test(e.action)))
+    assert.ok(log.some((e) => /Rol de turnos: quitó a Dra\. Valeria Solórzano/.test(e.action)))
+    for (const email of ['vsolorzano@demo.clinara', 'aquiroz@demo.clinara', 'murbina@demo.clinara']) {
       const u = await as(email)
       assert.equal((await u.get(`/api/roster?from=${d(1)}&to=${d(30)}`)).status, 403, email)
-      assert.equal((await u.post('/api/roster', { day: d(7), staffId: 's-paz' })).status, 403, email)
+      assert.equal((await u.post('/api/roster', { day: d(7), staffId: 's-bogran' })).status, 403, email)
     }
     // En el consultorio no aplica
-    const owner = await as('alopez@demo.clinara')
+    const owner = await as('ipacheco@demo.clinara')
     await owner.post('/api/me/view', { role: 'admin' })
     assert.equal((await owner.post('/api/roster', { day: d(7), staffId: 's-alopez' })).status, 400)
   })
@@ -204,7 +204,7 @@ describe('AD1 umbrales críticos por grupo', () => {
 
   // Ronda 12 (LB3): se quitó la función de umbrales críticos (pedido del médico); esta prueba de AD1 ya no aplica
   test.skip('Roberto agrega Hematocrito (20 y 60), uno con sólo límite superior y otro con sólo inferior; se archiva sin perderse; la bitácora guarda el antes y el después; un resultado nuevo dispara el aviso crítico', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     let s = (await admin.get('/api/bootstrap')).body.settings
     const groups = structuredClone(s.criticalGroups)
     // UM2 (ronda 8): los umbrales de la app son los del .md de Emil (Hb por sexo, ABIM-2026)
@@ -232,10 +232,10 @@ describe('AD1 umbrales críticos por grupo', () => {
     assert.ok(log.some((e) => /Potasio: crítico si es mayor de 5 → 6\.5/.test(e.action)))
     assert.ok(log.some((e) => /archivó pO2 de «Gases arteriales»/.test(e.action)))
     // Por URL o API, sólo administración
-    assert.equal((await (await as('lherrera@demo.clinara')).put('/api/settings/critical-groups', { groups })).status, 403)
+    assert.equal((await (await as('vsolorzano@demo.clinara')).put('/api/settings/critical-groups', { groups })).status, 403)
     // Un hematocrito de 18 en un hemograma es crítico, igual que un analito de antes
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     const n = await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', exam: 'Palidez.', exams: [{ group: 'lab', name: 'Hemograma', priority: 'urgent', place: 'clinic' }] })
     assert.equal(n.status, 201, JSON.stringify(n.body))
@@ -250,7 +250,7 @@ describe('AD1 umbrales críticos por grupo', () => {
 
 describe('AD4 catálogo de exámenes de la clínica', () => {
   test('empieza con la lista de antes; Roberto agrega, edita y archiva (en la bitácora); el médico no lo edita; en el consultorio el titular sí', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     let cat = (await admin.get('/api/exams/catalog')).body.exams
     // CA2 (ronda 7): los paquetes de la lista fija pasaron a perfiles; CA7 (ronda 11) los borró del catálogo (estaban archivados)
     for (const e of EXAMS) assert.ok(e.name in PACKAGE_REPLACEMENTS || cat.some((c: any) => c.name === e.name && c.group === e.group && c.active), `falta ${e.name}`)
@@ -272,8 +272,8 @@ describe('AD4 catálogo de exámenes de la clínica', () => {
     // Archivar el hemograma no cambia los ya ordenados; un examen renombrado conserva sus valores de referencia
     const hemo = cat.find((c: any) => c.name === 'Hemograma')
     assert.equal((await admin.patch(`/api/exams/catalog/${hemo.id}`, { name: 'Hemograma completo' })).status, 200)
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const stay = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     await doc.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', exam: 'Control.', exams: [{ group: 'lab', name: 'Hemograma completo', priority: 'routine', place: 'clinic' }] })
     const order = (await doc.get(`/api/inpatient/${stay.id}`)).body.exams.find((e: any) => e.name === 'Hemograma completo' && e.status === 'ordered')
@@ -284,7 +284,7 @@ describe('AD4 catálogo de exámenes de la clínica', () => {
     assert.equal((await doc.get('/api/exams/catalog')).status, 200)
     assert.equal((await doc.post('/api/exams/catalog', { group: 'lab', name: 'Examen de prueba del titular' })).status, 403)
     assert.equal((await doc.patch(`/api/exams/catalog/${hemo.id}`, { active: false })).status, 403)
-    const owner = await as('alopez@demo.clinara')
+    const owner = await as('ipacheco@demo.clinara')
     await owner.post('/api/me/view', { role: 'admin' })
     assert.equal((await owner.post('/api/exams/catalog', { group: 'lab', name: 'Examen de prueba del titular' })).status, 201)
   })
@@ -292,8 +292,8 @@ describe('AD4 catálogo de exámenes de la clínica', () => {
 
 describe('MC2 mis sets de exámenes', () => {
   test('cada médico recibe los cinco perfiles como sets suyos; crea, edita, duplica y archiva los suyos; otro médico no los ve', async () => {
-    const herrera = await as('lherrera@demo.clinara')
-    const paz = await as('apaz@demo.clinara')
+    const herrera = await as('vsolorzano@demo.clinara')
+    const paz = await as('tbogran@demo.clinara')
     let mine = (await herrera.get('/api/order-sets?kind=exams')).body
     for (const p of BASE_PROFILES) assert.ok(mine.some((s: any) => s.name === p.name && s.kind === 'exams'), `falta ${p.name}`)
     assert.equal((await herrera.get('/api/order-sets?kind=exams')).body.length, mine.length, 'se entregan una sola vez')
@@ -324,9 +324,9 @@ describe('MC2 mis sets de exámenes', () => {
 describe('MC5 ordenar exámenes del catálogo o externos', () => {
   // Ronda 6 (MC3): lo no catalogado (o archivado) ya no se vuelve externo: va «No catalogado» a la bandeja de su tipo; lo externo sigue sin bandeja
   test('un examen externo no llega a ninguna bandeja; uno que se archivó queda «No catalogado» y va a la bandeja de su tipo', async () => {
-    const admin = await as('admin@demo.clinara')
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const cat = (await admin.get('/api/exams/catalog')).body.exams
     const ves = cat.find((c: any) => c.name === 'Velocidad de eritrosedimentación')
     // CA7 (ronda 11): ya no se archiva; se quita del catálogo (y se vuelve a agregar al final)
@@ -355,11 +355,11 @@ describe('MC5 ordenar exámenes del catálogo o externos', () => {
 
 describe('nombre corto del personal', () => {
   test('usa el primer apellido, como en Honduras', () => {
-    assert.equal(shortStaff('Dr. Daniel Fúnez Castillo'), 'Dr. Fúnez')
-    assert.equal(shortStaff('Dra. Lucía Herrera'), 'Dra. Herrera')
-    assert.equal(shortStaff('Lic. Carmen Ríos'), 'Lic. Ríos')
-    assert.equal(shortStaff('Sofía Mejía'), 'Sofía Mejía')
-    assert.equal(shortStaff('Roberto Aguilar Mejía'), 'Roberto Mejía')
+    assert.equal(shortStaff('Dr. Joaquín Membreño Sierra'), 'Dr. Membreño')
+    assert.equal(shortStaff('Dra. Valeria Solórzano'), 'Dra. Solórzano')
+    assert.equal(shortStaff('Lic. Marta Urbina'), 'Lic. Urbina')
+    assert.equal(shortStaff('Andrea Quiroz'), 'Andrea Quiroz')
+    assert.equal(shortStaff('Ricardo Moncada Mejía'), 'Ricardo Mejía')
     assert.equal(shortStaff('José Luis Aguilar Mejía'), 'José Aguilar')
   })
 })

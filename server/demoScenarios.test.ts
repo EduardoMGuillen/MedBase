@@ -37,7 +37,7 @@ describe('Casos de demostración para probar cada estado', () => {
   })
 
   test('observación de la clínica: sin autorización, con nota en el segundo formato, y pasa a hospitalización', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const file = (await doc.get('/api/inpatient/he-pe1')).body
     assert.equal(file.hospitalization.kind, 'observation')
     assert.equal(file.authorizations.length, 0)
@@ -52,7 +52,7 @@ describe('Casos de demostración para probar cada estado', () => {
   })
 
   test('hospitalizado que vino de observación: SOAP y segundo formato, tratamiento de 1 día completado', async () => {
-    const file = (await (await as('lherrera@demo.clinara')).get('/api/inpatient/he-pe2')).body
+    const file = (await (await as('vsolorzano@demo.clinara')).get('/api/inpatient/he-pe2')).body
     assert.ok(file.hospitalization.observationAt)
     assert.deepEqual(file.authorizations.map((a: any) => `${a.template}:${a.status}`), ['hospital:pending'])
     const evo = file.notes.filter((n: any) => n.kind === 'evolution')
@@ -65,14 +65,14 @@ describe('Casos de demostración para probar cada estado', () => {
     assert.ok(file.doses.length > 5)
     assert.equal(file.labs.length, 1)
     // La nota de ingreso (la consulta) muestra sus medicamentos a la derecha, igual que una firmada en la aplicación
-    const c = (await (await as('lherrera@demo.clinara')).get('/api/consultations/ke-pe2')).body
+    const c = (await (await as('vsolorzano@demo.clinara')).get('/api/consultations/ke-pe2')).body
     const consult = c.consultation ?? c
     assert.equal(consult.indications.length, 3)
     assert.match(consult.orders.slice(3).join(' '), /Ceftriaxona.*Salbutamol.*Acetaminofén/)
   })
 
   test('ingreso directo: hospitalización firmada y quirúrgica genérica pendiente', async () => {
-    const file = (await (await as('lherrera@demo.clinara')).get('/api/inpatient/he-pe3')).body
+    const file = (await (await as('vsolorzano@demo.clinara')).get('/api/inpatient/he-pe3')).body
     const auth = Object.fromEntries(file.authorizations.map((a: any) => [a.template, a]))
     assert.equal(auth.hospital.status, 'signed')
     assert.ok(auth.hospital.fileId)
@@ -82,7 +82,7 @@ describe('Casos de demostración para probar cada estado', () => {
   })
 
   test('consultorio: la observación lista se refiere y la de ayer ya tiene su referencia', async () => {
-    const doc = await as('alopez@demo.clinara')
+    const doc = await as('ipacheco@demo.clinara')
     const draft = (await doc.get('/api/inpatient/he-re1/referral-draft')).body
     assert.match(draft.diagnosis, /Crisis hipertensiva \(BA03\)/)
     assert.match(draft.medications, /Captopril/)

@@ -69,7 +69,7 @@ async function as(email: string, password = DEMO_PASSWORD) {
   return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), put: (p: string, b: unknown) => call('PUT', p, b), patch: (p: string, b: unknown) => call('PATCH', p, b) }
 }
 const groupsOf = async (cid: string) => JSON.parse(String((await sql.one('SELECT critical_groups FROM clinics WHERE id = ?', [cid]))!.critical_groups)) as CriticalGroup[]
-const mainClinic = async () => String((await sql.one(`SELECT clinic_id FROM staff WHERE email = 'admin@demo.clinara'`))!.clinic_id)
+const mainClinic = async () => String((await sql.one(`SELECT clinic_id FROM staff WHERE email = 'rmoncada@demo.clinara'`))!.clinic_id)
 
 describe('UM3 (ronda 10): limpieza de los umbrales archivados', () => {
   test('en una demo nueva no hay archivados: la limpieza ya corrió y no cambió nada', async () => {
@@ -96,7 +96,7 @@ describe('UM3 (ronda 10): limpieza de los umbrales archivados', () => {
     // Un resultado crítico antiguo calculado con «Lactato de prueba» cuando estaba activo
     const exam = await sql.one('SELECT id, result, critical FROM exam_orders WHERE clinic_id = ? LIMIT 1', [id])
     await sql.run('UPDATE exam_orders SET result = ?, critical = TRUE WHERE id = ?',
-      [JSON.stringify({ at: '2026-10-10T10:00:00.000Z', by: 's-rios', values: [{ analyte: 'Lactato de prueba', value: '9', critical: true }] }), String(exam!.id)])
+      [JSON.stringify({ at: '2026-10-10T10:00:00.000Z', by: 's-urbina', values: [{ analyte: 'Lactato de prueba', value: '9', critical: true }] }), String(exam!.id)])
     await sql.run(`DELETE FROM meta WHERE key LIKE 'um3:%'`)
     const r = await cleanArchivedThresholds(sql)
     const after1 = await groupsOf(id)
@@ -118,7 +118,7 @@ describe('UM3 (ronda 10): limpieza de los umbrales archivados', () => {
     // El resultado crítico antiguo sigue crítico
     assert.equal((await sql.one('SELECT critical FROM exam_orders WHERE id = ?', [String(exam!.id)]))!.critical, true)
     // Lo retirado no vuelve aunque administración guarde la lista sin él; archivar otro umbral sí cuenta como archivado
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const visible = mergeCriticalGroups(after1).filter((g) => !g.retiredAt).map((g) => ({ ...g, analytes: g.analytes.filter((a) => !a.retiredAt) }))
     const target = visible.find((g) => !g.archivedAt)!
     target.analytes[0].archivedAt = new Date().toISOString()
@@ -145,7 +145,7 @@ describe('GE5 (ronda 10): paginación', () => {
     assert.deepEqual([p.rows[0], p.rows.at(-1), p.pages], [525, 529, 22])
   })
   test('recetas y bitácora: páginas de la lista completa en el servidor', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const all = await doc.get('/api/prescriptions?page=1&size=5')
     assert.equal(all.status, 200)
     assert.ok(all.body.total >= all.body.rows.length && all.body.rows.length <= 5)
@@ -153,9 +153,9 @@ describe('GE5 (ronda 10): paginación', () => {
       const p2 = await doc.get('/api/prescriptions?page=2&size=5')
       assert.ok(!p2.body.rows.some((r: any) => all.body.rows.some((x: any) => x.id === r.id)), 'la página 2 no repite la 1')
     }
-    const reception = await as('smejia@demo.clinara')
+    const reception = await as('aquiroz@demo.clinara')
     assert.equal((await reception.get('/api/prescriptions?page=1')).status, 403, 'recepción no ve recetas')
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const log = await admin.get('/api/audit?page=1&size=10')
     assert.equal(log.status, 200)
     assert.ok(Array.isArray(log.body.rows) && log.body.rows.length <= 10 && log.body.total >= log.body.rows.length)
@@ -201,7 +201,7 @@ describe('ME6 (ronda 10): el vademécum con las 530 filas del .md', () => {
   })
 
   test('Aciclovir: sus tres presentaciones; Ondansetrón y Tramadol toman los datos del .md; los de la base que no están siguen', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const { localDrugProvider } = await import('../src/lib/drugProvider.js')
     const drugs = localDrugProvider.catalog((await doc.get('/api/bootstrap')).body.clinicDrugs)
     assert.equal(searchDrugs(drugs, 'Aciclovir', 8).length, 3)
@@ -249,9 +249,9 @@ describe('EX5 y ME10 (ronda 10): órdenes de pendientes y receta de lo que no ha
   const stayOf = async () => String((await sql.one(`SELECT id FROM hospitalizations WHERE status = 'active' AND clinic_id = ? ORDER BY admitted_at LIMIT 1`, [await mainClinic()]))!.id)
 
   test('ME10: la nota guarda «va a receta» y la cantidad; enfermería imprime la receta del médico; queda registrada y bloquea la corrección', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
-    const reception = await as('smejia@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
+    const reception = await as('aquiroz@demo.clinara')
     const stay = await stayOf()
     const n = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'Control ME10', meds: [
       { drug: 'Ceftriaxona', presentation: 'Vial 1 g', dose: '1 g', route: 'Intravenosa', everyHours: 12, prn: false, loadingDose: '2 g', loadingStat: true, buyOutside: true, buyQuantity: '10 viales' },
@@ -272,25 +272,25 @@ describe('EX5 y ME10 (ronda 10): órdenes de pendientes y receta de lo que no ha
     assert.equal(job.status, 201, JSON.stringify(job.body))
     assert.equal((await reception.get(`/api/print-jobs/${job.body.id}`)).status, 403)
     const j = (await nurse.get(`/api/print-jobs/${job.body.id}`)).body
-    assert.deepEqual(j.doctors.map((d: any) => d.doctor.id), ['s-herrera'], 'sale con los datos del médico que indicó, no de quien imprime')
+    assert.deepEqual(j.doctors.map((d: any) => d.doctor.id), ['s-solorzano'], 'sale con los datos del médico que indicó, no de quien imprime')
     assert.deepEqual(j.meds.map((m: any) => m.drug), ['Ceftriaxona'])
     assert.equal((await nurse.post(`/api/print-jobs/${job.body.id}/printed`, { how: 'pdf' })).status, 200)
-    assert.ok(await sql.one(`SELECT 1 FROM print_log WHERE target_kind = 'hosp_med' AND target_id = ? AND by_id = 's-rios'`, [String(meds[0].id)]))
-    assert.ok(await sql.one(`SELECT 1 FROM audit WHERE user_id = 's-rios' AND action LIKE 'Descargó en PDF la receta%'`))
+    assert.ok(await sql.one(`SELECT 1 FROM print_log WHERE target_kind = 'hosp_med' AND target_id = ? AND by_id = 's-urbina'`, [String(meds[0].id)]))
+    assert.ok(await sql.one(`SELECT 1 FROM audit WHERE user_id = 's-urbina' AND action LIKE 'Descargó en PDF la receta%'`))
     const { noteOrderLocks, PRINTED_RX } = await import('./correctionLocks.js')
     const locks = await noteOrderLocks(sql, (await sql.one('SELECT * FROM hosp_notes WHERE id = ?', [n.body.id]))!)
     assert.equal(locks.meds[String(meds[0].id)], PRINTED_RX, 'GE4: la receta impresa bloquea la corrección de ese renglón')
     // «Órdenes impresas»: con quién y cuándo
     const pid = String(meds[0].patient_id)
     const list = (await nurse.get(`/api/patients/${pid}/print-jobs`)).body
-    assert.ok(list.some((x: any) => x.id === job.body.id && x.printedBy === 's-rios'))
+    assert.ok(list.some((x: any) => x.id === job.body.id && x.printedBy === 's-urbina'))
     assert.equal((await reception.get(`/api/patients/${pid}/print-jobs`)).status, 403)
   })
 
   test('EX5: «Imprimir orden» de pendientes: una orden por médico que pidió; registrada; bloquea la corrección; lo que ya tiene resultado no entra', async () => {
-    const herrera = await as('lherrera@demo.clinara')
-    const paz = await as('apaz@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const herrera = await as('vsolorzano@demo.clinara')
+    const paz = await as('tbogran@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const stay = await stayOf()
     const a = await herrera.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'EX5 a', exams: [
       { group: 'lab', name: 'Hemograma', priority: 'routine', place: 'external' }, { group: 'lab', name: 'Creatinina', priority: 'routine', place: 'clinic' }] })
@@ -302,16 +302,16 @@ describe('EX5 y ME10 (ronda 10): órdenes de pendientes y receta de lo que no ha
     assert.equal(job.status, 201, JSON.stringify(job.body))
     const j = (await nurse.get(`/api/print-jobs/${job.body.id}`)).body
     assert.equal(j.doctors.length, 2, 'con exámenes de dos médicos salen dos órdenes')
-    assert.deepEqual(j.doctors.map((d: any) => d.doctor.id).sort(), ['s-herrera', 's-paz'].sort())
+    assert.deepEqual(j.doctors.map((d: any) => d.doctor.id).sort(), ['s-solorzano', 's-bogran'].sort())
     assert.equal((await nurse.post(`/api/print-jobs/${job.body.id}/printed`, { how: 'print' })).status, 200)
     const { examLock, PRINTED_EXAMS } = await import('./correctionLocks.js')
     assert.equal(await examLock(sql, (await sql.one('SELECT * FROM exam_orders WHERE id = ?', [String(ex[0].id)]))!), PRINTED_EXAMS)
     // Uno con resultado ya no está pendiente. EX11 (ronda 14): la ventana lo muestra sin marcar, pero si se marca se imprime
     const done = String(ex.find((e) => e.name === 'Creatinina')!.id)
-    await sql.run(`UPDATE exam_orders SET status = 'result', result = ? WHERE id = ?`, [JSON.stringify({ report: 'ok', at: new Date().toISOString(), by: 's-rios' }), done])
+    await sql.run(`UPDATE exam_orders SET status = 'result', result = ? WHERE id = ?`, [JSON.stringify({ report: 'ok', at: new Date().toISOString(), by: 's-urbina' }), done])
     assert.equal((await nurse.post('/api/print-jobs', { kind: 'exams', examIds: [done] })).status, 201)
     // Recepción no
-    assert.equal((await (await as('smejia@demo.clinara')).post('/api/print-jobs', { kind: 'exams', examIds: [String(ex[0].id)] })).status, 403)
+    assert.equal((await (await as('aquiroz@demo.clinara')).post('/api/print-jobs', { kind: 'exams', examIds: [String(ex[0].id)] })).status, 403)
   })
 })
 
@@ -376,7 +376,7 @@ describe('CA5 (ronda 10): Imagen y gabinete completo', () => {
     }
     const set = `set-ca5-${Date.now()}`
     await sql.run('INSERT INTO order_sets (id, clinic_id, owner_id, name, items, created_at) VALUES (?,?,?,?,?,?)',
-      [set, id, 's-herrera', 'Preoperatorio de prueba', JSON.stringify([{ exam: { group: 'imaging', name: 'Radiografía de tórax', priority: 'routine', place: 'clinic' } }, { exam: { group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' } }]), now])
+      [set, id, 's-solorzano', 'Preoperatorio de prueba', JSON.stringify([{ exam: { group: 'imaging', name: 'Radiografía de tórax', priority: 'routine', place: 'clinic' } }, { exam: { group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' } }]), now])
     // Una orden antigua con «Radiografía de tórax»
     const ex = (await sql.one(`SELECT id, name FROM exam_orders WHERE clinic_id = ? LIMIT 1`, [id]))!
     await sql.run(`UPDATE exam_orders SET name = 'Radiografía de tórax' WHERE id = ?`, [String(ex.id)])
@@ -384,7 +384,7 @@ describe('CA5 (ronda 10): Imagen y gabinete completo', () => {
     const r = (await loadImagingCatalog(sql, id))!
     assert.deepEqual([...r.deleted].sort(), ['Mamografía', 'Radiografía de tórax', 'Tomografía (TAC)'])
     assert.ok(!(await sql.one(`SELECT 1 FROM exam_catalog WHERE clinic_id = ? AND norm_key = 'radiografia de torax'`, [id])), 'tampoco en archivados')
-    assert.deepEqual(r.sets.map((x) => [x.name, x.owner, x.removed]), [['Preoperatorio de prueba', 'Dra. Lucía Herrera', ['Radiografía de tórax']]])
+    assert.deepEqual(r.sets.map((x) => [x.name, x.owner, x.removed]), [['Preoperatorio de prueba', 'Dra. Valeria Solórzano', ['Radiografía de tórax']]])
     assert.deepEqual(JSON.parse(String((await sql.one('SELECT items FROM order_sets WHERE id = ?', [set]))!.items)).map((x: any) => x.exam.name), ['Hemograma'])
     assert.ok(await sql.one(`SELECT 1 FROM config_backups WHERE clinic_id = ? AND kind = 'ca5-imaging-removed'`, [id]))
     assert.equal((await sql.one('SELECT name FROM exam_orders WHERE id = ?', [String(ex.id)]))!.name, 'Radiografía de tórax', 'la orden antigua conserva su texto')
@@ -393,8 +393,8 @@ describe('CA5 (ronda 10): Imagen y gabinete completo', () => {
   })
 
   test('al ordenar: sin proyección no se acepta; con ella queda armada; Rayos X realizado queda terminado (EX3)', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const stay = String((await sql.one(`SELECT id FROM hospitalizations WHERE status = 'active' AND clinic_id = ? ORDER BY admitted_at LIMIT 1`, [await mainClinic()]))!.id)
     const bad = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'CA5', exams: [{ group: 'imaging', name: 'Rayos X', subject: 'tórax', priority: 'routine', place: 'clinic' }] })
     assert.equal(bad.status, 400)

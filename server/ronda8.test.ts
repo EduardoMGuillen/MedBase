@@ -45,10 +45,10 @@ async function freePatient(doc: Awaited<ReturnType<typeof as>>, skip: string[] =
   return boot.patients.find((x: any) => !busy.has(x.id) && !open.has(x.id) && !x.pending && x.dni)
 }
 
-/** Consulta sin cita de la Dra. Herrera; con `observe`, ingresa a observación. */
+/** Consulta sin cita de la Dra. Solórzano; con `observe`, ingresa a observación. */
 async function consult(doc: Awaited<ReturnType<typeof as>>, patientId: string, observe: boolean, items: any[] = []) {
-  const reception = await as('smejia@demo.clinara')
-  const w = await reception.post('/api/appointments/walk-in', { patientId, doctorId: 's-herrera', reason: 'Ronda 8' })
+  const reception = await as('aquiroz@demo.clinara')
+  const w = await reception.post('/api/appointments/walk-in', { patientId, doctorId: 's-solorzano', reason: 'Ronda 8' })
   assert.equal(w.status, 201, JSON.stringify(w.body))
   const r = await doc.post('/api/consultations', { appointmentId: w.body.id, reason: 'Fiebre', symptoms: [], history: 'Fiebre de 3 días', exam: 'Febril', observations: '',
     diagnoses: [{ code: 'MG26', label: 'Fiebre' }], orders: ['Dieta blanda.'], indications: ['Dieta blanda.'], plan: '', observe, items, exams: [] })
@@ -58,18 +58,18 @@ async function consult(doc: Awaited<ReturnType<typeof as>>, patientId: string, o
 
 describe('Ronda 8: incongruencias de la consulta externa', () => {
   test('al internar al paciente se cancelan sus otras citas abiertas de hoy y ya no se le marca llegada ni entra sin cita', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const reception = await as('smejia@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const reception = await as('aquiroz@demo.clinara')
     const p = await freePatient(doc)
     // Llegó también con otro médico
-    const other = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-paz', reason: 'Otra cosa' })
+    const other = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-bogran', reason: 'Otra cosa' })
     assert.equal(other.status, 201)
     const { hospitalizationId } = await consult(doc, p.id, true)
     assert.ok(hospitalizationId)
     const appts = (await reception.get(`/api/appointments?from=${today()}&to=${today()}`)).body.filter((a: any) => a.patientId === p.id)
     assert.equal(appts.find((a: any) => a.id === other.body.id).status, 'cancelled', 'la cita en sala con otro médico se cerró')
     assert.ok(appts.some((a: any) => a.status === 'done'), 'la que originó el ingreso queda atendida')
-    const again = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-paz', reason: 'Otra vez' })
+    const again = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-bogran', reason: 'Otra vez' })
     assert.equal(again.status, 409)
     assert.match(again.body.error, /^Este paciente está en observación \(desde \d{2}\/\d{2}\/\d{4}\)\. No puede pasar a consulta externa hasta su egreso\.$/)
     // CX2: la cita cerrada lleva motivo, autor «Sistema» y hora, y se puede reprogramar
@@ -80,13 +80,13 @@ describe('Ronda 8: incongruencias de la consulta externa', () => {
     // CX2: no se agenda para hoy; a futuro sí
     const d = new Date(); const pad = (n: number) => String(n).padStart(2, '0')
     let future = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate())
-    // el Dr. Paz no atiende domingos
+    // el Dr. Bográn no atiende domingos
     while (future.getDay() === 0 || future.getDay() === 6) future = new Date(future.getFullYear(), future.getMonth(), future.getDate() + 1)
     const fut = `${future.getFullYear()}-${pad(future.getMonth() + 1)}-${pad(future.getDate())}T09:00:00`
-    const todayAppt = await reception.post('/api/appointments', { patientId: p.id, doctorId: 's-paz', start: `${today()}T${pad(Math.min(16, d.getHours() + 1))}:00:00`, reason: 'Control' })
+    const todayAppt = await reception.post('/api/appointments', { patientId: p.id, doctorId: 's-bogran', start: `${today()}T${pad(Math.min(16, d.getHours() + 1))}:00:00`, reason: 'Control' })
     assert.equal(todayAppt.status, 409, JSON.stringify(todayAppt.body))
     assert.match(todayAppt.body.error, /No puede pasar a consulta externa hasta su egreso/)
-    assert.equal((await reception.post('/api/appointments', { patientId: p.id, doctorId: 's-paz', start: fut, reason: 'Control' })).status, 201)
+    assert.equal((await reception.post('/api/appointments', { patientId: p.id, doctorId: 's-bogran', start: fut, reason: 'Control' })).status, 201)
     const moved = await reception.patch(`/api/appointments/${other.body.id}`, { start: fut.replace('09:00', '10:00') })
     assert.equal(moved.status, 200, JSON.stringify(moved.body))
     assert.equal(moved.body.status, 'scheduled')
@@ -100,7 +100,7 @@ describe('Ronda 8: incongruencias de la consulta externa', () => {
     const now = new Date()
     const p = (n: number) => String(n).padStart(2, '0')
     await sql.run(`INSERT INTO appointments (id, patient_id, doctor_id, start, minutes, reason, type, status, arrived_at, source, clinic_id) VALUES (?,?,?,?,30,'x','followup','arrived',?,'staff','c-sb')`,
-      [id, String(h.patient_id), 's-paz', `${today()}T${p(now.getHours())}:00:00`, now.toISOString()])
+      [id, String(h.patient_id), 's-bogran', `${today()}T${p(now.getHours())}:00:00`, now.toISOString()])
     assert.ok(await closeVisitsOfInpatients(sql) >= 1)
     const row = (await sql.one('SELECT status, cancel_reason, cancelled_by FROM appointments WHERE id = ?', [id]))!
     assert.equal(row.status, 'cancelled')
@@ -130,8 +130,8 @@ describe('Ronda 8: rayos X sin informe obligatorio', () => {
   })
 
   test('realizada sale de la bandeja y el médico la revisa sin informe; un ultrasonido sigue esperando el suyo', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const stay = (await consult(doc, (await freePatient(doc)).id, true)).hospitalizationId!
     const n = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', observations: 'Control', exams: [
       { group: 'imaging', name: 'Radiografía de tórax', priority: 'routine', place: 'clinic' }, { group: 'imaging', name: 'Ultrasonido abdominal', priority: 'routine', place: 'clinic' }] })
@@ -143,7 +143,7 @@ describe('Ronda 8: rayos X sin informe obligatorio', () => {
     // DM2 (ronda 11): con personal de Imágenes en la demo, los estudios de imagen se trabajan en su bandeja
     const tray = (await nurse.get('/api/exams/tray')).body.map((e: any) => e.id)
     assert.ok(!tray.includes(rx.id), 'la radiografía realizada ya no está pendiente')
-    const items = (await (await as('pandino@demo.clinara')).get('/api/dept/tray')).body.items
+    const items = (await (await as('echinchilla@demo.clinara')).get('/api/dept/tray')).body.items
     assert.equal(items.find((e: any) => e.id === us.id)?.status, 'done', 'el ultrasonido sigue esperando su informe')
     assert.equal((await doc.post(`/api/exams/${rx.id}/review`)).status, 200)
     assert.equal((await doc.post(`/api/exams/${us.id}/review`)).status, 409)
@@ -152,7 +152,7 @@ describe('Ronda 8: rayos X sin informe obligatorio', () => {
 
 describe('Ronda 8: nota de evolución y medicamentos', () => {
   test('la evolución se guarda entre diagnóstico y examen físico; infusión con velocidad y primera dosis distinta pasan a la hoja', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const stay = (await consult(doc, (await freePatient(doc)).id, true)).hospitalizationId!
     const first = new Date(Date.now() - 60_000).toISOString()
     const n = await doc.post(`/api/inpatient/${stay}/notes`, {
@@ -172,7 +172,7 @@ describe('Ronda 8: nota de evolución y medicamentos', () => {
     // EX2: número de orden correlativo y registro de cada impresión
     assert.match(order.body.exams[0].orderNo, /^OE-\d{4}-\d{4}$/)
     assert.equal((await doc.post(`/api/exams/batch/${n.body.examBatch}/printed`, { group: 'imaging', how: 'pdf' })).status, 200)
-    const log = (await (await as('admin@demo.clinara')).get('/api/audit?limit=20')).body
+    const log = (await (await as('rmoncada@demo.clinara')).get('/api/audit?limit=20')).body
     assert.ok((Array.isArray(log) ? log : log.items ?? []).some((a: any) => /Descargó en PDF la orden de imagen y gabinete OE-/.test(a.action ?? a.text ?? '')))
     const file = (await doc.get(`/api/inpatient/${stay}`)).body
     const mida = file.meds.find((m: any) => m.drug === 'Midazolam')
@@ -186,7 +186,7 @@ describe('Ronda 8: nota de evolución y medicamentos', () => {
     assert.equal(doseAt(cef, new Date(cef.firstAt)), '2 g')
     assert.equal(doseAt(cef, new Date(new Date(cef.firstAt).getTime() + 12 * 3_600_000)), '1 g')
     // ME2: cada dosis registrada guarda la cantidad que le tocaba
-    const nurse = await as('crios@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const d1 = await nurse.post(`/api/inpatient/meds/${cef.id}/doses`, { scheduledAt: cef.firstAt, status: 'given' })
     assert.equal(d1.status, 201, JSON.stringify(d1.body))
     assert.equal(d1.body.dose, '2 g')
@@ -212,7 +212,7 @@ describe('Ronda 8: nota de evolución y medicamentos', () => {
 
 describe('Ronda 8: referencia a otro centro', () => {
   test('desde la consulta externa, con diagnóstico, tratamiento y motivo; no cierra nada', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const { consultationId } = await consult(doc, (await freePatient(doc)).id, false,
       [{ drug: 'Acetaminofén', presentation: 'Tableta 500 mg', dose: '1 tableta', route: 'Oral', frequency: 'Cada 8 horas', duration: '3 días' }])
     const draft = await doc.get(`/api/consultations/${consultationId}/referral-draft`)
@@ -232,19 +232,19 @@ describe('Ronda 8: referencia a otro centro', () => {
     const ad = await doc.post('/api/addenda', { targetKind: 'referral', targetId: r.body.id, kind: 'correction', corrects: 'Servicio', text: 'El servicio es infectología pediátrica.' })
     assert.equal(ad.status, 201, JSON.stringify(ad.body))
     assert.equal((await doc.get(`/api/referrals/${r.body.id}`)).body.addenda.length, 1)
-    assert.equal((await (await as('crios@demo.clinara')).post('/api/addenda', { targetKind: 'referral', targetId: r.body.id, kind: 'info', text: 'Nota de enfermería' })).status, 403)
-    assert.equal((await (await as('crios@demo.clinara')).get(`/api/referrals/${r.body.id}`)).status, 200, 'enfermería la ve e imprime')
-    assert.equal((await (await as('smejia@demo.clinara')).get(`/api/referrals/${r.body.id}`)).status, 403, 'recepción no la ve')
+    assert.equal((await (await as('murbina@demo.clinara')).post('/api/addenda', { targetKind: 'referral', targetId: r.body.id, kind: 'info', text: 'Nota de enfermería' })).status, 403)
+    assert.equal((await (await as('murbina@demo.clinara')).get(`/api/referrals/${r.body.id}`)).status, 200, 'enfermería la ve e imprime')
+    assert.equal((await (await as('aquiroz@demo.clinara')).get(`/api/referrals/${r.body.id}`)).status, 403, 'recepción no la ve')
     // RF1: la impresión queda en la bitácora; la lista del paciente la trae
     assert.equal((await doc.post(`/api/referrals/${r.body.id}/printed`, { how: 'print' })).status, 200)
     assert.ok((await doc.get(`/api/patients/${draft.body.patient ? r.body.patientId : ''}/referrals`)).body.some((x: any) => x.id === r.body.id))
   })
 
   test('RF1: desde la consulta en borrador (por su cita); al firmar la nota se enlaza a la consulta', async () => {
-    const doc = await as('lherrera@demo.clinara')
-    const reception = await as('smejia@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const reception = await as('aquiroz@demo.clinara')
     const p = await freePatient(doc)
-    const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-herrera', reason: 'Dolor torácico' })
+    const w = await reception.post('/api/appointments/walk-in', { patientId: p.id, doctorId: 's-solorzano', reason: 'Dolor torácico' })
     const draft = await doc.get(`/api/appointments/${w.body.id}/referral-draft`)
     assert.equal(draft.status, 200)
     const r = await doc.post(`/api/appointments/${w.body.id}/referral`, { ...draft.body, history: 'Dolor opresivo', admissionDiagnosis: 'Dolor torácico', reason: 'Valoración por cardiología', destination: 'Hospital Escuela', consent: true })
@@ -257,7 +257,7 @@ describe('Ronda 8: referencia a otro centro', () => {
   })
 
   test('desde la hospitalización y la observación de la clínica; RF1: firmarla nunca cierra la estancia', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const hosp = (await doc.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
     const d1 = await doc.get(`/api/inpatient/${hosp.id}/referral-draft`)
     assert.equal(d1.status, 200)
@@ -271,7 +271,7 @@ describe('Ronda 8: referencia a otro centro', () => {
     assert.equal(r2.status, 201)
     assert.equal((await doc.get(`/api/inpatient/${obs}`)).body.hospitalization.status, 'active')
     // Enfermería no firma referencias
-    assert.equal((await (await as('crios@demo.clinara')).post(`/api/inpatient/${obs}/referral`, { ...d2.body, reason: 'x x x', destination: 'H', consent: true })).status, 403)
+    assert.equal((await (await as('murbina@demo.clinara')).post(`/api/inpatient/${obs}/referral`, { ...d2.body, reason: 'x x x', destination: 'H', consent: true })).status, 403)
   })
 })
 
@@ -283,7 +283,7 @@ describe('Ronda 8: umbrales críticos de la app', () => {
     // UM2: sin personalizar manda el de la app (aunque lo guardado diga otra cosa); personalizado, el de la clínica
     saved[0].analytes[0] = { ...saved[0].analytes[0], low: 6, f: undefined, m: undefined }
     assert.deepEqual(mergeCriticalGroups(saved)[0].analytes.find((a) => a.id === 'a-hb')!.f, { low: 12, high: 16 })
-    saved[0].analytes[0] = { ...saved[0].analytes[0], editedAt: new Date().toISOString(), editedBy: 's-admin' }
+    saved[0].analytes[0] = { ...saved[0].analytes[0], editedAt: new Date().toISOString(), editedBy: 's-moncada' }
     const m = mergeCriticalGroups(saved)
     const hb = m[0].analytes.find((a) => a.id === 'a-hb')!
     assert.equal(hb.low, 6)
@@ -299,9 +299,9 @@ describe('Ronda 8: umbrales críticos de la app', () => {
 
 describe('CX1: Consulta externa por hora o por médico', () => {
   test('Administración guarda su vista y la recupera al volver a entrar; no toca la de «Por llegar hoy»', async () => {
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     assert.equal((await admin.patch('/api/me', { queueView: 'doctor' })).status, 200)
-    const again = await as('admin@demo.clinara')
+    const again = await as('rmoncada@demo.clinara')
     const prefs = (await again.get('/api/auth/me')).body.user.prefs
     assert.equal(prefs.queueView, 'doctor')
     assert.notEqual(prefs.arrivalsView, 'doctor')
@@ -311,7 +311,7 @@ describe('CX1: Consulta externa por hora o por médico', () => {
 
 describe('NE4: los diagnósticos bajan de nota en nota', () => {
   test('la evolución guarda la lista vigente (también en SOAP) y la bitácora dice qué se quitó y qué se agregó', async () => {
-    const doc = await as('lherrera@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
     const stay = (await consult(doc, (await freePatient(doc)).id, true)).hospitalizationId!
     // Del ingreso viene «Fiebre (MG26)»: se quita y se agrega otro
     const n1 = await doc.post(`/api/inpatient/${stay}/notes`, { kind: 'evolution', format: 'dx', diagnoses: [{ code: 'CB41', label: 'Insuficiencia respiratoria' }], exam: 'Disneico' })
@@ -322,7 +322,7 @@ describe('NE4: los diagnósticos bajan de nota en nota', () => {
     const file = (await doc.get(`/api/inpatient/${stay}`)).body
     const last = file.notes.find((x: any) => x.id === soap.body.id)
     assert.deepEqual(last.diagnoses.map((d: any) => d.code), ['CB41', 'CA00'])
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const log = (await admin.get('/api/audit?limit=50')).body
     const lines = (Array.isArray(log) ? log : log.items ?? []).map((a: any) => a.action ?? a.text ?? '')
     assert.ok(lines.some((t: string) => /agregó Insuficiencia respiratoria \(CB41\); quitó Fiebre \(MG26\)/.test(t)), lines.slice(0, 5).join('\n'))
@@ -357,8 +357,8 @@ describe('UM1: valores de referencia del documento de Emil', () => {
     // Un examen del Anexo A sin analitos en la lista fija ahora los trae
     assert.equal(findExam('Fibrinógeno')!.analytes![0].high, 400)
 
-    const doc = await as('lherrera@demo.clinara')
-    const nurse = await as('crios@demo.clinara')
+    const doc = await as('vsolorzano@demo.clinara')
+    const nurse = await as('murbina@demo.clinara')
     const pid = (await freePatient(doc)).id
     await sql.run(`UPDATE patients SET sex = 'M' WHERE id = ?`, [pid])
     const stay = (await consult(doc, pid, true)).hospitalizationId!
@@ -403,7 +403,7 @@ describe('UM2: umbrales críticos con fuente', () => {
     await migrateCriticalDefaults(sql)
     assert.equal(String((await sql.one(`SELECT critical_groups FROM clinics WHERE id = 'c-sb'`))!.critical_groups), again, 'la segunda vez no cambia nada')
     // Personalizar la digoxina: queda con quién y cuándo; «Restablecer» la devuelve
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const groups = (await admin.get('/api/bootstrap')).body.settings.criticalGroups ?? mergeCriticalGroups(after)
     const set = (high: number, reset?: boolean) => mergeCriticalGroups(groups).map((g: any) => ({ ...g, analytes: g.analytes.map((a: any) => (a.id === 'a-digoxina' ? { ...a, high, reset } : a)) }))
     const r1 = await admin.put('/api/settings/critical-groups', { groups: set(3) })
@@ -416,7 +416,7 @@ describe('UM2: umbrales críticos con fuente', () => {
     assert.equal(dig2.high, 2.1)
     assert.equal(dig2.editedAt, undefined)
     // Un médico de la clínica que no es Administración no puede (por URL directa)
-    assert.equal((await (await as('lherrera@demo.clinara')).put('/api/settings/critical-groups', { groups: set(3) })).status, 403)
+    assert.equal((await (await as('vsolorzano@demo.clinara')).put('/api/settings/critical-groups', { groups: set(3) })).status, 403)
   })
 })
 
@@ -435,7 +435,7 @@ describe('UM1: carga en la base', () => {
     assert.equal(rep.inserted, 0, 'la segunda vez no inserta nada')
     assert.equal(await count(), before)
     // La clínica edita la TSH; una carga futura no la pisa
-    const admin = await as('admin@demo.clinara')
+    const admin = await as('rmoncada@demo.clinara')
     const cat = (await admin.get('/api/exams/catalog')).body.exams.find((e: any) => e.name === 'TSH')
     const row = cat.refs.find((r: any) => r.analyte === 'TSH')
     const ed = await admin.put(`/api/exams/catalog/${cat.id}/refs`, { comment: 'Rango del laboratorio', rows: [{ ...row, low: 0.4, high: 4.5 }] })
@@ -449,7 +449,7 @@ describe('UM1: carga en la base', () => {
     // Ronda 12: el .md del 04/11/2026 agregó 17 fuentes (60 a 76)
     assert.equal(Number((await sql.one('SELECT COUNT(*)::int AS n FROM lab_sources'))!.n), 76)
     // Un médico que no es Administración no edita
-    assert.equal((await (await as('lherrera@demo.clinara')).put(`/api/exams/catalog/${cat.id}/refs`, { rows: [] })).status, 403)
+    assert.equal((await (await as('vsolorzano@demo.clinara')).put(`/api/exams/catalog/${cat.id}/refs`, { rows: [] })).status, 403)
   })
 })
 
@@ -464,7 +464,7 @@ describe('DM1: datos demo sin citas imposibles', () => {
     assert.ok(await free('hospital') >= 1)
     assert.ok(await free('observation') >= 1)
     const names = (await sql.query('SELECT name FROM staff')).map((r) => String(r.name))
-    for (const n of ['Roberto Aguilar', 'Sofía Mejía', 'Carmen Ríos', 'Karla Mendoza', 'Lucía Herrera', 'Andrés Paz', 'Mariela Zúñiga', 'Ana López'])
+    for (const n of ['Ricardo Moncada', 'Andrea Quiroz', 'Marta Urbina', 'Lorena Cardona', 'Valeria Solórzano', 'Tomás Bográn', 'Natalia Escoto', 'Isabel Pacheco'])
       assert.ok(names.some((x) => x.includes(n)), n)
   })
 })

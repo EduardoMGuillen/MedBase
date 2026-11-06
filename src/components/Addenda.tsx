@@ -18,7 +18,7 @@ export function DraftBadge({ savedAt, restored, offline }: { savedAt: string | n
   )
 }
 
-/** AN1: «Firmada por la Dra. Herrera el 30/10/2026 14:20», y «Con adenda» si tiene. */
+/** AN1: «Firmada por la Dra. Solórzano el 30/10/2026 14:20», y «Con adenda» si tiene. */
 export function SignedBadge({ by, at, addenda = 0 }: { by?: string; at: string; addenda?: number }) {
   return (
     <span className="signed-badge"><PenLine size={13} />Firmada{by ? ` por ${shortStaff(by)}` : ''} el {dateTime(at)}{addenda > 0 && <span className="badge badge--amber" style={{ marginLeft: 6 }}>Con adenda</span>}</span>

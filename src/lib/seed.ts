@@ -17,18 +17,18 @@ export const MAIN_CLINIC = 'c-sb'
 export const SECOND_CLINIC = 'c-sl'
 
 export const STAFF: Staff[] = [
-  { id: 's-super', name: 'Soporte Clinara', role: 'superadmin', email: 'superadmin@demo.clinara', color: '#0E2233', active: true },
-  { id: 's-admin', clinicId: 'c-sb', name: 'Roberto Aguilar', role: 'admin', email: 'admin@demo.clinara', color: '#5B6472', active: true },
-  { id: 's-herrera', clinicId: 'c-sb', name: 'Dra. Lucía Herrera', role: 'doctor', specialty: 'Medicina interna', email: 'lherrera@demo.clinara', license: 'CMH-08812', color: '#2335C9', active: true },
-  { id: 's-paz', clinicId: 'c-sb', name: 'Dr. Andrés Paz', role: 'doctor', specialty: 'Pediatría', email: 'apaz@demo.clinara', license: 'CMH-11420', color: '#0F8A6E', active: true },
-  { id: 's-zuniga', clinicId: 'c-sb', name: 'Dra. Mariela Zúñiga', role: 'doctor', specialty: 'Ginecología y obstetricia', email: 'mzuniga@demo.clinara', license: 'CMH-09931', color: '#B4407A', active: true },
-  { id: 's-rios', clinicId: 'c-sb', name: 'Lic. Carmen Ríos', role: 'nurse', email: 'crios@demo.clinara', color: '#C27A12', active: true },
-  { id: 's-mejia', clinicId: 'c-sb', name: 'Sofía Mejía', role: 'reception', email: 'smejia@demo.clinara', color: '#6A4BC4', active: true },
+  { id: 's-cerrato', name: 'Ing. Diego Cerrato', role: 'superadmin', email: 'dcerrato@demo.clinara', color: '#0E2233', active: true },
+  { id: 's-moncada', clinicId: 'c-sb', name: 'Ricardo Moncada', role: 'admin', email: 'rmoncada@demo.clinara', color: '#5B6472', active: true },
+  { id: 's-solorzano', clinicId: 'c-sb', name: 'Dra. Valeria Solórzano', role: 'doctor', specialty: 'Medicina interna', email: 'vsolorzano@demo.clinara', license: 'CMH-20118', color: '#2335C9', active: true },
+  { id: 's-bogran', clinicId: 'c-sb', name: 'Dr. Tomás Bográn', role: 'doctor', specialty: 'Pediatría', email: 'tbogran@demo.clinara', license: 'CMH-20233', color: '#0F8A6E', active: true },
+  { id: 's-escoto', clinicId: 'c-sb', name: 'Dra. Natalia Escoto', role: 'doctor', specialty: 'Ginecología y obstetricia', email: 'nescoto@demo.clinara', license: 'CMH-20347', color: '#B4407A', active: true },
+  { id: 's-urbina', clinicId: 'c-sb', name: 'Lic. Marta Urbina', role: 'nurse', email: 'murbina@demo.clinara', color: '#C27A12', active: true },
+  { id: 's-quiroz', clinicId: 'c-sb', name: 'Andrea Quiroz', role: 'reception', email: 'aquiroz@demo.clinara', color: '#6A4BC4', active: true },
   // Segunda clínica de demostración, para comprobar que los datos no se mezclan
-  { id: 's2-admin', clinicId: 'c-sl', name: 'Gloria Paredes', role: 'admin', email: 'admin.sanlucas@demo.clinara', color: '#5B6472', active: true },
-  { id: 's2-rosales', clinicId: 'c-sl', name: 'Dr. Esteban Rosales', role: 'doctor', specialty: 'Medicina general', email: 'erosales@demo.clinara', license: 'CMH-13002', color: '#2C7DA0', active: true },
-  { id: 's2-enamorado', clinicId: 'c-sl', name: 'Lic. Patricia Enamorado', role: 'nurse', email: 'penamorado@demo.clinara', color: '#C27A12', active: true },
-  { id: 's2-calix', clinicId: 'c-sl', name: 'Iris Cálix', role: 'reception', email: 'icalix@demo.clinara', color: '#6A4BC4', active: true },
+  { id: 's2-henriquez', clinicId: 'c-sl', name: 'Marcela Henríquez', role: 'admin', email: 'mhenriquez@demo.clinara', color: '#5B6472', active: true },
+  { id: 's2-lobo', clinicId: 'c-sl', name: 'Dr. Sergio Lobo', role: 'doctor', specialty: 'Medicina general', email: 'slobo@demo.clinara', license: 'CMH-20452', color: '#2C7DA0', active: true },
+  { id: 's2-montes', clinicId: 'c-sl', name: 'Lic. Alejandra Montes', role: 'nurse', email: 'amontes@demo.clinara', color: '#C27A12', active: true },
+  { id: 's2-sevilla', clinicId: 'c-sl', name: 'Brenda Sevilla', role: 'reception', email: 'bsevilla@demo.clinara', color: '#6A4BC4', active: true },
 ]
 
 const p = (
@@ -109,36 +109,36 @@ const a = (
 export function seedAppointments(): Appointment[] {
   n = 0
   return [
-    a('p2', 's-herrera', 0, 8, 0, 30, 'Control de glucosa', 'done'),
-    a('p9', 's-herrera', 0, 8, 30, 30, 'Revisión de laboratorios', 'done'),
-    a('p1', 's-herrera', 0, 9, 30, 30, 'Dolor de garganta y fiebre', 'triaged', 'first'),
-    a('p6', 's-herrera', 0, 10, 0, 45, 'Disnea de esfuerzo', 'arrived'),
-    a('p10', 's-herrera', 0, 11, 0, 30, 'Chequeo general', 'confirmed', 'first'),
-    a('p4', 's-herrera', 0, 14, 0, 30, 'Lumbalgia', 'scheduled'),
-    a('p7', 's-herrera', 0, 15, 30, 30, 'Cefalea recurrente', 'scheduled', 'first'),
-    a('p3', 's-paz', 0, 8, 30, 30, 'Control niño sano', 'done'),
-    a('p8', 's-paz', 0, 9, 0, 30, 'Crisis asmática leve', 'arrived', 'urgent'),
-    a('p3', 's-paz', 0, 13, 0, 30, 'Vacunación', 'confirmed'),
-    a('p5', 's-zuniga', 0, 9, 0, 45, 'Control prenatal', 'in_consult'),
-    a('p9', 's-zuniga', 0, 11, 30, 30, 'Papanicolaou', 'confirmed'),
-    a('p7', 's-zuniga', 0, 16, 0, 30, 'Consulta anticonceptivos', 'scheduled', 'first'),
-    a('p1', 's-herrera', 1, 9, 0, 30, 'Seguimiento presión arterial', 'scheduled'),
-    a('p2', 's-herrera', 2, 10, 0, 30, 'Control de glucosa', 'scheduled'),
-    a('p5', 's-zuniga', 3, 9, 0, 45, 'Ultrasonido obstétrico', 'scheduled'),
-    a('p4', 's-paz', -1, 10, 0, 30, 'Consulta', 'no_show'),
+    a('p2', 's-solorzano', 0, 8, 0, 30, 'Control de glucosa', 'done'),
+    a('p9', 's-solorzano', 0, 8, 30, 30, 'Revisión de laboratorios', 'done'),
+    a('p1', 's-solorzano', 0, 9, 30, 30, 'Dolor de garganta y fiebre', 'triaged', 'first'),
+    a('p6', 's-solorzano', 0, 10, 0, 45, 'Disnea de esfuerzo', 'arrived'),
+    a('p10', 's-solorzano', 0, 11, 0, 30, 'Chequeo general', 'confirmed', 'first'),
+    a('p4', 's-solorzano', 0, 14, 0, 30, 'Lumbalgia', 'scheduled'),
+    a('p7', 's-solorzano', 0, 15, 30, 30, 'Cefalea recurrente', 'scheduled', 'first'),
+    a('p3', 's-bogran', 0, 8, 30, 30, 'Control niño sano', 'done'),
+    a('p8', 's-bogran', 0, 9, 0, 30, 'Crisis asmática leve', 'arrived', 'urgent'),
+    a('p3', 's-bogran', 0, 13, 0, 30, 'Vacunación', 'confirmed'),
+    a('p5', 's-escoto', 0, 9, 0, 45, 'Control prenatal', 'in_consult'),
+    a('p9', 's-escoto', 0, 11, 30, 30, 'Papanicolaou', 'confirmed'),
+    a('p7', 's-escoto', 0, 16, 0, 30, 'Consulta anticonceptivos', 'scheduled', 'first'),
+    a('p1', 's-solorzano', 1, 9, 0, 30, 'Seguimiento presión arterial', 'scheduled'),
+    a('p2', 's-solorzano', 2, 10, 0, 30, 'Control de glucosa', 'scheduled'),
+    a('p5', 's-escoto', 3, 9, 0, 45, 'Ultrasonido obstétrico', 'scheduled'),
+    a('p4', 's-bogran', -1, 10, 0, 30, 'Consulta', 'no_show'),
   ]
 }
 
 export function seedClinical() {
   const vitals: Vitals[] = [
-    { id: 'v1', patientId: 'p1', appointmentId: 'a3', takenBy: 's-rios', takenAt: at(0, 9, 22), systolic: 128, diastolic: 84, heartRate: 96, respRate: 18, temperature: 38.4, spo2: 97, weightKg: 68, heightCm: 162, painScale: 5,
+    { id: 'v1', patientId: 'p1', appointmentId: 'a3', takenBy: 's-urbina', takenAt: at(0, 9, 22), systolic: 128, diastolic: 84, heartRate: 96, respRate: 18, temperature: 38.4, spo2: 97, weightKg: 68, heightCm: 162, painScale: 5,
       chiefComplaint: 'Dolor de garganta y fiebre desde hace 3 días.', notes: 'Refiere dificultad para tragar.' },
-    { id: 'v0', patientId: 'p1', takenBy: 's-rios', takenAt: at(-62, 10, 5), systolic: 142, diastolic: 92, heartRate: 78, respRate: 16, temperature: 36.7, spo2: 98, weightKg: 69.5, heightCm: 162, chiefComplaint: 'Control de presión arterial.' },
-    { id: 'v2', patientId: 'p2', takenBy: 's-rios', takenAt: at(0, 7, 55), systolic: 134, diastolic: 82, heartRate: 74, respRate: 16, temperature: 36.5, spo2: 98, weightKg: 91, heightCm: 174, glucose: 148, chiefComplaint: 'Control de glucosa.' },
+    { id: 'v0', patientId: 'p1', takenBy: 's-urbina', takenAt: at(-62, 10, 5), systolic: 142, diastolic: 92, heartRate: 78, respRate: 16, temperature: 36.7, spo2: 98, weightKg: 69.5, heightCm: 162, chiefComplaint: 'Control de presión arterial.' },
+    { id: 'v2', patientId: 'p2', takenBy: 's-urbina', takenAt: at(0, 7, 55), systolic: 134, diastolic: 82, heartRate: 74, respRate: 16, temperature: 36.5, spo2: 98, weightKg: 91, heightCm: 174, glucose: 148, chiefComplaint: 'Control de glucosa.' },
   ]
   const consultations: Consultation[] = [
     {
-      id: 'c1', patientId: 'p1', doctorId: 's-herrera', date: at(-62, 10, 15), reason: 'Control de presión arterial',
+      id: 'c1', patientId: 'p1', doctorId: 's-solorzano', date: at(-62, 10, 15), reason: 'Control de presión arterial',
       symptoms: [], history: 'Paciente femenina de 42 años con HTA diagnosticada hace 2 años, en tratamiento irregular. Refiere cefalea occipital matutina de 2 semanas de evolución, sin alteraciones visuales ni dolor torácico.',
       exam: 'Consciente, orientada, hidratada. Cuello sin ingurgitación yugular. Tórax: ruidos cardíacos rítmicos, sin soplos; murmullo vesicular presente sin agregados. Abdomen blando, depresible. Extremidades sin edema.',
       diagnoses: [{ code: 'I10', label: 'Hipertensión esencial (primaria)' }],
@@ -146,7 +146,7 @@ export function seedClinical() {
       plan: '', vitalsId: 'v0', prescriptionId: 'rx1',
     },
     {
-      id: 'c2', patientId: 'p2', doctorId: 's-herrera', appointmentId: 'a1', date: at(0, 8, 5), reason: 'Control de glucosa',
+      id: 'c2', patientId: 'p2', doctorId: 's-solorzano', appointmentId: 'a1', date: at(0, 8, 5), reason: 'Control de glucosa',
       symptoms: [], history: 'Paciente masculino de 58 años con DM2 de 10 años de evolución en tratamiento con metformina. Refiere fatiga leve. Glucosa en ayunas en casa de 140 a 150 mg/dL.',
       exam: 'Buen estado general. Pies sin lesiones, pulsos pedios presentes, sensibilidad conservada con monofilamento.',
       diagnoses: [{ code: 'E11.9', label: 'Diabetes mellitus tipo 2 sin complicaciones' }],
@@ -155,10 +155,10 @@ export function seedClinical() {
     },
   ]
   const prescriptions: Prescription[] = [
-    { id: 'rx1', folio: 'RX-2026-0912', patientId: 'p1', doctorId: 's-herrera', consultationId: 'c1', issuedAt: at(-62, 10, 30), items: [
+    { id: 'rx1', folio: 'RX-2026-0912', patientId: 'p1', doctorId: 's-solorzano', consultationId: 'c1', issuedAt: at(-62, 10, 30), items: [
       { drug: 'Losartán', presentation: 'Tableta 50 mg', dose: '1 tableta', frequency: 'Cada 24 horas', duration: '60 días', instructions: 'Tomar por la mañana.' },
     ] },
-    { id: 'rx2', folio: 'RX-2026-1044', patientId: 'p2', doctorId: 's-herrera', consultationId: 'c2', issuedAt: at(0, 8, 25), items: [
+    { id: 'rx2', folio: 'RX-2026-1044', patientId: 'p2', doctorId: 's-solorzano', consultationId: 'c2', issuedAt: at(0, 8, 25), items: [
       { drug: 'Metformina', presentation: 'Tableta 850 mg', dose: '1 tableta', frequency: 'Cada 12 horas', duration: '90 días', instructions: 'Con los alimentos.' },
       { drug: 'Atorvastatina', presentation: 'Tableta 20 mg', dose: '1 tableta', frequency: 'Cada 24 horas', duration: '90 días', instructions: 'Por la noche.' },
     ] },
@@ -193,9 +193,9 @@ export const SERVICES: Service[] = [
 
 export const DOCTOR_SETUP: Record<string, { schedule: Schedule; serviceId: string }> = {
   // Mañana y tarde, con la hora de almuerzo libre
-  's-herrera': { schedule: { days: [1, 2, 3, 4, 5], start: '08:00', end: '17:00', slot: 30, week: Object.fromEntries(['1', '2', '3', '4', '5'].map((d) => [d, [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '17:00' }]])) }, serviceId: 'svc-mi' },
-  's-paz': { schedule: { days: [1, 2, 3, 4, 5, 6], start: '08:00', end: '14:00', slot: 30 }, serviceId: 'svc-ped' },
-  's-zuniga': { schedule: { days: [1, 3, 5], start: '09:00', end: '17:00', slot: 30 }, serviceId: 'svc-gin' },
+  's-solorzano': { schedule: { days: [1, 2, 3, 4, 5], start: '08:00', end: '17:00', slot: 30, week: Object.fromEntries(['1', '2', '3', '4', '5'].map((d) => [d, [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '17:00' }]])) }, serviceId: 'svc-mi' },
+  's-bogran': { schedule: { days: [1, 2, 3, 4, 5, 6], start: '08:00', end: '14:00', slot: 30 }, serviceId: 'svc-ped' },
+  's-escoto': { schedule: { days: [1, 3, 5], start: '09:00', end: '17:00', slot: 30 }, serviceId: 'svc-gin' },
 }
 
 // ---------- Historial sintético para que los reportes tengan datos ----------
@@ -203,9 +203,9 @@ const FIRST_F = ['Karla', 'Lourdes', 'Gabriela', 'Patricia', 'Andrea', 'Claudia'
 const FIRST_M = ['José', 'Luis', 'Kevin', 'Óscar', 'Mario', 'Javier', 'Ricardo', 'Edwin', 'Marvin', 'Nelson', 'Wilmer', 'César', 'Raúl', 'Hugo', 'Bryan']
 const LAST = ['Martínez', 'López', 'Hernández', 'Flores', 'Zelaya', 'Aguilar', 'Rodríguez', 'Mejía', 'Cruz', 'Ramos', 'Ortiz', 'Murillo', 'Espinoza', 'Valladares', 'Canales', 'Bonilla', 'Sosa', 'Maradiaga']
 const REASONS: Record<string, [string, string][]> = {
-  's-herrera': [['Control de presión arterial', 'I10'], ['Dolor de garganta', 'J02.9'], ['Control de glucosa', 'E11.9'], ['Gastritis', 'K29.7'], ['Dolor lumbar', 'M54.5'], ['Chequeo general', 'Z00.0'], ['Cefalea', 'G43.9'], ['Ardor al orinar', 'N39.0']],
-  's-paz': [['Fiebre y tos', 'J20.9'], ['Diarrea', 'A09'], ['Control niño sano', 'Z00.0'], ['Dolor de oído', 'H66.9'], ['Resfriado', 'J00'], ['Crisis asmática', 'J45.9']],
-  's-zuniga': [['Control prenatal', 'O26.9'], ['Papanicolaou', 'Z00.0'], ['Infección urinaria', 'N39.0'], ['Consulta anticonceptivos', 'Z00.0']],
+  's-solorzano': [['Control de presión arterial', 'I10'], ['Dolor de garganta', 'J02.9'], ['Control de glucosa', 'E11.9'], ['Gastritis', 'K29.7'], ['Dolor lumbar', 'M54.5'], ['Chequeo general', 'Z00.0'], ['Cefalea', 'G43.9'], ['Ardor al orinar', 'N39.0']],
+  's-bogran': [['Fiebre y tos', 'J20.9'], ['Diarrea', 'A09'], ['Control niño sano', 'Z00.0'], ['Dolor de oído', 'H66.9'], ['Resfriado', 'J00'], ['Crisis asmática', 'J45.9']],
+  's-escoto': [['Control prenatal', 'O26.9'], ['Papanicolaou', 'Z00.0'], ['Infección urinaria', 'N39.0'], ['Consulta anticonceptivos', 'Z00.0']],
 }
 
 function rng(seed: number) {
@@ -254,7 +254,7 @@ export function seedHistory(days = 60) {
         const items = [{ serviceId: svc.id, name: svc.name, price: svc.price, qty: 1 }, ...(extra ? [{ serviceId: extra.id, name: extra.name, price: extra.price, qty: 1 }] : [])]
         const total = items.reduce((s, i) => s + i.price * i.qty, 0)
         const method = (['cash', 'cash', 'card', 'card', 'transfer', 'insurance'] as const)[Math.floor(rand() * 6)]
-        payments.push({ id: `hp${payments.length}`, receiptNo: `R-${String(++receipt).padStart(6, '0')}`, appointmentId: id, patientId: pt.id, items, discount: 0, total, method, receivedBy: 's-mejia', paidAt: at(-d, h, m + 35) })
+        payments.push({ id: `hp${payments.length}`, receiptNo: `R-${String(++receipt).padStart(6, '0')}`, appointmentId: id, patientId: pt.id, items, discount: 0, total, method, receivedBy: 's-quiroz', paidAt: at(-d, h, m + 35) })
       }
     }
   }
@@ -271,7 +271,7 @@ export function seedUpcoming(historyPatients: Patient[], existing: Appointment[]
   const all = [...PATIENTS, ...historyPatients].filter((p) => p.birthDate)
   const kids = all.filter((p) => yearsOld(p.birthDate) < 15)
   const adults = all.filter((p) => yearsOld(p.birthDate) >= 18)
-  const pools: Record<string, Patient[]> = { 's-herrera': adults, 's-paz': kids, 's-zuniga': adults.filter((p) => p.sex === 'F') }
+  const pools: Record<string, Patient[]> = { 's-solorzano': adults, 's-bogran': kids, 's-escoto': adults.filter((p) => p.sex === 'F') }
   const out: Appointment[] = []
   for (let d = 1; d <= days; d++) {
     const date = at(d, 12).slice(0, 10)
@@ -315,14 +315,14 @@ export function seedSecondClinic() {
   ]
   n = 100
   const appointments: Appointment[] = [
-    a('q3', 's2-rosales', 0, 8, 30, 30, 'Control de presión arterial', 'done'),
-    a('q1', 's2-rosales', 0, 10, 0, 30, 'Dolor en el dedo gordo del pie', 'arrived'),
-    a('q2', 's2-rosales', 0, 15, 0, 30, 'Chequeo general', 'confirmed', 'first'),
-    a('q3', 's2-rosales', 7, 9, 0, 30, 'Control de glucosa', 'scheduled'),
+    a('q3', 's2-lobo', 0, 8, 30, 30, 'Control de presión arterial', 'done'),
+    a('q1', 's2-lobo', 0, 10, 0, 30, 'Dolor en el dedo gordo del pie', 'arrived'),
+    a('q2', 's2-lobo', 0, 15, 0, 30, 'Chequeo general', 'confirmed', 'first'),
+    a('q3', 's2-lobo', 7, 9, 0, 30, 'Control de glucosa', 'scheduled'),
   ].map((x) => ({ ...x, id: x.id.replace('a', 'b') }))
   const services: Service[] = SERVICES.filter((x) => ['svc-gen', 'svc-ecg', 'svc-cur', 'svc-vac'].includes(x.id)).map((x) => ({ ...x, id: `sl-${x.id}` }))
   const setup: Record<string, { schedule: Schedule; serviceId: string }> = {
-    's2-rosales': { schedule: { days: [1, 2, 3, 4, 5], start: '07:00', end: '15:00', slot: 30 }, serviceId: 'sl-svc-gen' },
+    's2-lobo': { schedule: { days: [1, 2, 3, 4, 5], start: '07:00', end: '15:00', slot: 30 }, serviceId: 'sl-svc-gen' },
   }
   return { patients, appointments, services, setup }
 }
@@ -331,21 +331,21 @@ export function seedSecondClinic() {
 export const OFFICE_CLINIC = 'c-al'
 
 /**
- * Consultorio de la Dra. Ana López: un médico con su asistente. Pacientes con historial, la agenda de hoy en
+ * Consultorio de la Dra. Isabel Pacheco: un médico con su asistente. Pacientes con historial, la agenda de hoy en
  * distintos estados, recetas y una paciente en observación con un medicamento por aplicar. Los diagnósticos
  * usan CIE-11.
  */
 export function seedOffice() {
   const C = OFFICE_CLINIC
-  const doc = 's3-lopez'
+  const doc = 's3-pacheco'
   const clinic = {
-    id: C, slug: 'ana-lopez', name: 'Consultorio Dra. Ana López', address: 'Tegucigalpa, Col. Lomas del Guijarro, Edificio Plaza Médica, local 4',
-    phone: '+504 2239-4410', email: 'consultorio@analopez.hn', currency: 'L', rxValidityDays: 30, specialty: 'Medicina general', license: 'CMH-14550',
+    id: C, slug: 'isabel-pacheco', name: 'Consultorio Dra. Isabel Pacheco', address: 'Tegucigalpa, Col. Lomas del Guijarro, Edificio Plaza Médica, local 4',
+    phone: '+504 2239-4410', email: 'consultorio@isabelpacheco.hn', currency: 'L', rxValidityDays: 30, specialty: 'Medicina general', license: 'CMH-20561',
     reminderTemplate: 'Hola {paciente}, le recordamos su cita con {medico} el {fecha} a las {hora}. Responda SÍ para confirmar o llame al {telefono} si necesita cambiarla.',
   }
   const staff: Staff[] = [
-    { id: doc, clinicId: C, name: 'Dra. Ana López', role: 'doctor', specialty: 'Medicina general', email: 'alopez@demo.clinara', license: 'CMH-14550', color: '#2335C9', active: true },
-    { id: 's3-asistente', clinicId: C, name: 'Karla Mendoza', role: 'assistant', email: 'asistente@demo.clinara', color: '#0F8A6E', active: true },
+    { id: doc, clinicId: C, name: 'Dra. Isabel Pacheco', role: 'doctor', specialty: 'Medicina general', email: 'ipacheco@demo.clinara', license: 'CMH-20561', color: '#2335C9', active: true },
+    { id: 's3-cardona', clinicId: C, name: 'Lorena Cardona', role: 'assistant', email: 'lcardona@demo.clinara', color: '#0F8A6E', active: true },
   ]
   const patients: Patient[] = [
     p('r1', 'EXP-00501', 'Daniela María', 'Ordóñez Pineda', '1990-04-12', 'F', '9876-1010', { dni: '0801-1990-04512', civilStatus: 'Casada', occupation: 'Contadora', address: 'Tegucigalpa, Col. Palmira', allergies: ['Penicilina'] }),
@@ -443,8 +443,8 @@ export function seedInpatient(now = new Date()) {
   const dayAt = (offset: number, h: number, m = 0) => { const d = new Date(now); d.setDate(d.getDate() + offset); d.setHours(h, m, 0, 0); return d }
   // El caso que describió el médico: ingresó hace unas 6 horas con ondansetrón y acetaminofén
   const t0 = new Date(now); t0.setMinutes(0, 0, 0); t0.setHours(t0.getHours() - 6)
-  const nurse = 's-rios'
-  const doc = 's-herrera'
+  const nurse = 's-urbina'
+  const doc = 's-solorzano'
 
   const hospitalizations: Hospitalization[] = [
     { id: 'hz1', patientId: 'p11', bedId: 'bed-203', admittedAt: iso(t0), admittedBy: doc, reason: 'Dolor abdominal en fosa ilíaca derecha de 18 horas, con náuseas y fiebre.',
@@ -558,7 +558,7 @@ export const CASE_PATIENT_IDS = ['p15', 'p16', 'p17', 'p18', 'p19', 'p20']
 /** Cama del caso que ya egresó. */
 export const CASE_BED = 'bed-105'
 /** Personal que firma los casos; deben existir en la base para cargarlos. */
-export const CASE_STAFF = ['s-herrera', 's-paz', 's-zuniga', 's-rios', 's-mejia']
+export const CASE_STAFF = ['s-solorzano', 's-bogran', 's-escoto', 's-urbina', 's-quiroz']
 
 /** Primer número libre de expediente, folio de receta y recibo; la base los calcula para no chocar con lo que ya existe. */
 export interface CaseNumbers { record: number; folio: number; receipt: number }
@@ -571,8 +571,8 @@ export function seedCases(next: CaseNumbers, now = new Date()) {
   const iso = (d: Date) => d.toISOString()
   const dayAt = (offset: number, h: number, m = 0) => { const d = new Date(now); d.setDate(d.getDate() + offset); d.setHours(h, m, 0, 0); return d }
   const day = (offset: number) => at(offset, 12).slice(0, 10)
-  const nurse = 's-rios'
-  const internist = 's-herrera'
+  const nurse = 's-urbina'
+  const internist = 's-solorzano'
 
   const patients: Patient[] = [
     p('p15', '', 'Iris Marisol', 'Cáceres Amador', '1993-04-18', 'F', '9741-2286', {
@@ -654,7 +654,7 @@ export function seedCases(next: CaseNumbers, now = new Date()) {
       history: v.history, exam: v.exam, observations: v.observations, diagnoses: v.diagnoses, orders: v.orders, plan: '', vitalsId: ids.vitals, prescriptionId: ids.rx })
     if (v.rx) prescriptions.push({ id: ids.rx!, folio: '', patientId: v.patientId, doctorId: v.doctorId, consultationId: ids.cons, issuedAt: at(v.day, v.h, m + 35), items: v.rx })
     payments.push({ id: `cp${k}`, receiptNo: '', appointmentId: ids.appt, patientId: v.patientId, items: v.items, discount: 0, total: total(v.items), method: v.method,
-      reference: v.reference, receivedBy: 's-mejia', paidAt: at(v.day, v.h, m + 45) })
+      reference: v.reference, receivedBy: 's-quiroz', paidAt: at(v.day, v.h, m + 45) })
     return ids.cons
   }
 
@@ -769,7 +769,7 @@ export function seedCases(next: CaseNumbers, now = new Date()) {
     summary: 'Ingresó por celulitis de pierna derecha con fiebre, secundaria a herida con clavo en el tobillo, y glucosa de 286 mg/dL. Recibió clindamicina IV por 3 días con buena respuesta y se pasó a amoxicilina con ácido clavulánico oral. Doppler venoso sin trombosis. La glucosa se controló con insulina NPH y se reinició metformina. Afebril desde el segundo día.',
     condition: 'Mejorado, afebril y deambulando.',
     instructions: 'Completar el antibiótico por 7 días más. Elevar la pierna al estar sentado. Lavar la herida con agua y jabón una vez al día. Revisarse los pies a diario y usar calzado cerrado. Glucometría en ayunas cada día, anotarla y traer el registro. Regresar si vuelve la fiebre, aumenta el enrojecimiento o sale pus.',
-    followUp: 'Control en consulta externa con la Dra. Herrera en 4 días.',
+    followUp: 'Control en consulta externa con la Dra. Solórzano en 4 días.',
   }
   const notes: InpatientNote[] = [
     soap('chn1', 'admission', dayAt(-9, 11, 20),
@@ -852,7 +852,7 @@ export function seedCases(next: CaseNumbers, now = new Date()) {
   const stay = [{ name: 'Hospitalización en sala de medicina interna (por día)', price: 1800, qty: 4 }, { name: 'Medicamentos e insumos', price: 3150, qty: 1 },
     { ...charge('svc-cur')[0], qty: 4 }]
   payments.push({ id: 'cp-hosp', receiptNo: '', patientId: 'p17', items: stay, discount: 0, total: total(stay), method: 'insurance', reference: 'Mapfre, autorización 55-80213',
-    receivedBy: 's-mejia', paidAt: iso(dayAt(-5, 11, 40)) })
+    receivedBy: 's-quiroz', paidAt: iso(dayAt(-5, 11, 40)) })
   visit({
     patientId: 'p17', doctorId: internist, day: -1, h: 9, reason: 'Control después del egreso',
     vitals: { systolic: 134, diastolic: 82, heartRate: 76, respRate: 16, temperature: 36.6, spo2: 98, weightKg: 90.5, heightCm: 170, glucose: 132, painScale: 1,
@@ -898,7 +898,7 @@ export function seedCases(next: CaseNumbers, now = new Date()) {
 
   // Pediatría: control de niño sano con vacuna
   visit({
-    patientId: 'p19', doctorId: 's-paz', day: -14, h: 8, m: 30, reason: 'Control de niño sano',
+    patientId: 'p19', doctorId: 's-bogran', day: -14, h: 8, m: 30, reason: 'Control de niño sano',
     vitals: { heartRate: 112, respRate: 26, temperature: 36.7, spo2: 99, weightKg: 12.6, heightCm: 89, chiefComplaint: 'Control de los 2 años y medio y vacunas.' },
     history: 'Femenina de 2 años 6 meses que acude a control de niño sano. Come bien y duerme toda la noche. Dice frases de 3 palabras, corre y sube escaleras. Sin enfermedades desde el último control. La madre refiere que juega con tierra en la guardería.',
     exam: 'Activa, reactiva, bien hidratada. Peso de 12.6 kg y talla de 89 cm, ambos en el percentil 50 para la edad. Otoscopia normal. Ruidos cardíacos rítmicos, sin soplos. Abdomen blando. Genitales normales.',
@@ -916,7 +916,7 @@ export function seedCases(next: CaseNumbers, now = new Date()) {
     oral('Sulfato ferroso', 'Tableta 300 mg', '1 tableta', 'Cada 24 horas', '30 días', 'Con jugo de naranja, lejos de la leche.'),
     oral('Carbonato de calcio', 'Tableta 600 mg', '1 tableta', 'Cada 12 horas', '30 días', 'Separado 2 horas del hierro.')]
   visit({
-    patientId: 'p20', doctorId: 's-zuniga', day: -32, h: 9, reason: 'Control prenatal',
+    patientId: 'p20', doctorId: 's-escoto', day: -32, h: 9, reason: 'Control prenatal',
     vitals: { systolic: 108, diastolic: 68, heartRate: 84, respRate: 18, temperature: 36.6, spo2: 99, weightKg: 63.5, heightCm: 160, chiefComplaint: 'Control del embarazo; se siente bien.' },
     history: 'Femenina de 28 años, G2 P1, con embarazo de 23.5 semanas por FUM confiable. Percibe movimientos fetales. Niega sangrado, salida de líquido, contracciones, cefalea y edema. Las náuseas desaparecieron en el segundo trimestre.',
     exam: 'Altura uterina de 23 cm. Frecuencia cardíaca fetal de 146 lpm. Sin dinámica uterina. Sin edema en miembros inferiores.',
@@ -933,7 +933,7 @@ export function seedCases(next: CaseNumbers, now = new Date()) {
   labs.push({ id: 'cl9', patientId: 'p20', category: 'lab', title: 'Curva de tolerancia a la glucosa y hemograma', takenAt: at(-6, 7, 30),
     lines: ['Glucosa en ayunas 84 mg/dl', 'Glucosa 1 hora post carga 152 mg/dl', 'Glucosa 2 horas post carga 128 mg/dl', 'Hemoglobina 11.4 g/dl', 'Plaquetas 245 000 /mm3'] })
   visit({
-    patientId: 'p20', doctorId: 's-zuniga', day: -4, h: 9, reason: 'Control prenatal',
+    patientId: 'p20', doctorId: 's-escoto', day: -4, h: 9, reason: 'Control prenatal',
     vitals: { systolic: 112, diastolic: 70, heartRate: 86, respRate: 18, temperature: 36.5, spo2: 99, weightKg: 65.2, heightCm: 160, chiefComplaint: 'Control del embarazo; trae resultados.' },
     history: 'Embarazo de 27.5 semanas. Movimientos fetales presentes. Sin síntomas de alarma. Cumple los suplementos. Trae curva de tolerancia a la glucosa y hemograma.',
     exam: 'Altura uterina de 27 cm. Frecuencia cardíaca fetal de 142 lpm. Presentación cefálica. Sin edema.',
@@ -942,7 +942,7 @@ export function seedCases(next: CaseNumbers, now = new Date()) {
     orders: ['Continuar ácido fólico, sulfato ferroso y calcio.', 'Vacuna Tdpa aplicada hoy.', 'Inscribirse en el curso de preparación para el parto.', 'Control prenatal en 2 semanas.'],
     rx: prenatalRx, items: charge('svc-gin', 'svc-vac'), method: 'card', reference: 'POS 004871',
   })
-  appointments.push({ id: 'ca-next3', patientId: 'p20', doctorId: 's-zuniga', start: at(10, 9, 0), minutes: 45, reason: 'Control prenatal', type: 'followup', status: 'scheduled' })
+  appointments.push({ id: 'ca-next3', patientId: 'p20', doctorId: 's-escoto', start: at(10, 9, 0), minutes: 45, reason: 'Control prenatal', type: 'followup', status: 'scheduled' })
 
   const followups: Followup[] = [
     { id: 'cfu1', patientId: 'p15', kind: 'reminder', title: 'Llamar para confirmar que terminó el antibiótico y ya no tiene molestias', dueDate: day(1), createdBy: internist, createdAt: at(-6, 10, 40), active: true },
@@ -951,8 +951,8 @@ export function seedCases(next: CaseNumbers, now = new Date()) {
     { id: 'cfu3', patientId: 'p18', kind: 'chronic', title: 'Hipertensión arterial e hipotiroidismo', dueDate: day(1), everyDays: 90, notes: 'Traer el resultado de la mamografía.',
       createdBy: internist, createdAt: at(-120, 11), active: true },
     { id: 'cfu4', patientId: 'p18', kind: 'procedure', title: 'Mamografía de tamizaje', dueDate: day(-2), notes: 'Por antecedente de hermana con cáncer de mama.', createdBy: internist, createdAt: at(-30, 11), active: true },
-    { id: 'cfu5', patientId: 'p19', kind: 'reminder', title: 'Control de niño sano de los 3 años', dueDate: day(166), createdBy: 's-paz', createdAt: at(-14, 9), active: true },
-    { id: 'cfu6', patientId: 'p20', kind: 'reminder', title: 'Control prenatal de la semana 30 con ultrasonido', dueDate: day(10), createdBy: 's-zuniga', createdAt: at(-4, 9, 30), active: true },
+    { id: 'cfu5', patientId: 'p19', kind: 'reminder', title: 'Control de niño sano de los 3 años', dueDate: day(166), createdBy: 's-bogran', createdAt: at(-14, 9), active: true },
+    { id: 'cfu6', patientId: 'p20', kind: 'reminder', title: 'Control prenatal de la semana 30 con ultrasonido', dueDate: day(10), createdBy: 's-escoto', createdAt: at(-4, 9, 30), active: true },
   ]
 
   // Expedientes, folios y recibos siguen la numeración de la clínica en orden cronológico
