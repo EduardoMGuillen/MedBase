@@ -8,9 +8,9 @@ import { normalize } from '../../src/lib/patients.js'
 import { doseText } from '../../src/lib/doseText.js'
 import { formatRate, infusionUnitLabel } from '../../src/lib/inpatient.js'
 import { GENERAL_USE_LABEL, USAGE_AREAS } from '../../src/lib/clinicalConfig.js'
-import { toLocalValue } from '../../src/lib/dateInput.js'
+import { fromLocalValue, toLocalValue } from '../../src/lib/dateInput.js'
 import { localDay, periodOf, scopeFits, scopeHint, supplyLabel, unitText, type SupplyScope } from '../../src/lib/supplies.js'
-import { USAGE_AREA_LIST, type MaterialLine, type MaterialRecord, type MedUse, type UsageArea } from '../../src/lib/usage.js'
+import { sortSuggestions, USAGE_AREA_LIST, type MaterialLine, type MaterialRecord, type MedUse, type UsageArea, type UsageSuggestion } from '../../src/lib/usage.js'
 import type { Nebulization } from '../../src/lib/medExtras.js'
 import type { PrescriptionItem, Role } from '../../src/lib/types.js'
 import { assertGrace, graceUntil, saveVersion } from '../grace.js'
@@ -24,6 +24,13 @@ const MAX_RANGE_DAYS = 93
 const bedText = (room: unknown, label: unknown) => (room ? `Cuarto ${room}${label ? `-${label}` : ''}` : '')
 const locationOf = (area: UsageArea, bed?: string) => (area === 'outpatient' ? USAGE_AREAS.outpatient : `${USAGE_AREAS[area]}${bed ? ` · ${bed}` : ''}`)
 const fullName = (r: Row) => `${r.first_name} ${r.last_name}`.trim()
+/** Una hora guardada con zona («…Z», «…-06:00»: tal cual) o sin ella (hora local de Honduras, como las citas). */
+const whenOf = (s: unknown) => {
+  if (!s) return undefined
+  const t = String(s)
+  const d = /(?:Z|[+-]\d{2}:?\d{2})$/.test(t) ? new Date(t) : fromLocalValue(t)
+  return Number.isNaN(d.getTime()) ? undefined : d
+}
 
 /** «Lic. Carmen Ríos» y su cargo («Enfermería», «Médico · Medicina general», «Microbiólogo(a)»). */
 function staffWho(r: Row | undefined) {
@@ -126,6 +133,8 @@ export function registerUsage(app: Express, { sql, auth, need, userOf, clinicOf,
     location: r.general ? '' : String(r.location ?? ''), periodKind: String(r.period_kind) as MaterialRecord['periodKind'], periodStart: String(r.period_start), periodEnd: String(r.period_end),
     periodLabel: String(r.period_label), shiftKey: r.shift_key ? String(r.shift_key) : undefined, items: JSON.parse(String(r.items)) as MaterialLine[],
     recordedBy: String(r.recorded_by), recordedByName: staffWho(staff.get(String(r.recorded_by))).name, recordedAt: String(r.recorded_at), version: Number(r.version ?? 1),
+    // RU8 (ronda 15): los sets que se usaron, con el nombre que tenían en ese momento
+    sets: r.sets ? (JSON.parse(String(r.sets)) as { id: string; name: string }[]) : [],
     graceUntil: graceUntil(r.recorded_at), correctedAt: r.corrected_at ? String(r.corrected_at) : undefined,
     voidedAt: r.voided_at ? String(r.voided_at) : undefined, voidedBy: r.voided_by ? String(r.voided_by) : undefined,
     voidedByName: r.voided_by ? staffWho(staff.get(String(r.voided_by))).name : undefined, voidReason: r.void_reason ? String(r.void_reason) : undefined,
@@ -161,10 +170,12 @@ export function registerUsage(app: Express, { sql, auth, need, userOf, clinicOf,
     day,
     shiftKey: z.string().trim().max(40).optional(),
     items: z.array(z.object({ itemId: z.string().min(1).max(80), quantity: z.number().int('La cantidad es un número entero.').min(1, 'La cantidad mínima es 1.').max(999, 'Revisa la cantidad: es demasiado alta.') })).max(120),
+    // RU8 (ronda 15): los sets que se usaron («Usar set»)
+    sets: z.array(z.string().min(1).max(80)).max(20).default([]),
   })
 
   /** Valida el registro y arma lo que se guarda (periodo, ubicación y la copia de cada material). */
-  async function prepare(cid: string, b: z.infer<typeof recordBody>, keep?: Set<string>) {
+  async function prepare(cid: string, b: z.infer<typeof recordBody>, keep?: Set<string>, keptSets: { id: string; name: string }[] = []) {
     if (b.general && b.patientId) fail(400, 'Elige un paciente o «Uso general del servicio», no los dos.')
     if (!b.general && !b.patientId) fail(400, 'Elige el paciente o marca «Uso general del servicio».')
     const lines = b.items.filter((i) => i.quantity > 0)
@@ -188,9 +199,20 @@ export function registerUsage(app: Express, { sql, auth, need, userOf, clinicOf,
       return { itemId: l.itemId, category: String(r!.category), material: String(r!.material), variant: String(r!.variant ?? ''), unit: String(r!.unit) as MaterialLine['unit'], quantity: l.quantity }
     })
     const where = patient ? await whereWas(cid, String(patient.id), period.start, period.end) : { area: null, location: null }
-    return { period, patient, items: out, where }
+    // RU8: el nombre de cada set en este momento (al corregir, los que ya tenía el registro conservan el suyo)
+    const ids = [...new Set(b.sets)]
+    const found = ids.length ? await sql.query(`SELECT id, name, archived_at FROM supply_sets WHERE clinic_id = ? AND id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids]) : []
+    const sets = ids.map((id) => {
+      const had = keptSets.find((x) => x.id === id)
+      if (had) return had
+      const r = found.find((x) => String(x.id) === id) ?? fail(404, 'Un set del registro ya no existe.')
+      if (r!.archived_at) fail(409, `El set «${r!.name}» está archivado.`)
+      return { id, name: String(r!.name) }
+    })
+    return { period, patient, items: out, where, sets }
   }
   const itemsText = (items: MaterialLine[]) => items.map((i) => `${supplyLabel(i)} × ${unitText(i.quantity, i.unit)}`).join(', ')
+  const setsText = (sets: { name: string }[]) => (sets.length ? ` (con ${sets.length === 1 ? 'el set' : 'los sets'} ${sets.map((x) => `«${x.name}»`).join(', ')})` : '')
   const whoText = (patient?: Row) => (patient ? fullName(patient) : GENERAL_USE_LABEL)
 
   app.post('/api/usage/material', auth, need('usage.record'), async (req, res) => {
@@ -199,10 +221,10 @@ export function registerUsage(app: Express, { sql, auth, need, userOf, clinicOf,
     const cid = clinicOf(req)
     const p = await prepare(cid, b)
     const id = randomUUID()
-    await sql.run(`INSERT INTO material_uses (id, clinic_id, patient_id, general, area, location, period_kind, period_start, period_end, period_label, shift_key, items, recorded_by, recorded_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, cid, p.patient ? String(p.patient.id) : null, !p.patient, p.where.area, p.where.location, p.period.kind, p.period.start, p.period.end,
-      p.period.label, p.period.shiftKey ?? null, JSON.stringify(p.items), user.id, new Date().toISOString()])
-    await audit(user, `Registro de uso de material: registró para ${whoText(p.patient)} (${p.period.label}): ${itemsText(p.items)}`, sql, p.patient ? String(p.patient.id) : undefined)
+    await sql.run(`INSERT INTO material_uses (id, clinic_id, patient_id, general, area, location, period_kind, period_start, period_end, period_label, shift_key, items, recorded_by, recorded_at, sets)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, cid, p.patient ? String(p.patient.id) : null, !p.patient, p.where.area, p.where.location, p.period.kind, p.period.start, p.period.end,
+      p.period.label, p.period.shiftKey ?? null, JSON.stringify(p.items), user.id, new Date().toISOString(), p.sets.length ? JSON.stringify(p.sets) : null])
+    await audit(user, `Registro de uso de material: registró para ${whoText(p.patient)} (${p.period.label})${setsText(p.sets)}: ${itemsText(p.items)}`, sql, p.patient ? String(p.patient.id) : undefined)
     res.status(201).json(toRecord((await recordRow(cid, id))!, await staffMap(cid)))
   })
 
@@ -215,13 +237,13 @@ export function registerUsage(app: Express, { sql, auth, need, userOf, clinicOf,
     if (r.voided_at) fail(409, 'Ese registro está anulado: no se corrige.')
     assertGrace(user.id, r.recorded_by, r.recorded_at, 'registró el material')
     const before = JSON.parse(String(r.items)) as MaterialLine[]
-    const p = await prepare(cid, b, new Set(before.map((i) => i.itemId)))
+    const p = await prepare(cid, b, new Set(before.map((i) => i.itemId)), r.sets ? JSON.parse(String(r.sets)) : [])
     await sql.tx(async (q) => {
       const next = await saveVersion(q, { clinicId: cid, kind: 'material_use', id: String(r.id), version: Number(r.version ?? 1), authorId: String(r.recorded_by), at: String(r.recorded_at), by: user.id,
         data: { patientId: r.patient_id ?? null, general: Boolean(r.general), periodLabel: r.period_label, items: before } })
       await q.run(`UPDATE material_uses SET patient_id = ?, general = ?, area = ?, location = ?, period_kind = ?, period_start = ?, period_end = ?, period_label = ?, shift_key = ?, items = ?,
-          version = ?, corrected_at = ?, corrected_by = ? WHERE id = ?`, [p.patient ? String(p.patient.id) : null, !p.patient, p.where.area, p.where.location, p.period.kind, p.period.start,
-        p.period.end, p.period.label, p.period.shiftKey ?? null, JSON.stringify(p.items), next, new Date().toISOString(), user.id, String(r.id)])
+          version = ?, corrected_at = ?, corrected_by = ?, sets = ? WHERE id = ?`, [p.patient ? String(p.patient.id) : null, !p.patient, p.where.area, p.where.location, p.period.kind, p.period.start,
+        p.period.end, p.period.label, p.period.shiftKey ?? null, JSON.stringify(p.items), next, new Date().toISOString(), user.id, p.sets.length ? JSON.stringify(p.sets) : null, String(r.id)])
       await audit(user, `Registro de uso de material: corrigió en el periodo de gracia (versión ${next}) el registro de ${r.general ? GENERAL_USE_LABEL : fullName(r)} (antes: ${itemsText(before)}; ahora: ${whoText(p.patient)}, ${p.period.label}: ${itemsText(p.items)})`, q, p.patient ? String(p.patient.id) : undefined)
     })
     res.json(toRecord((await recordRow(cid, String(r.id)))!, await staffMap(cid)))
@@ -252,21 +274,53 @@ export function registerUsage(app: Express, { sql, auth, need, userOf, clinicOf,
     res.json({ ok: true })
   })
 
-  /** Pacientes para sugerir primero: atendidos (cita o consulta) o internados en ese periodo. */
+  /**
+   * RU7 (ronda 15): los atendidos o internados en el periodo, para «¿Para quién?», agrupados en Consulta externa, Observación y
+   * Hospitalización (A9): nombre, expediente, ubicación (cama o cuarto), hora de atención y cuántos registros de material tiene ya
+   * en ese periodo («Ya tiene registro (n)»). Quien está internado va a su estancia aunque también pasó por consulta externa.
+   *
+   * Por qué no salían los de consulta externa (ronda 14): se comparaba `consultations.date` como texto con la hora local, pero la
+   * consulta guarda la hora en UTC («…T23:14:00.000Z»): una consulta de las 17:14 quedaba «después» de las 23:00. Ahora cada hora
+   * se lee con su zona (con «Z» u otra zona, tal cual; sin zona, la de Honduras), y una cita cuenta por su hora o por la de llegada.
+   */
   app.get('/api/usage/suggest', auth, need('usage.record'), async (req, res) => {
     const f = parse(z.object({ from: iso, to: iso }), req.query, 'Elige el periodo.')
     const cid = clinicOf(req)
-    const from = new Date(f.from).toISOString()
-    const to = new Date(f.to).toISOString()
-    // Citas y consultas guardan la hora local de Honduras sin zona («2026-11-05T09:00:00»)
-    const lf = toLocalValue(new Date(f.from))
-    const lt = toLocalValue(new Date(f.to))
-    const rows = await sql.query(`SELECT p.id, p.first_name, p.last_name, p.record, MAX(x.kind) AS kind FROM patients p JOIN (
-        SELECT patient_id, 'outpatient' AS kind FROM appointments WHERE clinic_id = ? AND start >= ? AND start < ? AND status IN ('arrived','triaged','in_consult','done')
-        UNION SELECT patient_id, 'outpatient' FROM consultations WHERE clinic_id = ? AND date >= ? AND date < ?
-        UNION SELECT patient_id, kind FROM hospitalizations WHERE clinic_id = ? AND admitted_at < ? AND (discharged_at IS NULL OR discharged_at > ?)
-      ) x ON x.patient_id = p.id WHERE p.clinic_id = ? GROUP BY p.id, p.first_name, p.last_name, p.record ORDER BY p.first_name, p.last_name LIMIT 60`,
-    [cid, lf, lt, cid, lf, lt, cid, to, from, cid])
-    res.json(rows.map((r) => ({ id: String(r.id), name: fullName(r), record: String(r.record), area: (r.kind === 'outpatient' ? 'outpatient' : r.kind === 'observation' ? 'observation' : 'hospital') as UsageArea })))
+    const from = new Date(f.from)
+    const to = new Date(f.to)
+    const inPeriod = (s: unknown) => { const t = whenOf(s); return !!t && t >= from && t < to }
+    // Margen de un día en el texto (sirve para las dos formas de guardar la hora); el filtro fino es inPeriod
+    const lo = toLocalValue(new Date(from.getTime() - 86_400_000)).slice(0, 10)
+    const hi = `${toLocalValue(new Date(to.getTime() + 86_400_000)).slice(0, 10)}T99`
+    const consults = await sql.query(`SELECT patient_id, date FROM consultations WHERE clinic_id = ? AND date >= ? AND date < ?`, [cid, lo, hi])
+    const appts = await sql.query(`SELECT patient_id, start, arrived_at FROM appointments WHERE clinic_id = ? AND status IN ('arrived','triaged','in_consult','done')
+      AND ((start >= ? AND start < ?) OR (arrived_at >= ? AND arrived_at < ?))`, [cid, lo, hi, lo, hi])
+    const stays = await sql.query(`SELECT h.patient_id, h.kind, h.admitted_at, b.room, b.label FROM hospitalizations h LEFT JOIN beds b ON b.id = h.bed_id
+      WHERE h.clinic_id = ? AND h.admitted_at < ? AND (h.discharged_at IS NULL OR h.discharged_at > ?) ORDER BY h.admitted_at`, [cid, to.toISOString(), from.toISOString()])
+    const seen = new Map<string, { area: UsageArea; bed?: string; at?: string }>()
+    for (const c of consults) {
+      if (!inPeriod(c.date)) continue
+      const at = whenOf(c.date)!.toISOString()
+      const prev = seen.get(String(c.patient_id))
+      if (!prev || (prev.at ?? '') < at) seen.set(String(c.patient_id), { area: 'outpatient', at })
+    }
+    for (const a of appts) {
+      if (seen.has(String(a.patient_id)) || (!inPeriod(a.start) && !inPeriod(a.arrived_at))) continue
+      seen.set(String(a.patient_id), { area: 'outpatient', at: (whenOf(a.arrived_at) ?? whenOf(a.start))?.toISOString() })
+    }
+    // La estancia manda (la más reciente que cruza el periodo)
+    for (const h of stays) seen.set(String(h.patient_id), { area: h.kind === 'observation' ? 'observation' : 'hospital', bed: bedText(h.room, h.label) || undefined, at: String(h.admitted_at) })
+    const counts = await sql.query(`SELECT patient_id, general, COUNT(*)::int AS n FROM material_uses WHERE clinic_id = ? AND voided_at IS NULL AND period_start >= ? AND period_start < ?
+      GROUP BY patient_id, general`, [cid, from.toISOString(), to.toISOString()])
+    const countOf = new Map(counts.filter((c) => c.patient_id).map((c) => [String(c.patient_id), Number(c.n)]))
+    const general = counts.filter((c) => c.general).reduce((s, c) => s + Number(c.n), 0)
+    const ids = [...seen.keys()]
+    const people = ids.length ? await sql.query(`SELECT id, first_name, last_name, record, dni FROM patients WHERE clinic_id = ? AND id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids]) : []
+    const patients: UsageSuggestion[] = people.map((p) => {
+      const s = seen.get(String(p.id))!
+      return { id: String(p.id), name: fullName(p), record: String(p.record), dni: p.dni ? String(p.dni) : undefined, area: s.area, location: locationOf(s.area, s.bed), bed: s.bed,
+        at: s.at, records: countOf.get(String(p.id)) ?? 0 }
+    })
+    res.json({ patients: sortSuggestions(patients), general })
   })
 }

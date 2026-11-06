@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { DateTimeField } from '../components/DateTimeField'
 import { localValueToIso } from '../lib/dateInput'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -9,7 +9,8 @@ import { age, dateTime, dniDigits, fullName, inputDateTime } from '../lib/format
 import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { defaultSpecialty, stayDay, stayPath } from '../lib/inpatient'
 import { BedFields } from '../components/BedFields'
-import type { Bed, Diagnosis, Hospitalization } from '../lib/types'
+import type { Bed, Diagnosis, Hospitalization, Patient } from '../lib/types'
+import { normalize } from '../lib/patients'
 
 export const bedLabel = (b?: Pick<Bed, 'room' | 'label'>) => (b ? `Cuarto ${b.room}${b.label ? `-${b.label}` : ''}` : 'Sin cama')
 
@@ -97,14 +98,27 @@ export default function Inpatients() {
  * Buscador de pacientes de la clínica por nombre, expediente o identidad. Con `onNotFound`, si la búsqueda no
  * encuentra a nadie ofrece seguir sin expediente (receta para un paciente no registrado).
  */
-export function PatientPicker({ value, onChange, onNotFound, notFoundLabel, autoFocus = true }: { value: string; onChange: (id: string) => void; onNotFound?: (query: string) => void; notFoundLabel?: string; autoFocus?: boolean }) {
+/**
+ * El buscador de pacientes de la app: busca mientras se escribe, desde 2 letras, por nombre, expediente o identidad, sin importar
+ * tildes ni mayúsculas (RU7, ronda 15). Opcional: `label`, `placeholder`, `detail` (una línea más en cada resultado, ej. la
+ * ubicación) y `onQuery` (avisa lo escrito, para esconder otras listas mientras se busca).
+ */
+export function PatientPicker({ value, onChange, onNotFound, notFoundLabel, autoFocus = true, label = 'Paciente', placeholder = 'Nombre, expediente o identidad', detail, onQuery }: {
+  value: string; onChange: (id: string) => void; onNotFound?: (query: string) => void; notFoundLabel?: string; autoFocus?: boolean
+  label?: string; placeholder?: string; detail?: (p: Patient) => ReactNode; onQuery?: (q: string) => void
+}) {
   const { patients, patient } = useStore()
-  const [q, setQ] = useState('')
+  const [q, setQRaw] = useState('')
+  const setQ = (v: string) => { setQRaw(v); onQuery?.(v) }
   const chosen = value ? patient(value) : undefined
   const matches = useMemo(() => {
-    const s = q.trim().toLowerCase()
+    const s = normalize(q)
     if (s.length < 2) return []
-    return patients.filter((p) => !p.pending).filter((p) => fullName(p).toLowerCase().includes(s) || p.record.toLowerCase().includes(s) || (dniDigits(s).length >= 3 && dniDigits(p.dni).includes(dniDigits(s)))).slice(0, 8)
+    const words = s.split(' ')
+    return patients.filter((p) => !p.pending).filter((p) => {
+      const text = normalize(`${fullName(p)} ${p.record}`)
+      return words.every((w) => text.includes(w)) || (dniDigits(s).length >= 3 && dniDigits(p.dni).includes(dniDigits(s)))
+    }).slice(0, 8)
   }, [patients, q])
   if (chosen) {
     return (
@@ -115,12 +129,18 @@ export function PatientPicker({ value, onChange, onNotFound, notFoundLabel, auto
     )
   }
   return (
-    <div className="field suggest"><span>Paciente</span>
+    <div className="field suggest"><span>{label}</span>
       <Search size={16} style={{ position: 'absolute', left: 12, top: 37, color: 'var(--faint)' }} />
-      <input className="input" style={{ paddingLeft: 36 }} autoFocus={autoFocus} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre, expediente o identidad" aria-label="Buscar paciente" />
+      <input className="input" style={{ paddingLeft: 36 }} autoFocus={autoFocus} value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder} aria-label="Buscar paciente" />
       {(matches.length > 0 || (onNotFound && q.trim().length >= 3)) && (
         <div className="suggest__list">
-          {matches.map((p) => <button type="button" key={p.id} onClick={() => { onChange(p.id); setQ('') }}><span>{fullName(p)}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{p.record}</span></button>)}
+          {matches.map((p) => (
+            <button type="button" key={p.id} onClick={() => { onChange(p.id); setQ('') }}>
+              {detail
+                ? <span className="suggest__pt"><span>{fullName(p)}</span><small className="muted">{[p.record, p.dni ? `ID ${p.dni}` : ''].filter(Boolean).join(' · ')}{detail(p) ? <> · {detail(p)}</> : null}</small></span>
+                : <><span>{fullName(p)}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{p.record}</span></>}
+            </button>
+          ))}
           {onNotFound && q.trim().length >= 3 && (
             <button type="button" className="suggest__new" onClick={() => onNotFound(q.trim())}><Plus size={15} />{matches.length ? 'No es ninguno: ' : 'No está registrado: '}{notFoundLabel ?? 'continuar sin expediente'}</button>
           )}

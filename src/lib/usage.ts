@@ -50,6 +50,8 @@ export interface MaterialRecord {
   periodLabel: string
   shiftKey?: string
   items: MaterialLine[]
+  /** RU8 (ronda 15): los sets que se usaron, con su nombre en ese momento. */
+  sets?: { id: string; name: string }[]
   recordedBy: string
   recordedByName: string
   recordedAt: string
@@ -61,6 +63,41 @@ export interface MaterialRecord {
   voidedBy?: string
   voidedByName?: string
   voidReason?: string
+}
+
+/** RU7 (ronda 15): un paciente atendido o internado en el periodo, para «¿Para quién?» de «Registrar material». */
+export interface UsageSuggestion {
+  id: string
+  name: string
+  record: string
+  dni?: string
+  area: UsageArea
+  /** «Consulta externa», «Observación · Cuarto 101», «Hospitalización · Cuarto 201-A». */
+  location: string
+  /** «Cuarto 101» (observación y hospitalización). */
+  bed?: string
+  /** Hora de atención (consulta externa) o de ingreso (ISO). */
+  at?: string
+  /** Registros de material (no anulados) que ya tiene en este periodo. */
+  records: number
+}
+
+/** Cuarto «101-A» → [101, «a»] para ordenar por número y luego por cama. */
+const bedOrder = (bed?: string) => {
+  const m = /(\d+)(?:-?(.*))?$/.exec(bed ?? '')
+  return m ? [Number(m[1]), (m[2] ?? '').toLowerCase()] as const : [Number.MAX_SAFE_INTEGER, (bed ?? '').toLowerCase()] as const
+}
+
+/** A9: Consulta externa, Observación y Hospitalización, en ese orden; la consulta externa por hora (la más reciente arriba), lo demás por cama o cuarto. */
+export function sortSuggestions<T extends Pick<UsageSuggestion, 'area' | 'bed' | 'at' | 'name'>>(list: T[]): T[] {
+  const rank: Record<UsageArea, number> = { outpatient: 0, observation: 1, hospital: 2 }
+  return [...list].sort((a, b) => {
+    if (a.area !== b.area) return rank[a.area] - rank[b.area]
+    if (a.area === 'outpatient') return (b.at ?? '').localeCompare(a.at ?? '') || a.name.localeCompare(b.name, 'es')
+    const [na, la] = bedOrder(a.bed)
+    const [nb, lb] = bedOrder(b.bed)
+    return na - nb || la.localeCompare(lb, 'es') || a.name.localeCompare(b.name, 'es')
+  })
 }
 
 /** Un bloque por paciente (nombre, expediente, ubicación); el uso general del servicio va al final. */

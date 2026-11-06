@@ -400,7 +400,8 @@ describe('RU2 (ronda 14): pestaña «Material»', () => {
   test('sugerencias de pacientes: solo quien registra', async () => {
     const s = await (await as('crios@demo.clinara')).get(`/api/usage/suggest?${win()}`)
     assert.equal(s.status, 200)
-    assert.ok(Array.isArray(s.body))
+    // RU7 (ronda 15): { patients, general }
+    assert.ok(Array.isArray(s.body.patients))
     assert.equal((await (await as('smejia@demo.clinara')).get(`/api/usage/suggest?${win()}`)).status, 403)
   })
 })

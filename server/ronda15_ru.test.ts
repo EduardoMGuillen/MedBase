@@ -8,7 +8,9 @@ import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { loadSupplyCatalog } from './supplies.js'
 import { SUPPLY_MD } from '../src/lib/supplyMd/generated.js'
-import { currentPeriod, DEFAULT_SUPPLY_SETTINGS, parseSupplyMd } from '../src/lib/supplies.js'
+import { currentPeriod, DEFAULT_SUPPLY_SETTINGS, localDay, parseSupplyMd, periodOf } from '../src/lib/supplies.js'
+import { sortSuggestions } from '../src/lib/usage.js'
+import { fromLocalValue } from '../src/lib/dateInput.js'
 
 // Ronda 15, grupo RU (catálogo v2, formulario, sets y vista del registro): con la base y la API (copia en memoria de la demo)
 let server: Server
@@ -201,5 +203,54 @@ describe('RU4 (ronda 15): «Agregar material» para Administración y Enfermerí
     const doc = await as('alopez@demo.clinara')
     const r = await doc.post('/api/supplies', { category: 'Suturas', material: 'Nylon', variant: '7/0, aguja cortante', unit: 'sobre', scope: 'patient' })
     assert.equal(r.status, 201, JSON.stringify(r.body))
+  })
+})
+
+describe('RU7 (ronda 15): «¿Para quién?» con los atendidos e internados del periodo', () => {
+  test('una consulta externa de la tarde (guardada en UTC) sale en el turno de la tarde; agrupados y con «Ya tiene registro»', async () => {
+    const cid = await clinicOfUser('crios@demo.clinara')
+    const nurse = await as('crios@demo.clinara')
+    const shifts = DEFAULT_SUPPLY_SETTINGS.shifts
+    const tarde = shifts.find((s) => s.from === '15:00')!
+    const today = localDay(new Date())
+    const p = periodOf('shift', today, shifts, tarde.key)
+    // Un paciente sin estancia, atendido hoy a las 17:14 de Honduras (23:14 UTC): antes quedaba «después» de las 23:00
+    const pt = (await sql.one(`SELECT p.id, p.first_name, p.last_name FROM patients p WHERE p.clinic_id = ? AND NOT EXISTS (SELECT 1 FROM hospitalizations h WHERE h.patient_id = p.id)
+      ORDER BY p.record DESC LIMIT 1`, [cid]))!
+    const at = fromLocalValue(`${today}T17:14`).toISOString()
+    assert.match(at, /Z$/)
+    await sql.run(`INSERT INTO consultations (id, patient_id, doctor_id, date, reason, diagnoses, plan, orders, clinic_id) VALUES (?,?, 's-herrera', ?, 'Fiebre', '[]', '', '[]', ?)`,
+      [`c-ru7-${Date.now()}`, String(pt.id), at, cid])
+    const q = (x: { start: string; end: string }) => `from=${encodeURIComponent(x.start)}&to=${encodeURIComponent(x.end)}`
+    const s = await nurse.get(`/api/usage/suggest?${q(p)}`)
+    assert.equal(s.status, 200)
+    const mine = s.body.patients.find((x: { id: string }) => x.id === String(pt.id))
+    assert.ok(mine, 'el atendido en consulta externa en el periodo sale')
+    assert.deepEqual([mine.area, mine.location, mine.records], ['outpatient', 'Consulta externa', 0])
+    // A9: Consulta externa, Observación y Hospitalización, en ese orden
+    const rank = { outpatient: 0, observation: 1, hospital: 2 } as Record<string, number>
+    const areas = s.body.patients.map((x: { area: string }) => rank[x.area])
+    assert.deepEqual(areas, [...areas].sort((a: number, b: number) => a - b))
+    for (const x of s.body.patients.filter((y: { area: string }) => y.area !== 'outpatient')) assert.match(x.location, /^(Observación|Hospitalización)( · Cuarto .+)?$/)
+    // Fuera del periodo (la mañana) no sale
+    const manana = periodOf('shift', today, shifts, shifts.find((x) => x.from === '07:00')!.key)
+    assert.ok(!(await nurse.get(`/api/usage/suggest?${q(manana)}`)).body.patients.some((x: { id: string }) => x.id === String(pt.id)))
+    // «Ya tiene registro (n)»: el paciente y el uso general
+    const gasa = await lineOf(cid, 'Gasa estéril', '10 × 10 cm')
+    const alcohol = await lineOf(cid, 'Alcohol al 70 %', 'Frasco')
+    assert.equal((await nurse.post('/api/usage/material', { patientId: String(pt.id), day: today, shiftKey: tarde.key, items: [{ itemId: gasa.id, quantity: 2 }] })).status, 201)
+    assert.equal((await nurse.post('/api/usage/material', { general: true, day: today, shiftKey: tarde.key, items: [{ itemId: alcohol.id, quantity: 1 }] })).status, 201)
+    const again = await nurse.get(`/api/usage/suggest?${q(p)}`)
+    assert.equal(again.body.patients.find((x: { id: string }) => x.id === String(pt.id)).records, 1)
+    assert.ok(again.body.general >= 1)
+  })
+
+  test('sortSuggestions: consulta externa por hora (la más reciente arriba), observación y hospitalización por cuarto', () => {
+    const list = sortSuggestions([
+      { name: 'B', area: 'hospital', bed: 'Cuarto 201' }, { name: 'A', area: 'outpatient', at: '2026-11-06T15:00:00.000Z' }, { name: 'C', area: 'observation', bed: 'Cuarto 103' },
+      { name: 'D', area: 'observation', bed: 'Cuarto 101-B' }, { name: 'E', area: 'outpatient', at: '2026-11-06T18:00:00.000Z' }, { name: 'F', area: 'hospital', bed: 'Cuarto 105' },
+      { name: 'G', area: 'observation', bed: 'Cuarto 101-A' },
+    ] as Parameters<typeof sortSuggestions>[0])
+    assert.deepEqual(list.map((x) => x.name), ['E', 'A', 'G', 'D', 'C', 'F', 'B'])
   })
 })
