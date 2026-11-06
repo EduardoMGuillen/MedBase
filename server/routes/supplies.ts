@@ -2,6 +2,7 @@ import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse } from '../http.js'
+import { can } from '../../src/lib/permissions.js'
 import { shiftProblems, stripLength, supplyKey, supplyLabel, SUPPLY_SCOPE_LIST, SUPPLY_UNIT_LIST, type SupplyScope, type SupplyUnit } from '../../src/lib/supplies.js'
 import { SUPPLY_PERIODS, SUPPLY_SCOPES } from '../../src/lib/clinicalConfig.js'
 import { normalize } from '../../src/lib/patients.js'
@@ -46,12 +47,16 @@ export function registerSupplies(app: Express, { sql, auth, need, userOf, clinic
     res.json(await supplySettings(sql, clinicOf(req)))
   })
 
-  app.post('/api/supplies', auth, need('supplies.manage'), async (req, res) => {
+  // RU4 (ronda 15, A4): agregan Administración y Enfermería (en el consultorio, la titular y la asistente); editar y archivar,
+  // solo Administración. Si ya existe (activo o archivado), no se agrega: «Ya existe en el catálogo» (y cuál, para «Restaurar»)
+  app.post('/api/supplies', auth, need('supplies.add'), async (req, res) => {
     const b = parse(itemBody, req.body)
     const user = userOf(req)
     const cid = clinicOf(req)
     const variant = stripLength(b.material, b.variant)
-    await assertUnique(cid, b.material, variant)
+    const twin = (await sql.query('SELECT * FROM supply_items WHERE clinic_id = ?', [cid])).find((r) => supplyKey(String(r.material), String(r.variant ?? '')) === supplyKey(b.material, variant))
+    if (twin) return res.status(409).json({ error: `Ya existe en el catálogo: «${supplyLabel({ material: String(twin.material), variant: String(twin.variant ?? '') })}»${twin.archived_at ? ' (archivado)' : ''}.`, existing: toSupplyItem(twin) })
+    if (b.onShiftList && !can(user, 'supplies.shiftlist')) fail(403, 'No puedes marcar la lista de turno.')
     const id = randomUUID()
     const now = new Date().toISOString()
     const sort = Number((await sql.one<{ n: number }>('SELECT COALESCE(MAX(sort), 0)::int + 1 AS n FROM supply_items WHERE clinic_id = ?', [cid]))?.n ?? 1)

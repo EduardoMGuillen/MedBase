@@ -165,7 +165,7 @@ describe('RU1 (ronda 14): permisos del catálogo (en el servidor)', () => {
     assert.equal(aguja.body.variant, '19 G')
   })
 
-  test('Enfermería marca la lista de turno, pero no agrega, edita, archiva ni cambia el periodo', async () => {
+  test('Enfermería marca la lista de turno y agrega (RU4, ronda 15), pero no edita, archiva ni cambia el periodo', async () => {
     const nurse = await as('crios@demo.clinara')
     const cid = await clinicOf('crios@demo.clinara')
     const n95 = await byLabel(cid, 'Mascarilla N95')
@@ -173,7 +173,8 @@ describe('RU1 (ronda 14): permisos del catálogo (en el servidor)', () => {
     const on = await nurse.post(`/api/supplies/${n95.id}/shift-list`, { on: true })
     assert.equal(on.status, 200)
     assert.equal(on.body.onShiftList, true)
-    assert.equal((await nurse.post('/api/supplies', { category: 'Suturas', material: 'Seda', variant: '6/0', unit: 'sobre' })).status, 403)
+    // RU4 (ronda 15, A4): Enfermería ya agrega; aquí uno que ya existe, para no cambiar el catálogo de las demás pruebas
+    assert.equal((await nurse.post('/api/supplies', { category: 'Suturas', material: 'Seda', variant: '3/0, aguja cortante', unit: 'sobre' })).status, 409)
     assert.equal((await nurse.patch(`/api/supplies/${n95.id}`, { category: 'X', material: 'Mascarilla N95', variant: '', unit: 'unidad' })).status, 403)
     assert.equal((await nurse.post(`/api/supplies/${n95.id}/archive`)).status, 403)
     assert.equal((await nurse.put('/api/supplies/settings', { period: 'day', shifts: [] })).status, 403)

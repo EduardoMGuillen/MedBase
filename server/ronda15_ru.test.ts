@@ -153,3 +153,53 @@ describe('RU5 (ronda 15): catálogo v2 con «Registro»', () => {
     assert.deepEqual(rec.items.map((i: { material: string; variant: string; unit: string; quantity: number }) => [i.material, i.variant, i.unit, i.quantity]), [['Gasa hospitalaria', ROLLO, 'rollo', 1]])
   })
 })
+
+describe('RU4 (ronda 15): «Agregar material» para Administración y Enfermería; editar y archivar, solo Administración', () => {
+  test('enfermería agrega «Nylon 7/0, aguja cortante» en la lista de turno; no edita ni archiva (por URL directa)', async () => {
+    const nurse = await as('crios@demo.clinara')
+    const r = await nurse.post('/api/supplies', { category: 'Suturas', material: 'Nylon', variant: '7/0, aguja cortante', unit: 'sobre', scope: 'patient', onShiftList: true })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.deepEqual([r.body.scope, r.body.onShiftList, r.body.origin], ['patient', true, 'clinic'])
+    const list = await nurse.get('/api/supplies')
+    assert.ok(list.body.items.some((i: { id: string }) => i.id === r.body.id), 'aparece en el catálogo (y en el formulario, que lee el mismo)')
+    assert.equal((await nurse.patch(`/api/supplies/${r.body.id}`, { category: 'Suturas', material: 'Nylon', variant: '6/0', unit: 'sobre', scope: 'patient' })).status, 403)
+    assert.equal((await nurse.post(`/api/supplies/${r.body.id}/archive`)).status, 403)
+    const dup = await nurse.post('/api/supplies', { category: 'Suturas', material: 'Seda', variant: '3/0, aguja cortante', unit: 'sobre' })
+    assert.equal(dup.status, 409)
+    assert.match(dup.body.error, /^Ya existe en el catálogo/)
+    // Sin tildes ni mayúsculas también es el mismo
+    assert.equal((await nurse.post('/api/supplies', { category: 'Suturas', material: 'NYLON', variant: '7/0, AGUJA CORTANTE', unit: 'sobre' })).status, 409)
+  })
+
+  test('si la que existe está archivada, lo dice y devuelve cuál (para «Restaurar»); recepción no agrega', async () => {
+    const admin = await as('admin@demo.clinara')
+    const cid = await clinicOfUser('admin@demo.clinara')
+    const line = await lineOf(cid, 'Bata descartable')
+    assert.equal((await admin.post(`/api/supplies/${line.id}/archive`)).status, 200)
+    const dup = await admin.post('/api/supplies', { category: 'Ropa', material: 'Bata descartable', variant: '', unit: 'unidad' })
+    assert.equal(dup.status, 409)
+    assert.match(dup.body.error, /\(archivado\)/)
+    assert.equal(dup.body.existing.id, line.id)
+    assert.equal((await admin.post(`/api/supplies/${line.id}/restore`)).status, 200)
+    const rec = await as('smejia@demo.clinara')
+    assert.equal((await rec.post('/api/supplies', { category: 'Suturas', material: 'Nylon', variant: '8/0', unit: 'sobre' })).status, 403)
+  })
+
+  test('Administración edita y archiva una línea y queda en la bitácora', async () => {
+    const admin = await as('admin@demo.clinara')
+    const cid = await clinicOfUser('admin@demo.clinara')
+    const line = await lineOf(cid, 'Baja lengua (depresor)', 'Adulto')
+    const e = await admin.patch(`/api/supplies/${line.id}`, { category: String(line.category), material: 'Baja lengua (depresor)', variant: 'Adulto, de madera', unit: 'unidad', scope: 'both' })
+    assert.equal(e.status, 200, JSON.stringify(e.body))
+    assert.equal((await admin.post(`/api/supplies/${line.id}/archive`)).status, 200)
+    const log = (await sql.query(`SELECT action FROM audit WHERE clinic_id = ? AND action LIKE '%Baja lengua%'`, [cid])).map((r) => String(r.action))
+    assert.ok(log.some((a) => a.includes('editó')), log.join('\n'))
+    assert.ok(log.some((a) => a.includes('archivó')), log.join('\n'))
+  })
+
+  test('en el consultorio, la titular agrega materiales', async () => {
+    const doc = await as('alopez@demo.clinara')
+    const r = await doc.post('/api/supplies', { category: 'Suturas', material: 'Nylon', variant: '7/0, aguja cortante', unit: 'sobre', scope: 'patient' })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+  })
+})

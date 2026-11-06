@@ -1257,3 +1257,69 @@ li.is-void .usage-records__void { text-decoration: none; }
 .cdoc .rx-items p.rx-legend { margin-top: 2px; font-size: 12.5px; color: var(--ink); }
 .cdoc .rx-items p.rx-legend em { font-style: italic; }
 @media print { .cdoc .rx-items p.rx-legend { color: #111; } }
+
+/* ---------- RU4 (ronda 15): catálogo de material con categorías desplegables y filas compactas ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.tag { display: inline-block; font-size: 11.5px; font-weight: 600; line-height: 1.5; padding: 0 7px; border-radius: 99px; background: var(--ward); color: var(--muted); border: 1px solid var(--line-soft); white-space: nowrap; }
+.tag--patient { background: var(--ink-soft); color: var(--ink-deep); border-color: transparent; }
+.tag--general { background: var(--amber); color: var(--amber-ink); border-color: transparent; }
+.tag--both { background: var(--mint); color: var(--mint-ink); border-color: transparent; }
+.supply-tabs { margin-bottom: 12px; }
+.supply-tools { align-items: flex-end; }
+.supply-tools .supply-search { flex: 1 1 280px; max-width: 440px; }
+.supply-tools__mine { min-height: 44px; }
+.supply-tools__all { display: flex; gap: 6px; margin-left: auto; }
+.supply-search { position: relative; display: grid; gap: 4px; }
+.supply-search__label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.supply-search__box { position: relative; }
+.supply-search__box .input { padding-left: 36px; padding-right: 40px; width: 100%; }
+.supply-search__box .input::-webkit-search-cancel-button { display: none; }
+.supply-search__icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--faint); pointer-events: none; }
+.supply-search__clear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); }
+.supply-search__empty { font-size: 13px; margin: 4px 0 0; }
+.supply-search mark, .supply-grid mark, .mat-row mark { background: #fff1a8; color: inherit; border-radius: 2px; padding: 0 1px; }
+.supply-grid { --cols: minmax(0, 1.5fr) minmax(0, 1.4fr) 84px 112px 104px 48px; border-top: 1px solid var(--line); }
+.supply-grid__head, .supply-grid__row { display: grid; grid-template-columns: var(--cols); gap: 0 12px; align-items: center; padding: 0 22px; }
+.supply-grid__head { font-size: 12px; font-weight: 600; color: var(--muted); min-height: 34px; background: var(--paper); border-bottom: 1px solid var(--line); }
+.supply-grid__c { text-align: center; justify-self: center; }
+.supply-grid__cat { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 0 22px; border: 0; border-bottom: 1px solid var(--line-soft); background: var(--ward);
+  font: inherit; font-size: 14px; color: var(--petrol); text-align: left; cursor: pointer; }
+.supply-grid__cat:hover { background: #e4ebe9; }
+.supply-grid__cat .muted { font-size: 13px; }
+.supply-grid__chev { flex: none; transition: transform .15s ease; transform: rotate(-90deg); color: var(--muted); }
+.supply-grid__group.is-open .supply-grid__chev { transform: none; }
+.supply-grid__row { min-height: 40px; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+.supply-grid__row.is-first { border-top: 1px solid var(--line); }
+.supply-grid__group .supply-grid__row.is-first:first-of-type { border-top: 0; }
+.supply-grid__row.is-archived { color: var(--muted); }
+.supply-grid__mat { min-width: 0; padding: 6px 0; }
+.supply-grid__mat .supply-origin { display: block; font-size: 11.5px; }
+.supply-grid__var { min-width: 0; overflow-wrap: anywhere; }
+/* El material sale una vez y debajo sus variantes (en el teléfono, cada tarjeta lo repite) */
+.supply-grid__mat b.is-repeat { display: none; }
+.supply-grid__check { width: 20px; height: 20px; margin: 0; cursor: pointer; }
+.supply-grid__acts { display: flex; justify-content: flex-end; }
+.row-menu { position: relative; }
+.row-menu__btn { width: 40px; height: 40px; }
+.row-menu__pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 190px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md);
+  box-shadow: var(--shadow-lift); padding: 4px; display: grid; }
+.row-menu__pop button { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 0; background: none; font: inherit; font-size: 14px; text-align: left; border-radius: 8px; cursor: pointer; color: var(--petrol); }
+.row-menu__pop button:hover { background: var(--ward); }
+.supply-form .span-2 { grid-column: 1 / -1; }
+.qty-stepper { display: flex; align-items: center; gap: 6px; }
+.mat-qty::placeholder { color: var(--faint); }
+@media (max-width: 860px) {
+  .supply-grid__head { display: none; }
+  .supply-grid__cat { padding: 0 16px; }
+  /* A ~390 px cada línea es una tarjeta corta: material y variante arriba; unidad, registro y casilla abajo */
+  .supply-grid__row { grid-template-columns: minmax(0, 1fr) auto auto 44px 40px; grid-template-areas: 'mat mat mat mat acts' 'var var var var acts' 'unit scope . chk acts';
+    gap: 2px 8px; padding: 8px 16px; }
+  .supply-grid__row > :nth-child(1) { grid-area: mat; padding: 0; }
+  .supply-grid__row > :nth-child(2) { grid-area: var; }
+  .supply-grid__row > :nth-child(3) { grid-area: unit; }
+  .supply-grid__row > :nth-child(4) { grid-area: scope; }
+  .supply-grid__row > :nth-child(5) { grid-area: chk; min-height: 44px; display: flex; align-items: center; justify-content: center; }
+  .supply-grid__row > :nth-child(6) { grid-area: acts; align-self: start; }
+  .supply-grid__mat b.is-repeat { display: inline; }
+  .supply-tools__all { margin-left: 0; }
+}

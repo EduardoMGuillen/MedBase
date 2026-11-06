@@ -46,6 +46,9 @@ export const PERMISSIONS = {
   'usage.record': 'Registrar el material médico quirúrgico que se usó',
   'usage.export': 'Imprimir y exportar a Excel el registro de uso',
   'usage.void': 'Anular registros de material de cualquier persona',
+  // RU4 y RU8 (ronda 15): agregar material y variantes al catálogo (editar y archivar sigue siendo supplies.manage); sets
+  'supplies.add': 'Agregar materiales y variantes al catálogo de material',
+  'sets.manage': 'Crear, editar, duplicar y archivar sets de material',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -62,6 +65,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'ambulatory.register',
     // RU1–RU3 (ronda 14): el catálogo de material y su periodo; ve, imprime y exporta el registro de uso y anula registros
     'supplies.view', 'supplies.manage', 'supplies.shiftlist', 'usage.view', 'usage.export', 'usage.void',
+    // RU4 y RU8 (ronda 15): agrega materiales y administra los sets
+    'supplies.add', 'sets.manage',
   ],
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',
@@ -72,13 +77,15 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'inpatient.view', 'inpatient.care', 'orders.review', 'followups.view',
     'exams.process',
     // RU1–RU3 (ronda 14): ve el catálogo y arma la lista de turno; registra material; ve, imprime y exporta el registro
-    'supplies.view', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export'],
+    'supplies.view', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export',
+    // RU4 y RU8 (ronda 15, A4 y A13): agrega materiales y variantes (no edita ni archiva) y administra los sets
+    'supplies.add', 'sets.manage'],
   // RU2 y RU3 (ronda 14): ve el registro de uso, lo imprime y lo exporta (no registra material)
   reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view', 'ambulatory.register', 'usage.view', 'usage.export'],
   // Asistente de consultorio (secretaria o enfermera): recepción, preclínica, caja y aplicar dosis en observación. RU (ronda 14):
   // como enfermería en el registro de uso de material.
   assistant: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage',
-    'inpatient.view', 'inpatient.care', 'followups.view', 'exams.process', 'supplies.view', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export'],
+    'inpatient.view', 'inpatient.care', 'followups.view', 'exams.process', 'supplies.view', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export', 'supplies.add', 'sets.manage'],
   // DP1 (ronda 11): Laboratorio e Imágenes. Buscan pacientes y registran ambulatorios (DP3); su bandeja y resultados (solo su
   // tipo, deptAllows); el expediente parcial (DP4). El cargo agrega: Microbiólogo y Radiólogo configuran su departamento; el
   // Radiólogo además ve todo el expediente en solo lectura (positionPermissions).
@@ -98,7 +105,7 @@ const POSITION_PERMISSIONS: Record<string, Permission[]> = {
  * administrador, reportes, personal, configuración, servicios y formas de pago. Puede sumar asistentes y enfermería.
  */
 /** RU1–RU3 (ronda 14): en el consultorio la médica titular tiene los permisos de médico, enfermería y administración. */
-const USAGE_ALL: Permission[] = ['supplies.view', 'supplies.manage', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export', 'usage.void']
+const USAGE_ALL: Permission[] = ['supplies.view', 'supplies.manage', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export', 'usage.void', 'supplies.add', 'sets.manage']
 const OFFICE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
   doctor: [...new Set<Permission>([...ROLE_PERMISSIONS.doctor, 'checkin.manage', 'inpatient.care', ...USAGE_ALL])],
   admin: [...new Set<Permission>([...ROLE_PERMISSIONS.admin, ...USAGE_ALL])],
