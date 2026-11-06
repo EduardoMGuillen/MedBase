@@ -138,7 +138,7 @@ export function MaterialForm({ editing, onClose, onSaved }: { editing?: Material
   const skippedWhy = (why: 'archived' | 'scope') => (why === 'archived' ? 'archivado' : d.general ? 'se registra por paciente' : `se registra en ${GENERAL_USE_LABEL}`)
 
   /** Fila de material (~44 px): nombre, variante y unidad pegada; a la derecha [−] [cantidad] [+]. */
-  const row = (i: SupplyItem, q = '') => {
+  const row = (i: SupplyItem, q = '', inOthers = false) => {
     const ok = fits(i)
     const n = qtyOf(d.qty[i.id])
     return (
@@ -147,7 +147,7 @@ export function MaterialForm({ editing, onClose, onSaved }: { editing?: Material
           <span><b><Highlight text={i.material} q={q} /></b>{i.variant && <> <Highlight text={i.variant} q={q} /></>} <small className="mat-row__unit">{i.unit}</small></span>
           {!ok && <small className="mat-row__why">{scopeHint(i.scope)}</small>}
           {ok && !i.onShiftList && (
-            <span className="mat-row__off"><small className="muted">Fuera de la lista de turno</small>
+            <span className="mat-row__off">{!inOthers && <small className="muted">Fuera de la lista de turno</small>}
               {can('supplies.shiftlist') && !inRecord.has(i.id) && (
                 <label className="check-inline mat-row__list"><input type="checkbox" checked={d.addToList.includes(i.id)}
                   onChange={(e) => setD({ ...d, addToList: e.target.checked ? [...d.addToList, i.id] : d.addToList.filter((x) => x !== i.id) })} />Agregar a la lista de turno</label>
@@ -267,7 +267,7 @@ export function MaterialForm({ editing, onClose, onSaved }: { editing?: Material
             {(d.sets ?? []).length > 0 && <p className="muted mat-sets">Sets usados: {(d.sets ?? []).map((x) => `«${x.name}»`).join(', ')}</p>}
             {find.trim().length < 2 && (<>
               {others.length > 0 && (
-                <section className="mat-cat"><h4 className="mat-cat__plain">Fuera de la lista de turno</h4>{others.map((i) => row(i))}</section>
+                <section className="mat-cat"><h4 className="mat-cat__plain">Fuera de la lista de turno</h4>{others.map((i) => row(i, '', true))}</section>
               )}
               {archivedInRecord.length > 0 && (
                 <section className="mat-cat"><h4 className="mat-cat__plain">Archivados</h4>
