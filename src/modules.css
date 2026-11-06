@@ -1252,3 +1252,8 @@ li.is-void .usage-records__void { text-decoration: none; }
 /* RU6 (ronda 15): encabezado fijo «Registros» del menú, con el mismo estilo que el título de «Pacientes» */
 .side__grp--static .side__group { color: var(--muted); font-weight: 650; padding: 12px 10px 6px; margin-top: 2px; }
 .side__grp-list { display: grid; gap: 2px; }
+
+/* ME15 (ronda 15): leyenda del medicamento «Aplicar en la clínica» en la receta, corta y en cursiva */
+.cdoc .rx-items p.rx-legend { margin-top: 2px; font-size: 12.5px; color: var(--ink); }
+.cdoc .rx-items p.rx-legend em { font-style: italic; }
+@media print { .cdoc .rx-items p.rx-legend { color: #111; } }

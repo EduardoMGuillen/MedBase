@@ -169,10 +169,10 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
         <label className="check-line"><input type="checkbox" checked={!!m.applyInClinic}
           onChange={(e) => setM(e.target.checked && clinicMode === 'ambulatory' ? { ...m, applyInClinic: true, frequency: STAT_FREQUENCY, loadingDose: undefined } : { ...m, applyInClinic: e.target.checked })} />
           <span><b>Aplicar en la clínica</b><small>{clinicMode === 'stay'
-            ? 'Pasa a la hoja de medicamentos. Sin marcar, va a la receta para la casa.'
-            : 'No va a la receta: enfermería o el médico lo aplican aquí y el paciente se va a su casa (no queda en observación).'}</small></span></label>
+            ? 'Pasa a la hoja de medicamentos y también sale en la receta. Sin marcar, solo va a la receta para la casa.'
+            : 'Enfermería o el médico lo aplican aquí y el paciente se va a su casa (no queda en observación).'}</small></span></label>
       )}
-      {statOnly && <p className="muted" style={{ fontSize: 13, margin: 0 }}>Sin ingreso se aplica una sola dosis en la clínica. Si debe seguir en casa, agrégalo también a la receta.</p>}
+      {statOnly && <p className="muted" style={{ fontSize: 13, margin: 0 }}>Sin ingreso se aplica una sola dosis en la clínica. También sale en la receta.</p>}
       {clinicOption && m.applyInClinic && <div className="form-grid"><BuyOutsideFields checked={!!m.buyOutside} onChecked={(v) => setM({ ...m, buyOutside: v })} /></div>}
       {(neb ? nebulizationReady(nebValue) : m.drug.trim() && m.dose.trim()) && <p className="muted" style={{ fontSize: 13.5, overflowWrap: 'anywhere' }}>Se verá así: <b>{medicationLine(neb
         ? { ...m, drug: 'Nebulización', nebulization: nebValue } : { ...m, loadingDose: withLoading ? m.loadingDose : undefined })}</b></p>}

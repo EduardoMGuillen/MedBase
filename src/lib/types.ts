@@ -350,6 +350,11 @@ export interface PrescriptionItem {
   loadingDose?: string
   /** ME4 (ronda 9): vía «Nebulización» con varios medicamentos en una sola orden. */
   nebulization?: import('./medExtras').Nebulization
+  /**
+   * ME15 (ronda 15): leyenda corta en cursiva debajo del medicamento en la receta («Se aplica en la clínica.»). Se guarda con
+   * la receta al emitirla (lo emitido no cambia aunque cambie el texto en la configuración).
+   */
+  legend?: string
 }
 
 export interface Prescription {

@@ -17,13 +17,14 @@ import { PatientHeader } from '../components/PatientHeader'
 import { age, BACKGROUND_GROUPS, backgroundValue, RETIRED_BACKGROUND, bmi, date, dxCode, examText, time, money } from '../lib/format'
 import { Attachments } from './Attachments'
 import { AllergiesForm, BackgroundForm, IdentificationForm } from './PatientForms'
-import type { Certificate, ConsultApplication, Consultation, Patient, Referral, Vitals } from '../lib/types'
+import type { Certificate, ConsultApplication, Consultation, Patient, Prescription, Referral, Vitals } from '../lib/types'
 import { ApplyModal, applicationText, canApply } from '../components/ApplyMeds'
 import { ReferralActions } from './Referral'
 import { CERT_KIND } from '../lib/certificates'
 import { vitalLevel, type VitalKey } from '../lib/vitals'
 import { stayPath, yearsOld } from '../lib/inpatient'
 import { PatientEpicrises } from './Epicrisis'
+import { useFullRx } from './Prescriptions'
 import { TabRow } from '../components/TabRow'
 
 /** Signos de una preclínica. Resalta lo que está fuera de rango según la edad (`src/lib/vitals.ts`). */
@@ -318,7 +319,9 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
                 <div><h2>{date(c.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}{chart?.addenda?.some((a) => a.targetId === c.id) && <span className="badge badge--amber" style={{ marginLeft: 8 }}>Con adenda</span>}</h2><p>{time(c.date)}, {staffById(c.doctorId)?.name}</p></div>
                 <div className="page-head__actions">
                   <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}><NotebookPen size={15} />Nota</Link>
-                  {c.prescriptionId && can('rx.view') && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${c.prescriptionId}`}><FileText size={15} />Receta</Link>}
+                  {/* ME15 (ronda 15): «Receta» abre la más reciente de la consulta (la completa, si se generó); una consulta sin receta
+                      porque todo se aplicó en la clínica la genera aquí */}
+                  {can('rx.view') && <ConsultRxButton c={c} rxs={rxs} applied={(chart.applications ?? []).some((a) => a.consultationId === c.id)} />}
                   {(() => {
                     // EX10 (ronda 14): la orden de los externos y, aparte, la de los «En la clínica»
                     const mine = (exams ?? []).filter((e) => e.consultationId === c.id && !e.noteId && e.status !== 'cancelled')
@@ -419,4 +422,15 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
       {editing === 'background' && <BackgroundForm initial={p} onClose={() => setEditing(null)} onSave={save} />}
     </div>
   )
+}
+
+/** ME15 (ronda 15): «Receta» de la tarjeta de una consulta externa. */
+function ConsultRxButton({ c, rxs, applied }: { c: Consultation; rxs: Prescription[]; applied: boolean }) {
+  const { can } = useStore()
+  const { busy, generate } = useFullRx(c.id)
+  const latest = rxs.filter((r) => r.consultationId === c.id && !r.hospitalizationId && !r.voidedAt).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))[0]
+  const id = latest?.id ?? c.prescriptionId
+  if (id) return <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${id}`}><FileText size={15} />Receta</Link>
+  if (!applied || !can('rx.write')) return null
+  return <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => void generate()} title="Genera la receta con los medicamentos de esta consulta"><FileText size={15} />Receta</button>
 }

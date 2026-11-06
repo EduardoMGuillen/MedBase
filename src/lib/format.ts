@@ -3,6 +3,7 @@ import { loadingLine, nebulizationLine } from './medExtras.js'
 import { isPrnFrequency } from './catalogs.js'
 import { doseText } from './doseText.js'
 import { ROUTE_ABBR } from './inpatient.js'
+import { RX_LEGEND_BUY_AND_BRING, RX_LEGEND_IN_CLINIC } from './clinicalConfig.js'
 import type { ApptStatus, Background, ClinicContact, Diagnosis, Patient, PrescriptionItem } from './types'
 
 export const fullName = (p: Patient) => `${p.firstName} ${p.lastName}`
@@ -259,6 +260,53 @@ export function autoQuantity(i: Pick<PrescriptionItem, 'dose' | 'frequency' | 'd
   const per = m[1] === '1/2' || m[1] === '½' ? 0.5 : Number(m[1].replace(',', '.'))
   const n = Math.ceil(per * (24 / Number(hours[1])) * Number(days[1]) * (/semana/i.test(days[2] ?? '') ? 7 : 1))
   return n > 0 ? `${n} ${n === 1 ? unit[1] : unit[2]}` : undefined
+}
+
+/** Cantidad con su unidad base: «1 g» → 1000 mg, «500 mg», «5 mL», «1 000 000 UI». Una concentración («50 mg/mL») no es cantidad. */
+const BASE_UNIT: Record<string, [string, number]> = { g: ['mg', 1000], gr: ['mg', 1000], grs: ['mg', 1000], gramo: ['mg', 1000], gramos: ['mg', 1000], mg: ['mg', 1], mcg: ['mg', 0.001],
+  µg: ['mg', 0.001], ug: ['mg', 0.001], ml: ['mL', 1], cc: ['mL', 1], ui: ['UI', 1], u: ['UI', 1] }
+function amountOf(text: string) {
+  const m = /(\d+(?:[.,]\d+)?)\s*(gramos?|grs?|g|mg|mcg|µg|ug|ml|cc|ui|u)\b(\s*\/\s*(\d+(?:[.,]\d+)?)?\s*(?:ml|cc)\b)?/i.exec(text)
+  if (!m) return undefined
+  // «50 mg/mL» es concentración (no se sabe cuánto trae); «75 mg/3 mL», lo que trae la ampolla
+  if (m[3] && (!m[4] || Number(m[4].replace(',', '.')) === 1)) return undefined
+  const [unit, factor] = BASE_UNIT[m[2].toLowerCase()]
+  return { value: Number(m[1].replace(',', '.')) * factor, unit }
+}
+
+/**
+ * ME15 (ronda 15, A2): cantidad de una dosis única (STAT) en unidades de la presentación: «1 g» con «Vial 1 g» → «1 vial»;
+ * «2 g» con «Vial 1 g» → «2 viales»; «1 ampolla» → «1 ampolla». Si no se puede saber (concentración sin volumen, unidades
+ * distintas, nebulización), undefined: la línea sale sin cantidad.
+ */
+export function statQuantity(i: Pick<PrescriptionItem, 'dose' | 'presentation' | 'nebulization' | 'loadingDose'>) {
+  if (i.nebulization?.components?.length || i.loadingDose?.trim()) return undefined
+  const units = (n: number, u: [RegExp, string, string]) => `${n} ${n === 1 ? u[1] : u[2]}`
+  const counted = i.dose.trim().match(/^(\d+(?:[.,]\d+)?|1\/2|½)\s+(\S+)/)
+  const byDose = counted && COUNTABLE.find(([re]) => re.test(counted[2]))
+  if (counted && byDose) {
+    const n = Math.ceil(counted[1] === '1/2' || counted[1] === '½' ? 0.5 : Number(counted[1].replace(',', '.')))
+    return n > 0 ? units(n, byDose) : undefined
+  }
+  const form = COUNTABLE.find(([re]) => re.test(i.presentation.trim()))
+  const per = amountOf(i.presentation)
+  const dose = amountOf(i.dose)
+  if (!form || !per || !dose || per.unit !== dose.unit || per.value <= 0) return undefined
+  const n = Math.ceil(dose.value / per.value - 1e-9)
+  return n > 0 && n <= 50 ? units(n, form) : undefined
+}
+
+/**
+ * ME15 (ronda 15): la receta de una consulta externa lleva TODOS sus medicamentos, con o sin ingreso. Los «Aplicar en la
+ * clínica» van con su leyenda (A1) y, si no la tienen escrita, con su cantidad: la «Cantidad a comprar» manda; en una dosis
+ * STAT, las unidades de una dosis; si no, la del total de días; si no se puede calcular, sin cantidad (A2).
+ */
+export function consultRxItems(items: PrescriptionItem[]): PrescriptionItem[] {
+  return items.map((it) => {
+    if (!it.applyInClinic) return it
+    const quantity = it.quantity?.trim() || (/única/i.test(it.frequency) ? statQuantity(it) : autoQuantity(it)) || undefined
+    return { ...it, quantity, legend: it.buyOutside ? RX_LEGEND_BUY_AND_BRING : RX_LEGEND_IN_CLINIC }
+  })
 }
 
 /** "Tableta 500 mg" → "500 mg tableta", como se escribe en la receta. */

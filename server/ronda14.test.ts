@@ -119,7 +119,8 @@ describe('ME13 y EX10 (ronda 14): «Aplicar en la clínica» sin ingreso y la or
     assert.ok(!(await sql.one(`SELECT 1 FROM hospitalizations WHERE patient_id = ? AND status = 'active'`, [pid])))
     assert.ok(r.body.prescriptionId)
     const rx = await sql.one('SELECT items FROM prescriptions WHERE id = ?', [r.body.prescriptionId])
-    assert.deepEqual(JSON.parse(String(rx!.items)).map((x: { drug: string }) => x.drug), ['Acetaminofén', 'Ibuprofeno'], 'lo aplicado en la clínica no va a la receta')
+    // ME15 (ronda 15) cambia el punto 5 de ME13: lo aplicado en la clínica también va a la receta, con su leyenda
+    assert.deepEqual(JSON.parse(String(rx!.items)).map((x: { drug: string }) => x.drug), ['Diclofenaco', 'Acetaminofén', 'Ibuprofeno'])
     // EX10: dos lotes con folio propio; el de la clínica llega a la bandeja del laboratorio
     assert.ok(r.body.examBatch && r.body.clinicBatch && r.body.examBatch !== r.body.clinicBatch)
     const ext = await sql.one('SELECT order_no, place FROM exam_orders WHERE batch_id = ?', [r.body.examBatch])
@@ -161,7 +162,8 @@ describe('ME14 (ronda 14): receta al firmar con ingreso y desde la nota', () => 
     assert.equal(r.body.stayKind, 'observation')
     assert.ok(r.body.prescriptionId, 'con ingreso también sale la receta')
     const rx = await sql.one('SELECT items FROM prescriptions WHERE id = ?', [r.body.prescriptionId])
-    assert.deepEqual(JSON.parse(String(rx!.items)).map((x: { drug: string }) => x.drug), ['Acetaminofén', 'Ibuprofeno'])
+    // ME15 (ronda 15): con ingreso, la receta también trae los tres
+    assert.deepEqual(JSON.parse(String(rx!.items)).map((x: { drug: string }) => x.drug), ['Acetaminofén', 'Ibuprofeno', 'Ceftriaxona'])
     const sheet = await sql.query('SELECT drug FROM hosp_meds WHERE hospitalization_id = ?', [r.body.hospitalizationId])
     assert.deepEqual(sheet.map((m) => m.drug), ['Ceftriaxona'], 'a la hoja solo lo que se aplica en la clínica')
     assert.equal(await sql.one('SELECT 1 FROM consult_applications WHERE consultation_id = ?', [r.body.consultationId]), undefined, 'con ingreso no hay «por aplicar»')

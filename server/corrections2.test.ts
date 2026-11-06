@@ -100,7 +100,8 @@ describe('M1 orden médica → hoja de medicamentos (regresión)', () => {
     assert.equal(c.status, 201, JSON.stringify(c.body))
     assert.equal(c.body.stayKind, 'hospital')
     assert.equal(c.body.medOrders, 1)
-    assert.equal(c.body.prescriptionId, null, 'con ingreso no se emite receta')
+    // ME15 (ronda 15): con o sin ingreso, la receta de la consulta lleva todos sus medicamentos (también lo que va a la hoja)
+    assert.ok(c.body.prescriptionId, 'con ingreso también se emite la receta')
     const file = (await nurse.get(`/api/inpatient/${c.body.hospitalizationId}`)).body
     assert.equal(file.hospitalization.consultationId, c.body.consultationId)
     assert.equal(file.meds.length, 1)
@@ -161,7 +162,8 @@ describe('M1 orden médica → hoja de medicamentos (regresión)', () => {
     assert.equal(c.status, 201, JSON.stringify(c.body))
     assert.equal(c.body.stayKind, 'observation')
     const rx = (await doc.get(`/api/prescriptions/${c.body.prescriptionId}`)).body
-    assert.deepEqual(rx.prescription.items.map((i: any) => i.drug), ['Acetaminofén'])
+    // ME15 (ronda 15): la receta trae los dos; a la hoja, solo lo marcado
+    assert.deepEqual(rx.prescription.items.map((i: any) => i.drug), ['Acetaminofén', 'Solución salina 0.9 %'])
     assert.deepEqual((await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds.map((m: any) => m.drug), ['Solución salina 0.9 %'])
   })
 

@@ -266,7 +266,7 @@ function ConsultEntry({ consultationId, file }: { consultationId: string; file: 
         <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}>Ver nota completa</Link>
       </div>
       <div className="panel__body"><ConsultationBody c={c} vitals={data.vitals} exams={data.exams ?? []} vitalsLine={(() => { const s = file.hospitalization.vitalsPlan?.find((x) => x.noteId === c.id); return s ? vitalsModeText(s) : undefined })()}
-        medsExtra={<RxFromNote meds={[...file.meds.filter((m) => m.source === 'consultation' && m.sourceId === c.id), ...(file.consultRxMeds ?? [])]} />} />
+        medsExtra={<RxFromNote all meds={[...file.meds.filter((m) => m.source === 'consultation' && m.sourceId === c.id), ...(file.consultRxMeds ?? [])]} />} />
         <SignedBadge by={author?.name} at={c.date} addenda={(data.addenda ?? []).length} />
         <Addenda list={data.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={load} /></div>
     </article>
@@ -1908,15 +1908,16 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
  * ingreso, evolución, procedimiento, postquirúrgica). Abre «Generar receta» (ME12) con los medicamentos DE ESA NOTA: vienen
  * marcados los que van a receta (los de la consulta que no se aplican en la clínica) y los «No hay en la clínica». Enfermería,
  * como en ME12: solo los «No hay en la clínica», con los datos del médico que los indicó.
+ * ME15 (ronda 15, A3): en la nota de consulta (`all`) vienen marcados TODOS sus medicamentos; las demás notas, como ME14.
  */
-function RxFromNote({ meds }: { meds: InpatientMed[] }) {
+function RxFromNote({ meds, all = false }: { meds: InpatientMed[]; all?: boolean }) {
   const { can } = useStore()
   const [open, setOpen] = useState(false)
   if (!(can('chart.view') && (can('inpatient.care') || can('inpatient.orders')))) return null
   const live = meds.filter((m) => !m.stoppedAt)
   const doctor = can('inpatient.orders')
   if (!live.length || (!doctor && !live.some((m) => m.buyOutside))) return null
-  const forRx = live.filter((m) => m.id.startsWith('c:') || m.buyOutside).map((m) => m.id)
+  const forRx = live.filter((m) => (all && doctor) || m.id.startsWith('c:') || m.buyOutside).map((m) => m.id)
   return (
     <span className="note-actions no-print">
       <button type="button" className={`btn ${forRx.length ? 'btn--soft' : 'btn--ghost'} btn--sm`} onClick={() => setOpen(true)}><Pill size={14} />Receta</button>

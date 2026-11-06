@@ -146,7 +146,9 @@ function useStoreValue() {
   // Estables entre renders para poder usarlos como dependencias de efectos
   const fetchChart = useCallback((patientId: string) => api<Chart>(`/patients/${patientId}/chart`), [])
   const fetchPrescription = useCallback((id: string) =>
-    api<{ prescription: Prescription; consultation: Consultation | null; hospitalization: Hospitalization | null; patient: Patient | null }>(`/prescriptions/${id}`), [])
+    api<{ prescription: Prescription; consultation: Consultation | null; hospitalization: Hospitalization | null; patient: Patient | null
+      /** ME15 (ronda 15): lo que la consulta indicó y esta receta no trae, y la receta completa que ya se generó */
+      missingFromConsult?: PrescriptionItem[]; completeRx?: { id: string; folio: string } }>(`/prescriptions/${id}`), [])
   const fetchInpatient = useCallback((id: string) => api<InpatientFile>(`/inpatient/${id}`), [])
   const fetchConsultation = useCallback((id: string, purpose: 'note' | 'certificate' = 'note') =>
     api<{ consultation: Consultation; patient: Patient; vitals: Vitals | null; addenda?: Addendum[]; exams?: ExamOrder[]; referrals?: Referral[]; applications?: ConsultApplication[] }>(`/consultations/${id}?purpose=${purpose}`), [])

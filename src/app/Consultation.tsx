@@ -190,7 +190,10 @@ export default function Consultation() {
   // sin ingreso, una sola dosis que aplica enfermería); sin marcar, a la receta. Los «No hay en la clínica», a los dos lados.
   // Con ingreso, lo que no se desmarcó a propósito se aplica en la clínica (como el servidor)
   const applied = (m: PrescriptionItem) => (admitting ? m.applyInClinic !== false : !!m.applyInClinic)
-  const rxCount = meds.filter((m) => !applied(m) || m.buyOutside).length
+  // ME15 (ronda 15): la receta lleva todos los medicamentos, también los que se aplican en la clínica (si todo se aplica aquí y
+  // el adulto no tiene identidad, se firma sin receta, como el servidor)
+  const onlyInClinic = !meds.some((m) => !applied(m) || m.buyOutside)
+  const rxCount = onlyInClinic && !p.dni && yearsOld(p.birthDate) >= 18 ? 0 : meds.length
   const inClinic = meds.filter(applied)
   const noDays = meds.filter((m) => !applied(m) && missingDays({ ...m, applyInClinic: false }))
   // Sin ingreso, lo que se aplica en la clínica es solo dosis STAT: «Terminar consulta» no deja firmar otra frecuencia
@@ -201,7 +204,8 @@ export default function Consultation() {
     // MC2 (ronda 6): un PRN que vino de un set sin condición
     ...meds.flatMap((m) => (isPrnFrequency(m.frequency) && !m.prnCondition?.trim() ? [`la condición PRN de ${m.drug}`] : []))]
   // La receta lleva la identidad del paciente; en adultos es obligatoria
-  const needsDni = rxCount > 0 && !p.dni && yearsOld(p.birthDate) >= 18
+  // ME15: si todo se aplica en la clínica, sin identidad se firma sin receta (como antes); la receta se genera después
+  const needsDni = !onlyInClinic && !p.dni && yearsOld(p.birthDate) >= 18
   const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !indications.length && !meds.length && !exams.length && 'al menos una indicación, un medicamento o un examen',
     noDays.length > 0 && `el total de días de ${noDays.map((m) => m.drug).join(', ')} (va a la receta)`,
     needsDni && 'el número de identidad para la receta',
@@ -413,7 +417,7 @@ export default function Consultation() {
                 <ExamsBlock value={exams} onChange={setExams} inStay={admitting} />
               </div>
               <div className="plan-block" data-tour="medicamentos">
-                <h3 className="plan-block__title">Medicamentos <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'los que se aplican en la clínica van a la hoja; los demás, a la receta' : 'van a la receta'}</span></h3>
+                <h3 className="plan-block__title">Medicamentos <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'todos van a la receta; los que se aplican en la clínica, también a la hoja' : 'todos van a la receta'}</span></h3>
                 {admitting && <p className="muted" style={{ fontSize: 13.5 }}>Con ingreso, lo que se aplica en la clínica no necesita días: sin días queda «hasta nueva orden».</p>}
                 <MedicationList items={admitting ? meds.map((m) => ({ ...m, applyInClinic: applied(m) })) : meds} patient={p} editing={medForm?.index ?? null} requireDuration warn={statWarn}
                   onEdit={(i) => setMedForm({ index: i, initial: meds[i] })} onRemove={(i) => { setMeds(meds.filter((_, j) => j !== i)); setMedForm(null) }} />
@@ -465,9 +469,9 @@ export default function Consultation() {
                     {/* Son excluyentes: marcar una desmarca la otra */}
                     {/* Un consultorio no hospitaliza y puede no usar observación */}
                     {place.observation && <label className="check-line"><input type="checkbox" checked={observe} onChange={(e) => { setObserve(e.target.checked); if (e.target.checked) setAdmit(false) }} />
-                      <span><b>Ingreso a observación</b><small>Observación corta (hidratar, nebulizar, vigilar). Esta nota es la primera nota; lo que se aplica en la clínica pasa a la hoja y lo demás va a la receta.</small></span></label>}
+                      <span><b>Ingreso a observación</b><small>Observación corta (hidratar, nebulizar, vigilar). Esta nota es la primera nota; lo que se aplica en la clínica pasa a la hoja y la receta lleva todos los medicamentos.</small></span></label>}
                     {place.hospital && <label className="check-line"><input type="checkbox" checked={admit} onChange={(e) => { setAdmit(e.target.checked); if (e.target.checked) setObserve(false) }} />
-                      <span><b>Ingreso a hospitalización</b><small>Esta nota queda como nota de ingreso; lo que se aplica en la clínica pasa a la hoja y lo demás va a la receta. Al firmar eliges la cama.</small></span></label>}
+                      <span><b>Ingreso a hospitalización</b><small>Esta nota queda como nota de ingreso; lo que se aplica en la clínica pasa a la hoja y la receta lleva todos los medicamentos. Al firmar eliges la cama.</small></span></label>}
                   </div>
               )}
               {/* RF1 (ronda 8): referir a otro centro con la nota todavía en borrador (también desde la nota firmada) */}

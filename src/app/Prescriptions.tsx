@@ -216,6 +216,36 @@ function NewPrescription({ initial, onClose }: { initial: Omit<Draft, 'key'>; on
   )
 }
 
+/**
+ * ME15 (ronda 15): la receta de una consulta de antes no traía los medicamentos «Aplicar en la clínica». El médico genera la
+ * receta completa de esa consulta (una receta nueva, con su folio); la emitida no cambia.
+ */
+export function useFullRx(consultationId: string) {
+  const { notify } = useStore()
+  const nav = useNavigate()
+  const [busy, setBusy] = useState(false)
+  const generate = async () => {
+    setBusy(true)
+    try {
+      const r = await api<{ prescriptionId: string; folio: string }>(`/consultations/${consultationId}/full-rx`, { method: 'POST' })
+      notify(`Receta completa ${r.folio} emitida`)
+      nav(`/app/recetas/${r.prescriptionId}`)
+    } catch (e) { notify((e as Error).message, 'error'); setBusy(false) }
+  }
+  return { busy, generate }
+}
+
+function FullRxStrip({ consultationId, missing }: { consultationId: string; missing: PrescriptionItem[] }) {
+  const { can } = useStore()
+  const { busy, generate } = useFullRx(consultationId)
+  return (
+    <div className="alert-strip alert-strip--amber no-print" style={{ flexWrap: 'wrap', justifyContent: 'space-between' }}>
+      <span>Esta receta no trae {missing.length === 1 ? 'un medicamento' : `${missing.length} medicamentos`} de la consulta ({missing.map((m) => m.drug).join(', ')}): se emitió cuando lo que se aplicaba en la clínica no iba a la receta.{can('rx.write') ? ' Puedes generar la receta completa; esta no cambia.' : ''}</span>
+      {can('rx.write') && <button className="btn btn--primary btn--sm" disabled={busy} onClick={() => void generate()}><FileText size={15} />{busy ? 'Generando…' : 'Generar receta completa'}</button>}
+    </div>
+  )
+}
+
 export function PrescriptionSheet() {
   const { id } = useParams()
   const { staffById, fetchPrescription, settings, can, notify } = useStore()
@@ -237,7 +267,7 @@ export function PrescriptionSheet() {
   useEffect(load, [load])
   if (missing) return <div className="page"><div className="empty">Esta receta no existe. Vuelve a <Link to="/app/recetas">Recetas</Link>.</div></div>
   if (!data) return <Loading label="Cargando receta" />
-  const { prescription: rx, consultation: c, hospitalization: h, patient } = data
+  const { prescription: rx, consultation: c, hospitalization: h, patient, missingFromConsult = [], completeRx } = data
   const doc = staffById(rx.doctorId)!
   // Persona no registrada: se imprime con los datos que se escribieron
   const g = rx.guest
@@ -260,7 +290,7 @@ export function PrescriptionSheet() {
   const notes = rx.indications ?? c?.indications ?? (c?.orders.length ? c.orders.filter((o) => !rx.items.some((it) => o.startsWith(it.drug))) : c?.plan ? [c.plan] : [])
   // WhatsApp no permite adjuntar el PDF desde un enlace: se envía el texto de la receta
   const rxMessage = [`${settings.name}. Receta ${rx.folio}, ${date(rx.issuedAt)}.`, `${doc.name}, colegiación ${doc.license ?? ''}.`, `Paciente: ${name}.`, '',
-    ...rx.items.map((it, i) => `${i + 1}. ${medicationLine(it)}${it.instructions ? `. ${it.instructions}` : ''}`),
+    ...rx.items.map((it, i) => `${i + 1}. ${medicationLine(it)}${it.instructions ? `. ${it.instructions}` : ''}${it.legend ? ` (${it.legend})` : ''}`),
     ...(notes.length ? ['', 'Indicaciones:', ...notes.map((n) => `- ${n}`)] : [])].join('\n')
 
   return (
@@ -291,6 +321,11 @@ export function PrescriptionSheet() {
       {((examBatch && examGroups.length > 0) || clinicBatch) && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap' }}>
         {`También se ordenaron exámenes: ${[examBatch && examGroups.length > 0 && 'sus órdenes van debajo de la receta, cada una en su hoja, y se imprimen con el mismo botón', clinicBatch && 'la orden de los que se hacen en la clínica va aparte, al final, con su propio botón'].filter(Boolean).join('; ')}.`}
         <Link className="btn btn--ghost btn--sm" to={`/app/examenes/orden/${examBatch ?? clinicBatch}${examBatch && clinicBatch ? `?clinica=${clinicBatch}` : ''}`}>Abrir solo las órdenes</Link></div>}
+      {/* ME15 (ronda 15): una receta de antes no traía los «Aplicar en la clínica»: el médico genera la completa (esta no cambia) */}
+      {!rx.voidedAt && missingFromConsult.length > 0 && <FullRxStrip consultationId={rx.consultationId} missing={missingFromConsult} />}
+      {!rx.voidedAt && completeRx && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap' }}>
+        <span>Esta receta no traía todos los medicamentos de la consulta. Ya se generó la receta completa {completeRx.folio}.</span>
+        <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${completeRx.id}`}>Ver la receta completa</Link></div>}
       {rx.voidedAt && <div className="alert-strip no-print">Receta anulada el {date(rx.voidedAt)}, {time(rx.voidedAt)}{rx.voidedBy ? ` por ${staffById(rx.voidedBy)?.name ?? '—'}` : ''}. Motivo: {rx.voidReason}</div>}
       {voiding && <VoidRx id={rx.id} folio={rx.folio} onClose={() => setVoiding(false)} onDone={() => { setVoiding(false); load() }} />}
       {/* IM2 (ronda 13): solo el médico ve la casilla; enfermería reimprime la receta como la dejó el médico */}
@@ -318,6 +353,8 @@ export function PrescriptionSheet() {
               <strong>{it.drug}</strong> <span style={{ color: 'var(--muted)' }}>{it.presentation}</span>
               <p>{doseText(it.dose)}{it.route ? ` vía ${it.route.toLowerCase()}` : ''}, {it.prnCondition ? frequencyText(it) : it.frequency.toLowerCase()}{it.duration ? `, durante ${it.duration}` : ''}.{it.instructions ? ` ${it.instructions}` : ''}{it.quantity ? ` Cantidad: ${it.quantity}.` : ''}</p>
               </>}
+              {/* ME15 (ronda 15): «Se aplica en la clínica.» o «Comprar y traer a la clínica para su aplicación.» */}
+              {it.legend && <p className="rx-legend"><em>{it.legend}</em></p>}
             </li>
           ))}
         </ol>

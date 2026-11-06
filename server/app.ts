@@ -52,14 +52,14 @@ import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permis
 import { positionOf } from '../src/lib/positions.js'
 import { NEB_MAX_COMPONENTS, PAGE_SIZE } from '../src/lib/clinicalConfig.js'
 import { yearsOld } from '../src/lib/inpatient.js'
-import { medicationLine, normalizeDni } from '../src/lib/format.js'
+import { consultRxItems, dmy, medicationLine, normalizeDni } from '../src/lib/format.js'
 import { normalize } from '../src/lib/patients.js'
 import { AUDIT_KINDS, auditKind, type AuditKind } from '../src/lib/audit.js'
 import { hasBlank, medHasBlank } from '../src/lib/orderSets.js'
 import { assertGrace, printedAt, saveVersion, toVersion } from './grace.js'
 import { examLock, REMOVED_IN_GRACE } from './correctionLocks.js'
 import { DAY_NAMES_PLURAL, rangesOn, scheduleFromWeek, scheduleProblems, SLOT_OPTIONS, weekday, weekOf, withinSchedule } from '../src/lib/schedule.js'
-import type { ApptStatus, Staff } from '../src/lib/types.js'
+import type { ApptStatus, PrescriptionItem, Staff } from '../src/lib/types.js'
 
 export interface AppOptions {
   sql: Sql
@@ -897,7 +897,10 @@ export function createApp(opts: AppOptions) {
     // propósito (false) va a la receta. Sin ingreso, solo lo marcado se aplica aquí.
     const stayKind = c.admit ? 'hospital' : c.observe ? 'observation' : null
     const items = c.items.map((it) => ({ ...it, applyInClinic: stayKind ? it.applyInClinic !== false : !!it.applyInClinic }))
-    const rxItems = items.filter((it) => !it.applyInClinic || it.buyOutside)
+    // ME15 (ronda 15): la receta lleva TODOS los medicamentos, también los «Aplicar en la clínica» (con su leyenda y su
+    // cantidad), con o sin ingreso: el paciente puede comprarlo y traerlo, y la receta es la constancia de lo indicado. Antes
+    // (ME13, ronda 14) aquí se quitaban: `items.filter((it) => !it.applyInClinic || it.buyOutside)`.
+    const rxItems = consultRxItems(items)
     // ME13: sin ingreso, lo que se aplica en la clínica es una sola dosis (STAT): no se programan dosis siguientes (A6)
     if (!stayKind) {
       const repeat = items.find((it) => it.applyInClinic && (!/única/i.test(it.frequency) || it.loadingDose))
@@ -924,7 +927,12 @@ export function createApp(opts: AppOptions) {
     if (stayKind && await sql.one(`SELECT 1 FROM hospitalizations WHERE patient_id = ? AND clinic_id = ? AND status = 'active'`, [patientId, cid])) {
       fail(409, `${name} ya está en observación u hospitalizado.`)
     }
-    const rxId = rxItems.length ? randomUUID() : null
+    // ME15: si todo se aplica en la clínica y el adulto no tiene identidad, se firma sin receta como antes (no se bloquea la
+    // atención); la receta se genera después desde «Receta» de la tarjeta, ya con la identidad
+    const onlyInClinic = !items.some((it) => !it.applyInClinic || it.buyOutside)
+    const pRow = await patientRow(cid, String(appt!.patient_id))
+    const noIdentity = !!pRow && !pRow.dni && yearsOld(String(pRow.birth_date)) >= 18
+    const rxId = rxItems.length && !(onlyInClinic && noIdentity) ? randomUUID() : null
     let medOrders = 0
     const now = new Date()
     let folio: string | null = null
@@ -1279,7 +1287,52 @@ export function createApp(opts: AppOptions) {
     const hosp = rx.hospitalizationId ? await sql.one('SELECT * FROM hospitalizations WHERE id = ? AND clinic_id = ?', [rx.hospitalizationId, cid]) : undefined
     const patient = rx.patientId ? toPatient((await patientRow(cid, rx.patientId))!, true) : null
     await audit(userOf(req), `Abrió la receta ${rx.folio}`)
-    res.json({ prescription: { ...rx, printedAt: await printedAt(sql, 'prescription', rx.id) }, consultation: cons ? toConsultation(cons) : null, hospitalization: hosp ? toHospitalization(hosp) : null, patient })
+    // ME15 (ronda 15): lo que la consulta indicó y esta receta no trae (las de antes no llevaban los «Aplicar en la clínica») y
+    // la receta completa que ya se generó después, si la hay
+    const full = cons && !rx.hospitalizationId && !cons.admit_kind ? await fullRxState(cid, cons) : undefined
+    res.json({ prescription: { ...rx, printedAt: await printedAt(sql, 'prescription', rx.id) }, consultation: cons ? toConsultation(cons) : null, hospitalization: hosp ? toHospitalization(hosp) : null, patient,
+      missingFromConsult: full?.latest?.id === rx.id ? full.missing : [],
+      completeRx: full?.latest && full.latest.id !== rx.id && !full.missing.length ? { id: String(full.latest.id), folio: String(full.latest.folio) } : undefined })
+  })
+
+  /**
+   * ME15 (ronda 15): estado de la receta de una consulta externa: los medicamentos de la consulta que no trae ninguna receta
+   * vigente de esa consulta y la receta más reciente. Una consulta sin la lista de medicamentos guardada (anterior a la v22)
+   * no se puede completar.
+   */
+  async function fullRxState(cid: string, cons: Row) {
+    if (!cons.meds) return { missing: [] as PrescriptionItem[], latest: undefined as Row | undefined }
+    const meds = JSON.parse(String(cons.meds)) as PrescriptionItem[]
+    const issued = await sql.query(`SELECT id, folio, items FROM prescriptions WHERE clinic_id = ? AND consultation_id = ? AND hospitalization_id IS NULL AND voided_at IS NULL ORDER BY issued_at DESC`, [cid, String(cons.id)])
+    const has = (rx: Row, it: PrescriptionItem) => (JSON.parse(String(rx.items)) as PrescriptionItem[]).some((x) => normalize(x.drug) === normalize(it.drug) && x.dose === it.dose)
+    const latest = issued[0]
+    return { missing: latest ? meds.filter((it) => !has(latest, it)) : meds, latest }
+  }
+
+  // ME15 (ronda 15): «Receta» de una consulta vieja: una receta nueva con todos sus medicamentos (la emitida no cambia)
+  app.post('/api/consultations/:id/full-rx', auth, need('rx.write'), async (req, res) => {
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const cons = (await sql.one('SELECT * FROM consultations WHERE id = ? AND clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La consulta no existe.')
+    if (cons!.admit_kind) fail(409, 'Esta consulta ingresó al paciente: la receta se genera desde su estancia («Receta» en la tarjeta de la nota).')
+    if (!cons!.meds) fail(409, 'Esta consulta no guardó la lista de sus medicamentos: emite una receta sin consulta.')
+    const { missing } = await fullRxState(cid, cons!)
+    if (!missing.length) fail(409, 'La receta de esta consulta ya trae todos sus medicamentos.')
+    const items = consultRxItems(JSON.parse(String(cons!.meds)) as PrescriptionItem[])
+    const patientId = String(cons!.patient_id)
+    await assertRxIdentity(cid, patientId)
+    const who = await patientName(patientId)
+    const id = randomUUID()
+    const now = new Date()
+    let folio = ''
+    await sql.tx(async (q) => {
+      folio = await nextFolio(q, cid, now)
+      const marks = await currentMarks(q, user.id)
+      await q.run(`INSERT INTO prescriptions (id,folio,patient_id,doctor_id,consultation_id,issued_at,items,clinic_id,validity_days,signature_id,stamp_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [id, folio, patientId, user.id, String(cons!.id), now.toISOString(), JSON.stringify(items), cid, await rxValidityOf(q, user.id, undefined), marks.signatureId, marks.stampId])
+      await audit(user, `Generó la receta completa ${folio} de la consulta del ${dmy(String(cons!.date))} de ${who} (con ${missing.map((m) => m.drug).join(', ')})`, q, patientId)
+    })
+    res.status(201).json({ prescriptionId: id, folio })
   })
 
   // ---------- Personal ----------

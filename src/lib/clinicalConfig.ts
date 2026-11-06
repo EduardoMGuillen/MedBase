@@ -396,6 +396,13 @@ export const DEPT_SHIFTS: Record<'nursing' | 'lab' | 'imaging', { key: 'morning'
  */
 export const NOT_DONE_ELSEWHERE: Record<'lab' | 'imaging', string> = { lab: 'El paciente se lo hará en otro laboratorio', imaging: 'El paciente se lo hará en otro centro' }
 /** ME13 (ronda 14). VALIDAR: Emil. Motivos de «No aplicado» de un medicamento de consulta externa (más «Otro» escrito). */
+/**
+ * ME15 (ronda 15): leyendas de la receta para un medicamento «Aplicar en la clínica» (la receta lleva todos los medicamentos
+ * de la consulta). Con «No hay en la clínica (va a receta)» (ME10), la segunda. VALIDAR: Emil
+ */
+export const RX_LEGEND_IN_CLINIC = 'Se aplica en la clínica.'
+export const RX_LEGEND_BUY_AND_BRING = 'Comprar y traer a la clínica para su aplicación.'
+
 export const NOT_APPLIED_REASONS = ['El paciente se retiró', 'El paciente lo rechazó', 'No hay en la clínica']
 export const NOT_DONE_REASONS =['No hay reactivo', 'El paciente no llegó', 'El paciente se fue', 'Equipo dañado', 'Muestra insuficiente', 'Muestra hemolizada o inadecuada']
 /**
