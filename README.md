@@ -26,24 +26,48 @@ Para detenerlo, presiona `Ctrl + C` en la terminal.
 
 ### Cuentas de demo
 
-Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes entrar con un clic.
+Contraseña para todas: **`demo1234`**. En la pantalla de login también puedes entrar con un clic (salvo las cuentas que están para probar un rechazo).
+
+> Si tu base local es anterior a estos usuarios (todavía entras con `lherrera@demo.clinara` y compañía), recréala con `npm run db:reset` (detén antes `npm run dev`).
+
+**Clínica Santa Brígida** (la clínica demo principal, se regenera cada día)
 
 | Rol | Correo | Qué ve |
 |---|---|---|
-| Médico (medicina interna) | vsolorzano@demo.clinara | Su agenda, consultas, recetas, constancias, expediente |
-| Médico (pediatría) | tbogran@demo.clinara | Igual, con su propia agenda |
-| Médico (ginecología) | nescoto@demo.clinara | Igual, con su propia agenda |
-| Enfermería | murbina@demo.clinara | Consulta externa, perfil CE (triaje), hospitalizados: hoja de medicamentos y notas de enfermería |
-| Recepción | aquiroz@demo.clinara | Agenda, pacientes, recordatorios, caja |
-| Laboratorio (microbióloga) | psuazo@demo.clinara | Bandeja de laboratorio, configuración de laboratorio, rol de turnos |
-| Laboratorio (técnico) | berazo@demo.clinara | Bandeja de laboratorio, pacientes ambulatorios (configuración y turnos solo lectura) |
-| Imágenes (radiólogo) | rzepeda@demo.clinara | Bandeja de imágenes, informes, expediente en solo lectura, configuración de imágenes |
-| Imágenes (técnica) | echinchilla@demo.clinara | Bandeja de imágenes: realizados e imágenes (sin informes) |
-| Administración | rmoncada@demo.clinara | Reportes, personal, configuración, bitácora |
-| Administración de Clinara | dcerrato@demo.clinara | Clínicas y sus usuarios (sin expedientes) |
-| Médico de otra clínica (San Lucas) | slobo@demo.clinara | Sólo los pacientes de su clínica |
+| Médico (medicina interna) | vsolorzano@demo.clinara | Dra. Valeria Solórzano: su agenda, consultas, recetas, constancias, expediente, hospitalizados |
+| Médico (pediatría) | tbogran@demo.clinara | Dr. Tomás Bográn: igual, con su propia agenda |
+| Médico (ginecología y obstetricia) | nescoto@demo.clinara | Dra. Natalia Escoto: igual, con su propia agenda |
+| Médico (medicina general, todos los días) | jmembreno@demo.clinara | Dr. Joaquín Membreño: atiende de lunes a domingo y tiene turno todo el mes |
+| Médico y administración | mvilleda@demo.clinara | Dr. Mauricio Villeda, director médico: tiene los dos roles y cambia de vista |
+| Médico (cirugía general) | hnolasco@demo.clinara | Dr. Hugo Nolasco: consulta de cirugía y hoja de anestesia como cirujano |
+| Médico sin horario (anestesiología) | sarita@demo.clinara | Dra. Silvia Arita: no da consulta externa ni ofrece horas en la reserva en línea; llena y firma la hoja de anestesia |
+| Médico con verificación en dos pasos | tgalvez@demo.clinara | Dra. Teresa Gálvez (dermatología): después de la contraseña pide el código de 6 dígitos (ver abajo) |
+| Enfermería (licenciada) | murbina@demo.clinara | Lic. Marta Urbina: consulta externa, perfil CE (triaje), hospitalizados: hoja de medicamentos y notas |
+| Enfermería (auxiliar) | rvallecillo@demo.clinara | Aux. Rosa Vallecillo: igual que enfermería; firma con «Aux.» |
+| Recepción y enfermería | gyanes@demo.clinara | Gabriel Yanes: tiene los dos roles (recepción como vista inicial) |
+| Recepción | aquiroz@demo.clinara | Andrea Quiroz: agenda, pacientes, recordatorios, caja |
+| Laboratorio (microbióloga) | psuazo@demo.clinara | Lic. Paula Suazo: bandeja de laboratorio, configuración de laboratorio, rol de turnos |
+| Laboratorio (técnico) | berazo@demo.clinara | Téc. Bryan Erazo: bandeja de laboratorio, pacientes ambulatorios (configuración y turnos solo lectura) |
+| Imágenes (radiólogo) | rzepeda@demo.clinara | Dr. Rafael Zepeda: bandeja de imágenes, informes, expediente en solo lectura, configuración de imágenes |
+| Imágenes (técnica) | echinchilla@demo.clinara | Téc. Elena Chinchilla: bandeja de imágenes: realizados e imágenes (sin informes) |
+| Administración | rmoncada@demo.clinara | Ricardo Moncada: reportes, personal, configuración, bitácora |
+| Cuenta desactivada | joseguera@demo.clinara | Dr. Julio Oseguera: el login la rechaza («Esta cuenta está desactivada») |
+
+**Otras cuentas**
+
+| Rol | Correo | Qué ve |
+|---|---|---|
+| Administración de Clinara | dcerrato@demo.clinara | Ing. Diego Cerrato: clínicas y sus usuarios (sin expedientes) |
 | Consultorio: médico titular | ipacheco@demo.clinara | La Dra. Isabel Pacheco en su propio consultorio: atiende, cobra, configura y ve sus reportes |
-| Consultorio: asistente | lcardona@demo.clinara | Agenda, llegadas, preclínica, caja y aplicar medicamentos en observación |
+| Consultorio: asistente | lcardona@demo.clinara | Lorena Cardona: agenda, llegadas, preclínica, caja y aplicar medicamentos en observación |
+| Consultorio: segunda asistente | arodas@demo.clinara | Ana Rodas: con ella el consultorio está en su máximo de 2 asistentes (agregar una tercera da error) |
+| Otra clínica (San Lucas): administración | mhenriquez@demo.clinara | Marcela Henríquez: sólo los datos de su clínica |
+| Otra clínica (San Lucas): médicos | slobo@demo.clinara, cochoa@demo.clinara | Dr. Sergio Lobo (medicina general) y Dra. Carolina Ochoa (pediatría): sólo los pacientes de su clínica |
+| Otra clínica (San Lucas): enfermería y recepción | amontes@demo.clinara, bsevilla@demo.clinara | Lic. Alejandra Montes y Brenda Sevilla |
+| Clínica suspendida | prodezno@demo.clinara | Pablo Rodezno, de la Clínica San Miguel (desactivada): el login avisa que la clínica está desactivada |
+| Consultorio sin configurar | ltrochez@demo.clinara | Dr. Luis Trochez: consultorio recién creado; al entrar abre el asistente de configuración de 3 pasos |
+
+**Verificación en dos pasos de la Dra. Gálvez.** Agrega en Google o Microsoft Authenticator una cuenta con la clave `CLINARADEMO2FA7Q` (tipo «basada en tiempo»), o escanea `otpauth://totp/Clinara:tgalvez@demo.clinara?secret=CLINARADEMO2FA7Q&issuer=Clinara`, y escribe el código que muestre.
 
 ## Recorrido sugerido (15 minutos)
 

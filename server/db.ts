@@ -21,11 +21,12 @@ import { cleanArchivedThresholds, loadImagingCatalog } from './ronda10.js'
 import { loadRonda11Catalog } from './ronda11.js'
 import { addDeptDemo } from './demoDept.js'
 import { loadSupplyCatalog } from './supplies.js'
+import { insertExtraDemoUsers } from './demoUsers.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '83'
+const SCHEMA_VERSION = '84'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1335,6 +1336,8 @@ export function ensureDb(sql: Sql) {
         await backfillOrders(q)
         await addDemoScenarios(q)
         await migrateObservationAuthorizations(q)
+        // v84: usuarios demo para los casos de prueba (varios roles, cuenta desactivada, 2FA, clínica suspendida…)
+        await insertExtraDemoUsers(q)
       }
       await migrateRxValidity(q)
       await migrateRoles(q)
@@ -1474,6 +1477,7 @@ export async function seed(q: Sql) {
   await insertOffice(q)
   await insertClinicScenarios(q, MAIN_CLINIC, textPdf)
   await insertOfficeScenarios(q, OFFICE_CLINIC)
+  await insertExtraDemoUsers(q)
   await q.run(`INSERT INTO meta (key, value) VALUES ('seeded', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [now])
 }
 

@@ -105,7 +105,10 @@ describe('DM1 ronda 5: los mínimos del pedido', () => {
     const today = day(now)
     const counts: Record<string, unknown> = {}
     // Clínica Santa Brígida
-    const docs = (await sql.query(`SELECT id, name FROM staff WHERE clinic_id = 'c-sb' AND roles LIKE '%doctor%' AND active ORDER BY name`)).map((r) => ({ id: String(r.id), name: String(r.name) }))
+    // Los médicos que atienden hoy según su horario (la Dra. Escoto no atiende martes ni jueves; la Dra. Arita no tiene horario)
+    const docs = (await sql.query(`SELECT id, name, schedule FROM staff WHERE clinic_id = 'c-sb' AND roles LIKE '%doctor%' AND active ORDER BY name`))
+      .filter((r) => r.schedule && slotsOn(JSON.parse(String(r.schedule)), today).length).map((r) => ({ id: String(r.id), name: String(r.name) }))
+    assert.ok(docs.length >= 3, 'al menos tres médicos atienden hoy')
     assert.ok(await n(`SELECT COUNT(*)::int AS n FROM patients WHERE clinic_id = 'c-sb'`) >= 60)
     for (const d of docs) {
       const own = await n(`SELECT COUNT(DISTINCT patient_id)::int AS n FROM appointments WHERE doctor_id = ?`, [d.id])

@@ -10,7 +10,7 @@ import { positionOf } from '../lib/positions'
 import type { Staff } from '../lib/types'
 
 /** Cuentas de demo con botón de acceso rápido: un rol de cada tipo, la segunda clínica y el consultorio. */
-const DEMO_SHORTCUTS = ['s-cerrato', 's-solorzano', 's-membreno', 's-urbina', 's-quiroz', 's-moncada', 's-suazo', 's-zepeda', 's2-lobo', 's3-pacheco', 's3-cardona']
+const DEMO_SHORTCUTS = ['s-cerrato', 's-solorzano', 's-membreno', 's-villeda', 's-nolasco', 's-arita', 's-galvez', 's-urbina', 's-vallecillo', 's-yanes', 's-quiroz', 's-moncada', 's-suazo', 's-zepeda', 's2-lobo', 's3-pacheco', 's3-cardona']
 
 export default function Login() {
   const { user, signIn } = useStore()

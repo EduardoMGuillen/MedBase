@@ -297,8 +297,10 @@ async function ensureDemoStaff(q: Sql, clinicIds: string[]) {
       await q.run('INSERT INTO duty_roster (id, clinic_id, day, staff_id, assigned_by, assigned_at) VALUES (?,?,?,?,?,?)', [randomUUID(), MAIN, day, MEMBRENO.id, by, now.toISOString()])
     }
   }
-  // Fines de semana con citas: a quien no tiene sábado o domingo se le agrega una mañana (lo demás de su horario no cambia)
-  const doctors = await q.query(`SELECT id, schedule FROM staff WHERE clinic_id IN (${clinicIds.map(() => '?').join(',')}) AND active AND roles LIKE '%doctor%' AND email LIKE '%@demo.clinara'`, clinicIds)
+  // Fines de semana con citas: a quien no tiene sábado o domingo se le agrega una mañana (lo demás de su horario no cambia).
+  // Quien no tiene horario (la anestesióloga de la demo) no da consulta externa y se queda así.
+  const doctors = await q.query(`SELECT id, schedule FROM staff WHERE clinic_id IN (${clinicIds.map(() => '?').join(',')}) AND active AND roles LIKE '%doctor%' AND email LIKE '%@demo.clinara'
+    AND schedule IS NOT NULL`, clinicIds)
   for (const d of doctors) {
     const s = d.schedule ? JSON.parse(String(d.schedule)) as Schedule : undefined
     const week = weekOf(s)
@@ -361,7 +363,7 @@ interface Doc { id: string; name: string; specialty: string; schedule: Schedule;
 async function generateClinic(q: Sql, clinicId: string, office: boolean, now: Date) {
   const r = rng(office ? 4111 : 2027)
   const docs: Doc[] = (await q.query(`SELECT s.id, s.name, s.specialty, s.schedule, s.service_id, v.price, v.name AS svc FROM staff s LEFT JOIN services v ON v.id = s.service_id
-    WHERE s.clinic_id = ? AND s.active AND s.roles LIKE '%doctor%' AND s.email LIKE '%@demo.clinara' ORDER BY s.id`, [clinicId]))
+    WHERE s.clinic_id = ? AND s.active AND s.roles LIKE '%doctor%' AND s.email LIKE '%@demo.clinara' AND s.schedule IS NOT NULL ORDER BY s.id`, [clinicId]))
     .map((d) => ({ id: String(d.id), name: String(d.name), specialty: String(d.specialty ?? 'Medicina general'), schedule: JSON.parse(String(d.schedule ?? '{}')) as Schedule,
       serviceId: d.service_id ? String(d.service_id) : undefined, price: Number(d.price ?? 500), serviceName: String(d.svc ?? 'Consulta') }))
   if (!docs.length) return { patients: 0, appointments: 0, consultations: 0, observation: 0, hospital: 0, discharged: 0, followups: 0 }
