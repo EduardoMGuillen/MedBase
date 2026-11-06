@@ -152,6 +152,7 @@ consultorios. Antes de borrar o reemplazar algo, guardan una copia en la tabla `
 | 12 | `docs/ronda12/PEDIDO_RONDA12.md` | `PLAN_RONDA12.md` | `REPORTE_RONDA12.md` | — |
 | 13 | `docs/ronda13/PEDIDO_RONDA13.md` | `PLAN_RONDA13.md` | `REPORTE_RONDA13.md` | `docs/ronda13/despues/` |
 | 14 | `docs/ronda14/PEDIDO_RONDA14.md` | `PLAN_RONDA14.md` | `REPORTE_RONDA14.md` | `docs/ronda14/despues/` |
+| 15 | `docs/ronda15/PEDIDO_RONDA15.md` | `PLAN_RONDA15.md` | `REPORTE_RONDA15.md` | `docs/ronda15/despues/` |
 
 Ronda 14 (esquema 81 → 82): «Aplicar en la clínica» sin ingreso ya no crea una observación: queda «Por aplicar» para
 enfermería (ME13); receta al firmar con ingreso y desde la tarjeta de la nota (ME14); exámenes en «Externo» o «En la clínica»
