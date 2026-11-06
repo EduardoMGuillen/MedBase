@@ -2,8 +2,8 @@ import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse } from '../http.js'
-import { shiftProblems, stripLength, supplyKey, supplyLabel, SUPPLY_UNIT_LIST, type SupplyUnit } from '../../src/lib/supplies.js'
-import { SUPPLY_PERIODS } from '../../src/lib/clinicalConfig.js'
+import { shiftProblems, stripLength, supplyKey, supplyLabel, SUPPLY_SCOPE_LIST, SUPPLY_UNIT_LIST, type SupplyScope, type SupplyUnit } from '../../src/lib/supplies.js'
+import { SUPPLY_PERIODS, SUPPLY_SCOPES } from '../../src/lib/clinicalConfig.js'
 import { normalize } from '../../src/lib/patients.js'
 import { SUPPLY_MD } from '../../src/lib/supplyMd/generated.js'
 import { supplySettings, toSupplyItem } from '../supplies.js'
@@ -14,6 +14,8 @@ const itemBody = z.object({
   material: z.string().trim().min(2, 'Escribe el material.').max(80),
   variant: z.string().trim().max(80).default(''),
   unit: z.enum(SUPPLY_UNIT_LIST as [SupplyUnit, ...SupplyUnit[]], { message: 'Elige la unidad en que se cuenta.' }),
+  // RU5 (ronda 15): «Por paciente», «Uso general» o «Ambos» (por defecto)
+  scope: z.enum(SUPPLY_SCOPE_LIST as [SupplyScope, ...SupplyScope[]], { message: 'Elige cómo se registra.' }).default('both'),
   onShiftList: z.boolean().optional(),
 })
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Escribe las horas de los turnos en HH:mm.')
@@ -36,7 +38,7 @@ export function registerSupplies(app: Express, { sql, auth, need, userOf, clinic
   app.get('/api/supplies', auth, need('supplies.view', 'usage.record'), async (req, res) => {
     const cid = clinicOf(req)
     const rows = await sql.query(`SELECT * FROM supply_items WHERE clinic_id = ? ${req.query.archived === '1' ? '' : 'AND archived_at IS NULL'} ORDER BY sort, category, material, variant`, [cid])
-    res.json({ items: rows.map(toSupplyItem), settings: await supplySettings(sql, cid), source: { rows: SUPPLY_MD.rows.length, skipped: SUPPLY_MD.skipped.length } })
+    res.json({ items: rows.map(toSupplyItem), settings: await supplySettings(sql, cid), source: { rows: SUPPLY_MD.rows.length, skipped: SUPPLY_MD.skipped.length, sets: SUPPLY_MD.sets.length } })
   })
 
   // El periodo de registro (también lo necesita quien solo ve el registro de uso: Recepción)
@@ -53,9 +55,9 @@ export function registerSupplies(app: Express, { sql, auth, need, userOf, clinic
     const id = randomUUID()
     const now = new Date().toISOString()
     const sort = Number((await sql.one<{ n: number }>('SELECT COALESCE(MAX(sort), 0)::int + 1 AS n FROM supply_items WHERE clinic_id = ?', [cid]))?.n ?? 1)
-    await sql.run(`INSERT INTO supply_items (id, clinic_id, category, material, variant, unit, on_shift_list, sort, origin, created_by, created_at, list_set_at, list_set_by)
-      VALUES (?,?,?,?,?,?,?,?,'clinic',?,?,?,?)`, [id, cid, b.category, b.material, variant, b.unit, !!b.onShiftList, sort, user.id, now, b.onShiftList ? now : null, b.onShiftList ? user.id : null])
-    await audit(user, `${TAG}: agregó «${supplyLabel({ material: b.material, variant })}» (${b.category}, ${b.unit})${b.onShiftList ? ' en la lista de turno' : ''}${variant !== b.variant ? ' (sin la longitud escrita: solo calibre)' : ''}`)
+    await sql.run(`INSERT INTO supply_items (id, clinic_id, category, material, variant, unit, scope, on_shift_list, sort, origin, created_by, created_at, list_set_at, list_set_by)
+      VALUES (?,?,?,?,?,?,?,?,?,'clinic',?,?,?,?)`, [id, cid, b.category, b.material, variant, b.unit, b.scope, !!b.onShiftList, sort, user.id, now, b.onShiftList ? now : null, b.onShiftList ? user.id : null])
+    await audit(user, `${TAG}: agregó «${supplyLabel({ material: b.material, variant })}» (${b.category}, ${b.unit}, ${SUPPLY_SCOPES[b.scope].toLowerCase()})${b.onShiftList ? ' en la lista de turno' : ''}${variant !== b.variant ? ' (sin la longitud escrita: solo calibre)' : ''}`)
     res.status(201).json(toSupplyItem((await sql.one('SELECT * FROM supply_items WHERE id = ?', [id]))!))
   })
 
@@ -67,11 +69,12 @@ export function registerSupplies(app: Express, { sql, auth, need, userOf, clinic
     if (r.archived_at) fail(409, 'Ese material está archivado. Restáuralo para editarlo.')
     const variant = stripLength(b.material, b.variant)
     await assertUnique(cid, b.material, variant, String(r.id))
-    const before = `«${supplyLabel({ material: String(r.material), variant: String(r.variant) })}» (${r.category}, ${r.unit})`
-    const after = `«${supplyLabel({ material: b.material, variant })}» (${b.category}, ${b.unit})`
+    const scopeText = (s: unknown) => SUPPLY_SCOPES[(s as SupplyScope) ?? 'both']?.toLowerCase() ?? 'ambos'
+    const before = `«${supplyLabel({ material: String(r.material), variant: String(r.variant) })}» (${r.category}, ${r.unit}, ${scopeText(r.scope)})`
+    const after = `«${supplyLabel({ material: b.material, variant })}» (${b.category}, ${b.unit}, ${scopeText(b.scope)})`
     if (before === after) return res.json(toSupplyItem(r))
-    await sql.run('UPDATE supply_items SET category = ?, material = ?, variant = ?, unit = ?, edited_at = ?, edited_by = ? WHERE id = ?',
-      [b.category, b.material, variant, b.unit, new Date().toISOString(), user.id, String(r.id)])
+    await sql.run('UPDATE supply_items SET category = ?, material = ?, variant = ?, unit = ?, scope = ?, edited_at = ?, edited_by = ? WHERE id = ?',
+      [b.category, b.material, variant, b.unit, b.scope, new Date().toISOString(), user.id, String(r.id)])
     await audit(user, `${TAG}: editó ${before} → ${after}`)
     res.json(toSupplyItem((await sql.one('SELECT * FROM supply_items WHERE id = ?', [String(r.id)]))!))
   })

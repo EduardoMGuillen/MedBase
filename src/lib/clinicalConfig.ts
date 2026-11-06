@@ -440,6 +440,14 @@ export const SUPPLY_PERIODS = { shift: 'Por turno', day: 'Por día', week: 'Por 
  * (DP6, `DEPT_SHIFTS.nursing`: Mañana 07–15, Tarde 15–23, Noche 23–07). Cada clínica los edita en su configuración.
  */
 export const SUPPLY_DEFAULT_SHIFTS = DEPT_SHIFTS.nursing.map((s) => ({ key: s.key as string, label: s.label, from: s.from, to: s.to }))
+/**
+ * RU5 (ronda 15). VALIDAR: Emil. «Registro» de cada línea del catálogo: a quién se le registra. Al registrar a un paciente solo
+ * se ofrece «Por paciente» y «Ambos»; con «Uso general del servicio», «Uso general» y «Ambos». En el .md: Paciente, General,
+ * Ambos. Lo que la clínica crea queda en «Ambos» (A6).
+ */
+export const SUPPLY_SCOPES = { patient: 'Por paciente', general: 'Uso general', both: 'Ambos' } as const
+/** RU4 (ronda 15). VALIDAR: Emil. Materiales a los que «Agregar material» recuerda que se escribe solo el calibre. */
+export const SUPPLY_GAUGE_HINT = 'Escribe solo el calibre (G), no la longitud.'
 /** RU1 (ronda 14). Hasta cuántos turnos puede tener la clínica. */
 export const SUPPLY_MAX_SHIFTS = 6
 /** RU2 (ronda 14). VALIDAR: Emil. Áreas del registro de uso (A9). */

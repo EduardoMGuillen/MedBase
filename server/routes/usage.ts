@@ -9,7 +9,7 @@ import { doseText } from '../../src/lib/doseText.js'
 import { formatRate, infusionUnitLabel } from '../../src/lib/inpatient.js'
 import { GENERAL_USE_LABEL, USAGE_AREAS } from '../../src/lib/clinicalConfig.js'
 import { toLocalValue } from '../../src/lib/dateInput.js'
-import { localDay, periodOf, supplyLabel, unitText } from '../../src/lib/supplies.js'
+import { localDay, periodOf, scopeFits, scopeHint, supplyLabel, unitText, type SupplyScope } from '../../src/lib/supplies.js'
 import { USAGE_AREA_LIST, type MaterialLine, type MaterialRecord, type MedUse, type UsageArea } from '../../src/lib/usage.js'
 import type { Nebulization } from '../../src/lib/medExtras.js'
 import type { PrescriptionItem, Role } from '../../src/lib/types.js'
@@ -182,6 +182,9 @@ export function registerUsage(app: Express, { sql, auth, need, userOf, clinicOf,
       const r = byId.get(l.itemId) ?? fail(404, 'Un material del registro ya no existe en el catálogo.')
       // Lo archivado deja de ofrecerse; al corregir, lo que ya estaba en el registro se conserva
       if (r!.archived_at && !keep?.has(l.itemId)) fail(409, `«${supplyLabel({ material: String(r!.material), variant: String(r!.variant) })}» está archivado: ya no se registra.`)
+      // RU5 (ronda 15): a un paciente, solo lo «Por paciente» y «Ambos»; al uso general, solo «Uso general» y «Ambos»
+      const scope = String(r!.scope ?? 'both') as SupplyScope
+      if (!scopeFits(scope, !patient) && !keep?.has(l.itemId)) fail(400, `«${supplyLabel({ material: String(r!.material), variant: String(r!.variant) })}»: ${scopeHint(scope).replace(/^Se/, 'se')}.`)
       return { itemId: l.itemId, category: String(r!.category), material: String(r!.material), variant: String(r!.variant ?? ''), unit: String(r!.unit) as MaterialLine['unit'], quantity: l.quantity }
     })
     const where = patient ? await whereWas(cid, String(patient.id), period.start, period.end) : { area: null, location: null }

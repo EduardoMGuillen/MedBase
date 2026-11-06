@@ -25,7 +25,7 @@ import { loadSupplyCatalog } from './supplies.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '82'
+const SCHEMA_VERSION = '83'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1272,6 +1272,31 @@ ALTER TABLE attachments ADD COLUMN IF NOT EXISTS voided_at TEXT;
 ALTER TABLE attachments ADD COLUMN IF NOT EXISTS void_reason TEXT;
 ALTER TABLE addenda DROP CONSTRAINT IF EXISTS addenda_target_kind_check;
 ALTER TABLE addenda ADD CONSTRAINT addenda_target_kind_check CHECK (target_kind IN ('consultation','note','referral','anesthesia'));
+-- v83 (ronda 15). RU5: «Registro» de cada línea del catálogo (a quién se le registra: paciente, uso general o ambos). Las
+-- líneas que ya existían (y las que crea la clínica) quedan en «Ambos» (A6); la carga del .md v2 (server/supplies.ts) pone al día
+-- las del .md que la clínica no editó ni archivó. RU8: sets de material por clínica (nombre único, descripción y líneas con su
+-- cantidad; se archivan y se restauran, nada se borra; md_key = set inicial del Anexo del .md, edited_at = la clínica lo
+-- cambió y ninguna carga lo vuelve a tocar). El registro de material guarda qué sets se usaron (id y nombre en ese momento).
+ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT 'both' CHECK (scope IN ('patient','general','both'));
+CREATE TABLE IF NOT EXISTS supply_sets (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  items TEXT NOT NULL,
+  origin TEXT NOT NULL DEFAULT 'clinic' CHECK (origin IN ('catalog','clinic')),
+  md_key TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_by TEXT,
+  updated_at TEXT,
+  edited_at TEXT,
+  archived_at TEXT,
+  archived_by TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS supply_sets_md ON supply_sets (clinic_id, md_key) WHERE md_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS supply_sets_clinic ON supply_sets (clinic_id);
+ALTER TABLE material_uses ADD COLUMN IF NOT EXISTS sets TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -1347,7 +1372,8 @@ export function ensureDb(sql: Sql) {
       await clearCriticalFlags(q)
       // v57/v58 (ronda 8, CX2): nadie internado sigue a la vez en la consulta externa (idempotente)
       await closeVisitsOfInpatients(q)
-      // v82 (ronda 14, RU1): el catálogo base de material médico quirúrgico y su periodo de registro en cada clínica y consultorio
+      // v82 (ronda 14, RU1) y v83 (ronda 15, RU5 y RU8): el catálogo de material médico quirúrgico (v2), su periodo de registro y
+      // los sets iniciales en cada clínica y consultorio
       for (const c of await q.query('SELECT id FROM clinics')) await loadSupplyCatalog(q, String(c.id))
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })

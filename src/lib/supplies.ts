@@ -1,4 +1,4 @@
-import { GENERAL_USE_LABEL, SUPPLY_DEFAULT_SHIFTS, SUPPLY_GAUGE_ONLY, SUPPLY_MAX_SHIFTS, SUPPLY_PERIODS, SUPPLY_UNITS } from './clinicalConfig.js'
+import { GENERAL_USE_LABEL, SUPPLY_DEFAULT_SHIFTS, SUPPLY_GAUGE_ONLY, SUPPLY_MAX_SHIFTS, SUPPLY_PERIODS, SUPPLY_SCOPES, SUPPLY_UNITS } from './clinicalConfig.js'
 import { clinicParts, fromLocalValue } from './dateInput.js'
 import { normalize } from './patients.js'
 
@@ -10,6 +10,9 @@ import { normalize } from './patients.js'
 export type SupplyUnit = keyof typeof SUPPLY_UNITS
 export const SUPPLY_UNIT_LIST = Object.keys(SUPPLY_UNITS) as SupplyUnit[]
 export type SupplyPeriod = keyof typeof SUPPLY_PERIODS
+/** RU5 (ronda 15): a quién se le registra una línea: a un paciente, al uso general del servicio o a los dos. */
+export type SupplyScope = keyof typeof SUPPLY_SCOPES
+export const SUPPLY_SCOPE_LIST = Object.keys(SUPPLY_SCOPES) as SupplyScope[]
 export interface SupplyShift { key: string; label: string; from: string; to: string }
 export interface SupplySettings { period: SupplyPeriod; shifts: SupplyShift[]; updatedAt?: string; updatedBy?: string }
 export const DEFAULT_SUPPLY_SETTINGS: SupplySettings = { period: 'shift', shifts: SUPPLY_DEFAULT_SHIFTS }
@@ -21,6 +24,8 @@ export interface SupplyItem {
   /** Calibre, tipo de aguja, talla o tamaño; vacío si no tiene. */
   variant: string
   unit: SupplyUnit
+  /** RU5 (ronda 15): «Por paciente», «Uso general» o «Ambos». */
+  scope: SupplyScope
   onShiftList: boolean
   /** «catalog»: vino del .md; «clinic»: lo agregó la clínica. */
   origin: 'catalog' | 'clinic'
@@ -30,6 +35,26 @@ export interface SupplyItem {
   editedAt?: string
   /** La clínica marcó o desmarcó la lista de turno: la carga no la cambia. */
   listSetAt?: string
+  archivedAt?: string
+  archivedBy?: string
+}
+
+/** RU8 (ronda 15): una línea de un set: qué material del catálogo y cuántos (entero, mínimo 1). */
+export interface SupplySetLine { itemId: string; quantity: number }
+/** RU8 (ronda 15): set de material (nombre único en la clínica). Se archiva y se restaura; nada se borra. */
+export interface SupplySet {
+  id: string
+  name: string
+  description: string
+  items: SupplySetLine[]
+  /** «catalog»: set inicial del Anexo del .md; «clinic»: lo creó la clínica. */
+  origin: 'catalog' | 'clinic'
+  createdAt: string
+  createdBy?: string
+  updatedAt?: string
+  updatedBy?: string
+  /** La clínica lo cambió: ninguna carga lo vuelve a tocar. */
+  editedAt?: string
   archivedAt?: string
   archivedBy?: string
 }
@@ -75,6 +100,11 @@ export const matchesSupply = (i: Pick<SupplyItem, 'material' | 'variant' | 'cate
   return words.every((w) => text.includes(w))
 }
 
+/** RU5 (ronda 15): ¿se le puede registrar a este destino? (paciente o «Uso general del servicio»). */
+export const scopeFits = (scope: SupplyScope, general: boolean) => scope === 'both' || scope === (general ? 'general' : 'patient')
+/** RU5: por qué una línea no se puede sumar a este destino. */
+export const scopeHint = (scope: SupplyScope) => (scope === 'general' ? `Se registra en ${GENERAL_USE_LABEL}` : 'Se registra por paciente')
+
 /** Agrupa por categoría en el orden de la lista (la primera línea de cada categoría manda). */
 export function byCategory<T extends { category: string }>(list: T[]) {
   const out: { category: string; rows: T[] }[] = []
@@ -86,47 +116,92 @@ export function byCategory<T extends { category: string }>(list: T[]) {
   return out
 }
 
-// ---------- Lector del .md (RU1, carga inicial) ----------
+// ---------- Lector del .md (RU1, ronda 14; RU5 y RU8, ronda 15) ----------
 
-export interface SupplyMdRow { no: number; category: string; material: string; variant: string; unit: SupplyUnit; onList: boolean; key: string; line: number }
-export interface SupplyMdResult { rows: SupplyMdRow[]; skipped: { line: number; text: string; reason: string }[] }
+export interface SupplyMdRow {
+  no: number; category: string; material: string; variant: string; unit: SupplyUnit; scope: SupplyScope; onList: boolean; key: string; line: number
+  /** «R14-n» (la línea n del listado de la ronda 14) o «Nueva». */
+  origin: string
+}
+/** RU8 (ronda 15): un set inicial del Anexo: nombre, descripción y sus líneas (por material y variante) con su cantidad. */
+export interface SupplyMdSet { name: string; key: string; description: string; line: number; items: { key: string; material: string; variant: string; quantity: number }[] }
+export interface SupplyMdResult { rows: SupplyMdRow[]; skipped: { line: number; text: string; reason: string }[]; sets: SupplyMdSet[] }
 
 const cells = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim())
 const plain = (s: string) => s.replace(/\*\*?([^*]+)\*\*?/g, '$1').replace(/\s+/g, ' ').trim()
+const SCOPE_OF: Record<string, SupplyScope> = { paciente: 'patient', general: 'general', ambos: 'both' }
+const isRule = (c: string[]) => c.every((x) => /^:?-{2,}:?$/.test(x))
 
 /**
- * Lee la tabla de data/listado_material_medico_quirurgico.md: «# | Categoría | Material | Variante | Unidad | En la lista de
- * turno inicial». Se detiene en el primer título «##» después de la tabla: la sección «Cambios respecto al listado original»
- * no se carga. Variante «—» = sin variante. Las filas que no se pueden leer se devuelven en `skipped` con el motivo.
+ * Lee data/listado_material_medico_quirurgico.md (v2, ronda 15): la tabla «# | Categoría | Material | Variante | Unidad |
+ * Registro | En la lista de turno inicial | Origen» y, en «## Anexo», los sets iniciales («### Nombre», una línea de
+ * descripción y la tabla «Material | Variante | Cantidad»). Las secciones «Cambios respecto…» no se cargan. Variante «—» = sin
+ * variante. Las filas que no se pueden leer se devuelven en `skipped` con el motivo.
  */
 export function parseSupplyMd(md: string): SupplyMdResult {
-  const out: SupplyMdResult = { rows: [], skipped: [] }
+  const out: SupplyMdResult = { rows: [], skipped: [], sets: [] }
   const seen = new Set<string>()
-  let inTable = false
   const lines = md.split(/\r?\n/)
+  const skip = (i: number, reason: string) => out.skipped.push({ line: i + 1, text: lines[i].trim(), reason })
+  // 1) La tabla del catálogo: hasta el primer título después de ella
+  let inTable = false
+  let end = lines.length
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]
-    if (/^#{1,3}\s/.test(l) && (inTable || out.rows.length)) break
+    if (/^#{1,3}\s/.test(l) && (inTable || out.rows.length)) { end = i; break }
     if (!l.trim().startsWith('|')) { if (inTable && l.trim()) inTable = false; continue }
     const c = cells(l)
     if (!inTable) {
       if (c[0] === '#' && normalize(c[1] ?? '') === 'categoria') inTable = true
       continue
     }
-    if (c.every((x) => /^:?-{2,}:?$/.test(x))) continue
-    const skip = (reason: string) => out.skipped.push({ line: i + 1, text: l.trim(), reason })
-    if (c.length !== 6) { skip(`tiene ${c.length} columnas (se esperaban 6)`); continue }
-    const [noText, category, material, variantRaw, unitRaw, listRaw] = c.map(plain)
+    if (isRule(c)) continue
+    if (c.length !== 8) { skip(i, `tiene ${c.length} columnas (se esperaban 8)`); continue }
+    const [noText, category, material, variantRaw, unitRaw, scopeRaw, listRaw, originRaw] = c.map(plain)
     const no = Number(noText)
     const unit = normalize(unitRaw) as SupplyUnit
-    if (!Number.isInteger(no) || no < 1) { skip('el número de línea no es válido'); continue }
-    if (!category || !material) { skip('falta la categoría o el material'); continue }
-    if (!SUPPLY_UNIT_LIST.includes(unit)) { skip(`unidad desconocida «${unitRaw}»`); continue }
+    const scope = SCOPE_OF[normalize(scopeRaw)]
+    if (!Number.isInteger(no) || no < 1) { skip(i, 'el número de línea no es válido'); continue }
+    if (!category || !material) { skip(i, 'falta la categoría o el material'); continue }
+    if (!SUPPLY_UNIT_LIST.includes(unit)) { skip(i, `unidad desconocida «${unitRaw}»`); continue }
+    if (!scope) { skip(i, `registro desconocido «${scopeRaw}» (Paciente, General o Ambos)`); continue }
+    if (!/^(R14-\d+|Nueva)$/i.test(originRaw)) { skip(i, `origen desconocido «${originRaw}» (R14-n o Nueva)`); continue }
     const variant = stripLength(material, /^[—–-]$/.test(variantRaw) ? '' : variantRaw)
     const key = supplyKey(material, variant)
-    if (seen.has(key)) { skip('línea repetida (mismo material y variante)'); continue }
+    if (seen.has(key)) { skip(i, 'línea repetida (mismo material y variante)'); continue }
     seen.add(key)
-    out.rows.push({ no, category, material, variant, unit, onList: /^s[ií]$/i.test(listRaw), key, line: i + 1 })
+    out.rows.push({ no, category, material, variant, unit, scope, onList: /^s[ií]$/i.test(listRaw), key, line: i + 1, origin: /^nueva$/i.test(originRaw) ? 'Nueva' : originRaw.toUpperCase() })
+  }
+  // 2) El Anexo: los sets iniciales (RU8)
+  const annex = lines.findIndex((l, i) => i >= end && /^##\s+Anexo/i.test(l))
+  if (annex < 0) return out
+  let set: SupplyMdSet | undefined
+  const names = new Set<string>()
+  for (let i = annex + 1; i < lines.length; i++) {
+    const l = lines[i]
+    if (/^##\s/.test(l)) break
+    const h = /^###\s+(.+)$/.exec(l)
+    if (h) {
+      const name = plain(h[1])
+      if (names.has(normalize(name))) { skip(i, 'set repetido'); set = undefined; continue }
+      names.add(normalize(name))
+      set = { name, key: normalize(name), description: '', line: i + 1, items: [] }
+      out.sets.push(set)
+      continue
+    }
+    if (!set) continue
+    if (!l.trim().startsWith('|')) { if (l.trim() && !set.items.length && !set.description) set.description = plain(l); continue }
+    const c = cells(l).map(plain)
+    if (isRule(c) || normalize(c[0]) === 'material') continue
+    if (c.length !== 3) { skip(i, `tiene ${c.length} columnas (se esperaban 3: Material, Variante, Cantidad)`); continue }
+    const [material, variantRaw, qtyText] = c
+    const variant = stripLength(material, /^[—–-]$/.test(variantRaw) ? '' : variantRaw)
+    const key = supplyKey(material, variant)
+    const quantity = Number(qtyText)
+    if (!Number.isInteger(quantity) || quantity < 1) { skip(i, 'la cantidad es un entero desde 1'); continue }
+    if (!seen.has(key)) { skip(i, `«${supplyLabel({ material, variant })}» no está en la tabla del catálogo`); continue }
+    if (set.items.some((x) => x.key === key)) { skip(i, 'material repetido en el set'); continue }
+    set.items.push({ key, material, variant, quantity })
   }
   return out
 }

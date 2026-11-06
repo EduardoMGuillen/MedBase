@@ -43,32 +43,27 @@ const itemsOf = (cid: string) => sql.query('SELECT * FROM supply_items WHERE cli
 const byLabel = async (cid: string, material: string, variant = '') => (await sql.one('SELECT * FROM supply_items WHERE clinic_id = ? AND material = ? AND variant = ?', [cid, material, variant]))!
 
 describe('RU1 (ronda 14): carga del catálogo desde el .md', () => {
-  test('el .md se lee con su script: 73 líneas, 15 en la lista de turno, sin filas sin leer; no se carga «Cambios respecto…»', () => {
+  // RU5 (ronda 15): el .md v2 reemplaza al de la ronda 14 (208 líneas, 15 categorías, 17 en la lista de turno; ver ronda15.test.ts)
+  test('el .md se lee con su script: sin filas sin leer; no se carga «Cambios respecto…» ni el Anexo como líneas', () => {
     const md = readFileSync('data/listado_material_medico_quirurgico.md', 'utf8')
     const parsed = parseSupplyMd(md)
     assert.deepEqual(parsed, SUPPLY_MD, 'src/lib/supplyMd/generated.ts está al día con el .md (npm run ru1:build)')
-    assert.equal(parsed.rows.length, 73)
+    assert.equal(parsed.rows.length, 208)
     assert.equal(parsed.skipped.length, 0)
-    assert.equal(parsed.rows.filter((r) => r.onList).length, 15)
-    // El .md trae 9 categorías (el pedido dice 10): se carga lo que dice el archivo
-    assert.deepEqual([...new Set(parsed.rows.map((r) => r.category))], ['Agujas y jeringas', 'Acceso venoso', 'Curación y vendajes', 'Hojas de bisturí', 'Suturas',
-      'Protección personal', 'Oxígeno y nebulización', 'Sondas y recolectores', 'Ginecología y recién nacido'])
-    const changesLine = md.split(/\r?\n/).findIndex((l) => l.startsWith('## Cambios respecto')) + 1
-    assert.ok(changesLine > 0 && Math.max(...parsed.rows.map((r) => r.line)) < changesLine)
+    assert.equal(parsed.rows.filter((r) => r.onList).length, 17)
+    const annexLine = md.split(/\r?\n/).findIndex((l) => l.startsWith('## Anexo')) + 1
+    assert.ok(annexLine > 0 && Math.max(...parsed.rows.map((r) => r.line)) < annexLine)
     assert.ok(!parsed.rows.some((r) => /25 × 1½/.test(r.variant)), 'nada de la sección de cambios')
-    assert.deepEqual(parsed.rows.filter((r) => r.onList).map(supplyLabel), ['Aguja hipodérmica 21 G', 'Jeringa descartable 3 mL, aguja 21 G', 'Jeringa descartable 5 mL, aguja 21 G',
-      'Jeringa descartable 10 mL, aguja 21 G', 'Catéter IV 20 G', 'Catéter IV 22 G', 'Venoclisis Equipo de macrogoteo', 'Gasa hospitalaria Rollo 36" × 100 yd', 'Algodón Rollo',
-      'Alcohol al 70 % Frasco', 'Esparadrapo Hospitalario', 'Nylon 3/0, aguja cortante', 'Guante descartable Talla M', 'Guante estéril No. 7.0', 'Guante estéril No. 7.5'])
     // Variante «—» = sin variante
     assert.equal(parsed.rows.find((r) => r.material === 'Mascarilla N95')!.variant, '')
   })
 
-  test('cada clínica y consultorio de la demo tiene las 73 líneas y 15 en su lista de turno, con el periodo «Por turno»', async () => {
+  test('cada clínica y consultorio de la demo tiene el catálogo (v2: 208 líneas, 17 en su lista de turno), con el periodo «Por turno»', async () => {
     for (const c of await sql.query('SELECT id FROM clinics')) {
       const rows = await itemsOf(String(c.id))
-      assert.equal(rows.length, 73)
-      assert.equal(rows.filter((r) => r.on_shift_list).length, 15)
-      assert.equal(new Set(rows.map((r) => r.category)).size, 9)
+      assert.equal(rows.length, 208)
+      assert.equal(rows.filter((r) => r.on_shift_list).length, 17)
+      assert.equal(new Set(rows.map((r) => r.category)).size, 15)
       const s = (await sql.one('SELECT * FROM supply_settings WHERE clinic_id = ?', [String(c.id)]))!
       assert.equal(s.period, 'shift')
       assert.deepEqual(JSON.parse(String(s.shifts)).map((x: { label: string; from: string; to: string }) => `${x.label} ${x.from}-${x.to}`), ['Mañana 07:00-15:00', 'Tarde 15:00-23:00', 'Noche 23:00-07:00'])
@@ -91,7 +86,7 @@ describe('RU1 (ronda 14): carga del catálogo desde el .md', () => {
 
   test('buscar «seda» da las 8 variantes; «seda 4» da la 4/0', () => {
     const seda = SUPPLY_MD.rows.filter((r) => matchesSupply(r, 'seda'))
-    assert.equal(seda.length, 8)
+    assert.equal(seda.length, 8, 'v2: las mismas 8 sedas')
     assert.deepEqual(SUPPLY_MD.rows.filter((r) => matchesSupply(r, 'seda 4')).map(supplyLabel), ['Seda 4/0, aguja cortante'])
   })
 
@@ -101,7 +96,7 @@ describe('RU1 (ronda 14): carga del catálogo desde el .md', () => {
     const r1 = await loadSupplyCatalog(sql, cid)
     const r2 = await loadSupplyCatalog(sql, cid)
     assert.deepEqual([r1.created, r1.updated, r2.created, r2.updated], [0, 0, 0, 0])
-    assert.equal(r2.kept, 73)
+    assert.equal(r2.unchanged, SUPPLY_MD.rows.length)
     assert.equal(JSON.stringify(await itemsOf(cid)), before)
   })
 
@@ -133,7 +128,7 @@ describe('RU1 (ronda 14): carga del catálogo desde el .md', () => {
     assert.ok(log.some((l) => /editó «Bata descartable» .* → «Bata descartable Talla única»/.test(String(l.action))))
   })
 
-  test('una clínica y un consultorio nuevos nacen con las 73 líneas y 15 en su lista de turno', async () => {
+  test('una clínica y un consultorio nuevos nacen con el catálogo (v2: 208 líneas, 17 en su lista de turno)', async () => {
     const sa = await as('superadmin@demo.clinara')
     const c = await sa.post('/api/platform/clinics', { name: 'Clínica Material Nuevo', admin: { name: 'Admin Material', email: 'admin@material.test' } })
     assert.equal(c.status, 201)
@@ -141,8 +136,8 @@ describe('RU1 (ronda 14): carga del catálogo desde el .md', () => {
     assert.equal(o.status, 201)
     for (const id of [c.body.clinic.id, o.body.clinic.id]) {
       const rows = await itemsOf(String(id))
-      assert.equal(rows.length, 73)
-      assert.equal(rows.filter((r) => r.on_shift_list).length, 15)
+      assert.equal(rows.length, 208)
+      assert.equal(rows.filter((r) => r.on_shift_list).length, 17)
     }
     // El administrador de la clínica nueva desmarca «Algodón»: sale de la lista corta pero sigue en el catálogo
     const na = await as('admin@material.test', c.body.password)
@@ -150,24 +145,24 @@ describe('RU1 (ronda 14): carga del catálogo desde el .md', () => {
     const alg = list.find((i) => i.material === 'Algodón')!
     assert.equal((await na.post(`/api/supplies/${alg.id}/shift-list`, { on: false })).body.onShiftList, false)
     const again = (await na.get('/api/supplies')).body.items as { material: string; onShiftList: boolean }[]
-    assert.equal(again.filter((i) => i.onShiftList).length, 14)
+    assert.equal(again.filter((i) => i.onShiftList).length, 16)
     assert.ok(again.some((i) => i.material === 'Algodón'))
     // La titular del consultorio nuevo también configura su catálogo
     const tit = await as('titular@material.test', o.body.password)
-    assert.equal((await tit.post('/api/supplies', { category: 'Suturas', material: 'Nylon', variant: '4/0, aguja cortante', unit: 'sobre', onShiftList: true })).status, 201)
+    assert.equal((await tit.post('/api/supplies', { category: 'Suturas', material: 'Nylon', variant: '8/0, aguja cortante', unit: 'sobre', onShiftList: true })).status, 201)
   })
 })
 
 describe('RU1 (ronda 14): permisos del catálogo (en el servidor)', () => {
   test('Administración agrega, edita y archiva; quita la longitud de una aguja', async () => {
     const admin = await as('admin@demo.clinara')
-    const nylon = await admin.post('/api/supplies', { category: 'Suturas', material: 'Nylon', variant: '4/0, aguja cortante', unit: 'sobre', onShiftList: true })
+    const nylon = await admin.post('/api/supplies', { category: 'Suturas', material: 'Nylon', variant: '8/0, aguja cortante', unit: 'sobre', onShiftList: true })
     assert.equal(nylon.status, 201)
     assert.equal(nylon.body.onShiftList, true)
-    assert.equal((await admin.post('/api/supplies', { category: 'Suturas', material: 'nylon', variant: '4/0, aguja cortante', unit: 'sobre' })).status, 409, 'no se repite')
-    const aguja = await admin.post('/api/supplies', { category: 'Agujas y jeringas', material: 'Aguja hipodérmica', variant: '22 G × 1½"', unit: 'unidad' })
-    assert.equal(aguja.status, 201)
-    assert.equal(aguja.body.variant, '22 G')
+    assert.equal((await admin.post('/api/supplies', { category: 'Suturas', material: 'nylon', variant: '8/0, aguja cortante', unit: 'sobre' })).status, 409, 'no se repite')
+    const aguja = await admin.post('/api/supplies', { category: 'Agujas y jeringas', material: 'Aguja hipodérmica', variant: '19 G × 1½"', unit: 'unidad' })
+    assert.equal(aguja.status, 201, JSON.stringify(aguja.body))
+    assert.equal(aguja.body.variant, '19 G')
   })
 
   test('Enfermería marca la lista de turno, pero no agrega, edita, archiva ni cambia el periodo', async () => {
@@ -300,7 +295,7 @@ describe('RU2 (ronda 14): pestaña «Material»', () => {
   before(async () => {
     const [a, b] = await sql.query(`SELECT id FROM patients WHERE clinic_id = ? ORDER BY record LIMIT 2`, [MAIN])
     p1 = String(a.id); p2 = String(b.id)
-    for (const [k, m, v] of [['gasa', 'Gasa hospitalaria', 'Rollo 36" × 100 yd'], ['guante', 'Guante estéril', 'No. 7.5'], ['seda', 'Seda', '4/0, aguja cortante'], ['jeringa', 'Jeringa descartable', '5 mL, aguja 21 G'],
+    for (const [k, m, v] of [['gasa', 'Gasa estéril', '10 × 10 cm'], ['guante', 'Guante estéril', 'No. 7.5'], ['seda', 'Seda', '4/0, aguja cortante'], ['jeringa', 'Jeringa descartable', '5 mL, aguja 21 G'],
       ['alcohol', 'Alcohol al 70 %', 'Frasco'], ['n95', 'Mascarilla N95', '']]) ids[k] = String((await byLabel(MAIN, m, v)).id)
     const p = currentPeriod({ period: 'shift', shifts: DEFAULT_SUPPLY_SETTINGS.shifts })
     today = p.day; shift = p.shiftKey!
@@ -414,13 +409,15 @@ describe('RU2 (ronda 14): Consultorio', () => {
     const ana = await as('alopez@demo.clinara')
     const cid = await clinicOf('alopez@demo.clinara')
     const pt = await sql.one('SELECT id FROM patients WHERE clinic_id = ? LIMIT 1', [cid])
-    const gasa = await byLabel(cid, 'Gasa hospitalaria', 'Rollo 36" × 100 yd')
+    const gasa = await byLabel(cid, 'Gasa estéril', '10 × 10 cm')
     const p = currentPeriod({ period: 'shift', shifts: DEFAULT_SUPPLY_SETTINGS.shifts })
     assert.equal((await ana.post('/api/usage/material', { patientId: pt!.id, day: p.day, shiftKey: p.shiftKey, items: [{ itemId: gasa.id, quantity: 1 }] })).status, 201)
     assert.equal((await ana.get(`/api/usage/material?${win()}`)).status, 200)
     assert.equal((await ana.post(`/api/supplies/${gasa.id}/shift-list`, { on: false })).status, 200)
     const asis = await as('asistente@demo.clinara')
-    assert.equal((await asis.post('/api/usage/material', { general: true, day: p.day, shiftKey: p.shiftKey, items: [{ itemId: gasa.id, quantity: 1 }] })).status, 201)
+    // RU5 (ronda 15): al uso general del servicio, lo de «Uso general» o «Ambos» (el alcohol)
+    const alcohol = await byLabel(cid, 'Alcohol al 70 %', 'Frasco')
+    assert.equal((await asis.post('/api/usage/material', { general: true, day: p.day, shiftKey: p.shiftKey, items: [{ itemId: alcohol.id, quantity: 1 }] })).status, 201)
   })
 })
 
