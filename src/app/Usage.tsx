@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Ban, ChevronDown, ChevronRight, FileSpreadsheet, ListChecks, PencilLine, Plus, Printer } from 'lucide-react'
+import { Ban, ChevronDown, ChevronsDownUp, ChevronsUpDown, FileSpreadsheet, ListChecks, PencilLine, Plus, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Loading, Modal, PageHead, SectionHead } from '../components/ui'
@@ -13,7 +13,10 @@ import { GENERAL_USE_LABEL, SUPPLY_PERIODS, USAGE_AREAS } from '../lib/clinicalC
 import { byCategory, currentPeriod, periodOf, rangeOf, unitText, usageFileName, type SupplySettings, type UsagePeriod } from '../lib/supplies'
 import { download } from '../lib/csv'
 import { UsagePrint } from './UsagePrint'
-import { areaText, byPatient, materialRows, materialSums, materialTotals, medSummary, totalText, USAGE_AREA_LIST, type MaterialRecord, type MaterialSum, type MedUse, type PatientBlock, type UsageArea } from '../lib/usage'
+import {
+  areaText, byArea, byPatient, materialRows, materialSums, materialTotalRows, medSummary, totalsHeadline, totalText, totalWho, USAGE_AREA_LIST, type MaterialRecord, type MedUse, type PatientBlock,
+  type UsageArea,
+} from '../lib/usage'
 import { MaterialForm } from './MaterialForm'
 
 type Tab = 'meds' | 'material'
@@ -24,19 +27,21 @@ export interface UsageFilter { period: UsagePeriod; area: UsageArea | 'all'; q: 
 /** Los datos del registro con los filtros de la pantalla (completos: la paginación es solo de la pantalla). */
 function useUsage<T>(path: 'meds' | 'material', f: UsageFilter | null, key: number) {
   const [data, setData] = useState<T[] | null>(null)
+  const [order, setOrder] = useState<string[]>([])
   const [error, setError] = useState('')
   useEffect(() => {
     if (!f) return
     let alive = true
     const qs = new URLSearchParams({ from: f.period.start, to: f.period.end, area: f.area, q: f.q })
-    api<{ rows?: T[]; records?: T[] }>(`/usage/${path}?${qs}`).then((r) => { if (alive) { setData((r.rows ?? r.records) as T[]); setError('') } }).catch((e: Error) => { if (alive) setError(e.message) })
+    api<{ rows?: T[]; records?: T[]; order?: string[] }>(`/usage/${path}?${qs}`)
+      .then((r) => { if (alive) { setData((r.rows ?? r.records) as T[]); setOrder(r.order ?? []); setError('') } }).catch((e: Error) => { if (alive) setError(e.message) })
     return () => { alive = false }
   }, [path, f, key])
-  return { data, error }
+  return { data, order, error }
 }
 
 /**
- * RU2 (ronda 14): «Registro de uso de medicamentos y material» (menú «Uso de medicamentos y material»). Enfermería, Recepción y
+ * RU2 (ronda 14) y RU9 (ronda 15): «Registro de uso de medicamentos y material» (menú «Uso de medicamentos y material»). Enfermería, Recepción y
  * Administración (en el consultorio, la titular). Arriba el periodo, el turno, el área y el buscador; dos pestañas:
  * «Medicamentos» (solo lectura, se llena sola) y «Material» (lo registra Enfermería). Es administrativo: no toca lo clínico.
  */
@@ -109,56 +114,90 @@ export default function UsagePage() {
   )
 }
 
-/** Fila de un bloque por paciente: nombre, expediente y ubicación. */
-function BlockHead({ b, count }: { b: PatientBlock<unknown>; count: string }) {
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/** RU9: qué bloques están cerrados (abiertos al entrar, A16), con «Abrir todo» y «Cerrar todo». */
+function useClosed() {
+  const [closed, setClosed] = useState<Set<string>>(new Set())
+  const toggle = (k: string) => setClosed((c) => { const n = new Set(c); if (n.has(k)) n.delete(k); else n.add(k); return n })
+  return { closed, toggle, setClosed }
+}
+
+/**
+ * RU9 (ronda 15): los bloques por paciente, en grupos: primero «Uso general del servicio» (A11) y luego Consulta externa,
+ * Observación y Hospitalización, cada grupo con su título y cuántos pacientes. Lo usan «Material» y «Medicamentos» (A15).
+ */
+function BlockGroups<T>({ blocks, all, closed, toggle, head, body }: {
+  blocks: PatientBlock<T>[]; all: PatientBlock<T>[]; closed: Set<string>; toggle: (k: string) => void
+  head: (b: PatientBlock<T>) => string; body: (b: PatientBlock<T>) => ReactNode
+}) {
+  const totals = new Map(byArea(all).map((g) => [g.key, g.blocks.length]))
+  return (<>
+    {byArea(blocks).map((g) => (
+      <section key={g.key} className={`ub-group${g.key === 'general' ? ' ub-group--general' : ''}`} aria-label={g.title}>
+        {g.key !== 'general' && <h3 className="ub-group__title">{g.title} <span className="muted">· {plural(totals.get(g.key) ?? g.blocks.length, 'paciente', 'pacientes')}</span></h3>}
+        {g.blocks.map((b) => {
+          const open = !closed.has(b.key)
+          return (
+            <div key={b.key} className={`ub${b.general ? ' ub--general' : ''}${open ? ' is-open' : ''}`}>
+              <button type="button" className="ub__head" aria-expanded={open} onClick={() => toggle(b.key)}>
+                <ChevronDown size={16} className="ub__chev" aria-hidden="true" />
+                <b className="ub__name">{b.name}</b>
+                {!b.general && <span className="muted ub__where">{[b.record, b.location].filter(Boolean).join(' · ')}</span>}
+                <span className="ub__count">{head(b)}</span>
+              </button>
+              {open && <div className="ub__body">{body(b)}</div>}
+            </div>
+          )
+        })}
+      </section>
+    ))}
+  </>)
+}
+
+function OpenAll({ onAll }: { onAll: (open: boolean) => void }) {
   return (
-    <div className="usage-block__head">
-      <b>{b.name}</b>
-      {!b.general && <span className="muted">{b.record}{b.location ? ` · ${b.location}` : ''}</span>}
-      <span className="chip">{count}</span>
-    </div>
+    <span className="ub-all">
+      <button type="button" className="btn btn--ghost btn--sm" onClick={() => onAll(true)}><ChevronsUpDown size={15} />Abrir todo</button>
+      <button type="button" className="btn btn--ghost btn--sm" onClick={() => onAll(false)}><ChevronsDownUp size={15} />Cerrar todo</button>
+    </span>
   )
 }
 
-/** Pestaña «Medicamentos»: por paciente (hora, medicamento, aplicado por, médico que lo indicó) o el «Resumen» (modo suma). */
+/** Pestaña «Medicamentos»: «Por paciente» (los mismos bloques y el mismo orden que «Material», A15) o el «Resumen» (modo suma). */
 function MedsTab({ filter, reloadKey }: { filter: UsageFilter; reloadKey: number }) {
   const { data, error } = useUsage<MedUse>('meds', filter, reloadKey)
   const [view, setView] = useState<'patients' | 'summary'>('patients')
   const blocks = useMemo(() => byPatient(data ?? [], (a, b) => a.at.localeCompare(b.at)), [data])
   const summary = useMemo(() => medSummary(data ?? []), [data])
   const [pageNo, setPage] = usePage(JSON.stringify([filter.period.start, filter.period.end, filter.area, filter.q, view]))
+  const { closed, toggle, setClosed } = useClosed()
   const pg = paginate(blocks, pageNo)
   const sp = paginate(summary, pageNo)
   if (error) return <section className="panel"><div className="empty">{error}</div></section>
   if (!data) return <Loading label="Buscando lo que se aplicó" />
   return (
     <section className="panel usage-tab">
-      <SectionHead title="Medicamentos aplicados" sub={`${data.length} ${data.length === 1 ? 'aplicación' : 'aplicaciones'} de ${blocks.length} ${blocks.length === 1 ? 'paciente' : 'pacientes'}. Se llena solo con las dosis «Administrado» de la hoja de medicamentos y lo aplicado en consulta externa. Las correcciones se hacen donde se registró.`}
-        action={<>
-          <div className="segmented" role="radiogroup" aria-label="Vista">
-            <button type="button" role="radio" aria-checked={view === 'patients'} onClick={() => setView('patients')}>Por paciente</button>
-            <button type="button" role="radio" aria-checked={view === 'summary'} onClick={() => setView('summary')}>Resumen</button>
-          </div>
-          <OutputButtons tab="meds" filter={filter} meds={data} />
-        </>} />
-      {!data.length && <div className="empty">No se aplicaron medicamentos en este periodo{filter.area !== 'all' ? ` en ${areaText(filter.area)}` : ''}.</div>}
-      {view === 'patients' && pg.rows.map((b) => (
-        <div key={b.key} className="usage-block">
-          <BlockHead b={b} count={`${b.rows.length} ${b.rows.length === 1 ? 'aplicación' : 'aplicaciones'}`} />
-          <table className="table table--cards usage-table">
-            <thead><tr><th>Fecha y hora</th><th>Medicamento</th><th>Aplicado por</th><th>Médico que lo indicó</th></tr></thead>
-            <tbody>{b.rows.map((r) => (
-              <tr key={r.id}>
-                <td data-label="Fecha y hora" className="num">{dmyTime(r.at)}</td>
-                <td className="tc-full"><b>{r.medication}</b></td>
-                <td data-label="Aplicado por">{r.appliedBy}{r.appliedByTitle && <small className="muted usage-sub">{r.appliedByTitle}</small>}</td>
-                <td data-label="Médico que lo indicó">{r.orderedBy}</td>
-              </tr>
-            ))}</tbody>
-          </table>
+      <SectionHead title="Medicamentos aplicados" sub={`${plural(data.length, 'aplicación', 'aplicaciones')} de ${plural(blocks.length, 'paciente', 'pacientes')}. Se llena solo con las dosis «Administrado» de la hoja de medicamentos y lo aplicado en consulta externa. Las correcciones se hacen donde se registró.`}
+        action={<OutputButtons tab="meds" filter={filter} meds={data} />} />
+      <div className="ub-tools">
+        <div className="segmented" role="radiogroup" aria-label="Vista">
+          <button type="button" role="radio" aria-checked={view === 'patients'} onClick={() => setView('patients')}>Por paciente</button>
+          <button type="button" role="radio" aria-checked={view === 'summary'} onClick={() => setView('summary')}>Resumen</button>
         </div>
-      ))}
-      {view === 'patients' && <Pagination {...pg} onPage={setPage} label="Páginas de pacientes" />}
+        {view === 'patients' && blocks.length > 0 && <OpenAll onAll={(on) => setClosed(on ? new Set() : new Set(blocks.map((b) => b.key)))} />}
+      </div>
+      {!data.length && <div className="empty">No se aplicaron medicamentos en este periodo{filter.area !== 'all' ? ` en ${areaText(filter.area)}` : ''}.</div>}
+      {view === 'patients' && (<>
+        <BlockGroups blocks={pg.rows} all={blocks} closed={closed} toggle={toggle} head={(b) => plural(b.rows.length, 'aplicación', 'aplicaciones')}
+          body={(b) => b.rows.map((r) => (
+            <div key={r.id} className="ub-row ub-row--med">
+              <span className="ub-row__main"><span className="num muted ub-row__at">{dmyTime(r.at)}</span> <b>{r.medication}</b></span>
+              <small className="muted ub-row__side">Aplicó {r.appliedBy}{r.appliedByTitle ? ` (${r.appliedByTitle})` : ''} · Indicó {r.orderedBy}</small>
+            </div>
+          ))} />
+        <Pagination {...pg} onPage={setPage} label="Páginas de pacientes" />
+      </>)}
       {view === 'summary' && data.length > 0 && (<>
         <table className="table table--cards usage-table">
           <thead><tr><th>Medicamento y presentación</th><th>Aplicaciones</th><th>Total</th></tr></thead>
@@ -173,16 +212,21 @@ function MedsTab({ filter, reloadKey }: { filter: UsageFilter; reloadKey: number
   )
 }
 
-/** Pestaña «Material»: total del periodo, un bloque por paciente (modo suma) y al final el uso general del servicio. */
+/**
+ * Pestaña «Material» (RU9, ronda 15): dos vistas que no se muestran a la vez. «Por paciente» (por defecto): el uso general
+ * primero y luego los pacientes por área, en bloques compactos (una línea de encabezado y una fila por material) con un solo
+ * «Ver registros (n)». «Total del periodo»: una tabla por categoría con Material, Variante, Cantidad y Pacientes.
+ */
 function MaterialTab({ filter, reloadKey, onChanged }: { filter: UsageFilter; reloadKey: number; onChanged: () => void }) {
   const { can } = useStore()
-  const { data, error } = useUsage<MaterialRecord>('material', filter, reloadKey)
+  const { data, order, error } = useUsage<MaterialRecord>('material', filter, reloadKey)
   const [form, setForm] = useState<MaterialRecord | 'new' | null>(null)
   const [voiding, setVoiding] = useState<MaterialRecord | null>(null)
-  const [showTotal, setShowTotal] = useState(true)
+  const [view, setView] = useState<'patients' | 'total'>('patients')
   const blocks = useMemo(() => byPatient(data ?? [], (a, b) => a.recordedAt.localeCompare(b.recordedAt)), [data])
-  const totals = useMemo(() => materialTotals(data ?? []), [data])
+  const totals = useMemo(() => materialTotalRows(data ?? [], order), [data, order])
   const [pageNo, setPage] = usePage(JSON.stringify([filter.period.start, filter.period.end, filter.area, filter.q, 'material']))
+  const { closed, toggle, setClosed } = useClosed()
   const pg = paginate(blocks, pageNo)
   if (error) return <section className="panel"><div className="empty">{error}</div></section>
   return (
@@ -193,21 +237,42 @@ function MaterialTab({ filter, reloadKey, onChanged }: { filter: UsageFilter; re
           {can('usage.record') && <button className="btn btn--primary usage-add" onClick={() => setForm('new')}><Plus size={16} />Registrar material</button>}
         </>} />
       {!data ? <Loading label="Buscando el material registrado" /> : (<>
-        {totals.length > 0 && (
-          <div className="usage-total">
-            <button type="button" className="usage-total__head" aria-expanded={showTotal} onClick={() => setShowTotal(!showTotal)}>
-              {showTotal ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<b>Total del periodo</b><span className="muted">{totals.length} materiales · todos los pacientes y el uso general</span>
-            </button>
-            {showTotal && byCategory(totals).map((g) => (
-              <div key={g.category} className="usage-total__cat"><h4>{g.category}</h4>
-                <ul>{g.rows.map((s) => <li key={s.key}><span>{s.label}</span><b className="num">{unitText(s.quantity, s.unit)}</b></li>)}</ul>
-              </div>
-            ))}
+        <div className="ub-tools">
+          <div className="segmented" role="radiogroup" aria-label="Vista">
+            <button type="button" role="radio" aria-checked={view === 'patients'} onClick={() => setView('patients')}>Por paciente</button>
+            <button type="button" role="radio" aria-checked={view === 'total'} onClick={() => setView('total')}>Total del periodo</button>
+          </div>
+          {view === 'patients' && blocks.length > 0 && <OpenAll onAll={(on) => setClosed(on ? new Set() : new Set(blocks.map((b) => b.key)))} />}
+        </div>
+        {!data.length && <div className="empty">No hay material registrado en este periodo{filter.area !== 'all' ? ` en ${areaText(filter.area)}` : ''}.</div>}
+        {view === 'patients' && (<>
+          <BlockGroups blocks={pg.rows} all={blocks} closed={closed} toggle={toggle}
+            head={(b) => { const n = materialSums(b.rows).filter((s) => s.quantity > 0).length; const r = b.rows.filter((x) => !x.voidedAt).length; return `${plural(n, 'material', 'materiales')} · ${plural(r, 'registro', 'registros')}` }}
+            body={(b) => <MaterialBlockBody b={b} onEdit={setForm} onVoid={setVoiding} />} />
+          <Pagination {...pg} onPage={setPage} label="Páginas de pacientes" />
+        </>)}
+        {view === 'total' && totals.length > 0 && (
+          <div className="ub-total">
+            <p className="ub-total__line" role="status"><b>{totalsHeadline(data, totals)}</b></p>
+            <table className="table ub-total__table">
+              <thead><tr><th>Material</th><th>Variante</th><th className="num">Cantidad</th><th>Pacientes</th></tr></thead>
+              {byCategory(totals).map((g) => (
+                <tbody key={g.category}>
+                  <tr className="ub-total__cat"><th colSpan={4}>{g.category}</th></tr>
+                  {g.rows.map((s) => (
+                    <tr key={s.key}>
+                      <td data-label="Material"><b>{s.material}</b></td>
+                      <td data-label="Variante">{s.variant || <span className="muted">—</span>}</td>
+                      <td data-label="Cantidad" className="num ub-total__qty">{unitText(s.quantity, s.unit)}</td>
+                      <td data-label="Pacientes" className="muted">{totalWho(s)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              ))}
+            </table>
           </div>
         )}
-        {!data.length && <div className="empty">No hay material registrado en este periodo{filter.area !== 'all' ? ` en ${areaText(filter.area)}` : ''}.</div>}
-        {pg.rows.map((b) => <MaterialBlock key={b.key} b={b} onEdit={setForm} onVoid={setVoiding} />)}
-        <Pagination {...pg} onPage={setPage} label="Páginas de pacientes" />
+        {view === 'total' && data.length > 0 && !totals.length && <div className="empty">Todos los registros de este periodo están anulados.</div>}
       </>)}
       {form && <MaterialForm editing={form === 'new' ? undefined : form} onClose={() => setForm(null)} onSaved={() => { setForm(null); onChanged() }} />}
       {voiding && <VoidRecord r={voiding} onClose={() => setVoiding(null)} onDone={() => { setVoiding(null); onChanged() }} />}
@@ -217,35 +282,20 @@ function MaterialTab({ filter, reloadKey, onChanged }: { filter: UsageFilter; re
 
 const itemsLine = (r: MaterialRecord) => r.items.map((i) => `${i.material}${i.variant ? ` ${i.variant}` : ''} × ${unitText(i.quantity, i.unit)}`).join(', ')
 
-function MaterialBlock({ b, onEdit, onVoid }: { b: PatientBlock<MaterialRecord>; onEdit: (r: MaterialRecord) => void; onVoid: (r: MaterialRecord) => void }) {
+/** RU9: un bloque abierto: una fila por material (~32 px), la cantidad a la derecha; un solo «Ver registros (n)». */
+function MaterialBlockBody({ b, onEdit, onVoid }: { b: PatientBlock<MaterialRecord>; onEdit: (r: MaterialRecord) => void; onVoid: (r: MaterialRecord) => void }) {
   const sums = materialSums(b.rows)
-  const [open, setOpen] = useState<string | null>(null)
   const [showRecords, setShowRecords] = useState(false)
-  const active = b.rows.filter((r) => !r.voidedAt).length
-  return (
-    <div className={`usage-block${b.general ? ' usage-block--general' : ''}`}>
-      <BlockHead b={b} count={`${active} ${active === 1 ? 'registro' : 'registros'}`} />
-      <table className="table usage-table usage-mat">
-        <thead><tr><th>Material</th><th>Cantidad</th><th /></tr></thead>
-        <tbody>{sums.map((s) => <SumRow key={s.key} s={s} open={open === s.key} onToggle={() => setOpen(open === s.key ? null : s.key)} />)}</tbody>
-      </table>
-      <button type="button" className="btn btn--ghost btn--sm usage-records-btn" aria-expanded={showRecords} onClick={() => setShowRecords(!showRecords)}>
-        {showRecords ? <ChevronDown size={14} /> : <ChevronRight size={14} />}Registros ({b.rows.length})</button>
-      {showRecords && <ul className="usage-records">{b.rows.map((r) => <RecordLine key={r.id} r={r} onEdit={onEdit} onVoid={onVoid} />)}</ul>}
-    </div>
-  )
-}
-
-function SumRow({ s, open, onToggle }: { s: MaterialSum; open: boolean; onToggle: () => void }) {
   return (<>
-    <tr className={s.quantity ? undefined : 'is-void'}>
-      <td><b>{s.material}</b>{s.variant ? ` ${s.variant}` : ''}</td>
-      <td className="num usage-qty">{s.quantity ? unitText(s.quantity, s.unit) : '0'}</td>
-      <td style={{ textAlign: 'right' }}><button type="button" className="btn btn--ghost btn--sm" aria-expanded={open} onClick={onToggle}>{open ? 'Ocultar' : `Ver (${s.parts.length})`}</button></td>
-    </tr>
-    {open && <tr className="usage-parts"><td colSpan={3}><ul>{s.parts.map((p, i) => (
-      <li key={i} className={p.voided ? 'is-void' : undefined}>{dmyTime(p.at)} · {p.by} · {unitText(p.quantity, s.unit)}{p.voided ? ' (anulado)' : ''}</li>
-    ))}</ul></td></tr>}
+    {sums.map((s) => (
+      <div key={s.key} className={`ub-row${s.quantity ? '' : ' is-void'}`}>
+        <span className="ub-row__main"><b>{s.material}</b>{s.variant ? ` ${s.variant}` : ''}</span>
+        <span className="num ub-row__qty">{s.quantity ? unitText(s.quantity, s.unit) : '0'}</span>
+      </div>
+    ))}
+    <button type="button" className="btn btn--ghost btn--sm ub__records" aria-expanded={showRecords} onClick={() => setShowRecords(!showRecords)}>
+      {showRecords ? 'Ocultar registros' : `Ver registros (${b.rows.length})`}</button>
+    {showRecords && <ul className="usage-records">{b.rows.map((r) => <RecordLine key={r.id} r={r} onEdit={onEdit} onVoid={onVoid} />)}</ul>}
   </>)
 }
 
@@ -258,6 +308,7 @@ function RecordLine({ r, onEdit, onVoid }: { r: MaterialRecord; onEdit: (r: Mate
     <li className={r.voidedAt ? 'is-void' : undefined}>
       <div className="usage-records__text">
         <span className="num">{dmyTime(r.recordedAt)}</span> · {r.recordedByName} · <span className="muted">{r.periodLabel}</span>
+        {r.sets && r.sets.length > 0 && <div className="usage-records__set">{r.sets.length === 1 ? 'Set' : 'Sets'}: {r.sets.map((x) => x.name).join(', ')}</div>}
         <div className="usage-records__items">{itemsLine(r)}</div>
         {r.version > 1 && <span className="chip version-tag">Corregido · v{r.version}</span>}
         {r.voidedAt && <small className="usage-records__void">Anulado por {r.voidedByName} el {dmyTime(r.voidedAt)}. Motivo: {r.voidReason}</small>}

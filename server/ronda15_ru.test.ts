@@ -9,7 +9,7 @@ import { createSql, type Sql } from './sql.js'
 import { loadSupplyCatalog } from './supplies.js'
 import { SUPPLY_MD } from '../src/lib/supplyMd/generated.js'
 import { applySet, currentPeriod, DEFAULT_SUPPLY_SETTINGS, localDay, parseSupplyMd, periodOf, undoSet, type SupplySetView } from '../src/lib/supplies.js'
-import { sortSuggestions } from '../src/lib/usage.js'
+import { byArea, byPatient, materialTotalRows, sortSuggestions, totalsHeadline, totalWho, type MaterialRecord } from '../src/lib/usage.js'
 import { fromLocalValue } from '../src/lib/dateInput.js'
 
 // Ronda 15, grupo RU (catálogo v2, formulario, sets y vista del registro): con la base y la API (copia en memoria de la demo)
@@ -346,5 +346,51 @@ describe('RU8 (ronda 15): sets de material', () => {
     assert.equal((await doc.post('/api/supply-sets', { name: 'Curación de consultorio', items: [{ itemId: String(kgasa.id), quantity: 4 }] })).status, 201)
     // Un set de otra clínica no existe para ella
     assert.equal((await doc.post(`/api/supply-sets/${parto.id}/archive`)).status, 404)
+  })
+})
+
+describe('RU9 (ronda 15): vista del registro compacta y ordenada por paciente', () => {
+  const rec = (o: Partial<MaterialRecord> & { id: string }): MaterialRecord => ({
+    general: false, patientName: 'X', record: '', location: '', periodKind: 'shift', periodStart: '2026-11-06T13:00:00.000Z', periodEnd: '2026-11-06T21:00:00.000Z',
+    periodLabel: 'Mañana', items: [], recordedBy: 's', recordedByName: 'Lic. Carmen Ríos', recordedAt: '2026-11-06T14:00:00.000Z', version: 1, ...o,
+  })
+  const line = (itemId: string, quantity: number, category = 'Curación', material = itemId) => ({ itemId, quantity, category, material, variant: '', unit: 'unidad' as const })
+
+  test('«Por paciente»: primero el uso general y luego Consulta externa, Observación (por cuarto) y Hospitalización', () => {
+    const recs = [
+      rec({ id: '1', patientId: 'h', patientName: 'Ana', area: 'hospital', location: 'Hospitalización · Cuarto 201', items: [line('gasa', 1)] }),
+      rec({ id: '2', patientId: 'o2', patientName: 'Beto', area: 'observation', location: 'Observación · Cuarto 103', items: [line('gasa', 1)] }),
+      rec({ id: '3', general: true, patientName: '', items: [line('alcohol', 1)] }),
+      rec({ id: '4', patientId: 'c', patientName: 'Carla', area: 'outpatient', location: 'Consulta externa', items: [line('gasa', 2)] }),
+      rec({ id: '5', patientId: 'o1', patientName: 'Zoila', area: 'observation', location: 'Observación · Cuarto 101', items: [line('gasa', 1)] }),
+    ]
+    const blocks = byPatient(recs)
+    assert.deepEqual(blocks.map((b) => b.name), ['Uso general del servicio', 'Carla', 'Zoila', 'Beto', 'Ana'])
+    assert.deepEqual(byArea(blocks).map((g) => [g.title, g.blocks.length]), [['Uso general del servicio', 1], ['Consulta externa', 1], ['Observación', 2], ['Hospitalización', 1]])
+  })
+
+  test('«Total del periodo»: en el orden del catálogo, con pacientes y «+ uso general»; los anulados no cuentan', () => {
+    const recs = [
+      rec({ id: '1', patientId: 'a', patientName: 'Ana', area: 'outpatient', items: [line('guante', 2, 'Guantes'), line('gasa', 3)] }),
+      rec({ id: '2', patientId: 'b', patientName: 'Beto', area: 'outpatient', items: [line('guante', 2, 'Guantes')] }),
+      rec({ id: '3', general: true, patientName: '', items: [line('guante', 1, 'Guantes'), line('alcohol', 1, 'Antisépticos')] }),
+      rec({ id: '4', patientId: 'c', patientName: 'Carla', area: 'outpatient', items: [line('gasa', 9)], voidedAt: '2026-11-06T15:00:00.000Z' }),
+    ]
+    const rows = materialTotalRows(recs, ['gasa', 'alcohol', 'guante'])
+    assert.deepEqual(rows.map((r) => [r.itemId, r.quantity, totalWho(r)]), [['gasa', 3, '1 paciente'], ['alcohol', 1, 'Uso general'], ['guante', 5, '2 pacientes + uso general']])
+    assert.equal(totalsHeadline(recs, rows), '3 materiales · 2 pacientes y uso general')
+  })
+
+  test('la API trae el orden del catálogo para el total y el set de cada registro', async () => {
+    const nurse = await as('crios@demo.clinara')
+    const p = nowPeriod()
+    const r = await nurse.get(`/api/usage/material?from=${encodeURIComponent(p.start)}&to=${encodeURIComponent(p.end)}&area=all&q=`)
+    assert.equal(r.status, 200)
+    assert.ok(Array.isArray(r.body.order))
+    const used = new Set(r.body.records.flatMap((x: MaterialRecord) => x.items.map((i) => i.itemId)))
+    assert.equal(r.body.order.length, used.size)
+    assert.ok(r.body.records.some((x: MaterialRecord) => x.sets?.some((s) => s.name === 'Parto vaginal')), 'el registro con set lo dice')
+    // Recepción ve las dos vistas (solo lectura)
+    assert.equal((await (await as('smejia@demo.clinara')).get(`/api/usage/material?from=${encodeURIComponent(p.start)}&to=${encodeURIComponent(p.end)}&area=all&q=`)).status, 200)
   })
 })

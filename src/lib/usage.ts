@@ -100,20 +100,50 @@ export function sortSuggestions<T extends Pick<UsageSuggestion, 'area' | 'bed' |
   })
 }
 
-/** Un bloque por paciente (nombre, expediente, ubicación); el uso general del servicio va al final. */
-export interface PatientBlock<T> { key: string; patientId?: string; general: boolean; name: string; record: string; location: string; rows: T[] }
+/** Un bloque por paciente (nombre, expediente, ubicación y área); el uso general del servicio tiene el suyo. */
+export interface PatientBlock<T> { key: string; patientId?: string; general: boolean; name: string; record: string; location: string; area?: UsageArea; rows: T[] }
 
-export function byPatient<T extends { patientId?: string; general?: boolean; patientName: string; record: string; location: string }>(rows: T[], sortRows?: (a: T, b: T) => number): PatientBlock<T>[] {
+/** Cuarto o cama de una ubicación («Observación · Cuarto 101-A» → «Cuarto 101-A»). */
+const bedOf = (location: string) => location.split(' · ')[1]
+
+/**
+ * Un bloque por paciente. RU9 (ronda 15, A11): primero «Uso general del servicio»; luego Consulta externa, Observación y
+ * Hospitalización (A9), y dentro de cada área por cama o cuarto y por nombre. Lo usan la pantalla, la impresión y el Excel.
+ */
+export function byPatient<T extends { patientId?: string; general?: boolean; patientName: string; record: string; location: string; area?: UsageArea }>(rows: T[], sortRows?: (a: T, b: T) => number): PatientBlock<T>[] {
   const map = new Map<string, PatientBlock<T>>()
   for (const r of rows) {
     const key = r.general ? 'general' : r.patientId ?? r.patientName
     const b = map.get(key)
     if (b) { b.rows.push(r); continue }
-    map.set(key, { key, patientId: r.patientId, general: !!r.general, name: r.general ? GENERAL_USE_LABEL : r.patientName, record: r.general ? '' : r.record, location: r.general ? '' : r.location, rows: [r] })
+    map.set(key, { key, patientId: r.patientId, general: !!r.general, name: r.general ? GENERAL_USE_LABEL : r.patientName, record: r.general ? '' : r.record,
+      location: r.general ? '' : r.location, area: r.general ? undefined : r.area, rows: [r] })
   }
-  const list = [...map.values()].sort((a, b) => Number(a.general) - Number(b.general) || a.name.localeCompare(b.name, 'es'))
+  const rank = (b: PatientBlock<T>) => (b.general ? -1 : b.area ? USAGE_AREA_LIST.indexOf(b.area) : USAGE_AREA_LIST.length)
+  const list = [...map.values()].sort((a, b) => {
+    if (rank(a) !== rank(b)) return rank(a) - rank(b)
+    if (a.area && a.area !== 'outpatient') {
+      const [na, la] = bedOrder(bedOf(a.location))
+      const [nb, lb] = bedOrder(bedOf(b.location))
+      if (na !== nb) return na - nb
+      if (la !== lb) return la.localeCompare(lb, 'es')
+    }
+    return a.name.localeCompare(b.name, 'es')
+  })
   if (sortRows) list.forEach((b) => b.rows.sort(sortRows))
   return list
+}
+
+/** RU9: los bloques en grupos: «Uso general del servicio» (si hay) y luego cada área con sus pacientes. */
+export function byArea<T>(blocks: PatientBlock<T>[]) {
+  const out: { key: 'general' | UsageArea | 'other'; title: string; blocks: PatientBlock<T>[] }[] = []
+  for (const b of blocks) {
+    const key = b.general ? 'general' : b.area ?? 'other'
+    const g = out.find((x) => x.key === key)
+    if (g) g.blocks.push(b)
+    else out.push({ key, title: key === 'general' ? GENERAL_USE_LABEL : key === 'other' ? 'Sin área' : USAGE_AREAS[key], blocks: [b] })
+  }
+  return out
 }
 
 // ---------- Medicamentos: resumen (modo suma, A11) ----------
@@ -184,6 +214,43 @@ export const materialSums = (records: MaterialRecord[]) => [...sumOf(records).va
 
 /** «Total del periodo» por material y variante (todos los pacientes más el uso general), sin los que solo tienen anulados. */
 export const materialTotals = (records: MaterialRecord[]) => materialSums(records).filter((s) => s.quantity > 0)
+
+/** RU9: una fila del «Total del periodo»: el material, su cantidad y cuántos pacientes (y si también el uso general). */
+export interface MaterialTotalRow extends MaterialSum { patients: number; general: boolean }
+
+/**
+ * RU9 (ronda 15): «Total del periodo» en el orden del catálogo (`order`: los id del catálogo en su orden; lo que no está, al
+ * final por categoría y nombre), con cuántos pacientes lo usaron y si también el uso general. Los anulados no cuentan.
+ */
+export function materialTotalRows(records: MaterialRecord[], order: string[] = []): MaterialTotalRow[] {
+  const pos = new Map(order.map((id, i) => [id, i]))
+  const who = new Map<string, { patients: Set<string>; general: boolean }>()
+  for (const r of records) {
+    if (r.voidedAt) continue
+    for (const it of r.items) {
+      const w = who.get(it.itemId) ?? { patients: new Set<string>(), general: false }
+      if (r.general) w.general = true
+      else w.patients.add(r.patientId ?? r.patientName)
+      who.set(it.itemId, w)
+    }
+  }
+  const at = (s: MaterialSum) => pos.get(s.itemId) ?? Number.MAX_SAFE_INTEGER
+  return materialTotals(records).map((s) => ({ ...s, patients: who.get(s.itemId)?.patients.size ?? 0, general: !!who.get(s.itemId)?.general }))
+    .sort((a, b) => at(a) - at(b) || byCatalog(a, b))
+}
+
+/** «11 materiales · 9 pacientes y uso general». */
+export function totalsHeadline(records: MaterialRecord[], rows: MaterialTotalRow[]) {
+  const live = records.filter((r) => !r.voidedAt)
+  const patients = new Set(live.filter((r) => !r.general).map((r) => r.patientId ?? r.patientName)).size
+  const general = live.some((r) => r.general)
+  const parts = [patients ? `${patients} ${patients === 1 ? 'paciente' : 'pacientes'}` : '', general ? 'uso general' : ''].filter(Boolean)
+  return `${rows.length} ${rows.length === 1 ? 'material' : 'materiales'}${parts.length ? ` · ${parts.join(' y ')}` : ''}`
+}
+
+/** «3 pacientes», «2 pacientes + uso general», «Uso general». */
+export const totalWho = (r: Pick<MaterialTotalRow, 'patients' | 'general'>) =>
+  [r.patients ? `${r.patients} ${r.patients === 1 ? 'paciente' : 'pacientes'}` : '', r.general ? (r.patients ? '+ uso general' : 'Uso general') : ''].filter(Boolean).join(' ')
 
 /** Una fila por paciente, periodo y material (para el Excel «Por paciente»). */
 export function materialRows(records: MaterialRecord[]) {

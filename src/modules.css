@@ -1432,3 +1432,61 @@ li.is-void .usage-records__void { text-decoration: none; }
   .set-picker__pop { left: 0; right: 0; min-width: 0; }
   .set-notice { flex-wrap: wrap; }
 }
+
+/* ---------- RU9 (ronda 15): vista del registro compacta, por paciente y por área ---------- */
+.ub-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 4px 22px 12px; }
+.ub-all { display: flex; gap: 4px; margin-left: auto; }
+.ub-group { border-top: 1px solid var(--line); }
+.ub-group__title { margin: 0; padding: 12px 22px 6px; font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.ub-group__title .muted { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.ub { margin: 0 22px; border-bottom: 1px solid var(--line-soft); }
+.ub-group .ub:last-child { border-bottom: 0; }
+.ub--general { margin: 0; padding: 0 22px; background: var(--ward); }
+.ub__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; width: 100%; min-height: 44px; padding: 10px 0; border: 0; background: none; font: inherit;
+  font-size: 14px; text-align: left; cursor: pointer; color: var(--petrol); }
+.ub__chev { flex: none; align-self: center; color: var(--muted); transition: transform .15s ease; transform: rotate(-90deg); }
+.ub.is-open .ub__chev { transform: none; }
+.ub__name { font-size: 15px; }
+.ub__where { font-size: 13px; }
+.ub__count { margin-left: auto; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.ub__body { padding: 0 0 10px 24px; }
+.ub-row { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 16px; min-height: 32px; padding: 5px 0; border-bottom: 1px dotted var(--line); font-size: 14px; }
+.ub-row:last-of-type { border-bottom: 0; }
+.ub-row__main { min-width: 0; }
+.ub-row__qty { white-space: nowrap; font-weight: 650; text-align: right; }
+.ub-row.is-void .ub-row__main, .ub-row.is-void .ub-row__qty { text-decoration: line-through; color: var(--muted); }
+.ub-row--med { flex-wrap: wrap; }
+.ub-row__at { font-size: 13px; margin-right: 4px; }
+.ub-row__side { font-size: 12.5px; text-align: right; }
+.ub__records { margin-top: 6px; }
+.usage-records__set { font-size: 12.5px; font-weight: 600; color: var(--ink-deep); }
+.ub-total { padding: 0 22px 14px; }
+.ub-total__line { margin: 0 0 8px; font-size: 14px; color: var(--petrol); }
+.ub-total__table { width: 100%; table-layout: fixed; }
+.ub-total__table th:nth-child(2) { width: 30%; }
+.ub-total__table th:nth-child(3) { width: 120px; text-align: right; }
+.ub-total__table th:nth-child(4) { width: 22%; }
+.ub-total__table td { padding-top: 6px; padding-bottom: 6px; }
+.ub-total__qty { white-space: nowrap; font-weight: 650; text-align: right; }
+.ub-total__cat th { padding: 12px 8px 4px; font-size: 12.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); background: none; text-align: left; }
+@media (max-width: 640px) {
+  .ub-tools { padding: 4px 16px 10px; }
+  .ub-all { margin-left: 0; }
+  .ub-group__title { padding: 12px 16px 6px; }
+  .ub { margin: 0 16px; }
+  .ub--general { padding: 0 16px; }
+  .ub__body { padding-left: 0; }
+  .ub__count { margin-left: 26px; white-space: normal; }
+  .ub-row__side { text-align: left; }
+  .ub-total { padding: 0 16px 12px; }
+  .ub-total__table, .ub-total__table tbody, .ub-total__table tr { display: block; }
+  .ub-total__table thead { display: none; }
+  .ub-total__table tr:not(.ub-total__cat) { display: grid; grid-template-columns: 1fr auto; gap: 0 12px; padding: 6px 0; border-bottom: 1px dotted var(--line); }
+  .ub-total__table td { display: block; padding: 0; border: 0; }
+  .ub-total__table td:nth-child(1) { grid-column: 1; }
+  .ub-total__table td:nth-child(2) { grid-column: 1; font-size: 13px; }
+  .ub-total__table td:nth-child(3) { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  .ub-total__table td:nth-child(4) { grid-column: 1 / -1; font-size: 12.5px; }
+  .ub-total__cat { display: block; }
+  .ub-total__cat th { display: block; padding: 12px 0 4px; }
+}

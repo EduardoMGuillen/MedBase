@@ -152,7 +152,10 @@ export function registerUsage(app: Express, { sql, auth, need, userOf, clinicOf,
     const records = rows.map((r) => toRecord(r, staff))
       // El uso general del servicio no es de un área: sale con «Todas»
       .filter((r) => (f.area === 'all' || r.area === f.area) && (!f.q || matches(f.q, r.patientName, r.record) || r.items.some((i) => matches(f.q, i.material, i.variant, i.category))))
-    res.json({ records })
+    // RU9 (ronda 15): el orden del catálogo, para el «Total del periodo» (solo lo que sale en estos registros)
+    const used = [...new Set(records.flatMap((r) => r.items.map((i) => i.itemId)))]
+    const order = used.length ? (await sql.query(`SELECT id FROM supply_items WHERE clinic_id = ? AND id IN (${used.map(() => '?').join(',')}) ORDER BY sort, category, material, variant`, [cid, ...used])).map((r) => String(r.id)) : []
+    res.json({ records, order })
   })
 
   /** Dónde estaba el paciente en ese periodo: la estancia (observación u hospitalización) que lo cruza, o consulta externa. */

@@ -324,7 +324,8 @@ describe('RU2 (ronda 14): pestaña «Material»', () => {
     const blocks = byPatient(recs)
     const b1 = blocks.find((b) => b.patientId === p1)!
     assert.equal(materialSums(b1.rows).find((s) => s.itemId === ids.guante)!.quantity, 4, 'Guante estéril 7.5 = 4')
-    assert.equal(blocks[blocks.length - 1].name, 'Uso general del servicio', 'el uso general va al final')
+    // RU9 (ronda 15, A11): el uso general va primero
+    assert.equal(blocks[0].name, 'Uso general del servicio', 'el uso general va primero')
     assert.equal(materialTotals(recs).find((s) => s.itemId === ids.jeringa)!.quantity, 5, 'Jeringa 5 mL = 5')
   })
 
