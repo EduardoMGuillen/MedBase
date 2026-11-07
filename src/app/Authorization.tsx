@@ -4,7 +4,7 @@ import { Camera, ChevronLeft, FileSignature, FileText, PenLine, Printer, Trash2 
 import { useStore } from '../lib/store'
 import { Loading, Modal } from '../components/ui'
 import { dateTime, dmyTime, formatPhone, shortStaff } from '../lib/format'
-import { currentDiagnoses, yearsOld } from '../lib/inpatient'
+import { currentDiagnoses, stayPath, yearsOld } from '../lib/inpatient'
 import { authStatus, authTitle, consentStatements, isSurgical, FREQUENT_SURGERIES, HOSPITAL_CONSENT, HOSPITAL_DECLARATION, SURGICAL_GENERIC } from '../lib/consent'
 import type { Authorization, AuthorizationData, InpatientFile, Patient } from '../lib/types'
 import { openFile } from '../lib/files'
@@ -328,7 +328,8 @@ export default function AuthorizationPage() {
   return (
     <div className="page">
       <div className="page-head no-print">
-        {chart ? <Link className="btn btn--ghost" to={`/app/hospitalizados/${a.hospitalizationId}?tab=anexos`}><ChevronLeft size={16} />Volver a los anexos</Link>
+        {/* R2 pendiente (ronda 17): antes siempre iba a /app/hospitalizados/…; en observación vuelve a /app/observacion/… */}
+        {chart ? <Link className="btn btn--ghost" to={`${stayPath({ id: a.hospitalizationId, kind: a.stayKind })}?tab=anexos`}><ChevronLeft size={16} />Volver a los anexos</Link>
           : <Link className="btn btn--ghost" to="/app/hospitalizados"><ChevronLeft size={16} />Volver a Hospitalizados</Link>}
         <div className="page-head__actions">
           <span className={`badge badge--${st.tone}`}>{st.label}</span>

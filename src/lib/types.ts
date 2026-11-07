@@ -842,6 +842,8 @@ export interface Authorization {
   revocation?: ConsentRevocation
   /** Escaneos reemplazados: no se borran. */
   fileHistory?: { fileId: string; replacedAt: string; replacedBy: string; reason: string }[]
+  /** Tipo de la estancia ('hospital' u 'observation'); lo manda GET /authorizations/:id. */
+  stayKind?: string
 }
 
 /** Quien firma por el paciente, el testigo o el representante legal. */

@@ -1010,7 +1010,9 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   app.get('/api/authorizations/:aid', auth, need('inpatient.view', 'inpatient.admit'), async (req, res) => {
     const row = (await sql.one('SELECT * FROM authorizations WHERE id = ? AND clinic_id = ?', [String(req.params.aid), clinicOf(req)])) ?? fail(404, 'La autorización no existe.')
     if (!can(userOf(req), 'inpatient.view') && row!.template !== 'hospital') fail(403, 'Solo puedes ver la autorización de hospitalización.')
-    res.json(toAuthorization(row!))
+    // R2 pendiente (ronda 17): el tipo de estancia, para que «Volver a los anexos» lleve a observación cuando corresponde
+    const stay = await sql.one('SELECT kind FROM hospitalizations WHERE id = ? AND clinic_id = ?', [row!.hospitalization_id, clinicOf(req)])
+    res.json({ ...toAuthorization(row!), stayKind: String(stay?.kind ?? 'hospital') })
   })
 
   /**
