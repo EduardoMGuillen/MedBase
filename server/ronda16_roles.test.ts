@@ -109,3 +109,22 @@ describe('RE2 (ronda 16): Consulta externa «Por médico» para administración 
     assert.deepEqual(list.sort(byArrival).map((x) => x.id), ['sin-cita', 'cita-9', 'cita-8', 'falta'])
   })
 })
+
+describe('RE1 (ronda 16): «Paciente sin cita» también desde Inicio de administración y de recepción', () => {
+  test('administración y recepción registran a un paciente sin cita y queda «En sala»; laboratorio e imágenes, 403', async () => {
+    const cid = await clinicOfUser('rmoncada@demo.clinara')
+    const free = await sql.query(`SELECT p.id FROM patients p WHERE p.clinic_id = ? AND NOT p.pending
+      AND NOT EXISTS (SELECT 1 FROM hospitalizations h WHERE h.patient_id = p.id AND h.discharged_at IS NULL) ORDER BY p.record DESC LIMIT 3`, [cid])
+    const doctorId = String((await sql.one(`SELECT id FROM staff WHERE clinic_id = ? AND role = 'doctor' AND active ORDER BY id LIMIT 1`, [cid]))!.id)
+    for (const [i, email] of ['rmoncada@demo.clinara', 'aquiroz@demo.clinara'].entries()) {
+      const r = await (await as(email)).post('/api/appointments/walk-in', { patientId: String(free[i].id), doctorId, reason: 'Dolor de cabeza' })
+      assert.equal(r.status, 201, `${email}: ${JSON.stringify(r.body)}`)
+      assert.equal(r.body.status, 'arrived', 'queda en Consulta externa › «En sala»')
+      assert.equal(r.body.source, 'walkin')
+      assert.ok(r.body.arrivedAt)
+    }
+    for (const email of ['psuazo@demo.clinara', 'rzepeda@demo.clinara']) {
+      assert.equal((await (await as(email)).post('/api/appointments/walk-in', { patientId: String(free[2].id), doctorId, reason: 'Dolor de cabeza' })).status, 403, email)
+    }
+  })
+})

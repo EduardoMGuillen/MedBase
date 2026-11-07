@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Activity, BedDouble, FlaskConical, LogIn, NotebookPen, Stethoscope, Syringe, UserPlus } from 'lucide-react'
-import { AmbulatoryModal } from './Ambulatory'
+import { Activity, BedDouble, LogIn, NotebookPen, Stethoscope, Syringe } from 'lucide-react'
+import { AmbulatoryButton } from './Ambulatory'
+import { WalkInButton } from './WalkIn'
 import { useStore } from '../lib/store'
-import { features, hasRole } from '../lib/permissions'
+import { features } from '../lib/permissions'
 import { Modal, PageHead, StatusBadge } from '../components/ui'
 import { age, fullName, sameDay, time } from '../lib/format'
-import type { ActiveStay, Appointment, ConsultApplication, Patient, Vitals } from '../lib/types'
+import type { Appointment, ConsultApplication, Vitals } from '../lib/types'
 import { ApplyModal, applyBadge, canApply } from '../components/ApplyMeds'
 import { api, ApiError } from '../lib/api'
 import { GRACE_EXPIRED_TEXT } from '../lib/grace'
@@ -18,8 +19,6 @@ import { ApptGroupList, GroupTools, groupAppointments, useFold, type ApptGroupVi
 import { QUEUE_DEFAULT_VIEW, QUEUE_GROUP_ROLES } from '../lib/clinicalConfig'
 import { byArrival } from '../lib/arrivals'
 import { stayConflictText, stayPath, yearsOld } from '../lib/inpatient'
-import { PatientPicker } from './Inpatients'
-import { IdentificationForm } from './PatientForms'
 import { CompleteRegistration } from './NewPatient'
 
 const minutesSince = (iso?: string) => (iso ? Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)) : null)
@@ -38,7 +37,6 @@ export default function WaitingRoom() {
   const [triage, setTriage] = useState<Appointment | null>(null)
   // GE4 (ronda 9): quien hizo la preclínica la corrige en el periodo de gracia, con el mismo formulario
   const [fixing, setFixing] = useState<{ appt: Appointment; vitals: Vitals } | null>(null)
-  const [walkIn, setWalkIn] = useState(false)
   // ME13 (ronda 14): los medicamentos «Aplicar en la clínica» de las consultas de hoy sin ingreso; enfermería (o el médico) los aplica
   const mayApply = canApply(can)
   const [apps, setApps] = useState<ConsultApplication[]>([])
@@ -55,7 +53,6 @@ export default function WaitingRoom() {
     const t = setInterval(loadApps, 60_000)
     return () => clearInterval(t)
   }, [mayApply, loadApps, doneToday])
-  const [ambulatory, setAmbulatory] = useState(false)
   const [completing, setCompleting] = useState<Appointment | null>(null)
   // El médico ve "Mis pacientes" por defecto y se recuerda su última elección en este navegador
   const viewKey = `clinara.ce.${user?.id}`
@@ -149,11 +146,10 @@ export default function WaitingRoom() {
               <button role="radio" aria-checked={!mine} onClick={() => setMine(false)}>Toda la clínica</button>
             </div>
           )}
-          {can('checkin.manage') && <button className="btn btn--primary" data-tour="sin-cita" onClick={() => setWalkIn(true)}><UserPlus size={17} />Paciente sin cita</button>}
+          {can('checkin.manage') && <WalkInButton tour="sin-cita" />}
           {/* DP3 (ronda 11): paciente que viene solo a hacerse exámenes (Recepción y Administración; solo en clínicas) */}
-          {multiDoctor && can('ambulatory.register') && <button className="btn btn--soft" onClick={() => setAmbulatory(true)}><FlaskConical size={17} />Paciente ambulatorio</button>}
+          {multiDoctor && can('ambulatory.register') && <AmbulatoryButton />}
         </>} />
-      {ambulatory && <AmbulatoryModal onClose={() => setAmbulatory(false)} onDone={() => setAmbulatory(false)} />}
       {applying && <ApplyModal list={applying} onClose={() => setApplying(null)} onSaved={() => { setApplying(null); loadApps() }} />}
       {grouped && (
         <div className="ce-arrange" role="group" aria-label="Organizar la consulta externa">
@@ -172,7 +168,6 @@ export default function WaitingRoom() {
       </div>
       {triage && <VitalsModal appt={triage} onClose={() => setTriage(null)} onSaved={() => setTriage(null)} />}
       {fixing && <VitalsModal appt={fixing.appt} correct={fixing.vitals} onClose={() => setFixing(null)} onSaved={() => setFixing(null)} />}
-      {walkIn && <WalkInModal onClose={() => setWalkIn(false)} />}
       {taking && (
         <Modal title="Atender paciente de otro médico" onClose={() => setTaking(null)} footer={<>
           <button className="btn btn--ghost" onClick={() => setTaking(null)}>Cancelar</button>
@@ -194,61 +189,8 @@ export default function WaitingRoom() {
   )
 }
 
-/**
- * CX2 (ronda 8): el paciente tiene una estancia activa: no pasa a la consulta externa. Dice dónde está y, a quien puede
- * verlo, lleva a su expediente de la estancia.
- */
-export function StayConflict({ stay }: { stay: ActiveStay }) {
-  const { can } = useStore()
-  return (
-    <div className="alert-strip" role="alert">
-      <span>{stayConflictText(stay)}</span>
-      {can('inpatient.view') && <> <Link to={stayPath(stay)}>Ver paciente hospitalizado</Link></>}
-    </div>
-  )
-}
-
-/** Paciente que llega de pie: se busca o se registra y entra a la sala de espera. */
-function WalkInModal({ onClose }: { onClose: () => void }) {
-  const { staff, walkIn, addPatient, can, user, activeStayOf } = useStore()
-  const doctors = staff.filter((s) => hasRole(s, 'doctor') && s.active)
-  const [patientId, setPatientId] = useState('')
-  const [doctorId, setDoctorId] = useState(user?.role === 'doctor' ? user.id : doctors[0]?.id ?? '')
-  const [reason, setReason] = useState('')
-  // EN1 (ronda 6): apagado por defecto
-  const [urgent, setUrgent] = useState(false)
-  const [registering, setRegistering] = useState(false)
-  const [busy, setBusy] = useState(false)
-  if (registering) {
-    return <IdentificationForm title="Registrar paciente nuevo" submitLabel="Registrar y continuar" withAllergies onClose={() => setRegistering(false)} onSave={async (p) => {
-      const r = await addPatient(p as Omit<Patient, 'id' | 'record' | 'createdAt'>)
-      if (r) { setPatientId(r.id); setRegistering(false) }
-    }} />
-  }
-  return (
-    <Modal title="Paciente sin cita" onClose={onClose} footer={<>
-      <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn btn--primary" disabled={!patientId || !doctorId || !reason.trim() || busy || !!activeStayOf(patientId)} onClick={async () => {
-        setBusy(true)
-        const ok = await walkIn({ patientId, doctorId, reason: reason.trim(), urgent })
-        setBusy(false)
-        if (ok) onClose()
-      }}>Pasar a sala de espera</button>
-    </>}>
-      <PatientPicker value={patientId} onChange={setPatientId} />
-      {patientId && activeStayOf(patientId) && <StayConflict stay={activeStayOf(patientId)!} />}
-      {can('patients.manage') && <button className="btn btn--primary" style={{ justifySelf: 'start' }} onClick={() => setRegistering(true)}><UserPlus size={16} />Registrar paciente nuevo</button>}
-      {doctors.length > 1 && <label className="field"><span>Médico</span>
-        <select className="select" value={doctorId} onChange={(e) => setDoctorId(e.target.value)}>
-          {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? `, ${d.specialty.toLowerCase()}` : ''}</option>)}
-        </select></label>}
-      <label className="field"><span>Motivo de consulta</span>
-        <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Fiebre y dolor de garganta" /></label>
-      <label className="switch-line"><input type="checkbox" role="switch" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} aria-checked={urgent} />
-        <span><b>Urgente</b><small>La tarjeta sale con la etiqueta «Urgente». Queda en la bitácora con tu nombre.</small></span></label>
-    </Modal>
-  )
-}
+// RE1 (ronda 16): «Paciente sin cita» y el aviso de estancia activa viven en WalkIn.tsx (los usan también Inicio y «Paciente ambulatorio»)
+export { StayConflict } from './WalkIn'
 
 /**
  * Triaje: enfermería registra el motivo de consulta y los signos vitales; el médico recibe ambos.
