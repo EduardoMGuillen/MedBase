@@ -67,6 +67,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'supplies.view', 'supplies.manage', 'supplies.shiftlist', 'usage.view', 'usage.export', 'usage.void',
     // RU4 y RU8 (ronda 15): agrega materiales y administra los sets
     'supplies.add', 'sets.manage',
+    // RU10 (ronda 16): también registra material (en las clínicas pequeñas cubre a enfermería y a recepción)
+    'usage.record',
   ],
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',
@@ -80,8 +82,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'supplies.view', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export',
     // RU4 y RU8 (ronda 15, A4 y A13): agrega materiales y variantes (no edita ni archiva) y administra los sets
     'supplies.add', 'sets.manage'],
-  // RU2 y RU3 (ronda 14): ve el registro de uso, lo imprime y lo exporta (no registra material)
-  reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view', 'ambulatory.register', 'usage.view', 'usage.export'],
+  // RU2 y RU3 (ronda 14): ve el registro de uso, lo imprime y lo exporta. RU10 (ronda 16): también registra material (no anula
+  // lo de otros: usage.void sigue siendo de administración)
+  reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view', 'ambulatory.register', 'usage.view', 'usage.export',
+    'usage.record'],
   // Asistente de consultorio (secretaria o enfermera): recepción, preclínica, caja y aplicar dosis en observación. RU (ronda 14):
   // como enfermería en el registro de uso de material.
   assistant: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage',
