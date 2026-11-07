@@ -52,8 +52,10 @@ export function AuditLog({ mine = false }: { mine?: boolean }) {
     ...all.map((r) => [localISODate(new Date(r.at)), time(r.at), ...(mine ? [] : [who(r.userId)]), r.role ? ROLE_LABEL[r.role] : '', AUDIT_KINDS[r.kind], r.action, r.patientName ?? '']),
   ])) }
   const roles = ROLES_BY_KIND[settings.kind ?? 'clinic']
+  // UI1 (ronda 17): el recuadro ya no se desplaza a lo ancho con los filtros adentro; solo la tabla (`.table-wrap`), sin
+  // encabezado fijo ni alto propio: crece con la página. A 720 px o menos, cada registro es una tarjeta.
   return (
-    <section className="panel table-wrap">
+    <section className="panel audit-log">
       <div className="panel__head"><div><h2>{mine ? 'Mi actividad' : 'Bitácora'}</h2><p>{mine ? 'Todo lo que has hecho en el sistema, con fecha y hora. No se edita ni se borra.' : 'Quién hizo qué y cuándo, con qué rol. No se edita ni se borra.'}</p></div>
         <button className="btn btn--ghost btn--sm" disabled={!rows?.length} onClick={exportCsv}><Download size={15} />Exportar a Excel</button></div>
       <div className="panel__body audit-filters">
@@ -69,18 +71,20 @@ export function AuditLog({ mine = false }: { mine?: boolean }) {
         <div className="audit-filters__patient"><PatientPicker value={f.patientId} onChange={set('patientId')} autoFocus={false} /></div>
       </div>
       {!rows ? <Loading /> : (<>
-        <table className="table table--sticky">
+        <div className="table-wrap">
+        <table className="table table--cards audit-table">
           <thead><tr><th>Fecha y hora</th>{!mine && <th>Persona</th>}<th>Rol</th><th>Acción</th><th>Paciente</th></tr></thead>
           <tbody>{rows.map((e) => (
             <tr key={e.id}>
-              <td className="num" style={{ whiteSpace: 'nowrap' }}>{date(e.at)} {time(e.at)}</td>
-              {!mine && <td>{who(e.userId)}</td>}
-              <td>{e.role ? ROLE_LABEL[e.role] : <span className="muted">—</span>}</td>
-              <td>{e.action}<small className="muted" style={{ display: 'block' }}>{AUDIT_KINDS[e.kind]}</small></td>
-              <td>{e.patientName ?? <span className="muted">—</span>}</td>
+              <td className="num tc-lead" style={{ whiteSpace: 'nowrap' }}>{date(e.at)} {time(e.at)}</td>
+              {!mine && <td className="tc-trail">{who(e.userId)}</td>}
+              <td data-label="Rol">{e.role ? ROLE_LABEL[e.role] : <span className="muted">—</span>}</td>
+              <td data-label="Acción" className="tc-full">{e.action}<small className="muted" style={{ display: 'block' }}>{AUDIT_KINDS[e.kind]}</small></td>
+              <td data-label="Paciente">{e.patientName ?? <span className="muted">—</span>}</td>
             </tr>
           ))}</tbody>
         </table>
+        </div>
         {!rows.length && <div className="empty">Nada en la bitácora con esos filtros.</div>}
         <Pagination page={Math.min(page, Math.max(1, Math.ceil(data!.total / PAGE_SIZE)))} pages={Math.max(1, Math.ceil(data!.total / PAGE_SIZE))} total={data!.total} size={PAGE_SIZE} onPage={setPage} label="Páginas de la bitácora" />
       </>)}

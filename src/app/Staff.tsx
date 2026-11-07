@@ -9,6 +9,7 @@ import { AuditLog } from './Activity'
 import { Pagination, paginate, usePage } from '../components/Pagination'
 import type { Role, Staff } from '../lib/types'
 import { TabRow } from '../components/TabRow'
+import { TopScrollbar } from '../components/TopScrollbar'
 
 type Tab = 'people' | 'roles' | 'audit'
 
@@ -39,12 +40,14 @@ export default function StaffPage() {
       </TabRow>
 
       {tab === 'people' && (
+        // UI1 (ronda 17): sin encabezado fijo (dentro del recuadro con desplazamiento a lo ancho quedaba corrido hacia abajo,
+        // tapaba las primeras filas y dejaba una barra blanca arriba). La tabla crece con la página; a 720 px o menos, tarjetas.
         <section className="panel table-wrap">
-          <table className="table table--sticky table--cards">
+          <table className="table table--cards staff-table">
             <thead><tr><th>Nombre</th><th>Rol</th><th>Correo</th><th>Estado</th><th /></tr></thead>
             <tbody>{staffPage.rows.map((s) => (
               <tr key={s.id}>
-                <td className="tc-full"><div className="cell-person"><Avatar name={s.name} color={s.color} /><span style={{ fontWeight: 600 }}>{s.name}<small>{[s.specialty, s.license].filter(Boolean).join(', ')}</small></span></div></td>
+                <td className="tc-full staff-table__name"><div className="cell-person"><Avatar name={s.name} color={s.color} /><span style={{ fontWeight: 600 }}>{s.name}<small>{[s.specialty, s.license].filter(Boolean).join(', ')}</small></span></div></td>
                 <td data-label="Rol" className="tc-full">
                   <div className="role-picks">
                     {s.id === settings.ownerId && <span className="badge badge--ink">Médico titular</span>}
@@ -52,21 +55,21 @@ export default function StaffPage() {
                     {(!office || s.id !== settings.ownerId) && <button className="btn btn--ghost btn--sm" aria-label={`Cambiar los roles de ${s.name}`} onClick={() => setRolesOf(s)}>Roles</button>}
                   </div>
                 </td>
-                <td data-label="Correo">{s.email}</td>
+                <td data-label="Correo" className="staff-table__mail">{s.email}</td>
                 <td data-label="Estado"><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Desactivado</span>}
                   {s.twoFactor && <span className="badge badge--ink">Dos pasos</span>}</div></td>
-                <td className="tc-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  {s.id !== user?.id && <>
+                <td className="tc-actions staff-table__actions">
+                  {s.id !== user?.id && <div className="staff-actions">
                     <button className="btn btn--ghost btn--sm" onClick={async () => {
                       if (!confirm(`Se generará una contraseña temporal para ${s.name} y se cerrarán sus sesiones abiertas.`)) return
                       const r = await resetStaffPassword(s.id)
                       if (r) setSecret({ name: s.name, email: s.email, password: r.password })
-                    }}>Restablecer contraseña</button>{' '}
-                    {s.twoFactor && <><button className="btn btn--ghost btn--sm" title="Por si perdió su teléfono" onClick={() => {
+                    }}>Restablecer contraseña</button>
+                    {s.twoFactor && <button className="btn btn--ghost btn--sm" title="Por si perdió su teléfono" onClick={() => {
                       if (confirm(`¿Quitar la verificación en dos pasos de ${s.name}? Podrá entrar sólo con su contraseña hasta que la vuelva a activar.`)) updateStaff(s.id, { twoFactor: false })
-                    }}>Quitar dos pasos</button>{' '}</>}
+                    }}>Quitar dos pasos</button>}
                     <button className="btn btn--ghost btn--sm" onClick={() => updateStaff(s.id, { active: !s.active })}>{s.active ? 'Desactivar' : 'Reactivar'}</button>
-                  </>}
+                  </div>}
                 </td>
               </tr>
             ))}</tbody>
@@ -76,8 +79,11 @@ export default function StaffPage() {
       )}
 
       {tab === 'roles' && (
-        <section className="panel table-wrap">
-          <table className="table matrix table--sticky">
+        // UI1 (ronda 17): la matriz crece con la página (sin alto fijo); si no cabe a lo ancho se desplaza con una barra
+        // también arriba (TopScrollbar) y la columna «Permiso» queda fija a la izquierda.
+        <section className="panel staff-matrix">
+          <TopScrollbar>{(ref) => <div className="table-wrap" ref={ref as React.RefObject<HTMLDivElement>}>
+          <table className="table matrix">
             <thead><tr><th>Permiso</th>{ROLES.map((r) => <th key={r}>{ROLE_LABEL[r]}</th>)}</tr></thead>
             <tbody>{CLINIC_PERMISSIONS.map((p) => (
               <tr key={p}>
@@ -88,6 +94,7 @@ export default function StaffPage() {
               </tr>
             ))}</tbody>
           </table>
+          </div>}</TopScrollbar>
         </section>
       )}
 
