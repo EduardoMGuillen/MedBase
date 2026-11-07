@@ -10,7 +10,7 @@ import type { Correctable } from '../lib/types'
  * GE4 (ronda 9): periodo de gracia. «Corregir» sólo para el autor y mientras no vence (hora del servidor); el botón
  * desaparece solo al vencer, sin recargar. «Corregida · vN» y «Ver versiones» cuando hubo correcciones.
  */
-export type VersionKind = 'note' | 'dose' | 'vitals' | 'consultation' | 'exam_result' | 'anesthesia' | 'preanesthesia' | 'surgical_count'
+export type VersionKind = 'note' | 'dose' | 'vitals' | 'consultation' | 'exam_result' | 'anesthesia' | 'preanesthesia' | 'surgical_count' | 'fluid_entry'
 
 /** ¿Puede corregirlo esta persona ahora? Se vuelve a evaluar cada pocos segundos y al llegar al límite. */
 export function useGrace(until: string | undefined, authorId: string | undefined) {

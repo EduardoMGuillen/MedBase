@@ -56,6 +56,8 @@ import { PreEvalAnnex, PreEvalButton } from '../components/PreEval'
 import { SurgicalCountAnnex, SurgicalCountCard } from '../components/SurgicalCount'
 import type { OrderSet } from '../lib/types'
 import { TabRow } from '../components/TabRow'
+import { FluidsOrder, fluidsPayload, fluidsStart, type FluidsChoice } from '../components/FluidsOrder'
+import { currentFluidsMode, fluidsOrderText } from '../lib/fluids'
 
 type Tab = 'sheet' | 'notes' | 'vitals' | 'meds' | 'nursing' | 'labs' | 'annexes'
 
@@ -279,6 +281,7 @@ function ConsultEntry({ consultationId, file }: { consultationId: string; file: 
         <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}>Ver nota completa</Link>
       </div>
       <div className="panel__body"><ConsultationBody c={c} vitals={data.vitals} exams={data.exams ?? []} vitalsLine={(() => { const s = file.hospitalization.vitalsPlan?.find((x) => x.noteId === c.id); return s ? vitalsModeText(s) : undefined })()}
+        fluidsLine={(() => { const s = file.hospitalization.fluidsPlan?.find((x) => x.noteId === c.id); return s ? fluidsOrderText(s.mode) : undefined })()}
         medsExtra={<RxFromNote all meds={[...file.meds.filter((m) => m.source === 'consultation' && m.sourceId === c.id), ...(file.consultRxMeds ?? [])]} />} />
         <SignedBadge by={author?.name} at={c.date} addenda={(data.addenda ?? []).length} />
         <Addenda list={data.addenda ?? []} targetKind="consultation" targetId={c.id} canAdd={can('consult.write') && user?.role === 'doctor'} prescriptionId={c.prescriptionId} onAdded={load} /></div>
@@ -913,6 +916,8 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
       <div className="panel__body">
         <NoteColumns left={<NoteText n={n} vitals={n.vitalsId ? file.vitals.find((v) => v.id === n.vitalsId) : undefined} />}
           indications={<>{n.vitals && <p className="note-vitals-line">{vitalsModeText(n.vitals)}<LineTag tag={n.vitals.tag} /></p>}
+            {/* IE1 (ronda 16) */}
+            {n.fluids && <p className="note-vitals-line"><span className={n.fluids.tag === 'omitted' ? 'struck' : ''}>{fluidsOrderText(n.fluids.mode)}</span><LineTag tag={n.fluids.tag} /></p>}
             {indications.length ? <OrderChecklist n={n} orders={indications} file={file} reload={reload} /> : !n.vitals && <p className="muted">Sin indicaciones.</p>}</>}
           exams={<NoteExams list={(file.exams ?? []).filter((e) => e.noteId === n.id)} />}
           meds={meds.length ? <>{<OrderChecklist n={n} orders={meds} file={file} reload={reload} pill />}<RxFromNote meds={file.meds.filter((m) => m.noteId === n.id)} /></> : <p className="muted">Sin medicamentos.</p>} />
@@ -1357,6 +1362,10 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   const stale = basedOn !== lastId
   // MC6 (ronda 6): frecuencia de signos vitales: la vigente (no empieza vacía); un ingreso nuevo, por turno
   const [vitalsMode, setVitalsMode] = useState<VitalsMode>(() => currentVitalsMode(file))
+  // IE1 (ronda 16): «Ingestas y excretas»: la vigente baja marcada; desmarcarla la suspende
+  const fluidsNow = currentFluidsMode(file.hospitalization.fluidsPlan)
+  const [fluids, setFluids] = useState<FluidsChoice>(() => fluidsStart(fluidsNow))
+  const fluidsDirty = fluids.on !== !!fluidsNow || (fluids.on && fluids.mode !== fluidsNow)
   // MC8 (ronda 6): signos vitales opcionales tomados por el médico (null: no se agregaron)
   const [nv, setNv] = useState<VitalsForm | null>(null)
   const [nvAt, setNvAt] = useState(() => inputDateTime(new Date()))
@@ -1374,11 +1383,11 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   const vademecum = useVademecum()
   const active = file.meds.filter((m) => !m.stoppedAt && !courseDone(m))
   // AN1: la nota se guarda sola como borrador (aquí y en el servidor) mientras se escribe
-  const noteBlank = (!postop || (!pq.procedureName.trim() && !pq.description.trim() && !pq.postDiagnoses.length && !pq.anesthesia)) && !Object.values(n).some((v) => v.trim()) && !dxChanged && !d.evolution.trim() && !d.exam.trim() && !d.observations.trim() && !d.history.trim() && (kind !== 'admission' || d.chiefComplaint.trim() === (file.hospitalization.reason ?? '').trim()) && !meds.length && !stop.length && !exams.length && !extra.length && !Object.keys(decisions).length && !nvFilled
-  const draft = useDraftSync('evolucion', correct ? `${file.hospitalization.id}:correct:${correct.id}` : `${file.hospitalization.id}:${postop ? 'postop' : kind}`, { n, format, d, meds, stop, extra, exams, decisions, vitalsMode, nv, nvAt, pq }, (x) => {
+  const noteBlank = (!postop || (!pq.procedureName.trim() && !pq.description.trim() && !pq.postDiagnoses.length && !pq.anesthesia)) && !Object.values(n).some((v) => v.trim()) && !dxChanged && !d.evolution.trim() && !d.exam.trim() && !d.observations.trim() && !d.history.trim() && (kind !== 'admission' || d.chiefComplaint.trim() === (file.hospitalization.reason ?? '').trim()) && !meds.length && !stop.length && !exams.length && !extra.length && !Object.keys(decisions).length && !nvFilled && !fluidsDirty
+  const draft = useDraftSync('evolucion', correct ? `${file.hospitalization.id}:correct:${correct.id}` : `${file.hospitalization.id}:${postop ? 'postop' : kind}`, { n, format, d, meds, stop, extra, exams, decisions, vitalsMode, nv, nvAt, pq, fluids }, (x) => {
     if (seed) return // viene de un borrador de procedimiento mayor: manda lo que se traía
     if (x.pq) setPq(x.pq)
-    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD({ ...x.d, evolution: x.d.evolution ?? '', chiefComplaint: x.d.chiefComplaint ?? '', history: x.d.history ?? '' }); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams); if (x.decisions) setDecisions(x.decisions); if (x.vitalsMode) setVitalsMode(x.vitalsMode); if (x.nv) { setNv(x.nv); if (x.nvAt) setNvAt(x.nvAt) }
+    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD({ ...x.d, evolution: x.d.evolution ?? '', chiefComplaint: x.d.chiefComplaint ?? '', history: x.d.history ?? '' }); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams); if (x.decisions) setDecisions(x.decisions); if (x.vitalsMode) setVitalsMode(x.vitalsMode); if (x.fluids) setFluids(x.fluids); if (x.nv) { setNv(x.nv); if (x.nvAt) setNvAt(x.nvAt) }
   }, noteBlank)
   const inVademecum = (drug: string) => vademecum.some((x) => normalize(x.name) === normalize(drug))
   // Huecos "___" de un set aplicado: la nota no se firma hasta llenarlos
@@ -1394,7 +1403,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   // NO2 (ronda 16): la nota de ingreso estándar pide lo mismo que la consulta externa: el motivo y la impresión diagnóstica
   const admissionMissing = admissionStd ? [!d.chiefComplaint.trim() && 'el motivo de consulta', !d.diagnoses.length && 'la impresión diagnóstica'].filter((x): x is string => !!x) : []
   const ready = !blanks.length && !fixBlank && !admissionMissing.length && (postop ? !pqCheck.missing.length : !nvErrors.length && !nvFuture && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
-    : (dxChanged && d.diagnoses.length > 0) || !!d.evolution.trim() || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0 || exams.length > 0 || Object.keys(decisions).length > 0))
+    : (dxChanged && d.diagnoses.length > 0) || !!d.evolution.trim() || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0 || exams.length > 0 || Object.keys(decisions).length > 0 || fluidsDirty))
   /** Un set se agrega al final: indicaciones y medicamentos (que pasan a la hoja al guardar), todo editable. */
   const applySet = (set: OrderSet) => {
     const texts = set.items.flatMap((it) => (it.text ? [it.text] : []))
@@ -1497,7 +1506,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         // MC7 (ronda 6): el servidor arma el cuadro completo (Continúa, Nueva, Modificada, Omitida) sobre la última nota firmada
         const chain = { basedOn, decisions: Object.entries(decisions).filter(([id]) => activeInd.some((a) => a.id === id)).map(([id, x]) => ({ id, ...x })) }
         const ok = await addInpatientNote(file.hospitalization.id, { kind, format: postop ? 'postop' : format, exams, ...(postop ? { subjective: '', objective: '', assessment: '', plan: '', diagnoses: pq.postDiagnoses, postop: postopPayload(pq, pqCheck) } : format === 'soap' ? { ...n, diagnoses: d.diagnoses } : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim(),
-            ...(kind === 'admission' ? { chiefComplaint: d.chiefComplaint.trim(), history: d.history.trim() } : { evolution: d.evolution.trim() }) }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId,
+            ...(kind === 'admission' ? { chiefComplaint: d.chiefComplaint.trim(), history: d.history.trim() } : { evolution: d.evolution.trim() }) }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId, fluids: postop && !fluidsDirty ? undefined : fluidsPayload(fluids, fluidsNow),
           vitalsTaken: !postop && nvFilled ? { takenAt: fromLocalValue(nvAt).toISOString(), ...Object.fromEntries(FIELDS.map((k) => [k, vitalNumber(nv!, k)]).filter(([, x]) => x !== undefined)) } : undefined })
         setBusy(false)
         // EX2 (ronda 8): con estudios externos se ofrece el cuadro «Órdenes de exámenes: Imprimir / Descargar PDF»
@@ -1637,6 +1646,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         )}
       </fieldset>
       {/* NO2 (ronda 16): aquí va el bloque de órdenes extra (IE1: «Ingestas y excretas»), debajo de Indicaciones y antes de Exámenes */}
+      <FluidsOrder value={fluids} current={fluidsNow} onChange={setFluids} />
       {afterIndications}
       {/* MC3 (ronda 5): Indicaciones → Exámenes → Medicamentos (con los activos dentro, antes de «Agregar medicamento») */}
       <fieldset className="fs"><legend>Exámenes</legend>

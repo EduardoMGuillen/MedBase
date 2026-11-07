@@ -12,6 +12,8 @@ import { AnesthesiaRecord } from './AnesthesiaDoc'
 import { PreEvalRecord } from './PreEvalDoc'
 import { SurgicalCountRecord } from './SurgicalCountDoc'
 import { ThermalCurve, VitalsTable } from './VitalsSheet'
+import { FluidBalance } from '../components/FluidBalance'
+import { fluidsOrderText } from '../lib/fluids'
 import { antipyreticDoses, bandOf, missedTakes, takeStatuses, vitalsAnchor, vitalsEvery, vitalsModeText } from '../lib/vitalsSheet'
 import { useNow } from '../lib/hooks'
 import { EpicrisisSheet } from './Epicrisis'
@@ -93,10 +95,13 @@ export default function FullRecord() {
   for (let d = new Date(stayStart).setHours(0, 0, 0, 0); d <= stayEnd; d += 7 * 86_400_000) vitalPages.push([d, Math.min(d + 7 * 86_400_000, new Date(stayEnd).setHours(24, 0, 0, 0))])
   // La epicrisis vigente va al final; también es un documento aparte
   const epicrisis = currentEpicrisis(file)
+  const fluidsOrdered = !!h.fluidsPlan?.some((x) => x.mode !== 'off')
   const sections: [string, string][] = [
     ['fr-hoja', obs ? 'Datos generales' : 'Hoja de hospitalización'],
     // EN1: los signos vitales van antes de las notas de evolución, como en el expediente
     ['fr-signos-0', `Hoja de signos vitales (${vitalPages.length} ${vitalPages.length === 1 ? 'hoja' : 'hojas'})`],
+    // IE1 (ronda 16): ingestas y excretas, debajo de los signos vitales (solo si hubo la orden)
+    ...(fluidsOrdered ? [['fr-liquidos', 'Ingestas y excretas'] as [string, string]] : []),
     ['fr-notas', `Notas de evolución (${entries.length})`],
     ...(!obs ? [['fr-enfermeria', `Notas de enfermería (${nursing.length})`] as [string, string]] : []),
     ['fr-medicamentos', 'Hoja de medicamentos'],
@@ -154,10 +159,13 @@ export default function FullRecord() {
           </>, true)
         })}
 
+        {fluidsOrdered && page('fr-liquidos', 'Ingestas y excretas', <FluidBalance file={file} print />, true)}
+
         {entries.length ? entries.map((e, i) => page(i === 0 ? 'fr-notas' : `fr-nota-${i}`, `Notas de evolución · ${i + 1} de ${entries.length}`, <>
           <div className="fr-note-head"><h2 className="fr-h">{e.title}</h2>
             <span>{e.kind === 'consult' && consult ? `${staffById(consult.consultation.doctorId)?.name} · ${dm(consult.consultation.date)}` : e.note ? `${who(e.note.authorId)} · ${dm(e.note.at)}` : e.legacy ? `${staffById(e.legacy.createdBy)?.name} · ${dm(e.legacy.createdAt)}` : ''}</span></div>
-          {e.kind === 'consult' && consult && <ConsultationBody c={consult.consultation} vitals={consult.vitals} exams={(file.exams ?? []).filter((x) => x.consultationId === consult.consultation.id)} />}
+          {e.kind === 'consult' && consult && <ConsultationBody c={consult.consultation} vitals={consult.vitals} exams={(file.exams ?? []).filter((x) => x.consultationId === consult.consultation.id)}
+            fluidsLine={(() => { const x = h.fluidsPlan?.find((y) => y.noteId === consult.consultation.id); return x ? fluidsOrderText(x.mode) : undefined })()} />}
           {e.kind === 'consult' && consult && <PrintedAddenda list={file.addenda ?? []} id={consult.consultation.id} />}
           {e.legacy && <div className="note"><p><b>{e.legacy.name}</b></p>{e.legacy.notes && <p>{e.legacy.notes}</p>}</div>}
           {e.note && <NoteBody n={e.note} file={file} />}
@@ -275,7 +283,7 @@ function NoteBody({ n, file }: { n: InpatientNote; file: InpatientFile }) {
       <span className="order-check__text"><span className="order-check__order"><span className="order-check__txt">{text}</span>{tag && <span className={`line-tag line-tag--${tag}`}>{LINE_TAG[tag]}</span>}</span>
         {mark?.action === 'check' && <small className="order-check__mark">✓ {shortStaff(staffById(mark.by)?.name)} {dm(mark.at)}</small>}</span></li>
   })}</ol> : <p className="muted">{empty}</p>
-  return <NoteColumns left={<NoteText n={n} vitals={n.vitalsId ? file.vitals.find((v) => v.id === n.vitalsId) : undefined} />} indications={<>{n.vitals && <p className="note-vitals-line">{vitalsModeText(n.vitals)}<span className={`line-tag line-tag--${n.vitals.tag}`}>{LINE_TAG[n.vitals.tag]}</span></p>}{indications.length || !n.vitals ? list(indications, 'Sin indicaciones.') : null}</>} exams={<NoteExams list={(file.exams ?? []).filter((x) => x.noteId === n.id)} />} meds={list(meds, 'Sin medicamentos.', true)} />
+  return <NoteColumns left={<NoteText n={n} vitals={n.vitalsId ? file.vitals.find((v) => v.id === n.vitalsId) : undefined} />} indications={<>{n.vitals && <p className="note-vitals-line">{vitalsModeText(n.vitals)}<span className={`line-tag line-tag--${n.vitals.tag}`}>{LINE_TAG[n.vitals.tag]}</span></p>}{n.fluids && <p className="note-vitals-line"><span className={n.fluids.tag === 'omitted' ? 'struck' : ''}>{fluidsOrderText(n.fluids.mode)}</span><span className={`line-tag line-tag--${n.fluids.tag}`}>{LINE_TAG[n.fluids.tag]}</span></p>}{indications.length || !n.vitals ? list(indications, 'Sin indicaciones.') : null}</>} exams={<NoteExams list={(file.exams ?? []).filter((x) => x.noteId === n.id)} />} meds={list(meds, 'Sin medicamentos.', true)} />
 }
 
 /** AN1: las adendas de una nota, debajo de ella en la misma página impresa. */

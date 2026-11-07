@@ -133,7 +133,9 @@ export function BackgroundView({ p, compact = false, only }: { p: Patient; compa
  * texto clínico; a la derecha las indicaciones y debajo los medicamentos.
  */
 /** MC5 (ronda 6): con `exams` (los de esta consulta) la columna de órdenes lleva Indicaciones y plan → Exámenes → Medicamentos. */
-export function ConsultationBody({ c, vitals, exams, vitalsLine, applications, medsExtra }: { c: Consultation; vitals?: Vitals | null; exams?: ExamOrder[]; vitalsLine?: string
+export function ConsultationBody({ c, vitals, exams, vitalsLine, fluidsLine, applications, medsExtra }: { c: Consultation; vitals?: Vitals | null; exams?: ExamOrder[]; vitalsLine?: string
+  /** IE1 (ronda 16): «Cuantificar ingestas y excretas» indicada con el ingreso. */
+  fluidsLine?: string
   /** ME13 (ronda 14): lo que se aplicó en la clínica (quién y cuándo), debajo de cada medicamento. */
   applications?: ConsultApplication[]
   /** ME13 y ME14 (ronda 14): botones debajo de los medicamentos («Aplicar», «Receta»). */
@@ -168,7 +170,7 @@ export function ConsultationBody({ c, vitals, exams, vitalsLine, applications, m
       indications={c.orders.length ? <IndicationList items={c.orders} /> : <p>{c.plan || <span className="muted">Sin registro.</span>}</p>} />
   }
   // MC6 (ronda 6): con ingreso, la frecuencia de signos vitales que indicó la consulta va como primera indicación
-  return <NoteColumns left={left} indicationsTitle="Indicaciones y plan" indications={<>{vitalsLine && <p className="note-vitals-line">{vitalsLine}</p>}<IndicationList items={c.indications} empty={vitalsLine ? '' : undefined} /></>} exams={examBlock}
+  return <NoteColumns left={left} indicationsTitle="Indicaciones y plan" indications={<>{vitalsLine && <p className="note-vitals-line">{vitalsLine}</p>}{fluidsLine && <p className="note-vitals-line">{fluidsLine}</p>}<IndicationList items={c.indications} empty={vitalsLine || fluidsLine ? '' : undefined} /></>} exams={examBlock}
     meds={<><MedLines items={c.orders.slice(c.indications.length)} sub={applications?.length ? appOf : undefined} />{medsExtra}</>} />
 }
 

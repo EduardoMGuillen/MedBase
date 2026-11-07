@@ -8,6 +8,9 @@ import { createSql, type Sql } from './sql.js'
 import { fileAlerts, myPendingAdmissions } from '../src/lib/alerts.js'
 import { admissionOrdersPending, attendingText } from '../src/lib/inpatient.js'
 import { permissionsFor } from '../src/lib/permissions.js'
+import { fluidBalance, fluidPeriods, fluidsTag, fluidTotals, parseVolumeMl, signedMl } from '../src/lib/fluids.js'
+import { fromLocalValue } from '../src/lib/dateInput.js'
+import type { Dose, FluidEntry, InpatientMed } from '../src/lib/types.js'
 
 // Ronda 16 (rama ingreso): HO2 (ingreso directo con nota de ingreso, médico tratante, recepción ingresa) e IE1 (ingestas y excretas)
 let server: Server
@@ -155,5 +158,148 @@ describe('HO2 (ronda 16): ingreso directo con médico tratante y órdenes pendie
     const boot = (await doc.get('/api/bootstrap')).body
     for (const h of boot.inpatients.filter((x: any) => x.consultationId || x.kind === 'observation' || x.observationAt)) assert.equal(h.ordersPending, false, h.id)
     assert.ok(boot.inpatients.every((h: any) => Array.isArray(h.attendingIds) && h.attendingIds.length), 'toda estancia tiene médico tratante (las de antes: quien ingresó)')
+  })
+})
+
+// ---------------------------------------------------------------- IE1 ----------------------------------------------------------------
+const L = (v: string) => fromLocalValue(v).getTime()
+const med = (x: Partial<InpatientMed>): InpatientMed => ({ id: 'm1', hospitalizationId: 'h', drug: 'Hartmann', dose: '1000 ml', route: 'Intravenosa', prn: false, firstAt: '2026-11-02T14:00:00.000Z',
+  orderedBy: 's', orderedAt: new Date(L('2026-11-02T07:30')).toISOString(), ...x } as InpatientMed)
+const dose = (medId: string, at: string, extra: Partial<Dose> = {}): Dose => ({ id: `d-${medId}-${at}`, medId, givenAt: new Date(L(at)).toISOString(), givenBy: 's', status: 'given', ...extra })
+const entry = (x: Partial<FluidEntry>): FluidEntry => ({ id: Math.random().toString(36), hospitalizationId: 'h', kind: 'out', item: 'urine', ml: 300, at: new Date(L('2026-11-02T10:00')).toISOString(), createdBy: 's', createdAt: '', ...x })
+
+describe('IE1 (ronda 16): cálculo de ingestas y excretas (función pura)', () => {
+  const shift = [L('2026-11-02T07:00'), L('2026-11-02T15:00')] as const
+  test('una infusión de 100 mL/h desde las 08:00 da 700 mL en el turno de 07:00 a 15:00; suspendida a las 12:00, 400 mL', () => {
+    const inf = med({ drug: 'Solución salina 0.9 %', dose: '1000 ml', infusionRate: 100, infusionUnit: 'ml/h' })
+    const doses = [dose('m1', '2026-11-02T08:00')]
+    assert.equal(fluidTotals({ meds: [inf], doses, entries: [] }, ...shift, L('2026-11-02T18:00')).iv, 700)
+    assert.equal(fluidTotals({ meds: [{ ...inf, infusionStoppedAt: new Date(L('2026-11-02T12:00')).toISOString() }], doses, entries: [] }, ...shift, L('2026-11-02T18:00')).iv, 400)
+    assert.equal(fluidTotals({ meds: [{ ...inf, stoppedAt: new Date(L('2026-11-02T12:00')).toISOString() }], doses, entries: [] }, ...shift, L('2026-11-02T18:00')).iv, 400, 'cambiada u omitida: hasta ahí')
+    assert.equal(fluidTotals({ meds: [{ ...inf, infusionRate: 2, infusionUnit: 'ml/min' }], doses, entries: [] }, ...shift, L('2026-11-02T18:00')).iv, 840, 'mL/min × 60')
+    assert.equal(fluidTotals({ meds: [inf], doses, entries: [] }, ...shift, L('2026-11-02T10:00')).iv, 200, 'la que sigue corriendo cuenta hasta ahora')
+    const none = fluidTotals({ meds: [inf], doses: [], entries: [] }, ...shift, L('2026-11-02T18:00'))
+    assert.equal(none.iv, 0); assert.equal(none.noStart.length, 1, 'sin inicio registrado no suma: se avisa')
+    const src = fluidTotals({ meds: [inf], doses, entries: [] }, ...shift, L('2026-11-02T18:00')).ivSources
+    assert.deepEqual(src.map((s) => s.ml), [700]); assert.match(src[0].label, /Solución salina/, 'de qué medicamento sale')
+  })
+
+  test('una dosis «1000 ml IV cada 8 h» suma 1000 mL al marcarse aplicada, y no antes; sin volumen no se inventa', () => {
+    const m = med({ everyHours: 8 })
+    assert.equal(fluidTotals({ meds: [m], doses: [], entries: [] }, ...shift, L('2026-11-02T18:00')).iv, 0)
+    assert.equal(fluidTotals({ meds: [m], doses: [dose('m1', '2026-11-02T09:00', { status: 'skipped' })], entries: [] }, ...shift, L('2026-11-02T18:00')).iv, 0, 'no aplicada no suma')
+    assert.equal(fluidTotals({ meds: [m], doses: [dose('m1', '2026-11-02T09:00')], entries: [] }, ...shift, L('2026-11-02T18:00')).iv, 1000)
+    const cef = med({ id: 'm2', drug: 'Ceftriaxona', dose: '1 g', presentation: 'Vial 1 g', everyHours: 12 })
+    const t = fluidTotals({ meds: [cef], doses: [dose('m2', '2026-11-02T09:00')], entries: [] }, ...shift, L('2026-11-02T18:00'))
+    assert.equal(t.iv, 0); assert.equal(t.noVolume.length, 1, '«Sin volumen: agrégalo a mano»')
+    const oral = med({ id: 'm3', route: 'Oral', dose: '500 ml' })
+    assert.equal(fluidTotals({ meds: [oral], doses: [dose('m3', '2026-11-02T09:00')], entries: [] }, ...shift, L('2026-11-02T18:00')).iv, 0, 'solo IV')
+    assert.equal(parseVolumeMl('Hartmann 1000 ml'), 1000)
+    assert.equal(parseVolumeMl('Bolsa 500 mL'), 500)
+    assert.equal(parseVolumeMl('1 L'), 1000)
+    assert.equal(parseVolumeMl('Vial 40 mg/10 mL'), undefined, 'un mL de concentración no cuenta')
+    assert.equal(parseVolumeMl('2 g'), undefined)
+  })
+
+  test('registros manuales, anulados sin sumar, totales y balance con signo; cortes por turno, 12 y 24 h', () => {
+    const entries = [entry({}), entry({ kind: 'in', item: 'oral', ml: 200 }), entry({ ml: 999, voidedAt: '2026-11-02T17:00:00.000Z' })]
+    const t = fluidTotals({ meds: [], doses: [], entries }, ...shift, L('2026-11-02T18:00'))
+    assert.equal(t.out.urine, 300, 'el anulado no suma')
+    assert.equal(t.totalIn, 200); assert.equal(t.totalOut, 300); assert.equal(t.balance, -100)
+    assert.equal(signedMl(-100), '−100 mL'); assert.equal(signedMl(250), '+250 mL')
+    assert.deepEqual(fluidPeriods('shift', L('2026-11-02T08:00'), L('2026-11-03T08:00')).map((p) => p.label), ['07:00–15:00', '15:00–23:00', '23:00–07:00', '07:00–15:00'])
+    assert.deepEqual(fluidPeriods('shift', L('2026-11-02T08:00'), L('2026-11-03T08:00')).map((p) => p.day), ['2026-11-02', '2026-11-02', '2026-11-02', '2026-11-03'], 'el día clínico va de 07:00 a 07:00')
+    assert.deepEqual(fluidPeriods('h12', L('2026-11-02T08:00'), L('2026-11-02T20:00')).map((p) => p.label), ['07:00–19:00', '19:00–07:00'])
+    assert.deepEqual(fluidPeriods('h24', L('2026-11-02T08:00'), L('2026-11-02T20:00')).map((p) => p.label), ['07:00–07:00'])
+    const plan = [{ mode: 'shift' as const, from: new Date(L('2026-11-02T08:00')).toISOString(), by: 's' }]
+    const days = fluidBalance({ plan, meds: [], doses: [], entries, now: L('2026-11-02T18:00') })
+    assert.equal(days.length, 1); assert.equal(days[0].periods.length, 2); assert.equal(days[0].balance, -100)
+    assert.deepEqual(fluidBalance({ plan: undefined, meds: [], doses: [], entries, now: L('2026-11-02T18:00') }), [], 'sin la orden no hay tabla')
+    assert.equal(fluidsTag(undefined, 'shift'), 'new'); assert.equal(fluidsTag(plan, 'shift'), 'continue'); assert.equal(fluidsTag(plan, 'h12'), 'modified'); assert.equal(fluidsTag(plan, 'off'), 'omitted'); assert.equal(fluidsTag(undefined, 'off'), null)
+  })
+})
+
+describe('IE1 (ronda 16): la orden en las notas y el registro en el expediente', () => {
+  let stayId = ''
+  test('la nota de ingreso con «Ingestas y excretas», «Por turno», activa el registro y la indicación', async () => {
+    const { bedId, patientId } = await freeBedAndPatient(4)
+    const doc = await as('hnolasco@demo.clinara')
+    const r = await doc.post('/api/inpatient', { patientId, bedId, reason: 'Diarrea con deshidratación', diagnoses: dx })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    stayId = r.body.id
+    const nurse = await as('murbina@demo.clinara')
+    assert.equal((await nurse.post(`/api/inpatient/${stayId}/fluids`, { kind: 'out', item: 'urine', ml: 300 })).status, 409, 'sin la orden no se registra')
+    const note = await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'admission', format: 'dx', chiefComplaint: 'Diarrea', diagnoses: dx, orders: ['Dieta blanda.'], fluids: { mode: 'shift' } })
+    assert.equal(note.status, 201, JSON.stringify(note.body))
+    assert.deepEqual(note.body.fluids, { mode: 'shift', tag: 'new' })
+    const file = (await doc.get(`/api/inpatient/${stayId}`)).body
+    assert.equal(file.hospitalization.fluidsPlan.at(-1).mode, 'shift')
+    assert.ok(await sql.one(`SELECT 1 FROM audit WHERE action LIKE 'Indicó «Cuantificar ingestas y excretas · Por turno%'`))
+  })
+
+  test('enfermería registra (con su nombre), corrige en el periodo de gracia y anula con motivo; los demás roles no (403)', async () => {
+    const nurse = await as('murbina@demo.clinara')
+    const at = new Date(Date.now() - 30 * 60_000).toISOString()
+    const r = await nurse.post(`/api/inpatient/${stayId}/fluids`, { kind: 'out', item: 'urine', ml: 300, at })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(r.body.createdBy, await staffId('murbina@demo.clinara'))
+    assert.equal((await nurse.post(`/api/inpatient/${stayId}/fluids`, { kind: 'out', item: 'oral', ml: 100 })).status, 400, 'rubro de la lista')
+    assert.equal((await nurse.post(`/api/inpatient/${stayId}/fluids`, { kind: 'in', item: 'oral', ml: 100, at: new Date(Date.now() + 3_600_000).toISOString() })).status, 400, 'no en el futuro')
+    assert.equal((await (await as('aquiroz@demo.clinara')).post(`/api/inpatient/${stayId}/fluids`, { kind: 'out', item: 'urine', ml: 100 })).status, 403, 'recepción')
+    assert.equal((await (await as('rmoncada@demo.clinara')).post(`/api/inpatient/${stayId}/fluids`, { kind: 'out', item: 'urine', ml: 100 })).status, 403, 'administración')
+    assert.equal((await (await as('psuazo@demo.clinara')).post(`/api/inpatient/${stayId}/fluids`, { kind: 'out', item: 'urine', ml: 100 })).status, 403, 'laboratorio')
+    const aux = await as('rvallecillo@demo.clinara')
+    const a = await aux.post(`/api/inpatient/${stayId}/fluids`, { kind: 'in', item: 'oral', ml: 250 })
+    assert.equal(a.status, 201, 'la auxiliar también registra')
+    const doc = await as('hnolasco@demo.clinara')
+    assert.equal((await doc.post(`/api/inpatient/${stayId}/fluids`, { kind: 'out', item: 'vomit', ml: 50 })).status, 201, 'y el médico')
+    // Corrección: solo la autora, en el periodo de gracia
+    assert.equal((await aux.patch(`/api/fluids/${r.body.id}`, { kind: 'out', item: 'urine', ml: 350, at })).status, 403)
+    const c = await nurse.patch(`/api/fluids/${r.body.id}`, { kind: 'out', item: 'urine', ml: 350, at })
+    assert.equal(c.status, 200, JSON.stringify(c.body)); assert.equal(c.body.ml, 350); assert.equal(c.body.version, 2)
+    // Anular: la autora o el médico; otra enfermera no
+    assert.equal((await aux.post(`/api/fluids/${r.body.id}/void`, { reason: 'Registro duplicado' })).status, 403)
+    assert.equal((await nurse.post(`/api/fluids/${r.body.id}/void`, { reason: 'no' })).status, 400, 'con motivo')
+    const v = await nurse.post(`/api/fluids/${r.body.id}/void`, { reason: 'Registro duplicado' })
+    assert.equal(v.status, 200); assert.ok(v.body.voidedAt)
+    assert.equal((await nurse.patch(`/api/fluids/${r.body.id}`, { kind: 'out', item: 'urine', ml: 300, at })).status, 409, 'anulado no se corrige')
+    const file = (await doc.get(`/api/inpatient/${stayId}`)).body
+    assert.equal(file.fluids.length, 3)
+    const days = fluidBalance({ plan: file.hospitalization.fluidsPlan, meds: file.meds, doses: file.doses, entries: file.fluids, now: Date.now() })
+    assert.equal(days.reduce((s, d) => s + d.totalOut, 0), 50, 'el anulado deja de sumar')
+    assert.ok(await sql.one(`SELECT 1 FROM audit WHERE action LIKE 'Ingestas y excretas: anuló Diuresis 350 mL%'`))
+  })
+
+  test('solo el médico ordena: enfermería y el radiólogo no (403); una evolución la cambia y la suspende', async () => {
+    const doc = await as('hnolasco@demo.clinara')
+    assert.equal((await (await as('murbina@demo.clinara')).post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', evolution: 'Bien', fluids: { mode: 'h12' } })).status, 403)
+    assert.equal((await (await as('rzepeda@demo.clinara')).post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', evolution: 'Bien', fluids: { mode: 'h12' } })).status, 403)
+    const m = await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', evolution: 'Mejor', fluids: { mode: 'h12' } })
+    assert.equal(m.status, 201, JSON.stringify(m.body)); assert.deepEqual(m.body.fluids, { mode: 'h12', tag: 'modified' })
+    const off = await doc.post(`/api/inpatient/${stayId}/notes`, { kind: 'evolution', format: 'dx', evolution: 'Tolera la vía oral', fluids: { mode: 'off' } })
+    assert.equal(off.status, 201, JSON.stringify(off.body)); assert.deepEqual(off.body.fluids, { mode: 'h12', tag: 'omitted' })
+    const file = (await doc.get(`/api/inpatient/${stayId}`)).body
+    assert.equal(file.hospitalization.fluidsPlan.at(-1).mode, 'off')
+    assert.equal((await (await as('murbina@demo.clinara')).post(`/api/inpatient/${stayId}/fluids`, { kind: 'out', item: 'urine', ml: 100 })).status, 409, 'suspendida: ya no se registra')
+  })
+
+  test('la consulta externa con ingreso activa el registro de la estancia', async () => {
+    const cid = String((await sql.one(`SELECT clinic_id FROM staff WHERE id = 's-nolasco'`))!.clinic_id)
+    const { patientId } = await freeBedAndPatient(5)
+    const appt = (await sql.one(`SELECT * FROM appointments WHERE clinic_id = ? ORDER BY start DESC LIMIT 1`, [cid]))!
+    const id = `r16i-${Date.now()}`
+    const row = { ...appt, id, patient_id: patientId, doctor_id: 's-nolasco', status: 'in_consult', start: new Date().toISOString().slice(0, 16) }
+    const cols = Object.keys(row)
+    await sql.run(`INSERT INTO appointments (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`, cols.map((k) => (row as Record<string, unknown>)[k]))
+    const doc = await as('hnolasco@demo.clinara')
+    const r = await doc.post('/api/consultations', { appointmentId: id, reason: 'Diarrea', diagnoses: dx, admit: true, orders: ['Ingreso a hospitalización', 'Dieta blanda.'],
+      indications: ['Ingreso a hospitalización', 'Dieta blanda.'], fluids: { mode: 'shift' } })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    const h = (await sql.one('SELECT fluids_plan, attending_ids FROM hospitalizations WHERE id = ?', [r.body.hospitalizationId]))!
+    assert.equal(JSON.parse(String(h.fluids_plan))[0].mode, 'shift')
+    assert.equal(JSON.parse(String(h.fluids_plan))[0].noteId, r.body.consultationId)
+    assert.deepEqual(JSON.parse(String(h.attending_ids)), ['s-nolasco'], 'HO2: el médico que ingresa desde la consulta es el tratante')
+    const boot = (await doc.get('/api/bootstrap')).body
+    assert.equal(boot.inpatients.find((x: any) => x.id === r.body.hospitalizationId).ordersPending, false, 'la consulta es la nota de ingreso')
   })
 })

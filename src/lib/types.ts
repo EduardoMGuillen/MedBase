@@ -576,6 +576,8 @@ export interface Hospitalization {
   outcomeNote?: string
   /** HO2 (ronda 16): médico(s) tratante(s); el primero es el principal. Las estancias de antes: quien las ingresó. */
   attendingIds?: string[]
+  /** IE1 (ronda 16): la orden de ingestas y excretas, por tramos (el último manda; 'off' es suspendida). */
+  fluidsPlan?: FluidsSegment[]
   /** HO2 (ronda 16): en la lista de hospitalizados: ingreso directo sin nota de ingreso firmada (órdenes pendientes). */
   ordersPending?: boolean
 }
@@ -662,6 +664,8 @@ export interface InpatientNote extends Correctable {
   vitals?: VitalsMode & { tag: OrderLineTag }
   /** MC8 (ronda 6): la toma de signos vitales anotada en esta nota (opcional). */
   vitalsId?: string
+  /** IE1 (ronda 16): la orden «Cuantificar ingestas y excretas» de esta nota (nueva, modificada, continúa u omitida). */
+  fluids?: { mode: FluidsMode | 'off'; tag: OrderLineTag }
   /** MC7: la nota firmada sobre la que se armó (para avisar si otra se firmó mientras se escribía). */
   basedOn?: string
 }
@@ -1148,6 +1152,32 @@ export interface InpatientFile {
   consultRxMeds?: InpatientMed[]
   /** EX1: exámenes de la estancia (y de la consulta que lo ingresó). */
   exams?: ExamOrder[]
+  /** IE1 (ronda 16): registros manuales de ingestas y excretas (también los anulados, tachados). */
+  fluids?: FluidEntry[]
+}
+
+/** IE1 (ronda 16): frecuencia de corte de «Cuantificar ingestas y excretas». */
+export type FluidsMode = 'shift' | 'h12' | 'h24'
+/** IE1 (ronda 16): un tramo de la orden: desde cuándo rige y quién la dio ('off': suspendida). */
+export interface FluidsSegment { mode: FluidsMode | 'off'; from: string; by: string; noteId?: string }
+/** IE1 (ronda 16): un ingreso o egreso registrado a mano, en mL. */
+export interface FluidEntry {
+  id: string
+  hospitalizationId: string
+  kind: 'in' | 'out'
+  /** Rubro (FLUID_IN_ITEMS o FLUID_OUT_ITEMS). */
+  item: string
+  ml: number
+  at: string
+  note?: string
+  createdBy: string
+  createdAt: string
+  version?: number
+  graceUntil?: string
+  correctedAt?: string
+  voidedAt?: string
+  voidedBy?: string
+  voidReason?: string
 }
 
 // ---------- Crónicos y seguimientos ----------

@@ -1,3 +1,4 @@
+import { FluidBalance } from '../components/FluidBalance'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DateTimeField } from '../components/DateTimeField'
 import { fromLocalValue, localValueToIso } from '../lib/dateInput'
@@ -133,6 +134,8 @@ export function VitalsSheet({ file, p, reload, autoRecord, autoRecordPast, onFoc
             onRecord={record ? () => setRecording(true) : undefined} />
         </section>
       </>)}
+      {/* IE1 (ronda 16): ingestas y excretas, debajo de los signos vitales y la curva térmica (sin la orden no aparece) */}
+      <FluidBalance file={file} reload={reload} />
       {/* Fijo abajo a la derecha: siempre a mano, también en el celular */}
       {record && <button className="btn btn--primary vs-fab" data-tour="signos-registrar" onClick={() => setRecording(true)}><Plus size={18} />Registrar signos</button>}
       {recording && <RecordVitalsModal file={file} p={p} onClose={() => setRecording(false)} onSaved={() => { setRecording(false); reload() }} />}

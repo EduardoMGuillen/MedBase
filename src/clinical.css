@@ -1097,3 +1097,26 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .attending__chip { display: inline-flex; align-items: center; gap: 6px; }
 .attending__chip .icon-btn { width: 22px; height: 22px; }
 .admission-pending { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+/* IE1 (ronda 16): ingestas y excretas (botón del editor de órdenes y tabla por turno y por día) */
+.fluids-order { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px dashed var(--line); }
+.fluids-order__freq .input { min-width: 170px; }
+.fluids-order__hint { flex-basis: 100%; font-size: 13px; }
+.fluids__day { margin-bottom: 18px; }
+.fluids__day h4 { margin: 0 0 6px; }
+.table-wrap { overflow-x: auto; }
+.fluids__table th, .fluids__table td, .fluids__log th, .fluids__log td { padding: 6px 10px; white-space: nowrap; }
+.fluids__table td { text-align: right; font-variant-numeric: tabular-nums; }
+.fluids__table thead th:not(:first-child) { text-align: right; }
+.fluids__group th { background: var(--ward, #f1f6f4); color: var(--petrol, inherit); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.fluids__sum th, .fluids__sum td { font-weight: 700; }
+.fluids__balance th, .fluids__balance td { border-top: 2px solid var(--line); }
+.fluids__total { background: rgba(0, 0, 0, .025); font-weight: 600; }
+.fluids__neg { color: var(--red-ink, #b42318); }
+.fluids__pos { color: var(--mint-ink, #146c43); }
+.fluids__warn { color: var(--amber-ink, #8a5a00); }
+.fluids__iv { display: inline-grid; justify-items: end; gap: 2px; }
+.fluids__src { display: grid; gap: 2px; font-size: 12px; color: var(--muted); text-align: left; white-space: normal; max-width: 260px; }
+.fluids__notes { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.fluids__actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+@media print { .fluids__table th, .fluids__table td { padding: 3px 6px; font-size: 11px; } .fluids__actions { display: none; } }

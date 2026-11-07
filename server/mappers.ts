@@ -1,6 +1,6 @@
 import { graceUntil } from './grace.js'
 import type {
-  Appointment, Attachment, AuditEntry, ClinicContact, Authorization, AuthorizationData, Background, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
+  Appointment, Attachment, AuditEntry, ClinicContact, Authorization, AuthorizationData, Background, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicSettings, Consultation, Dose, FluidEntry, Followup, HospProcedure, Hospitalization, InpatientMed, InpatientNote,
   ConsentRevocation, ConsentSigning, Epicrisis, EpicrisisData, GuestPatient, Patient, Payment, Prescription, Referral, ReferralData, Service, Staff, Vitals,
 } from '../src/lib/types.js'
 import { DEFAULT_SETTINGS } from '../src/lib/seed.js'
@@ -144,6 +144,15 @@ export const toHospitalization = (r: Row): Hospitalization => ({
   // HO2 (ronda 16): sin dato (estancias creadas antes de v88 o desde la consulta), quien ingresó
   attendingIds: (() => { const ids = j<string[]>(r.attending_ids, []); return ids.length ? ids : [String(r.admitted_by)] })(),
   ordersPending: r.orders_pending == null ? undefined : Boolean(r.orders_pending),
+  // IE1 (ronda 16): la orden de ingestas y excretas por tramos
+  fluidsPlan: r.fluids_plan ? j(r.fluids_plan, undefined) : undefined,
+})
+
+/** IE1 (ronda 16): un ingreso o egreso de líquidos registrado a mano. */
+export const toFluidEntry = (r: Row): FluidEntry => ({
+  id: String(r.id), hospitalizationId: String(r.hospitalization_id), kind: r.kind as FluidEntry['kind'], item: String(r.item), ml: Number(r.ml), at: String(r.at),
+  note: s(r.note), createdBy: String(r.created_by), createdAt: String(r.created_at), ...correctable(r.version, r.created_at),
+  correctedAt: s(r.corrected_at), voidedAt: s(r.voided_at), voidedBy: s(r.voided_by), voidReason: s(r.void_reason),
 })
 
 /** GE4 (ronda 9): número de versión (sólo si se corrigió) y hasta cuándo puede corregirlo su autor. */
@@ -172,7 +181,8 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
     : (r.kind === 'evolution' || r.kind === 'admission') && j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses?.length ? { diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses } : {}),
   procedure: r.kind === 'procedure' ? j(r.data, undefined) : undefined,
   // MC7 (ronda 6): el cuadro completo con sus etiquetas
-  ...(r.kind === 'admission' || r.kind === 'evolution' ? { lines: j<{ lines?: InpatientNote['lines'] }>(r.data, {}).lines, basedOn: j<{ basedOn?: string }>(r.data, {}).basedOn, vitals: j<{ vitals?: InpatientNote['vitals'] }>(r.data, {}).vitals, vitalsId: j<{ vitalsId?: string }>(r.data, {}).vitalsId } : {}),
+  ...(r.kind === 'admission' || r.kind === 'evolution' ? { lines: j<{ lines?: InpatientNote['lines'] }>(r.data, {}).lines, basedOn: j<{ basedOn?: string }>(r.data, {}).basedOn, vitals: j<{ vitals?: InpatientNote['vitals'] }>(r.data, {}).vitals, vitalsId: j<{ vitalsId?: string }>(r.data, {}).vitalsId,
+    fluids: j<{ fluids?: InpatientNote['fluids'] }>(r.data, {}).fluids } : {}),
 })
 
 export const toInpatientMed = (r: Row): InpatientMed => ({

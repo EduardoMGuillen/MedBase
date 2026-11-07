@@ -1370,6 +1370,31 @@ ALTER TABLE hosp_meds ADD COLUMN IF NOT EXISTS quantity TEXT;
 -- quedan con quien las ingresó (siempre un médico). Idempotente: solo llena las vacías.
 ALTER TABLE hospitalizations ADD COLUMN IF NOT EXISTS attending_ids TEXT;
 UPDATE hospitalizations SET attending_ids = json_build_array(admitted_by)::text WHERE attending_ids IS NULL AND admitted_by IS NOT NULL;
+-- v88 (ronda 16, IE1): ingestas y excretas. La orden «Cuantificar ingestas y excretas» va por tramos en la estancia (JSON, como
+-- vitals_plan: frecuencia de corte o 'off' cuando una nota la suspende). Los ingresos y egresos manuales van en fluid_entries:
+-- con autor y hora; se corrigen en el periodo de gracia (record_versions 'fluid_entry') y después se anulan con motivo (no
+-- se borran). Los líquidos IV se calculan de la hoja de medicamentos (no se guardan). Idempotente.
+ALTER TABLE hospitalizations ADD COLUMN IF NOT EXISTS fluids_plan TEXT;
+CREATE TABLE IF NOT EXISTS fluid_entries (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  hospitalization_id TEXT NOT NULL REFERENCES hospitalizations(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  kind TEXT NOT NULL CHECK (kind IN ('in','out')),
+  item TEXT NOT NULL,
+  ml NUMERIC NOT NULL CHECK (ml > 0),
+  at TEXT NOT NULL,
+  note TEXT,
+  created_by TEXT NOT NULL REFERENCES staff(id),
+  created_at TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  corrected_at TEXT,
+  corrected_by TEXT REFERENCES staff(id),
+  voided_at TEXT,
+  voided_by TEXT REFERENCES staff(id),
+  void_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS fluid_entries_stay ON fluid_entries (clinic_id, hospitalization_id, at);
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

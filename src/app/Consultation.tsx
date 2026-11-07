@@ -32,6 +32,7 @@ import { DraftBadge } from '../components/Addenda'
 import { GoToNote } from '../components/GoToNote'
 import { useRxValidity } from '../lib/hooks'
 import { hasBlank, medHasBlank, orderKey, rxToSetMed, setMedToRx } from '../lib/orderSets'
+import { FluidsOrder, fluidsStart, type FluidsChoice } from '../components/FluidsOrder'
 
 /**
  * Plan y manejo en dos bloques: indicaciones (dieta, cuidados, estudios, control) y medicamentos, que
@@ -43,6 +44,8 @@ interface Draft {
   followups: FollowupInput[]; admit: boolean; observe?: boolean
   /** MC6 (ronda 6): frecuencia de signos vitales del ingreso. */
   vitalsPlan?: VitalsMode
+  /** IE1 (ronda 16): «Ingestas y excretas» con el ingreso. */
+  fluids?: FluidsChoice
   orders?: { text: string; rx?: PrescriptionItem }[]
 }
 
@@ -88,6 +91,8 @@ export default function Consultation() {
   const [referring, setReferring] = useState(false)
   // MC6 (ronda 6): con ingreso, el médico indica cada cuánto se toman los signos (por turno por defecto)
   const [vitalsPlan, setVitalsPlan] = useState<VitalsMode>(saved.vitalsPlan ?? { mode: 'shift' })
+  // IE1 (ronda 16): con ingreso, «Ingestas y excretas» (por turno por defecto) activa el registro de la estancia
+  const [fluids, setFluids] = useState<FluidsChoice>(saved.fluids ?? fluidsStart())
   const [dx, setDx] = useState<Diagnosis[]>(saved.dx ?? [])
   const [indications, setIndications] = useState<string[]>(saved.indications ?? [])
   const [meds, setMeds] = useState<PrescriptionItem[]>(saved.meds ?? [])
@@ -166,11 +171,11 @@ export default function Consultation() {
   }, [todayVitals?.id])
 
   // AN1: borrador que se guarda solo, en este navegador y en el servidor; sobrevive a recargar y a cerrar el navegador
-  const snapshot: Draft = { reason, history, exam, observations, dx, indications, meds, exams, followups, admit, observe, vitalsPlan }
+  const snapshot: Draft = { reason, history, exam, observations, dx, indications, meds, exams, followups, admit, observe, vitalsPlan, fluids }
   const blankDraft = !history && !exam && !observations && !dx.length && !indications.length && !meds.length && !exams.length && !followups.length
   const draft = useDraftSync<Draft>('consulta', apptId, snapshot, (d) => {
     setReason(d.reason ?? ''); setHistory(d.history ?? ''); setExam(d.exam ?? ''); setObservations(d.observations ?? ''); setDx(d.dx ?? [])
-    setIndications(d.indications ?? []); setMeds(d.meds ?? []); setExams(d.exams ?? []); setFollowups(d.followups ?? []); setAdmit(!!d.admit); setObserve(!!d.observe); if (d.vitalsPlan) setVitalsPlan(d.vitalsPlan)
+    setIndications(d.indications ?? []); setMeds(d.meds ?? []); setExams(d.exams ?? []); setFollowups(d.followups ?? []); setAdmit(!!d.admit); setObserve(!!d.observe); if (d.vitalsPlan) setVitalsPlan(d.vitalsPlan); if (d.fluids) setFluids(d.fluids)
   }, blankDraft, draftKey(apptId))
 
   if (!appt || !p || !user) return <div className="page"><div className="empty">No se encontró la cita. Vuelve a la <Link to="/app/agenda">agenda</Link>.</div></div>
@@ -259,6 +264,7 @@ export default function Consultation() {
       orders: [...(admitLine ? [admitLine] : []), ...indications, ...meds.map(medicationOrder)], indications: admitLine ? [admitLine, ...indications] : indications,
       plan: '', vitalsId: todayVitals?.id, followups, validityDays: validity, exams, observe: observe && !hospitalized && place.observation, admit: admit && !hospitalized && place.hospital,
       vitalsPlan: admitting ? vitalsPlan : undefined,
+      fluids: admitting && fluids.on ? { mode: fluids.mode } : undefined,
     }, admitting ? meds.map((m) => ({ ...m, applyInClinic: true })) : meds)
     setSigning(false)
     if (r) {
@@ -447,7 +453,8 @@ export default function Consultation() {
               </div>
 
               {/* NO2 (ronda 16): el lugar del bloque de órdenes extra (IE1: «Ingestas y excretas» con ingreso), debajo de Indicaciones y
-                  antes de Exámenes, como en NoteEditor (prop `afterIndications`) */}
+                  antes de Exámenes, como en NoteEditor */}
+              {admitting && <div className="plan-block"><FluidsOrder value={fluids} onChange={setFluids} /></div>}
               <div className="plan-block">
                 <h3 className="plan-block__title">Exámenes <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'enfermería los recibe en su bandeja' : 'se imprimen aparte de la receta'}</span></h3>
                 <ExamsBlock value={exams} onChange={setExams} inStay={admitting} />

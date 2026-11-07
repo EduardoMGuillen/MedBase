@@ -572,3 +572,41 @@ export const SURGICAL_COUNT = {
   handoffRoles: ['Instrumentista', 'Circulante'],
   confirmation: 'Recuento completo y correcto, confirmado en voz alta antes de que el paciente salga de sala',
 } as const
+
+/**
+ * IE1 (ronda 16). VALIDAR: Emil. Ingestas y excretas: frecuencia de corte de la orden «Cuantificar ingestas y excretas».
+ * «Por turno» corta en VITALS_SHIFT_TIMES (07:00, 15:00 y 23:00); «Cada 12 horas» y «Cada 24 horas» empiezan en el primer
+ * turno (07:00). El total de 24 horas va de 07:00 a 07:00 del día siguiente.
+ */
+export const FLUID_FREQUENCIES = [
+  { value: 'shift', label: 'Por turno' },
+  { value: 'h12', label: 'Cada 12 horas' },
+  { value: 'h24', label: 'Cada 24 horas' },
+] as const
+/** IE1 (ronda 16). VALIDAR: Emil. Rubros de ingresos que se registran a mano («Líquidos IV» se calcula solo). */
+export const FLUID_IN_ITEMS = [
+  { key: 'oral', label: 'Vía oral', hint: '' },
+  { key: 'other_in', label: 'Otros ingresos', hint: 'Sonda, sangre y hemoderivados' },
+] as const
+/** IE1 (ronda 16). VALIDAR: Emil. Rubros de egresos, todos manuales, en mL. */
+export const FLUID_OUT_ITEMS = [
+  { key: 'urine', label: 'Diuresis' },
+  { key: 'stool', label: 'Evacuaciones' },
+  { key: 'vomit', label: 'Vómitos' },
+  { key: 'drain', label: 'Drenajes' },
+  { key: 'bleeding', label: 'Sangrado' },
+  { key: 'other_out', label: 'Otros egresos' },
+] as const
+/**
+ * IE1 (ronda 16). VALIDAR: Emil. Regla de los líquidos IV calculados:
+ * - `routes`: vías que cuentan (nombre de la lista de ME17; también se reconoce la abreviatura, p. ej. «IV»).
+ * - Infusión (con velocidad): velocidad × el tiempo que corrió en el corte, desde la hora de inicio real (la primera dosis
+ *   registrada como aplicada) hasta que se suspende la infusión, se suspende la orden o se cambia (la orden nueva empieza
+ *   con su propio inicio registrado). Sin inicio registrado no suma.
+ * - Dosis intermitente: suma su volumen en mL cuando enfermería la marca como aplicada (a la hora real de aplicación). El
+ *   volumen se lee de la dosis y, si no trae, de la presentación; un «mL» de concentración («40 mg/10 mL») no cuenta.
+ * - `maxDoseMl`: un volumen leído mayor que esto no se usa (se lista «Sin volumen»): evita leer mal un texto raro.
+ */
+export const FLUID_IV_RULE = { routes: ['Intravenosa'], countWhen: 'given' as const, maxDoseMl: 5000 }
+/** IE1 (ronda 16). VALIDAR: Emil. Límite de un registro manual de ingreso o egreso (mL). */
+export const FLUID_MAX_ENTRY_ML = 10000

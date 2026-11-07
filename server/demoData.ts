@@ -235,7 +235,7 @@ function vitalsFor(r: Rand, age: number, c: Case) {
 // ---------- Respaldo y borrado ----------
 
 /** Tablas con datos de pacientes, en el orden en que se pueden borrar (lo que depende de otra va antes). */
-const PATIENT_TABLES = ['surgical_counts', 'preanesthesia_evals', 'anesthesia_sheets', 'exam_events', 'exam_orders', 'addenda', 'note_drafts', 'epicrises', 'referrals', 'authorizations', 'order_marks', 'hosp_doses', 'hosp_meds', 'hosp_procedures',
+const PATIENT_TABLES = ['fluid_entries', 'surgical_counts', 'preanesthesia_evals', 'anesthesia_sheets', 'exam_events', 'exam_orders', 'addenda', 'note_drafts', 'epicrises', 'referrals', 'authorizations', 'order_marks', 'hosp_doses', 'hosp_meds', 'hosp_procedures',
   'hosp_notes', 'order_set_uses', 'certificates', 'payment_installments', 'payments', 'prescriptions', 'followups', 'attachments', 'hospitalizations', 'consultations', 'vitals',
   'appointments', 'patients'] as const
 /** Tablas que no se pueden borrar por sus reglas de sólo agregar: se apaga la regla dentro de la transacción. */

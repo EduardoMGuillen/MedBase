@@ -8,13 +8,16 @@ import { type Ctx, diagnosisInput, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
 import { assertGrace, saveVersion } from '../grace.js'
 import { noteMedRows, noteOrderLocks, REMOVED_IN_GRACE } from '../correctionLocks.js'
-import { rolesOf, toAttachment, toAuthorization, toBed, toDose, toEpicrisis, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral, toVitals } from '../mappers.js'
+import { rolesOf, toAttachment, toFluidEntry, toAuthorization, toBed, toDose, toEpicrisis, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral, toVitals } from '../mappers.js'
 import { currentVitalsMode, frequencyFromOrders, sameVitalsMode, VITALS_FREQUENCIES, vitalsModeShort } from '../../src/lib/vitalsSheet.js'
 import { buildEpicrisis, createEpicrisisDraft, missingForIssue } from '../epicrisis.js'
 import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
 import { activeIndications, attendingText, chainNote, courseDone, doseAt, indicationLines, isScheduled, LATE_AFTER_MIN, lineOrder, medLabel, twoDecimals } from '../../src/lib/inpatient.js'
-import type { InpatientNote, OrderLine, VitalsSegment } from '../../src/lib/types.js'
+import type { FluidsSegment, InpatientNote, OrderLine, VitalsSegment } from '../../src/lib/types.js'
+import { currentFluidsMode, fluidItemLabel, fluidsOrderText, fluidsTag } from '../../src/lib/fluids.js'
+import { FLUID_IN_ITEMS, FLUID_MAX_ENTRY_ML, FLUID_OUT_ITEMS } from '../../src/lib/clinicalConfig.js'
+import { dmyTime } from '../../src/lib/format.js'
 import { VITALS_OTHER_RANGE } from '../../src/lib/clinicalConfig.js'
 import { examLine, isPending } from '../../src/lib/exams.js'
 import { hasBlank, medHasBlank } from '../../src/lib/orderSets.js'
@@ -50,6 +53,21 @@ export async function applyVitalsPlan(q: Sql, h: Row, mode: z.infer<typeof vital
   if (current && sameVitalsMode(current, mode)) return 'continue' as const
   await q.run('UPDATE hospitalizations SET vitals_plan = ? WHERE id = ?', [JSON.stringify([...plan, { ...mode, from: at, by, noteId }]), String(h.id)])
   return current ? 'modified' as const : 'new' as const
+}
+
+/** IE1 (ronda 16): la orden «Cuantificar ingestas y excretas» que trae una nota o la consulta con ingreso ('off': la suspende). */
+export const fluidsInput = z.object({ mode: z.enum(['shift', 'h12', 'h24', 'off']) })
+
+/**
+ * IE1 (ronda 16): aplica la orden de ingestas y excretas de una nota: un tramo nuevo si es nueva, cambia la frecuencia o la
+ * suspende. Devuelve la etiqueta para la nota (o undefined si la nota no la toca).
+ */
+export async function applyFluidsPlan(q: Sql, h: Row, mode: z.infer<typeof fluidsInput>['mode'], by: string, at: string, noteId?: string) {
+  const plan = (h.fluids_plan ? JSON.parse(String(h.fluids_plan)) : []) as FluidsSegment[]
+  const tag = fluidsTag(plan, mode)
+  if (!tag) return undefined
+  if (tag !== 'continue') await q.run('UPDATE hospitalizations SET fluids_plan = ? WHERE id = ?', [JSON.stringify([...plan, { mode, from: at, by, noteId }]), String(h.id)])
+  return tag
 }
 
 /** Una toma de signos vitales (hoja de la estancia y, MC8 ronda 6, dentro de la nota del médico). */
@@ -505,6 +523,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       consultRxMeds: (await consultRxRows(sql, h)).map(toInpatientMed),
       // EX1: exámenes de la estancia (y los que pidió la consulta que lo ingresó)
       exams: await examsWhere(sql, 'clinic_id = ? AND (hospitalization_id = ? OR (consultation_id IS NOT NULL AND consultation_id = ?))', [cid, id, String(h.consultation_id ?? '')]),
+      // IE1 (ronda 16): ingresos y egresos de líquidos registrados a mano (también los anulados)
+      fluids: (await sql.query('SELECT * FROM fluid_entries WHERE hospitalization_id = ? ORDER BY at, created_at', [id])).map(toFluidEntry),
     }
   }
 
@@ -562,6 +582,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       vitals: vitalsModeInput.optional(),
       // MC8 (ronda 6): signos vitales tomados por el médico (opcional): quedan como una toma de la hoja
       vitalsTaken: vitalsBody.optional(),
+      // IE1 (ronda 16): «Ingestas y excretas» (nueva, otra frecuencia o suspendida)
+      fluids: fluidsInput.optional(),
       chain: z.object({ basedOn: z.string().nullable(), decisions: z.array(z.object({ id: z.string(), action: z.enum(['continue', 'omit', 'change']), text: z.string().trim().max(500).optional() })).max(60) }).optional(),
       // Identificador que genera el formulario al abrirse: si la misma nota llega dos veces (doble clic, reintento),
       // se devuelve la que ya se guardó y no se duplican ni la nota ni sus órdenes de medicamento
@@ -570,7 +592,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     // IM2 (ronda 12): quien solo escribe notas (el radiólogo) no ingresa, no indica medicamentos ni cambia las indicaciones
     if (!can(userOf(req), 'inpatient.orders')) {
       if (b.kind !== 'evolution') fail(403, 'La nota de ingreso la escribe el médico tratante.')
-      if (b.meds.length || b.stopMedIds.length || b.orders.length || b.exams.length || b.vitals || b.chain?.decisions.length) fail(403, 'Tu nota no lleva indicaciones, medicamentos ni exámenes: los indica el médico tratante.')
+      if (b.meds.length || b.stopMedIds.length || b.orders.length || b.exams.length || b.vitals || b.fluids || b.chain?.decisions.length) fail(403, 'Tu nota no lleva indicaciones, medicamentos ni exámenes: los indica el médico tratante.')
       b.chain = undefined
     }
     // SOAP: los cuatro campos, como siempre. Estándar: al menos un campo, una indicación o un medicamento.
@@ -642,6 +664,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       indicationCount = ind.length
     }
     let vitalsTag: 'continue' | 'new' | 'modified' | undefined
+    let fluidsTagged: ReturnType<typeof fluidsTag> | undefined
     let examBatch: string | null = null
     // MC8 (ronda 6): la toma anotada en la nota, con la misma validación que la hoja de signos
     const taken = b.vitalsTaken && VITAL_FIELDS.some((k) => b.vitalsTaken![k] != null) ? b.vitalsTaken : undefined
@@ -660,9 +683,11 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     await sql.tx(async (q) => {
       if (taken) await insertVitals(q, h, taken, user.id, new Date(taken.takenAt ?? at).toISOString(), at, vitalsId!, noteId)
       if (b.vitals) vitalsTag = await applyVitalsPlan(q, h, b.vitals, user.id, at, noteId, vitalsCtx)
+      if (b.fluids) fluidsTagged = await applyFluidsPlan(q, h, b.fluids.mode, user.id, at, noteId)
       await q.run(`INSERT INTO hosp_notes (id, clinic_id, hospitalization_id, kind, author_id, at, subjective, objective, assessment, plan, data) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [noteId, cid, id, b.kind, user.id, at, b.format === 'soap' ? b.subjective : '', b.format === 'soap' ? b.objective : '', b.format === 'soap' ? b.assessment : '', b.format === 'soap' ? b.plan : '',
           JSON.stringify({ orders, checklist, indications: indicationCount === undefined ? undefined : Math.min(indicationCount, orders.length), lines, basedOn: b.chain ? b.chain.basedOn ?? undefined : undefined, vitals: b.vitals && vitalsTag ? { ...b.vitals, tag: vitalsTag } : undefined, vitalsId,
+            fluids: b.fluids && fluidsTagged ? { mode: b.fluids.mode === 'off' ? (JSON.parse(String(h.fluids_plan ?? '[]')) as FluidsSegment[]).at(-1)?.mode ?? 'off' : b.fluids.mode, tag: fluidsTagged } : undefined,
             ...(b.format === 'postop' ? { format: 'postop', diagnoses: b.diagnoses, postop: { ...b.postop!, startAt: new Date(b.postop!.startAt).toISOString(), endAt: new Date(b.postop!.endAt).toISOString(), ...postopAuth } }
               : b.format === 'dx' && b.kind === 'admission' ? { format: 'dx', diagnoses: b.diagnoses, chiefComplaint: b.chiefComplaint, history: b.history, exam: b.exam, observations: b.observations }
               : b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, evolution: b.evolution || undefined, exam: b.exam, observations: b.observations }
@@ -670,6 +695,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
               : b.diagnoses.length ? { diagnoses: b.diagnoses } : {}) })])
       await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
       examBatch = await insertExams(q, { clinicId: cid, patientId: String(h.patient_id), hospitalizationId: id, noteId, by: user.id, at }, b.exams)
+      if (fluidsTagged && fluidsTagged !== 'continue') await audit(user, `${fluidsTagged === 'omitted' ? 'Suspendió' : fluidsTagged === 'modified' ? 'Cambió' : 'Indicó'} «${fluidsTagged === 'omitted' ? 'Cuantificar ingestas y excretas' : fluidsOrderText(b.fluids!.mode)}» a ${name} en su nota`, q)
       if (vitalsTag && b.vitals && vitalsTag !== 'continue') await audit(user, `Indicó ${vitalsModeShort(b.vitals) === 'sin control programado' ? 'sin control programado de signos vitales' : `signos vitales ${vitalsModeShort(b.vitals)}`} a ${name} en su nota`, q)
       const what = b.kind === 'admission' ? 'nota de ingreso' : b.format === 'postop' ? `nota postquirúrgica («${b.postop!.procedureName}»${postopAuth?.urgent ? ', urgencia sin autorización previa' : ''})` : 'nota de evolución'
       // PQ2 (ronda 9): queda en la bitácora quién participó
@@ -1284,6 +1310,76 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   })
 
   /** El médico cambia cada cuántas horas se toman los signos: define la cuadrícula y las tomas esperadas. */
+  // ---------- IE1 (ronda 16): ingestas y excretas ----------
+  const fluidBody = z.object({
+    kind: z.enum(['in', 'out']),
+    item: z.string().min(1),
+    ml: z.number({ error: 'Escribe la cantidad en mL.' }).positive('La cantidad debe ser mayor que 0.').max(FLUID_MAX_ENTRY_ML, `Revisa la cantidad: más de ${FLUID_MAX_ENTRY_ML} mL en un registro.`),
+    at: when.optional(),
+    note: z.string().trim().max(300).optional(),
+  }).superRefine((x, c) => {
+    if (!(x.kind === 'in' ? FLUID_IN_ITEMS : FLUID_OUT_ITEMS).some((i) => i.key === x.item)) c.addIssue({ code: 'custom', message: 'Elige el tipo de ingreso o egreso de la lista.' })
+  })
+  /** La hora del registro: no en el futuro ni antes del ingreso. */
+  const fluidAt = (h: Row, at?: string) => {
+    const t = new Date(at ?? Date.now())
+    if (t.getTime() > Date.now() + 2 * 60_000) fail(400, 'La hora no puede ser en el futuro.')
+    if (t.getTime() < new Date(String(h.observation_at ?? h.admitted_at)).getTime() - 3_600_000) fail(400, 'La hora es anterior al ingreso. Revísala.')
+    return t.toISOString()
+  }
+  const fluidRow = async (cid: string, fid: string) => (await sql.one('SELECT * FROM fluid_entries WHERE id = ? AND clinic_id = ?', [fid, cid])) ?? fail(404, 'El registro no existe.')
+  const fluidText = (x: { kind: string; item: string; ml: unknown; at: string }) => `${fluidItemLabel(x.kind as 'in' | 'out', x.item)} ${Number(x.ml)} mL (${x.kind === 'in' ? 'ingreso' : 'egreso'}, ${dmyTime(x.at)})`
+
+  // Registran enfermería (licenciada o auxiliar), el asistente del consultorio y el médico; solo con la orden activa
+  app.post('/api/inpatient/:id/fluids', auth, need('inpatient.care', 'inpatient.orders'), async (req, res) => {
+    const b = parse(fluidBody, req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const h = await activeHosp(cid, String(req.params.id))
+    if (!currentFluidsMode(toHospitalization(h).fluidsPlan)) fail(409, 'Sin orden de ingestas y excretas: el médico la indica en su nota.')
+    const at = fluidAt(h, b.at)
+    const id = randomUUID()
+    await sql.run(`INSERT INTO fluid_entries (id, clinic_id, hospitalization_id, patient_id, kind, item, ml, at, note, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, cid, String(h.id), String(h.patient_id), b.kind, b.item, b.ml, at, b.note || null, user.id, new Date().toISOString()])
+    await audit(user, `Ingestas y excretas: registró ${fluidText({ ...b, at })} de ${await patientName(String(h.patient_id))}`)
+    res.status(201).json(toFluidEntry((await fluidRow(cid, id))!))
+  })
+
+  // GE4: el autor lo corrige durante el periodo de gracia; la versión anterior queda guardada
+  app.patch('/api/fluids/:fid', auth, need('inpatient.care', 'inpatient.orders'), async (req, res) => {
+    const b = parse(fluidBody, req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const r = (await fluidRow(cid, String(req.params.fid)))!
+    if (r.voided_at) fail(409, 'Ese registro está anulado: no se corrige.')
+    assertGrace(user.id, r.created_by, r.created_at, 'hizo el registro')
+    const h = await activeHosp(cid, String(r.hospitalization_id))
+    const at = fluidAt(h, b.at ?? String(r.at))
+    // Fuera de la transacción: con una sola conexión, consultar por fuera de ella la bloquearía
+    const name = await patientName(String(h.patient_id))
+    await sql.tx(async (q) => {
+      const next = await saveVersion(q, { clinicId: cid, kind: 'fluid_entry', id: String(r.id), version: Number(r.version ?? 1), authorId: String(r.created_by), at: String(r.created_at), by: user.id,
+        data: { kind: r.kind, item: r.item, ml: Number(r.ml), at: r.at, note: r.note ?? undefined } })
+      await q.run('UPDATE fluid_entries SET kind = ?, item = ?, ml = ?, at = ?, note = ?, version = ?, corrected_at = ?, corrected_by = ? WHERE id = ?',
+        [b.kind, b.item, b.ml, at, b.note || null, next, new Date().toISOString(), user.id, String(r.id)])
+      await audit(user, `Ingestas y excretas: corrigió en el periodo de gracia (versión ${next}) ${fluidText({ kind: String(r.kind), item: String(r.item), ml: r.ml, at: String(r.at) })} → ${fluidText({ ...b, at })} de ${name}`, q)
+    })
+    res.json(toFluidEntry((await fluidRow(cid, String(r.id)))!))
+  })
+
+  // «Anular» con motivo: queda tachado y no suma. Lo anula quien lo registró o un médico
+  app.post('/api/fluids/:fid/void', auth, need('inpatient.care', 'inpatient.orders'), async (req, res) => {
+    const b = parse(z.object({ reason: z.string().trim().min(5, 'Escribe el motivo de la anulación (al menos 5 letras).').max(300) }), req.body)
+    const user = userOf(req)
+    const cid = clinicOf(req)
+    const r = (await fluidRow(cid, String(req.params.fid)))!
+    if (r.voided_at) fail(409, 'Ese registro ya estaba anulado.')
+    if (String(r.created_by) !== user.id && !can(user, 'inpatient.orders')) fail(403, 'Solo quien hizo el registro o el médico lo pueden anular.')
+    await sql.run('UPDATE fluid_entries SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?', [new Date().toISOString(), user.id, b.reason, String(r.id)])
+    await audit(user, `Ingestas y excretas: anuló ${fluidText({ kind: String(r.kind), item: String(r.item), ml: r.ml, at: String(r.at) })} de ${await patientName(String(r.patient_id))}. Motivo: ${b.reason}`)
+    res.json(toFluidEntry((await fluidRow(cid, String(r.id)))!))
+  })
+
   app.patch('/api/inpatient/:id/vitals-frequency', auth, need('inpatient.orders'), async (req, res) => {
     const { everyHours } = parse(z.object({ everyHours: z.number().int().refine((x) => VITALS_FREQUENCIES.includes(x), 'Elige 1, 2, 4, 6, 8, 12 o 24 horas.') }), req.body)
     const user = userOf(req)

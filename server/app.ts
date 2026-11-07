@@ -28,7 +28,8 @@ import { registerBilling } from './routes/billing.js'
 import { registerReports } from './routes/reports.js'
 import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
-import { ORDERS_PENDING_SQL, pendingOrders, registerInpatient, vitalsBody, vitalsModeInput } from './routes/inpatient.js'
+import { fluidsInput, ORDERS_PENDING_SQL, pendingOrders, registerInpatient, vitalsBody, vitalsModeInput } from './routes/inpatient.js'
+import { fluidsOrderText } from '../src/lib/fluids.js'
 import { syncStayOrders } from './medOrders.js'
 import { ensureHospitalAuthorization, refreshPendingAuthorizationsForPatient } from './authorizations.js'
 import { createIcdClient, icdConfigFromEnv, type IcdClient } from './icd.js'
@@ -890,6 +891,8 @@ export function createApp(opts: AppOptions) {
       exams: z.array(examInput).max(40).default([]),
       // MC6 (ronda 6): frecuencia de signos vitales del ingreso (por turno por defecto)
       vitalsPlan: vitalsModeInput.optional(),
+      // IE1 (ronda 16): «Ingestas y excretas» con el ingreso (activa el registro durante la estancia)
+      fluids: fluidsInput.optional(),
     }), req.body)
     // Basta una indicación, un medicamento o un examen; no se exigen todos
     if (!c.orders.length && !c.items.length && !c.exams.length) fail(400, 'Agrega al menos una indicación, un medicamento o un examen en el plan y manejo.')
@@ -1008,6 +1011,11 @@ export function createApp(opts: AppOptions) {
           VALUES (?,?,?,NULL,?,?,?,?,?,?,'active',?,?,?,?)`,
           [stayId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null, stayKind, specialtyOf(user),
             c.vitalsPlan ? JSON.stringify([{ ...c.vitalsPlan, from: now.toISOString(), by: user.id, noteId: consultId }]) : null, JSON.stringify([user.id])])
+        // IE1 (ronda 16): la orden de ingestas y excretas de la consulta empieza el registro de la estancia
+        if (c.fluids && c.fluids.mode !== 'off') {
+          await q.run('UPDATE hospitalizations SET fluids_plan = ? WHERE id = ?', [JSON.stringify([{ mode: c.fluids.mode, from: now.toISOString(), by: user.id, noteId: consultId }]), stayId])
+          await audit(user, `Indicó «${fluidsOrderText(c.fluids.mode)}» a ${name} con el ingreso`, q)
+        }
         medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: stayId })
         // Ronda 8: las otras citas abiertas de hoy (por ejemplo, otra en sala con otro médico) se cancelan
         await closeOpenVisits(q, cid, patientId, now, now)
@@ -1225,7 +1233,7 @@ export function createApp(opts: AppOptions) {
   })
 
   /** GE4 (ronda 9): «Ver versiones»: las anteriores, en solo lectura, para quien ya ve ese registro (clínico). */
-  const VERSION_TABLE = { note: 'hosp_notes', dose: 'hosp_doses', vitals: 'vitals', consultation: 'consultations', exam_result: 'exam_orders', anesthesia: 'anesthesia_sheets', preanesthesia: 'preanesthesia_evals', surgical_count: 'surgical_counts' } as const
+  const VERSION_TABLE = { note: 'hosp_notes', dose: 'hosp_doses', vitals: 'vitals', consultation: 'consultations', exam_result: 'exam_orders', anesthesia: 'anesthesia_sheets', preanesthesia: 'preanesthesia_evals', surgical_count: 'surgical_counts', fluid_entry: 'fluid_entries' } as const
   app.get('/api/versions/:kind/:id', auth, need('chart.view'), async (req, res) => {
     const kind = String(req.params.kind) as keyof typeof VERSION_TABLE
     if (!VERSION_TABLE[kind]) fail(404, 'No hay versiones de ese registro.')
