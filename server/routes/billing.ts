@@ -1,7 +1,7 @@
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { type Ctx, fail, parse, type Row } from '../http.js'
+import { type Ctx, fail, parse, placeOf, type Row } from '../http.js'
 import { toPatient, toPayment, toService } from '../mappers.js'
 import type { Sql } from '../sql.js'
 import { normalize } from '../../src/lib/patients.js'
@@ -86,8 +86,10 @@ export function registerBilling(app: Express, { sql, auth, need, userOf, clinicO
 
   /** La forma de pago tiene que estar habilitada en la clínica; la tarjeta pide su número de autorización. */
   async function assertMethod(cid: string, method: Payment['method'], reference?: string) {
-    const enabled = (await settings(cid)).paymentMethods ?? ['cash', 'transfer']
-    if (!enabled.includes(method)) fail(400, `La clínica no acepta pagos con ${METHOD_LABEL[method]}. Elige otra forma de pago o habilítala en Configuración.`)
+    const cfg = await settings(cid)
+    const enabled = cfg.paymentMethods ?? ['cash', 'transfer']
+    // Consultorio pendiente (ronda 17): «consultorio» en una cuenta de consultorio
+    if (!enabled.includes(method)) fail(400, `${placeOf(cfg.kind).The} no acepta pagos con ${METHOD_LABEL[method]}. Elige otra forma de pago o habilítala en Configuración.`)
     if (method === 'card' && !reference) fail(400, 'Escribe el número de autorización del pago con tarjeta.')
   }
 

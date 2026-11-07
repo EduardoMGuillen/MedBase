@@ -1,7 +1,7 @@
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { type Ctx, fail, parse, type Row } from '../http.js'
+import { type Ctx, fail, parse, placeOf, type Row } from '../http.js'
 import { examInput, examsWhere, insertExams } from './exams.js'
 import { can } from '../../src/lib/permissions.js'
 import { isDeptLead } from '../../src/lib/positions.js'
@@ -193,7 +193,7 @@ export function registerDept(app: Express, { sql, auth, need, userOf, clinicOf, 
     if (b.exams.some((e) => e.group !== b.group)) fail(400, `Todos los estudios deben ser de ${GROUP_LABEL[b.group].toLowerCase()}.`)
     if (b.fileId && !(await sql.one('SELECT 1 FROM attachments WHERE id = ? AND clinic_id = ? AND patient_id = ?', [b.fileId, cid, b.patientId]))) fail(400, 'El archivo no corresponde a este paciente.')
     let requester: Row | undefined
-    if (b.requestedById) requester = (await sql.one('SELECT id, name FROM staff WHERE id = ? AND clinic_id = ?', [b.requestedById, cid])) ?? fail(400, 'Ese médico no es de la clínica.')
+    if (b.requestedById) requester = (await sql.one('SELECT id, name FROM staff WHERE id = ? AND clinic_id = ?', [b.requestedById, cid])) ?? fail(400, `Ese médico no es ${placeOf(user.clinicKind).of}.`)
     const at = new Date().toISOString()
     // Siempre en la clínica (las órdenes externas no entran a la bandeja)
     const list = b.exams.map((e) => ({ ...e, place: 'clinic' as const }))

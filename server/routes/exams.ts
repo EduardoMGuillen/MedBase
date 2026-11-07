@@ -2,7 +2,7 @@ import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { assertGrace, graceUntil, saveVersion } from '../grace.js'
-import { type Ctx, fail, parse, type Row } from '../http.js'
+import { type Ctx, fail, parse, placeOf, type Row } from '../http.js'
 import type { Sql } from '../sql.js'
 import { can, deptAllows } from '../../src/lib/permissions.js'
 import { microbiologistsFor, onDutyNow } from '../roster.js'
@@ -247,7 +247,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     const user = userOf(req)
     const clinicWide = b.clinic && (can(user, 'settings.manage') || (can(user, 'dept.config') && user.role === 'lab'))
     if (!clinicWide && !can(user, 'exams.order')) fail(403, 'Sólo los médicos crean perfiles propios.')
-    if (b.clinic && !clinicWide) fail(403, 'Los perfiles de la clínica los editan Administración y el microbiólogo.')
+    if (b.clinic && !clinicWide) fail(403, `Los perfiles ${placeOf(user.clinicKind).of} los editan Administración y el microbiólogo.`)
     const id = randomUUID()
     await sql.run('INSERT INTO exam_profiles (id, clinic_id, owner_id, name, items, created_by, created_at) VALUES (?,?,?,?,?,?,?)',
       [id, clinicOf(req), clinicWide ? null : user.id, b.name, JSON.stringify(b.items), user.id, new Date().toISOString()])

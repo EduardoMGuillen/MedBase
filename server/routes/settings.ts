@@ -1,7 +1,7 @@
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { type Ctx, fail, hasRoleSql, parse } from '../http.js'
+import { type Ctx, fail, hasRoleSql, parse, placeOf } from '../http.js'
 import { toService } from '../mappers.js'
 import { createStaffMember } from '../app.js'
 
@@ -50,8 +50,8 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
     const contacts = s.contacts ?? (s.phone ? [{ id: 'principal', number: s.phone, label: 'Principal', type: 'call' as const, primary: true }] : undefined)
     if (!contacts?.length) fail(400, 'Agrega al menos un teléfono.')
     if (contacts!.filter((c) => c.primary).length !== 1) fail(400, 'Marca un teléfono como principal.')
-    if (contacts!.filter((c) => c.whatsapp).length > 1) fail(400, 'Marca un solo número como el WhatsApp de la clínica.')
-    if (contacts!.some((c) => c.whatsapp && c.type === 'call')) fail(400, 'El número de WhatsApp de la clínica tiene que aceptar WhatsApp.')
+    if (contacts!.filter((c) => c.whatsapp).length > 1) fail(400, `Marca un solo número como el WhatsApp ${placeOf(userOf(req).clinicKind).of}.`)
+    if (contacts!.some((c) => c.whatsapp && c.type === 'call')) fail(400, `El número de WhatsApp ${placeOf(userOf(req).clinicKind).of} tiene que aceptar WhatsApp.`)
     const phone = contacts!.find((c) => c.primary)!.number
     await sql.run(`UPDATE clinics SET name = ?, address = ?, phone = ?, email = ?, currency = ?, reminder_template = ?, record_uses_dni = ?, logo = ?,
       obs_alert_hours = ?, obs_order_checklist = ?, dni_mask = ?, observation_enabled = COALESCE(?, observation_enabled), specialty = COALESCE(?, specialty), license = COALESCE(?, license),

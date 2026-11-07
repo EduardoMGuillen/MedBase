@@ -4,7 +4,7 @@ import { ANESTHESIA_TYPES, INFUSION_UNITS, NEB_MAX_COMPONENTS, SURGICAL_TEAM } f
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { type Ctx, diagnosisInput, fail, parse, type Row } from '../http.js'
+import { type Ctx, diagnosisInput, fail, parse, placeOf, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
 import { assertGrace, saveVersion } from '../grace.js'
 import { noteMedRows, noteOrderLocks, REMOVED_IN_GRACE } from '../correctionLocks.js'
@@ -213,11 +213,11 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   }
   const bedName = (b: Row) => `cama ${b.room}${b.label ? `-${b.label}` : ''}`
   /** HO2 (ronda 16): los médicos tratantes: personal activo de la clínica con el rol de médico, en el orden elegido. */
-  const attendingRows = async (cid: string, ids: string[]) => {
+  const attendingRows = async (cid: string, ids: string[], kind?: string) => {
     const rows = await sql.query(`SELECT * FROM staff WHERE clinic_id = ? AND id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids])
     return ids.map((x) => {
       const r = rows.find((y) => String(y.id) === x)
-      if (!r || !r.active || !rolesOf(r).includes('doctor')) fail(400, 'El médico tratante debe ser un médico activo de la clínica.')
+      if (!r || !r.active || !rolesOf(r).includes('doctor')) fail(400, `El médico tratante debe ser un médico activo ${placeOf(kind).of}.`)
       return r!
     })
   }
@@ -324,7 +324,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     ;(await patientRow(cid, b.patientId)) ?? fail(404, 'El paciente no existe.')
     const attendingIds = [...new Set(b.attendingIds.length ? b.attendingIds : doctor ? [user.id] : [])]
     if (!attendingIds.length) fail(400, 'Elige al médico tratante.')
-    const attending = await attendingRows(cid, attendingIds)
+    const attending = await attendingRows(cid, attendingIds, userOf(req).clinicKind)
     // Sin especialidad elegida: la del médico que ingresa o, si ingresa recepción, la del médico tratante principal
     const specialty = b.specialty || (doctor ? specialtyOf(user) : specialtyOf({ specialty: attending[0].specialty ? String(attending[0].specialty) : undefined }))
     const bed = await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ? AND active', [b.bedId, cid])
@@ -430,7 +430,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const prevAttending = toHospitalization(h).attendingIds ?? [String(h.admitted_by)]
     const nextAttending = b.attendingIds ? [...new Set(b.attendingIds)] : undefined
     const attendingChanged = !!nextAttending && JSON.stringify(nextAttending) !== JSON.stringify(prevAttending)
-    const names = attendingChanged ? await attendingRows(cid, nextAttending!) : []
+    const names = attendingChanged ? await attendingRows(cid, nextAttending!, userOf(req).clinicKind) : []
     const nameOf = async (x: string) => String((await sql.one('SELECT name FROM staff WHERE id = ?', [x]))?.name ?? '')
     if (b.bedId && h.kind === 'observation') fail(409, 'En observación no se asigna cama. Usa «Pasar a hospitalización».')
     const bed = b.bedId ? await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ? AND active', [b.bedId, cid]) : undefined

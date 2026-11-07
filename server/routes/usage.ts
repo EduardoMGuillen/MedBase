@@ -1,7 +1,7 @@
 import type { Express, Request } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { type Ctx, fail, parse, type Row } from '../http.js'
+import { type Ctx, fail, parse, placeOf, type Row } from '../http.js'
 import { can, mainRole, ROLE_LABEL } from '../../src/lib/permissions.js'
 import { positionOf, signedName } from '../../src/lib/positions.js'
 import { normalize } from '../../src/lib/patients.js'
@@ -186,7 +186,10 @@ export function registerUsage(app: Express, { sql, auth, need, userOf, clinicOf,
     if (new Set(lines.map((i) => i.itemId)).size !== lines.length) fail(400, 'Un material está repetido en el registro.')
     if (b.day > localDay(new Date())) fail(400, 'La fecha no puede ser en el futuro.')
     const cfg = await supplySettings(sql, cid)
-    if (cfg.period === 'shift' && b.shiftKey && !cfg.shifts.some((s) => s.key === b.shiftKey)) fail(400, 'Ese turno no existe en la configuración de la clínica.')
+    // Consultorio pendiente (ronda 17): «consultorio» en una cuenta de consultorio
+    if (cfg.period === 'shift' && b.shiftKey && !cfg.shifts.some((s) => s.key === b.shiftKey)) {
+      fail(400, `Ese turno no existe en la configuración ${placeOf(String((await sql.one('SELECT kind FROM clinics WHERE id = ?', [cid]))?.kind ?? '')).of}.`)
+    }
     const period = periodOf(cfg.period, b.day, cfg.shifts, b.shiftKey)
     let patient: Row | undefined
     if (b.patientId) patient = (await sql.one('SELECT * FROM patients WHERE id = ? AND clinic_id = ?', [b.patientId, cid])) ?? fail(404, 'El paciente no existe.')

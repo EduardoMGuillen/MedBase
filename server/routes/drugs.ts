@@ -1,7 +1,7 @@
 import express, { type Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { type Ctx, fail, parse } from '../http.js'
+import { type Ctx, fail, parse, placeOf } from '../http.js'
 import { toClinicDrug } from '../mappers.js'
 import { DRUGS } from '../../src/lib/catalogs.js'
 import { normalize } from '../../src/lib/patients.js'
@@ -61,7 +61,7 @@ export function registerDrugs(app: Express, { sql, auth, need, userOf, clinicOf,
       return res.json(toClinicDrug((await sql.one('SELECT * FROM clinic_drugs WHERE id = ?', [String(existing.id)]))!))
     }
     const id = await insert(cid, userOf(req).id, b, key)
-    await audit(userOf(req), `Agregó al vademécum de la clínica: ${[b.name, b.presentation, b.concentration].filter(Boolean).join(' ')}`)
+    await audit(userOf(req), `Agregó al vademécum ${placeOf(userOf(req).clinicKind).of}: ${[b.name, b.presentation, b.concentration].filter(Boolean).join(' ')}`)
     res.status(201).json(toClinicDrug((await sql.one('SELECT * FROM clinic_drugs WHERE id = ?', [id]))!))
   })
 
@@ -83,12 +83,12 @@ export function registerDrugs(app: Express, { sql, auth, need, userOf, clinicOf,
       const key = keyOf(r.data.name, r.data.presentation, r.data.concentration)
       const base = baseMatch(r.data, key)
       if (base) { skipped.push({ row: i + 2, name, reason: 'Ya está en el catálogo base' }); continue }
-      if (known.has(key)) { skipped.push({ row: i + 2, name, reason: 'Ya está en el vademécum de la clínica o repetido en el archivo' }); continue }
+      if (known.has(key)) { skipped.push({ row: i + 2, name, reason: `Ya está en el vademécum ${placeOf(user.clinicKind).of} o repetido en el archivo` }); continue }
       known.add(key)
       await insert(cid, user.id, r.data, key)
       added++
     }
-    await audit(user, `Importó ${added} medicamento(s) al vademécum de la clínica${skipped.length ? `; ${skipped.length} fila(s) no se importaron` : ''}`)
+    await audit(user, `Importó ${added} medicamento(s) al vademécum ${placeOf(user.clinicKind).of}${skipped.length ? `; ${skipped.length} fila(s) no se importaron` : ''}`)
     res.json({ added, skipped })
   })
 
@@ -107,7 +107,8 @@ export function registerDrugs(app: Express, { sql, auth, need, userOf, clinicOf,
     }
     const key = keyOf(next.name, next.presentation as string | undefined, next.concentration as string | undefined)
     const clash = await sql.one('SELECT 1 FROM clinic_drugs WHERE clinic_id = ? AND norm_key = ? AND id <> ?', [cid, key, String(row!.id)])
-    if (clash) fail(409, 'Ya hay otro medicamento igual en el vademécum de la clínica.')
+    // Consultorio pendiente (ronda 17): «consultorio» en una cuenta de consultorio
+    if (clash) fail(409, `Ya hay otro medicamento igual en el vademécum ${placeOf(user.clinicKind).of}.`)
     // ME5: uno del LNME editado o archivado por la clínica queda «Editado por la clínica»: ninguna carga futura lo pisa ni lo reactiva
     const fromLnme = row!.origin === 'lnme'
     await sql.run(`UPDATE clinic_drugs SET name = ?, brand = ?, presentation = ?, concentration = ?, route = ?, active = ?, norm_key = ?, updated_by = ?, updated_at = ?, usual_dose = ?, usual_use = ?,
@@ -116,7 +117,7 @@ export function registerDrugs(app: Express, { sql, auth, need, userOf, clinicOf,
         next.usualDose || null, next.usualUse || null, fromLnme ? EDITED : row!.origin_label ?? null, String(row!.id)])
     const lnme = row!.lnme_no != null ? ` (LNME #${row!.lnme_no})` : ''
     const what = b.active === false ? (lnme ? 'Archivó' : 'Desactivó') : b.active === true && !row!.active ? 'Reactivó' : 'Editó'
-    await audit(userOf(req), `${what} en el vademécum de la clínica: ${next.name}${lnme}`)
+    await audit(userOf(req), `${what} en el vademécum ${placeOf(userOf(req).clinicKind).of}: ${next.name}${lnme}`)
     res.json(toClinicDrug((await sql.one('SELECT * FROM clinic_drugs WHERE id = ?', [String(row!.id)]))!))
   })
 }

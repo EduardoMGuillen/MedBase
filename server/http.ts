@@ -1,8 +1,8 @@
 import type { NextFunction, Request, Response } from 'express'
 import { z } from 'zod'
 import type { Row, Sql } from './sql.js'
-import type { Permission } from '../src/lib/permissions.js'
-import type { ClinicSettings, Staff } from '../src/lib/types.js'
+import { placeWord, type Permission } from '../src/lib/permissions.js'
+import type { ClinicKind, ClinicSettings, Staff } from '../src/lib/types.js'
 
 export type { Row }
 
@@ -13,6 +13,16 @@ export class HttpError extends Error {
 }
 
 export const fail = (status: number, message: string): never => { throw new HttpError(status, message) }
+
+/**
+ * Consultorio pendiente (ronda 17): la palabra del lugar en los mensajes del servidor, como placeWord() en la interfaz.
+ * En una cuenta de consultorio los mensajes decían «clínica». `of` = «de la clínica» / «del consultorio».
+ */
+export function placeOf(kind: ClinicKind | string | null | undefined) {
+  const word = placeWord({ kind: kind === 'office' ? 'office' : 'clinic' })
+  const the = kind === 'office' ? 'el consultorio' : 'la clínica'
+  return { word, the, The: the[0]!.toUpperCase() + the.slice(1), of: kind === 'office' ? 'del consultorio' : 'de la clínica' }
+}
 
 /**
  * AD5: condición SQL "esta persona tiene el rol" (aunque su vista activa sea otra). `alias` es el de la tabla staff.

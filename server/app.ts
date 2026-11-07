@@ -12,7 +12,7 @@ import { seedDemo } from './demoData.js'
 import { attempts, completePendingPatient, createPatient, createPendingPatient, DEMO_PASSWORD, ensureDb, hit, nextFolio } from './db.js'
 import type { Sql } from './sql.js'
 import { activeStayOf, closeOpenVisits, stayConflictMessage } from './stayVisits.js'
-import { type Ctx, fail, hasRoleSql, HttpError, localDate, parse, type Row } from './http.js'
+import { type Ctx, fail, hasRoleSql, HttpError, localDate, parse, placeOf, type Row } from './http.js'
 import {
   clinicSettings, rolesOf, toAppointment, toAudit, toBed, toClinicDrug, toConsultation, toFollowup, toHospitalization, toPatient, toPrescription, toService, toStaff, toVitals,
   toReferral,
@@ -230,7 +230,11 @@ export function createApp(opts: AppOptions) {
       fail(401, 'El correo o la contraseña no coinciden.')
     }
     if (!row!.active) fail(403, 'Esta cuenta está desactivada. Pide a administración que la reactive.')
-    if (row!.clinic_id && !(await sql.one('SELECT 1 FROM clinics WHERE id = ? AND active', [row!.clinic_id]))) fail(403, 'Tu clínica está desactivada en Clinara. Comunícate con administración.')
+    if (row!.clinic_id) {
+      // Consultorio pendiente (ronda 17): «Tu consultorio» en una cuenta de consultorio
+      const c = await sql.one('SELECT active, kind FROM clinics WHERE id = ?', [row!.clinic_id])
+      if (!c?.active) fail(403, `Tu ${placeOf(String(c?.kind ?? '')).word} está desactivad${c?.kind === 'office' ? 'o' : 'a'} en Clinara. Comunícate con administración.`)
+    }
     if (row!.totp_enabled) {
       if (!body.code) return res.json({ twoFactor: true })
       if (!verifyTotp(String(row!.totp_secret), body.code)) {
