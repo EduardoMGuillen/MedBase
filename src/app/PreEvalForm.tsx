@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, FileSignature } from 'lucide-react'
+import { FileSignature } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
-import { Loading } from '../components/ui'
+import { BackButton, Loading, PageHead } from '../components/ui'
 import { DraftBadge } from '../components/Addenda'
 import { CorrectionReason } from '../components/Grace'
 import { DateField } from '../components/DateTimeField'
@@ -70,11 +70,9 @@ export default function PreEvalFormPage() {
   }
   return (
     <div className="page">
-      <div className="page-head">
-        <div><Link className="btn btn--ghost btn--sm anes-btn" to={back}><ChevronLeft size={15} />Volver al expediente</Link>
-          <h1 style={{ marginTop: 8 }}>{correcting ? 'Corregir la valoración preanestésica' : 'Valoración preanestésica'}</h1>
-          <p>{`${p.firstName} ${p.lastName}`.trim()} · Expediente {p.record}{d.proposedSurgery ? ` · ${d.proposedSurgery}` : ''}</p></div>
-      </div>
+      <PageHead back={<BackButton to={back}>Volver al expediente</BackButton>}
+        title={correcting ? 'Corregir la valoración preanestésica' : 'Valoración preanestésica'}
+        sub={`${`${p.firstName} ${p.lastName}`.trim()} · Expediente ${p.record}${d.proposedSurgery ? ` · ${d.proposedSurgery}` : ''}`} />
       <div className="anes-form">
         <p className="muted" style={{ margin: 0 }}>Se guarda sola mientras escribes. Solo la clasificación ASA es obligatoria. Al firmar quedas como anestesiólogo, con tu nombre, especialidad y colegiado.</p>
         <Section title="Paciente y cirugía propuesta">

@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, FileSignature, Plus, Trash2 } from 'lucide-react'
+import { FileSignature, Plus, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
-import { Loading } from '../components/ui'
+import { BackButton, Loading, PageHead } from '../components/ui'
 import { DraftBadge } from '../components/Addenda'
 import { CorrectionReason } from '../components/Grace'
 import { DateField, TimeField } from '../components/DateTimeField'
@@ -100,11 +100,9 @@ export default function AnesthesiaFormPage() {
   const nextTime = (() => { const m = /^(\d{2}):(\d{2})$/.exec(lastTime ?? ''); if (!m) return d.times.anesthesiaStart || ''; const t = (Number(m[1]) * 60 + Number(m[2]) + 5) % 1440; return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}` })()
   return (
     <div className="page">
-      <div className="page-head">
-        <div><Link className="btn btn--ghost btn--sm anes-btn" to={back}><ChevronLeft size={15} />Volver a la nota</Link>
-          <h1 style={{ marginTop: 8 }}>{correcting ? 'Corregir el registro de anestesia' : 'Registro de anestesia'}</h1>
-          <p>{`${p.firstName} ${p.lastName}`.trim()} · Expediente {p.record} · {d.operation || d.proposedSurgery}</p></div>
-      </div>
+      <PageHead back={<BackButton to={back}>Volver a la nota</BackButton>}
+        title={correcting ? 'Corregir el registro de anestesia' : 'Registro de anestesia'}
+        sub={`${`${p.firstName} ${p.lastName}`.trim()} · Expediente ${p.record} · ${d.operation || d.proposedSurgery}`} />
       <div className="anes-form">
         <p className="muted" style={{ margin: 0 }}>Se guarda solo mientras escribes. Ningún campo es obligatorio salvo la técnica; «Anestesia realizada por» eres tú, con tu nombre, especialidad y colegiado al firmar.</p>
         <Section title="Encabezado, paciente y equipo quirúrgico">

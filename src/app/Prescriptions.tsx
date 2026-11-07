@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DateField } from '../components/DateTimeField'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Ban, ChevronLeft, Copy, FileText, MessageCircle, Plus, Printer, UserPlus, X } from 'lucide-react'
+import { Ban, Copy, FileText, MessageCircle, Plus, Printer, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
-import { Loading, Modal, PageHead } from '../components/ui'
+import { Loading, Modal, PageHead, BackButton } from '../components/ui'
 import { Pagination, usePage } from '../components/Pagination'
 import { PAGE_SIZE } from '../lib/clinicalConfig'
 import { age, date, formatPhone, fullName, localISODate, medicationLine, frequencyText, time, whatsappUrl } from '../lib/format'
@@ -295,10 +295,8 @@ export function PrescriptionSheet() {
 
   return (
     <div className="page">
-      <div className="page-head no-print">
-        {patient ? <Link className="btn btn--ghost" to={h ? stayPath(h) : `/app/pacientes/${patient.id}`}><ChevronLeft size={16} />Expediente de {patient.firstName}</Link>
-          : <Link className="btn btn--ghost" to="/app/recetas"><ChevronLeft size={16} />Recetas</Link>}
-        <div className="page-head__actions">
+      <PageHead noPrint back={patient ? <BackButton to={h ? stayPath(h) : `/app/pacientes/${patient.id}`}>Expediente de {patient.firstName}</BackButton>
+          : <BackButton to="/app/recetas">Recetas</BackButton>} actions={<>
           {!patient && g && can('rx.write') && can('patients.manage') && <GuestLink rx={rx} guest={g} onLinked={load} />}
           {can('rx.write') && !rx.voidedAt && <button className="btn btn--danger" onClick={() => setVoiding(true)}><Ban size={16} />Anular</button>}
           {can('rx.write') && rx.voidedAt && <Link className="btn btn--soft" to={`/app/recetas?repetir=${rx.id}`}><Copy size={16} />Emitir una nueva</Link>}
@@ -313,8 +311,7 @@ export function PrescriptionSheet() {
             if (examBatch && examGroups.length) void markBatchPrinted(examBatch, examGroups)
             window.print()
           }}><Printer size={16} />{examBatch && examGroups.length ? `Imprimir receta y ${examGroups.length > 1 ? 'órdenes' : 'orden'} de exámenes` : 'Imprimir o guardar PDF'}</button>
-        </div>
-      </div>
+      </>} />
       {next && next.startsWith('/app/') && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap', justifyContent: 'space-between' }}>
         <span>El paciente quedó {next.includes('/observacion/') ? 'en observación' : 'hospitalizado'}. Imprime la receta y las órdenes y sigue a su expediente.</span>
         <Link className="btn btn--primary btn--sm" to={next}>{next.includes('/observacion/') ? 'Ir a observación' : 'Ir a hospitalización'}</Link></div>}

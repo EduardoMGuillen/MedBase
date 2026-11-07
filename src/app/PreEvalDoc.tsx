@@ -114,7 +114,7 @@ export default function PreEvalPage() {
   return (
     <div className="page">
       <PrintBar title={`Valoración preanestésica${ev.voidedAt ? ' (anulada)' : ''}`}>
-        <div className="page-head__actions"><Link className="btn btn--ghost" to={`${stayPath(x.stayKind, ev.hospitalizationId)}?tab=anexos`}>Ir al expediente</Link></div>
+        <Link className="btn btn--ghost" to={`${stayPath(x.stayKind, ev.hospitalizationId)}?tab=anexos`}>Ir al expediente</Link>
       </PrintBar>
       {ev.voidedAt && <p className="alert-strip alert-strip--amber no-print">Anulada el {dmyTime(ev.voidedAt)} por {staffById(ev.voidedBy ?? '')?.name ?? '—'}: {ev.voidReason}</p>}
       {ev.mode === 'system' && ev.data

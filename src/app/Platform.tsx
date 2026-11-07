@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Building2, ChevronLeft, ExternalLink, Plus, UserPlus } from 'lucide-react'
+import { Building2, ExternalLink, Plus, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { Avatar, Loading, Modal, PageHead } from '../components/ui'
+import { Avatar, BackButton, Loading, Modal, PageHead } from '../components/ui'
 import { Pagination, paginate, usePage } from '../components/Pagination'
 import { date, time } from '../lib/format'
 import { ROLE_LABEL, ROLE_SUMMARY, ROLES_BY_KIND } from '../lib/permissions'
@@ -198,21 +198,16 @@ export function ClinicDetail() {
 
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <Link to="/app" className="back-link"><ChevronLeft size={15} />Clínicas</Link>
-          <h1>{clinic.name}</h1>
-          <p>{clinic.kind === 'office' && <span className="badge badge--ink">Consultorio</span>} {clinic.active ? <span className="badge badge--mint">Activa</span> : <span className="badge">Desactivada</span>} Creada el {date(clinic.createdAt)}</p>
-        </div>
-        <div className="page-head__actions">
+      <PageHead back={<BackButton to="/app">Clínicas</BackButton>} title={clinic.name}
+        sub={<>{clinic.kind === 'office' && <span className="badge badge--ink">Consultorio</span>} {clinic.active ? <span className="badge badge--mint">Activa</span> : <span className="badge">Desactivada</span>} Creada el {date(clinic.createdAt)}</>}
+        actions={<>
           <a className="btn btn--ghost" href={`/reservar/${clinic.slug}`} target="_blank" rel="noreferrer"><ExternalLink size={16} />Reserva en línea</a>
           {clinic.active
             ? <button className="btn btn--danger" onClick={async () => {
               if (confirm(`Al desactivar ${clinic.name}, su personal no podrá entrar y la reserva en línea dejará de funcionar. Los datos se conservan.`) && await updateClinic(clinic.id, { active: false }, 'Clínica desactivada')) load()
             }}>Desactivar clínica</button>
             : <button className="btn btn--primary" onClick={async () => { if (await updateClinic(clinic.id, { active: true }, 'Clínica reactivada')) load() }}>Reactivar clínica</button>}
-        </div>
-      </div>
+        </>} />
 
       <div className="stats">
         <div className="stat"><b className="num">{clinic.stats?.staff ?? 0}</b><span>Usuarios</span></div>

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Ban, ChevronLeft, FilePlus2, FileText, MessageCircle, Printer, Send } from 'lucide-react'
+import { Ban, FilePlus2, FileText, MessageCircle, Printer, Send } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
-import { Loading, Modal } from '../components/ui'
+import { Loading, Modal, BackButton, PageHead } from '../components/ui'
 import { date, dxCode, time, whatsappUrl } from '../lib/format'
 import { shortDate } from '../lib/consent'
 import { currentEpicrisis } from '../lib/inpatient'
@@ -111,9 +111,7 @@ export default function EpicrisisPage() {
     `Indicaciones: ${d.instructions}${d.followUp ? `\nControl: ${d.followUp}` : ''}\n\n${d.doctor?.name ?? ''}${d.doctor?.license ? `, colegiación ${d.doctor.license}` : ''}`
   return (
     <div className="page">
-      <div className="page-head no-print">
-        <Link className="btn btn--ghost" to={`/app/hospitalizados/${e.hospitalizationId}?tab=anexos`}><ChevronLeft size={16} />Volver al expediente</Link>
-        <div className="page-head__actions">
+      <PageHead noPrint back={<BackButton to={`/app/hospitalizados/${e.hospitalizationId}?tab=anexos`}>Volver al expediente</BackButton>} actions={<>
           <span className={`badge badge--${STATUS[e.status].tone}`}>{STATUS[e.status].label}{e.version > 1 ? ` · versión ${e.version}` : ''}</span>
           {e.status === 'issued' && can('inpatient.orders') && <button className="btn btn--ghost" onClick={() => setVoiding(true)}><Ban size={16} />Anular</button>}
           {e.status === 'issued' && p?.phone && <a className="btn btn--ghost" href={whatsappUrl(p.phone, text)} target="_blank" rel="noreferrer"><MessageCircle size={16} />Enviar por WhatsApp</a>}
@@ -124,8 +122,7 @@ export default function EpicrisisPage() {
             setE(x); setDraft(x.data); setDirty(false); notify('Epicrisis emitida')
           })}><Send size={16} />Emitir</button>}
           <button className={`btn ${e.status === 'issued' ? 'btn--primary' : 'btn--soft'}`} onClick={() => window.print()}><Printer size={16} />Imprimir o guardar PDF</button>
-        </div>
-      </div>
+      </>} />
       {e.status === 'voided' && <div className="alert-strip no-print">Anulada el {dm(e.voidedAt!)} por {staffById(e.voidedBy ?? '')?.name}: {e.voidReason}.</div>}
       {editable && (
         <section className="panel no-print epi-edit">

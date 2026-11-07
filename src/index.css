@@ -302,6 +302,8 @@ a.stat:hover { background: var(--ward); }
 .page-head h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.035em; }
 .page-head p { color: var(--muted); margin-top: 4px; }
 .page-head__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.page-head__main { display: grid; justify-items: start; min-width: 0; }
+.page-head__back + h1 { margin-top: 8px; }
 
 .panel { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); }
 .panel__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 22px; border-bottom: 1px solid var(--line-soft); }

@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { Camera, ChevronLeft, FileSignature, FileText, PenLine, Printer, Trash2 } from 'lucide-react'
+import { Camera, FileSignature, FileText, PenLine, Printer, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { Loading, Modal } from '../components/ui'
+import { Loading, Modal, BackButton, PageHead } from '../components/ui'
 import { dateTime, dmyTime, formatPhone, shortStaff } from '../lib/format'
 import { currentDiagnoses, stayPath, yearsOld } from '../lib/inpatient'
 import { authStatus, authTitle, consentStatements, isSurgical, FREQUENT_SURGERIES, HOSPITAL_CONSENT, HOSPITAL_DECLARATION, SURGICAL_GENERIC } from '../lib/consent'
@@ -327,16 +327,13 @@ export default function AuthorizationPage() {
   const signed = a.pdfId ?? a.fileId
   return (
     <div className="page">
-      <div className="page-head no-print">
-        {/* R2 pendiente (ronda 17): antes siempre iba a /app/hospitalizados/…; en observación vuelve a /app/observacion/… */}
-        {chart ? <Link className="btn btn--ghost" to={`${stayPath({ id: a.hospitalizationId, kind: a.stayKind })}?tab=anexos`}><ChevronLeft size={16} />Volver a los anexos</Link>
-          : <Link className="btn btn--ghost" to="/app/hospitalizados"><ChevronLeft size={16} />Volver a Hospitalizados</Link>}
-        <div className="page-head__actions">
+      {/* R2 pendiente (ronda 17): antes siempre iba a /app/hospitalizados/…; en observación vuelve a /app/observacion/… */}
+      <PageHead noPrint back={chart ? <BackButton to={`${stayPath({ id: a.hospitalizationId, kind: a.stayKind })}?tab=anexos`}>Volver a los anexos</BackButton>
+          : <BackButton to="/app/hospitalizados">Volver a Hospitalizados</BackButton>} actions={<>
           <span className={`badge badge--${st.tone}`}>{st.label}</span>
           {a.pdfId && <button className="btn btn--ghost" onClick={() => openFile(a.pdfId!).catch((e: Error) => notify(e.message, 'error'))}><FileText size={16} />Abrir el PDF</button>}
           <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />{signed ? 'Imprimir' : 'Imprimir para firmar'}</button>
-        </div>
-      </div>
+      </>} />
       {a.pdfSha256 && <p className="muted no-print auth-hash" style={{ marginBottom: 12 }}>Huella SHA-256 del PDF firmado: <code>{a.pdfSha256}</code></p>}
       {signed ? <div className="signed-doc"><PdfPages fileId={signed} label={a.pdfId ? 'La autorización firmada' : 'La hoja escaneada'} /></div> : <AuthorizationSheet a={a} />}
       {a.revocation?.pdfId && <div className="signed-doc"><PdfPages fileId={a.revocation.pdfId} label="La revocación firmada" /></div>}

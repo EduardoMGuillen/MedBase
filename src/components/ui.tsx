@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode, type TextareaHTMLAttributes } from 'react'
-import { ChevronRight, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { initials, STATUS } from '../lib/format'
 import type { ApptStatus } from '../lib/types'
 import { useStore } from '../lib/store'
@@ -115,16 +116,31 @@ export function Loading({ label = 'Cargando' }: { label?: string }) {
   return <div className="loading" role="status"><span className="loading__dot" />{label}</div>
 }
 
-export function PageHead({ title, sub, actions, tour }: { title: string; sub?: ReactNode; actions?: ReactNode; tour?: string }) {
+/**
+ * Cabecera de cada pantalla: volver (opcional), título, subtítulo y acciones a la derecha. ES (ronda 17): también la usan los
+ * documentos (receta, constancia, nota, recibo…), que solo llevan «volver» y acciones, y los formularios de anestesia, con
+ * «volver» encima del título. `noPrint` la oculta al imprimir.
+ */
+export function PageHead({ title, sub, actions, tour, back, noPrint }: {
+  title?: ReactNode; sub?: ReactNode; actions?: ReactNode; tour?: string; back?: ReactNode; noPrint?: boolean
+}) {
   return (
-    <div className="page-head" data-tour={tour}>
-      <div>
-        <h1>{title}</h1>
+    <div className={`page-head${noPrint ? ' no-print' : ''}`} data-tour={tour}>
+      {(back || title || sub) && <div className="page-head__main">
+        {back}
+        {title && <h1>{title}</h1>}
         {sub && <p>{sub}</p>}
-      </div>
+      </div>}
       {actions && <div className="page-head__actions">{actions}</div>}
     </div>
   )
+}
+
+/** ES (ronda 17): «volver» de toda la app: botón fantasma con la flecha a la izquierda; con `to` es un enlace. */
+export function BackButton({ to, onClick, children }: { to?: string; onClick?: () => void; children: ReactNode }) {
+  const body = <><ChevronLeft size={16} />{children}</>
+  return to ? <Link className="btn btn--ghost page-head__back" to={to}>{body}</Link>
+    : <button type="button" className="btn btn--ghost page-head__back" onClick={onClick}>{body}</button>
 }
 
 /**

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Addenda, SignedBadge } from '../components/Addenda'
 import { Link, useParams } from 'react-router-dom'
-import { ChevronLeft, FileBadge, Printer, Send } from 'lucide-react'
+import { FileBadge, Printer, Send } from 'lucide-react'
 import { ReferralModal } from './Referral'
 import { useStore } from '../lib/store'
-import { Loading } from '../components/ui'
+import { Loading, BackButton, PageHead } from '../components/ui'
 import { ClinicalDoc, guardianRow, patientOf, placeOf, signerOfStaff } from '../components/ClinicalDoc'
 import { date, time } from '../lib/format'
 import { BackgroundView, ConsultationBody, Identification } from './PatientChart'
@@ -28,16 +28,13 @@ export default function ConsultNote() {
 
   return (
     <div className="page">
-      <div className="page-head no-print">
-        <Link className="btn btn--ghost" to={`/app/pacientes/${p.id}`}><ChevronLeft size={16} />Expediente de {p.firstName}</Link>
-        <div className="page-head__actions">
+      <PageHead noPrint back={<BackButton to={`/app/pacientes/${p.id}`}>Expediente de {p.firstName}</BackButton>} actions={<>
           {can('consult.write') && <Link className="btn btn--ghost" data-tour="constancia" to={`/app/constancia/${c.id}`}><FileBadge size={16} />Generar constancia</Link>}
           {/* Ronda 8: referencia a otro centro desde la consulta externa */}
           {can('consult.write') && user?.role === 'doctor' && <button className="btn btn--ghost" onClick={() => setReferring(true)}><Send size={16} />Referir a otro centro</button>}
           {(data.referrals ?? []).map((r) => <Link key={r.id} className="btn btn--soft" to={`/app/referencias/${r.id}`}><Send size={16} />{r.number}{r.voidedAt ? ' (anulada)' : ''}</Link>)}
           <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir nota</button>
-        </div>
-      </div>
+      </>} />
       {/* IM1 (ronda 13): la plantilla única */}
       <div data-tour="nota-consulta">
       <ClinicalDoc kind="Nota de consulta" at={c.date} place={placeOf(settings)} patient={patientOf(p, settings)} rows={[guardianRow(p)]} className="clinical-note"

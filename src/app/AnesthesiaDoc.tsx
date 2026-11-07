@@ -258,9 +258,9 @@ export default function AnesthesiaSheetPage() {
   if (error) return <DocError title="No se puede abrir el registro." error={error} />
   if (!x) return <Loading label="Abriendo el registro de anestesia" />
   const s = x.sheet
-  const back = <div className="page-head__actions">
+  const back = <>
     {x.preEval && <Link className="btn btn--ghost" to={`/app/valoracion/${x.preEval.id}`}>Ver valoración</Link>}
-    <Link className="btn btn--ghost" to={anesthesiaNoteLink(x.stayKind, s.hospitalizationId, s.noteId)}>Ir a la nota</Link></div>
+    <Link className="btn btn--ghost" to={anesthesiaNoteLink(x.stayKind, s.hospitalizationId, s.noteId)}>Ir a la nota</Link></>
   return (
     <div className="page">
       <PrintBar title={`Registro de anestesia${s.voidedAt ? ' (anulado)' : ''}`}>{back}</PrintBar>

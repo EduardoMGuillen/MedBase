@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Ban, ChevronLeft, Download, Printer, Send } from 'lucide-react'
+import { Ban, Download, Printer, Send } from 'lucide-react'
 import { useStore, type ReferralFrom } from '../lib/store'
-import { Loading, Modal } from '../components/ui'
+import { Loading, Modal, BackButton, PageHead } from '../components/ui'
 import { dmy, dmyTime } from '../lib/format'
 import { REFERRAL_CONSENT, REFERRAL_FOOTER } from '../lib/clinicalConfig'
 import { stayPath } from '../lib/inpatient'
@@ -209,14 +209,11 @@ export default function ReferralPage() {
   const doctor = user?.role === 'doctor'
   return (
     <div className="page">
-      <div className="page-head no-print">
-        <button className="btn btn--ghost" onClick={() => (r.consultationId ? nav(`/app/nota/${r.consultationId}`) : window.history.length > 1 ? nav(-1) : nav(`/app/pacientes/${r.patientId}`))}><ChevronLeft size={16} />Volver</button>
-        <div className="page-head__actions">
+      <PageHead noPrint back={<BackButton onClick={() => (r.consultationId ? nav(`/app/nota/${r.consultationId}`) : window.history.length > 1 ? nav(-1) : nav(`/app/pacientes/${r.patientId}`))}>Volver</BackButton>} actions={<>
           {!r.voidedAt && doctor && <button className="btn btn--ghost" onClick={() => setVoiding(true)}><Ban size={16} />Anular</button>}
           <button className="btn btn--soft" onClick={() => print('pdf')}><Download size={16} />Descargar PDF</button>
           <button className="btn btn--primary" onClick={() => print('print')}><Printer size={16} />Imprimir</button>
-        </div>
-      </div>
+      </>} />
       <p className="muted no-print" style={{ fontSize: 13.5 }}>No se envía por WhatsApp ni por ningún canal automático: se imprime o se descarga y se entrega al paciente o a su familia.</p>
       <ReferralSheet r={r} />
       {/* RF1: firmada no se edita; se corrige con adenda (también sale en la impresión) */}

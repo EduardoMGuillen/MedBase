@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { DateField, TimeField } from '../components/DateTimeField'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Ban, ChevronLeft, FileBadge, MessageCircle, Printer } from 'lucide-react'
+import { Ban, FileBadge, MessageCircle, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { Loading, Modal } from '../components/ui'
+import { Loading, Modal, BackButton, PageHead } from '../components/ui'
 import { age, date, localISODate, recordNumber, time, whatsappUrl } from '../lib/format'
 import { yearsOld } from '../lib/inpatient'
 import { CERT_KIND, certificateText, plainText } from '../lib/certificates'
@@ -96,9 +96,7 @@ export default function Certificate() {
 
   return (
     <div className="page">
-      <div className="page-head no-print">
-        <Link className="btn btn--ghost" to={`/app/pacientes/${p.id}`}><ChevronLeft size={16} />Expediente de {p.firstName}</Link>
-      </div>
+      <PageHead noPrint back={<BackButton to={`/app/pacientes/${p.id}`}>Expediente de {p.firstName}</BackButton>} />
       <section className="panel no-print">
         <div className="panel__head"><div><h2>Generar constancia</h2><p>Consulta del {date(c.date)}. Revisa la vista previa; una vez emitida queda en el expediente y no se edita.</p></div></div>
         <div className="panel__body form-grid form-grid--4">
@@ -164,14 +162,11 @@ export function CertificateView() {
   const text = `${CERT_KIND[cert.kind].title} ${cert.number}\n${cert.data.to}:\n\n${plainText(certificateText(cert.kind, cert.data, cert.issuedAt))}\n\n${cert.data.doctor.name}, colegiación ${cert.data.doctor.license}`
   return (
     <div className="page">
-      <div className="page-head no-print">
-        <Link className="btn btn--ghost" to={`/app/pacientes/${cert.patientId}`}><ChevronLeft size={16} />Expediente de {cert.data.patient.name.split(' ')[0]}</Link>
-        <div className="page-head__actions">
+      <PageHead noPrint back={<BackButton to={`/app/pacientes/${cert.patientId}`}>Expediente de {cert.data.patient.name.split(' ')[0]}</BackButton>} actions={<>
           {can('consult.write') && !cert.voidedAt && <button className="btn btn--ghost" onClick={() => setVoiding(true)}><Ban size={16} />Anular</button>}
           {p?.phone && !cert.voidedAt && <a className="btn btn--ghost" href={whatsappUrl(p.phone, text)} target="_blank" rel="noreferrer"><MessageCircle size={16} />Enviar por WhatsApp</a>}
           <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir o guardar PDF</button>
-        </div>
-      </div>
+      </>} />
       {cert.voidedAt && (
         <div className="alert-strip no-print">Anulada el {date(cert.voidedAt)} a las {time(cert.voidedAt)} por {staffById(cert.voidedBy ?? '')?.name}: {cert.voidReason}.
           {cert.consultationId && can('consult.write') && <> <Link to={`/app/constancia/${cert.consultationId}`}>Emitir otra</Link></>}</div>

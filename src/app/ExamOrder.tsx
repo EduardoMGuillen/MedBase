@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, Download, MessageCircle, Printer } from 'lucide-react'
+import { Download, MessageCircle, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
-import { Loading } from '../components/ui'
+import { Loading, BackButton, PageHead } from '../components/ui'
 import { ClinicalDoc, guardianRow, patientOf, placeOf } from '../components/ClinicalDoc'
 import { dmyTime, fullName, whatsappUrl } from '../lib/format'
 import { examCatalog, examLine, orderGroups } from '../lib/exams'
@@ -62,12 +62,9 @@ export default function ExamOrderPage() {
     ...shown.filter((e) => e.group === g).map((e) => `• ${examLine(e)}${e.priority === 'urgent' ? ' (URGENTE)' : ''}${e.indication ? `. ${e.indication}` : ''}`)].join('\n')
   return (
     <div className={`page${only ? ` print-only-${only.g}` : ''}`}>
-      <div className="page-head no-print">
-        <button className="btn btn--ghost" onClick={() => nav(-1)}><ChevronLeft size={16} />Volver</button>
-        <div className="page-head__actions">
+      <PageHead noPrint back={<BackButton onClick={() => nav(-1)}>Volver</BackButton>} actions={<>
           <Link className="btn btn--ghost" to={`/app/pacientes/${p.id}`}>Expediente</Link>
-        </div>
-      </div>
+      </>} />
       <div className="exam-order__bar no-print">
         {groups.map((g) => (
           <div key={g} className="exam-order__acts">

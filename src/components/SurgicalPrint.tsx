@@ -1,7 +1,8 @@
 import { useEffect, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, Download, Printer } from 'lucide-react'
+import { Download, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
+import { BackButton, PageHead } from './ui'
 
 /**
  * PQ3 (ronda 14), PQ4 y PQ5 (ronda 16): piezas de los documentos quirúrgicos impresos (registro de anestesia, valoración
@@ -37,7 +38,7 @@ export function PrintBar({ title, hint = 'Hoja Carta. Sin la firma y el sello de
   const { notify } = useStore()
   const nav = useNavigate()
   return (<>
-    <div className="page-head no-print"><button className="btn btn--ghost" onClick={() => nav(-1)}><ChevronLeft size={16} />Volver</button>{children}</div>
+    <PageHead noPrint back={<BackButton onClick={() => nav(-1)}>Volver</BackButton>} actions={children} />
     <div className="exam-order__bar no-print"><div className="exam-order__acts">
       <b>{title}</b>
       <button className="btn btn--primary btn--sm anes-btn" onClick={() => window.print()}><Printer size={15} />Imprimir</button>

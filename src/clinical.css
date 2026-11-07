@@ -224,8 +224,6 @@
 .slug-input span { padding: 0 2px 0 12px; color: var(--muted); font-size: 14px; white-space: nowrap; }
 .slug-input .input { border: 0; box-shadow: none !important; padding-left: 2px; }
 .slug-input:focus-within { border-color: var(--ink); box-shadow: 0 0 0 3px var(--ink-soft); }
-.back-link { display: inline-flex; align-items: center; gap: 2px; font-size: 13.5px; color: var(--muted); text-decoration: none; margin-bottom: 6px; }
-.back-link:hover { color: var(--ink); }
 .page-head p .badge { margin-right: 8px; }
 
 /* ---------- Hospitalización ---------- */

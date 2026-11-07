@@ -121,7 +121,7 @@ export default function SurgicalCountPage() {
   return (
     <div className="page">
       <PrintBar title={`Recuento quirúrgico${c.voidedAt ? ' (anulado)' : ''}`} hint="Hoja Carta. Instrumentista, circulante y cirujano firman en papel.">
-        <div className="page-head__actions"><Link className="btn btn--ghost" to={anesthesiaNoteLink(x.stayKind, c.hospitalizationId, c.noteId)}>Ir a la nota</Link></div>
+        <Link className="btn btn--ghost" to={anesthesiaNoteLink(x.stayKind, c.hospitalizationId, c.noteId)}>Ir a la nota</Link>
       </PrintBar>
       {c.voidedAt && <p className="alert-strip alert-strip--amber no-print">Anulado el {dmyTime(c.voidedAt)} por {staffById(c.voidedBy ?? '')?.name ?? '—'}: {c.voidReason}</p>}
       {c.mode === 'system' && c.data

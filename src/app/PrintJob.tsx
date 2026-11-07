@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { ResultSheet } from './ResultSheet'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, Download, Printer } from 'lucide-react'
+import { Download, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
-import { Loading } from '../components/ui'
+import { Loading, BackButton, PageHead } from '../components/ui'
 import { ClinicalDoc, guardianRow, patientOf, placeOf } from '../components/ClinicalDoc'
 import { dmyTime } from '../lib/format'
 import { medLabel } from '../lib/inpatient'
@@ -71,10 +71,9 @@ export default function PrintJobPage() {
   const sheets = job.kind === 'exams' ? job.doctors.flatMap((d) => (['lab', 'imaging'] as ExamGroup[]).map((g) => ({ d, g, list: job.exams.filter((e) => d.items.includes(e.id) && e.group === g) })).filter((x) => x.list.length)) : []
   return (
     <div className="page">
-      <div className="page-head no-print">
-        <button className="btn btn--ghost" onClick={() => nav(-1)}><ChevronLeft size={16} />Volver</button>
-        <div className="page-head__actions"><Link className="btn btn--ghost" to={`/app/pacientes/${p.id}`}>Expediente</Link></div>
-      </div>
+      <PageHead noPrint back={<BackButton onClick={() => nav(-1)}>Volver</BackButton>} actions={<>
+        <Link className="btn btn--ghost" to={`/app/pacientes/${p.id}`}>Expediente</Link>
+      </>} />
       <div className="exam-order__bar no-print">
         <div className="exam-order__acts">
           <b>{title}{job.kind === 'exams' ? (sheets.length > 1 ? ` (${sheets.length} documentos${docs > 1 ? ': uno por médico' : ''}${groups.size > 1 ? ' y por tipo' : ''})` : '') : docs > 1 ? ` (${docs}: una por médico)` : ''}</b>

@@ -429,16 +429,13 @@ export function ReceiptSheet() {
   const subtotal = p.items.reduce((s, i) => s + i.price * i.qty, 0)
   return (
     <div className="page">
-      <div className="page-head no-print">
-        <Link className="btn btn--ghost" to="/app/caja"><ChevronLeft size={16} />Volver a caja</Link>
-        <div className="page-head__actions">
+      <PageHead noPrint back={<Link className="btn btn--ghost" to="/app/caja"><ChevronLeft size={16} />Volver a caja</Link>} actions={<>
           {can('settings.manage') && !p.voided && <button className="btn btn--danger" onClick={() => setVoiding(true)}>Anular recibo</button>}
           {!p.voided && (p.balance ?? 0) > 0 && <button className="btn btn--soft" onClick={() => setAbono(true)}><Wallet size={16} />Registrar abono</button>}
           {!p.voided && <button className="btn btn--ghost" onClick={() => { setInvoice(p.invoiceNo ?? ''); setEditingInvoice(true) }}><FileText size={16} />{p.invoiceNo ? 'Cambiar factura' : 'Anotar factura'}</button>}
           {!p.voided && patient.phone && <a className="btn btn--ghost" target="_blank" rel="noreferrer" href={whatsappUrl(patient.phone, receiptText(p, settings.name, settings.currency))}><MessageCircle size={16} />Enviar por WhatsApp</a>}
           <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir recibo</button>
-        </div>
-      </div>
+      </>} />
       {/* IM1 (ronda 13): la plantilla única; el recibo no lleva firma */}
       <ClinicalDoc kind="Recibo" folio={p.receiptNo} at={p.paidAt} place={{ ...placeOf(settings), address: `${settings.address}${settings.email ? ` · ${settings.email}` : ''}` }} className="receipt"
         stamp={p.voided ? 'Anulado' : undefined} brand="Gracias por su preferencia"

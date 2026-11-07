@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, FileSignature, Plus, Trash2 } from 'lucide-react'
+import { FileSignature, Plus, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
-import { Loading } from '../components/ui'
+import { BackButton, Loading, PageHead } from '../components/ui'
 import { DraftBadge } from '../components/Addenda'
 import { CorrectionReason } from '../components/Grace'
 import { DateField, TimeField } from '../components/DateTimeField'
@@ -75,11 +75,9 @@ export default function SurgicalCountFormPage() {
   }
   return (
     <div className="page">
-      <div className="page-head">
-        <div><Link className="btn btn--ghost btn--sm anes-btn" to={back}><ChevronLeft size={15} />Volver a la nota</Link>
-          <h1 style={{ marginTop: 8 }}>{correcting ? 'Corregir el recuento quirúrgico' : 'Recuento quirúrgico'}</h1>
-          <p>{`${p.firstName} ${p.lastName}`.trim()} · Expediente {p.record}{d.procedure ? ` · ${d.procedure}` : ''}</p></div>
-      </div>
+      <PageHead back={<BackButton to={back}>Volver a la nota</BackButton>}
+        title={correcting ? 'Corregir el recuento quirúrgico' : 'Recuento quirúrgico'}
+        sub={`${`${p.firstName} ${p.lastName}`.trim()} · Expediente ${p.record}${d.procedure ? ` · ${d.procedure}` : ''}`} />
       <div className="anes-form">
         <p className="muted" style={{ margin: 0 }}>Se guarda solo mientras escribes. Escribe lo contado en cada momento. El instrumental se cuenta al inicio, antes de cerrar herida y en el cambio de personal; sus demás casillas pueden quedar en blanco.</p>
         <Section title="Encabezado">

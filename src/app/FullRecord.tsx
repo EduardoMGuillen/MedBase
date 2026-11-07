@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { ChevronLeft, Printer } from 'lucide-react'
+import { useParams } from 'react-router-dom'
+import { Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { Loading } from '../components/ui'
+import { Loading, BackButton, PageHead } from '../components/ui'
 import { contactLine, date, fullName, recordNumber, shortStaff, time, dxCode } from '../lib/format'
 import { attendingText, currentEpicrisis, LINE_TAG, medLabel, orderMark, splitOrders, stayPath, yearsOld } from '../lib/inpatient'
 import type { OrderLineTag } from '../lib/types'
@@ -115,10 +115,8 @@ export default function FullRecord() {
 
   return (
     <div className="page fr">
-      <div className="page-head no-print">
-        <Link className="btn btn--ghost" to={stayPath(h)}><ChevronLeft size={16} />Volver al expediente</Link>
-        <button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir / Descargar PDF</button>
-      </div>
+      <PageHead noPrint back={<BackButton to={stayPath(h)}>Volver al expediente</BackButton>}
+        actions={<button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir / Descargar PDF</button>} />
       <nav className="panel fr-index no-print" aria-label="Índice del expediente">
         <div className="panel__head"><div><h2>Expediente completo de {fullName(p)}</h2><p>Al imprimir, cada sección y cada nota de evolución empieza en una hoja nueva. Para guardar el PDF, elige «Guardar como PDF» en la impresora.</p></div></div>
         <ol>{sections.map(([sid, label]) => <li key={sid}><a href={`#${sid}`}>{label}</a></li>)}</ol>
