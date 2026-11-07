@@ -13,6 +13,8 @@ import { aldreteTotal, blankAnesthesia, fluidBalance, prefillAnesthesia, sameAs,
 import { anesthesiaNoteLink } from '../components/AnesthesiaSheet'
 import { PreEvalSummary } from '../components/PreEval'
 import { preEvalIntoSheet, type PreEval } from '../lib/preanesthesia'
+import { DrugSearch } from '../components/DrugSearch'
+import { useVademecum } from '../lib/vademecum'
 import '../components/anesthesia.css'
 
 /**
@@ -53,6 +55,7 @@ export default function AnesthesiaFormPage() {
   const [initial, setInitial] = useState<AnesthesiaData | null>(null)
   const [why, setWhy] = useState('')
   const [busy, setBusy] = useState(false)
+  const vademecum = useVademecum()
   useEffect(() => {
     type Ctx = { prefill: AnesthesiaPrefill; hospitalizationId: string; stayKind: string; sheet?: AnesthesiaSheet; preEval?: PreEval | null }
     const load: Promise<Ctx> = correcting
@@ -174,7 +177,9 @@ export default function AnesthesiaFormPage() {
             <tbody>{d.drugs.map((r, i) => <tr key={r.id}>
               <td data-label="Categoría" className="anes-table__wide"><select className="select" value={r.category} onChange={(e) => setDrug(i, { category: e.target.value })} aria-label={`Categoría del fármaco ${i + 1}`}>
                 <option value="">Elige…</option>{ANESTHESIA_SHEET.drugCategories.map((c) => <option key={c}>{c}</option>)}</select></td>
-              <td data-label="Fármaco" className="anes-table__wide"><input className="input" value={r.drug} onChange={(e) => setDrug(i, { drug: e.target.value })} aria-label={`Fármaco ${i + 1}`} /></td>
+              {/* Pendiente ME8 (ronda 17): antes un campo de texto simple; ahora el buscador del vademécum (sigue aceptando texto libre) */}
+              <td data-label="Fármaco" className="anes-table__wide"><DrugSearch value={r.drug} drugs={vademecum} label={null} placeholder="Busca en el vademécum o escríbelo" ariaLabel={`Fármaco ${i + 1}`}
+                onChange={(t) => setDrug(i, { drug: t })} onPick={(x) => setDrug(i, { drug: x.name })} /></td>
               <td data-label="Dosis"><input className="input" value={r.dose} onChange={(e) => setDrug(i, { dose: e.target.value })} aria-label={`Dosis del fármaco ${i + 1}`} /></td>
               <td data-label="Vía"><input className="input" value={r.route} onChange={(e) => setDrug(i, { route: e.target.value })} aria-label={`Vía del fármaco ${i + 1}`} /></td>
               <td data-label="Hora" className="anes-table__wide"><TimeField value={r.time} onChange={(v) => setDrug(i, { time: v })} label={`Hora del fármaco ${i + 1}`} /></td>
