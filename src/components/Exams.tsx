@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { FoldHead, Modal } from './ui'
-import { byArea, contrastOptions, defaultPlace, examCatalog, examKey, examLine, examMatches, findExam, GROUP_LABEL, hasDetails, missingDetail, orderGroups, type CatalogExam } from '../lib/exams'
+import { areaFor, byArea, contrastOptions, defaultPlace, examCatalog, examKey, examLine, examMatches, findExam, GROUP_LABEL, hasDetails, missingDetail, orderGroups, type CatalogExam } from '../lib/exams'
 import { IMAGING_SIDES } from '../lib/clinicalConfig'
 import type { ImagingDetails } from '../lib/imagingCatalog'
 import { useOrderSets } from '../lib/useOrderSets'
@@ -99,11 +99,24 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
           </div>
         )
       })}
-      {!value.length && <p className="muted" style={{ fontSize: 14 }}>Sin exámenes. {inStay ? 'Enfermería recibe los pendientes en su bandeja (los externos no).' : 'Se imprimen aparte de la receta: una orden de laboratorio y otra de imagen y gabinete.'}</p>}
+      {!value.length && <p className="muted" style={{ fontSize: 14 }}>Sin exámenes. {inStay ? receiversText(settings) : 'Se imprimen aparte de la receta: una orden de laboratorio y otra de imagen y gabinete.'}</p>}
       <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setPicking(true)}><Plus size={16} />Ordenar exámenes</button>
       {picking && <ExamPicker current={value} onClose={() => setPicking(false)} onAdd={(list) => { onChange([...value, ...withPlace(list)]); setPicking(false) }} />}
     </div>
   )
+}
+
+/**
+ * Pendiente (ronda 17): quién recibe los pendientes en la estancia, según las áreas de servicio de la clínica (areaFor): antes
+ * decía siempre «Enfermería recibe los pendientes…», aunque la clínica tuviera laboratorio o imágenes propios.
+ */
+function receiversText(s: { hasLab?: boolean; hasImaging?: boolean }) {
+  const lab = areaFor('lab', 'clinic', true, s) === 'lab' ? 'Laboratorio' : 'Enfermería'
+  const img = areaFor('imaging', 'clinic', true, s) === 'imaging' ? 'Imágenes' : 'Enfermería'
+  if (lab === img) return `${lab} recibe los pendientes en su bandeja (los externos no).`
+  if (lab === 'Enfermería') return 'Enfermería recibe los pendientes de laboratorio e Imágenes los de imagen y gabinete, en su bandeja (los externos no).'
+  if (img === 'Enfermería') return 'Laboratorio recibe los pendientes de laboratorio y enfermería los de imagen y gabinete, en su bandeja (los externos no).'
+  return 'Laboratorio e Imágenes reciben los pendientes en su bandeja (los externos no).'
 }
 
 /** MC4 (ronda 6): lo marcado y no agregado todavía sobrevive a cerrar la pestaña o a un apagón (se borra al agregar o cancelar). */
@@ -157,7 +170,13 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
   const setPickedItem = (key: string | undefined, patch: Partial<ExamInput>) => setPicked(picked.map((x) => (x.key === key ? { ...x, ...patch } : x)))
   // CA6: «+ Otro Rayos X» agrega otra fila del mismo estudio, con sus propios campos
   const addAgain = (e: CatalogExam) => setPicked([...picked, keyed(withDetailFlag(newExam(e.group, e.name)))])
-  const exact = catalog.some((e) => keyOf(e.name) === keyOf(q.trim()))
+  // Pendiente (ronda 17): «Agregar como no catalogado» no sale si lo buscado es un examen del catálogo: por su nombre, por el
+  // nombre sin lo de los paréntesis («Examen general de orina») o por su sigla entre paréntesis («EGO», «HbA1c», «EKG»)
+  const namesOf = (name: string) => {
+    const m = /^(.*?)\s*\(([^()]*)\)(.*)$/.exec(name)
+    return m ? [name, `${m[1]}${m[3]}`, ...(m[2].includes(',') ? [] : [m[2]])] : [name]
+  }
+  const exact = q.trim().length > 0 && catalog.some((e) => namesOf(e.name).some((x) => keyOf(x) === keyOf(q.trim().replace(/[.]$/, ''))))
   const inCatalog = (name: string) => catalog.some((c) => keyOf(c.name) === keyOf(name))
   const toggle = (g: ExamGroup, name: string) => {
     if (!repeatable(name) && current.some((c) => keyOf(c.name) === keyOf(name))) return
