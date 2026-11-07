@@ -967,6 +967,15 @@ button.src-tag--none { cursor: pointer; }
 .exam-row__brief { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding-left: 22px; font-size: 13px; }
 .exam-row--compact .exam-row__side { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
 .exam-row--compact .row-menu__btn { width: 34px; height: 34px; }
+/* EX12 (ronda 16): en el expediente, los exámenes de cada día por categoría, con encabezado, conteo y «Muestra tomada» del grupo */
+.exam-cat { border-bottom: 1px solid var(--line-soft); }
+.exam-cat:last-child { border-bottom: 0; }
+.exam-cat__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 8px 22px 4px; }
+.exam-cat__toggle { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; font: inherit; font-size: 14px; color: var(--petrol); cursor: pointer; min-height: 32px; }
+.exam-cat__chev { color: var(--muted); transition: transform .15s; transform: rotate(90deg); }
+.exam-cat.is-closed .exam-cat__chev { transform: none; }
+.exam-cat .exam-row { border-bottom: 0; }
+@media (max-width: 640px) { .exam-cat__head { padding: 8px 14px 4px; } .exam-cat__head .btn { min-height: 44px; } }
 @media (max-width: 640px) {
   .exam-row--compact { padding: 8px 14px; }
   .exam-row--compact .exam-row__side { justify-content: flex-start; padding-left: 22px; }

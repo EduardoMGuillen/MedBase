@@ -10,7 +10,7 @@ import { api } from '../lib/api'
 import { Modal } from '../components/ui'
 import { ExamPrintModal } from '../components/ExamPrintModal'
 import { age, cap, date, dateTime, inputDateTime, shortStaff } from '../lib/format'
-import { canReview, examCatalog, examLine, examStatusLabel, findExam, flagOf, GROUP_LABEL, isPending, NEXT_ACTION, reportOptional, resultBrief, STATUS_LABEL } from '../lib/exams'
+import { canReview, examCatalog, examLine, examStatusLabel, findExam, flagOf, GROUP_LABEL, isPending, NEXT_ACTION, orderGroups, reportOptional, resultBrief, STATUS_LABEL } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { analyteSection, isQualitative, rangeFor, rangeText, type LabReference } from '../lib/labReference'
 import { SourceTag } from '../components/SourceTag'
@@ -38,6 +38,8 @@ const EXAM_FILTERS: { key: ExamFilter; label: string; test: (e: ExamOrder) => bo
 ]
 const fold = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 const dayKey = (iso: string) => new Date(iso).toDateString()
+/** Los exámenes ya ordenados, cortados por día (en el mismo orden). */
+const daysOf = <T extends { orderedAt: string }>(list: T[]) => list.reduce<T[][]>((out, e) => { const last = out[out.length - 1]; if (last && dayKey(last[0].orderedAt) === dayKey(e.orderedAt)) last.push(e); else out.push([e]); return out }, [])
 
 /**
  * EX1: exámenes de un paciente (en una estancia o en su historial) en dos subsecciones, Laboratorio e Imagen y gabinete,
@@ -73,6 +75,11 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
   const order = (a: ExamOrder, b: ExamOrder) => (sort === 'oldest' ? a.orderedAt.localeCompare(b.orderedAt) : b.orderedAt.localeCompare(a.orderedAt))
   const visible = exams.filter((e) => match(e) && passes(e))
   const setAll = (v: boolean) => setShown((x) => ({ ...x, ...Object.fromEntries(visible.map((e) => [e.id, v])) }))
+  // EX12 (ronda 16): grupos por categoría contraídos a mano; el catálogo de la clínica da la categoría
+  const [folded, setFolded] = useState<Record<string, boolean>>({})
+  const { exams: clinicExams } = useExamCatalog()
+  const catalog = examCatalog(clinicExams)
+  const canTake = useCanTake()
   return (
     <div className="hc" data-tour="examenes-tab">
       {exams.length > 0 && (
@@ -104,10 +111,25 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
                 {canResults(g) && all.some((e) => e.result) && <button className="btn btn--ghost btn--sm" onClick={() => setResults(g)}><Printer size={14} />Imprimir resultados</button>}
                 {open && can('exams.process') && (!user || deptAllows(user, g)) && <button className="btn btn--ghost btn--sm" onClick={() => setUploading(g)}><Upload size={14} />Subir resultado externo</button>}
               </div></div>
-            {list.length ? <div className="rows">{list.map((e, i) => (
-              <Fragment key={e.id}>
-                {(i === 0 || dayKey(list[i - 1].orderedAt) !== dayKey(e.orderedAt)) && <div className="exam-day">{cap(date(e.orderedAt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>}
-                <ExamRow e={e} reload={reload} open={open} expanded={isOpen(e)} onToggle={() => setShown((x) => ({ ...x, [e.id]: !isOpen(e) }))} />
+            {list.length ? <div className="rows">{daysOf(list).map((day) => (
+              <Fragment key={day[0].id}>
+                <div className="exam-day">{cap(date(day[0].orderedAt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>
+                {/* EX12 (ronda 16): dentro del día, por categoría del catálogo (el orden de la orden impresa, IM3); cada grupo se contrae
+                    y lleva un «Muestra tomada» para todos sus exámenes (DP2) */}
+                {orderGroups(day, catalog).map((c) => {
+                  const key = `${g}|${dayKey(day[0].orderedAt)}|${c.title}`
+                  const closed = !!folded[key]
+                  return (
+                    <section key={key} className={`exam-cat${closed ? ' is-closed' : ''}`}>
+                      <div className="exam-cat__head">
+                        <button type="button" className="exam-cat__toggle" aria-expanded={!closed} onClick={() => setFolded((x) => ({ ...x, [key]: !closed }))}>
+                          <ChevronRight size={16} className="exam-cat__chev" aria-hidden /><b>{c.title}</b> <span className="muted">({c.items.length})</span></button>
+                        <TakeAllButton list={c.items.filter((x) => canTake(x, open))} reload={reload} />
+                      </div>
+                      {!closed && c.items.map((e) => <ExamRow key={e.id} e={e} reload={reload} open={open} compact expanded={isOpen(e)} onToggle={() => setShown((x) => ({ ...x, [e.id]: !isOpen(e) }))} />)}
+                    </section>
+                  )
+                })}
               </Fragment>
             ))}</div>
               : <div className="empty">{all.length ? 'Ningún examen coincide' : `Sin exámenes de ${GROUP_LABEL[g].toLowerCase()}.`}</div>}
