@@ -6,7 +6,7 @@ import { fromLocalValue } from '../lib/dateInput'
 import { dateToDisplay } from '../lib/dateInput'
 import { dmyTime, inputDateTime, shortStaff } from '../lib/format'
 import { FLUID_IN_ITEMS, FLUID_MAX_ENTRY_ML, FLUID_OUT_ITEMS } from '../lib/clinicalConfig'
-import { currentFluidsMode, fluidBalance, fluidItemLabel, fluidsOrderText, fmtMl, signedMl, type FluidRow, type FluidTotals } from '../lib/fluids'
+import { currentFluidsMode, fluidBalance, fluidItemLabel, fluidsSentence, fluidSingleColumn, fluidVisibleItems, fmtMl, signedMl, type FluidRow, type FluidTotals } from '../lib/fluids'
 import { DateTimeField } from './DateTimeField'
 import { GraceButton, VersionTag } from './Grace'
 import { Modal } from './ui'
@@ -27,28 +27,40 @@ function IvCell({ t }: { t: FluidTotals }) {
 
 const cell = (n: number) => (n ? fmtMl(n) : '—')
 
-/** Una tabla por día clínico (07:00 a 07:00): columnas por corte y el total de 24 horas. */
-function DayTable({ periods, total, day }: { periods: FluidRow[]; total: FluidTotals; day: string }) {
-  const cols: { key: string; label: string; t: FluidTotals }[] = [...periods.map((p) => ({ key: String(p.start), label: p.label, t: p as FluidTotals })), { key: 'day', label: '24 horas', t: total }]
+/**
+ * Una tabla por día clínico (07:00 a 07:00): columnas por corte y el total de 24 horas.
+ * UI3 (ronda 17): con un solo corte de 24 horas (orden cada 24 horas) no se repite «07:00–07:00» junto a «24 horas»: queda una
+ * sola columna.
+ */
+function DayTable({ periods, total, day, onRecord }: { periods: FluidRow[]; total: FluidTotals; day: string; onRecord?: () => void }) {
+  // IE2 (ronda 17): solo los rubros con registros ese día (y Líquidos IV solo si hubo); sin nada, un aviso corto y el botón
+  const show = fluidVisibleItems(total)
+  const single = fluidSingleColumn(periods)
+  const cols: { key: string; label: string; t: FluidTotals }[] = [...(single ? [] : periods.map((p) => ({ key: String(p.start), label: p.label, t: p as FluidTotals }))), { key: 'day', label: '24 horas', t: total }]
   const bal = (n: number) => <b className={n < 0 ? 'fluids__neg' : 'fluids__pos'}>{signedMl(n)}</b>
   return (
     <div className="fluids__day">
       <h4>{dateToDisplay(day)} <small className="muted">(de 07:00 a 07:00)</small></h4>
-      <div className="table-wrap">
+      {show.empty ? (
+        <div className="fluids__empty">
+          <p className="muted">Sin registros este día.</p>
+          {onRecord && <button type="button" className="btn btn--ghost btn--sm" onClick={onRecord}><Plus size={15} />Registrar ingreso o egreso</button>}
+        </div>
+      ) : <div className="table-wrap">
         <table className="table fluids__table">
           <thead><tr><th scope="col">mL</th>{cols.map((c) => <th key={c.key} scope="col" className={c.key === 'day' ? 'fluids__total' : ''}>{c.label}</th>)}</tr></thead>
           <tbody>
             <tr className="fluids__group"><th scope="row" colSpan={cols.length + 1}>Ingresos</th></tr>
-            <tr><th scope="row">Líquidos IV <small className="muted">(calculado)</small></th>{cols.map((c) => <td key={c.key} className={c.key === 'day' ? 'fluids__total' : ''}><IvCell t={c.t} /></td>)}</tr>
-            {FLUID_IN_ITEMS.map((i) => <tr key={i.key}><th scope="row">{i.label}{i.hint ? <small className="muted"> ({i.hint.toLowerCase()})</small> : null}</th>{cols.map((c) => <td key={c.key} className={c.key === 'day' ? 'fluids__total' : ''}>{cell(c.t.in[i.key])}</td>)}</tr>)}
+            {show.iv && <tr><th scope="row">Líquidos IV <small className="muted">(calculado)</small></th>{cols.map((c) => <td key={c.key} className={c.key === 'day' ? 'fluids__total' : ''}><IvCell t={c.t} /></td>)}</tr>}
+            {show.in.map((i) => <tr key={i.key}><th scope="row">{i.label}{i.hint ? <small className="muted"> ({i.hint.toLowerCase()})</small> : null}</th>{cols.map((c) => <td key={c.key} className={c.key === 'day' ? 'fluids__total' : ''}>{cell(c.t.in[i.key])}</td>)}</tr>)}
             <tr className="fluids__sum"><th scope="row">Total de ingresos</th>{cols.map((c) => <td key={c.key} className={c.key === 'day' ? 'fluids__total' : ''}>{fmtMl(c.t.totalIn)}</td>)}</tr>
             <tr className="fluids__group"><th scope="row" colSpan={cols.length + 1}>Egresos</th></tr>
-            {FLUID_OUT_ITEMS.map((i) => <tr key={i.key}><th scope="row">{i.label}</th>{cols.map((c) => <td key={c.key} className={c.key === 'day' ? 'fluids__total' : ''}>{cell(c.t.out[i.key])}</td>)}</tr>)}
+            {show.out.map((i) => <tr key={i.key}><th scope="row">{i.label}</th>{cols.map((c) => <td key={c.key} className={c.key === 'day' ? 'fluids__total' : ''}>{cell(c.t.out[i.key])}</td>)}</tr>)}
             <tr className="fluids__sum"><th scope="row">Total de egresos</th>{cols.map((c) => <td key={c.key} className={c.key === 'day' ? 'fluids__total' : ''}>{fmtMl(c.t.totalOut)}</td>)}</tr>
             <tr className="fluids__balance"><th scope="row">Balance</th>{cols.map((c) => <td key={c.key} className={c.key === 'day' ? 'fluids__total' : ''}>{bal(c.t.balance)}</td>)}</tr>
           </tbody>
         </table>
-      </div>
+      </div>}
       {(total.noVolume.length > 0 || total.noStart.length > 0) && (
         <ul className="fluids__notes">
           {total.noVolume.length > 0 && <li>* Sin volumen: agrégalo a mano. {total.noVolume.join('; ')}</li>}
@@ -78,11 +90,12 @@ export function FluidBalance({ file, reload, print = false }: { file: InpatientF
   return (
     <section className="panel fluids" data-testid="fluid-balance">
       <div className="panel__head">
-        <div><h2>Ingestas y excretas</h2><p>{mode ? fluidsOrderText(mode) : 'Orden suspendida: el registro queda como estaba.'} Los líquidos IV se calculan de la hoja de medicamentos{print ? '.' : '; toca un número para ver de qué sale.'}</p></div>
+        {/* UI3 (ronda 17): «Cuantificar ingestas y excretas cada 24 horas. Los líquidos IV se calculan de la hoja de medicamentos; toca un número para ver de dónde sale.» */}
+        <div><h2>Ingestas y excretas</h2><p>{mode ? fluidsSentence(mode) : 'Orden suspendida: el registro queda como estaba.'} Los líquidos IV se calculan de la hoja de medicamentos{print ? '.' : '; toca un número para ver de dónde sale.'}</p></div>
         {record && <button type="button" className="btn btn--primary btn--sm" onClick={() => setEditing('new')}><Plus size={15} />Registrar ingreso o egreso</button>}
       </div>
       <div className="panel__body">
-        {days.length ? days.map((d) => <DayTable key={d.day} day={d.day} periods={d.periods} total={d} />) : <p className="muted">Todavía no hay datos.</p>}
+        {days.length ? days.map((d) => <DayTable key={d.day} day={d.day} periods={d.periods} total={d} onRecord={record ? () => setEditing('new') : undefined} />) : <p className="muted">Todavía no hay datos.</p>}
         <h4 style={{ marginTop: 16 }}>Registros</h4>
         {entries.length ? (
           <div className="table-wrap">
@@ -125,7 +138,8 @@ function FluidEntryModal({ stayId, entry, onClose, onSaved }: { stayId: string; 
   const future = fromLocalValue(at).getTime() > Date.now() + 60_000
   const ok = !!type && n > 0 && n <= FLUID_MAX_ENTRY_ML && !future
   return (
-    <Modal title={entry ? 'Corregir registro' : 'Registrar ingreso o egreso'} onClose={onClose} footer={<>
+    // UI3 (ronda 17): dos columnas parejas (Tipo y Cantidad; Hora con «Ahora» en la misma línea y Nota), alineadas por arriba
+    <Modal title={entry ? 'Corregir registro' : 'Registrar ingreso o egreso'} className="fluid-entry" onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ok || busy} onClick={async () => {
         setBusy(true)

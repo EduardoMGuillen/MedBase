@@ -230,11 +230,42 @@ tr.clickable { cursor: pointer; }
 /* AD6: la barra de pestañas y el encabezado de las tablas largas se quedan fijos al bajar */
 .tabs--sticky { position: sticky; top: 0; z-index: 20; background: var(--ward); margin-top: -8px; padding-top: 8px; }
 .table--sticky thead th { position: sticky; top: 0; z-index: 3; box-shadow: inset 0 -1px 0 var(--line); }
-.page:has(> .tabs--sticky) .table--sticky thead th { top: 52px; }
+/* UI1 (ronda 17): se quitó el `top: 52px` del encabezado cuando la página tiene pestañas fijas. La tabla va dentro de
+   `.table-wrap` (que se desplaza a lo ancho), y el encabezado fijo se pega a ESE recuadro, no a la página: con 52 px quedaba
+   siempre corrido hacia abajo, tapaba las primeras filas y dejaba una barra blanca vacía arriba (Personal y roles, Caja,
+   Configuración). */
 @media (max-width: 860px) {
   /* En el teléfono la tabla se desplaza dentro de su recuadro (a lo ancho y a lo alto) y su encabezado queda arriba */
   .table-wrap:has(> .table--sticky) { max-height: calc(100dvh - 150px); overflow: auto; overscroll-behavior: contain; }
-  .page:has(> .tabs--sticky) .table--sticky thead th { top: 0; }
+}
+/* UI1 (ronda 17): Personal y roles. Columnas repartidas: el nombre con la especialidad en dos líneas como máximo a 1366 px,
+   los botones de cada fila apilados a la derecha (sin salirse de la tarjeta) y el correo partido si hace falta. */
+.staff-table th, .staff-table td { padding-left: 14px; padding-right: 14px; }
+.staff-table th:first-child, .staff-table td:first-child { padding-left: 22px; }
+.staff-table .staff-table__name { min-width: 15.5rem; }
+.staff-table .role-picks .badge { white-space: normal; text-align: left; }
+.staff-table .staff-table__name .cell-person > span { min-width: 0; }
+.staff-table .staff-table__name .cell-person small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.staff-table .staff-table__mail { overflow-wrap: break-word; }
+.staff-table .staff-table__actions { width: 1%; }
+.staff-actions { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.staff-actions .btn { justify-content: center; white-space: nowrap; }
+.staff-matrix { overflow: hidden; }
+.staff-matrix .top-scroll { margin: 0; }
+.staff-matrix .matrix th:first-child, .staff-matrix .matrix td:first-child { position: sticky; left: 0; z-index: 1; background: var(--paper); min-width: 13rem; box-shadow: inset -1px 0 0 var(--line-soft); }
+.staff-matrix .matrix th:first-child { background: #fafcfb; }
+.staff-matrix .matrix th:not(:first-child) { min-width: 6.5rem; }
+.audit-log .audit-table td { overflow-wrap: break-word; }
+@media screen and (max-width: 720px) {
+  .staff-actions { flex-direction: row; flex-wrap: wrap; width: 100%; }
+  .staff-actions .btn { flex: 1 1 auto; white-space: normal; }
+  .staff-table .staff-table__name { min-width: 0; }
+  .staff-table .staff-table__name .cell-person small { white-space: normal; }
+  .staff-table .staff-table__actions { width: auto; }
+  .staff-matrix .matrix th:first-child, .staff-matrix .matrix td:first-child { min-width: 10rem; max-width: 12rem; }
+  .staff-matrix .matrix th, .staff-matrix .matrix td { padding: 10px 12px; }
+  /* En la tarjeta de la bitácora, Rol y Paciente lado a lado y la acción completa debajo */
+  .audit-table td.tc-full { order: 1; }
 }
 @media print { .tabs--sticky, .table--sticky thead th { position: static; } }
 .dx-recode { display: grid; gap: 6px; margin-bottom: 8px; }
@@ -784,12 +815,17 @@ button.src-tag--none { cursor: pointer; }
 .ref-note__src { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 
 /* GE3 (ronda 9): campo propio de fecha y hora (dd/mm/aaaa HH:mm, 24 horas, sin AM/PM) */
+/* UI2 (ronda 17): el botón del calendario (o del reloj) va DENTRO del campo, a la derecha, en todas las pantallas. Antes era
+   un hermano del campo en una fila que se partía: según el ancho quedaba al lado, debajo o encima de lo que siguiera (en la
+   Agenda, sobre la barra de desplazamiento de arriba). Ahora campo y botón van juntos en `.dtf__box`; «Ahora» y el aviso
+   siguen fuera, en la misma fila si cabe. */
 .dtf { position: relative; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; max-width: 100%; }
-.dtf__input { flex: 1 1 9rem; min-width: 0; }
-.dtf--date .dtf__input { flex-basis: 7.5rem; }
-.dtf--time .dtf__input { flex: 0 1 5.5rem; }
-.dtf__btn { flex: none; min-width: 44px; min-height: 44px; }
-.dtf__now { min-height: 44px; }
+.dtf__box { position: relative; display: block; flex: 1 1 11rem; min-width: 0; }
+.dtf--date .dtf__box { flex-basis: 9.5rem; }
+.dtf--time .dtf__box { flex: 0 1 7.5rem; }
+.dtf__box .dtf__input { width: 100%; min-width: 0; padding-right: 42px; }
+.dtf__box .dtf__btn { position: absolute; top: 0; right: 0; bottom: 0; width: 42px; height: auto; min-height: 0; border-radius: 0 var(--r-md) var(--r-md) 0; }
+.dtf__now { min-height: 42px; }
 .dtf__msg { flex-basis: 100%; }
 .dtf__pop { position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; width: min(300px, 88vw); display: grid; gap: 10px; padding: 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,.16); }
 .dtf__pop--time { width: auto; }
@@ -1394,10 +1430,7 @@ li.is-void .usage-records__void { text-decoration: none; }
 .mat-form .modal__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
 .mat-form .modal__foot { flex: none; padding: 0; border-top: 1px solid var(--line); display: block; }
 .mat-form__head { max-width: 560px; }
-/* El icono del calendario dentro del campo de fecha */
-.mat-form .dtf--inset { flex-wrap: nowrap; }
-.mat-form .dtf--inset .dtf__input { padding-right: 46px; }
-.mat-form .dtf--inset .dtf__btn { position: absolute; right: 2px; top: 0; }
+/* UI2 (ronda 17): el icono del calendario dentro del campo ya es general (ver `.dtf__box`) */
 .mat-form__cols { display: grid; gap: 20px; align-items: start; }
 .mat-col { display: grid; gap: 10px; min-width: 0; align-content: start; }
 .mat-col__title { font-size: 15px; margin: 0; color: var(--petrol); }

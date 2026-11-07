@@ -105,7 +105,9 @@
 .cal-bar__nav { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .cal-bar__title { font-size: 19px; margin-left: 6px; white-space: nowrap; }
 .cal-bar__tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.cal-bar__date { width: 160px; height: 36px; }
+.cal-bar__date { width: 170px; }
+/* UI2 (ronda 17): el alto va en el campo, no en el contenedor (con alto fijo el botón se salía y quedaba sobre la barra de arriba) */
+.cal-bar__date .dtf__input { height: 36px; }
 .cal-bar__doc { width: auto; height: 36px; max-width: 230px; }
 .cal__inner--week { min-width: 900px; }
 .cal__head--day { flex-direction: column; gap: 0; border: 0; border-left: 1px solid var(--line-soft); background: transparent; cursor: pointer; padding: 8px 4px; }
@@ -1111,7 +1113,19 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .fluids__group th { background: var(--ward, #f1f6f4); color: var(--petrol, inherit); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
 .fluids__sum th, .fluids__sum td { font-weight: 700; }
 .fluids__balance th, .fluids__balance td { border-top: 2px solid var(--line); }
-.fluids__total { background: rgba(0, 0, 0, .025); font-weight: 600; }
+/* UI3 (ronda 17): cada fila con un solo fondo de punta a punta (el rubro es un th y tomaba el fondo de los encabezados) */
+.fluids__table tbody tr > * { background: var(--paper); }
+.fluids__table tbody tr:hover > * { background: #fafcfb; }
+.fluids__table tbody tr.fluids__group > th { background: var(--ward, #f1f6f4); }
+.fluids__table tbody th { border-bottom: 1px solid var(--line-soft); }
+.fluids__table tbody tr:last-child > * { border-bottom: 0; }
+.fluids__total { font-weight: 600; }
+/* IE2 (ronda 17): día sin registros: aviso corto y el botón, en vez de una tabla llena de guiones */
+.fluids__empty { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--r-md); }
+.fluids__empty p { margin: 0; }
+.fluid-entry.modal { width: min(600px, 100%); }
+.fluid-entry .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+@media (max-width: 600px) { .fluid-entry .form-grid { grid-template-columns: minmax(0, 1fr); } }
 .fluids__neg { color: var(--red-ink, #b42318); }
 .fluids__pos { color: var(--mint-ink, #146c43); }
 .fluids__warn { color: var(--amber-ink, #8a5a00); }

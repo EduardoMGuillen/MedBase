@@ -21,6 +21,15 @@ export function fluidsOrderText(m: FluidsMode | 'off') {
   return `${FLUIDS_ORDER} · ${fluidsModeLabel(m)}${detail}`
 }
 
+/**
+ * UI3 (ronda 17): la frase de la tarjeta, bien puntuada: «Cuantificar ingestas y excretas cada 24 horas.», «… por turno
+ * (07:00, 15:00 y 23:00).». La orden en las notas sigue con `fluidsOrderText` («… · Cada 24 horas»).
+ */
+export function fluidsSentence(m: FluidsMode) {
+  const detail = m === 'shift' ? ` (${VITALS_SHIFT_TIMES.slice(0, -1).join(', ')} y ${VITALS_SHIFT_TIMES.at(-1)})` : ''
+  return `${FLUIDS_ORDER} ${fluidsModeLabel(m).toLowerCase()}${detail}.`
+}
+
 /** La orden vigente (el último tramo), o undefined si nunca se indicó o está suspendida. */
 export function currentFluidsMode(plan?: FluidsSegment[]): FluidsMode | undefined {
   const last = plan?.at(-1)
@@ -170,6 +179,22 @@ export function fluidBalance(x: { plan?: FluidsSegment[]; meds: InpatientMed[]; 
     return { day, periods, ...t }
   }).reverse()
 }
+
+/**
+ * IE2 (ronda 17): qué rubros se muestran en la tabla de un día: solo los que tienen al menos un registro (no anulado) ese día,
+ * y «Líquidos IV (calculado)» solo si ese día hubo líquidos IV en la hoja de medicamentos (con volumen calculado o aplicados
+ * sin volumen reconocible, que llevan el aviso «*»). Los encabezados, los totales y el balance se muestran siempre; `empty`:
+ * nada que mostrar (la pantalla pone «Sin registros este día»). En «Registrar ingreso o egreso» siguen todos los rubros.
+ */
+export function fluidVisibleItems(t: Pick<FluidTotals, 'iv' | 'noVolume' | 'in' | 'out'>) {
+  const iv = t.iv > 0 || t.noVolume.length > 0
+  const inItems = FLUID_IN_ITEMS.filter((i) => (t.in[i.key] ?? 0) > 0)
+  const outItems = FLUID_OUT_ITEMS.filter((i) => (t.out[i.key] ?? 0) > 0)
+  return { iv, in: inItems, out: outItems, empty: !iv && !inItems.length && !outItems.length }
+}
+
+/** UI3 (ronda 17): un solo corte de 24 horas en el día (orden cada 24 horas): la tabla lleva una sola columna, «24 horas». */
+export const fluidSingleColumn = (periods: Pick<FluidPeriod, 'start' | 'end'>[]) => periods.length === 1 && periods[0].end - periods[0].start >= 24 * HOUR
 
 /** «+300 mL», «−250 mL», «0 mL»: el balance siempre con su signo. */
 export const signedMl = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmtMl(Math.abs(n))}`
