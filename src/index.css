@@ -304,6 +304,9 @@ a.row:hover { background: var(--ward); }
 .cal-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .cal-toolbar h2 { font-size: 20px; min-width: 230px; text-transform: none; }
 .cal { display: grid; overflow-x: auto; }
+/* AG1 (ronda 16): la barra horizontal de arriba (TopScrollbar), pegada a la agenda y sincronizada con la de abajo */
+.top-scroll { overflow-x: auto; overflow-y: hidden; height: 14px; margin: 0 1px 2px; }
+.top-scroll > div { height: 1px; }
 .cal__inner { display: grid; min-width: 760px; }
 .cal__heads { display: grid; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--paper); z-index: 2; border-radius: var(--r-lg) var(--r-lg) 0 0; }
 .cal__head { padding: 14px 16px; display: flex; gap: 10px; align-items: center; border-left: 1px solid var(--line-soft); }
