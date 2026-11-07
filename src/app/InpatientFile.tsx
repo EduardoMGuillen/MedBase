@@ -57,6 +57,7 @@ import { NotInVademecum } from '../components/AddToVademecum'
 import { GenerateRxModal, RxAnnex } from '../components/GenerateRx'
 import { AnesthesiaAnnex, AnesthesiaCard } from '../components/AnesthesiaSheet'
 import { PreEvalAnnex, PreEvalButton } from '../components/PreEval'
+import { SurgicalCountAnnex, SurgicalCountCard } from '../components/SurgicalCount'
 import { DrugSearch } from '../components/DrugSearch'
 import type { OrderSet } from '../lib/types'
 import { TabRow } from '../components/TabRow'
@@ -901,6 +902,8 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
         <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={can('inpatient.orders') && user?.role === 'doctor'} onAdded={reload} openWith={toAddendum} />
         {/* PQ3 (ronda 14): hoja de anestesia de la nota postquirúrgica */}
         {n.format === 'postop' && <AnesthesiaCard note={n} />}
+        {/* PQ5 (ronda 16): recuento quirúrgico */}
+        {n.format === 'postop' && <SurgicalCountCard note={n} />}
       </div>
       {correcting && p && <NoteEditor file={file} p={p} kind={n.kind === 'admission' ? 'admission' : 'evolution'} variant={n.format === 'postop' ? 'postop' : undefined} correct={n}
         onClose={() => setCorrecting(false)} onSaved={(b, rx) => { setCorrecting(false); reload(); if (b || rx) setOrdersFor({ batch: b, rxNote: rx }) }} onExpired={(t) => { setCorrecting(false); setToAddendum(t) }} />}
@@ -1883,6 +1886,7 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
       {/* PQ4 y PQ5 (ronda 16): valoración preanestésica (de la estancia) y recuento quirúrgico */}
       <PreEvalAnnex stayId={file.hospitalization.id} />
       <AnesthesiaAnnex stayId={file.hospitalization.id} />
+      <SurgicalCountAnnex stayId={file.hospitalization.id} />
       {file.referrals.map((r) => (
         <article key={r.id} className="panel consult-entry">
           <div className="panel__head"><div><h2>Referencia {r.number} {r.voidedAt ? <span className="badge badge--red">Anulada</span> : <span className="badge badge--mint">Firmada</span>}</h2>

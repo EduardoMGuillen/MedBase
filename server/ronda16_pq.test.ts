@@ -8,7 +8,8 @@ import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { blankAnesthesia, gridPoints } from '../src/lib/anesthesia.js'
 import { blankPreEval, latestLabs, prefillPreEval } from '../src/lib/preanesthesia.js'
-import { ANESTHESIA_GRID } from '../src/lib/clinicalConfig.js'
+import { blankCount, countMissing, prefillCount } from '../src/lib/surgicalCount.js'
+import { ANESTHESIA_GRID, SURGICAL_COUNT } from '../src/lib/clinicalConfig.js'
 
 // PQ4 y PQ5 (ronda 16): valoración preanestésica ligada a la estancia, registro de anestesia y recuento quirúrgico
 let server: Server
@@ -189,5 +190,98 @@ describe('PQ4 (ronda 16): valoración preanestésica antes de la cirugía y regi
       { at: '2026-11-05T10:00:00Z', values: [{ analyte: 'Hemoglobina', value: '12', unit: 'g/dL' }, { analyte: 'Hematocrito', value: '36', unit: '%' }, { analyte: 'INR', value: '1.1' }] },
     ])
     assert.deepEqual(labs, { hb: '12 g/dL', hto: '36 %', inr: '1.1', glucose: '110' })
+  })
+})
+
+describe('PQ5 (ronda 16): recuento quirúrgico', () => {
+  let stay: { id: string; patientId: string }
+  let nolasco: Client; let urbina: Client; let vallecillo: Client; let quiroz: Client; let moncada: Client
+  let noteId = ''
+  before(async () => {
+    nolasco = await as('hnolasco@demo.clinara'); urbina = await as('murbina@demo.clinara'); vallecillo = await as('rvallecillo@demo.clinara')
+    quiroz = await as('aquiroz@demo.clinara'); moncada = await as('rmoncada@demo.clinara')
+    stay = (await nolasco.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'hospital' && h.status === 'active')
+    noteId = await postopNote(nolasco, stay.id, { scrub: { name: 'Lic. Marta Urbina', staffId: 's-urbina' }, circulating: { name: 'Aux. Rosa Vallecillo' }, anesthesiologist: { name: 'Dra. Silvia Arita', staffId: 's-arita' } })
+  })
+  const countData = (incorrect = false) => {
+    const d = prefillCount({ postop: undefined })
+    d.procedure = 'Apendicectomía'
+    d.rows = d.rows.map((r) => ({ ...r, cells: { ...r.cells, initial: '10', final: '10' }, result: 'Correcto' }))
+    if (incorrect) d.rows[1] = { ...d.rows[1], cells: { ...d.rows[1].cells, final: '9' }, result: 'Incorrecto' }
+    d.rows.push({ key: 'other:1', label: 'Clips', cells: { initial: '4', added: '', cavity: '', wound: '', final: '4' }, result: 'Correcto' })
+    d.handoffs = [{ id: 'h1', time: '09:30', role: 'Circulante', from: 'Aux. Rosa Vallecillo', to: 'Lic. Gabriel Yanes', count: 'Completo' }]
+    return d
+  }
+
+  test('«Sin agregar» en la nota; recepción y administración 403 (también por URL directa)', async () => {
+    const card = await urbina.get(`/api/surgical-count/notes/${noteId}`)
+    assert.equal(card.status, 200, JSON.stringify(card.body)); assert.deepEqual(card.body.counts, [])
+    for (const who of [quiroz, moncada]) {
+      assert.equal((await who.get(`/api/surgical-count/notes/${noteId}`)).status, 403)
+      assert.equal((await who.get(`/api/surgical-count/notes/${noteId}/prefill`)).status, 403)
+      assert.equal((await who.get(`/api/inpatient/${stay.id}/surgical-count/blank`)).status, 403)
+      assert.equal((await who.post(`/api/surgical-count/notes/${noteId}/sign`, { data: countData() })).status, 403)
+      assert.equal((await who.post(`/api/surgical-count/notes/${noteId}/upload`, { fileId: 'x' })).status, 403)
+      assert.equal((await who.get(`/api/inpatient/${stay.id}/surgical-counts`)).status, 403)
+    }
+  })
+
+  test('Lic. Marta Urbina lo llena con un «Incorrecto»: pide las casillas y la nota; al firmar queda en Anexos con su nombre', async () => {
+    const pf = await urbina.get(`/api/surgical-count/notes/${noteId}/prefill`)
+    assert.equal(pf.status, 200, JSON.stringify(pf.body))
+    const head = prefillCount(pf.body.prefill)
+    assert.equal(head.procedure, 'Apendicectomía'); assert.equal(head.surgeon, 'Dr. Hugo Nolasco'); assert.equal(head.scrubNurse, 'Lic. Marta Urbina'); assert.equal(head.circulatingNurse, 'Aux. Rosa Vallecillo')
+    assert.equal((await urbina.put(`/api/drafts/recuento/${noteId}`, { data: { d: head } })).status, 200)
+    const bad = countData(true)
+    const r1 = await urbina.post(`/api/surgical-count/notes/${noteId}/sign`, { data: bad })
+    assert.equal(r1.status, 400); assert.match(r1.body.error, /Se informó al cirujano/)
+    bad.incorrect = { surgeonInformed: 'Sí', searched: 'Sí', xray: 'No', found: 'Sí', note: '' }
+    assert.match((await urbina.post(`/api/surgical-count/notes/${noteId}/sign`, { data: bad })).body.error, /nota/)
+    bad.incorrect.note = 'La gasa estaba en el campo, debajo del paño.'
+    bad.confirmed = true
+    // Una fila fija que falta no se acepta
+    assert.equal((await urbina.post(`/api/surgical-count/notes/${noteId}/sign`, { data: { ...bad, rows: bad.rows.slice(1) } })).status, 400)
+    const s = await urbina.post(`/api/surgical-count/notes/${noteId}/sign`, { data: bad })
+    assert.equal(s.status, 201, JSON.stringify(s.body))
+    assert.equal(s.body.createdBy, 's-urbina'); assert.match(s.body.signer.name, /Urbina/); assert.ok(s.body.createdAt)
+    assert.equal(s.body.data.rows.length, SURGICAL_COUNT.rows.length + 1); assert.equal(s.body.data.handoffs.length, 1)
+    assert.equal((await urbina.get(`/api/drafts/recuento/${noteId}`)).body, null)
+    const annex = (await nolasco.get(`/api/inpatient/${stay.id}/surgical-counts`)).body
+    const mine = annex.find((x: any) => x.id === s.body.id)
+    assert.ok(mine); assert.equal(mine.procedure, 'Apendicectomía')
+    assert.equal((await urbina.post(`/api/surgical-count/notes/${noteId}/sign`, { data: countData() })).status, 409)
+    assert.ok((await audits()).includes('resultado incorrecto en Gasas'))
+    // Corrección en el periodo de gracia (solo ella) y adenda; no se borra
+    const fix = await urbina.post(`/api/surgical-counts/${s.body.id}/correct`, { data: { ...bad, confirmed: false }, version: 1 })
+    assert.equal(fix.status, 200, JSON.stringify(fix.body)); assert.equal(fix.body.version, 2)
+    assert.equal((await vallecillo.post(`/api/surgical-counts/${s.body.id}/correct`, { data: bad, version: 2 })).status, 403)
+    assert.equal((await urbina.post('/api/addenda', { targetKind: 'surgical_count', targetId: s.body.id, kind: 'info', text: 'Se avisó a la jefa de sala.' })).status, 201)
+    await assert.rejects(sql.run('DELETE FROM surgical_counts WHERE id = ?', [s.body.id]), /no se borra/)
+    const view = await vallecillo.get(`/api/surgical-counts/${s.body.id}`)
+    assert.equal(view.status, 200); assert.equal(view.body.prefill.patient.id, stay.patientId)
+  })
+
+  test('hoja en blanco e imprimir; subir la foto (auxiliar) y reemplazarla con motivo', async () => {
+    const note2 = await postopNote(nolasco, stay.id, {})
+    const blank = await vallecillo.get(`/api/inpatient/${stay.id}/surgical-count/blank?nota=${note2}`)
+    assert.equal(blank.status, 200); assert.equal(blank.body.prefill.postop.procedureName, 'Apendicectomía')
+    assert.ok((await audits()).includes('Imprimió el recuento quirúrgico en blanco'))
+    const f = await uploadPdf(vallecillo, stay.patientId, stay.id)
+    const up = await vallecillo.post(`/api/surgical-count/notes/${note2}/upload`, { fileId: f, observation: 'Firmado por las tres' })
+    assert.equal(up.status, 201, JSON.stringify(up.body)); assert.equal(up.body.mode, 'upload')
+    const f2 = await uploadPdf(urbina, stay.patientId, stay.id)
+    assert.equal((await urbina.post(`/api/surgical-count/notes/${note2}/upload`, { fileId: f2 })).status, 409)
+    const rep = await urbina.post(`/api/surgical-count/notes/${note2}/upload`, { fileId: f2, replaces: { sheetId: up.body.id, reason: 'Foto borrosa' } })
+    assert.equal(rep.status, 201, JSON.stringify(rep.body))
+    const counts = (await urbina.get(`/api/surgical-count/notes/${note2}`)).body.counts
+    assert.equal(counts.length, 2); assert.ok(counts.find((c: any) => c.id === up.body.id).voidedAt)
+    assert.equal((await urbina.del(`/api/attachments/${f2}`)).status, 409)
+  })
+
+  test('la nota que no es postquirúrgica no lleva recuento; lo que falta para firmar', async () => {
+    const n = await nolasco.post(`/api/inpatient/${stay.id}/notes`, { kind: 'evolution', format: 'dx', observations: 'Estable' })
+    assert.equal(n.status, 201, JSON.stringify(n.body))
+    assert.equal((await urbina.get(`/api/surgical-count/notes/${n.body.id}`)).status, 409)
+    assert.deepEqual(countMissing(blankCount()), ['marca el resultado de al menos una fila'])
   })
 })

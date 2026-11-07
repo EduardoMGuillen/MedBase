@@ -10,6 +10,7 @@ import { authStatus, authTitle } from '../lib/consent'
 import { PdfPages } from '../components/PdfPages'
 import { AnesthesiaRecord } from './AnesthesiaDoc'
 import { PreEvalRecord } from './PreEvalDoc'
+import { SurgicalCountRecord } from './SurgicalCountDoc'
 import { ThermalCurve, VitalsTable } from './VitalsSheet'
 import { antipyreticDoses, bandOf, missedTakes, takeStatuses, vitalsAnchor, vitalsEvery, vitalsModeText } from '../lib/vitalsSheet'
 import { useNow } from '../lib/hooks'
@@ -232,6 +233,7 @@ export default function FullRecord() {
           {/* PQ4 y PQ5 (ronda 16): valoración preanestésica y recuento quirúrgico */}
           <PreEvalRecord stayId={h.id} />
           <AnesthesiaRecord stayId={h.id} />
+          <SurgicalCountRecord stayId={h.id} />
         </>, true)}
 
         {file.referrals.map((r, i) => page(`fr-referencia-${i}`, `Anexos: referencia ${r.number}`, <ReferralSheet r={r} />))}

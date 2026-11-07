@@ -40,6 +40,7 @@ import { registerReferrals } from './routes/referrals.js'
 import { registerConsent } from './routes/consent.js'
 import { registerAnesthesia } from './routes/anesthesia.js'
 import { registerPreanesthesia } from './routes/preanesthesia.js'
+import { registerSurgicalCount } from './routes/surgicalCount.js'
 import { registerOrderSets } from './routes/orderSets.js'
 import { registerRoster } from './routes/roster.js'
 import { applicationsOf, registerApplications } from './routes/applications.js'
@@ -1485,6 +1486,7 @@ export function createApp(opts: AppOptions) {
   registerAnesthesia(app, ctx)
   // PQ4 y PQ5 (ronda 16): valoración preanestésica (ligada a la estancia) y recuento quirúrgico (de la nota postquirúrgica)
   registerPreanesthesia(app, ctx)
+  registerSurgicalCount(app, ctx)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada.')))
 
