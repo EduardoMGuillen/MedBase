@@ -66,12 +66,12 @@ export function ExamCatalogAdmin({ only, readOnly = false }: { only?: ExamGroup;
             {items.map((e) => (
               <li key={e.id}>
                 <span><b>{e.name}</b>
-                  {refOf(e) ? <button type="button" className="linklike" style={{ fontSize: 13 }} aria-expanded={refOpen === e.id} onClick={() => setRefOpen(refOpen === e.id ? null : e.id)}>
+                  {refOf(e) ? <button type="button" className="linklike fs-md" aria-expanded={refOpen === e.id} onClick={() => setRefOpen(refOpen === e.id ? null : e.id)}>
                     {refOpen === e.id ? 'Ocultar valores de referencia' : `Valores de referencia${analytes(e) ? ` (${analytes(e)})` : ''}`}</button>
                     : e.group === 'lab' && <small className="muted">{analytes(e) > 0 ? `${analytes(e)} ${analytes(e) === 1 ? 'valor' : 'valores'} con rango de referencia` : 'Sin valores de referencia en la lista de Emil'}</small>}
                   {refOpen === e.id && refOf(e) && <RefDetails r={refOf(e)!} />}
                   {/* CA5 (ronda 10): qué pide al ordenarlo */}
-                  {e.group === 'imaging' && hasDetails(detailsOf(e)) && <small className="muted" style={{ display: 'block' }}>Pide al ordenar: {detailsSummary(detailsOf(e)!)}</small>}</span>
+                  {e.group === 'imaging' && hasDetails(detailsOf(e)) && <small className="c-muted block">Pide al ordenar: {detailsSummary(detailsOf(e)!)}</small>}</span>
                 {!readOnly && <span className="excat__acts">
                   <button className="btn btn--ghost btn--sm" aria-label={`Editar ${e.name}`} title="Editar" onClick={() => setEditing(e)}><Pencil size={13} /><span>Editar</span></button>
                   <button className="btn btn--ghost btn--sm" aria-label={`Quitar ${e.name}`} title="Quitar" onClick={() => setRemoving(e)}><Trash2 size={13} /><span>Quitar</span></button>
@@ -153,7 +153,7 @@ function ExamForm({ exam, onClose, onSaved, only }: { exam?: ClinicExam; onClose
   }
   return (
     <Modal title={exam ? `Editar examen: ${exam.name}` : 'Agregar examen'} wide className="excat-modal" onClose={onClose} footer={<>
-      {refsDirty && <span className="muted" style={{ marginRight: 'auto', fontSize: 13.5 }}>Hay cambios en los valores de referencia sin guardar.</span>}
+      {refsDirty && <span className="c-muted mr-auto fs-md">Hay cambios en los valores de referencia sin guardar.</span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={busy || name.trim().length < 2 || badRefs || (!!exam && !examChanged && !refsDirty)} onClick={save}>{exam ? 'Guardar cambios' : 'Agregar'}</button>
     </>}>

@@ -200,7 +200,7 @@ function SupplyMaterials({ items, error, reload, setItems, archived, setArchived
             try { await api(`/supplies/${archiving.id}/archive`, { method: 'POST' }); notify(`${supplyLabel(archiving)} se archivó`); setArchiving(null); reload() } catch (e) { notify((e as Error).message, 'error') }
           }}><Archive size={15} />Archivar</button>
         </>}>
-          <p style={{ marginTop: 0 }}><b>{supplyLabel(archiving)}</b> deja de aparecer al registrar material y sale de la lista de turno. Los registros anteriores lo siguen mostrando. Se puede restaurar desde «Ver archivados».</p>
+          <p className="mt-0"><b>{supplyLabel(archiving)}</b> deja de aparecer al registrar material y sale de la lista de turno. Los registros anteriores lo siguen mostrando. Se puede restaurar desde «Ver archivados».</p>
         </Modal>
       )}
     </section>
@@ -275,7 +275,7 @@ function SupplyForm({ item, preset, items, categories, canRestore, onClose, onSa
           </select></label>
         {!item && can('supplies.shiftlist') && <label className="check-inline span-2"><input type="checkbox" checked={f.onShiftList} onChange={(e) => setF({ ...f, onShiftList: e.target.checked })} />En la lista de turno</label>}
         {same && (
-          <div className="alert-strip alert-strip--amber span-2" role="alert" style={{ flexWrap: 'wrap' }}>
+          <div className="alert-strip alert-strip--amber span-2 wrap" role="alert">
             <span>Ya existe en el catálogo: <b>{supplyLabel(same)}</b>{same.archivedAt ? ' (archivado)' : ''}.</span>
             {same.archivedAt && canRestore && <button type="button" className="btn btn--ghost btn--sm" onClick={() => void restore(same)}><RotateCcw size={14} />Restaurar</button>}
             {same.archivedAt && !canRestore && <small>Administración lo puede restaurar.</small>}

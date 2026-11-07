@@ -34,7 +34,7 @@ export function ExamTray() {
               const p = patient(e.patientId)
               return (
                 <Link key={e.id} to={examPath(e, inpatients)} className={`row row--plain tray-row${e.priority === 'urgent' ? ' tray-row--urgent' : ''}`}>
-                  <div className="row__who"><strong>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red" style={{ marginLeft: 6 }}>Urgente</span>}</strong>
+                  <div className="row__who"><strong>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red ml-xs">Urgente</span>}</strong>
                     <span>{p ? fullName(p) : ''} · {dateTime(e.orderedAt)}{e.indication ? ` · ${e.indication}` : ''}</span></div>
                   <span className="badge badge--amber">{NEXT_ACTION[e.group][e.status] ?? 'Pendiente'}</span>
                 </Link>
@@ -62,7 +62,7 @@ export function NewResults() {
         const flagged = e.result?.values?.filter((v) => v.flag) ?? []
         return (
           <Link key={e.id} to={examPath(e, inpatients)} className="row row--plain">
-            <div className="row__who"><strong>{examLine(e)}<span style={{ fontWeight: 400 }}> · {p ? fullName(p) : ''}</span></strong>
+            <div className="row__who"><strong>{examLine(e)}<span className="fw-normal"> · {p ? fullName(p) : ''}</span></strong>
               {/* DP2 (ronda 11): «No se realizó» también avisa al médico que lo pidió */}
               {notDone ? <span>{GROUP_LABEL[e.group]} · No se realizó: {e.notDone!.reason} ({shortStaff(staffById(e.notDone!.by)?.name)}, {dateTime(e.notDone!.at)}). Sigue pendiente: cancélalo o déjalo para que lo reintenten.</span>
                 : <span>{GROUP_LABEL[e.group]} · resultado {e.result ? dateTime(e.result.at) : ''} por {shortStaff(staffById(e.result?.by ?? '')?.name)}</span>}

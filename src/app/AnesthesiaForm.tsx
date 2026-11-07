@@ -104,7 +104,7 @@ export default function AnesthesiaFormPage() {
         title={correcting ? 'Corregir el registro de anestesia' : 'Registro de anestesia'}
         sub={`${`${p.firstName} ${p.lastName}`.trim()} · Expediente ${p.record} · ${d.operation || d.proposedSurgery}`} />
       <div className="anes-form">
-        <p className="muted" style={{ margin: 0 }}>Se guarda solo mientras escribes. Ningún campo es obligatorio salvo la técnica; «Anestesia realizada por» eres tú, con tu nombre, especialidad y colegiado al firmar.</p>
+        <p className="c-muted m-0">Se guarda solo mientras escribes. Ningún campo es obligatorio salvo la técnica; «Anestesia realizada por» eres tú, con tu nombre, especialidad y colegiado al firmar.</p>
         <Section title="Encabezado, paciente y equipo quirúrgico">
           <div className="form-grid form-grid--4">
             <label className="field"><span>Fecha</span><DateField value={d.date} onChange={(v) => set({ date: v })} label="Fecha" /></label>
@@ -125,7 +125,7 @@ export default function AnesthesiaFormPage() {
         {ctx.preEval ? <Section title="Valoración preanestésica">
           <PreEvalSummary pe={ctx.preEval} />
         </Section> : <Section title="Valoración preanestésica">
-          <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Esta estancia no tiene valoración preanestésica: llénala aquí.</p>
+          <p className="c-muted m-0 fs-md">Esta estancia no tiene valoración preanestésica: llénala aquí.</p>
           <div className="anes-group"><span>ASA</span><div className="anes-opts">
             {ANESTHESIA_SHEET.asa.map((o) => <label key={o} className="anes-opt"><input type="radio" name="asa" checked={d.asa === o} onChange={() => set({ asa: o })} />{o}</label>)}
             <Box label="E (urgencia)" checked={d.asaE} onChange={(v) => set({ asaE: v })} /></div></div>
@@ -158,7 +158,7 @@ export default function AnesthesiaFormPage() {
           </div>
         </Section>
         <Section title="Monitoreo transanestésico (cada 5 min)">
-          <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Un registro por toma. Al imprimir se dibujan en la cuadrícula de 0 a 120 minutos desde el inicio de la anestesia; si dura más, sale una hoja de continuación.</p>
+          <p className="c-muted m-0 fs-md">Un registro por toma. Al imprimir se dibujan en la cuadrícula de 0 a 120 minutos desde el inicio de la anestesia; si dura más, sale una hoja de continuación.</p>
           {d.monitoring.length > 0 && <table className="anes-table">
             <thead><tr><th>Hora</th><th>PAS</th><th>PAD</th><th>FC</th><th>SpO₂</th><th>EtCO₂</th><th>Temp. °C</th><th /></tr></thead>
             <tbody>{d.monitoring.map((r, i) => <tr key={r.id}>
@@ -240,7 +240,7 @@ export default function AnesthesiaFormPage() {
           <p className="anes-calc" role="status">Aldrete total: <b>{ald.any ? `${ald.total}/10${ald.complete ? '' : ' (faltan parámetros)'}` : '—'}</b></p>
         </Section>
         <Section title="Firmas">
-          <p style={{ margin: 0 }}>Anestesiólogo: <b>{user.name}</b>{user.specialty ? ` · ${user.specialty}` : ''}{user.license ? ` · ${user.license}` : ''}. Instrumentista y circulante firman en papel.</p>
+          <p className="m-0">Anestesiólogo: <b>{user.name}</b>{user.specialty ? ` · ${user.specialty}` : ''}{user.license ? ` · ${user.license}` : ''}. Instrumentista y circulante firman en papel.</p>
           <div className="form-grid">
             <Txt label="Instrumentista" value={d.scrubNurse} onChange={(v) => set({ scrubNurse: v })} />
             <Txt label="Circulante" value={d.circulatingNurse} onChange={(v) => set({ circulatingNurse: v })} />

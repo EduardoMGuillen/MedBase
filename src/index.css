@@ -430,7 +430,31 @@ button.chip[aria-pressed='true'] { background: var(--ink); color: #fff; border-c
 .form-grid--3 { grid-template-columns: repeat(3, 1fr); }
 .form-grid--4 { grid-template-columns: repeat(4, 1fr); }
 /* ES (ronda 17): no estirarse en una rejilla ni en una columna flexible (antes, style={{ justifySelf: 'start' }}) */
-.self-start { justify-self: start; align-self: flex-start; }
+.self-start { justify-self: start !important; align-self: flex-start !important; }
+/* ES (ronda 17): utilidades en vez de estilos sueltos (style={{}}). Llevan !important porque reemplazan a un estilo en línea,
+   que ganaba a cualquier regla. */
+.fs-sm { font-size: var(--fs-sm) !important; }
+.fs-md { font-size: var(--fs-md) !important; }
+.fs-base { font-size: var(--fs-base) !important; }
+.fw-normal { font-weight: 400 !important; }
+.ta-r { text-align: right !important; }
+.nowrap { white-space: nowrap !important; }
+.block { display: block !important; }
+.faint { color: var(--faint) !important; }
+.c-muted { color: var(--muted) !important; }
+.m-0 { margin: 0 !important; }
+.mt-0 { margin-top: 0 !important; }
+.mr-auto { margin-right: auto !important; }
+.ml-auto { margin-left: auto !important; }
+.ml-xs { margin-left: 6px !important; }
+.ml-sm { margin-left: 8px !important; }
+.grow { flex: 1 !important; }
+.wrap { flex-wrap: wrap !important; }
+.hstack { display: flex !important; gap: 8px !important; flex-wrap: wrap !important; }
+.hstack--center { align-items: center !important; }
+.hstack.hstack--nowrap { flex-wrap: nowrap !important; }
+.stack { display: grid !important; gap: 14px !important; }
+.stack.stack--16 { gap: 16px !important; }
 .span-2 { grid-column: span 2; }
 .span-all { grid-column: 1 / -1; }
 .suggest { position: relative; }

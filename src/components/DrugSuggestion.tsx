@@ -49,10 +49,10 @@ export function DrugPickedHint({ drugs, name, presentation }: { drugs: Drug[]; n
   const { alternatives, unconfirmed, restriction } = d.lnme
   if (!alternatives?.length && !unconfirmed && !restriction) return null
   return (
-    <small className="muted" style={{ display: 'block', fontSize: 12.5 }}>
+    <small className="c-muted block fs-sm">
       {alternatives?.length ? <>También: {alternatives.join(' · ')}</> : null}
-      {unconfirmed && <span className="field__msg--warn" style={{ display: 'block' }}><TriangleAlert size={12} style={{ verticalAlign: '-2px' }} /> {UNCONFIRMED}</span>}
-      {restriction && <span style={{ display: 'block' }}>{restriction}</span>}
+      {unconfirmed && <span className="field__msg--warn block"><TriangleAlert size={12} style={{ verticalAlign: '-2px' }} /> {UNCONFIRMED}</span>}
+      {restriction && <span className="block">{restriction}</span>}
     </small>
   )
 }

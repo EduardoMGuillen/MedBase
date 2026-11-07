@@ -67,14 +67,14 @@ export default function Login() {
         <div className="auth__card">
           <h1>Iniciar sesión</h1>
           <p>Usa el correo que te asignó tu clínica.</p>
-          <form onSubmit={submit} style={{ display: 'grid', gap: 14 }} noValidate>
+          <form className="stack" onSubmit={submit} noValidate>
             {error && <div className="auth__err" role="alert">{error}</div>}
             {needCode ? (
               <label className="field">
                 <span>Código de verificación</span>
                 <input className="input num" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus value={code}
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" style={{ fontSize: 22, letterSpacing: '0.3em', height: 52 }} />
-                <small style={{ color: 'var(--muted)', fontSize: 13 }}>Ábrelo en Google Authenticator, Microsoft Authenticator o tu app de códigos.</small>
+                <small className="c-muted fs-md">Ábrelo en Google Authenticator, Microsoft Authenticator o tu app de códigos.</small>
               </label>
             ) : (<>
             <label className="field">

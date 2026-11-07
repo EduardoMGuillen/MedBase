@@ -74,7 +74,7 @@ export default function PreEvalFormPage() {
         title={correcting ? 'Corregir la valoración preanestésica' : 'Valoración preanestésica'}
         sub={`${`${p.firstName} ${p.lastName}`.trim()} · Expediente ${p.record}${d.proposedSurgery ? ` · ${d.proposedSurgery}` : ''}`} />
       <div className="anes-form">
-        <p className="muted" style={{ margin: 0 }}>Se guarda sola mientras escribes. Solo la clasificación ASA es obligatoria. Al firmar quedas como anestesiólogo, con tu nombre, especialidad y colegiado.</p>
+        <p className="c-muted m-0">Se guarda sola mientras escribes. Solo la clasificación ASA es obligatoria. Al firmar quedas como anestesiólogo, con tu nombre, especialidad y colegiado.</p>
         <Section title="Paciente y cirugía propuesta">
           <div className="form-grid form-grid--3">
             <label className="field"><span>Fecha</span><DateField value={d.date} onChange={(v) => set({ date: v })} label="Fecha" /></label>
@@ -102,7 +102,7 @@ export default function PreEvalFormPage() {
           <Txt label="Antecedentes y medicación" value={d.history} onChange={(v) => set({ history: v })} area />
         </Section>
         <Section title="Laboratorios">
-          <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Traen el último resultado del paciente, si existe. Puedes cambiarlos.</p>
+          <p className="c-muted m-0 fs-md">Traen el último resultado del paciente, si existe. Puedes cambiarlos.</p>
           <div className="form-grid form-grid--3">
             {PREANESTHESIA_LABS.map((l) => <Txt key={l.key} label={l.label} value={d.labs[l.key]} onChange={(v) => set({ labs: { ...d.labs, [l.key]: v } })} />)}
           </div>
@@ -112,7 +112,7 @@ export default function PreEvalFormPage() {
           <Txt label="Plan y recomendaciones" value={d.plan} onChange={(v) => set({ plan: v })} area placeholder="Ej. Ayuno de 8 h, suspender anticoagulante, reservar 2 unidades" />
         </Section>
         <Section title="Firma">
-          <p style={{ margin: 0 }}>Anestesiólogo: <b>{user.name}</b>{user.specialty ? ` · ${user.specialty}` : ''}{user.license ? ` · ${user.license}` : ''}. En el impreso queda el espacio para la firma y el sello en papel.</p>
+          <p className="m-0">Anestesiólogo: <b>{user.name}</b>{user.specialty ? ` · ${user.specialty}` : ''}{user.license ? ` · ${user.license}` : ''}. En el impreso queda el espacio para la firma y el sello en papel.</p>
           {correcting && <CorrectionReason value={why} onChange={setWhy} />}
         </Section>
         <div className="anes-foot">

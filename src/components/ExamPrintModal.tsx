@@ -40,7 +40,7 @@ export function ExamPrintModal({ exams, onClose, title }: { exams: ExamOrder[]; 
       <button className="btn btn--soft" disabled={!picked.length || busy} onClick={() => go('pdf')}><Download size={15} />Descargar PDF</button>
       <button className="btn btn--primary" disabled={!picked.length || busy} onClick={() => go('imprimir')}><Printer size={15} />Imprimir</button>
     </>}>
-      <p className="muted" style={{ fontSize: 14, margin: 0 }}>Los externos ya van marcados. Sale con los datos del médico que los pidió y sin su firma y sello en papel no vale.</p>
+      <p className="c-muted fs-base m-0">Los externos ya van marcados. Sale con los datos del médico que los pidió y sin su firma y sello en papel no vale.</p>
       {list.length > 1 && <button type="button" className="btn btn--ghost btn--sm self-start" onClick={() => setPicked(all ? [] : list.map((e) => e.id))}>{all ? 'Desmarcar todos' : 'Marcar todos'}</button>}
       {groups.map((g) => (
         <div key={g} className="print-pick">
@@ -48,15 +48,15 @@ export function ExamPrintModal({ exams, onClose, title }: { exams: ExamOrder[]; 
           {list.filter((e) => e.group === g).map((e) => (
             <label key={e.id} className={`exam-row-pick${picked.includes(e.id) ? ' is-on' : ''}`}>
               <input type="checkbox" checked={picked.includes(e.id)} onChange={() => toggle(e.id)} />
-              <span><b>{examLine(e)}</b>{e.place === 'external' && <span className="badge" style={{ marginLeft: 6 }}>Externo</span>}{e.priority === 'urgent' && <span className="badge badge--red" style={{ marginLeft: 6 }}>Urgente</span>}
-                {!isPending(e) && <span className="badge badge--mint" style={{ marginLeft: 6 }}>Con resultado</span>}
-                <small className="muted" style={{ display: 'block' }}>Pedido {dateTime(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)}</small></span>
+              <span><b>{examLine(e)}</b>{e.place === 'external' && <span className="badge ml-xs">Externo</span>}{e.priority === 'urgent' && <span className="badge badge--red ml-xs">Urgente</span>}
+                {!isPending(e) && <span className="badge badge--mint ml-xs">Con resultado</span>}
+                <small className="c-muted block">Pedido {dateTime(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)}</small></span>
             </label>
           ))}
         </div>
       ))}
-      {groups.length > 1 && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Sale una orden de laboratorio y otra de imagen y gabinete.</p>}
-      {doctors > 1 && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Los pidieron {doctors} médicos: sale una orden por cada uno.</p>}
+      {groups.length > 1 && <p className="c-muted fs-md m-0">Sale una orden de laboratorio y otra de imagen y gabinete.</p>}
+      {doctors > 1 && <p className="c-muted fs-md m-0">Los pidieron {doctors} médicos: sale una orden por cada uno.</p>}
     </Modal>
   )
 }

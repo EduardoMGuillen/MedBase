@@ -305,18 +305,18 @@ export function MedicationForm(props: ItemForm | StayForm) {
           onChange={(e) => set(e.target.checked ? { applyInClinic: true, freq: 'once', prn: false, loading: false } : { applyInClinic: false })} />
           <span><b>Aplicar en la clínica</b><small>Enfermería o el médico lo aplican aquí y el paciente se va a su casa (no queda en observación).</small></span></label>
       )}
-      {statOnly && <p className="muted" style={{ fontSize: 13, margin: 0 }}>Sin ingreso se aplica una sola dosis en la clínica. También sale en la receta.</p>}
+      {statOnly && <p className="c-muted fs-md m-0">Sin ingreso se aplica una sola dosis en la clínica. También sale en la receta.</p>}
       {buyShown && <div className="form-grid"><BuyOutsideFields checked={d.buyOutside} onChecked={(v) => set({ buyOutside: v })} /></div>}
       {preview && <p className="muted" style={{ fontSize: 13.5, overflowWrap: 'anywhere' }}>Se verá así: <b>{preview}</b></p>}
       {neb && nebConflict && !overrideAllergy && (
         <div className="alert-strip" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
-          <span style={{ display: 'flex', gap: 8 }}><TriangleAlert size={18} style={{ flex: 'none' }} />{patient.firstName} es alérgica/o a {nebConflict}.</span>
+          <span className="hstack hstack--nowrap"><TriangleAlert size={18} style={{ flex: 'none' }} />{patient.firstName} es alérgica/o a {nebConflict}.</span>
           <button type="button" className="btn btn--danger btn--sm" style={{ background: '#fff' }} onClick={() => setOverrideAllergy(true)}>Indicar de todos modos</button>
         </div>
       )}
       {conflict && (
         <div className="alert-strip" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
-          <span style={{ display: 'flex', gap: 8 }}><TriangleAlert size={18} style={{ flex: 'none' }} />{patient.firstName} es alérgica/o a {conflict}. {d.drug} puede provocar una reacción.</span>
+          <span className="hstack hstack--nowrap"><TriangleAlert size={18} style={{ flex: 'none' }} />{patient.firstName} es alérgica/o a {conflict}. {d.drug} puede provocar una reacción.</span>
           {!overrideAllergy && <button type="button" className="btn btn--danger btn--sm" style={{ background: '#fff' }} onClick={() => setOverrideAllergy(true)}>Indicar de todos modos</button>}
         </div>
       )}

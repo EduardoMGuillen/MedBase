@@ -56,7 +56,7 @@ export default function AmbulatoryPatients() {
                 <span>Llegó a las {time(x.firstAt)}</span>
                 <ul className="amb-exams" style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'grid', gap: 4 }}>
                   {x.exams.map((e) => (
-                    <li key={e.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <li className="hstack hstack--center" key={e.id}>
                       <span className={`badge badge--${STAGE_TONE[e.stage]}`}>{STAGE_LABEL[e.stage]}</span>
                       <span>{e.name}</span>
                       <span className="muted">{GROUP_LABEL[e.group]}{e.priority === 'urgent' ? ' · urgente' : ''}{e.requestedById ? ` · solicita ${staffById(e.requestedById)?.name ?? 'un médico'}` : e.requestedBy ? ` · solicita ${e.requestedBy}` : ''}</span>

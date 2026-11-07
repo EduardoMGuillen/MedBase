@@ -111,7 +111,7 @@ function SetEditor({ set, office, onClose, onSaved }: { set?: OrderSet; office: 
         <label className="check-line"><input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} />
           <span><b>Compartir con la clínica</b><small>Los demás médicos lo pueden aplicar o duplicar; sólo tú lo editas.</small></span></label>
       )}
-      <p className="muted" style={{ fontSize: 13.5 }}>Arrastra para cambiar el orden. Escribe <b>___</b> (tres guiones bajos) donde haya que completar algo al aplicarlo, por ejemplo «Ayuno de ___ a ___».</p>
+      <p className="c-muted fs-md">Arrastra para cambiar el orden. Escribe <b>___</b> (tres guiones bajos) donde haya que completar algo al aplicarlo, por ejemplo «Ayuno de ___ a ___».</p>
       {items.length > 0 && (
         <ol className="orders set-items">
           {items.map((it, i) => (
@@ -181,7 +181,7 @@ function SetMedForm({ initial, onSave, onCancel }: { initial: SetMed; onSave: (m
         {m.prn && <label className="field"><span>Condición (opcional en el set)</span><input className="input" value={m.prnCondition ?? ''} onChange={(e) => setM({ ...m, prnCondition: e.target.value })} placeholder="Ej. si dolor" /></label>}
         <label className="field"><span>Indicaciones</span><input className="input" value={m.instructions ?? ''} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder="Ej. Diluir en 100 ml" /></label>
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div className="hstack hstack--nowrap">
         <button type="button" className="btn btn--primary" disabled={!ok} onClick={() => onSave({ ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours: freq === 'once' || freq === 'infusion' ? undefined : Number(freq),
           infusionRate: freq === 'infusion' ? initial.infusionRate : undefined, infusionUnit: freq === 'infusion' ? initial.infusionUnit : undefined, instructions: m.instructions?.trim() || undefined, prnCondition: m.prn ? m.prnCondition?.trim() || undefined : undefined, presentation: m.presentation || undefined })}>
           <Plus size={16} />{initial.drug ? 'Guardar medicamento' : 'Agregar al set'}</button>

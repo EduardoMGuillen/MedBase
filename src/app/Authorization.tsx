@@ -65,12 +65,12 @@ export function AuthorizationForm({ file, p, template = 'surgical', initialProce
             <input className="input" autoFocus list="frequent-surgeries" value={procedure} onChange={(e) => setProcedure(e.target.value)} placeholder="Ej. Apendicectomía o laparotomía exploradora" />
             <datalist id="frequent-surgeries">{FREQUENT_SURGERIES.map((x) => <option key={x} value={x} />)}</datalist></label>
           <label className="field"><span>Diagnóstico actual</span><input className="input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} /></label>
-          <p className="muted" style={{ fontSize: 13.5 }}>Paciente, médico, fecha y acompañante los pone el sistema.</p>
+          <p className="c-muted fs-md">Paciente, médico, fecha y acompañante los pone el sistema.</p>
         </form>
       ) : signed ? (
         <p>Esta estancia ya tiene su autorización de hospitalización firmada ({dateTime(current!.statusAt ?? current!.createdAt)}). No se crea otra.</p>
       ) : (<>
-        <p className="muted" style={{ fontSize: 14 }}>{current ? `Ya se generó al ingresar (${dateTime(current.createdAt)}) y está pendiente de firma: no se crea otra. Revisa el acompañante y ábrela para imprimirla.`
+        <p className="c-muted fs-base">{current ? `Ya se generó al ingresar (${dateTime(current.createdAt)}) y está pendiente de firma: no se crea otra. Revisa el acompañante y ábrela para imprimirla.`
           : 'Una sola hoja para todos los pacientes que se hospitalizan: autoriza el ingreso y la atención, los medicamentos y los procedimientos menores. Aquí sólo falta el acompañante.'}</p>
         <div className="form-grid">
           <label className="field"><span>Acompañante: nombre completo</span><input className="input" value={companion.name} onChange={(e) => setCompanion({ ...companion, name: e.target.value })} /></label>
@@ -104,7 +104,7 @@ function RemoveAuthorization({ a, onClose, onDone }: { a: Authorization; onClose
       <button className="btn btn--danger" disabled={busy || reason.trim().length < 3} onClick={async () => { setBusy(true); await onDone(reason.trim()); setBusy(false) }}><Trash2 size={15} />Eliminar</button>
     </>}>
       <p>¿Eliminar esta autorización? Aún no está firmada. Esta acción no se puede deshacer desde aquí.</p>
-      <p className="muted" style={{ fontSize: 14 }}>{authTitle(a)}, generada el {dateTime(a.createdAt)}. Queda en la bitácora con tu nombre y el motivo.</p>
+      <p className="c-muted fs-base">{authTitle(a)}, generada el {dateTime(a.createdAt)}. Queda en la bitácora con tu nombre y el motivo.</p>
       <label className="field"><span>Motivo</span><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></label>
     </Modal>
   )

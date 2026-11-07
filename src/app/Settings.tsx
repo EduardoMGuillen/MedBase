@@ -264,7 +264,7 @@ function ClinicDrugs() {
       {result && (
         <div className={`alert-strip ${result.added ? 'alert-strip--calm' : 'alert-strip--amber'}`} style={{ margin: '12px 22px 0', flexDirection: 'column', alignItems: 'stretch' }}>
           <span>Se importaron {result.added} medicamento(s).{result.skipped.length ? ` ${result.skipped.length} fila(s) no se importaron:` : ''}</span>
-          {result.skipped.length > 0 && <ul className="note__list" style={{ margin: 0, fontWeight: 400 }}>{result.skipped.slice(0, 8).map((x) => <li key={x.row}>Fila {x.row}{x.name ? ` (${x.name})` : ''}: {x.reason}</li>)}</ul>}
+          {result.skipped.length > 0 && <ul className="note__list m-0 fw-normal">{result.skipped.slice(0, 8).map((x) => <li key={x.row}>Fila {x.row}{x.name ? ` (${x.name})` : ''}: {x.reason}</li>)}</ul>}
           <button className="linklike self-start" onClick={() => setResult(null)}>Cerrar</button>
         </div>
       )}
@@ -278,12 +278,12 @@ function ClinicDrugs() {
         <tbody>
           {pg.rows.map((r) => (
             <tr key={r.key}>
-              <td className="tc-full"><b>{r.name}</b>{r.use && <small className="muted" style={{ display: 'block' }}>{r.use}</small>}</td>
+              <td className="tc-full"><b>{r.name}</b>{r.use && <small className="c-muted block">{r.use}</small>}</td>
               <td data-label="Comercial">{r.brand ?? '—'}</td>
               <td data-label="Presentación">{r.presentation || '—'}</td>
               <td data-label="Vía">{r.route || '—'}</td>
               <td data-label="Origen" className="muted">{DRUG_ORIGIN}</td>
-              <td className="tc-actions" style={{ textAlign: 'right' }}>{r.drug && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(r.drug!)}>{canEdit(r.drug) ? 'Editar' : 'Ver'}</button>}</td>
+              <td className="tc-actions ta-r">{r.drug && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(r.drug!)}>{canEdit(r.drug) ? 'Editar' : 'Ver'}</button>}</td>
             </tr>
           ))}
         </tbody>
@@ -322,7 +322,7 @@ function Beds() {
               <td data-label="Cuarto"><input className="input" autoFocus placeholder="Ej. 106" value={room} onChange={(e) => setRoom(e.target.value)} aria-label="Cuarto" /></td>
               <td data-label="Cama"><input className="input" placeholder="Opcional, ej. A" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Cama" /></td>
               <td />
-              <td className="tc-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}><button className="btn btn--primary btn--sm" disabled={!room.trim()} onClick={async () => {
+              <td className="tc-actions ta-r nowrap"><button className="btn btn--primary btn--sm" disabled={!room.trim()} onClick={async () => {
                 if (await createBed({ room: room.trim(), label: label.trim(), active: true })) { setRoom(''); setLabel(''); setAdding(false) }
               }}><Plus size={14} />Agregar cama</button>{' '}
                 <button className="btn btn--ghost btn--sm" onClick={() => { setAdding(false); setRoom(''); setLabel('') }}>Cancelar</button></td>
@@ -334,10 +334,10 @@ function Beds() {
             return (
               <tr key={b.id} style={b.active ? undefined : { opacity: 0.7 }}>
                 {editing === b.id ? <BedRename b={b} onDone={() => setEditing(null)} /> : <><td data-label="Cuarto" className="num">{b.room}</td><td data-label="Cama">{b.label || '—'}</td></>}
-                <td data-label="Estado" className="tc-full">{!b.active ? <><span className="badge badge--amber">Fuera de servicio</span>{b.outOfServiceNote && <small className="muted" style={{ display: 'block' }}>{b.outOfServiceNote}</small>}</>
-                  : h ? <><span className="badge badge--ink">Ocupada</span> <span style={{ fontSize: 14 }}>{p ? fullName(p) : 'Paciente'}{h.specialty ? ` · ${h.specialty}` : ''}</span></>
+                <td data-label="Estado" className="tc-full">{!b.active ? <><span className="badge badge--amber">Fuera de servicio</span>{b.outOfServiceNote && <small className="c-muted block">{b.outOfServiceNote}</small>}</>
+                  : h ? <><span className="badge badge--ink">Ocupada</span> <span className="fs-base">{p ? fullName(p) : 'Paciente'}{h.specialty ? ` · ${h.specialty}` : ''}</span></>
                     : <span className="badge badge--mint">Libre</span>}</td>
-                <td className="tc-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <td className="tc-actions ta-r nowrap">
                   {editing !== b.id && <button className="btn btn--ghost btn--sm" onClick={() => setEditing(b.id)}>Renombrar</button>}{' '}
                   {b.active
                     ? <button className="btn btn--ghost btn--sm" disabled={!!h} title={h ? 'Tiene un paciente: dale de alta o trasládalo primero' : undefined} onClick={() => {
@@ -416,7 +416,7 @@ function ClinicDataForm() {
           <label className="field"><span>Símbolo de moneda</span><input className="input" value={f.currency} maxLength={4} onChange={(e) => set('currency', e.target.value)} /></label>
           <label className="field span-2" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <input type="checkbox" checked={f.recordUsesDni} onChange={(e) => set('recordUsesDni', e.target.checked)} />
-            <span style={{ margin: 0 }}>Usar el número de identidad como número de expediente en recetas y constancias</span></label>
+            <span className="m-0">Usar el número de identidad como número de expediente en recetas y constancias</span></label>
           <label className="field span-2"><span>Formato del documento de identidad</span>
             <input className="input num" value={f.dniMask ?? '0000-0000-00000'} maxLength={30} onChange={(e) => set('dniMask', e.target.value.replace(/[^0\- /.]/g, ''))} />
             <small className="muted">Cada 0 es un dígito; los guiones se ponen solos. El de Honduras es 0000-0000-00000. Déjalo vacío si la clínica registra otro tipo de documento con letras.</small></label>
@@ -518,7 +518,7 @@ function ConvertToClinic({ onClose }: { onClose: () => void }) {
         <p>Entrega estos datos a quien administrará la clínica. La contraseña sólo se muestra esta vez.</p>
         <div className="field"><span>Correo</span><div className="secret">{done.email}</div></div>
         <div className="field"><span>Contraseña temporal</span><div className="secret">{done.password}</div></div>
-        <p className="muted" style={{ fontSize: 13.5 }}>Los permisos cambiaron: todos vuelven a iniciar sesión.</p>
+        <p className="c-muted fs-md">Los permisos cambiaron: todos vuelven a iniciar sesión.</p>
       </Modal>
     )
   }
@@ -577,7 +577,7 @@ function ServiceAreas() {
             <span><b>Laboratorio propio</b><small>Los exámenes de laboratorio quedan dirigidos al laboratorio. Sin él, enfermería toma la muestra.</small></span></label>
           <label className="check-line"><input type="checkbox" checked={img} onChange={(e) => setImg(e.target.checked)} />
             <span><b>Imágenes propias</b><small>Rayos X, ultrasonido, EKG… quedan dirigidos al área de imágenes. Sin ella, enfermería los coordina o realiza.</small></span></label>
-          <p className="muted" style={{ fontSize: 13.5 }}>Mientras no haya personas con rol de laboratorio o de imágenes, los pendientes siguen llegando a la bandeja de enfermería. Cuando se agreguen esos roles, bastará con asignarlos.</p>
+          <p className="c-muted fs-md">Mientras no haya personas con rol de laboratorio o de imágenes, los pendientes siguen llegando a la bandeja de enfermería. Cuando se agreguen esos roles, bastará con asignarlos.</p>
         </div>
       </section>
     </div>
@@ -611,7 +611,7 @@ function PaymentMethods() {
             onChange={(e) => setOn(e.target.checked ? all.filter((x) => x === m || on.includes(x)) : on.filter((x) => x !== m))} />
             <span><b>{METHOD_LABEL[m]}</b><small>{hint[m]}</small></span></label>
         ))}
-        <p className="muted" style={{ fontSize: 13.5 }}>Al menos una queda activa.</p>
+        <p className="c-muted fs-md">Al menos una queda activa.</p>
       </div>
     </section>
   )
@@ -636,7 +636,7 @@ function Services() {
               <td data-label={`Precio (${settings.currency})`}><input className="input num" type="number" min={0} step="0.01" placeholder="0.00" aria-label="Precio" value={price} onChange={(e) => setPrice(e.target.value)} /></td>
               <td />
               <td />
-              <td className="tc-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+              <td className="tc-actions ta-r nowrap">
                 <button className="btn btn--primary btn--sm" disabled={name.trim().length < 2 || price === ''} onClick={async () => {
                   if (await createService({ name: name.trim(), price: Number(price), active: true })) { setName(''); setPrice(''); setAdding(false) }
                 }}><Plus size={15} />Agregar</button>{' '}
@@ -666,8 +666,8 @@ function ServiceRow({ s }: { s: Service }) {
       <td data-label="Servicio" className="tc-full"><input className="input" value={name} onChange={(e) => setName(e.target.value)} aria-label="Nombre del servicio" /></td>
       <td data-label={`Precio (${settings.currency})`}><input className="input num" type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} aria-label={`Precio de ${s.name}`} title={money(s.price, settings.currency)} /></td>
       <td data-label="Estado">{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Oculto en caja</span>}</td>
-      <td data-label="Origen" className="tc-full" style={{ fontSize: 13.5 }}>{s.createdBy ? <>Agregado al cobrar por {staffById(s.createdBy)?.name ?? '—'}<br /><small className="muted">{s.createdAt ? date(s.createdAt) : ''}</small></> : <span className="muted">Configuración</span>}</td>
-      <td className="tc-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+      <td data-label="Origen" className="tc-full fs-md">{s.createdBy ? <>Agregado al cobrar por {staffById(s.createdBy)?.name ?? '—'}<br /><small className="muted">{s.createdAt ? date(s.createdAt) : ''}</small></> : <span className="muted">Configuración</span>}</td>
+      <td className="tc-actions ta-r nowrap">
         {dirty
           ? <button className="btn btn--primary btn--sm" onClick={() => updateService(s.id, { name: name.trim(), price: Number(price) })}>Guardar</button>
           : <button className="btn btn--ghost btn--sm" onClick={() => updateService(s.id, { active: !s.active })}>{s.active ? 'Ocultar' : 'Activar'}</button>}
@@ -705,8 +705,8 @@ function Schedules() {
   const choose = (next: string) => { if (next !== current?.id) { if (unsaved) setAsking(next); else select(next) } }
   if (!current) return <div className="empty">No hay médicos en {office ? 'el consultorio' : 'la clínica'}.</div>
   return (
-    <div style={{ display: 'grid', gap: 16 }} data-tour="tab:horarios">
-      <p style={{ color: 'var(--muted)' }}>Cada día puede tener una o más franjas (por ejemplo, de 08:00 AM a 12:00 PM y de 02:00 PM a 05:00 PM). La agenda y la reserva en línea solo ofrecen horas dentro del horario. Cada médico también puede cambiar el suyo en su <i>Configuración</i>.</p>
+    <div className="stack stack--16" data-tour="tab:horarios">
+      <p className="c-muted">Cada día puede tener una o más franjas (por ejemplo, de 08:00 AM a 12:00 PM y de 02:00 PM a 05:00 PM). La agenda y la reserva en línea solo ofrecen horas dentro del horario. Cada médico también puede cambiar el suyo en su <i>Configuración</i>.</p>
       <div className={office || doctors.length < 2 ? '' : 'sched-pick'}>
         {!office && doctors.length > 1 && (
           <nav className="panel sched-pick__list" aria-label="Médicos">

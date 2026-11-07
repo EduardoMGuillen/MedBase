@@ -293,7 +293,7 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
               <div className="panel__head"><h2>Seguimientos programados</h2><Link className="btn btn--ghost btn--sm" to="/app/seguimientos">Ver todos</Link></div>
               <div className="rows">{pending.map((f) => (
                 <div key={f.id} className="row" style={{ gridTemplateColumns: '120px 1fr' }}>
-                  <span className="num" style={{ fontSize: 13.5 }}>{date(`${f.dueDate}T12:00:00`)}</span>
+                  <span className="num fs-md">{date(`${f.dueDate}T12:00:00`)}</span>
                   <div className="row__who"><strong>{f.title}</strong><span>{followupLabel(f)}{f.everyDays ? `, control cada ${f.everyDays} días` : ''}</span></div>
                 </div>
               ))}</div>
@@ -304,7 +304,7 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
             <div className="panel__head"><h2>Citas</h2></div>
             {appts.length ? <div className="rows">{appts.slice(0, 12).map((a) => (
               <div key={a.id} className="row" style={{ gridTemplateColumns: '120px 1fr auto' }}>
-                <span className="num" style={{ fontSize: 13.5 }}>{date(a.start, { day: 'numeric', month: 'short', year: '2-digit' })} {time(a.start)}</span>
+                <span className="num fs-md">{date(a.start, { day: 'numeric', month: 'short', year: '2-digit' })} {time(a.start)}</span>
                 <div className="row__who"><strong>{a.reason}</strong><span>{staffById(a.doctorId)?.name}</span></div>
                 <StatusBadge status={a.status} />
               </div>
@@ -318,7 +318,7 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
           {cs.length ? cs.map((c) => (
             <article key={c.id} className="panel consult-entry">
               <div className="panel__head">
-                <div><h2>{date(c.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}{chart?.addenda?.some((a) => a.targetId === c.id) && <span className="badge badge--amber" style={{ marginLeft: 8 }}>Con adenda</span>}</h2><p>{time(c.date)}, {staffById(c.doctorId)?.name}</p></div>
+                <div><h2>{date(c.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}{chart?.addenda?.some((a) => a.targetId === c.id) && <span className="badge badge--amber ml-sm">Con adenda</span>}</h2><p>{time(c.date)}, {staffById(c.doctorId)?.name}</p></div>
                 <div className="page-head__actions">
                   <Link className="btn btn--ghost btn--sm" to={`/app/nota/${c.id}`}><NotebookPen size={15} />Nota</Link>
                   {/* ME15 (ronda 15): «Receta» abre la más reciente de la consulta (la completa, si se generó); una consulta sin receta
@@ -355,7 +355,7 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
           )}
           {hs.length ? <div className="rows">{hs.map((h) => (
             <Link key={h.id} to={stayPath(h)} className="row" style={{ gridTemplateColumns: '150px 1fr auto' }}>
-              <span className="num" style={{ fontSize: 13.5 }}>{date(h.admittedAt)}{h.dischargedAt ? ` al ${date(h.dischargedAt)}` : ''}</span>
+              <span className="num fs-md">{date(h.admittedAt)}{h.dischargedAt ? ` al ${date(h.dischargedAt)}` : ''}</span>
               <div className="row__who"><strong>{h.diagnoses.map((d) => d.label).join('; ')}</strong><span>{h.kind === 'observation' ? 'Observación' : bedLabel(bed(h.bedId))}{h.observationAt ? ' (vino de observación)' : ''}, ingresó {staffById(h.admittedBy)?.name}</span></div>
               <span className={`badge ${h.status === 'active' ? 'badge--mint' : 'badge--done'}`}>{h.status === 'active' ? (h.kind === 'observation' ? 'En observación' : 'Hospitalizado') : 'Egresado'}</span>
             </Link>
@@ -370,7 +370,7 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
             <thead><tr><th>Fecha</th><th>PA</th><th>FC</th><th>FR</th><th>Temp.</th><th>SpO₂</th><th>Peso</th><th>Motivo</th><th>Tomó</th></tr></thead>
             <tbody>{vs.map((v) => (
               <tr key={v.id} className="num">
-                <td style={{ whiteSpace: 'nowrap' }}>{date(v.takenAt)} {time(v.takenAt)}</td><td>{v.systolic != null ? `${v.systolic}/${v.diastolic}` : '—'}</td><td>{v.heartRate ?? '—'}</td><td>{v.respRate ?? '—'}</td>
+                <td className="nowrap">{date(v.takenAt)} {time(v.takenAt)}</td><td>{v.systolic != null ? `${v.systolic}/${v.diastolic}` : '—'}</td><td>{v.heartRate ?? '—'}</td><td>{v.respRate ?? '—'}</td>
                 <td>{v.temperature != null ? `${v.temperature.toFixed(1)} °C` : '—'}</td><td>{v.spo2 != null ? `${v.spo2}%` : '—'}</td><td>{v.weightKg ? `${v.weightKg} kg` : '—'}</td><td style={{ minWidth: 180 }}>{v.chiefComplaint ?? '—'}</td><td>{staffById(v.takenBy)?.name}</td>
               </tr>
             ))}</tbody>
@@ -383,7 +383,7 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
         <section className="panel">
           {rxs.length ? <div className="rows">{rxs.map((r) => (
             <Link key={r.id} to={`/app/recetas/${r.id}`} className="row" style={{ gridTemplateColumns: '110px 1fr auto' }}>
-              <span className="num" style={{ fontSize: 13.5 }}>{date(r.issuedAt)}</span>
+              <span className="num fs-md">{date(r.issuedAt)}</span>
               <div className="row__who"><strong>{r.items.map((i) => i.drug).join(', ')}</strong><span>{r.folio}, {staffById(r.doctorId)?.name}</span></div>
               <FileText size={18} color="var(--faint)" />
             </Link>
@@ -395,7 +395,7 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
         <section className="panel">
           {certs?.length ? <div className="rows">{certs.map((x) => (
             <Link key={x.id} to={`/app/constancias/${x.id}`} className="row" style={{ gridTemplateColumns: '120px 1fr auto' }}>
-              <span className="num" style={{ fontSize: 13.5 }}>{date(x.issuedAt)}<br /><span style={{ color: 'var(--muted)' }}>{x.number}</span></span>
+              <span className="num fs-md">{date(x.issuedAt)}<br /><span className="c-muted">{x.number}</span></span>
               <div className="row__who"><strong>{CERT_KIND[x.kind].title}</strong><span>{staffById(x.doctorId)?.name}{x.kind === 'rest' && x.data.restDays ? `, ${x.data.restDays} días de reposo` : ''}</span></div>
               {x.voidedAt ? <span className="badge badge--red">Anulada</span> : <span className="badge badge--mint">Vigente</span>}
             </Link>
@@ -407,7 +407,7 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
         <section className="panel">
           {refs?.length ? <div className="rows">{refs.map((r) => (
             <div key={r.id} className="row" style={{ gridTemplateColumns: '130px 1fr auto' }}>
-              <span className="num" style={{ fontSize: 13.5 }}>{date(r.issuedAt)}<br /><span style={{ color: 'var(--muted)' }}>{r.number}</span></span>
+              <span className="num fs-md">{date(r.issuedAt)}<br /><span className="c-muted">{r.number}</span></span>
               <div className="row__who"><strong>Hoja de referencia{r.destination ? ` a ${r.destination}` : ''}</strong>
                 <span>{staffById(r.issuedBy)?.name}{r.data.service ? ` · ${r.data.service}` : ''}{r.data.priority === 'urgent' ? ' · Urgente' : ''} {r.voidedAt ? <span className="badge badge--red">Anulada</span> : <span className="badge badge--mint">Firmada</span>}</span></div>
               <ReferralActions r={r} />

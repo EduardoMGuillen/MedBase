@@ -436,15 +436,15 @@ function RecordVitalsModal({ file, p, onClose, onSaved, past = false, suggested,
   }
   return (
     <Modal title={correct ? 'Corregir: signos vitales' : past ? 'Registrar tomas anteriores' : 'Registrar signos vitales'} onClose={onClose} footer={confirming ? <>
-      <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }}>Revise: {errors.map((k) => `${VITALS[k].label.toLowerCase()} ${v[k]}`).join(', ')}.</span>
+      <span className="field__msg field__msg--error mr-auto">Revise: {errors.map((k) => `${VITALS[k].label.toLowerCase()} ${v[k]}`).join(', ')}.</span>
       <button className="btn btn--ghost" onClick={() => setConfirming(false)}>Corregir</button>
       <button className="btn btn--danger" disabled={busy} onClick={save}>Guardar de todos modos</button>
     </> : <>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-      {correct && <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>}
+      {correct && <span className="mr-auto"><CorrectionReason value={why} onChange={setWhy} /></span>}
       <button className="btn btn--primary" disabled={!any || future || busy} onClick={trySave}>{correct ? 'Guardar corrección' : 'Guardar'}</button>
     </>}>
-      <p className="muted" style={{ fontSize: 13.5 }}>{past ? 'Una lectura que se tomó a una hora que ya pasó. Queda como «Registro tardío», con tu nombre y la hora en que la anotas, y reemplaza el «Cubierta por…» de esa hora.' : 'Anota sólo lo que tomaste (por ejemplo, sólo la temperatura). Puedes usar punto o coma para los decimales.'}</p>
+      <p className="c-muted fs-md">{past ? 'Una lectura que se tomó a una hora que ya pasó. Queda como «Registro tardío», con tu nombre y la hora en que la anotas, y reemplaza el «Cubierta por…» de esa hora.' : 'Anota sólo lo que tomaste (por ejemplo, sólo la temperatura). Puedes usar punto o coma para los decimales.'}</p>
       <label className="field"><span>Fecha y hora de la toma</span>
         <DateTimeField value={takenAt} max={maxAt} invalid={future} onChange={setTakenAt} label="Hora de la toma" />
         {future ? <small className="field__msg field__msg--error">No puede ser en el futuro.</small> : <small className="muted">Si la anotas después de tomarla, corrige la hora. La hora en que la anotas se guarda sola.</small>}</label>

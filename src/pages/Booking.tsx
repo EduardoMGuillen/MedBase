@@ -30,7 +30,7 @@ function ClinicChooser() {
           <div className="doc-grid">{list.map((c) => (
             <Link key={c.slug} to={`/reservar/${c.slug}`} className="doc-card" style={{ textDecoration: 'none', color: 'inherit' }}>
               <span className="clinic-ico"><Building2 size={20} /></span>
-              <span style={{ flex: 1 }}><strong>{c.name}</strong><small>{c.address}</small></span><ChevronRight size={18} color="var(--faint)" />
+              <span className="grow"><strong>{c.name}</strong><small>{c.address}</small></span><ChevronRight size={18} color="var(--faint)" />
             </Link>
           ))}</div>
         ) : <div className="empty">Por ahora ninguna clínica recibe reservas en línea.</div>}

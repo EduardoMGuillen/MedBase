@@ -95,11 +95,11 @@ export function DischargeWriter({ file, p, onDone, initialCondition }: { file: I
   return (
     <Modal title="Nota de egreso" wide className="note-modal discharge-write" onClose={onDone}
       top={<>
-        <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>{hospital ? 'Lo que escribes aquí es lo que sale en la epicrisis. Al guardar se cierra el expediente, se libera la cama' : 'Al guardarla se cierra la observación y el paciente sale de la lista'} y, si hay medicamentos al alta, se emite la receta de salida.</p>
+        <p className="c-muted m-0 fs-md">{hospital ? 'Lo que escribes aquí es lo que sale en la epicrisis. Al guardar se cierra el expediente, se libera la cama' : 'Al guardarla se cierra la observación y el paciente sale de la lista'} y, si hay medicamentos al alta, se emite la receta de salida.</p>
         <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />
       </>}
       footer={<>
-        {missing.length > 0 && <span className="field__msg field__msg--warn" role="status" style={{ marginRight: 'auto' }}>Falta: {missing.join(', ')}.</span>}
+        {missing.length > 0 && <span className="field__msg field__msg--warn mr-auto" role="status">Falta: {missing.join(', ')}.</span>}
         <button className="btn btn--ghost" onClick={onDone}>Seguir después</button>
         <button className="btn btn--primary" disabled={missing.length > 0 || busy} onClick={save}><LogOut size={17} />Dar de alta a {fullName(p).split(' ')[0]}{hospital ? ' y emitir la epicrisis' : ''}</button>
       </>}>
@@ -144,7 +144,7 @@ export function DischargeWriter({ file, p, onDone, initialCondition }: { file: I
           </section>
           <section className="epi__sec"><h3>9. Medicamentos al alta <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· van a la receta de salida</span></h3>
             {open.length > 0 && <div className="discharge-open">
-              <p className="muted" style={{ fontSize: 13.5 }}>Órdenes que siguen abiertas. Si alguna continúa en casa, pásala a la receta y escribe los días.</p>
+              <p className="c-muted fs-md">Órdenes que siguen abiertas. Si alguna continúa en casa, pásala a la receta y escribe los días.</p>
               <div className="rows">{open.map((m) => (
                 <div key={m.id} className="omit-row"><span>{medLabel(m)}{m.days ? '' : ' · hasta nueva orden'}</span>
                   <button type="button" className="btn btn--soft btn--sm" onClick={() => setMedForm({ index: -1, initial: toRx(m) })}><Plus size={14} />Pasar a la receta</button></div>
@@ -152,7 +152,7 @@ export function DischargeWriter({ file, p, onDone, initialCondition }: { file: I
             </div>}
             <MedicationList items={items} patient={p} editing={medForm?.index ?? null} requireDuration
               onEdit={(i) => setMedForm({ index: i, initial: items[i] })} onRemove={(i) => { setItems(items.filter((_, j) => j !== i)); setMedForm(null) }} />
-            {!items.length && !medForm && <p className="muted" style={{ fontSize: 14 }}>Sin medicamentos al alta.</p>}
+            {!items.length && !medForm && <p className="c-muted fs-base">Sin medicamentos al alta.</p>}
             {medForm ? (
               <MedicationForm key={`${medForm.index}-${medForm.initial?.drug ?? ''}`} patient={p} current={items} initial={medForm.initial} requireDuration
                 submitLabel={medForm.index >= 0 ? 'Guardar cambios' : 'Agregar medicamento'}
@@ -162,7 +162,7 @@ export function DischargeWriter({ file, p, onDone, initialCondition }: { file: I
             {items.length > 0 && <RxValidityField value={validity} onChange={setValidity} />}
           </section>
           <section className="epi__sec"><h3>10. Exámenes pendientes al alta</h3>
-            {pre.pendingExams.length > 0 && <><p className="muted" style={{ fontSize: 13.5 }}>De la estancia, todavía sin resultado:</p><ul className="note__list">{pre.pendingExams.map((x, i) => <li key={i}>{x}</li>)}</ul></>}
+            {pre.pendingExams.length > 0 && <><p className="c-muted fs-md">De la estancia, todavía sin resultado:</p><ul className="note__list">{pre.pendingExams.map((x, i) => <li key={i}>{x}</li>)}</ul></>}
             <ExamsBlock value={exams} onChange={setExams} />
           </section>
           <section className="epi__sec"><h3>11. Indicaciones al alta y seguimiento</h3>
@@ -185,7 +185,7 @@ export function DischargeView({ note, file, reload }: { note: InpatientNote; fil
     <article className="panel consult-entry">
       <div className="panel__head">
         <div><h2>Nota de egreso</h2><p>{dateTime(note.at)}, {author?.name}</p></div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div className="hstack">
           <Link className="btn btn--primary btn--sm" to={`/app/${h.kind === 'observation' ? 'observacion' : 'hospitalizados'}/${h.id}/expediente`}><FileText size={15} />Expediente completo</Link>
           {h.prescriptionId && <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${h.prescriptionId}`}>Receta de egreso</Link>}
           <EpicrisisButton file={file} />

@@ -87,7 +87,7 @@ export function SupplySetsTab() {
             try { await api(`/supply-sets/${archiving.id}/archive`, { method: 'POST' }); notify(`El set «${archiving.name}» se archivó`); setArchiving(null); reload() } catch (e) { notify((e as Error).message, 'error') }
           }}><Archive size={15} />Archivar</button>
         </>}>
-          <p style={{ marginTop: 0 }}>El set <b>{archiving.name}</b> deja de ofrecerse en «Usar set». Los registros que ya lo usaron no cambian. Se puede restaurar desde «Ver archivados».</p>
+          <p className="mt-0">El set <b>{archiving.name}</b> deja de ofrecerse en «Usar set». Los registros que ya lo usaron no cambian. Se puede restaurar desde «Ver archivados».</p>
         </Modal>
       )}
     </section>
@@ -170,11 +170,11 @@ export function SetEditor({ set, copy, onClose, onSaved }: { set?: SupplySetView
             <SupplySearch items={active} value={find} onChange={setFind} label="Buscar material" max={30}
               results={(found, q) => <div className="mat-results">{found.map((i) => row(i, q))}</div>} />
           )}
-          {find.trim().length < 2 && <p className="muted" style={{ margin: 0 }}>Escribe al menos 2 letras (ej. «guante 7.5», «gasa»).</p>}
+          {find.trim().length < 2 && <p className="c-muted m-0">Escribe al menos 2 letras (ej. «guante 7.5», «gasa»).</p>}
         </section>
         <section className="mat-col" aria-label="Materiales del set">
           <h3 className="mat-col__title">En el set: {plural(count, 'material', 'materiales')}</h3>
-          {!count && <p className="muted" style={{ margin: 0 }}>Todavía no tiene materiales.</p>}
+          {!count && <p className="c-muted m-0">Todavía no tiene materiales.</p>}
           {byCategory(chosen).map((g) => (
             <section key={g.category} className="mat-cat">
               <h4 className="mat-cat__plain">{g.category}</h4>

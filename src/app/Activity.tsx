@@ -76,10 +76,10 @@ export function AuditLog({ mine = false }: { mine?: boolean }) {
           <thead><tr><th>Fecha y hora</th>{!mine && <th>Persona</th>}<th>Rol</th><th>Acción</th><th>Paciente</th></tr></thead>
           <tbody>{rows.map((e) => (
             <tr key={e.id}>
-              <td className="num tc-lead" style={{ whiteSpace: 'nowrap' }}>{date(e.at)} {time(e.at)}</td>
+              <td className="num tc-lead nowrap">{date(e.at)} {time(e.at)}</td>
               {!mine && <td className="tc-trail">{who(e.userId)}</td>}
               <td data-label="Rol">{e.role ? ROLE_LABEL[e.role] : <span className="muted">—</span>}</td>
-              <td data-label="Acción" className="tc-full">{e.action}<small className="muted" style={{ display: 'block' }}>{AUDIT_KINDS[e.kind]}</small></td>
+              <td data-label="Acción" className="tc-full">{e.action}<small className="c-muted block">{AUDIT_KINDS[e.kind]}</small></td>
               <td data-label="Paciente">{e.patientName ?? <span className="muted">—</span>}</td>
             </tr>
           ))}</tbody>

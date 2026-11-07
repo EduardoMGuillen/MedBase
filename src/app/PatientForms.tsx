@@ -77,7 +77,7 @@ export function IdentificationForm({ title, submitLabel, initial, withAllergies 
       </fieldset>
       {minor && !f.dni && (
         <fieldset className="fs"><legend>Menor sin identidad: responsable</legend>
-          <p className="muted" style={{ fontSize: 13.5 }}>La receta y las constancias llevarán los datos del padre, la madre o el responsable.</p>
+          <p className="c-muted fs-md">La receta y las constancias llevarán los datos del padre, la madre o el responsable.</p>
           <div className="form-grid">
             {field('guardianName', 'Nombre del responsable')}
             {field('guardianRelation', 'Parentesco', { placeholder: 'Ej. Madre' })}
@@ -153,7 +153,7 @@ export function BackgroundForm({ initial, onClose, onSave }: { initial: Patient;
         setBusy(false)
       }}>Guardar antecedentes</button>
     </>}>
-      <p style={{ fontSize: 13.5, color: 'var(--muted)' }}>Escribe <i>Negados</i> cuando el paciente no tenga antecedentes de ese tipo; así queda constancia de que se interrogó.</p>
+      <p className="fs-md c-muted">Escribe <i>Negados</i> cuando el paciente no tenga antecedentes de ese tipo; así queda constancia de que se interrogó.</p>
       {BACKGROUND_GROUPS.filter((g) => !g.female || initial.sex === 'F').map((g) => (
         <fieldset key={g.title} className="fs"><legend>{g.title}</legend>
           {/* AP4 (ronda 13): un apartado de tres campos (hospitalarios, traumáticos y quirúrgicos) va uno debajo del otro a todo el

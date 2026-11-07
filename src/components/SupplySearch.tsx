@@ -79,7 +79,7 @@ export function SupplySearch({ items, value, onChange, placeholder = 'Buscar mat
           {materials.map((m) => (
             <button type="button" role="option" aria-selected="false" key={m.material} onMouseDown={(e) => e.preventDefault()} onClick={() => { onPickMaterial(m); setFocus(false) }}>
               <span><Highlight text={m.material} q={value} /></span>
-              <span className="muted" style={{ marginLeft: 'auto', fontSize: 12.5 }}>{m.category} · {m.variants} {m.variants === 1 ? 'variante' : 'variantes'}</span>
+              <span className="c-muted ml-auto fs-sm">{m.category} · {m.variants} {m.variants === 1 ? 'variante' : 'variantes'}</span>
             </button>
           ))}
         </div>

@@ -96,10 +96,10 @@ export default function Prescriptions() {
           if (!name) return null
           return (
             <div key={r.id} className="row rx-row">
-              <Link to={`/app/recetas/${r.id}`} className="num rx-row__when">{date(r.issuedAt)}<br /><span style={{ color: 'var(--muted)' }}>{r.folio}</span>{r.voidedAt && <><br /><span className="badge badge--red">Anulada</span></>}</Link>
+              <Link to={`/app/recetas/${r.id}`} className="num rx-row__when">{date(r.issuedAt)}<br /><span className="c-muted">{r.folio}</span>{r.voidedAt && <><br /><span className="badge badge--red">Anulada</span></>}</Link>
               <Link to={`/app/recetas/${r.id}`} className="row__who" style={{ textDecoration: 'none' }}>
-                <strong>{name}{r.standalone && <span className="badge badge--ink" style={{ marginLeft: 8 }}>Sin consulta</span>}
-                  {!r.patientId && <span className="badge badge--amber" style={{ marginLeft: 8 }}>Paciente no registrado</span>}</strong>
+                <strong>{name}{r.standalone && <span className="badge badge--ink ml-sm">Sin consulta</span>}
+                  {!r.patientId && <span className="badge badge--amber ml-sm">Paciente no registrado</span>}</strong>
                 <span>{r.items.map((i) => i.drug).join(', ')}, por {staffById(r.doctorId)?.name}</span>
               </Link>
               {write && <button className="btn btn--ghost btn--sm" onClick={() => repeat(r)}><Copy size={14} />Repetir receta</button>}
@@ -141,7 +141,7 @@ function GuestFields({ value, onChange, onPick, onCancel }: { value: GuestPatien
     onChange({ ...value, [k]: k === 'phone' ? formatPhone(e.target.value) : e.target.value })
   return (
     <fieldset className="fs"><legend>Receta para paciente no registrado</legend>
-      <p className="muted" style={{ fontSize: 13.5 }}>No se le crea expediente. La receta queda en tu historial marcada como «Paciente no registrado»; si después se registra, la vinculas.</p>
+      <p className="c-muted fs-md">No se le crea expediente. La receta queda en tu historial marcada como «Paciente no registrado»; si después se registra, la vinculas.</p>
       <div className="form-grid">
         <label className="field span-2"><span>Nombre completo</span><input className="input" autoFocus value={value.name} onChange={set('name')} autoComplete="off" /></label>
         <div className="field"><span>Fecha de nacimiento (opcional)</span><DateField value={value.birthDate ?? ''} onChange={(v) => onChange({ ...value, birthDate: v })} max={localISODate(now)} label="Fecha de nacimiento" /></div>
@@ -177,7 +177,7 @@ function NewPrescription({ initial, onClose }: { initial: Omit<Draft, 'key'>; on
     <section className="panel">
       <div className="panel__head"><div><h2>{initial.items.length ? 'Repetir receta' : 'Nueva receta'}</h2><p>{guest ? 'Para una persona que no está en la biblioteca.' : 'Queda en el expediente del paciente como receta sin consulta.'}</p></div>
         <button className="icon-btn" aria-label="Cerrar" onClick={onClose}><X size={18} /></button></div>
-      <div className="panel__body" style={{ display: 'grid', gap: 16 }}>
+      <div className="panel__body stack stack--16">
         {guest ? <GuestFields value={guest} onChange={setGuest} onPick={usePatient} onCancel={() => setGuest(null)} />
           : <PatientPicker value={patientId} onChange={setPatientId} notFoundLabel="receta para paciente no registrado"
             onNotFound={(q) => setGuest({ ...EMPTY_GUEST, name: q.replace(/\b\p{L}/gu, (c) => c.toUpperCase()) })} />}
@@ -208,8 +208,8 @@ function NewPrescription({ initial, onClose }: { initial: Omit<Draft, 'key'>; on
             if (r) nav(`/app/recetas/${r.prescriptionId}`)
           }}><FileText size={16} />Emitir receta</button>
           <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
-          {who && !items.length && <span className="muted" style={{ fontSize: 13.5 }}>Agrega al menos un medicamento.</span>}
-          {medForm && items.length > 0 && <span className="muted" style={{ fontSize: 13.5 }}>Termina o cancela el medicamento que estás editando.</span>}
+          {who && !items.length && <span className="c-muted fs-md">Agrega al menos un medicamento.</span>}
+          {medForm && items.length > 0 && <span className="c-muted fs-md">Termina o cancela el medicamento que estás editando.</span>}
         </div>
       </div>
     </section>
@@ -315,12 +315,12 @@ export function PrescriptionSheet() {
       {next && next.startsWith('/app/') && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap', justifyContent: 'space-between' }}>
         <span>El paciente quedó {next.includes('/observacion/') ? 'en observación' : 'hospitalizado'}. Imprime la receta y las órdenes y sigue a su expediente.</span>
         <Link className="btn btn--primary btn--sm" to={next}>{next.includes('/observacion/') ? 'Ir a observación' : 'Ir a hospitalización'}</Link></div>}
-      {((examBatch && examGroups.length > 0) || clinicBatch) && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap' }}>
+      {((examBatch && examGroups.length > 0) || clinicBatch) && <div className="alert-strip alert-strip--calm no-print wrap">
         {`También se ordenaron exámenes: ${[examBatch && examGroups.length > 0 && 'sus órdenes van debajo de la receta, cada una en su hoja, y se imprimen con el mismo botón', clinicBatch && 'la orden de los que se hacen en la clínica va aparte, al final, con su propio botón'].filter(Boolean).join('; ')}.`}
         <Link className="btn btn--ghost btn--sm" to={`/app/examenes/orden/${examBatch ?? clinicBatch}${examBatch && clinicBatch ? `?clinica=${clinicBatch}` : ''}`}>Abrir solo las órdenes</Link></div>}
       {/* ME15 (ronda 15): una receta de antes no traía los «Aplicar en la clínica»: el médico genera la completa (esta no cambia) */}
       {!rx.voidedAt && missingFromConsult.length > 0 && <FullRxStrip consultationId={rx.consultationId} missing={missingFromConsult} />}
-      {!rx.voidedAt && completeRx && <div className="alert-strip alert-strip--calm no-print" style={{ flexWrap: 'wrap' }}>
+      {!rx.voidedAt && completeRx && <div className="alert-strip alert-strip--calm no-print wrap">
         <span>Esta receta no traía todos los medicamentos de la consulta. Ya se generó la receta completa {completeRx.folio}.</span>
         <Link className="btn btn--ghost btn--sm" to={`/app/recetas/${completeRx.id}`}>Ver la receta completa</Link></div>}
       {rx.voidedAt && <div className="alert-strip no-print">Receta anulada el {date(rx.voidedAt)}, {time(rx.voidedAt)}{rx.voidedBy ? ` por ${staffById(rx.voidedBy)?.name ?? '—'}` : ''}. Motivo: {rx.voidReason}</div>}
@@ -347,7 +347,7 @@ export function PrescriptionSheet() {
                 <strong>{medicationLine(it)}</strong>
                 <p>{it.instructions ? `${it.instructions}.` : ''}{it.quantity ? ` Cantidad: ${it.quantity}.` : ''}</p>
               </> : <>
-              <strong>{it.drug}</strong> <span style={{ color: 'var(--muted)' }}>{it.presentation}</span>
+              <strong>{it.drug}</strong> <span className="c-muted">{it.presentation}</span>
               <p>{doseText(it.dose)}{it.route ? ` vía ${it.route.toLowerCase()}` : ''}, {it.prnCondition ? frequencyText(it) : it.frequency.toLowerCase()}{it.duration ? `, durante ${it.duration}` : ''}.{it.instructions ? ` ${it.instructions}` : ''}{it.quantity ? ` Cantidad: ${it.quantity}.` : ''}</p>
               </>}
               {/* ME15 (ronda 15): «Se aplica en la clínica.» o «Comprar y traer a la clínica para su aplicación.» */}
@@ -403,7 +403,7 @@ function GuestLink({ rx, guest, onLinked }: { rx: Prescription; guest: GuestPati
         <button className="btn btn--ghost" onClick={() => setMode(null)}>Cancelar</button>
         <button className="btn btn--primary" disabled={!patientId} onClick={() => link(patientId)}>Vincular</button>
       </>}>
-        <p className="muted" style={{ fontSize: 14 }}>La receta {rx.folio} pasa al expediente que elijas y queda en la bitácora.</p>
+        <p className="c-muted fs-base">La receta {rx.folio} pasa al expediente que elijas y queda en la bitácora.</p>
         <PatientPicker value={patientId} onChange={setPatientId} />
       </Modal>
     )}

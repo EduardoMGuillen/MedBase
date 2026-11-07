@@ -61,22 +61,22 @@ export default function Followups() {
               const soon = !overdue && f.dueDate <= addDays(today, 7)
               return (
                 <tr key={f.id}>
-                  <td><Link to={`/app/pacientes/${p.id}`}>{fullName(p)}</Link><small style={{ display: 'block', color: 'var(--muted)' }}>{p.phone}</small></td>
-                  <td>{f.kind !== 'chronic' && <span className="badge badge--neutral fu-type">{f.reminderType ? REMINDER_TYPE[f.reminderType] : f.kind === 'procedure' ? 'Procedimiento' : 'Recordatorio'}</span>}{f.title}{f.notes && <small style={{ display: 'block', color: 'var(--muted)' }}>{f.notes}</small>}</td>
-                  <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                  <td><Link to={`/app/pacientes/${p.id}`}>{fullName(p)}</Link><small className="block c-muted">{p.phone}</small></td>
+                  <td>{f.kind !== 'chronic' && <span className="badge badge--neutral fu-type">{f.reminderType ? REMINDER_TYPE[f.reminderType] : f.kind === 'procedure' ? 'Procedimiento' : 'Recordatorio'}</span>}{f.title}{f.notes && <small className="block c-muted">{f.notes}</small>}</td>
+                  <td className="num nowrap">
                     {/* CR2 (ronda 6): primero cuántos días faltan y al lado la fecha; en Recordatorios la columna Fecha no cambia */}
                     {kind === 'chronic' ? <><b>{daysLabel(daysUntil(f.dueDate, today))}</b> · {date(`${f.dueDate}T12:00:00`)}</> : date(`${f.dueDate}T12:00:00`)}
-                    {overdue && <span className="badge badge--red" style={{ marginLeft: 6 }}>Vencido</span>}
-                    {soon && <span className="badge badge--amber" style={{ marginLeft: 6 }}>Esta semana</span>}
+                    {overdue && <span className="badge badge--red ml-xs">Vencido</span>}
+                    {soon && <span className="badge badge--amber ml-xs">Esta semana</span>}
                   </td>
-                  {kind === 'chronic' && <td className="num" style={{ whiteSpace: 'nowrap' }}>{f.everyDays && f.everyDays % 30 === 0 ? `${f.everyDays / 30} ${f.everyDays === 30 ? 'mes' : 'meses'}` : `${f.everyDays} días`}</td>}
+                  {kind === 'chronic' && <td className="num nowrap">{f.everyDays && f.everyDays % 30 === 0 ? `${f.everyDays / 30} ${f.everyDays === 30 ? 'mes' : 'meses'}` : `${f.everyDays} días`}</td>}
                   <td className="fu-notice">
                     {/* CR2 (ronda 6): los avisos programados en una línea y el WhatsApp enviado aparte */}
                     {(f.remindedWeek || f.remindedEve || f.remindedDay) && <div className="fu-notice__auto">Avisos: {[f.remindedWeek && '1 semana antes', f.remindedEve && 'un día antes', f.remindedDay && 'el día del control'].filter(Boolean).join(' · ')}</div>}
                     {f.notifiedAt && <div className="fu-notice__sent">Enviado: {dateTime(f.notifiedAt)}</div>}
-                    {!f.remindedWeek && !f.remindedEve && !f.remindedDay && !f.notifiedAt && <span style={{ color: 'var(--faint)' }}>Aún no toca</span>}
+                    {!f.remindedWeek && !f.remindedEve && !f.remindedDay && !f.notifiedAt && <span className="faint">Aún no toca</span>}
                   </td>
-                  <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                  <td className="nowrap ta-r">
                     <button className={`btn ${f.notifiedAt ? 'btn--ghost' : 'btn--soft'} btn--sm`} onClick={() => setSending(f)}><MessageCircle size={15} />WhatsApp</button>{' '}
                     <CompleteButton f={f} />
                   </td>

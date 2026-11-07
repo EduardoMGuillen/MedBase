@@ -400,7 +400,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
         </div>
       </div>
       {past && (
-        <div className="alert-strip alert-strip--calm medsheet__past" style={{ flexWrap: 'wrap' }}>
+        <div className="alert-strip alert-strip--calm medsheet__past wrap">
           <span>Día pasado: se muestra lo que se registró, en modo lectura.{fixing ? ' Toca una hora para registrarla tarde o una dosis para corregirla; pide motivo y queda en la bitácora.' : ''}</span>
           {care && <button className="btn btn--ghost btn--sm" onClick={() => setFixing(!fixing)}>{fixing ? 'Terminar' : 'Corregir registros'}</button>}
         </div>
@@ -489,9 +489,9 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                     {care && !m.stoppedAt && (ref.getTime() === today.getTime() || fixing) && (
                       <button className="slot2 slot2--prn" onClick={() => setMarking({ med: m, late: past })}><b><Plus size={13} /> PRN</b><small>Registrar dosis</small></button>
                     )}
-                    {!prnToday.length && !(care && !m.stoppedAt && ref.getTime() === today.getTime()) && <span className="muted" style={{ fontSize: 13 }}>Según necesidad. Sin dosis este día.</span>}
+                    {!prnToday.length && !(care && !m.stoppedAt && ref.getTime() === today.getTime()) && <span className="c-muted fs-md">Según necesidad. Sin dosis este día.</span>}
                   </>)}
-                  {!m.prn && !slots.length && !running && <span className="muted" style={{ fontSize: 13 }}>Sin dosis este día.</span>}
+                  {!m.prn && !slots.length && !running && <span className="c-muted fs-md">Sin dosis este día.</span>}
                 </div>
               </div>
             )
@@ -640,17 +640,17 @@ function DoseModal({ med, at, late = false, doses, onClose, onSaved }: { med: In
         {med.nebulization.diluent?.trim() && <span>Diluido en {med.nebulization.diluentVolume ? `${med.nebulization.diluentVolume} de ` : ''}{med.nebulization.diluent}</span>}
       </div>}
       {/* ME2 (ronda 8): la cantidad propuesta es la de esta dosis (la inicial o las siguientes) y queda guardada en el registro */}
-      {med.loadingDose && at && <p className="alert-strip alert-strip--amber" style={{ margin: 0 }}>{isLoadingSlot(med, at) ? 'Dosis inicial' : 'Dosis siguiente'}: <b>{doseAt(med, at)}</b></p>}
+      {med.loadingDose && at && <p className="alert-strip alert-strip--amber m-0">{isLoadingSlot(med, at) ? 'Dosis inicial' : 'Dosis siguiente'}: <b>{doseAt(med, at)}</b></p>}
       {/* ME1: el evento de una infusión es su inicio; después la fila queda «En infusión desde…» */}
-      {med.infusionRate && <p className="muted" style={{ margin: 0 }}>Registra el inicio de la infusión a {formatRate(med.infusionRate)} {infusionUnitLabel(med.infusionUnit)}.</p>}
+      {med.infusionRate && <p className="c-muted m-0">Registra el inicio de la infusión a {formatRate(med.infusionRate)} {infusionUnitLabel(med.infusionUnit)}.</p>}
       {tooSoon && <div className="alert-strip"><TriangleAlert size={16} />La última dosis fue a las {time(last!.givenAt)}; la indicación es cada {med.everyHours} horas.</div>}
       {at && (
         <DoseStatus value={status} onChange={(s) => { setStatus(s); setNote('') }} />
       )}
-      {!given && <p className="muted" style={{ fontSize: 13.5 }}>Con el motivo, la dosis deja de alertar y queda en la hoja como {status === 'omitted' ? 'omitida' : 'no aplicada'}.</p>}
+      {!given && <p className="c-muted fs-md">Con el motivo, la dosis deja de alertar y queda en la hoja como {status === 'omitted' ? 'omitida' : 'no aplicada'}.</p>}
       <div className="field"><span>{med.infusionRate && given ? 'Hora de inicio real' : 'Hora real'}</span><DateTimeField value={when} max={inputDateTime(new Date())} onChange={setWhen} label="Hora real" /></div>
       {given && at && fromLocalValue(when).getTime() - at.getTime() > LATE_AFTER_MIN * 60_000 && (
-        <p className="muted" style={{ fontSize: 13.5 }}>Queda como administrada con retraso: {elapsed(Math.round((fromLocalValue(when).getTime() - at.getTime()) / 60_000))} después de la hora indicada.</p>)}
+        <p className="c-muted fs-md">Queda como administrada con retraso: {elapsed(Math.round((fromLocalValue(when).getTime() - at.getTime()) / 60_000))} después de la hora indicada.</p>)}
       {!given && <SkipReasons value={note} onChange={setNote} reasons={status === 'omitted' ? OMIT_REASONS : SKIP_REASONS} />}
       <label className="field"><span>{given ? 'Observación (opcional)' : status === 'omitted' ? 'Motivo por el que se omitió' : 'Motivo por el que no se aplicó'}</span>
         <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={given ? 'Ej. Dolor 7/10' : status === 'omitted' ? 'Ej. Suspendida por el médico' : 'Ej. Paciente en ayuno para cirugía'} /></label>
@@ -703,8 +703,8 @@ function CorrectDoseModal({ med, dose, onClose, onSaved }: { med: InpatientMed; 
         if (ok) onSaved()
       }}>Guardar corrección</button>
     </>}>
-      <p className="muted" style={{ fontSize: 14 }}>Registrada como {DOSE_LABEL[dose.status].toLowerCase()} a las {time(dose.givenAt)} del {date(dose.givenAt)}. El registro anterior se conserva.{grace ? ` Corregible hasta ${time(dose.graceUntil!)}.` : ''}</p>
-      <p style={{ margin: 0 }}><VersionTag version={dose.version} kind="dose" id={dose.id} render={(x) => <span>{DOSE_LABEL[x.status as Dose['status']] ?? String(x.status)} a las {dmyTime(String(x.givenAt))}{x.note ? `: ${String(x.note)}` : ''}</span>} /></p>
+      <p className="c-muted fs-base">Registrada como {DOSE_LABEL[dose.status].toLowerCase()} a las {time(dose.givenAt)} del {date(dose.givenAt)}. El registro anterior se conserva.{grace ? ` Corregible hasta ${time(dose.graceUntil!)}.` : ''}</p>
+      <p className="m-0"><VersionTag version={dose.version} kind="dose" id={dose.id} render={(x) => <span>{DOSE_LABEL[x.status as Dose['status']] ?? String(x.status)} a las {dmyTime(String(x.givenAt))}{x.note ? `: ${String(x.note)}` : ''}</span>} /></p>
       {dose.scheduledAt && <DoseStatus value={status} onChange={setStatus} />}
       <div className="field"><span>Hora real</span><DateTimeField value={when} max={inputDateTime(new Date())} onChange={setWhen} label="Hora real" /></div>
       {!given && <SkipReasons value={note} onChange={setNote} reasons={status === 'omitted' ? OMIT_REASONS : SKIP_REASONS} />}
@@ -815,7 +815,7 @@ function MedicalNotes({ file, p, reload, show = true, onWriting }: { file: File;
         <section className="panel">
           <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <p className="muted">{hasAdmission ? 'Las notas quedan en orden, de la más antigua a la más reciente. Procedimientos, notas postquirúrgicas y egreso también son notas de evolución.' : 'Lo primero es la nota de ingreso, con las indicaciones de medicamentos.'}</p>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div className="hstack">
               {(doctor || (writer && hasAdmission)) && <button className="btn btn--primary" data-tour="nueva-evolucion" onClick={() => setWriting('note')}><NotebookPen size={16} />{hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso'}</button>}
               {writer && <button className="btn btn--primary" onClick={() => setWriting('procedure')}><Syringe size={16} />{doctor ? 'Procedimiento' : 'Procedimiento menor'}</button>}
               {(doctor || can('inpatient.care')) && <button className={`btn ${doctor ? 'btn--primary' : 'btn--soft'}`} onClick={() => { setAuthFor(undefined); setWriting('authorization') }}><FileSignature size={16} />Autorización quirúrgica</button>}
@@ -881,7 +881,7 @@ function ConvertModal({ file, p, onClose, onDone }: { file: File; p: Patient; on
         if (r) onDone()
       }}><BedDouble size={16} />Hospitalizar</button>
     </>}>
-      <p className="muted" style={{ fontSize: 14 }}>Las notas, los medicamentos, los laboratorios y las autorizaciones de la observación pasan al expediente de hospitalización, en orden y con su autoría.</p>
+      <p className="c-muted fs-base">Las notas, los medicamentos, los laboratorios y las autorizaciones de la observación pasan al expediente de hospitalización, en orden y con su autoría.</p>
       <BedFields bedId={f.bedId} specialty={f.specialty} onChange={(v) => setF({ ...f, ...v })} />
       <div className="form-grid">
         <label className="field"><span>Quién lo acompaña</span><input className="input" value={f.companionName} onChange={set('companionName')} /></label>
@@ -1023,7 +1023,7 @@ function PendingOrdersPanel({ file, reload }: { file: File; reload: () => void }
   if (file.hospitalization.status !== 'active') return null
   return (
     <section className={`panel ${pending.length ? 'pending-orders' : ''}`} data-tour="checklist">
-      <div className="panel__head"><div><h2>Órdenes por revisar <span className="num" style={{ color: 'var(--faint)' }}>{pending.length}</span></h2>
+      <div className="panel__head"><div><h2>Órdenes por revisar <span className="num faint">{pending.length}</span></h2>
         <p>{pending.length ? 'Marca cada orden cuando la hayas revisado; queda tu nombre y la hora.' : 'Todas las órdenes médicas están revisadas.'}</p></div></div>
       {pending.length > 0 && (
         <div className="rows">{pending.map(({ note, index, text }) => (
@@ -1091,9 +1091,9 @@ function TextCorrection({ n, procedure, onClose, onSaved, onExpired }: { n: Inpa
   const ok = procedure ? f.name.trim().length >= 3 && f.text.trim().length >= 10 : f.text.trim().length >= 3
   return (
     <Modal title={`Corregir: ${procedure ? 'Nota de procedimiento' : 'Nota de enfermería'}`} wide className="note-modal" onClose={onClose} footer={<>
-      {expired ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="alert">{GRACE_EXPIRED_TEXT}
-        <button type="button" className="btn btn--soft btn--sm" style={{ marginLeft: 8 }} onClick={() => { draft.clear(); onExpired(f.text.trim()) }}>Pasar a una adenda</button></span>
-        : <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>}
+      {expired ? <span className="field__msg field__msg--error mr-auto" role="alert">{GRACE_EXPIRED_TEXT}
+        <button type="button" className="btn btn--soft btn--sm ml-sm" onClick={() => { draft.clear(); onExpired(f.text.trim()) }}>Pasar a una adenda</button></span>
+        : <span className="mr-auto"><CorrectionReason value={why} onChange={setWhy} /></span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ok || busy || expired} onClick={async () => {
         setBusy(true)
@@ -1264,7 +1264,7 @@ function CorrectionOrders({ n, file, p, value, onChange, locks }: { n: Inpatient
           return <li key={e.id}>
             <span className={on ? '' : 'struck'}>{e.name}</span>
             {locks.exams[e.id] ? <div className="locked-line">{locks.exams[e.id]}</div>
-              : <button type="button" className="btn btn--ghost btn--sm" style={{ marginLeft: 8 }} onClick={() => set({ keepExams: on ? value.keepExams.filter((x) => x !== e.id) : [...value.keepExams, e.id] })}>{on ? 'Quitar' : 'Deshacer'}</button>}
+              : <button type="button" className="btn btn--ghost btn--sm ml-sm" onClick={() => set({ keepExams: on ? value.keepExams.filter((x) => x !== e.id) : [...value.keepExams, e.id] })}>{on ? 'Quitar' : 'Deshacer'}</button>}
           </li>
         })}</ul>}
         <ExamsBlock value={value.exams} onChange={(v) => set({ exams: v })} inStay />
@@ -1477,9 +1477,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         {!noteBlank && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}
         {p.allergies.length > 0 && <div className="alert-strip"><TriangleAlert size={16} />Alergias: {p.allergies.join(', ')}</div>}
       </>} footer={correct ? <>
-      {expired ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="alert">{GRACE_EXPIRED_TEXT}
-        {onExpired && <button type="button" className="btn btn--soft btn--sm" style={{ marginLeft: 8 }} onClick={() => onExpired(correctionText())}>Pasar a una adenda</button>}</span>
-        : <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>}
+      {expired ? <span className="field__msg field__msg--error mr-auto" role="alert">{GRACE_EXPIRED_TEXT}
+        {onExpired && <button type="button" className="btn btn--soft btn--sm ml-sm" onClick={() => onExpired(correctionText())}>Pasar a una adenda</button>}</span>
+        : <span className="mr-auto"><CorrectionReason value={why} onChange={setWhy} /></span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy || expired} onClick={async () => {
         setBusy(true)
@@ -1496,10 +1496,10 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         } finally { setBusy(false) }
       }}>Guardar corrección</button>
     </> : <>
-      {postop && pqCheck.missing.length && !blanks.length ? <span className="field__msg field__msg--warn" style={{ marginRight: 'auto' }} role="status">Para firmar falta {pqCheck.missing.join(', ')}.</span>
-        : admissionMissing.length && !blanks.length ? <span className="field__msg field__msg--warn" style={{ marginRight: 'auto' }} role="status">Para firmar falta {admissionMissing.join(' y ')}.</span>
-        : blanks.length ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="status">Completa los espacios ___ de {blanks.join(', ')}.</span>
-        : <span className="muted" style={{ marginRight: 'auto', fontSize: 13.5 }}>{meds.length ? `${meds.length} medicamento(s) nuevo(s)` : ''}{stop.length ? `${meds.length ? ', ' : ''}${stop.length} omitido(s)` : ''}</span>}
+      {postop && pqCheck.missing.length && !blanks.length ? <span className="field__msg field__msg--warn mr-auto" role="status">Para firmar falta {pqCheck.missing.join(', ')}.</span>
+        : admissionMissing.length && !blanks.length ? <span className="field__msg field__msg--warn mr-auto" role="status">Para firmar falta {admissionMissing.join(' y ')}.</span>
+        : blanks.length ? <span className="field__msg field__msg--error mr-auto" role="status">Completa los espacios ___ de {blanks.join(', ')}.</span>
+        : <span className="c-muted mr-auto fs-md">{meds.length ? `${meds.length} medicamento(s) nuevo(s)` : ''}{stop.length ? `${meds.length ? ', ' : ''}${stop.length} omitido(s)` : ''}</span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy || stale} onClick={async () => {
         setBusy(true)
@@ -1532,7 +1532,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
           if (b === 'dx') return <Fragment key={b}>{dxField}</Fragment>
           if (b === 'vitals') return <Fragment key={b}>{vitalsBlock}</Fragment>
           const s = SOAP.find((x) => x.key === b)!
-          return <label key={b} className="field dictate-field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
+          return <label key={b} className="field dictate-field"><span>{s.letter}. {s.label} <small className="fw-normal">{s.hint}</small></span>
             <AutoTextarea value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} />
             <DictateButton label={s.label} onText={(f) => setN((x) => ({ ...x, [s.key]: f(x[s.key]) }))} /></label>
         }) : admissionStd ? (<>
@@ -1550,7 +1550,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         </>) : (<>
           {dxField}
           {/* Ronda 8: el cuadro entre el diagnóstico y el examen físico */}
-          <label className="field dictate-field"><span>Evolución <small style={{ fontWeight: 400 }}>Cómo ha seguido desde la nota anterior y lo que refiere el paciente.</small></span>
+          <label className="field dictate-field"><span>Evolución <small className="fw-normal">Cómo ha seguido desde la nota anterior y lo que refiere el paciente.</small></span>
             <AutoTextarea value={d.evolution} onChange={(e) => setD({ ...d, evolution: e.target.value })} />
             <DictateButton label="Evolución" onText={(f) => setD((x) => ({ ...x, evolution: f(x.evolution) }))} /></label>
           {vitalsBlock}
@@ -1566,7 +1566,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
       </div>
       <fieldset className="fs"><legend>Indicaciones</legend>
         <VitalsFrequency value={vitalsMode} onChange={setVitalsMode} />
-        {stale && <div className="alert-strip alert-strip--amber" role="alert" style={{ flexWrap: 'wrap' }}>
+        {stale && <div className="alert-strip alert-strip--amber wrap" role="alert">
           <span>Otra nota se firmó mientras escribías. Las indicaciones y los medicamentos activos ya se actualizaron con ella: revísalos antes de firmar.</span>
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => {
             // NE4: si no tocaste los diagnósticos, se recalculan sobre la nota que se acaba de firmar
@@ -1578,7 +1578,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         {activeInd.length > 0 && (
           <div className="note-editor__active">
             <h4>Indicaciones activas</h4>
-            <p className="muted" style={{ fontSize: 13.5 }}>Vienen de la nota anterior y siguen vigentes. Marca OMITIR para suspender una; Cambiar la cierra y deja la nueva.</p>
+            <p className="c-muted fs-md">Vienen de la nota anterior y siguen vigentes. Marca OMITIR para suspender una; Cambiar la cierra y deja la nueva.</p>
             <div className="rows">
               {activeInd.map((a) => {
                 const dec = decisions[a.id]
@@ -1603,7 +1603,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
             </div>
           </div>
         )}
-        <p className="muted" style={{ fontSize: 13.5 }}>{activeInd.length ? 'Indicaciones nuevas' : 'Lo que no es medicamento ni examen'}, una por línea: dieta, cuidados, signos vitales. Puedes pegar una lista completa.</p>
+        <p className="c-muted fs-md">{activeInd.length ? 'Indicaciones nuevas' : 'Lo que no es medicamento ni examen'}, una por línea: dieta, cuidados, signos vitales. Puedes pegar una lista completa.</p>
         {extra.length > 0 && <ol className="orders">{extra.map((o, i) => (
           <li key={i}><span className="orders__n">{i + 1}.</span>
             <input className={`input${hasBlank(o) ? ' input--blank' : ''}`} value={o} aria-label={`Indicación ${i + 1}`} aria-invalid={hasBlank(o)} onChange={(e) => setExtra(extra.map((x, j) => j === i ? e.target.value : x))} />
@@ -1654,11 +1654,11 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         <ExamsBlock value={exams} onChange={setExams} inStay />
       </fieldset>
       <fieldset className="fs note-editor__meds"><legend>Medicamentos</legend>
-        <p className="muted" style={{ fontSize: 13.5 }}>Pasan solos a la hoja de medicamentos.</p>
+        <p className="c-muted fs-md">Pasan solos a la hoja de medicamentos.</p>
         {active.length > 0 && (
           <div className="note-editor__active">
             <h4>Medicamentos activos</h4>
-            <p className="muted" style={{ fontSize: 13.5 }}>Marca OMITIR para suspender un medicamento; desde ahora la hoja de enfermería lo mostrará omitido.</p>
+            <p className="c-muted fs-md">Marca OMITIR para suspender un medicamento; desde ahora la hoja de enfermería lo mostrará omitido.</p>
             <div className="rows">
               {active.map((m) => (
                 <div key={m.id} className="omit-row">
@@ -1676,12 +1676,12 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
           <li key={i} className={medHasBlank(m) ? 'orders__blank' : undefined}><span className="orders__n">–</span>
             <span className="orders__text"><Pill size={13} className="orders__pill" />{medLabel(m)}{m.days ? ` por ${m.days} días` : ''}{m.instructions ? `. ${m.instructions}` : ''}{m.quantity && !m.buyOutside ? ` · Cantidad: ${m.quantity}` : ''}
               {m.buyOutside && <span className="badge badge--amber rx-tag">Receta{m.buyQuantity ? ` · comprar ${m.buyQuantity}` : ''}</span>}
-              {!inVademecum(m.drug) && <span className="badge badge--amber" style={{ marginLeft: 6 }}>No está en el vademécum de la clínica</span>}</span>
+              {!inVademecum(m.drug) && <span className="badge badge--amber ml-xs">No está en el vademécum de la clínica</span>}</span>
             <span className="orders__tools">
               <button type="button" className="icon-btn" aria-label={`Editar ${m.drug}`} onClick={() => { setEditingMed(i); setAdding(false); setReplacing(null) }}><Pencil size={14} /></button>
               <button type="button" className="icon-btn" aria-label={`Quitar ${m.drug}`} onClick={() => { setMeds(meds.filter((_, j) => j !== i)); setEditingMed(null) }}><X size={14} /></button></span></li>
         ))}</ol>}
-        {replacing && <p className="muted" style={{ fontSize: 13.5 }}>La indicación nueva reemplaza a {active.find((m) => m.id === replacing)?.drug}. La nota conservará el resto de órdenes.</p>}
+        {replacing && <p className="c-muted fs-md">La indicación nueva reemplaza a {active.find((m) => m.id === replacing)?.drug}. La nota conservará el resto de órdenes.</p>}
         {editingMed !== null && meds[editingMed] ? <MedicationForm kind="stay" key={`edit-${editingMed}`} patient={p} current={[...meds.filter((_, j) => j !== editingMed), ...active]} initial={editInitial(meds[editingMed])}
             onSave={(m) => { setMeds(meds.map((x, j) => (j === editingMed ? { ...m, replacesId: x.replacesId } : x))); setEditingMed(null) }} onCancel={() => setEditingMed(null)} />
           : replacing ? <MedicationForm kind="stay" patient={p} current={meds} initial={medToNew(active.find((m) => m.id === replacing)!, file.doses)} onSave={(m) => { setMeds([...meds, { ...m, replacesId: replacing }]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
@@ -1795,7 +1795,7 @@ function NursingRow({ n, who, file, reload, canAdd, kinds }: { n: InpatientNote;
   return (
     <div className="nnote">
       <div className="nnote__when"><b>{date(n.at, { day: 'numeric', month: 'short' })}</b><span>{time(n.at)}</span></div>
-      <div><p>{n.text}</p><small className="muted">{who}{count > 0 && <span className="badge badge--amber" style={{ marginLeft: 6 }}>Con adenda</span>}</small>
+      <div><p>{n.text}</p><small className="muted">{who}{count > 0 && <span className="badge badge--amber ml-xs">Con adenda</span>}</small>
         <div className="signed-row">
           <VersionTag version={n.version} kind="note" id={n.id} render={(v) => <p>{String(v.text ?? '')}</p>} />
           <GraceButton record={n} authorId={n.authorId} onCorrect={() => setCorrecting(true)} />
@@ -1830,7 +1830,7 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
         <section className="panel">
           <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <p className="muted">Se firman en pantalla (tablet, celular o computadora) o se imprimen, se firman en papel y se sube la foto o el PDF de la hoja firmada.</p>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div className="hstack">
               {file.hospitalization.kind === 'hospital' && <button className="btn btn--soft" onClick={() => setMaking('hospital')}><FileSignature size={16} />Autorización de hospitalización{hospital?.status === 'pending' ? ' (pendiente)' : ''}</button>}
               <button className="btn btn--primary" onClick={() => setMaking('surgical')}><FileSignature size={16} />Autorización quirúrgica</button>
             </div>

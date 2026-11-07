@@ -43,7 +43,7 @@ export function PreEvalButton({ stayId, patientId, authorizationId, small, onCha
       <ClipboardCheck size={small ? 14 : 16} />Valoración preanestésica</button>
     {choosing && (
       <Modal title="Valoración preanestésica" onClose={() => setChoosing(false)}>
-        <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>Se hace antes de la cirugía. Puede haber más de una (si se reprograma); la vigente es la última.</p>
+        <p className="c-muted mt-0 fs-base">Se hace antes de la cirugía. Puede haber más de una (si se reprograma); la vigente es la última.</p>
         <div className="choice-grid">
           <button type="button" className="choice" disabled={!doctor} aria-disabled={!doctor} onClick={() => { if (doctor) nav(`/app/valoracion/nueva/${stayId}${q ? `?${q}` : ''}`) }}>
             <PenLine size={22} /><b>Escribir en el sistema</b>
@@ -88,9 +88,9 @@ export function PreEvalAnnex({ stayId }: { stayId: string }) {
       {x.evals.length > 0 ? <div className="rows">{[...x.evals].reverse().map((e) => (
         <div key={e.id} className="row anes-row">
           <div className="row__who"><strong>{e.mode === 'system' ? 'En el sistema' : 'En papel'}
-            {e.id === current?.id && <span className="badge badge--mint" style={{ marginLeft: 6 }}>Vigente</span>}
-            {e.voidedAt && <span className="badge badge--red" style={{ marginLeft: 6 }}>Anulada</span>}
-            {e.version > 1 && <span className="badge" style={{ marginLeft: 6 }}>Corregida (v{e.version})</span>}</strong>
+            {e.id === current?.id && <span className="badge badge--mint ml-xs">Vigente</span>}
+            {e.voidedAt && <span className="badge badge--red ml-xs">Anulada</span>}
+            {e.version > 1 && <span className="badge ml-xs">Corregida (v{e.version})</span>}</strong>
             <span>{evalLine(e, who)}{e.data ? ` · ${[e.data.proposedSurgery, preEvalLine(e.data)].filter(Boolean).join(' · ')}` : ''}{e.observation ? ` · ${e.observation}` : ''}{e.voidedAt ? ` · Anulada: ${e.voidReason}` : ''}</span>
             {e.mode === 'system' && !e.voidedAt && <Addenda list={addenda} targetKind="preanesthesia" targetId={e.id} canAdd={e.createdBy === user?.id} onAdded={load} />}
           </div>
@@ -113,14 +113,14 @@ export function PreEvalAnnex({ stayId }: { stayId: string }) {
 export function PreEvalSummary({ pe }: { pe: PreEval }) {
   return (
     <div className="preeval-sum" data-testid="preeval-summary">
-      <p style={{ margin: 0 }}><b>{pe.mode === 'system' ? `Firmada por ${pe.signer?.name ?? pe.performedBy.name}` : `En papel · Valoración de ${pe.performedBy.name}`}</b>, {dmyTime(pe.createdAt)}</p>
+      <p className="m-0"><b>{pe.mode === 'system' ? `Firmada por ${pe.signer?.name ?? pe.performedBy.name}` : `En papel · Valoración de ${pe.performedBy.name}`}</b>, {dmyTime(pe.createdAt)}</p>
       {pe.data ? <>
-        <p style={{ margin: 0 }}>{preEvalLine(pe.data) || 'Sin ASA ni vía aérea anotados.'}</p>
-        {pe.data.allergies && <p style={{ margin: 0 }}>Alergias: {pe.data.allergies}</p>}
-        {labLine(pe.data.labs) && <p style={{ margin: 0 }}>{labLine(pe.data.labs)}</p>}
-        {pe.data.techniques.length > 0 && <p style={{ margin: 0 }}>Técnica propuesta: {pe.data.techniques.join(', ')}</p>}
-      </> : <p className="muted" style={{ margin: 0 }}>Los datos están en la hoja en papel.</p>}
-      <p className="muted" style={{ margin: 0, fontSize: 13 }}>De solo lectura: si algo cambió, corrige la valoración o escribe una nueva antes de firmar el registro.</p>
+        <p className="m-0">{preEvalLine(pe.data) || 'Sin ASA ni vía aérea anotados.'}</p>
+        {pe.data.allergies && <p className="m-0">Alergias: {pe.data.allergies}</p>}
+        {labLine(pe.data.labs) && <p className="m-0">{labLine(pe.data.labs)}</p>}
+        {pe.data.techniques.length > 0 && <p className="m-0">Técnica propuesta: {pe.data.techniques.join(', ')}</p>}
+      </> : <p className="c-muted m-0">Los datos están en la hoja en papel.</p>}
+      <p className="c-muted m-0 fs-md">De solo lectura: si algo cambió, corrige la valoración o escribe una nueva antes de firmar el registro.</p>
       <Link className="btn btn--ghost btn--sm anes-btn self-start" to={`/app/valoracion/${pe.id}`} target="_blank"><Eye size={14} />Ver valoración</Link>
     </div>
   )

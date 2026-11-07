@@ -52,7 +52,7 @@ export function ReferralModal({ from, stayKind, prefill, onClose, onSigned }: {
   const set = (k: keyof Editable) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => { const v = e.target.value; setF((x) => x && { ...x, [k]: v }) }
   const stay = from.kind === 'stay'
   const area = (k: keyof Editable, label: string, rows: number, hint?: string) => f && (
-    <label key={k} className="field span-2"><span>{label}{hint && <small style={{ fontWeight: 400 }}> {hint}</small>}</span>
+    <label key={k} className="field span-2"><span>{label}{hint && <small className="fw-normal"> {hint}</small>}</span>
       <textarea className="textarea textarea--sm" rows={rows} value={String(f[k] ?? '')} onChange={set(k)} /></label>
   )
   const missing = !f ? [] : [!f.reason.trim() && 'el motivo de referencia', !f.destination.trim() && 'el centro de destino', !f.consent && 'la casilla de consentimiento'].filter(Boolean)
@@ -60,7 +60,7 @@ export function ReferralModal({ from, stayKind, prefill, onClose, onSigned }: {
     <Modal title="Hoja de referencia" wide onClose={onClose}
       top={f && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}
       footer={<>
-      {f && missing.length > 0 && <span className="field__msg field__msg--warn" style={{ marginRight: 'auto' }}>Para firmar falta {missing.join(', ')}.</span>}
+      {f && missing.length > 0 && <span className="field__msg field__msg--warn mr-auto">Para firmar falta {missing.join(', ')}.</span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!f || missing.length > 0 || busy} onClick={async () => {
         if (!f) return
@@ -74,7 +74,7 @@ export function ReferralModal({ from, stayKind, prefill, onClose, onSigned }: {
       }}><Send size={16} />Firmar referencia</button>
     </>}>
       {!f ? <Loading label="Armando la referencia" /> : (<>
-        <p className="muted" style={{ fontSize: 13.5 }}>Se llenó con el expediente. Revísala y completa lo que haga falta; se guarda sola como borrador. Firmada ya no se edita: si hay un error, se anula y se emite otra.</p>
+        <p className="c-muted fs-md">Se llenó con el expediente. Revísala y completa lo que haga falta; se guarda sola como borrador. Firmada ya no se edita: si hay un error, se anula y se emite otra.</p>
         <div className="form-grid">
           <label className="field"><span>Centro o establecimiento al que se refiere</span><input className={`input${!f.destination.trim() ? ' input--warn' : ''}`} value={f.destination} onChange={set('destination')} placeholder="Ej. Hospital Escuela" aria-required="true" /></label>
           <label className="field"><span>Servicio o especialidad</span><input className="input" value={f.service} onChange={set('service')} placeholder="Ej. Cardiología" /></label>
@@ -214,7 +214,7 @@ export default function ReferralPage() {
           <button className="btn btn--soft" onClick={() => print('pdf')}><Download size={16} />Descargar PDF</button>
           <button className="btn btn--primary" onClick={() => print('print')}><Printer size={16} />Imprimir</button>
       </>} />
-      <p className="muted no-print" style={{ fontSize: 13.5 }}>No se envía por WhatsApp ni por ningún canal automático: se imprime o se descarga y se entrega al paciente o a su familia.</p>
+      <p className="c-muted no-print fs-md">No se envía por WhatsApp ni por ningún canal automático: se imprime o se descarga y se entrega al paciente o a su familia.</p>
       <ReferralSheet r={r} />
       {/* RF1: firmada no se edita; se corrige con adenda (también sale en la impresión) */}
       <div className="referral-addenda">

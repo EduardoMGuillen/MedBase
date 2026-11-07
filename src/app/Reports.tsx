@@ -58,8 +58,8 @@ export default function Reports() {
           <div className="stat"><b className="num">{money(report.totals.revenue, cur)}</b><span>Ingresos</span><small>Ticket promedio {money(report.totals.avgTicket, cur)}</small></div>
           <div className="stat"><b className="num">{report.totals.done}</b><span>Consultas atendidas</span><small>de {report.totals.appointments} citas</small></div>
           <div className="stat"><b className="num">{report.totals.attendance == null ? '—' : `${Math.round(report.totals.attendance * 100)}%`}</b><span>Asistencia</span>
-            <small style={{ color: 'var(--muted)' }}>{report.totals.noShow} no asistieron</small></div>
-          <div className="stat"><b className="num">{report.totals.online}</b><span>Reservas en línea</span><small style={{ color: 'var(--muted)' }}>{report.totals.newPatients} {report.totals.newPatients === 1 ? 'paciente nuevo' : 'pacientes nuevos'}</small></div>
+            <small className="c-muted">{report.totals.noShow} no asistieron</small></div>
+          <div className="stat"><b className="num">{report.totals.online}</b><span>Reservas en línea</span><small className="c-muted">{report.totals.newPatients} {report.totals.newPatients === 1 ? 'paciente nuevo' : 'pacientes nuevos'}</small></div>
         </div>
 
         <div className="grid-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
@@ -79,10 +79,10 @@ export default function Reports() {
           {report.byDoctor.length > 1 && <section className="panel table-wrap">
             <div className="panel__head"><h2>Por médico</h2></div>
             <table className="table table--sticky">
-              <thead><tr><th>Médico</th><th style={{ textAlign: 'right' }}>Citas</th><th style={{ textAlign: 'right' }}>Atendidas</th><th style={{ textAlign: 'right' }}>No asistió</th><th style={{ textAlign: 'right' }}>Ingresos</th></tr></thead>
+              <thead><tr><th>Médico</th><th className="ta-r">Citas</th><th className="ta-r">Atendidas</th><th className="ta-r">No asistió</th><th className="ta-r">Ingresos</th></tr></thead>
               <tbody>{doctorsPage.rows.map((d) => (
-                <tr key={d.id}><td>{d.name}</td><td className="num" style={{ textAlign: 'right' }}>{d.appointments}</td><td className="num" style={{ textAlign: 'right' }}>{d.done}</td>
-                  <td className="num" style={{ textAlign: 'right' }}>{d.noShow}</td><td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{money(d.revenue, cur)}</td></tr>
+                <tr key={d.id}><td>{d.name}</td><td className="num ta-r">{d.appointments}</td><td className="num ta-r">{d.done}</td>
+                  <td className="num ta-r">{d.noShow}</td><td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{money(d.revenue, cur)}</td></tr>
               ))}</tbody>
             </table>
             <Pagination {...doctorsPage} onPage={setDoctorsPage} label="Páginas del reporte por médico" />

@@ -75,7 +75,7 @@ export default function ExamOrderPage() {
           </div>
         ))}
       </div>
-      {groups.length > 1 && <p className="muted no-print" style={{ fontSize: 14 }}>Son dos órdenes: el paciente lleva la de laboratorio y la de imagen y gabinete a lugares distintos.</p>}
+      {groups.length > 1 && <p className="c-muted no-print fs-base">Son dos órdenes: el paciente lleva la de laboratorio y la de imagen y gabinete a lugares distintos.</p>}
       {/* EX10 (ronda 14): la orden de los «En la clínica» de una consulta externa: ya le llegó al departamento */}
       {shown.length > 0 && shown.every((e) => e.place !== 'external' && !e.hospitalizationId && e.consultationId) && <div className="alert-strip alert-strip--calm no-print">{clinicNotice(shown, settings)}</div>}
       {groups.map((g) => (

@@ -43,7 +43,7 @@ export function Attachments({ patientId }: { patientId: string }) {
   const open = (a: Attachment) => { openFile(a.id).catch(() => notify('No se pudo abrir el archivo.', 'error')) }
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div className="stack stack--16">
       <div className={`dropzone ${drag ? 'is-drag' : ''}`}
         onDragOver={(e) => { e.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)}
         onDrop={(e) => { e.preventDefault(); setDrag(false); upload(e.dataTransfer.files) }}>

@@ -16,7 +16,7 @@ export function VitalsFields({ v, setV, checked, setChecked, ageYears, onEdit }:
         const i = issue(k)
         return (
           <label className="field" key={k}>
-            <span>{VITALS[k].label} <small style={{ fontWeight: 400 }}>({VITALS[k].unit})</small></span>
+            <span>{VITALS[k].label} <small className="fw-normal">({VITALS[k].unit})</small></span>
             <input className={`input num ${i ? `input--${i.level}` : ''}`} inputMode="decimal" type="text" autoComplete="off" value={v[k]}
               onChange={(e) => { setV({ ...v, [k]: e.target.value }); onEdit?.(); setChecked((c) => { const n = new Set(c); for (const x of PAIR.includes(k) ? PAIR : [k]) n.delete(x); return n }) }}
               onBlur={() => check(...(PAIR.includes(k) ? PAIR : [k]).filter((x) => v[x] !== ''))}

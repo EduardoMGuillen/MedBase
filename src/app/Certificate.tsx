@@ -129,7 +129,7 @@ export default function Certificate() {
               <span><b>Incluir diagnóstico</b><small>Sólo si el paciente lo autoriza. Por defecto la constancia no lo lleva.</small></span></label>
           )}
           {kind !== 'free' && <label className="field span-all"><span>Indicaciones adicionales (opcional)</span><input className="input" value={f.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Ej. Puede reincorporarse a sus labores con restricción de esfuerzo físico" /></label>}
-          <div className="span-all" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="span-all hstack">
             <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
               setBusy(true)
               const r = await createCertificate({

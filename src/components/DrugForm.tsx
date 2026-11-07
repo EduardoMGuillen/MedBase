@@ -29,7 +29,7 @@ export function DrugForm({ drug, initialName = '', onClose }: { drug?: ClinicDru
   const l = drug?.lnme
   return (
     <Modal title={drug ? 'Medicamento del vademécum' : 'Agregar medicamento'} onClose={onClose} footer={<>
-      {drug && <button className={`btn ${drug.active ? 'btn--danger' : 'btn--soft'}`} style={{ marginRight: 'auto' }} disabled={busy} onClick={() => save({ active: !drug.active })}>{drug.active ? (l ? 'Archivar' : 'Desactivar') : 'Reactivar'}</button>}
+      {drug && <button className={`btn ${drug.active ? 'btn--danger' : 'btn--soft'} mr-auto`} disabled={busy} onClick={() => save({ active: !drug.active })}>{drug.active ? (l ? 'Archivar' : 'Desactivar') : 'Reactivar'}</button>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={f.name.trim().length < 2 || busy} onClick={() => save()}>{drug ? 'Guardar' : 'Agregar'}</button>
     </>}>

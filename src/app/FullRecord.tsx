@@ -149,7 +149,7 @@ export default function FullRecord() {
           // OB2 (ronda 5): la misma tabla que en pantalla (una fila por toma, la más reciente arriba, pendientes incluidas)
           const pending = missedTakes(file, now).filter((x) => x.getTime() >= a && x.getTime() < b)
           return page(`fr-signos-${i}`, `Hoja de signos vitales · ${i + 1} de ${vitalPages.length}`, <>
-            <h2 className="fr-h">Hoja de signos vitales <small className="muted" style={{ fontWeight: 400, fontSize: 13 }}>{dm(new Date(a).toISOString()).slice(0, 10)} al {dm(new Date(b - 1).toISOString()).slice(0, 10)} · toma cada {vitalsEvery(file)} h</small></h2>
+            <h2 className="fr-h">Hoja de signos vitales <small className="c-muted fw-normal fs-md">{dm(new Date(a).toISOString()).slice(0, 10)} al {dm(new Date(b - 1).toISOString()).slice(0, 10)} · toma cada {vitalsEvery(file)} h</small></h2>
             <ThermalCurve print vitals={takes} t0={a} t1={b} every={vitalsEvery(file)} anchor={vitalsAnchor(file)} stayStart={stayStart} band={band}
               antipyretics={antipyreticDoses(file).filter((x) => { const t = new Date(x.at).getTime(); return t >= a && t < b })} />
             {takes.length || pending.length || takeStatuses(file, now).some((x) => x.status === 'covered' && x.at.getTime() >= a && x.at.getTime() < b) ? <VitalsTable print vitals={takes} pending={pending} covered={takeStatuses(file, now).filter((x) => x.status === 'covered' && x.at.getTime() >= a && x.at.getTime() < b).map((x) => ({ at: x.at, by: x.by! }))} ageYears={p.birthDate ? yearsOld(p.birthDate) : undefined} band={band} who={(id) => shortStaff(staffById(id)?.name)} />

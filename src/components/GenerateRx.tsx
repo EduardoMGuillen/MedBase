@@ -44,7 +44,7 @@ export function GenerateRxModal({ meds, onClose, only }: { meds: InpatientMed[];
       <button className="btn btn--soft" disabled={!picked.length || busy || badDays} onClick={() => go('pdf')}><FileText size={15} />Descargar PDF</button>
       <button className="btn btn--primary" disabled={!picked.length || busy || badDays} onClick={() => go('imprimir')}><Printer size={15} />Imprimir</button>
     </>}>
-      <p className="muted" style={{ fontSize: 14, margin: 0 }}>{doctor
+      <p className="c-muted fs-base m-0">{doctor
         ? 'Marca los medicamentos que van en la receta. Los días y la cantidad a comprar son solo para esta receta: no cambian la orden ni la hoja. Sale con tus datos y sin tu firma y sello en papel no vale.'
         : 'Medicamentos activos marcados «No hay en la clínica». La receta sale con los datos del médico que los indicó y sin su firma y sello en papel no vale.'}</p>
       {!active.length && <p className="muted">{doctor ? 'El paciente no tiene medicamentos activos.' : 'No hay medicamentos marcados «No hay en la clínica».'}</p>}
@@ -56,7 +56,7 @@ export function GenerateRxModal({ meds, onClose, only }: { meds: InpatientMed[];
               <label className={`exam-row-pick${on ? ' is-on' : ''}`}>
                 <input type="checkbox" checked={on} onChange={() => setPicked(on ? picked.filter((x) => x !== m.id) : [...picked, m.id])} />
                 <span><b>{medLabel(m)}</b>{(m.buyOutside || m.id.startsWith('c:')) && <span className="badge badge--amber rx-tag">Receta</span>}
-                  <small className="muted" style={{ display: 'block' }}>Indicado por {shortStaff(staffById(m.orderedBy)?.name)}</small></span>
+                  <small className="c-muted block">Indicado por {shortStaff(staffById(m.orderedBy)?.name)}</small></span>
               </label>
               {doctor && on && (
                 <div className="rxgen__fields">
@@ -68,7 +68,7 @@ export function GenerateRxModal({ meds, onClose, only }: { meds: InpatientMed[];
           )
         })}
       </div>
-      {!doctor && doctors > 1 && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Los indicaron {doctors} médicos: sale una receta por cada uno.</p>}
+      {!doctor && doctors > 1 && <p className="c-muted fs-md m-0">Los indicaron {doctors} médicos: sale una receta por cada uno.</p>}
     </Modal>
   )
 }
@@ -99,7 +99,7 @@ export function RxAnnex({ patientId, stayId, meds }: { patientId: string; stayId
           <ul className="rxgen__issued">{list.map((r) => (
             <li key={r.id}>
               <span><b>{dmyTime(r.createdAt)}</b> · {(r.doctorIds ?? []).map((d) => staffById(d)?.name ?? '—').join(', ')}
-                <small className="muted" style={{ display: 'block' }}>{(r.meds ?? []).map((m) => `${m.label}${m.days ? ` por ${m.days} ${m.days === 1 ? 'día' : 'días'}` : ''}`).join(' · ')}</small></span>
+                <small className="c-muted block">{(r.meds ?? []).map((m) => `${m.label}${m.days ? ` por ${m.days} ${m.days === 1 ? 'día' : 'días'}` : ''}`).join(' · ')}</small></span>
               <span className="rxgen__acts">
                 <button className="btn btn--ghost btn--sm" onClick={() => nav(`/app/impresion/${r.id}`)}><FileText size={14} />Ver PDF</button>
                 <button className="btn btn--soft btn--sm" onClick={() => nav(`/app/impresion/${r.id}?accion=imprimir`)}><Printer size={14} />Imprimir</button>

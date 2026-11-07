@@ -113,7 +113,7 @@ export function Roster({ fixed, canEdit: canEditProp }: { fixed?: RosterDept; ca
             <button className="icon-btn roster__panel-close" aria-label="Cerrar" onClick={() => setOpen(null)}><X size={18} /></button>
           </div>
           {open < today && editable && <p className="alert-strip alert-strip--amber">{fixed ? 'Es un día que ya pasó: solo se editan los turnos de hoy en adelante.' : 'Es un día que ya pasó: el cambio queda en la bitácora.'}</p>}
-          <p className="muted" style={{ fontSize: 13.5 }}>Marca quién trabaja este día ({of(open).length} asignado{of(open).length === 1 ? '' : 's'}). Cada cambio se guarda al momento.</p>
+          <p className="c-muted fs-md">Marca quién trabaja este día ({of(open).length} asignado{of(open).length === 1 ? '' : 's'}). Cada cambio se guarda al momento.</p>
           <div className="roster__pick">
             {dept === 'doctors' ? doctors.map((d) => (
               <label key={d.id} className="check-line"><input type="checkbox" disabled={busy || !editable} checked={of(open).some((s) => s.staffId === d.id)} onChange={() => toggle(open, d.id)} />

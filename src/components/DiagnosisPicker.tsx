@@ -44,7 +44,7 @@ export function DiagnosisPicker({ value, onChange, label, placeholder, recode = 
   return (
     <div className="field dx-picker"><span>{label ?? 'Diagnósticos (CIE-11)'}</span>
       {value.length > 0 && <ol className="dx-list">{value.map((d) => (
-        <li key={d.code + d.label}><span><b>{d.label}</b> <span className="muted">{d.code === 'S/C' ? 'sin código' : d.code}</span>{legacyTag(d) && <span className="badge" style={{ marginLeft: 6 }}>{legacyTag(d)}</span>}</span>
+        <li key={d.code + d.label}><span><b>{d.label}</b> <span className="muted">{d.code === 'S/C' ? 'sin código' : d.code}</span>{legacyTag(d) && <span className="badge ml-xs">{legacyTag(d)}</span>}</span>
           <button type="button" className="icon-btn" aria-label={`Quitar ${d.label}`} onClick={() => onChange(value.filter((x) => x !== d))}><X size={15} /></button></li>
       ))}</ol>}
       {recode.length > 0 && !s && (

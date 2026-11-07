@@ -158,7 +158,7 @@ export default function WaitingRoom() {
       <div className="grid-2" data-tour="sala-espera" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))' }}>
         {lanes.map((lane) => (
           <section key={lane.title} className="panel">
-            <div className="panel__head"><div><h2>{lane.title} <span className="num" style={{ color: 'var(--faint)' }}>{lane.list.length}</span></h2><p>{lane.hint}</p></div></div>
+            <div className="panel__head"><div><h2>{lane.title} <span className="num faint">{lane.list.length}</span></h2><p>{lane.hint}</p></div></div>
             {!lane.list.length ? <div className="empty">Nadie en esta etapa.</div>
               : grouped ? <ApptGroupList groups={lane.groups} prefix={`${lane.title}:`} isOpen={fold.isOpen} toggle={fold.toggle} render={card} className="queue-group-body" />
                 : lane.list.map(card)}
@@ -179,7 +179,7 @@ export default function WaitingRoom() {
           }}><Stethoscope size={16} />Sí, lo atiendo yo</button>
         </>}>
           <p>Este paciente está asignado {staffById(taking.doctorId)?.name.startsWith('Dra') ? 'a la' : 'al'} <b>{staffById(taking.doctorId)?.name}</b>. ¿Desea atenderlo usted?</p>
-          <p className="muted" style={{ fontSize: 13.5 }}>La consulta quedará a su nombre y la bitácora registrará que usted lo tomó y a quién estaba asignado.</p>
+          <p className="c-muted fs-md">La consulta quedará a su nombre y la bitácora registrará que usted lo tomó y a quién estaba asignado.</p>
         </Modal>
       )}
       {completing && patient(completing.patientId) && <CompleteRegistration patient={patient(completing.patientId)!} onClose={() => setCompleting(null)}
@@ -250,17 +250,17 @@ export function VitalsModal({ appt, onClose, onSaved, correct }: { appt: Appoint
 
   return (
     <Modal title={`${correct ? 'Corregir: ' : ''}Preclínica de ${fullName(p)}`} onClose={onClose} footer={confirming ? <>
-      <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }}>Revise: {errors.map((k) => `${VITALS[k].label.toLowerCase()} ${v[k]}`).join(', ')}.</span>
+      <span className="field__msg field__msg--error mr-auto">Revise: {errors.map((k) => `${VITALS[k].label.toLowerCase()} ${v[k]}`).join(', ')}.</span>
       <button className="btn btn--ghost" onClick={() => setConfirming(false)}>Corregir</button>
       <button className="btn btn--danger" disabled={busy} onClick={save}>Guardar de todos modos</button>
     </> : <>
-      {correct && (expired ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="alert">{GRACE_EXPIRED_TEXT.replace(/ Lo que escribiste.*$/, '')}</span>
-        : <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>)}
+      {correct && (expired ? <span className="field__msg field__msg--error mr-auto" role="alert">{GRACE_EXPIRED_TEXT.replace(/ Lo que escribiste.*$/, '')}</span>
+        : <span className="mr-auto"><CorrectionReason value={why} onChange={setWhy} /></span>)}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy || expired} onClick={trySave}>{correct ? 'Guardar corrección' : 'Guardar preclínica'}</button>
     </>}>
       {p.allergies.length > 0 && <div className="alert-strip">Alergias: {p.allergies.join(', ')}</div>}
-      <p className="muted" style={{ fontSize: 13.5 }}>Registra el motivo y sólo los signos que apliquen. Ningún signo es obligatorio. Puedes usar punto o coma para los decimales.</p>
+      <p className="c-muted fs-md">Registra el motivo y sólo los signos que apliquen. Ningún signo es obligatorio. Puedes usar punto o coma para los decimales.</p>
       <label className="field"><span>Motivo de consulta, en palabras del paciente</span>
         <textarea className="textarea textarea--sm" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Dolor de garganta y fiebre desde hace 3 días" />
         {!ready && <small className="field__msg field__msg--warn">Escribe el motivo para poder guardar la preclínica.</small>}</label>

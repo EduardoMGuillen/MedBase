@@ -105,7 +105,7 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
           <section key={g} className="panel">
             <div className="panel__head"><div><h2>{g === 'lab' ? <FlaskConical size={17} style={{ verticalAlign: '-3px' }} /> : <ScanLine size={17} style={{ verticalAlign: '-3px' }} />} {GROUP_LABEL[g]}</h2>
               <p>{all.filter(isPending).length} pendiente{all.filter(isPending).length === 1 ? '' : 's'} · {all.filter((e) => e.status === 'result' || e.status === 'reviewed').length} con resultado</p></div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div className="hstack">
                 {/* EX5 (ronda 10): la orden de los pendientes, para imprimir o descargar (médico y enfermería) */}
                 {canPrint && all.some(printable) && <button className="btn btn--ghost btn--sm" onClick={() => setPrinting(g)}><Printer size={14} />Imprimir orden</button>}
                 {canResults(g) && all.some((e) => e.result) && <button className="btn btn--ghost btn--sm" onClick={() => setResults(g)}><Printer size={14} />Imprimir resultados</button>}
@@ -139,7 +139,7 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
       {(batches.length > 0 || jobs.length > 0) && (
         <section className="panel"><div className="panel__body" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {/* Ronda 8: cada orden se imprime (los externos los lleva el paciente, como la receta) */}
-          <span className="muted" style={{ fontSize: 14 }}>Órdenes impresas:</span>
+          <span className="c-muted fs-base">Órdenes impresas:</span>
           {batches.map((b) => {
             const list = exams.filter((e) => e.batchId === b && e.status !== 'cancelled')
             const f = list[0]
@@ -208,10 +208,10 @@ export function ExamRow({ e, reload, open, expanded, onToggle, compact = false }
   const toggle = (
     <button type="button" className="exam-row__toggle" aria-expanded={expanded} aria-controls={id} onClick={onToggle}>
       <ChevronRight size={16} className="exam-row__chev" aria-hidden />
-      <strong>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red" style={{ marginLeft: 6 }}>Urgente</span>}{e.place === 'external' && <span className="badge" style={{ marginLeft: 6 }}>Externo</span>}{e.uncatalogued && <span className="badge badge--neutral" style={{ marginLeft: 6 }}>No catalogado</span>}</strong>
+      <strong>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red ml-xs">Urgente</span>}{e.place === 'external' && <span className="badge ml-xs">Externo</span>}{e.uncatalogued && <span className="badge badge--neutral ml-xs">No catalogado</span>}</strong>
     </button>
   )
-  const ordered = <span className="muted" style={{ fontSize: 13 }}>Pedido {dateTime(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)}{e.indication ? ` · ${e.indication}` : ''}</span>
+  const ordered = <span className="c-muted fs-md">Pedido {dateTime(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)}{e.indication ? ` · ${e.indication}` : ''}</span>
   const brief = compact && !expanded ? resultBrief(e.result) : { flags: [] as string[], text: undefined }
   const canNext = open && mine && can('exams.process') && isPending(e) && e.status === 'ordered' && e.place !== 'external'
   const canCancel = open && isPending(e) && !dept && (can('exams.process') || can('exams.order'))
@@ -223,10 +223,10 @@ export function ExamRow({ e, reload, open, expanded, onToggle, compact = false }
           {brief.flags.map((f) => <span key={f} className="badge badge--red">{f}</span>)}{brief.text && <span className="muted">{brief.text}</span>}</span>}
         {expanded && <div id={id} className="exam-row__body">
           <span className="exam-row__trail">{(e.events ?? []).filter((x) => x.status !== 'ordered').map((x) => `${STATUS_LABEL[e.group][x.status]} ${dateTime(x.at)} (${shortStaff(staffById(x.by)?.name)})`).join(' · ')}</span>
-          {e.status === 'cancelled' && <span className="muted" style={{ fontSize: 13 }}>Cancelado: {e.cancelReason}</span>}
-          {e.requestedById || e.requestedByName ? <span className="muted" style={{ fontSize: 13 }}>Solicitado por: {e.requestedById ? staffById(e.requestedById)?.name : e.requestedByName}{e.location === 'ambulatory' ? ' · Ambulatorio' : ''}</span> : null}
-          {e.orderFileId && <span style={{ fontSize: 13 }}>Orden en papel: <FileChip id={e.orderFileId} /></span>}
-          {optional && e.status === 'done' && <span className="muted" style={{ fontSize: 13 }}>Realizada. El informe (lectura) es opcional en los rayos X.</span>}
+          {e.status === 'cancelled' && <span className="c-muted fs-md">Cancelado: {e.cancelReason}</span>}
+          {e.requestedById || e.requestedByName ? <span className="c-muted fs-md">Solicitado por: {e.requestedById ? staffById(e.requestedById)?.name : e.requestedByName}{e.location === 'ambulatory' ? ' · Ambulatorio' : ''}</span> : null}
+          {e.orderFileId && <span className="fs-md">Orden en papel: <FileChip id={e.orderFileId} /></span>}
+          {optional && e.status === 'done' && <span className="c-muted fs-md">Realizada. El informe (lectura) es opcional en los rayos X.</span>}
           {e.result && <ResultView e={e} />}
         </div>}
       </div>
@@ -349,7 +349,7 @@ export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () 
   const empty = analytes.filter((a) => !values[a.name]?.trim()).length
   return (
     <Modal title={`${correcting ? 'Corregir: ' : ''}${e.group === 'lab' ? 'Resultado' : 'Informe'}: ${examLine(e)}`} wide className="result-modal" onClose={onClose} footer={<>
-      {correcting && <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>}
+      {correcting && <span className="mr-auto"><CorrectionReason value={why} onChange={setWhy} /></span>}
       {!correcting && analytes.length > 1 && <span className="muted result-modal__count">{analytes.length - empty} de {analytes.length} con resultado</span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ready || busy} onClick={async () => {
@@ -373,8 +373,8 @@ export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () 
           <select className="select" value={responsibleId} onChange={(x) => setResponsibleId(x.target.value)} aria-required="true">
             <option value="">Elige el microbiólogo responsable</option>{resp.microbiologists.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
           <small className="muted">{resp.optional ? 'Si un microbiólogo responde por este resultado, elígelo (va en el PDF).' : 'No hay un solo microbiólogo de turno: elige quién responde por este resultado (va en el PDF).'}</small></label>
-        : resp.auto && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Microbiólogo responsable: {resp.microbiologists.find((m) => m.id === resp.auto)?.name} (de turno).</p>)}
-      {imagesOnly && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Sube las imágenes del estudio. El informe lo escribe el radiólogo o un médico.</p>}
+        : resp.auto && <p className="c-muted fs-md m-0">Microbiólogo responsable: {resp.microbiologists.find((m) => m.id === resp.auto)?.name} (de turno).</p>)}
+      {imagesOnly && <p className="c-muted fs-md m-0">Sube las imágenes del estudio. El informe lo escribe el radiólogo o un médico.</p>}
       {e.group === 'lab' && (<>
         {analytes.length > 0 && <div className="result-form" role="table" aria-label={`Resultados de ${examLine(e)}`}>
           <div className="result-form__head" role="row"><span role="columnheader">Parámetro</span><span role="columnheader">Resultado</span><span role="columnheader">Valor de referencia</span></div>
@@ -400,7 +400,7 @@ export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () 
             )
           })}
         </div>}
-        {!analytes.length && <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Este examen no tiene parámetros en el catálogo: escribe el resultado abajo o agrega los valores.</p>}
+        {!analytes.length && <p className="c-muted fs-md m-0">Este examen no tiene parámetros en el catálogo: escribe el resultado abajo o agrega los valores.</p>}
         {extra.map((x, i) => (
           <div key={i} className="form-grid form-grid--3">
             <input className="input" value={x.analyte} onChange={(ev) => setExtra(extra.map((y, j) => (j === i ? { ...y, analyte: ev.target.value } : y)))} placeholder="Parámetro" />
@@ -414,7 +414,7 @@ export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () 
       {!imagesOnly && <label className="field"><span>{e.group === 'lab' ? 'Comentario (opcional)' : 'Informe (conclusión)'}</span>
         <textarea className="textarea" rows={e.group === 'lab' ? 2 : 4} value={report} onChange={(x) => setReport(x.target.value)} placeholder={e.group === 'lab' ? 'Observaciones del laboratorio sobre la muestra o el resultado.' : 'Ej. Vesícula con litos múltiples, pared de 3 mm; vía biliar sin dilatación.'} /></label>}
       <div className="field"><span>Foto o PDF del {e.group === 'lab' ? 'resultado' : 'informe o las imágenes'} (opcional)</span>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="hstack hstack--center">
           <button type="button" className="btn btn--soft btn--sm" onClick={() => input.current?.click()}><Camera size={15} />{file ? 'Cambiar archivo' : 'Tomar foto o elegir archivo'}</button>
           {file && <span className="muted">{file.name}</span>}
         </div>
@@ -463,12 +463,12 @@ function ExternalResult({ group, patientId, hospitalizationId, onClose, onDone }
         setBusy(false)
       }}>Guardar</button>
     </>}>
-      <p className="muted" style={{ fontSize: 14 }}>Para un resultado que el paciente trae o que llegó de otro laboratorio, sin orden en el sistema.</p>
+      <p className="c-muted fs-base">Para un resultado que el paciente trae o que llegó de otro laboratorio, sin orden en el sistema.</p>
       <label className="field"><span>Qué examen es</span><input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={group === 'lab' ? 'Ej. Hemograma' : 'Ej. Ultrasonido abdominal'} /></label>
       <div className="field"><span>Fecha y hora</span><DateTimeField value={takenAt} max={inputDateTime(new Date())} onChange={setTakenAt} label="Fecha y hora" /></div>
       {group === 'imaging' && <label className="field"><span>Informe (opcional)</span><textarea className="textarea textarea--sm" rows={3} value={report} onChange={(e) => setReport(e.target.value)} /></label>}
       <div className="field"><span>Foto o PDF</span>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="hstack hstack--center">
           <button type="button" className="btn btn--soft btn--sm" onClick={() => input.current?.click()}><Camera size={15} />{file ? 'Cambiar archivo' : 'Tomar foto o elegir archivo'}</button>
           {file && <span className="muted">{file.name}</span>}
         </div>
@@ -549,7 +549,7 @@ function PrintResults({ group, exams, onClose }: { group: ExamGroup; exams: Exam
         {shown.map((e) => (
           <label key={e.id} className={`exam-row-pick${picked.includes(e.id) ? ' is-on' : ''}`}>
             <input type="checkbox" checked={picked.includes(e.id)} onChange={() => setPicked(picked.includes(e.id) ? picked.filter((x) => x !== e.id) : [...picked, e.id])} />
-            <span><b>{examLine(e)}</b><small className="muted" style={{ display: 'block' }}>Resultado {e.result?.at ? dateTime(e.result.at) : ''}</small></span>
+            <span><b>{examLine(e)}</b><small className="c-muted block">Resultado {e.result?.at ? dateTime(e.result.at) : ''}</small></span>
           </label>
         ))}
         {!shown.length && <p className="muted">Ningún examen coincide.</p>}
@@ -574,7 +574,7 @@ function NotDoneModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () => voi
         try { await api(`/exams/${e.id}/not-done`, { body: { reason } }); notify('Se avisó al médico que lo pidió. Sigue pendiente.'); onDone() } catch (x) { notify((x as Error).message, 'error'); setBusy(false) }
       }}>Guardar</button>
     </>}>
-      <p className="muted" style={{ fontSize: 14, margin: 0 }}>La orden sigue pendiente: el médico decide si la cancela. Con «Reintentar» vuelve a la bandeja.</p>
+      <p className="c-muted fs-base m-0">La orden sigue pendiente: el médico decide si la cancela. Con «Reintentar» vuelve a la bandeja.</p>
       <div style={{ display: 'grid', gap: 6 }}>
         {/* EX10 (ronda 14): «El paciente se lo hará en otro laboratorio» (en imágenes, «…en otro centro») */}
         {[...NOT_DONE_REASONS, NOT_DONE_ELSEWHERE[e.group], 'Otro'].map((r) => <label key={r} className="check-line"><input type="radio" name="nd" checked={pick === r} onChange={() => setPick(r)} /><span><b>{r}</b></span></label>)}

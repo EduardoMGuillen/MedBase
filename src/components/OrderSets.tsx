@@ -39,7 +39,7 @@ export function OrderSetPicker({ where, patientId, onApply }: { where: 'consulta
       <button type="button" className="btn btn--soft btn--sm" onClick={() => { setOpen(true); reload() }}><ListChecks size={15} />Set de órdenes</button>
       {open && (
         <Modal title="Set de órdenes" onClose={() => setOpen(false)} footer={<Link className="btn btn--ghost" to="/app/sets-de-ordenes">Administrar mis sets</Link>}>
-          <p className="muted" style={{ fontSize: 13.5 }}>Sus órdenes se agregan al final de la lista. Puedes editarlas o quitarlas antes de firmar.</p>
+          <p className="c-muted fs-md">Sus órdenes se agregan al final de la lista. Puedes editarlas o quitarlas antes de firmar.</p>
           <label className="input-icon"><Search size={16} /><input className="input" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre" aria-label="Buscar set por nombre" /></label>
           {!sets ? <p className="muted">Cargando…</p> : !mine.length && !shared.length ? (
             <p className="muted">{q ? 'Ningún set con ese nombre.' : 'Todavía no tienes sets. Escribe tus órdenes y usa «Guardar estas órdenes como set».'}</p>
@@ -85,7 +85,7 @@ export function SaveSetButton({ items }: { items: OrderSetItem[] }) {
           <label className="field"><span>Nombre del set</span>
             <input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Post-op colecistectomía no complicada"
               onKeyDown={(e) => { if (e.key === 'Enter' && name.trim().length >= 3 && !busy) void save() }} /></label>
-          <p className="muted" style={{ fontSize: 13.5 }}>Se guardan {items.length} órdenes. Para dejar un espacio para completar al aplicarlo, escribe tres guiones bajos: «Ayuno de ___ a ___».</p>
+          <p className="c-muted fs-md">Se guardan {items.length} órdenes. Para dejar un espacio para completar al aplicarlo, escribe tres guiones bajos: «Ayuno de ___ a ___».</p>
           {!office && (
             <label className="check-line"><input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} />
               <span><b>Compartir con la clínica</b><small>Los demás médicos lo pueden aplicar o duplicar como suyo; sólo tú lo editas.</small></span></label>

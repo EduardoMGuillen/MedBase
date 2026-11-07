@@ -141,7 +141,7 @@ export default function Agenda() {
             {can('billing.manage') && a.status === 'done' && a.paid === false && <button className="btn btn--primary" onClick={() => navigate(`/app/caja?cobrar=${a.id}`)}><Receipt size={15} />Cobrar</button>}
             {!p.pending && <button className="btn btn--ghost" onClick={() => navigate(`/app/pacientes/${p.id}`)}>Abrir expediente</button>}
           </>}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="hstack hstack--center">
               <StatusBadge status={a.status} />
               {conflict && <span className="badge badge--red">Hospitalizado: cita en conflicto</span>}
               {a.type === 'urgent' && <span className="badge badge--red">Urgente</span>}
@@ -150,7 +150,7 @@ export default function Agenda() {
               {a.remindedAt && open && <span className="badge badge--mint">Recordatorio enviado</span>}
               {a.paid === true && <span className="badge badge--mint">Cobrada</span>}
             </div>
-            <div className="chart-meta" style={{ marginTop: 0 }}>
+            <div className="chart-meta mt-0">
               <span>{cap(new Date(a.start).toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' }))}</span>
               <span>Hora <b>{time(a.start)}</b></span>
               <span>{staff.find((s) => s.id === a.doctorId)?.name}</span>
@@ -158,11 +158,11 @@ export default function Agenda() {
             </div>
             {a.reason && <p><b>Motivo:</b> {a.reason}</p>}
             {a.status === 'cancelled' && (a.cancelReason || a.cancelledBy) && (
-              <p className="muted" style={{ fontSize: 13.5 }}>Cancelada{a.cancelledBy ? ` por ${a.cancelledBy === 'system' ? 'Sistema' : staffById(a.cancelledBy)?.name ?? 'el personal'}` : ''}
+              <p className="c-muted fs-md">Cancelada{a.cancelledBy ? ` por ${a.cancelledBy === 'system' ? 'Sistema' : staffById(a.cancelledBy)?.name ?? 'el personal'}` : ''}
                 {a.cancelledAt ? ` el ${dmyTime(a.cancelledAt)}` : ''}{a.cancelReason ? `. Motivo: ${a.cancelReason}` : ''}.</p>
             )}
             {conflict && <StayConflict stay={activeStayOf(a.patientId)!} />}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div className="hstack">
               {open && (can('agenda.manage') || can('checkin.manage')) && <ReminderButton appt={a} />}
               {a.status === 'scheduled' && can('agenda.manage') && (
                 <button className="btn btn--ghost btn--sm" onClick={() => store.setStatus(a.id, 'confirmed', 'Cita confirmada')}>Marcar como confirmada</button>
@@ -542,7 +542,7 @@ function ApptPatientPicker({ patients, value, onChange, onNew }: { patients: Pat
         <div className="suggest__list">
           {matches.map((p) => (
             <button type="button" key={p.id} onClick={() => { onChange(p.id); setQ('') }}>
-              <span>{fullName(p)}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{p.pending ? 'Nuevo, sin registro' : p.record}</span>
+              <span>{fullName(p)}</span><span className="c-muted ml-auto">{p.pending ? 'Nuevo, sin registro' : p.record}</span>
             </button>
           ))}
           <button type="button" className="suggest__new" onClick={() => onNew(q)}><UserPlus size={15} />{matches.length ? 'No es ninguno: ' : 'No está registrado: '}agendar a «{q.trim()}» como paciente nuevo</button>

@@ -83,7 +83,7 @@ export default function PrintJobPage() {
         {job.printed.filter((x) => x.how !== 'view').length > 0 && <small className="muted">{job.printed.filter((x) => x.how !== 'view').map((x) => `${x.how === 'pdf' ? 'Descargado' : 'Impreso'} por ${staffById(x.by)?.name ?? '—'}, ${dmyTime(x.at)}`).join(' · ')}</small>}
         <small className="muted">{job.kind === 'results' ? 'Sin la firma y el sello de los responsables en papel no vale.' : 'Sin la firma y el sello del médico en papel no vale.'}</small>
         {/* IM2 (ronda 13): solo el médico decide si la receta lleva el diagnóstico; enfermería la imprime como él la dejó */}
-        {job.kind === 'rx' && can('inpatient.orders') && !!job.diagnoses?.length && <label className="check-line" style={{ margin: 0 }}>
+        {job.kind === 'rx' && can('inpatient.orders') && !!job.diagnoses?.length && <label className="check-line m-0">
           <input type="checkbox" checked={!!job.includeDx} disabled={savingDx} onChange={async (e) => {
             const v = e.target.checked
             setSavingDx(true)
@@ -118,7 +118,7 @@ function HospRxSheet({ meds, extras = {}, doctor, number, patient: p, at, diagno
       <ol className="rx-items">
         {meds.map((m) => { const x = extras[m.id] ?? {}; const qty = x.quantity || m.buyQuantity || m.quantity; return (
           <li key={m.id}>
-            <strong>{m.nebulization || m.loadingDose || m.infusionRate ? medLabel(m) : m.drug}</strong> {!m.nebulization && <span style={{ color: 'var(--muted)' }}>{m.presentation}</span>}
+            <strong>{m.nebulization || m.loadingDose || m.infusionRate ? medLabel(m) : m.drug}</strong> {!m.nebulization && <span className="c-muted">{m.presentation}</span>}
             {/* ME12 (ronda 11): «por 3 días» de esta receta (la orden sigue sin días) */}
             <p>{m.nebulization || m.loadingDose || m.infusionRate ? (x.days ? `Por ${x.days} ${x.days === 1 ? 'día' : 'días'}. ` : '') : `${medLabel(m).replace(m.drug, '').trim()}${x.days ? ` por ${x.days} ${x.days === 1 ? 'día' : 'días'}` : ''}. `}
               {!x.days && m.days ? `Durante ${m.days} ${m.days === 1 ? 'día' : 'días'}. ` : ''}{m.instructions ? `${m.instructions}. ` : ''}

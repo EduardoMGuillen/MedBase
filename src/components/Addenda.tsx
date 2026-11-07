@@ -21,7 +21,7 @@ export function DraftBadge({ savedAt, restored, offline }: { savedAt: string | n
 /** AN1: «Firmada por la Dra. Solórzano el 30/10/2026 14:20», y «Con adenda» si tiene. */
 export function SignedBadge({ by, at, addenda = 0 }: { by?: string; at: string; addenda?: number }) {
   return (
-    <span className="signed-badge"><PenLine size={13} />Firmada{by ? ` por ${shortStaff(by)}` : ''} el {dateTime(at)}{addenda > 0 && <span className="badge badge--amber" style={{ marginLeft: 6 }}>Con adenda</span>}</span>
+    <span className="signed-badge"><PenLine size={13} />Firmada{by ? ` por ${shortStaff(by)}` : ''} el {dateTime(at)}{addenda > 0 && <span className="badge badge--amber ml-xs">Con adenda</span>}</span>
   )
 }
 
@@ -76,13 +76,13 @@ function AddAddendum({ targetKind, targetId, kinds, prescriptionId, onClose, onD
         if (r) onDone()
       }}>Firmar adenda</button>
     </>}>
-      <p className="muted" style={{ fontSize: 14 }}>La nota firmada no cambia. La adenda queda debajo, con tu nombre, la fecha y la hora, y tampoco se puede editar después.</p>
+      <p className="c-muted fs-base">La nota firmada no cambia. La adenda queda debajo, con tu nombre, la fecha y la hora, y tampoco se puede editar después.</p>
       {kinds.length > 1 && <div className="segmented" role="radiogroup" aria-label="Tipo de adenda">
         {kinds.map((k) => <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}>{ADDENDUM_KIND[k]}</button>)}
       </div>}
       {kind === 'correction' && <label className="field"><span>Qué se corrige</span><input className="input" value={corrects} onChange={(e) => setCorrects(e.target.value)} maxLength={200} placeholder="Ej. Dosis de amoxicilina mal escrita" /></label>}
       <label className="field"><span>Texto de la adenda</span><textarea className="textarea" rows={5} value={text} onChange={(e) => setText(e.target.value)} autoFocus /></label>
-      {aboutRx && <div className="alert-strip alert-strip--amber" style={{ flexWrap: 'wrap' }}>La adenda no cambia la receta ya emitida. Si el error está en la receta, anúlala y emite una nueva.
+      {aboutRx && <div className="alert-strip alert-strip--amber wrap">La adenda no cambia la receta ya emitida. Si el error está en la receta, anúlala y emite una nueva.
         <Link className="btn btn--soft btn--sm" to={`/app/recetas/${prescriptionId}`}>Abrir la receta</Link></div>}
     </Modal>
   )

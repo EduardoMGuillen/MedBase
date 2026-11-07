@@ -176,7 +176,7 @@ function RolesModal({ s, roles, self, onClose }: { s: Staff; roles: Role[]; self
         if (ok) onClose()
       }}>Guardar roles</button>
     </>}>
-      <p className="muted" style={{ fontSize: 14 }}>Marca uno o varios. Con más de un rol, la persona cambia entre sus vistas desde Inicio o desde el pie del menú; sus permisos son los de la vista en la que esté.</p>
+      <p className="c-muted fs-base">Marca uno o varios. Con más de un rol, la persona cambia entre sus vistas desde Inicio o desde el pie del menú; sus permisos son los de la vista en la que esté.</p>
       <div style={{ display: 'grid', gap: 8 }}>
         {roles.map((r) => (
           <label key={r} className="check-line">

@@ -264,9 +264,9 @@ export default function Patients() {
                   <td>
                     {lv && <div>Consulta {date(lv)}</div>}
                     {eg && <div>Egreso {date(eg)}</div>}
-                    {!lv && !eg && <span style={{ color: 'var(--faint)' }}>Sin consultas</span>}
+                    {!lv && !eg && <span className="faint">Sin consultas</span>}
                   </td>
-                  <td>{nx ? date(nx.start, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : <span style={{ color: 'var(--faint)' }}>Sin agendar</span>}</td>
+                  <td>{nx ? date(nx.start, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : <span className="faint">Sin agendar</span>}</td>
                 </tr>
               )
             })}

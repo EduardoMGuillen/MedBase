@@ -65,7 +65,7 @@ export function DictateButton({ label, onText }: { label: string; onText: (updat
           <button className="btn btn--primary" onClick={() => { try { localStorage.setItem(NOTICE, new Date().toISOString()) } catch { /* sin almacenamiento */ } setAsking(false); begin() }}><Mic size={15} />Entendido, dictar</button>
         </>}>
           <p>{DICTATION_PRIVACY}</p>
-          <p className="muted" style={{ fontSize: 14 }}>El texto dictado queda en el campo para que lo revises antes de firmar.</p>
+          <p className="c-muted fs-base">El texto dictado queda en el campo para que lo revises antes de firmar.</p>
         </Modal>
       )}
     </div>

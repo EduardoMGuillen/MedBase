@@ -35,7 +35,7 @@ export function ConsentChoice({ authorizationId, p, onDone }: { authorizationId:
   }
   if (signing) return <ConsentSigning a={a} p={p} action="accept" onClose={() => setSigning(false)} onDone={() => onDone('signed')} />
   return (
-    <Modal title={authTitle(a)} onClose={() => onDone('later')} footer={<span className="muted" style={{ fontSize: 13.5, marginRight: 'auto' }}>Ya está llena con los datos del paciente y del ingreso.</span>}>
+    <Modal title={authTitle(a)} onClose={() => onDone('later')} footer={<span className="c-muted fs-md mr-auto">Ya está llena con los datos del paciente y del ingreso.</span>}>
       <div className="consent-choice__doc">
         <FileSignature size={20} />
         <div>
@@ -86,7 +86,7 @@ export function AdmitBedStep({ h, p, onClose, onDone }: { h: Hospitalization; p:
         if (ok) onDone()
       }}><BedDouble size={16} />Confirmar y pasar a la autorización</button>
     </>}>
-      <p className="muted" style={{ fontSize: 14 }}>{p.firstName} ya quedó ingresado con la nota de consulta como nota de ingreso. Elige la cama; luego firma la autorización de hospitalización.</p>
+      <p className="c-muted fs-base">{p.firstName} ya quedó ingresado con la nota de consulta como nota de ingreso. Elige la cama; luego firma la autorización de hospitalización.</p>
       <BedFields bedId={f.bedId} specialty={f.specialty} onChange={(v) => setF({ ...f, ...v })} />
       <fieldset className="fs"><legend>Quién lo acompaña (va en la autorización)</legend>
         <div className="form-grid">

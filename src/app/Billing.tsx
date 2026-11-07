@@ -97,7 +97,7 @@ export default function Billing() {
           <label className="field" style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}><span>Desde</span><DateField value={from} max={to} onChange={setFrom} label="Desde" /></label>
           <label className="field" style={{ gridTemplateColumns: 'auto 1fr', alignItems: 'center' }}><span>Hasta</span><DateField value={to} min={from} max={todayKey} onChange={setTo} label="Hasta" /></label>
         </>)}
-        {charged.length > 0 && <button className="btn btn--ghost no-print" style={{ marginLeft: 'auto' }} onClick={exportCsv}><Download size={16} />Exportar a Excel</button>}
+        {charged.length > 0 && <button className="btn btn--ghost no-print ml-auto" onClick={exportCsv}><Download size={16} />Exportar a Excel</button>}
       </div>}
 
       {tab === 'balances' && (
@@ -107,7 +107,7 @@ export default function Billing() {
             const pt = patient(p.patientId)
             return (
               <Link key={p.id} to={`/app/recibos/${p.id}`} className="row caja-row">
-                <span className="num" style={{ fontSize: 13.5 }}>{date(p.paidAt, { day: 'numeric', month: 'short' })}</span>
+                <span className="num fs-md">{date(p.paidAt, { day: 'numeric', month: 'short' })}</span>
                 <div className="row__who"><strong>{pt ? fullName(pt) : '—'}</strong><span>{p.receiptNo} · {p.items.map((i) => i.name).join(', ')}</span></div>
                 <span className="badge badge--amber num">Debe {money(p.balance ?? 0, cur)}</span>
               </Link>
@@ -126,15 +126,15 @@ export default function Billing() {
         {tab === 'today' && <CashCount expected={byMethod('cash')} currency={cur} />}
         <section className="panel table-wrap">
           <table className="table table--sticky table--cards">
-            <thead><tr><th>Recibo</th><th>Factura</th><th>Fecha</th><th>Paciente</th><th>Forma de pago</th><th>Cobró</th><th style={{ textAlign: 'right' }}>Total</th></tr></thead>
+            <thead><tr><th>Recibo</th><th>Factura</th><th>Fecha</th><th>Paciente</th><th>Forma de pago</th><th>Cobró</th><th className="ta-r">Total</th></tr></thead>
             <tbody>{shown.map((p, i) => {
               const pt = patient(p.patientId)
               // GE5 (ronda 10): en pantalla, solo la página; al imprimir el cierre de caja salen todos
               const off = i < (pg.page - 1) * pg.size || i >= pg.page * pg.size
               return (
                 <tr key={p.id} style={p.voided ? { opacity: 0.5 } : undefined} onClick={() => nav(`/app/recibos/${p.id}`)} className={`clickable${off ? ' pager-off' : ''}`}>
-                  <td className="num tc-lead"><Link to={`/app/recibos/${p.id}`}>{p.receiptNo}</Link>{p.voided && <span className="badge badge--red" style={{ marginLeft: 8 }}>Anulado</span>}</td>
-                  <td data-label="Factura" className="num">{p.invoiceNo ?? (p.voided ? '—' : <span style={{ color: 'var(--faint)' }}>Sin anotar</span>)}</td>
+                  <td className="num tc-lead"><Link to={`/app/recibos/${p.id}`}>{p.receiptNo}</Link>{p.voided && <span className="badge badge--red ml-sm">Anulado</span>}</td>
+                  <td data-label="Factura" className="num">{p.invoiceNo ?? (p.voided ? '—' : <span className="faint">Sin anotar</span>)}</td>
                   <td data-label="Fecha" className="num">{date(p.paidAt, { day: 'numeric', month: 'short' })} {time(p.paidAt)}</td>
                   <td data-label="Paciente" className="tc-full">{pt ? fullName(pt) : '—'}</td>
                   <td data-label="Forma de pago">{METHOD_LABEL[p.method]}{p.bank ? `, ${p.bank}` : ''}{p.reference ? `, ${p.reference}` : ''}</td>
@@ -283,7 +283,7 @@ function ChargeModal({ appt, onClose, onPaid }: { appt?: Appointment; onClose: (
       <div className="lines">
         {lines.map((l, i) => (
           <div key={i} className="line">
-            <span>{l.name}{!l.serviceId && <small className="muted" style={{ display: 'block' }}>{l.save ? 'Servicio nuevo: se guardará en la lista' : 'Sólo para este cobro'}</small>}</span>
+            <span>{l.name}{!l.serviceId && <small className="c-muted block">{l.save ? 'Servicio nuevo: se guardará en la lista' : 'Sólo para este cobro'}</small>}</span>
             <input className="input num" type="number" min={1} max={99} value={l.qty} aria-label={`Cantidad de ${l.name}`}
               onChange={(e) => setLines(lines.map((x, j) => j === i ? { ...x, qty: Math.max(1, Number(e.target.value) || 1) } : x))} />
             <input className="input num" type="number" min={0} step="0.01" value={l.price} aria-label={`Precio de ${l.name}`}
@@ -316,7 +316,7 @@ function ChargeModal({ appt, onClose, onPaid }: { appt?: Appointment; onClose: (
             {svcOpen && <div className="suggest__list">
               {svcMatches.map((s) => (
                 <button key={s.id} onMouseDown={(e) => e.preventDefault()} onClick={() => addLine({ serviceId: s.id, name: s.name, price: s.price, qty: 1 })}>
-                  <span style={{ flex: 1 }}>{s.name}</span><span className="num" style={{ color: 'var(--muted)' }}>{money(s.price, cur)}</span>
+                  <span className="grow">{s.name}</span><span className="num c-muted">{money(s.price, cur)}</span>
                 </button>
               ))}
               <button className="suggest__new" onMouseDown={(e) => e.preventDefault()} onClick={() => startNew(svcQ.trim())}>
@@ -337,7 +337,7 @@ function ChargeModal({ appt, onClose, onPaid }: { appt?: Appointment; onClose: (
               <button role="radio" aria-checked={discMode === 'percent'} onClick={() => setDiscMode('percent')}>%</button>
             </div>
           </div>
-          {discMode === 'percent' && disc > 0 && <small className="num" style={{ color: 'var(--muted)' }}>= {money(disc, cur)}</small>}
+          {discMode === 'percent' && disc > 0 && <small className="num c-muted">= {money(disc, cur)}</small>}
         </div>
         <div className="field"><span>Total</span><div className="total-box num">{money(total, cur)}</div></div>
       </div>
@@ -376,7 +376,7 @@ function ChargeModal({ appt, onClose, onPaid }: { appt?: Appointment; onClose: (
       )}
       <label className="field"><span>Factura del talonario (opcional)</span>
         <input className="input num" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} maxLength={40} placeholder="000-001-01-00000000" />
-        <small style={{ color: 'var(--muted)' }}>Si todavía no la llenas, puedes anotarla después en el recibo.</small>
+        <small className="c-muted">Si todavía no la llenas, puedes anotarla después en el recibo.</small>
       </label>
     </Modal>
   )
@@ -443,9 +443,9 @@ export function ReceiptSheet() {
         rows={[p.invoiceNo && { label: 'Factura', value: p.invoiceNo }]}
         legends={[`Atendió: ${staffById(p.receivedBy)?.name ?? '—'}`, 'Comprobante interno de pago. No sustituye la factura.']}>
         <table className="table receipt__items">
-          <thead><tr><th>Concepto</th><th style={{ textAlign: 'center' }}>Cant.</th><th style={{ textAlign: 'right' }}>Precio</th><th style={{ textAlign: 'right' }}>Importe</th></tr></thead>
+          <thead><tr><th>Concepto</th><th style={{ textAlign: 'center' }}>Cant.</th><th className="ta-r">Precio</th><th className="ta-r">Importe</th></tr></thead>
           <tbody>{p.items.map((i, k) => (
-            <tr key={k}><td>{i.name}</td><td className="num" style={{ textAlign: 'center' }}>{i.qty}</td><td className="num" style={{ textAlign: 'right' }}>{money(i.price, settings.currency)}</td><td className="num" style={{ textAlign: 'right' }}>{money(i.price * i.qty, settings.currency)}</td></tr>
+            <tr key={k}><td>{i.name}</td><td className="num" style={{ textAlign: 'center' }}>{i.qty}</td><td className="num ta-r">{money(i.price, settings.currency)}</td><td className="num ta-r">{money(i.price * i.qty, settings.currency)}</td></tr>
           ))}</tbody>
         </table>
         <div className="receipt__totals num">

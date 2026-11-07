@@ -103,7 +103,7 @@ function ProfessionalPanel() {
   return (
     <section className="panel">
       <div className="panel__head"><div><h2>Datos profesionales</h2><p>Así apareces en tus recetas, constancias, autorizaciones y epicrisis.</p></div></div>
-      <div className="panel__body" style={{ display: 'grid', gap: 14 }}>
+      <div className="panel__body stack">
         <div className="form-grid">
           <label className="field span-2"><span>Nombre como aparece en documentos</span><input className="input" value={f.docName} onChange={(e) => setF({ ...f, docName: e.target.value })} placeholder="Ej. Dra. Valeria Solórzano Mejía" /></label>
           <label className="field"><span>Especialidad</span><input className="input" value={f.specialty} onChange={(e) => setF({ ...f, specialty: e.target.value })} /></label>
@@ -138,7 +138,7 @@ function PersonalPanel() {
   return (
     <section className="panel">
       <div className="panel__head"><div><h2>Datos personales</h2><p>Así apareces en los recibos y en los documentos que generas.</p></div></div>
-      <div className="panel__body" style={{ display: 'grid', gap: 14 }}>
+      <div className="panel__body stack">
         <div className="form-grid">
           <label className="field span-2"><span>Nombre como aparece en documentos</span><input className="input" value={docName} onChange={(e) => setDocName(e.target.value)} /></label>
           <label className="field span-2"><span>Correo para entrar</span><input className="input" value={user.email} disabled /></label>
@@ -170,12 +170,12 @@ function SignaturePanel() {
   return (
     <section className="panel">
       <div className="panel__head"><div><h2>Firma electrónica</h2><p>Se usa en autorizaciones, recetas, constancias y epicrisis. Cambiarla no altera los documentos ya firmados: cada uno guardó su copia.</p></div></div>
-      <div className="panel__body" style={{ display: 'grid', gap: 14 }}>
+      <div className="panel__body stack">
         {mode === 'view' && (<>
           <div className="mark-box mark-box--sig">
             {saved ? <img src={saved} alt="Tu firma guardada" /> : <span className="muted">{saved === undefined ? 'Cargando…' : 'Todavía no tienes firma guardada.'}</span>}
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="hstack">
             <button className="btn btn--primary" onClick={() => { setMode('draw'); setDrawn(null); setUploaded(false) }}><PenLine size={16} />{saved ? 'Cambiar mi firma' : 'Dibujar mi firma'}</button>
             <label className="btn btn--soft">Subir una imagen
               <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={async (e) => {
@@ -188,7 +188,7 @@ function SignaturePanel() {
           {!uploaded && <SignaturePad label="Firma aquí con el dedo, el lápiz o el mouse" onChange={setDrawn} height={170} />}
           {drawn && <div className="mark-box mark-box--sig"><span className="muted">Vista previa</span><img src={drawn} alt="Vista previa de tu firma" /></div>}
           <label className="field" style={{ maxWidth: 320 }}><span>Tu contraseña, para confirmar</span><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="hstack hstack--nowrap">
             <button className="btn btn--primary" disabled={!drawn || !password || busy} onClick={save}>Guardar firma</button>
             <button className="btn btn--ghost" onClick={() => { setMode('view'); setDrawn(null); setPassword('') }}>Cancelar</button>
           </div>
@@ -323,7 +323,7 @@ function SecurityPanel() {
   const { user, closeOtherSessions } = useStore()
   if (!user) return null
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div className="stack stack--16">
       <div className="grid-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
         <PasswordPanel />
         <TwoFactorPanel />
@@ -356,7 +356,7 @@ function PinPanel() {
         <form className="panel__body form-grid" onSubmit={(e) => { e.preventDefault(); if (/^\d{4,6}$/.test(pin) && password) void done(pin) }}>
           <label className="field"><span>PIN nuevo (4 a 6 números)</span><input className="input num" inputMode="numeric" type="password" maxLength={6} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} /></label>
           <label className="field"><span>Tu contraseña</span><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-          <div className="span-2" style={{ display: 'flex', gap: 8 }}>
+          <div className="span-2 hstack hstack--nowrap">
             <button className="btn btn--primary" disabled={!/^\d{4,6}$/.test(pin) || !password}>Guardar PIN</button>
             {user?.hasPin && <button type="button" className="btn btn--danger" disabled={!password} onClick={() => done('')}>Quitar PIN</button>}
             <button type="button" className="btn btn--ghost" onClick={() => setOpen(false)}>Cancelar</button>

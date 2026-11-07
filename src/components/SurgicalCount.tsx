@@ -100,7 +100,7 @@ export function SurgicalCountAnnex({ stayId }: { stayId: string }) {
       </div>
       {list && list.length > 0 && <div className="rows">{list.map((c) => (
         <div key={c.id} className="row anes-row">
-          <div className="row__who"><strong>{c.procedure ?? 'Nota postquirúrgica'}{c.surgeryAt ? ` · ${dmy(c.surgeryAt)}` : ''}{c.voidedAt && <span className="badge badge--red" style={{ marginLeft: 6 }}>Anulado</span>}</strong>
+          <div className="row__who"><strong>{c.procedure ?? 'Nota postquirúrgica'}{c.surgeryAt ? ` · ${dmy(c.surgeryAt)}` : ''}{c.voidedAt && <span className="badge badge--red ml-xs">Anulado</span>}</strong>
             <span>{countLine(c, who)}{c.mode === 'system' ? ` · ${resultText(c)}` : ' · En papel'}{c.voidedAt ? ` · Anulado: ${c.voidReason}` : ''}</span></div>
           <span className="anes-card__acts">
             <Link className="btn btn--ghost btn--sm anes-btn" to={`/app/recuento/${c.id}`}><Eye size={14} />Ver</Link>

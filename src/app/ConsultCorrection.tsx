@@ -47,9 +47,9 @@ export function ConsultCorrection({ c, p, onClose, onSaved, onExpired }: { c: Co
   const text = () => [f.reason, f.history, f.exam, f.observations].filter((x) => x.trim()).join('\n')
   return (
     <Modal title="Corregir: Nota de consulta" wide className="note-modal" onClose={onClose} footer={<>
-      {expired ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="alert">{GRACE_EXPIRED_TEXT}
-        <button type="button" className="btn btn--soft btn--sm" style={{ marginLeft: 8 }} onClick={() => { draft.clear(); onExpired(text()) }}>Pasar a una adenda</button></span>
-        : <span style={{ marginRight: 'auto' }}><CorrectionReason value={why} onChange={setWhy} /></span>}
+      {expired ? <span className="field__msg field__msg--error mr-auto" role="alert">{GRACE_EXPIRED_TEXT}
+        <button type="button" className="btn btn--soft btn--sm ml-sm" onClick={() => { draft.clear(); onExpired(text()) }}>Pasar a una adenda</button></span>
+        : <span className="mr-auto"><CorrectionReason value={why} onChange={setWhy} /></span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ok || busy || expired || editing !== null} onClick={async () => {
         setBusy(true)
@@ -73,8 +73,8 @@ export function ConsultCorrection({ c, p, onClose, onSaved, onExpired }: { c: Co
           <fieldset className="fs"><legend>Medicamentos de la receta {rx.folio}</legend>
             {locks?.rxLock && <div className="alert-strip alert-strip--amber">{locks.rxLock}</div>}
             <ul className="note__list">{items.map((it, i) => (
-              <li key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ flex: 1 }}>{medicationLine(it)}</span>
+              <li className="hstack hstack--center" key={i}>
+                <span className="grow">{medicationLine(it)}</span>
                 {rxOpen && editing === null && <>
                   <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditing(i)}><Pencil size={13} />Cambiar</button>
                   <button type="button" className="icon-btn" aria-label={`Quitar ${it.drug}`} disabled={items.length === 1} onClick={() => setF({ ...f, items: items.filter((_, j) => j !== i) })}><X size={15} /></button>
@@ -91,7 +91,7 @@ export function ConsultCorrection({ c, p, onClose, onSaved, onExpired }: { c: Co
               const on = keep.includes(e.id)
               return <li key={e.id}><span className={on ? '' : 'struck'}>{e.name}</span>
                 {e.lock ? <div className="locked-line">{e.lock}</div>
-                  : <button type="button" className="btn btn--ghost btn--sm" style={{ marginLeft: 8 }} onClick={() => setF({ ...f, keepExams: on ? keep.filter((x) => x !== e.id) : [...keep, e.id] })}>{on ? 'Quitar' : 'Deshacer'}</button>}</li>
+                  : <button type="button" className="btn btn--ghost btn--sm ml-sm" onClick={() => setF({ ...f, keepExams: on ? keep.filter((x) => x !== e.id) : [...keep, e.id] })}>{on ? 'Quitar' : 'Deshacer'}</button>}</li>
             })}</ul>
           </fieldset>
         )}
@@ -101,7 +101,7 @@ export function ConsultCorrection({ c, p, onClose, onSaved, onExpired }: { c: Co
               const v = fus.find((y) => y.id === x.id)
               if (x.lock) return <div key={x.id}><strong>{x.title}</strong> · {x.dueDate.split('-').reverse().join('/')}<div className="locked-line">{x.lock}</div></div>
               if (!v) return <div key={x.id}><span className="struck">{x.title}</span>
-                <button type="button" className="btn btn--ghost btn--sm" style={{ marginLeft: 8 }} onClick={() => setF({ ...f, followups: [...fus, { id: x.id, title: x.title, dueDate: x.dueDate, notes: x.notes }] })}>Deshacer</button></div>
+                <button type="button" className="btn btn--ghost btn--sm ml-sm" onClick={() => setF({ ...f, followups: [...fus, { id: x.id, title: x.title, dueDate: x.dueDate, notes: x.notes }] })}>Deshacer</button></div>
               return <div key={x.id} className="form-grid">
                 <label className="field"><span>Motivo</span><input className="input" value={v.title} onChange={(e) => setFu(x.id, { title: e.target.value })} /></label>
                 <div className="field"><span>Fecha</span><DateField value={v.dueDate} min={localISODate(new Date())} onChange={(d) => setFu(x.id, { dueDate: d })} label="Fecha del seguimiento" /></div>

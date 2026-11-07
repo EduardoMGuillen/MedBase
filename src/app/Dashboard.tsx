@@ -352,7 +352,7 @@ export default function Dashboard() {
             <div className="rows">
               {audit.slice(0, 7).map((e) => (
                 <div key={e.id} className="row" style={{ gridTemplateColumns: '54px 1fr' }}>
-                  <span className="num" style={{ color: 'var(--muted)', fontSize: 13 }}>{time(e.at)}</span>
+                  <span className="num c-muted fs-md">{time(e.at)}</span>
                   <div className="row__who"><strong>{e.userId === 'online' ? 'Reserva en línea' : staffById(e.userId)?.name}</strong><span>{e.action}</span></div>
                 </div>
               ))}

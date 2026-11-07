@@ -40,7 +40,7 @@ export default function Onboarding() {
       </div>
       <section className="panel">
         <div className="panel__head"><div><h2><S.icon size={18} style={{ verticalAlign: '-3px' }} /> {S.title}</h2><p>{S.hint}</p></div></div>
-        <div className="panel__body" style={{ display: 'grid', gap: 14 }}>
+        <div className="panel__body stack">
           {step === 0 && (<>
             <div className="form-grid">
               <label className="field span-2"><span>Nombre del consultorio</span><input className="input" value={f.name} onChange={set('name')} /></label>
@@ -49,7 +49,7 @@ export default function Onboarding() {
               <label className="field"><span>Especialidad</span><input className="input" value={f.specialty} onChange={set('specialty')} /></label>
               <label className="field"><span>Número de colegiación</span><input className="input" value={f.license} onChange={set('license')} /></label>
             </div>
-            <p className="muted" style={{ fontSize: 13.5 }}>El logo lo subes en Configuración; si no hay, las recetas salen con tu nombre como encabezado.</p>
+            <p className="c-muted fs-md">El logo lo subes en Configuración; si no hay, las recetas salen con tu nombre como encabezado.</p>
           </>)}
           {step === 1 && me && <ScheduleEditor key={JSON.stringify(me.schedule)} d={me} onSaved={next} />}
           {step === 2 && consult && (
@@ -57,7 +57,7 @@ export default function Onboarding() {
               <input className="input num" type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} />
               <small className="muted">Hoy: {money(consult.price, settings.currency)}</small></label>
           )}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="hstack">
             {step !== 1 && (
               <button className="btn btn--primary" disabled={busy || (step === 0 && (f.name.trim().length < 3 || f.address.trim().length < 3 || f.phone.replace(/\D/g, '').length < 7))} onClick={async () => {
                 setBusy(true)

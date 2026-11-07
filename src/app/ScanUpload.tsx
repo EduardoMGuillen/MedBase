@@ -71,7 +71,7 @@ export function useScanPicker() {
 
   const tooBig = !!preview && preview.blob.size > MAX_SCAN_BYTES
   const ui = <>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div className="hstack">
         <button type="button" className="btn btn--soft" onClick={() => camera.current?.click()}><Camera size={16} />Tomar foto</button>
         <button type="button" className="btn btn--soft" onClick={() => picker.current?.click()}><Images size={16} />Elegir fotos o PDF</button>
         <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { add(e.target.files); e.target.value = '' }} />
@@ -142,7 +142,7 @@ export function ScanUpload({ a, mode, onClose, onDone }: { a: Authorization; mod
         : <button className="btn btn--primary" disabled={tooBig || progress !== null || (needsNote && note.trim().length < 3)} onClick={confirm}>
           {progress !== null ? `Subiendo ${Math.round(progress * 100)} %` : 'Confirmar y guardar'}</button>}
     </>}>
-      <p className="muted" style={{ fontSize: 14 }}>Toma una foto de cada página, elige varias fotos o el PDF del escáner. Todo se une en un solo documento, en este orden. Máximo 15 MB.</p>
+      <p className="c-muted fs-base">Toma una foto de cada página, elige varias fotos o el PDF del escáner. Todo se une en un solo documento, en este orden. Máximo 15 MB.</p>
       {ui}
       {mode !== 'signed' && mode !== 'attach' && (
         <label className="field"><span>{needsNote ? 'Por qué se reemplaza' : 'Nota (opcional)'}</span>

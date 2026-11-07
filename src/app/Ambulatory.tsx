@@ -43,7 +43,7 @@ function QuickPatient({ onClose, onCreated }: { onClose: () => void; onCreated: 
       <button className="btn btn--ghost" onClick={onClose}>Volver</button>
       <button className="btn btn--primary" disabled={!ready || busy} onClick={save}>Registrar y continuar</button>
     </>}>
-      <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Solo lo necesario para tomar la muestra y enviarle el resultado. Si después pasa a consulta, la ficha se completa en su expediente.</p>
+      <p className="c-muted fs-md m-0">Solo lo necesario para tomar la muestra y enviarle el resultado. Si después pasa a consulta, la ficha se completa en su expediente.</p>
       <div className="form-grid">
         <label className="field"><span>Nombres</span><input className="input" autoFocus value={f.firstName} onChange={(e) => set({ firstName: e.target.value })} /></label>
         <label className="field"><span>Apellidos</span><input className="input" value={f.lastName} onChange={(e) => set({ lastName: e.target.value })} /></label>
@@ -124,7 +124,7 @@ export function AmbulatoryModal({ group: fixed, onClose, onDone }: { group?: Exa
             <option value="">Médico de afuera o viene por su cuenta</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
         {!doctorId && <label className="field"><span>Nombre del médico (si es de afuera)</span><input className="input" value={doctorName} onChange={(e) => setDoctorName(e.target.value)} placeholder="Ej. Dr. Carlos Medina" /></label>}
         <div className="field"><span>Foto o archivo de la orden (opcional)</span>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="hstack hstack--center">
             {/* RE1 (ronda 16): siempre activo (el archivo se sube al enviar, cuando ya hay paciente y departamento) */}
             <button type="button" className="btn btn--soft btn--sm" onClick={() => input.current?.click()}><Camera size={15} />{file ? 'Cambiar archivo' : 'Tomar foto o elegir archivo'}</button>
             {file && <span className="muted">{file.name}</span>}

@@ -99,7 +99,7 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
           </div>
         )
       })}
-      {!value.length && <p className="muted" style={{ fontSize: 14 }}>Sin exámenes. {inStay ? receiversText(settings) : 'Se imprimen aparte de la receta: una orden de laboratorio y otra de imagen y gabinete.'}</p>}
+      {!value.length && <p className="c-muted fs-base">Sin exámenes. {inStay ? receiversText(settings) : 'Se imprimen aparte de la receta: una orden de laboratorio y otra de imagen y gabinete.'}</p>}
       <button type="button" className="btn btn--soft self-start" onClick={() => setPicking(true)}><Plus size={16} />Ordenar exámenes</button>
       {picking && <ExamPicker current={value} onClose={() => setPicking(false)} onAdd={(list) => { onChange([...value, ...withPlace(list)]); setPicking(false) }} />}
     </div>
@@ -230,7 +230,7 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
         </div>
       )}
       {!catalogOnly && can('exams.order') && picked.some((e) => inCatalog(e.name)) && (
-        <button className="btn btn--ghost" style={{ marginRight: 'auto' }} onClick={() => setSavingSet(true)}><ListChecks size={15} />Guardar selección como set</button>)}
+        <button className="btn btn--ghost mr-auto" onClick={() => setSavingSet(true)}><ListChecks size={15} />Guardar selección como set</button>)}
       <button className="btn btn--ghost" onClick={close}>Cancelar</button>
       {firstMissing && <small className="field__msg field__msg--warn exam-picker__missing" role="status">{firstMissing.m}: {firstMissing.e.name}.</small>}
       <button className="btn btn--primary" disabled={!picked.length || !!firstMissing} onClick={() => { if (!catalogOnly) writePicked([]); onAdd(picked) }}>Agregar ({picked.length})</button>
@@ -248,7 +248,7 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
         <div className="exam-picker__menus">
           <button type="button" className="btn btn--soft btn--sm" aria-expanded={menu === 'sets'} onClick={() => setMenu(menu === 'sets' ? null : 'sets')}><ListChecks size={15} />Mis sets ({sets?.length ?? 0})</button>
           <button type="button" className="btn btn--soft btn--sm" aria-expanded={menu === 'profiles'} onClick={() => setMenu(menu === 'profiles' ? null : 'profiles')}><FlaskConical size={15} />Perfiles ({profiles.length})</button>
-          <span className="fold-tools" style={{ marginLeft: 'auto' }}>
+          <span className="fold-tools ml-auto">
             <button type="button" className="btn btn--ghost btn--sm" onClick={() => setFold(Object.fromEntries(allKeys.map((k) => [k, true])))}>Expandir todo</button>
             <button type="button" className="btn btn--ghost btn--sm" onClick={() => setFold(Object.fromEntries(allKeys.map((k) => [k, false])))}>Contraer todo</button>
           </span>

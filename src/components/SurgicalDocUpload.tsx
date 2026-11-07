@@ -53,7 +53,7 @@ export function SurgicalDocUpload({ title, docName, patientId, stayId, endpoint,
         ? <button className="btn btn--primary" disabled={!files.length || building} onClick={build}>{building ? 'Preparando…' : 'Ver vista previa'}</button>
         : <button className="btn btn--primary" disabled={!ok} onClick={confirm}>{progress !== null ? `Subiendo ${Math.round(progress * 100)} %` : 'Confirmar y guardar'}</button>}
     </>}>
-      <p className="muted" style={{ fontSize: 14 }}>Toma una foto de cada página o elige el PDF del escáner. Todo se une en un solo documento, en este orden. Máximo 15 MB.
+      <p className="c-muted fs-base">Toma una foto de cada página o elige el PDF del escáner. Todo se une en un solo documento, en este orden. Máximo 15 MB.
         {replaces ? ' El documento anterior queda anulado y visible, con el motivo.' : ''}</p>
       {ui}
       <div className="form-grid">

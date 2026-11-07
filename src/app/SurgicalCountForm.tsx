@@ -79,7 +79,7 @@ export default function SurgicalCountFormPage() {
         title={correcting ? 'Corregir el recuento quirúrgico' : 'Recuento quirúrgico'}
         sub={`${`${p.firstName} ${p.lastName}`.trim()} · Expediente ${p.record}${d.procedure ? ` · ${d.procedure}` : ''}`} />
       <div className="anes-form">
-        <p className="muted" style={{ margin: 0 }}>Se guarda solo mientras escribes. Escribe lo contado en cada momento. El instrumental se cuenta al inicio, antes de cerrar herida y en el cambio de personal; sus demás casillas pueden quedar en blanco.</p>
+        <p className="c-muted m-0">Se guarda solo mientras escribes. Escribe lo contado en cada momento. El instrumental se cuenta al inicio, antes de cerrar herida y en el cambio de personal; sus demás casillas pueden quedar en blanco.</p>
         <Section title="Encabezado">
           <div className="form-grid form-grid--3">
             <label className="field"><span>Fecha</span><DateField value={d.date} onChange={(v) => set({ date: v })} label="Fecha" /></label>
@@ -110,7 +110,7 @@ export default function SurgicalCountFormPage() {
           {others < SURGICAL_COUNT.maxOther && <button type="button" className="btn btn--soft btn--sm anes-btn self-start" onClick={() => set({ rows: [...d.rows, blankCountRow(`other:${newId()}`, '')] })}><Plus size={14} />Agregar fila «{SURGICAL_COUNT.otherLabel}»</button>}
         </Section>
         <Section title="Cambio de personal">
-          <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Un recuento cada vez que se releva la instrumentista o la circulante.</p>
+          <p className="c-muted m-0 fs-md">Un recuento cada vez que se releva la instrumentista o la circulante.</p>
           {d.handoffs.length > 0 && <table className="anes-table">
             <thead><tr><th>Hora</th><th>Quién se releva</th><th>Entrega</th><th>Recibe</th><th>Recuento</th><th /></tr></thead>
             <tbody>{d.handoffs.map((h, i) => <tr key={h.id}>
@@ -126,13 +126,13 @@ export default function SurgicalCountFormPage() {
             onClick={() => set({ handoffs: [...d.handoffs, { id: newId(), time: '', role: '', from: '', to: '', count: '' }] })}><Plus size={14} />Agregar cambio de personal</button>}
         </Section>
         {wrong && <Section title="Resultado incorrecto">
-          <p className="field__msg field__msg--warn" style={{ margin: 0 }}>Hay un resultado «Incorrecto»: responde cada casilla y escribe la nota.</p>
+          <p className="field__msg field__msg--warn m-0">Hay un resultado «Incorrecto»: responde cada casilla y escribe la nota.</p>
           {SURGICAL_COUNT.searches.map((x) => <Radio key={x.key} label={x.label} options={['Sí', 'No']} value={d.incorrect[x.key]} onChange={(v) => set({ incorrect: { ...d.incorrect, [x.key]: v } })} />)}
           <Txt label="Nota (obligatoria)" value={d.incorrect.note} onChange={(v) => set({ incorrect: { ...d.incorrect, note: v } })} area placeholder="Qué faltaba, qué se hizo y qué se encontró" />
         </Section>}
         <Section title="Confirmación y firmas">
           <div className="anes-opts"><Box label={SURGICAL_COUNT.confirmation} checked={d.confirmed} onChange={(v) => set({ confirmed: v })} /></div>
-          <p style={{ margin: 0 }}>Lo firmas tú: <b>{user.name}</b>, con la fecha y la hora. Instrumentista, circulante y cirujano firman en papel en el impreso.</p>
+          <p className="m-0">Lo firmas tú: <b>{user.name}</b>, con la fecha y la hora. Instrumentista, circulante y cirujano firman en papel en el impreso.</p>
           {correcting && <CorrectionReason value={why} onChange={setWhy} />}
           {missing.length > 0 && <small className="field__msg field__msg--warn">Para firmar, {missing.join('; ')}.</small>}
         </Section>

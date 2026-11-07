@@ -54,7 +54,7 @@ export function VersionTag({ version, kind, id, render }: { version?: number; ki
     <button type="button" className="btn btn--ghost btn--sm version-link" onClick={() => api<Version[]>(`/versions/${kind}/${id}`).then(setList).catch(() => setList([]))}><History size={13} />Ver versiones</button>
     {list && (
       <Modal title="Versiones anteriores" onClose={() => setList(null)} footer={<button className="btn btn--primary" onClick={() => setList(null)}>Cerrar</button>}>
-        <p className="muted" style={{ marginTop: 0 }}>Solo lectura. Lo que se ve y se imprime es la versión {version}.</p>
+        <p className="c-muted mt-0">Solo lectura. Lo que se ve y se imprime es la versión {version}.</p>
         {list.map((v) => (
           <section key={v.version} className="version-item">
             <h4>Versión {v.version} · {staffById(v.authorId)?.name ?? ''} · {dmyTime(v.at)}</h4>

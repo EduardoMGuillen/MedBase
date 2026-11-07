@@ -140,7 +140,7 @@ function AnesthesiaUpload({ info, replaces, onClose, onDone }: { info: NoteInfo;
         ? <button className="btn btn--primary" disabled={!files.length || building} onClick={build}>{building ? 'Preparando…' : 'Ver vista previa'}</button>
         : <button className="btn btn--primary" disabled={!ok} onClick={confirm}>{progress !== null ? `Subiendo ${Math.round(progress * 100)} %` : 'Confirmar y guardar'}</button>}
     </>}>
-      <p className="muted" style={{ fontSize: 14 }}>Toma una foto de cada página o elige el PDF del escáner. Todo se une en un solo documento, en este orden. Máximo 15 MB.
+      <p className="c-muted fs-base">Toma una foto de cada página o elige el PDF del escáner. Todo se une en un solo documento, en este orden. Máximo 15 MB.
         {replaces ? ' La hoja anterior queda anulada y visible, con el motivo.' : ''}</p>
       {ui}
       <div className="form-grid">
@@ -173,7 +173,7 @@ export function AnesthesiaAnnex({ stayId }: { stayId: string }) {
       </div>
       {list && list.length > 0 && <div className="rows">{list.map((s) => (
         <div key={s.id} className="row anes-row">
-          <div className="row__who"><strong>{s.procedure ?? 'Nota postquirúrgica'}{s.surgeryAt ? ` · ${dmy(s.surgeryAt)}` : ''}{s.voidedAt && <span className="badge badge--red" style={{ marginLeft: 6 }}>Anulada</span>}</strong>
+          <div className="row__who"><strong>{s.procedure ?? 'Nota postquirúrgica'}{s.surgeryAt ? ` · ${dmy(s.surgeryAt)}` : ''}{s.voidedAt && <span className="badge badge--red ml-xs">Anulada</span>}</strong>
             <span>{sheetLine(s, who)}{s.mode === 'upload' ? ` · Anestesia realizada por ${s.performedBy.name}` : ''}{s.voidedAt ? ` · Anulada: ${s.voidReason}` : ''}</span></div>
           <span className="anes-card__acts">
             <Link className="btn btn--ghost btn--sm anes-btn" to={`/app/anestesia/${s.id}`}><Eye size={14} />Ver</Link>

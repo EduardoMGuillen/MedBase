@@ -38,7 +38,7 @@ export function GeneralDataModal({ h, p, onClose, onDone }: { h: Hospitalization
       onDone()
     }}>
       <fieldset className="fs"><legend>{obs ? 'Observación' : 'Estancia'}</legend>
-        <p className="muted" style={{ fontSize: 13.5 }}>La nota de ingreso, los diagnósticos, las órdenes y la fecha y hora del ingreso no se editan. Si hay un error clínico, escribe una nota nueva o cambia la orden.</p>
+        <p className="c-muted fs-md">La nota de ingreso, los diagnósticos, las órdenes y la fecha y hora del ingreso no se editan. Si hay un error clínico, escribe una nota nueva o cambia la orden.</p>
         <div className="form-grid">
           {!obs && <div className="span-2"><BedFields bedId={stay.bedId} specialty={stay.specialty} currentBedId={h.bedId} onChange={(v) => setStay({ ...stay, ...v })} /></div>}
           {!obs && can('inpatient.orders') && <div className="span-2"><AttendingPicker value={attending} onChange={setAttending} required /></div>}

@@ -331,7 +331,7 @@ export default function Consultation() {
             </div>
             {todayVitals && <div className="panel__body csec__body">
               <VitalsGrid v={todayVitals} birthDate={p.birthDate} />
-              {todayVitals.notes && <p className="muted" style={{ fontSize: 14 }}>Nota de enfermería: {todayVitals.notes}</p>}
+              {todayVitals.notes && <p className="c-muted fs-base">Nota de enfermería: {todayVitals.notes}</p>}
             </div>}
           </section>
 
@@ -385,7 +385,7 @@ export default function Consultation() {
               {/* NO1 (ronda 16): el ingreso va arriba de «Indicaciones y plan»: es lo primero que se ordena */}
               {store.can('inpatient.orders') && (
                 hospitalized
-                  ? <p style={{ fontSize: 14 }}><BedDouble size={15} style={{ verticalAlign: '-3px' }} /> {p.firstName} ya está {hospitalized.kind === 'observation' ? 'en observación' : 'hospitalizado'}. <Link to={`/app/${hospitalized.kind === 'observation' ? 'observacion' : 'hospitalizados'}/${hospitalized.id}`}>Abrir su expediente</Link>.</p>
+                  ? <p className="fs-base"><BedDouble size={15} style={{ verticalAlign: '-3px' }} /> {p.firstName} ya está {hospitalized.kind === 'observation' ? 'en observación' : 'hospitalizado'}. <Link to={`/app/${hospitalized.kind === 'observation' ? 'observacion' : 'hospitalizados'}/${hospitalized.id}`}>Abrir su expediente</Link>.</p>
                   : (place.observation || place.hospital) && <div className="admit-choice" role="group" aria-label="Ingreso">
                     {/* Son excluyentes: marcar una desmarca la otra */}
                     {/* Un consultorio no hospitaliza y puede no usar observación */}
@@ -404,7 +404,7 @@ export default function Consultation() {
                       <li className="orders__fixed" title="Va fija en el número 1 mientras el ingreso esté marcado">
                         <span className="orders__n">1.</span>
                         <span className="orders__text orders__text--fixed">{admitLine}</span>
-                        <span className="orders__tools"><span className="muted" style={{ fontSize: 12.5 }}>Fija</span></span>
+                        <span className="orders__tools"><span className="c-muted fs-sm">Fija</span></span>
                       </li>
                     )}
                     {indications.map((o, i) => (
@@ -425,7 +425,7 @@ export default function Consultation() {
                       </li>
                     ))}
                   </ol>
-                ) : <p className="muted" style={{ fontSize: 14 }}>Dieta, cuidados, cita de control, lo que necesite. Una por línea. Los exámenes van en su sección.</p>}
+                ) : <p className="c-muted fs-base">Dieta, cuidados, cita de control, lo que necesite. Una por línea. Los exámenes van en su sección.</p>}
                 <form className="order-add" onSubmit={(e) => { e.preventDefault(); addOrder(orderText) }}>
                   <input ref={orderInput} className="input" value={orderText} onChange={(e) => setOrderText(e.target.value)} placeholder={`${indications.length + 1 + off}. Escribe una indicación y presiona Enter, o pega varias líneas`} aria-label="Nueva indicación" enterKeyHint="done"
                     onPaste={(e) => {
@@ -461,12 +461,12 @@ export default function Consultation() {
               </div>
               <div className="plan-block" data-tour="medicamentos">
                 <h3 className="plan-block__title">Medicamentos <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'Con ingreso, todos pasan a la hoja de medicamentos y a la receta' : 'todos van a la receta'}</span></h3>
-                {admitting && <p className="muted" style={{ fontSize: 13.5 }}>Sin días quedan «hasta nueva orden». La infusión está en «Frecuencia».</p>}
+                {admitting && <p className="c-muted fs-md">Sin días quedan «hasta nueva orden». La infusión está en «Frecuencia».</p>}
                 {/* NO1 (ronda 16): lo que se agregó sin «Aplicar en la clínica» antes de marcar el ingreso también pasa a la hoja */}
                 {admitting && meds.some((m) => !m.applyInClinic) && <div className="alert-strip alert-strip--calm" role="status">Con el ingreso, todos los medicamentos pasan a la hoja de medicamentos</div>}
                 <MedicationList items={admitting ? meds.map((m) => ({ ...m, applyInClinic: applied(m) })) : meds} patient={p} editing={medForm?.index ?? null} requireDuration warn={(m) => statWarn(m) ?? infusionWarn(m)}
                   onEdit={(i) => setMedForm({ index: i, initial: meds[i] })} onRemove={(i) => { setMeds(meds.filter((_, j) => j !== i)); setMedForm(null) }} />
-                {!meds.length && !medForm && <p className="muted" style={{ fontSize: 14 }}>Sin medicamentos indicados.</p>}
+                {!meds.length && !medForm && <p className="c-muted fs-base">Sin medicamentos indicados.</p>}
                 {medForm ? (
                   <MedicationForm key={medForm.index >= 0 ? `e${medForm.index}` : `n${meds.length}`} patient={p} current={meds} initial={medForm.initial}
                     onSaveAnother={medForm.index < 0 ? (item) => { setMeds([...meds, item]); setMedForm({ index: -1 }) } : undefined} place={{ where: 'consult', admitting, canApply: store.can('inpatient.orders') }}
@@ -489,18 +489,18 @@ export default function Consultation() {
               <div className="panel__body csec__body">
                 {followups.length > 0 && <ul className="note__list">{followups.map((f, i) => (
                   <li key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{ flex: 1 }}><b>{followupLabel(f)}:</b> {f.title}, {date(`${f.dueDate}T12:00:00`)}</span>
+                    <span className="grow"><b>{followupLabel(f)}:</b> {f.title}, {date(`${f.dueDate}T12:00:00`)}</span>
                     <button className="icon-btn" aria-label="Quitar" onClick={() => setFollowups(followups.filter((_, j) => j !== i))}><X size={14} /></button>
                   </li>
                 ))}</ul>}
                 {newFollowup ? (<>
                   <FollowupFields value={newFollowup} onChange={setNewFollowup} />
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div className="hstack hstack--nowrap">
                     <button className="btn btn--soft btn--sm" disabled={newFollowup.title.trim().length < 3 || !newFollowup.dueDate}
                       onClick={() => { setFollowups([...followups, { ...newFollowup, title: newFollowup.title.trim(), notes: newFollowup.notes?.trim() || undefined }]); setNewFollowup(null) }}><Plus size={14} />Agregar</button>
                     <button className="btn btn--ghost btn--sm" onClick={() => setNewFollowup(null)}>Cancelar</button>
                   </div>
-                </>) : !followups.length && <p className="muted" style={{ fontSize: 14 }}>Sin seguimiento programado.</p>}
+                </>) : !followups.length && <p className="c-muted fs-base">Sin seguimiento programado.</p>}
               </div>
             </section>
           )}
@@ -513,7 +513,7 @@ export default function Consultation() {
                 <button type="button" className="btn btn--ghost btn--sm self-start" onClick={() => setReferring(true)}><Send size={15} />Referir a otro centro</button>
               )}
               {rxCount > 0 && <RxValidityField value={validity} onChange={setValidity} />}
-              <p style={{ fontSize: 14, color: 'var(--muted)' }}>
+              <p className="fs-base c-muted">
                 {missing.length ? `Para firmar falta ${missing.join(', ')}.` : `Al firmar se cierra la cita${rxCount ? ` y se emite una receta con ${rxCount} medicamento${rxCount > 1 ? 's' : ''}` : ''}${admit && !hospitalized ? ', se ingresa a hospitalización' : observe && !hospitalized ? ' e ingresa a observación' : ''}${inClinic.length ? `${ambulatory ? '; enfermería aplica en la clínica (sin ingreso): ' : '; pasan a la hoja de medicamentos: '}${inClinic.map((m) => m.drug).join(', ')}` : ''}.`}
               </p>
               <button className="btn btn--primary btn--lg" data-tour="firmar" disabled={missing.length > 0 || signing} onClick={sign}>Firmar consulta{rxCount ? ' y receta' : ''}</button>

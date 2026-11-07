@@ -315,7 +315,7 @@ function SaveAsSet({ lines, onClose }: { lines: { itemId: string; quantity: numb
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={busy || name.trim().length < 2} onClick={() => void save()}>{busy ? 'Guardando…' : 'Guardar set'}</button>
     </>}>
-      <p style={{ marginTop: 0 }}>Se guarda lo seleccionado ({plural(lines.length, 'material', 'materiales')}) con sus cantidades. El registro no cambia.</p>
+      <p className="mt-0">Se guarda lo seleccionado ({plural(lines.length, 'material', 'materiales')}) con sus cantidades. El registro no cambia.</p>
       <label className="field"><span>Nombre del set</span>
         <input className="input" value={name} maxLength={60} autoFocus placeholder="Ej. Cesárea" onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && name.trim().length >= 2) void save() }} /></label>

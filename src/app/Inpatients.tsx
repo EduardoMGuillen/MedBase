@@ -167,7 +167,7 @@ export function PatientPicker({ value, onChange, onNotFound, notFoundLabel, auto
             <button type="button" key={p.id} onClick={() => { onChange(p.id); setQ('') }}>
               {detail
                 ? <span className="suggest__pt"><span>{fullName(p)}</span><small className="muted">{[p.record, p.dni ? `ID ${p.dni}` : ''].filter(Boolean).join(' · ')}{detail(p) ? <> · {detail(p)}</> : null}</small></span>
-                : <><span>{fullName(p)}</span><span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{p.record}</span></>}
+                : <><span>{fullName(p)}</span><span className="c-muted ml-auto">{p.record}</span></>}
             </button>
           ))}
           {onNotFound && q.trim().length >= 3 && (
@@ -243,7 +243,7 @@ export function AdmitModal({ initialPatientId, consultationId, bedId, onClose, o
     </>}>
       {initialPatientId && p ? <div className="field"><span>Paciente</span><div className="picked"><b>{fullName(p)}</b><span className="muted">{p.record}, {age(p.birthDate)}</span></div></div>
         : <PatientPicker value={patientId} onChange={setPatientId} />}
-      <p className="muted" style={{ fontSize: 13.5 }}>Si el paciente tuvo una consulta externa con ingreso en las últimas 48 horas, este ingreso se vincula a ella y jala sus órdenes y medicamentos sin duplicarlos.</p>
+      <p className="c-muted fs-md">Si el paciente tuvo una consulta externa con ingreso en las últimas 48 horas, este ingreso se vincula a ella y jala sus órdenes y medicamentos sin duplicarlos.</p>
       {already && <div className="alert-strip">Este paciente ya está {already.kind === 'observation' ? 'en observación: desde su expediente puedes pasarlo a hospitalización' : 'hospitalizado'}. <Link to={stayPath(already)}>Abrir su expediente</Link>.</div>}
       <div className="form-grid">
         <div className="span-2"><BedFields bedId={f.bedId} specialty={specialty} onChange={(v) => { setF({ ...f, bedId: v.bedId }); setSpecialty(v.specialty) }} /></div>

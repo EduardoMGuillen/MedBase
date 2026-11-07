@@ -18,7 +18,7 @@ import { DILUENT_OPTIONS, type NebComponent, type Nebulization } from '../lib/me
 export function LoadingDoseFields({ checked, onChecked, value, onValue, givenAt, extra, warn }: {
   checked: boolean; onChecked: (v: boolean) => void; value: string; onValue: (v: string) => void; givenAt?: string; extra?: ReactNode; warn?: boolean
 }) {
-  if (givenAt) return <p className="field span-2 muted" style={{ margin: 0, fontSize: 13.5 }}>{givenAt}</p>
+  if (givenAt) return <p className="field span-2 c-muted m-0 fs-md">{givenAt}</p>
   return (<>
     <div className="field span-2 stat-line">
       <label className="check-inline"><input type="checkbox" checked={checked} onChange={(e) => onChecked(e.target.checked)} />Primera dosis diferente (STAT)</label>

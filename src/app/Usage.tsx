@@ -334,7 +334,7 @@ function VoidRecord({ r, onClose, onDone }: { r: MaterialRecord; onClose: () => 
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={busy || reason.trim().length < 5} onClick={() => void submit()}>Anular</button>
     </>}>
-      <p style={{ marginTop: 0 }}><b>{r.general ? GENERAL_USE_LABEL : r.patientName}</b> · {r.periodLabel}<br />{itemsLine(r)}</p>
+      <p className="mt-0"><b>{r.general ? GENERAL_USE_LABEL : r.patientName}</b> · {r.periodLabel}<br />{itemsLine(r)}</p>
       <p className="muted">El registro no se borra: queda tachado, con quién lo anuló y por qué, y deja de sumar.</p>
       <label className="field"><span>Motivo de la anulación</span>
         <input className="input" value={reason} maxLength={300} autoFocus onChange={(e) => setReason(e.target.value)} placeholder="Ej. se registró al paciente equivocado" /></label>

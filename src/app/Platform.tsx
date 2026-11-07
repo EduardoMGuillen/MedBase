@@ -52,7 +52,7 @@ export default function Platform() {
 
       {!clinics ? <Loading /> : (<>
         <div className="stats">
-          <div className="stat"><b className="num">{active.length}</b><span>Cuentas activas ({active.filter((c) => c.kind === 'office').length} consultorios)</span>{clinics.length > active.length && <small style={{ color: 'var(--muted)' }}>{clinics.length - active.length} desactivadas</small>}</div>
+          <div className="stat"><b className="num">{active.length}</b><span>Cuentas activas ({active.filter((c) => c.kind === 'office').length} consultorios)</span>{clinics.length > active.length && <small className="c-muted">{clinics.length - active.length} desactivadas</small>}</div>
           <div className="stat"><b className="num">{sum('staff')}</b><span>Usuarios</span></div>
           <div className="stat"><b className="num">{sum('patients')}</b><span>Pacientes registrados</span></div>
           <div className="stat"><b className="num">{sum('consultations30')}</b><span>Consultas, últimos 30 días</span></div>
@@ -60,17 +60,17 @@ export default function Platform() {
 
         <section className="panel table-wrap">
           <table className="table">
-            <thead><tr><th>Cuenta</th><th>Tipo</th><th>Estado</th><th style={{ textAlign: 'right' }}>Usuarios</th><th style={{ textAlign: 'right' }}>Pacientes</th><th style={{ textAlign: 'right' }}>Citas 30 días</th><th>Última actividad</th></tr></thead>
+            <thead><tr><th>Cuenta</th><th>Tipo</th><th>Estado</th><th className="ta-r">Usuarios</th><th className="ta-r">Pacientes</th><th className="ta-r">Citas 30 días</th><th>Última actividad</th></tr></thead>
             <tbody>{clinicsPage.rows.map((c) => (
               <tr key={c.id} style={c.active ? undefined : { opacity: 0.6 }}>
                 <td><div className="cell-person"><span className="clinic-ico"><Building2 size={18} /></span>
                   <Link to={`/app/clinicas/${c.id}`}>{c.name}<small>/reservar/{c.slug}</small></Link></div></td>
                 <td>{c.kind === 'office' ? <span className="badge badge--ink">Consultorio</span> : <span className="badge">Clínica</span>}</td>
                 <td>{c.active ? <span className="badge badge--mint">Activa</span> : <span className="badge">Desactivada</span>}</td>
-                <td className="num" style={{ textAlign: 'right' }}>{c.stats?.staff ?? 0}</td>
-                <td className="num" style={{ textAlign: 'right' }}>{c.stats?.patients ?? 0}</td>
-                <td className="num" style={{ textAlign: 'right' }}>{c.stats?.appointments30 ?? 0}</td>
-                <td className="num" style={{ whiteSpace: 'nowrap' }}>{c.stats?.lastActivity ? `${date(c.stats.lastActivity)} ${time(c.stats.lastActivity)}` : 'Sin actividad'}</td>
+                <td className="num ta-r">{c.stats?.staff ?? 0}</td>
+                <td className="num ta-r">{c.stats?.patients ?? 0}</td>
+                <td className="num ta-r">{c.stats?.appointments30 ?? 0}</td>
+                <td className="num nowrap">{c.stats?.lastActivity ? `${date(c.stats.lastActivity)} ${time(c.stats.lastActivity)}` : 'Sin actividad'}</td>
               </tr>
             ))}</tbody>
           </table>
@@ -82,7 +82,7 @@ export default function Platform() {
           <div className="panel__head"><div><h2>Actividad de la plataforma</h2><p>Acciones de la administración de Clinara</p></div></div>
           {activity.length ? <div className="rows">{activity.slice(0, 12).map((e) => (
             <div key={e.id} className="row" style={{ gridTemplateColumns: '120px 1fr' }}>
-              <span className="num" style={{ color: 'var(--muted)', fontSize: 13 }}>{date(e.at, { day: 'numeric', month: 'short' })} {time(e.at)}</span>
+              <span className="num c-muted fs-md">{date(e.at, { day: 'numeric', month: 'short' })} {time(e.at)}</span>
               <div className="row__who"><strong>{e.action}</strong><span>{e.clinicName ?? 'Plataforma'}</span></div>
             </div>
           ))}</div> : <div className="empty">Todavía no hay acciones registradas.</div>}
@@ -92,7 +92,7 @@ export default function Platform() {
       {creating && <NewClinic onClose={() => setCreating(false)} onCreated={(r) => {
         setCreating(false); load()
         setSecret({ title: r.clinic.kind === 'office' ? 'Consultorio creado' : 'Clínica creada', name: r.admin.name, email: r.admin.email, password: r.password, extra: (
-          <div className="field"><span>Reserva en línea {r.clinic.kind === 'office' ? 'del consultorio' : 'de la clínica'}</span><div className="secret" style={{ fontSize: 14 }}>{bookingUrl(r.clinic.slug)}</div></div>
+          <div className="field"><span>Reserva en línea {r.clinic.kind === 'office' ? 'del consultorio' : 'de la clínica'}</span><div className="secret fs-base">{bookingUrl(r.clinic.slug)}</div></div>
         ) })
       }} create={createClinic} />}
       {secret && <SecretModal s={secret} onClose={() => setSecret(null)} />}
@@ -142,7 +142,7 @@ function NewClinic({ onClose, onCreated, create }: {
         <button role="radio" aria-checked={!office} onClick={() => setKind('clinic')}>Clínica</button>
         <button role="radio" aria-checked={office} onClick={() => setKind('office')}>Consultorio (médico independiente)</button>
       </div>
-      <p className="muted" style={{ fontSize: 13.5 }}>{office
+      <p className="c-muted fs-md">{office
         ? 'Un médico que atiende en su propio consultorio, solo o con una asistente. Él mismo lo administra: horario, precios, caja y reportes. No tiene hospitalización; sí observación, que puede apagar.'
         : 'Varios médicos, recepción, enfermería y hospitalización. La administra un usuario de administración.'}</p>
       {office && (
@@ -236,7 +236,7 @@ export function ClinicDetail() {
                   </td>
                   <td><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{s.active ? <span className="badge badge--mint">Activo</span> : <span className="badge">Desactivado</span>}
                     {s.twoFactor && <span className="badge badge--ink">Dos pasos</span>}</div></td>
-                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <td className="ta-r nowrap">
                     <button className="btn btn--ghost btn--sm" onClick={async () => {
                       if (!confirm(`Se generará una contraseña temporal para ${s.name} y se cerrarán sus sesiones.`)) return
                       const r = await resetPlatformStaffPassword(s.id)
@@ -264,13 +264,13 @@ export function ClinicDetail() {
               <label className="field"><span>Moneda</span><input className="input" maxLength={4} value={f.currency ?? ''} onChange={(e) => setF({ ...f, currency: e.target.value })} /></label>
             </div>
             <label className="field"><span>Correo</span><input className="input" type="email" value={f.email ?? ''} onChange={(e) => setF({ ...f, email: e.target.value })} /></label>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="hstack hstack--nowrap">
               <button className="btn btn--primary" disabled={!dirty} onClick={async () => {
                 if (await updateClinic(clinic.id, { name: f.name, slug: f.slug, address: f.address, phone: f.phone, email: f.email, currency: f.currency })) load()
               }}>Guardar cambios</button>
               {dirty && <button className="btn btn--ghost" onClick={() => setF(clinic)}>Descartar</button>}
             </div>
-            <p style={{ fontSize: 13, color: 'var(--muted)' }}>Precios, horarios y la plantilla de recordatorios los ajusta la administración de la clínica en su Configuración.</p>
+            <p className="fs-md c-muted">Precios, horarios y la plantilla de recordatorios los ajusta la administración de la clínica en su Configuración.</p>
           </div>
         </section>
       </div>

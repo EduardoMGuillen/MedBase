@@ -19,8 +19,8 @@ export function BarChart({ data, title, valueLabel, height = 180 }: { data: Bar[
       </figcaption>
       {asTable ? (
         <div className="table-wrap chart__table">
-          <table className="table"><thead><tr><th>Fecha</th><th style={{ textAlign: 'right' }}>{valueLabel}</th></tr></thead>
-            <tbody>{data.map((d) => <tr key={d.key}><td>{d.tip}</td><td className="num" style={{ textAlign: 'right' }}>{d.display}</td></tr>)}</tbody></table>
+          <table className="table"><thead><tr><th>Fecha</th><th className="ta-r">{valueLabel}</th></tr></thead>
+            <tbody>{data.map((d) => <tr key={d.key}><td>{d.tip}</td><td className="num ta-r">{d.display}</td></tr>)}</tbody></table>
         </div>
       ) : (
         <div className="chart__plot" style={{ height }} onMouseLeave={() => setHover(null)}>

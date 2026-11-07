@@ -107,7 +107,7 @@ export function FluidBalance({ file, reload, print = false }: { file: InpatientF
                     <td>{dmyTime(e.at)}</td>
                     <td><span className={e.voidedAt ? 'struck' : ''}>{e.kind === 'in' ? 'Ingreso' : 'Egreso'}: {fluidItemLabel(e.kind, e.item)}</span></td>
                     <td><span className={e.voidedAt ? 'struck' : ''}>{fmtMl(e.ml)}</span></td>
-                    <td>{e.note ?? ''}{e.voidedAt && <small className="muted" style={{ display: 'block' }}>Anulado por {who(e.voidedBy ?? '')} el {dmyTime(e.voidedAt)}: {e.voidReason}</small>}</td>
+                    <td>{e.note ?? ''}{e.voidedAt && <small className="c-muted block">Anulado por {who(e.voidedBy ?? '')} el {dmyTime(e.voidedAt)}: {e.voidReason}</small>}</td>
                     <td>{who(e.createdBy)} <small className="muted">{dmyTime(e.createdAt)}</small> <VersionTag version={e.version} kind="fluid_entry" id={e.id} /></td>
                     {!print && <td className="fluids__actions">{!e.voidedAt && h.status === 'active' && (<>
                       <GraceButton record={e} authorId={e.createdBy} onCorrect={() => setEditing(e)} />
