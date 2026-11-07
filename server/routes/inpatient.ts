@@ -120,6 +120,8 @@ const medInput = z.object({
   // ME10 (ronda 10): la clínica no lo tiene: sigue en la hoja y va a una receta (con lo que hay que comprar)
   buyOutside: z.boolean().optional(),
   buyQuantity: z.string().trim().max(60).optional(),
+  // ME16 (ronda 16): cantidad total, como en la receta
+  quantity: z.string().trim().max(80).optional(),
   // ME4 (ronda 9): nebulización (vía «Nebulización») con sus componentes y diluyente
   nebulization: z.object({ components: z.array(z.object({ drug: z.string().trim().min(1, 'Escribe el medicamento de la nebulización.').max(160), amount: z.string().trim().min(1, 'Escribe la cantidad de cada medicamento de la nebulización.').max(40) })).min(1).max(NEB_MAX_COMPONENTS, `Una nebulización lleva hasta ${NEB_MAX_COMPONENTS} medicamentos.`),
     diluentVolume: z.string().trim().max(40).optional(), diluent: z.string().trim().max(80).optional() }).optional(),
@@ -501,6 +503,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       exam: text, observations: text,
       // Ronda 8: Estándar: el cuadro de evolución, entre los diagnósticos y el examen físico
       evolution: text,
+      // NO2 (ronda 16): la nota de ingreso estándar es la de la consulta externa: motivo de consulta e historia de la enfermedad actual
+      chiefComplaint: z.string().trim().max(1000).default(''), history: text,
       meds: z.array(medInput).max(20).default([]),
       stopMedIds: z.array(z.string()).max(30).default([]),
       orders: z.array(z.string().trim().min(1).max(500)).max(40).default([]),
@@ -530,7 +534,11 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       const empty = ([['subjective', 'el subjetivo (S)'], ['objective', 'el objetivo (O)'], ['assessment', 'el análisis (A)'], ['plan', 'el plan (P)']] as const).find(([k]) => !b[k])
       if (empty) fail(400, `Escribe ${empty[1]}.`)
     } else if (b.kind === 'admission') {
-      fail(400, 'La nota de ingreso se escribe en formato SOAP.')
+      // NO2 (ronda 16): por defecto, el formato estándar de la consulta externa; pide lo mismo que la consulta: el motivo y la
+      // impresión diagnóstica (antes la nota de ingreso solo se escribía en SOAP)
+      if (b.format !== 'dx') fail(400, 'La nota de ingreso se escribe en formato estándar o SOAP.')
+      if (!b.chiefComplaint) fail(400, 'Escribe el motivo de consulta.')
+      if (!b.diagnoses.length) fail(400, 'Agrega al menos un diagnóstico en la impresión diagnóstica.')
     } else if (b.format === 'postop') {
       // PQ1 (ronda 9): obligatorios; el cierre no antes del inicio; ninguna hora en el futuro
       checkPostop(b.diagnoses, b.postop ?? fail(400, 'Faltan los datos de la nota postquirúrgica.'))
@@ -612,8 +620,10 @@ export function registerInpatient(app: Express, ctx: Ctx) {
         [noteId, cid, id, b.kind, user.id, at, b.format === 'soap' ? b.subjective : '', b.format === 'soap' ? b.objective : '', b.format === 'soap' ? b.assessment : '', b.format === 'soap' ? b.plan : '',
           JSON.stringify({ orders, checklist, indications: indicationCount === undefined ? undefined : Math.min(indicationCount, orders.length), lines, basedOn: b.chain ? b.chain.basedOn ?? undefined : undefined, vitals: b.vitals && vitalsTag ? { ...b.vitals, tag: vitalsTag } : undefined, vitalsId,
             ...(b.format === 'postop' ? { format: 'postop', diagnoses: b.diagnoses, postop: { ...b.postop!, startAt: new Date(b.postop!.startAt).toISOString(), endAt: new Date(b.postop!.endAt).toISOString(), ...postopAuth } }
+              : b.format === 'dx' && b.kind === 'admission' ? { format: 'dx', diagnoses: b.diagnoses, chiefComplaint: b.chiefComplaint, history: b.history, exam: b.exam, observations: b.observations }
               : b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, evolution: b.evolution || undefined, exam: b.exam, observations: b.observations }
-              : b.kind === 'evolution' && b.diagnoses.length ? { diagnoses: b.diagnoses } : {}) })])
+              // NO3 (ronda 16): toda nota SOAP (también la de ingreso) guarda sus diagnósticos CIE-11
+              : b.diagnoses.length ? { diagnoses: b.diagnoses } : {}) })])
       await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
       examBatch = await insertExams(q, { clinicId: cid, patientId: String(h.patient_id), hospitalizationId: id, noteId, by: user.id, at }, b.exams)
       if (vitalsTag && b.vitals && vitalsTag !== 'continue') await audit(user, `Indicó ${vitalsModeShort(b.vitals) === 'sin control programado' ? 'sin control programado de signos vitales' : `signos vitales ${vitalsModeShort(b.vitals)}`} a ${name} en su nota`, q)
@@ -1035,9 +1045,9 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   })
   const sameMed = (r: Row, m: z.infer<typeof medInput>) => JSON.stringify([r.drug, r.presentation ?? '', r.dose, r.route, r.every_hours ?? null, Boolean(r.prn), r.prn ? r.prn_condition ?? '' : '',
     new Date(String(r.first_at)).getTime(), r.instructions ?? '', r.days ?? null, r.infusion_rate == null ? null : Number(r.infusion_rate), r.infusion_rate ? r.infusion_unit ?? 'ml/h' : null,
-    r.loading_dose ?? null, r.nebulization ? JSON.parse(String(r.nebulization)) : null, Boolean(r.buy_outside), r.buy_outside ? r.buy_quantity ?? '' : '']) === JSON.stringify([m.drug, m.presentation ?? '', m.dose, m.route, m.everyHours ?? null, m.prn, m.prn ? m.prnCondition ?? '' : '',
+    r.loading_dose ?? null, r.nebulization ? JSON.parse(String(r.nebulization)) : null, Boolean(r.buy_outside), r.buy_outside ? r.buy_quantity ?? '' : '', r.quantity ?? '']) === JSON.stringify([m.drug, m.presentation ?? '', m.dose, m.route, m.everyHours ?? null, m.prn, m.prn ? m.prnCondition ?? '' : '',
     new Date(m.firstAt ?? String(r.first_at)).getTime(), m.instructions ?? '', m.days ?? null, m.infusionRate ?? null, m.infusionRate ? m.infusionUnit ?? 'ml/h' : null,
-    m.loadingDose && m.everyHours && !m.prn && !m.infusionRate ? m.loadingDose : null, m.nebulization ?? null, !!m.buyOutside, m.buyOutside ? m.buyQuantity ?? '' : ''])
+    m.loadingDose && m.everyHours && !m.prn && !m.infusionRate ? m.loadingDose : null, m.nebulization ?? null, !!m.buyOutside, m.buyOutside ? m.buyQuantity ?? '' : '', m.quantity ?? ''])
   const rowLabel = (r: Row) => medLabel(toInpatientMed(r))
   async function correctOrders(q: Sql, h: Row, n: Row, data: Record<string, unknown>, o: z.infer<typeof ordersFix>, userId: string) {
     const locks = await noteOrderLocks(q, n)
@@ -1083,10 +1093,10 @@ export function registerInpatient(app: Express, ctx: Ctx) {
         const m = p.med
         const loading = m.loadingDose && m.everyHours && !m.prn && !m.infusionRate
         await q.run(`UPDATE hosp_meds SET drug = ?, presentation = ?, dose = ?, route = ?, every_hours = ?, prn = ?, prn_condition = ?, first_at = ?, instructions = ?, days = ?,
-            infusion_rate = ?, infusion_unit = ?, loading_dose = ?, loading_stat = ?, nebulization = ?, buy_outside = ?, buy_quantity = ? WHERE id = ?`,
+            infusion_rate = ?, infusion_unit = ?, loading_dose = ?, loading_stat = ?, nebulization = ?, buy_outside = ?, buy_quantity = ?, quantity = ? WHERE id = ?`,
           [m.drug, m.presentation || null, m.dose, m.route, m.everyHours ?? null, m.prn, m.prn ? m.prnCondition || null : null, new Date(m.firstAt ?? String(r.first_at)).toISOString(), m.instructions || null,
             m.days ?? null, m.infusionRate ?? null, m.infusionRate ? m.infusionUnit || 'ml/h' : null, loading ? m.loadingDose : null, loading ? m.loadingStat !== false : null,
-            m.nebulization ? JSON.stringify(m.nebulization) : null, !!m.buyOutside, m.buyOutside ? m.buyQuantity || null : null, id])
+            m.nebulization ? JSON.stringify(m.nebulization) : null, !!m.buyOutside, m.buyOutside ? m.buyQuantity || null : null, m.quantity || null, id])
         changes.push(`cambió ${rowLabel(r)} por ${medLabel({ ...m, everyHours: m.everyHours, prn: m.prn })} en la hoja`)
       }
     }
@@ -1136,6 +1146,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       subjective: text, objective: text, assessment: text, plan: text,
       diagnoses: z.array(diagnosisInput).max(20).default([]),
       exam: text, observations: text, evolution: text,
+      // NO2 (ronda 16): nota de ingreso estándar
+      chiefComplaint: z.string().trim().max(1000).default(''), history: text,
       postop: postopInput.optional(),
       // Nota de procedimiento y de enfermería
       name: z.string().trim().max(200).optional(), performedAt: when.optional(), text: z.string().trim().max(10000).optional(),
@@ -1170,6 +1182,11 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       // La autorización (o la urgencia) quedó resuelta al firmar: no se corrige aquí
       set.data = { ...data, diagnoses: b.diagnoses, postop: { ...x, startAt: new Date(x!.startAt).toISOString(), endAt: new Date(x!.endAt).toISOString(), authorizationId: old.authorizationId, urgent: old.urgent, justification: old.justification } }
       what = 'nota postquirúrgica'
+    } else if (format === 'dx' && kind === 'admission') {
+      // NO2 (ronda 16): la nota de ingreso estándar se corrige con lo mismo que pide al firmarse
+      if (!b.chiefComplaint) fail(400, 'Escribe el motivo de consulta.')
+      if (!b.diagnoses.length) fail(400, 'Agrega al menos un diagnóstico en la impresión diagnóstica.')
+      set.data = { ...data, diagnoses: b.diagnoses, chiefComplaint: b.chiefComplaint, history: b.history, exam: b.exam, observations: b.observations }
     } else if (format === 'dx') {
       if (!b.diagnoses.length && !b.evolution && !b.exam && !b.observations) fail(400, 'Escribe al menos un diagnóstico, la evolución, el examen físico o una observación.')
       set.data = { ...data, diagnoses: b.diagnoses, evolution: b.evolution || undefined, exam: b.exam, observations: b.observations }
@@ -1177,7 +1194,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       const empty = ([['subjective', 'el subjetivo (S)'], ['objective', 'el objetivo (O)'], ['assessment', 'el análisis (A)'], ['plan', 'el plan (P)']] as const).find(([k]) => !b[k])
       if (empty) fail(400, `Escribe ${empty[1]}.`)
       Object.assign(set, { subjective: b.subjective, objective: b.objective, assessment: b.assessment, plan: b.plan })
-      if (kind === 'evolution') set.data = { ...data, diagnoses: b.diagnoses.length ? b.diagnoses : undefined }
+      // NO3 (ronda 16): también la nota de ingreso SOAP corrige sus diagnósticos
+      set.data = { ...data, diagnoses: b.diagnoses.length ? b.diagnoses : undefined }
     }
     if (kind === 'admission') what = 'nota de ingreso'
     const version = Number(n!.version ?? 1)

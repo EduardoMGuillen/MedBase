@@ -112,10 +112,12 @@ describe('P3 cada ruta de la tabla', () => {
     assert.equal(c.status, 201, JSON.stringify(c.body))
     assert.equal(c.body.stayKind, 'observation')
     assert.ok(c.body.prescriptionId)
-    assert.deepEqual((await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds.map((m: any) => m.drug), ['Metoclopramida'])
+    // NO1 (ronda 16): con ingreso ya no hay «Aplicar en la clínica»: los dos pasan a la hoja (antes, ME14: solo lo marcado), y al
+    // pasar a hospitalización no se duplica nada
+    assert.deepEqual((await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds.map((m: any) => m.drug).sort(), ['Acetaminofén', 'Metoclopramida'])
     const conv = await doc.post(`/api/inpatient/${c.body.hospitalizationId}/convert`, { bedId: await freeBed() })
     assert.equal(conv.body.medOrders, 0)
-    assert.deepEqual((await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds.map((m: any) => m.drug), ['Metoclopramida'])
+    assert.deepEqual((await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds.map((m: any) => m.drug).sort(), ['Acetaminofén', 'Metoclopramida'])
   })
   test('consulta con medicamento + ingreso directo a hospitalización → hoja', async () => {
     const { doc, apptId } = await openConsult('p10')

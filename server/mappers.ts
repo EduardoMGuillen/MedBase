@@ -160,11 +160,13 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
   ...(r.kind === 'evolution' && j<{ format?: string }>(r.data, {}).format === 'postop'
     ? { format: 'postop' as const, diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses ?? [], postop: j<{ postop?: InpatientNote['postop'] }>(r.data, {}).postop }
     : {}),
-  ...(r.kind === 'evolution' && j<{ format?: string }>(r.data, {}).format === 'dx'
+  // NO2 (ronda 16): la nota de ingreso también puede ser estándar (con el motivo y la historia de la enfermedad actual)
+  ...((r.kind === 'evolution' || r.kind === 'admission') && j<{ format?: string }>(r.data, {}).format === 'dx'
     ? { format: 'dx' as const, diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses ?? [], exam: j<{ exam?: string }>(r.data, {}).exam ?? '',
-      observations: j<{ observations?: string }>(r.data, {}).observations ?? '', evolution: j<{ evolution?: string }>(r.data, {}).evolution || undefined }
-    // NE4 (ronda 8): la evolución SOAP también guarda los diagnósticos vigentes
-    : r.kind === 'evolution' && j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses?.length ? { diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses } : {}),
+      observations: j<{ observations?: string }>(r.data, {}).observations ?? '', evolution: j<{ evolution?: string }>(r.data, {}).evolution || undefined,
+      ...(r.kind === 'admission' ? { chiefComplaint: j<{ chiefComplaint?: string }>(r.data, {}).chiefComplaint ?? '', history: j<{ history?: string }>(r.data, {}).history ?? '' } : {}) }
+    // NE4 (ronda 8): la evolución SOAP también guarda los diagnósticos vigentes; NO3 (ronda 16): y la nota de ingreso SOAP
+    : (r.kind === 'evolution' || r.kind === 'admission') && j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses?.length ? { diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses } : {}),
   procedure: r.kind === 'procedure' ? j(r.data, undefined) : undefined,
   // MC7 (ronda 6): el cuadro completo con sus etiquetas
   ...(r.kind === 'admission' || r.kind === 'evolution' ? { lines: j<{ lines?: InpatientNote['lines'] }>(r.data, {}).lines, basedOn: j<{ basedOn?: string }>(r.data, {}).basedOn, vitals: j<{ vitals?: InpatientNote['vitals'] }>(r.data, {}).vitals, vitalsId: j<{ vitalsId?: string }>(r.data, {}).vitalsId } : {}),
@@ -179,7 +181,7 @@ export const toInpatientMed = (r: Row): InpatientMed => ({
   infusionRate: r.infusion_rate == null ? undefined : Number(r.infusion_rate), infusionUnit: (s(r.infusion_unit) as InpatientMed['infusionUnit']) ?? undefined,
   loadingDose: s(r.loading_dose), loadingStat: r.loading_stat == null ? undefined : Boolean(r.loading_stat),
   nebulization: r.nebulization ? j(r.nebulization, undefined) : undefined,
-  buyOutside: r.buy_outside ? true : undefined, buyQuantity: s(r.buy_quantity),
+  buyOutside: r.buy_outside ? true : undefined, buyQuantity: s(r.buy_quantity), quantity: s(r.quantity),
   infusionStoppedAt: s(r.infusion_stopped_at), infusionStoppedBy: s(r.infusion_stopped_by), infusionStopNote: s(r.infusion_stop_note),
 })
 

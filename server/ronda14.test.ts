@@ -164,22 +164,24 @@ describe('ME14 (ronda 14): receta al firmar con ingreso y desde la nota', () => 
     const rx = await sql.one('SELECT items FROM prescriptions WHERE id = ?', [r.body.prescriptionId])
     // ME15 (ronda 15): con ingreso, la receta también trae los tres
     assert.deepEqual(JSON.parse(String(rx!.items)).map((x: { drug: string }) => x.drug), ['Acetaminofén', 'Ibuprofeno', 'Ceftriaxona'])
-    const sheet = await sql.query('SELECT drug FROM hosp_meds WHERE hospitalization_id = ?', [r.body.hospitalizationId])
-    assert.deepEqual(sheet.map((m) => m.drug), ['Ceftriaxona'], 'a la hoja solo lo que se aplica en la clínica')
+    const sheet = await sql.query('SELECT drug FROM hosp_meds WHERE hospitalization_id = ? ORDER BY source_index', [r.body.hospitalizationId])
+    // NO1 (ronda 16): con ingreso ya no hay «Aplicar en la clínica»: los tres pasan a la hoja (antes, ME14: solo la Ceftriaxona,
+    // y los otros dos salían en «Generar receta» como medicamentos de la consulta que no están en la hoja)
+    assert.deepEqual(sheet.map((m) => m.drug), ['Acetaminofén', 'Ibuprofeno', 'Ceftriaxona'], 'con ingreso, todos a la hoja')
     assert.equal(await sql.one('SELECT 1 FROM consult_applications WHERE consultation_id = ?', [r.body.consultationId]), undefined, 'con ingreso no hay «por aplicar»')
     const file = await doc.get(`/api/inpatient/${r.body.hospitalizationId}`)
     assert.equal(file.status, 200, JSON.stringify(file.body).slice(0, 200))
     const extra = file.body.consultRxMeds as { id: string; drug: string }[]
-    assert.deepEqual(extra.map((m) => m.drug), ['Acetaminofén', 'Ibuprofeno'])
-    const all = [...file.body.meds.map((m: { id: string }) => m.id), ...extra.map((m) => m.id)]
+    assert.deepEqual(extra, [], 'nada queda fuera de la hoja')
+    const all = file.body.meds.map((m: { id: string }) => m.id) as string[]
     assert.equal(all.length, 3, 'los tres medicamentos, sin repetidos')
-    const job = await doc.post('/api/print-jobs', { kind: 'rx', chosen: true, medIds: all, extras: { [extra[0].id]: { days: 3 } } })
+    const job = await doc.post('/api/print-jobs', { kind: 'rx', chosen: true, medIds: all, extras: { [all[0]]: { days: 3 } } })
     assert.equal(job.status, 201, JSON.stringify(job.body))
     const j = await doc.get(`/api/print-jobs/${job.body.id}`)
     assert.deepEqual(j.body.meds.map((m: { drug: string }) => m.drug).sort(), ['Acetaminofén', 'Ceftriaxona', 'Ibuprofeno'])
     // Enfermería no elige otros medicamentos (tampoco por URL directa)
     const nurse = await as('murbina@demo.clinara')
-    assert.equal((await nurse.post('/api/print-jobs', { kind: 'rx', chosen: true, medIds: [extra[0].id] })).status, 403)
-    assert.equal((await nurse.post('/api/print-jobs', { kind: 'rx', medIds: [extra[0].id] })).status, 400)
+    assert.equal((await nurse.post('/api/print-jobs', { kind: 'rx', chosen: true, medIds: [all[0]] })).status, 403)
+    assert.equal((await nurse.post('/api/print-jobs', { kind: 'rx', medIds: [all[0]] })).status, 400)
   })
 })

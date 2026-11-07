@@ -54,8 +54,9 @@ import { registerSupplySets } from './routes/supplySets.js'
 import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permission } from '../src/lib/permissions.js'
 import { positionOf } from '../src/lib/positions.js'
 import { NEB_MAX_COMPONENTS, NURSE_DEFAULT_POSITION, PAGE_SIZE } from '../src/lib/clinicalConfig.js'
-import { yearsOld } from '../src/lib/inpatient.js'
+import { ADMIT_ORDER, yearsOld } from '../src/lib/inpatient.js'
 import { consultRxItems, dmy, medicationLine, normalizeDni } from '../src/lib/format.js'
+import { consultItemIssue } from '../src/lib/medForm.js'
 import { normalize } from '../src/lib/patients.js'
 import { AUDIT_KINDS, auditKind, type AuditKind } from '../src/lib/audit.js'
 import { hasBlank, medHasBlank } from '../src/lib/orderSets.js'
@@ -899,11 +900,23 @@ export function createApp(opts: AppOptions) {
     // Con ingreso, lo que no trae la casilla se aplica en la clínica (como hasta ahora: va a la hoja); solo lo desmarcado a
     // propósito (false) va a la receta. Sin ingreso, solo lo marcado se aplica aquí.
     const stayKind = c.admit ? 'hospital' : c.observe ? 'observation' : null
-    const items = c.items.map((it) => ({ ...it, applyInClinic: stayKind ? it.applyInClinic !== false : !!it.applyInClinic }))
+    // NO1 (ronda 16): con ingreso ya no hay casilla: todos los medicamentos pasan a la hoja (y a la receta, ME15). Antes (ME14,
+    // ronda 14) lo desmarcado a propósito (false) iba solo a la receta: `stayKind ? it.applyInClinic !== false : …`
+    const items = c.items.map((it) => ({ ...it, applyInClinic: stayKind ? true : !!it.applyInClinic }))
+    // NO1 (ronda 16): con ingreso, la primera indicación es «Ingreso a hospitalización» u «Ingreso a observación» (la pone el
+    // formulario; si no viene, o viene la del otro ingreso, se corrige aquí: va una sola vez y en el número 1)
+    if (stayKind) {
+      const line = ADMIT_ORDER[stayKind]
+      const isAdmit = (o: string) => (Object.values(ADMIT_ORDER) as string[]).includes(o.replace(/\.$/, ''))
+      c.orders = [line, ...c.orders.filter((o) => !isAdmit(o))]
+      c.indications = [line, ...(c.indications ?? []).filter((o) => !isAdmit(o))]
+    }
     // ME15 (ronda 15): la receta lleva TODOS los medicamentos, también los «Aplicar en la clínica» (con su leyenda y su
     // cantidad), con o sin ingreso: el paciente puede comprarlo y traerlo, y la receta es la constancia de lo indicado. Antes
     // (ME13, ronda 14) aquí se quitaban: `items.filter((it) => !it.applyInClinic || it.buyOutside)`.
     const rxItems = consultRxItems(items)
+    // ME16 (ronda 16): la infusión solo con ingreso y con su velocidad (como el formulario: sin ingreso no aparece)
+    for (const it of c.items) { const issue = consultItemIssue(it, { admitting: !!stayKind }); if (issue) fail(400, issue) }
     // ME13: sin ingreso, lo que se aplica en la clínica es una sola dosis (STAT): no se programan dosis siguientes (A6)
     if (!stayKind) {
       const repeat = items.find((it) => it.applyInClinic && (!/única/i.test(it.frequency) || it.loadingDose))
@@ -1039,6 +1052,8 @@ export function createApp(opts: AppOptions) {
       validityDays: validityInput,
     }), req.body)
     if (!b.patientId === !b.guest) fail(400, 'Elige al paciente o escribe sus datos.')
+    // ME16 (ronda 16): la receta suelta no lleva infusión (no hay estancia)
+    for (const it of b.items) { const issue = consultItemIssue(it, { admitting: false }); if (issue) fail(400, issue) }
     const noDays = b.items.find((it) => !it.duration && !/única/i.test(it.frequency))
     if (noDays) fail(400, `Escribe el total de días de ${noDays.drug}.`)
     const cid = clinicOf(req)
@@ -1158,6 +1173,8 @@ export function createApp(opts: AppOptions) {
       if (!b.items.length) fail(400, 'La receta necesita al menos un medicamento; para quitarla, anúlala.')
       if (b.items.some((it) => it.applyInClinic)) fail(400, '«Aplicar en la clínica» no se agrega en una corrección.')
       if (b.items.some(medHasBlank)) fail(400, 'Completa los espacios ___ de los medicamentos.')
+      // ME16 (ronda 16): una infusión solo en la consulta que dio el ingreso
+      for (const it of b.items) { const issue = consultItemIssue(it, { admitting: !!c!.admit_kind }); if (issue) fail(400, issue) }
     }
     const version = Number(c!.version ?? 1)
     const who = await patientName(String(c!.patient_id))
@@ -1530,6 +1547,11 @@ const rxItem = z.object({
   loadingDose: z.string().trim().max(60).optional(),
   nebulization: z.object({ components: z.array(z.object({ drug: z.string().trim().min(1, 'Escribe el medicamento de la nebulización.').max(160), amount: z.string().trim().min(1, 'Escribe la cantidad de cada medicamento de la nebulización.').max(40) })).min(1).max(NEB_MAX_COMPONENTS, `Una nebulización lleva hasta ${NEB_MAX_COMPONENTS} medicamentos.`),
     diluentVolume: z.string().trim().max(40).optional(), diluent: z.string().trim().max(80).optional() }).optional(),
+  // ME16 (ronda 16): infusión continua (frecuencia «Infusión») de la consulta con ingreso: velocidad, unidad y hora de inicio.
+  // Si va con ingreso y con su velocidad lo revisa cada ruta (consultItemIssue, la misma regla que el formulario)
+  infusionRate: z.number().positive('La velocidad de infusión debe ser mayor que 0.').optional(),
+  infusionUnit: z.enum(['ml/h', 'ml/min']).optional(),
+  firstAt: z.string().max(40).refine((x) => !Number.isNaN(Date.parse(x)), 'La hora de inicio no es válida.').optional(),
 }).refine((it) => !/^PRN\b/i.test(it.frequency) || !!it.prnCondition, 'Escribe la condición del medicamento PRN (ej. si dolor).')
   .refine((it) => !it.nebulization || it.route === 'Nebulización', 'La nebulización va con la vía «Nebulización».')
   .refine((it) => !it.loadingDose || (/cada\s+\d+\s*h/i.test(it.frequency) && !it.nebulization), 'La primera dosis distinta va con una frecuencia cada tantas horas.')

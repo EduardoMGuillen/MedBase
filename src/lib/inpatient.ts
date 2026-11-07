@@ -3,6 +3,7 @@ import { clinicParts } from './dateInput.js'
 import { loadingLine, nebulizationLine, type Nebulization } from './medExtras.js'
 import { normalize } from './patients.js'
 import { doseText } from './doseText.js'
+import { ROUTE_OPTIONS } from './clinicalConfig.js'
 
 /**
  * Horario de medicamentos en hospitalización. Lo usan el servidor (para validar que la dosis que
@@ -11,11 +12,17 @@ import { doseText } from './doseText.js'
 
 export const HOUR = 3_600_000
 
+/** NO1 (ronda 16): la primera indicación de la consulta con ingreso (fija en el número 1). */
+export const ADMIT_ORDER = { hospital: 'Ingreso a hospitalización', observation: 'Ingreso a observación' } as const
+
 /** Frecuencias que el médico puede indicar. `null` es dosis única. */
 export const INPATIENT_FREQUENCIES: { label: string; hours: number | null }[] = [
   { label: 'Cada 4 horas', hours: 4 }, { label: 'Cada 6 horas', hours: 6 }, { label: 'Cada 8 horas', hours: 8 },
   { label: 'Cada 12 horas', hours: 12 }, { label: 'Cada 24 horas', hours: 24 }, { label: 'Dosis única', hours: null },
 ]
+
+/** Las vías de la lista (ME17): las demás son texto libre. */
+const KNOWN_ROUTES = new Set(ROUTE_OPTIONS.map((r) => r.name))
 
 export const ROUTE_ABBR: Record<string, string> = {
   Intravenosa: 'IV', Intramuscular: 'IM', Subcutánea: 'SC', Oral: 'VO', Sublingual: 'SL', Inhalada: 'inhalada', Tópica: 'tópica', Rectal: 'rectal',
@@ -48,7 +55,8 @@ const dmyHm = (iso: string) => {
  *   «Ceftriaxona IM · 2 gr el 02/11/2026 14:00 y luego 1 gr c/12h».
  */
 export function medLabel(m: Labelable) {
-  const route = ROUTE_ABBR[m.route] ?? m.route.toLowerCase()
+  // ME17 (ronda 16): una vía escrita a mano sale tal cual («Intraósea»); las de la lista sin abreviatura corta, en minúscula
+  const route = ROUTE_ABBR[m.route] ?? (KNOWN_ROUTES.has(m.route) ? m.route.toLowerCase() : m.route)
   if (m.infusionRate) return `${[m.drug, m.dose, route].filter(Boolean).join(' ')} · Infusión a ${formatRate(m.infusionRate)} ${infusionUnitLabel(m.infusionUnit)}`
   const freq = m.everyHours ? `c/${m.everyHours}h` : m.prn ? '' : 'dosis única'
   // MC2 (ronda 6): «PRN · si dolor»
@@ -285,7 +293,10 @@ export function chainNote(file: Pick<InpatientFile, 'notes'>) {
 export function activeIndications(file: Pick<InpatientFile, 'notes' | 'meds' | 'hospitalization'> & Partial<Pick<InpatientFile, 'consultIndications'>>): { id: string; text: string }[] {
   if (file.hospitalization.status !== 'active') return []
   const last = chainNote(file)
+  // NO1 (ronda 16): «Ingreso a hospitalización / observación» es la primera orden de la consulta, pero ya se cumplió al ingresar:
+  // no baja como indicación activa a la primera nota (los identificadores conservan su posición)
   if (!last) return (file.consultIndications ?? []).map((text, i) => ({ id: `${file.hospitalization.consultationId ?? 'consulta'}:${i}`, text }))
+    .filter((x) => !(Object.values(ADMIT_ORDER) as string[]).includes(x.text))
   if (last.lines) return last.lines.filter((l) => l.kind === 'ind' && (l.tag === 'continue' || l.tag === 'new')).map((l) => ({ id: l.id, text: l.text }))
   return splitOrders(last, file).indications.filter((o) => !o.text.startsWith('OMITIR ')).map((o) => ({ id: `${last.id}:${o.index}`, text: o.text }))
 }

@@ -117,7 +117,7 @@ function HospRxSheet({ meds, extras = {}, doctor, number, patient: p, at, diagno
       legends={[SIGN_AND_STAMP_LEGEND, `Receta ${number}: medicamentos indicados en la estancia.`]}>
       <div className="rx-sheet__rx" aria-hidden="true">Rx</div>
       <ol className="rx-items">
-        {meds.map((m) => { const x = extras[m.id] ?? {}; const qty = x.quantity || m.buyQuantity; return (
+        {meds.map((m) => { const x = extras[m.id] ?? {}; const qty = x.quantity || m.buyQuantity || m.quantity; return (
           <li key={m.id}>
             <strong>{m.nebulization || m.loadingDose || m.infusionRate ? medLabel(m) : m.drug}</strong> {!m.nebulization && <span style={{ color: 'var(--muted)' }}>{m.presentation}</span>}
             {/* ME12 (ronda 11): «por 3 días» de esta receta (la orden sigue sin días) */}

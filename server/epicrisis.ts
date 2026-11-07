@@ -67,7 +67,8 @@ export async function buildEpicrisis(q: Sql, h: Row): Promise<EpicrisisData> {
     observationAt: h.observation_at ? String(h.observation_at) : undefined,
     admissionDx: j(h.diagnoses, []),
     // MC5: la HEA corregida en la nota de egreso manda
-    hea: d?.hea?.trim() || String(consult?.history ?? '').trim() || String(admission?.subjective ?? '').trim(),
+    // NO2 (ronda 16): la nota de ingreso estándar trae la historia de la enfermedad actual en sus datos
+    hea: d?.hea?.trim() || String(consult?.history ?? '').trim() || String(admission?.subjective ?? '').trim() || String(j<{ history?: string }>(admission?.data, {}).history ?? '').trim(),
     meds: [...grouped.values()].sort((a, b) => a.start.localeCompare(b.start)),
     procedures: [
       ...notes.filter((n) => n.kind === 'procedure').map((n) => { const x = j<{ name: string; performedAt: string }>(n.data, { name: '', performedAt: String(n.at) }); return { name: x.name, at: x.performedAt } }),

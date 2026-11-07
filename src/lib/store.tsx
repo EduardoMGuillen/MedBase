@@ -37,7 +37,7 @@ export interface Chart { vitals: Vitals[]; consultations: Consultation[]; prescr
 /** RF1 (ronda 8): de dónde sale la referencia: una estancia, una consulta firmada o una consulta en borrador (su cita). */
 export type ReferralFrom = { kind: 'stay' | 'consultation' | 'appointment'; id: string }
 const referralBase = (src: ReferralFrom) => `/${src.kind === 'stay' ? 'inpatient' : src.kind === 'appointment' ? 'appointments' : 'consultations'}/${src.id}`
-export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'prnCondition' | 'instructions' | 'days' | 'replacesId' | 'infusionRate' | 'infusionUnit' | 'loadingDose' | 'loadingStat' | 'nebulization' | 'buyOutside' | 'buyQuantity'> & { firstAt?: string }
+export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'prnCondition' | 'instructions' | 'days' | 'replacesId' | 'infusionRate' | 'infusionUnit' | 'loadingDose' | 'loadingStat' | 'nebulization' | 'buyOutside' | 'buyQuantity' | 'quantity'> & { firstAt?: string }
 export type FollowupInput = Pick<Followup, 'kind' | 'title' | 'dueDate' | 'everyDays' | 'notes' | 'reminderType'>
 
 export interface Report {
@@ -206,7 +206,7 @@ function useStoreValue() {
     /** Editar datos generales de la estancia: cama, acompañante y teléfonos. El ingreso en sí no se edita. */
     updateAdmission: (id: string, b: Partial<Pick<Hospitalization, 'bedId' | 'specialty' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'>>) =>
       run(() => api<Hospitalization>(`/inpatient/${id}`, { method: 'PATCH', body: b }), 'Datos generales guardados'),
-    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations' | 'evolution' | 'postop'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string; exams?: ExamInput[]; chain?: { basedOn: string | null; decisions: { id: string; action: 'omit' | 'change'; text?: string }[] }; vitals?: VitalsMode; vitalsTaken?: Partial<Record<string, number>> & { takenAt?: string } }) =>
+    addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations' | 'evolution' | 'postop' | 'chiefComplaint' | 'history'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string; exams?: ExamInput[]; chain?: { basedOn: string | null; decisions: { id: string; action: 'omit' | 'change'; text?: string }[] }; vitals?: VitalsMode; vitalsTaken?: Partial<Record<string, number>> & { takenAt?: string } }) =>
       run(() => api<InpatientNote & { examBatch?: string }>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : b.format === 'postop' ? 'Nota postquirúrgica guardada' : 'Nota de evolución guardada'),
     stopMed: (medId: string, reason: string) => run(() => api<InpatientMed>(`/inpatient/meds/${medId}/stop`, { body: { reason } }), 'Orden suspendida'),
     // ME1 (ronda 8): enfermería suspende la infusión en curso
