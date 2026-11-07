@@ -178,62 +178,7 @@ de Imágenes». Laboratorio sí abre `/app/pacientes-ambulatorios` por URL (tien
 en su menú porque ya tiene su bandeja Ambulatorio. Enfermería del consultorio: no hay usuario demo; se revisó con la regla
 (`sidebarFor`) en las pruebas, no en el navegador.
 
-## En pausa (7 de noviembre de 2026): lo que falta
+## En pausa (7 de noviembre de 2026), terminado el mismo día
 
-Pausado a pedido de Edu. Ya está en producción (`fe34eb8`):
-- UI1, UI2, UI3, IE2, OB1, LB9, NO4, CF1, PF1, AD1 y PF2;
-- IF1 (infusión continua en cualquier paciente);
-- los filtros de Personal y roles;
-- la Dra. Gálvez sin código de verificación.
-
-Lo que falta, cada cosa en su rama local; cada rama tiene su worktree en `.claude/worktrees/`:
-
-1. **`ronda17-pendientes`**: pendientes de rondas anteriores encontrados en la auditoría.
-   - Hechos y con commit:
-     - «Volver a los anexos» lleva a observación cuando corresponde;
-     - Archivos hasta 15 MB, y los PDF de resultados y adjuntos salen en el expediente completo;
-     - el teléfono se imprime sin «+504»;
-     - los mensajes dicen «consultorio» en las cuentas de consultorio;
-     - los exámenes externos no ofrecen «Muestra tomada»;
-     - «Agregar como no catalogado» y el aviso de quién recibe los exámenes;
-     - el fármaco de la hoja de anestesia se busca en el vademécum;
-     - los sets de órdenes guardan la velocidad de la infusión.
-   - A medias (commit WIP): los nombres de los médicos fijos al bajar en la Agenda.
-   - Falta: terminar la Agenda, correr las pruebas, el lint y el build, unir y desplegar.
-2. **`ronda17-estilo`**: un mismo diseño en toda la app. Hay cambios a medias en un commit WIP, sin revisar ni probar.
-   - Un solo estilo de menú desplegable (`.select` con flecha propia y `.select--sm`).
-   - Un solo estilo de menú emergente (`suggest`, `row-menu`, `role-menu`, `help-menu`, `src-pop`, `dtf__pop`, `set-picker`).
-   - Quitar los recuadros con barra de color a la izquierda y sombra («aspecto de IA»).
-   - `badge` para estados y `chip` para filtros.
-   - `PageHead` en las 32 cabeceras armadas a mano.
-   - `.linklike` y `.link-btn` en una sola clase, y la utilidad `.self-start`.
-   - Variables de diseño para colores y radios.
-   - Menos estilos sueltos (`style={{}}`).
-3. **`ronda17-tablet`**: sin commits todavía.
-   - Hospitalizados y Observación como una tabla sobria de camas, agrupada por cuarto, con un filtro segmentado y etiquetas de estado en vez de tarjetas.
-   - Modo tablet de 768 a 1180 px:
-     - la barra lateral se vuelve una franja de íconos que se abre encima;
-     - botones y campos de 44 px con dedo;
-     - dos columnas en horizontal.
-   - Revisión en móvil (390 y 360 px) de cada pantalla con cada perfil, y comprobación sin desplazamiento a lo ancho a 390, 768, 1024, 1366 y 1920 px.
-   - El CSS nuevo va en `src/boards.css` y `src/responsive.css`.
-4. Al terminar:
-   - correr todas las pruebas, archivo por archivo;
-   - lint y build;
-   - revisar en pantalla;
-   - escribir `REPORTE_RONDA17.md`;
-   - desplegar.
-
-**Para Emil** (van en el reporte):
-- **TU1 (ronda 6):** copiar semana, repetir turno para médicos y colores en el rol de turnos.
-- **MI1 y MI2 (ronda 6):** el texto nunca llegó.
-- **«Química sanguínea»:** qué lleva como perfil.
-- **Paciente ambulatorio:** si queda «pendiente de cobro» en Caja.
-- **Valoración preanestésica:** la tarjeta de pendientes en el Inicio.
-- **Contradicciones entre rondas:** el lugar del diagnóstico, la infusión sin ingreso, viñetas en la orden y números en la receta.
-- **Defaults de la ronda 17:**
-  - `checkin.manage` para todos los médicos de la clínica;
-  - Observación en solo lectura para administración y recepción;
-  - las bandejas de Laboratorio e Imágenes en solo lectura para administración;
-  - el checklist activado en todas las clínicas;
-  - la sección «Vademécum» en la configuración.
+Se retomó y se terminó: `ronda17-pendientes` (PE), `ronda17-estilo` (ES) y `ronda17-tablet` (TB) están unidas a `main`. El
+detalle, las pruebas y lo que Emil debe validar están en `REPORTE_RONDA17.md`.
