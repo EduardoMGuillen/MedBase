@@ -756,12 +756,17 @@ button.src-tag--none { cursor: pointer; }
 .ref-note__src { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 
 /* GE3 (ronda 9): campo propio de fecha y hora (dd/mm/aaaa HH:mm, 24 horas, sin AM/PM) */
+/* UI2 (ronda 17): el botón del calendario (o del reloj) va DENTRO del campo, a la derecha, en todas las pantallas. Antes era
+   un hermano del campo en una fila que se partía: según el ancho quedaba al lado, debajo o encima de lo que siguiera (en la
+   Agenda, sobre la barra de desplazamiento de arriba). Ahora campo y botón van juntos en `.dtf__box`; «Ahora» y el aviso
+   siguen fuera, en la misma fila si cabe. */
 .dtf { position: relative; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; max-width: 100%; }
-.dtf__input { flex: 1 1 9rem; min-width: 0; }
-.dtf--date .dtf__input { flex-basis: 7.5rem; }
-.dtf--time .dtf__input { flex: 0 1 5.5rem; }
-.dtf__btn { flex: none; min-width: 44px; min-height: 44px; }
-.dtf__now { min-height: 44px; }
+.dtf__box { position: relative; display: block; flex: 1 1 11rem; min-width: 0; }
+.dtf--date .dtf__box { flex-basis: 9.5rem; }
+.dtf--time .dtf__box { flex: 0 1 7.5rem; }
+.dtf__box .dtf__input { width: 100%; min-width: 0; padding-right: 42px; }
+.dtf__box .dtf__btn { position: absolute; top: 0; right: 0; bottom: 0; width: 42px; height: auto; min-height: 0; border-radius: 0 var(--r-md) var(--r-md) 0; }
+.dtf__now { min-height: 42px; }
 .dtf__msg { flex-basis: 100%; }
 .dtf__pop { position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; width: min(300px, 88vw); display: grid; gap: 10px; padding: 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,.16); }
 .dtf__pop--time { width: auto; }
@@ -1366,10 +1371,7 @@ li.is-void .usage-records__void { text-decoration: none; }
 .mat-form .modal__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
 .mat-form .modal__foot { flex: none; padding: 0; border-top: 1px solid var(--line); display: block; }
 .mat-form__head { max-width: 560px; }
-/* El icono del calendario dentro del campo de fecha */
-.mat-form .dtf--inset { flex-wrap: nowrap; }
-.mat-form .dtf--inset .dtf__input { padding-right: 46px; }
-.mat-form .dtf--inset .dtf__btn { position: absolute; right: 2px; top: 0; }
+/* UI2 (ronda 17): el icono del calendario dentro del campo ya es general (ver `.dtf__box`) */
 .mat-form__cols { display: grid; gap: 20px; align-items: start; }
 .mat-col { display: grid; gap: 10px; min-width: 0; align-content: start; }
 .mat-col__title { font-size: 15px; margin: 0; color: var(--petrol); }

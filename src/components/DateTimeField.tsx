@@ -11,6 +11,8 @@ import {
  * forzar a 24 horas: por eso la ronda 8 no lo resolvió del todo (quedaban campos nativos en otras pantallas). Se escribe con
  * números (las barras y los dos puntos se ponen solos) o se elige en el calendario en español, con la hora en dos listas
  * 00–23 y 00–59 y el botón «Ahora». Hora de Honduras (America/Tegucigalpa). Objetivos táctiles de 44 px.
+ * UI2 (ronda 17): el campo y su botón de calendario (o reloj) van juntos en `.dtf__box`: el botón queda dentro del campo, a la
+ * derecha, en todas las pantallas; «Ahora» y el aviso de error quedan fuera.
  */
 const pad = (n: number) => String(n).padStart(2, '0')
 const HOURS = Array.from({ length: 24 }, (_, i) => pad(i))
@@ -131,16 +133,18 @@ export function DateTimeField({ value, onChange, max, min, invalid, id, label = 
   const set = (v: string) => { setSeen(v); setText(toDisplay(v)); onChange(v) }
   return (
     <span className="dtf" ref={pop.ref}>
-      <input id={id} className={`input num dtf__input${bad ? ' input--error' : ''}`} inputMode="numeric" autoComplete="off" placeholder="dd/mm/aaaa HH:mm" aria-label={label}
-        aria-invalid={bad || undefined} value={text}
-        onChange={(e) => {
-          const t = maskDateTime(e.target.value)
-          setText(t)
-          const v = fromDisplay(t)
-          if (v && (!max || v <= max) && (!min || v >= min)) { setSeen(v); onChange(v) }
-        }}
-        onBlur={() => { if (!fromDisplay(text)) setText(toDisplay(value)) }} />
-      <button type="button" className="icon-btn dtf__btn" aria-label={`Elegir ${label.toLowerCase()}`} aria-expanded={pop.open} onClick={() => pop.setOpen(!pop.open)}><CalendarDays size={17} /></button>
+      <span className="dtf__box">
+        <input id={id} className={`input num dtf__input${bad ? ' input--error' : ''}`} inputMode="numeric" autoComplete="off" placeholder="dd/mm/aaaa HH:mm" aria-label={label}
+          aria-invalid={bad || undefined} value={text}
+          onChange={(e) => {
+            const t = maskDateTime(e.target.value)
+            setText(t)
+            const v = fromDisplay(t)
+            if (v && (!max || v <= max) && (!min || v >= min)) { setSeen(v); onChange(v) }
+          }}
+          onBlur={() => { if (!fromDisplay(text)) setText(toDisplay(value)) }} />
+        <button type="button" className="icon-btn dtf__btn" aria-label={`Elegir ${label.toLowerCase()}`} aria-expanded={pop.open} onClick={() => pop.setOpen(!pop.open)}><CalendarDays size={17} /></button>
+      </span>
       {now && <button type="button" className="btn btn--ghost btn--sm dtf__now" onClick={() => set(toLocalValue(new Date()))}>Ahora</button>}
       {text.length >= 16 && !parsed && <small className="field__msg field__msg--error dtf__msg">No es una fecha y hora válida.</small>}
       {pop.open && (
@@ -171,17 +175,19 @@ export function DateField({ value, onChange, max, min, invalid, id, label = 'Fec
   const set = (v: string) => { setSeen(v); setText(dateToDisplay(v)); onChange(v) }
   return (
     <span className={`dtf dtf--date${className ? ` ${className}` : ''}`} ref={pop.ref}>
-      <input id={id} className={`input num dtf__input${bad ? ' input--error' : ''}`} inputMode="numeric" autoComplete="off" placeholder="dd/mm/aaaa" aria-label={label}
-        aria-invalid={bad || undefined} aria-required={required || undefined} value={text}
-        onChange={(e) => {
-          const t = maskDate(e.target.value)
-          setText(t)
-          const v = dateFromDisplay(t)
-          if (v && (!max || v <= max) && (!min || v >= min)) { setSeen(v); onChange(v) }
-          if (!t && !required) { setSeen(''); onChange('') }
-        }}
-        onBlur={() => { if (text && !dateFromDisplay(text)) setText(dateToDisplay(value)) }} />
-      <button type="button" className="icon-btn dtf__btn" aria-label={`Elegir ${label.toLowerCase()}`} aria-expanded={pop.open} onClick={() => pop.setOpen(!pop.open)}><CalendarDays size={17} /></button>
+      <span className="dtf__box">
+        <input id={id} className={`input num dtf__input${bad ? ' input--error' : ''}`} inputMode="numeric" autoComplete="off" placeholder="dd/mm/aaaa" aria-label={label}
+          aria-invalid={bad || undefined} aria-required={required || undefined} value={text}
+          onChange={(e) => {
+            const t = maskDate(e.target.value)
+            setText(t)
+            const v = dateFromDisplay(t)
+            if (v && (!max || v <= max) && (!min || v >= min)) { setSeen(v); onChange(v) }
+            if (!t && !required) { setSeen(''); onChange('') }
+          }}
+          onBlur={() => { if (text && !dateFromDisplay(text)) setText(dateToDisplay(value)) }} />
+        <button type="button" className="icon-btn dtf__btn" aria-label={`Elegir ${label.toLowerCase()}`} aria-expanded={pop.open} onClick={() => pop.setOpen(!pop.open)}><CalendarDays size={17} /></button>
+      </span>
       {text.length >= 10 && !parsed && <small className="field__msg field__msg--error dtf__msg">No es una fecha válida.</small>}
       {pop.open && (
         <Popover anchor={pop.ref} popRef={pop.popRef} className="" label={label}>
@@ -207,10 +213,12 @@ export function TimeField({ value, onChange, invalid, id, label = 'Hora', step }
   void step
   return (
     <span className="dtf dtf--time" ref={pop.ref}>
-      <input id={id} className={`input num dtf__input${bad ? ' input--error' : ''}`} inputMode="numeric" autoComplete="off" placeholder="HH:mm" aria-label={label} aria-invalid={bad || undefined} value={text}
-        onChange={(e) => { const t = maskTime(e.target.value); setText(t); const v = timeFromDisplay(t); if (v) { setSeen(v); onChange(v) } }}
-        onBlur={() => { if (!timeFromDisplay(text)) setText(value) }} />
-      <button type="button" className="icon-btn dtf__btn" aria-label={`Elegir ${label.toLowerCase()}`} aria-expanded={pop.open} onClick={() => pop.setOpen(!pop.open)}><Clock size={17} /></button>
+      <span className="dtf__box">
+        <input id={id} className={`input num dtf__input${bad ? ' input--error' : ''}`} inputMode="numeric" autoComplete="off" placeholder="HH:mm" aria-label={label} aria-invalid={bad || undefined} value={text}
+          onChange={(e) => { const t = maskTime(e.target.value); setText(t); const v = timeFromDisplay(t); if (v) { setSeen(v); onChange(v) } }}
+          onBlur={() => { if (!timeFromDisplay(text)) setText(value) }} />
+        <button type="button" className="icon-btn dtf__btn" aria-label={`Elegir ${label.toLowerCase()}`} aria-expanded={pop.open} onClick={() => pop.setOpen(!pop.open)}><Clock size={17} /></button>
+      </span>
       {pop.open && (
         <Popover anchor={pop.ref} popRef={pop.popRef} className="dtf__pop--time" label={label}>
           <TimePicker value={value} onPick={set} />

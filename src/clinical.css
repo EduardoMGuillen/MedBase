@@ -105,7 +105,9 @@
 .cal-bar__nav { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .cal-bar__title { font-size: 19px; margin-left: 6px; white-space: nowrap; }
 .cal-bar__tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.cal-bar__date { width: 160px; height: 36px; }
+.cal-bar__date { width: 170px; }
+/* UI2 (ronda 17): el alto va en el campo, no en el contenedor (con alto fijo el botón se salía y quedaba sobre la barra de arriba) */
+.cal-bar__date .dtf__input { height: 36px; }
 .cal-bar__doc { width: auto; height: 36px; max-width: 230px; }
 .cal__inner--week { min-width: 900px; }
 .cal__head--day { flex-direction: column; gap: 0; border: 0; border-left: 1px solid var(--line-soft); background: transparent; cursor: pointer; padding: 8px 4px; }
