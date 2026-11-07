@@ -137,7 +137,9 @@ export default function App() {
             <Route path="recibos/:id" element={<Guard perm="billing.manage"><ReceiptSheet /></Guard>} />
             <Route path="reportes" element={<Guard perm="reports.view"><Reports /></Guard>} />
             <Route path="personal" element={<Guard perm="staff.manage"><StaffPage /></Guard>} />
+            {/* CF1 (ronda 17): una URL por sección; /app/configuracion abre la primera */}
             <Route path="configuracion" element={<Guard perm="settings.manage"><Settings /></Guard>} />
+            <Route path="configuracion/:seccion" element={<Guard perm="settings.manage"><Settings /></Guard>} />
             {/* RU1 (ronda 14): el catálogo de material y la lista de turno, para quien no entra a Configuración (Enfermería) */}
             <Route path="material-medico-quirurgico" element={<Guard perm="supplies.view"><SupplyCatalogPage /></Guard>} />
             {/* RU2 (ronda 14): registro de uso de medicamentos y material (Enfermería, Recepción y Administración) */}

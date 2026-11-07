@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CalendarClock, Compass, FlaskConical, History, ListChecks, LogOut, PenLine, Pill, Plus, Settings2, ShieldCheck, Star, UserRound } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -19,20 +19,23 @@ import { MyExams } from './MyExams'
 
 type Section = 'pro' | 'datos' | 'firma' | 'horario' | 'vademecum' | 'sets' | 'examenes' | 'prefs' | 'seguridad' | 'actividad'
 
-/** Apartados y quién los ve (sin `roles`, todos). */
-const SECTIONS: { key: Section; label: string; icon: typeof Pill; roles?: Role[] }[] = [
-  { key: 'pro', label: 'Datos profesionales', icon: UserRound, roles: ['doctor'] },
+/**
+ * Apartados y quién los ve (sin `roles`, todos). CF1 (ronda 17): ordenados en tres grupos: quién eres en los documentos,
+ * lo que preparas para atender (horario y preferencias primero, luego tus listas) y tu cuenta.
+ */
+const SECTIONS: { key: Section; label: string; icon: typeof Pill; group: string; roles?: Role[] }[] = [
+  { key: 'pro', label: 'Datos profesionales', icon: UserRound, group: 'Mis datos', roles: ['doctor'] },
   // RE1 (ronda 5): recepción tiene sus datos personales (sin especialidad, colegiación ni sello)
-  { key: 'datos', label: 'Datos personales', icon: UserRound, roles: ['reception'] },
-  { key: 'firma', label: 'Firma electrónica', icon: PenLine, roles: ['doctor'] },
-  { key: 'horario', label: 'Mi horario', icon: CalendarClock, roles: ['doctor'] },
-  { key: 'vademecum', label: 'Mi vademécum', icon: Pill, roles: ['doctor'] },
-  { key: 'sets', label: 'Mis sets de órdenes', icon: ListChecks, roles: ['doctor'] },
+  { key: 'datos', label: 'Datos personales', icon: UserRound, group: 'Mis datos', roles: ['reception'] },
+  { key: 'firma', label: 'Firma electrónica', icon: PenLine, group: 'Mis datos', roles: ['doctor'] },
+  { key: 'horario', label: 'Mi horario', icon: CalendarClock, group: 'Para atender', roles: ['doctor'] },
+  { key: 'prefs', label: 'Preferencias', icon: Settings2, group: 'Para atender', roles: ['doctor', 'reception'] },
+  { key: 'vademecum', label: 'Mi vademécum', icon: Pill, group: 'Para atender', roles: ['doctor'] },
+  { key: 'sets', label: 'Mis sets de órdenes', icon: ListChecks, group: 'Para atender', roles: ['doctor'] },
   // MC2 (ronda 5): sets de exámenes del médico (reemplazan a «Mis exámenes frecuentes»)
-  { key: 'examenes', label: 'Mis sets de exámenes', icon: FlaskConical, roles: ['doctor'] },
-  { key: 'prefs', label: 'Preferencias', icon: Settings2, roles: ['doctor', 'reception'] },
-  { key: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
-  { key: 'actividad', label: 'Mi actividad', icon: History },
+  { key: 'examenes', label: 'Mis sets de exámenes', icon: FlaskConical, group: 'Para atender', roles: ['doctor'] },
+  { key: 'seguridad', label: 'Seguridad', icon: ShieldCheck, group: 'Mi cuenta' },
+  { key: 'actividad', label: 'Mi actividad', icon: History, group: 'Mi cuenta' },
 ]
 
 /**
@@ -47,6 +50,7 @@ export default function MyConfig() {
   const doctor = user.role === 'doctor'
   const mine = doctor || user.role === 'reception'
   const sections = SECTIONS.filter((s) => !s.roles || s.roles.includes(user.role))
+  const groups = new Set(sections.map((s) => s.group)).size
   const current = sections.find((s) => s.key === params.get('seccion'))?.key ?? sections[0].key
   const go = (k: Section) => setParams({ seccion: k }, { replace: true })
   return (
@@ -64,11 +68,12 @@ export default function MyConfig() {
       </div>
       <div className="myconf">
         <nav className="myconf__nav" aria-label="Apartados">
-          {sections.map((s) => (
-            <button key={s.key} type="button" className={`myconf__tab${current === s.key ? ' is-on' : ''}`} aria-current={current === s.key ? 'page' : undefined} onClick={() => go(s.key)}>
+          {sections.map((s, i) => (<Fragment key={s.key}>
+            {groups > 1 && s.group !== sections[i - 1]?.group && <span className="myconf__group">{s.group}</span>}
+            <button type="button" className={`myconf__tab${current === s.key ? ' is-on' : ''}`} aria-current={current === s.key ? 'page' : undefined} onClick={() => go(s.key)}>
               <s.icon size={16} />{s.label}
             </button>
-          ))}
+          </Fragment>))}
         </nav>
         <div className="myconf__body">
           {current === 'pro' && <ProfessionalPanel />}

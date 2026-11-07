@@ -258,6 +258,8 @@ tr.clickable { cursor: pointer; }
 .myconf__tab:hover { background: var(--paper); color: var(--petrol); }
 .myconf__tab.is-on { background: var(--ink-soft); color: var(--ink-deep); }
 .myconf__body { display: grid; gap: 16px; min-width: 0; }
+.myconf__group { padding: 12px 12px 4px; color: var(--faint); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.myconf__group:first-child { padding-top: 0; }
 .mark-box { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; background: #fbfcfc; min-height: 72px; }
 .mark-box img { max-height: 90px; max-width: 260px; object-fit: contain; }
 .mark-box--sig img { max-height: 120px; max-width: 100%; }
@@ -274,6 +276,32 @@ tr.clickable { cursor: pointer; }
   .myconf { grid-template-columns: 1fr; }
   .myconf__nav { position: static; grid-auto-flow: column; overflow-x: auto; scrollbar-width: none; }
   .myconf__tab { white-space: nowrap; }
+  .myconf__group { display: none; }
+}
+
+/* CF1 (ronda 17): Configuración de la clínica por secciones (mismo índice que Mi configuración) */
+.cfg .myconf__tab { text-decoration: none; }
+.cfg__head h2 { font-size: 20px; margin: 0; }
+.cfg__head p { color: var(--muted); margin: 4px 0 0; font-size: 14px; max-width: 760px; }
+.cfg .form-grid > .field { align-content: start; }
+.cfg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; align-items: start; }
+.cfg-reminder { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.cfg-savebar { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 16px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 -6px 18px rgba(20, 30, 60, .06); }
+.cfg-savebar__msg { margin-right: auto; color: var(--muted); font-size: 14px; }
+.cfg-savebar__msg.is-dirty { color: var(--ink-deep); font-weight: 600; }
+/* El horario cabe junto a la lista de médicos aunque el índice le quite ancho: con poco espacio, cada día se apila */
+.cfg .sched-pick { grid-template-columns: 240px minmax(0, 1fr); }
+.cfg .sched { container-type: inline-size; }
+@container (max-width: 620px) {
+  .cfg .sched__day { grid-template-columns: 1fr; padding: 12px; }
+  .cfg .sched__ranges { min-width: 0; }
+}
+@media (max-width: 1100px) { .cfg .sched-pick { grid-template-columns: minmax(0, 1fr); } .cfg .sched-pick__list { position: static; } .cfg .sched-pick__list ul { max-height: 220px; } }
+@media (max-width: 860px) {
+  .cfg-reminder { grid-template-columns: 1fr; }
+  .cfg-savebar { padding: 10px 12px; }
+  .cfg-savebar__msg { font-size: 13px; }
 }
 
 /* AD1: teléfonos de la clínica */

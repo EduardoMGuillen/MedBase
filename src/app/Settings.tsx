@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
-import { Download, Plus, Upload } from 'lucide-react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { BedDouble, Building2, CalendarClock, Download, FlaskConical, Package, Pill, Plus, Receipt, Upload } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead, SectionHead } from '../components/ui'
 import { DrugForm } from '../components/DrugForm'
@@ -15,44 +16,169 @@ import type { Bed, ClinicDrug, ClinicSettings, PaymentMethod, Service, Staff } f
 import { ScheduleEditor } from './ScheduleEditor'
 import { Roster } from './Roster'
 import { features, hasRole } from '../lib/permissions'
-import { TabRow } from '../components/TabRow'
 import { SupplyCatalog } from './SupplyCatalog'
 
-type Tab = 'clinic' | 'services' | 'payments' | 'areas' | 'exams' | 'schedules' | 'roster' | 'beds' | 'drugs' | 'supplies'
+/**
+ * CF1 (ronda 17): «Configuración de la clínica» (en el consultorio, «Configuración del consultorio») por secciones, cada una
+ * con su URL (`/app/configuracion/<sección>`): un índice a la izquierda en pantallas anchas y una fila desplazable en el
+ * teléfono, como en «Configuración» de cada persona. `/app/configuracion` abre la primera. «Guardar cambios» guarda lo que
+ * se cambió en la sección que se ve; al cambiar de sección con algo sin guardar, se pregunta.
+ */
+export type SettingsSection = 'datos' | 'agenda' | 'cobros' | 'observacion' | 'examenes' | 'vademecum' | 'material'
+
+type Features = ReturnType<typeof features>
+interface SectionDef { key: SettingsSection; label: (f: Features) => string; icon: typeof Pill; sub: (f: Features) => string; save?: boolean }
+
+const SECTIONS: SectionDef[] = [
+  { key: 'datos', label: (f) => (f.office ? 'Datos del consultorio' : 'Datos de la clínica'), icon: Building2, save: true,
+    sub: (f) => `Nombre, dirección, contactos, correo, moneda, documento de identidad y logo: lo que sale en recetas, constancias y recibos${f.office ? ', con tu especialidad y colegiación' : ''}.` },
+  { key: 'agenda', label: () => 'Agenda y recordatorios', icon: CalendarClock, save: true,
+    sub: (f) => (f.office ? 'Tu horario de atención y el mensaje de recordatorio por WhatsApp.' : 'El horario de cada médico, el rol de turnos y el mensaje de recordatorio por WhatsApp.') },
+  { key: 'cobros', label: () => 'Cobros', icon: Receipt, save: true, sub: () => 'Los servicios que se cobran en caja, con su precio, y las formas de pago que se aceptan.' },
+  { key: 'observacion', label: (f) => (f.hospital ? 'Hospitalización y observación' : 'Observación'), icon: BedDouble, save: true,
+    sub: (f) => (f.hospital ? 'Cuándo resaltar a quien lleva mucho en observación, cómo revisa enfermería las órdenes, la curva térmica y las camas.' : 'Si usas observación, cuándo resaltar a quien lleva mucho tiempo y la curva térmica.') },
+  { key: 'examenes', label: () => 'Exámenes', icon: FlaskConical, save: true, sub: (f) => `Quién realiza los exámenes en ${f.office ? 'el consultorio' : 'la clínica'}, el catálogo de exámenes y los perfiles de laboratorio.` },
+  { key: 'vademecum', label: () => 'Vademécum', icon: Pill, sub: () => 'Los medicamentos que se ofrecen al recetar y en la hoja de medicamentos.' },
+  { key: 'material', label: () => 'Material médico quirúrgico', icon: Package, sub: () => 'El catálogo de material, los sets y el periodo de registro.' },
+]
 
 export default function Settings() {
-  const [tab, setTab] = useState<Tab>('clinic')
+  const { seccion } = useParams()
   const { settings } = useStore()
   const f = features(settings)
+  const section = SECTIONS.find((s) => s.key === seccion)
+  // La URL vieja (/app/configuracion) y una sección que no existe abren la primera
+  if (!section) return <Navigate to="/app/configuracion/datos" replace />
   return (
     <div className="page">
-      <PageHead title="Configuración" sub={f.office ? 'Datos que aparecen en tus recetas y recibos, precios, tu horario y lo que usa tu consultorio.' : 'Datos que aparecen en recetas y recibos, precios, horarios de atención y camas.'} />
-      <TabRow className="tabs--sticky">
-        <button className="tab" role="tab" data-tour="tab:clinica" aria-selected={tab === 'clinic'} onClick={() => setTab('clinic')}>{f.office ? 'Consultorio' : 'Clínica'}</button>
-        <button className="tab" role="tab" data-tour="tab:servicios" aria-selected={tab === 'services'} onClick={() => setTab('services')}>Servicios y precios</button>
-        <button className="tab" role="tab" data-tour="tab:pagos" aria-selected={tab === 'payments'} onClick={() => setTab('payments')}>Formas de pago</button>
-        <button className="tab" role="tab" data-tour="tab:areas" aria-selected={tab === 'areas'} onClick={() => setTab('areas')}>Áreas de servicio</button>
-        {/* AD4 (ronda 5): la batería de exámenes de la clínica */}
-        <button className="tab" role="tab" data-tour="tab:examenes" aria-selected={tab === 'exams'} onClick={() => setTab('exams')}>Catálogo de exámenes</button>
-        <button className="tab" role="tab" data-tour="tab:horarios" aria-selected={tab === 'schedules'} onClick={() => setTab('schedules')}>{f.office ? 'Mi horario' : 'Horarios de médicos'}</button>
-        {/* AD3 (ronda 5): qué médico trabaja cada día; un consultorio tiene un solo médico */}
-        {!f.office && <button className="tab" role="tab" data-tour="tab:turnos" aria-selected={tab === 'roster'} onClick={() => setTab('roster')}>Rol de turnos</button>}
-        {f.hospital && <button className="tab" role="tab" data-tour="tab:camas" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}>Camas</button>}
-        <button className="tab" role="tab" data-tour="tab:vademecum" aria-selected={tab === 'drugs'} onClick={() => setTab('drugs')}>Vademécum</button>
-        {/* RU1 (ronda 14): catálogo de material médico quirúrgico, lista de turno y periodo de registro */}
-        <button className="tab" role="tab" data-tour="tab:material" aria-selected={tab === 'supplies'} onClick={() => setTab('supplies')}>Material médico quirúrgico</button>
-      </TabRow>
-      {tab === 'clinic' && <ClinicForm />}
-      {tab === 'services' && <Services />}
-      {tab === 'payments' && <PaymentMethods />}
-      {tab === 'areas' && <ServiceAreas />}
-      {tab === 'exams' && <><ExamCatalogAdmin /><LabProfilesAdmin /></>}
-      {tab === 'schedules' && <Schedules />}
-      {tab === 'roster' && !f.office && <Roster />}
-      {tab === 'beds' && f.hospital && <Beds />}
-      {tab === 'drugs' && <ClinicDrugs />}
-      {tab === 'supplies' && <SupplyCatalog />}
+      <PageHead title={f.office ? 'Configuración del consultorio' : 'Configuración de la clínica'}
+        sub={f.office ? 'Lo que aparece en tus recetas y recibos, tus precios, tu horario y lo que usa tu consultorio.' : 'Lo que aparece en recetas y recibos, precios, horarios, camas, exámenes y material de la clínica.'} />
+      <SectionForms key={section.key} section={section} f={f} />
     </div>
+  )
+}
+
+/** Un bloque de la sección con algo por guardar: campos de la configuración (`patch`) o su propio guardado (`save`). */
+interface Block { dirty: boolean; patch?: Partial<ClinicSettings>; save?: () => Promise<boolean>; reset: () => void }
+const SectionCtx = createContext<((id: string, b: Block | null) => void) | null>(null)
+
+/** Registra un bloque en la sección (en cada render, para que la sección tenga siempre sus valores al guardar). */
+function useSectionBlock(id: string, b: Block) {
+  const register = useContext(SectionCtx)
+  useEffect(() => { register?.(id, b) })
+  useEffect(() => () => register?.(id, null), [id, register])
+}
+
+/**
+ * Campos de la configuración de la clínica que se editan en un bloque. Lo cambiado queda como borrador encima de lo
+ * guardado; «Guardar cambios» manda los borradores de la sección juntos (un solo PUT con la configuración completa) y
+ * luego los limpia.
+ */
+function useSettingsDraft(id: string) {
+  const { settings } = useStore()
+  const [draft, setDraft] = useState<Partial<ClinicSettings>>({})
+  const v: ClinicSettings = { ...settings, ...draft }
+  const patch = Object.fromEntries(Object.entries(draft).filter(([k, x]) => JSON.stringify(x) !== JSON.stringify(settings[k as keyof ClinicSettings]))) as Partial<ClinicSettings>
+  const dirty = Object.keys(patch).length > 0
+  useSectionBlock(id, { dirty, patch, reset: () => setDraft({}) })
+  const set = <K extends keyof ClinicSettings>(k: K, x: ClinicSettings[K]) => setDraft((d) => ({ ...d, [k]: x }))
+  const setMany = (p: Partial<ClinicSettings>) => setDraft((d) => ({ ...d, ...p }))
+  return { v, set, setMany }
+}
+
+function SectionForms({ section, f }: { section: SectionDef; f: Features }) {
+  const { settings, saveSettings } = useStore()
+  const navigate = useNavigate()
+  const blocks = useRef(new Map<string, Block>())
+  const [dirtyIds, setDirtyIds] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const [asking, setAsking] = useState<SettingsSection | null>(null)
+  const register = useCallback((id: string, b: Block | null) => {
+    if (b) blocks.current.set(id, b); else blocks.current.delete(id)
+    const ids = [...blocks.current].filter(([, x]) => x.dirty).map(([k]) => k).sort()
+    setDirtyIds((prev) => (prev.join('|') === ids.join('|') ? prev : ids))
+  }, [])
+  const dirty = dirtyIds.length > 0
+  // Al cerrar o recargar la pestaña con cambios sin guardar, el navegador pregunta
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault() }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+  const saveAll = async () => {
+    const list = [...blocks.current.values()].filter((b) => b.dirty)
+    const patch = Object.assign({}, ...list.map((b) => b.patch ?? {})) as Partial<ClinicSettings>
+    setBusy(true)
+    let ok = true
+    if (Object.keys(patch).length) {
+      const merged = { ...settings, ...patch }
+      ok = !!(await saveSettings({ ...merged, logo: merged.logo ?? '' }))
+      if (ok) for (const b of list) if (b.patch) b.reset()
+    }
+    for (const b of list) if (ok && b.save) ok = await b.save()
+    setBusy(false)
+    return ok
+  }
+  const discard = () => { for (const b of blocks.current.values()) if (b.dirty) b.reset() }
+  const go = (k: SettingsSection) => navigate(`/app/configuracion/${k}`)
+  // En el teléfono el índice es una fila que se desplaza a lo ancho: la sección abierta queda a la vista
+  const nav = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const el = nav.current
+    const on = el?.querySelector<HTMLElement>('.is-on')
+    if (el && on && el.scrollWidth > el.clientWidth) el.scrollLeft = on.offsetLeft - el.offsetLeft - 16
+  }, [])
+  return (
+    <SectionCtx.Provider value={register}>
+      <div className="myconf cfg">
+        <nav ref={nav} className="myconf__nav" aria-label="Secciones de la configuración">
+          {SECTIONS.map((s) => (
+            <Link key={s.key} to={`/app/configuracion/${s.key}`} className={`myconf__tab${s.key === section.key ? ' is-on' : ''}`} data-tour={`cfg:${s.key}`}
+              aria-current={s.key === section.key ? 'page' : undefined}
+              onClick={(e) => { if (s.key === section.key) e.preventDefault(); else if (dirty) { e.preventDefault(); setAsking(s.key) } }}>
+              <s.icon size={16} />{s.label(f)}
+            </Link>
+          ))}
+        </nav>
+        <div className="myconf__body">
+          <div className="cfg__head"><h2>{section.label(f)}</h2><p>{section.sub(f)}</p></div>
+          {section.key === 'datos' && <ClinicDataForm />}
+          {section.key === 'agenda' && <><Schedules />{!f.office && <Roster />}<ReminderForm /></>}
+          {section.key === 'cobros' && <><Services /><PaymentMethods /></>}
+          {section.key === 'observacion' && <><ObservationForm />{f.hospital && <Beds />}</>}
+          {section.key === 'examenes' && <><ServiceAreas /><ExamCatalogAdmin /><LabProfilesAdmin /></>}
+          {section.key === 'vademecum' && <ClinicDrugs />}
+          {section.key === 'material' && <SupplyCatalog />}
+          {section.save && (
+            <div className="cfg-savebar" role="region" aria-label="Guardar la sección">
+              <span className={`cfg-savebar__msg${dirty ? ' is-dirty' : ''}`}>{dirty ? 'Hay cambios sin guardar en esta sección.' : 'Todo guardado.'}</span>
+              {dirty && <button className="btn btn--ghost" disabled={busy} onClick={discard}>Descartar</button>}
+              <button className="btn btn--primary" disabled={!dirty || busy} onClick={() => void saveAll()}>{busy ? 'Guardando…' : 'Guardar cambios'}</button>
+            </div>
+          )}
+        </div>
+      </div>
+      {asking && (
+        <Modal title="Hay cambios sin guardar" onClose={() => setAsking(null)} footer={<>
+          <button className="btn btn--ghost" onClick={() => setAsking(null)}>Seguir aquí</button>
+          <button className="btn btn--soft" onClick={() => { discard(); go(asking); setAsking(null) }}>Descartar y cambiar</button>
+          <button className="btn btn--primary" disabled={busy} onClick={async () => { if (await saveAll()) { go(asking); setAsking(null) } }}>Guardar y cambiar</button>
+        </>}>
+          <p>Cambiaste algo en «{section.label(f)}» y no lo guardaste. ¿Lo guardas antes de ir a «{SECTIONS.find((s) => s.key === asking)!.label(f)}»?</p>
+        </Modal>
+      )}
+    </SectionCtx.Provider>
+  )
+}
+
+/** Un panel con su título, para las secciones que juntan varios. */
+function Panel({ title, sub, children, tour }: { title: string; sub?: ReactNode; children: ReactNode; tour?: string }) {
+  return (
+    <section className="panel" data-tour={tour}>
+      <div className="panel__head"><div><h2>{title}</h2>{sub && <p>{sub}</p>}</div></div>
+      {children}
+    </section>
   )
 }
 
@@ -185,7 +311,7 @@ function Beds() {
   const stayIn = (id: string) => bedStays.find((h) => h.bedId === id)
   const counts = { free: sorted.filter((b) => b.active && !stayIn(b.id)).length, busy: sorted.filter((b) => stayIn(b.id)).length, off: sorted.filter((b) => !b.active).length }
   return (
-    <section className="panel table-wrap">
+    <section className="panel table-wrap" data-tour="tab:camas">
       <SectionHead title="Camas" sub={`${counts.free} libres · ${counts.busy} ocupadas${counts.off ? ` · ${counts.off} fuera de servicio` : ''}. Se ocupan al ingresar a un paciente y se liberan al darle de alta o trasladarlo.`}
         action={<button className="btn btn--primary btn--sm" onClick={() => setAdding(true)}><Plus size={15} />Agregar cama</button>} />
       <table className="table table--sticky table--cards">
@@ -259,30 +385,34 @@ function shrinkLogo(file: File) {
   })
 }
 
-function ClinicForm() {
-  const { settings, saveSettings } = useStore()
-  const [f, setF] = useState<ClinicSettings>(settings)
-  const [busy, setBusy] = useState(false)
+/** CF1: Datos de la clínica (o del consultorio): lo que sale en recetas, constancias y recibos. */
+function ClinicDataForm() {
+  const { settings } = useStore()
+  const { v: f, set, setMany } = useSettingsDraft('datos')
   const [converting, setConverting] = useState(false)
   const office = features(settings).office
-  const set = <K extends keyof ClinicSettings>(k: K, v: ClinicSettings[K]) => setF({ ...f, [k]: v })
-  const preview = fillTemplate(f.reminderTemplate, {
-    paciente: 'María José', clinica: f.name, medico: 'Dra. Valeria Solórzano', fecha: 'martes 20 de octubre', hora: '09:30', telefono: clinicWhatsapp(f),
-  })
-  const dirty = JSON.stringify(f) !== JSON.stringify(settings)
   return (
-    <div className="grid-2">
+    <div className="cfg-grid">
       <section className="panel">
-        <div className="panel__head"><h2>{office ? 'Datos del consultorio' : 'Datos de la clínica'}</h2></div>
+        <div className="panel__head"><h2>Nombre y contactos</h2></div>
         <div className="panel__body form-grid">
           <label className="field span-2"><span>Nombre</span><input className="input" value={f.name} onChange={(e) => set('name', e.target.value)} /></label>
           <label className="field span-2"><span>Dirección</span><input className="input" value={f.address} onChange={(e) => set('address', e.target.value)} /></label>
           <div className="field span-2"><span>Teléfonos y WhatsApp</span>
-            <ContactsEditor value={f.contacts ?? []} onChange={(contacts) => setF({ ...f, contacts, phone: contacts.find((c) => c.primary)?.number ?? '' })} />
+            <ContactsEditor value={f.contacts ?? []} onChange={(contacts) => setMany({ contacts, phone: contacts.find((c) => c.primary)?.number ?? '' })} />
             <label className="check-line"><input type="checkbox" checked={!!f.docsWhatsapp} onChange={(e) => set('docsWhatsapp', e.target.checked)} />
               <span><b>Poner también el WhatsApp en recetas, constancias y recibos</b><small>{f.docsWhatsapp ? contactLine(f) : `Tel. ${f.phone} · WhatsApp ${clinicWhatsapp(f)}`}</small></span></label>
           </div>
-          <label className="field"><span>Correo</span><input className="input" type="email" value={f.email} onChange={(e) => set('email', e.target.value)} /></label>
+          <label className="field span-2"><span>Correo</span><input className="input" type="email" value={f.email} onChange={(e) => set('email', e.target.value)} /></label>
+        </div>
+      </section>
+      <section className="panel">
+        <div className="panel__head"><div><h2>Recetas, constancias y recibos</h2><p>El encabezado, la moneda y cómo se escribe el documento de identidad.</p></div></div>
+        <div className="panel__body form-grid">
+          {office && <>
+            <label className="field"><span>Especialidad (encabezado de recetas)</span><input className="input" value={f.specialty ?? ''} onChange={(e) => set('specialty', e.target.value)} /></label>
+            <label className="field"><span>Número de colegiación</span><input className="input" value={f.license ?? ''} onChange={(e) => set('license', e.target.value)} /></label>
+          </>}
           <label className="field"><span>Símbolo de moneda</span><input className="input" value={f.currency} maxLength={4} onChange={(e) => set('currency', e.target.value)} /></label>
           <label className="field span-2" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <input type="checkbox" checked={f.recordUsesDni} onChange={(e) => set('recordUsesDni', e.target.checked)} />
@@ -290,25 +420,6 @@ function ClinicForm() {
           <label className="field span-2"><span>Formato del documento de identidad</span>
             <input className="input num" value={f.dniMask ?? '0000-0000-00000'} maxLength={30} onChange={(e) => set('dniMask', e.target.value.replace(/[^0\- /.]/g, ''))} />
             <small className="muted">Cada 0 es un dígito; los guiones se ponen solos. El de Honduras es 0000-0000-00000. Déjalo vacío si la clínica registra otro tipo de documento con letras.</small></label>
-          {office && <>
-            <label className="field"><span>Especialidad (encabezado de recetas)</span><input className="input" value={f.specialty ?? ''} onChange={(e) => set('specialty', e.target.value)} /></label>
-            <label className="field"><span>Número de colegiación</span><input className="input" value={f.license ?? ''} onChange={(e) => set('license', e.target.value)} /></label>
-            <label className="check-line span-2"><input type="checkbox" checked={f.observationEnabled !== false} onChange={(e) => set('observationEnabled', e.target.checked)} />
-              <span><b>Uso observación</b><small>Para aplicar medicamentos o hidratar en el consultorio, con su hoja de medicamentos. Si la apagas, la consulta sólo emite receta.</small></span></label>
-          </>}
-          {(!office || f.observationEnabled !== false) && <label className="field"><span>Observación: resaltar después de (horas)</span>
-            <input className="input num" type="number" min={1} max={240} value={f.obsAlertHours ?? 24} onChange={(e) => set('obsAlertHours', Math.max(1, Number(e.target.value) || 24))} /></label>}
-          {!office && <label className="field" style={{ alignContent: 'end' }}><span>Órdenes en observación</span>
-            <span style={{ display: 'flex', gap: 8, alignItems: 'center', minHeight: 42 }}><input type="checkbox" checked={!!f.obsOrderChecklist} onChange={(e) => set('obsOrderChecklist', e.target.checked)} />
-              Enfermería las revisa como checklist</span></label>}
-          {(!office || f.observationEnabled !== false) && <>
-            <label className="field"><span>Curva térmica: temperatura normal desde (°C)</span>
-              <input className="input num" type="number" step={0.1} min={34} max={38} value={f.tempLow ?? 36} onChange={(e) => set('tempLow', Math.round(Number(e.target.value) * 10) / 10)} />
-              <small className="muted">Por debajo es hipotermia (azul en la curva).</small></label>
-            <label className="field"><span>Fiebre desde (°C)</span>
-              <input className="input num" type="number" step={0.1} min={36} max={41} value={f.tempHigh ?? 38} onChange={(e) => set('tempHigh', Math.round(Number(e.target.value) * 10) / 10)} />
-              <small className="muted">Desde este valor es fiebre (rojo en la curva y alerta del expediente).</small></label>
-          </>}
           <div className="field span-2"><span>Logo (aparece en recetas y constancias)</span>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               {f.logo ? <img src={f.logo} alt="Logo de la clínica" style={{ height: 48, maxWidth: 160, objectFit: 'contain', border: '1px solid var(--line)', borderRadius: 8, padding: 4 }} />
@@ -323,17 +434,6 @@ function ClinicForm() {
           </div>
         </div>
       </section>
-      <section className="panel">
-        <div className="panel__head"><div><h2>Recordatorio por WhatsApp</h2><p>Variables: {'{paciente} {clinica} {medico} {fecha} {hora} {telefono}'}</p></div></div>
-        <div className="panel__body" style={{ display: 'grid', gap: 14 }}>
-          <textarea className="textarea" rows={5} value={f.reminderTemplate} onChange={(e) => set('reminderTemplate', e.target.value)} aria-label="Plantilla del recordatorio" />
-          <div className="wa-preview"><span>Ejemplo con una cita ficticia</span><p>{preview}</p></div>
-        </div>
-      </section>
-      <div className="span-all" style={{ display: 'flex', gap: 8 }}>
-        <button className="btn btn--primary" disabled={!dirty || busy} onClick={async () => { setBusy(true); await saveSettings({ ...f, logo: f.logo ?? '' }); setBusy(false) }}>Guardar cambios</button>
-        {dirty && <button className="btn btn--ghost" onClick={() => setF(settings)}>Descartar</button>}
-      </div>
       {office && (
         <section className="panel span-all">
           <div className="panel__head"><div><h2>¿El consultorio crece?</h2><p>Si vas a sumar a otro médico, conviértelo en clínica: aparecen enfermería, recepción, administración y hospitalización. No se pierde ni se mueve ningún dato.</p></div>
@@ -341,6 +441,61 @@ function ClinicForm() {
         </section>
       )}
       {converting && <ConvertToClinic onClose={() => setConverting(false)} />}
+    </div>
+  )
+}
+
+/** CF1: el mensaje de recordatorio por WhatsApp (sección Agenda y recordatorios), con un ejemplo. */
+function ReminderForm() {
+  const { v: f, set } = useSettingsDraft('recordatorio')
+  const preview = fillTemplate(f.reminderTemplate, {
+    paciente: 'María José', clinica: f.name, medico: 'Dra. Valeria Solórzano', fecha: 'martes 20 de octubre', hora: '09:30', telefono: clinicWhatsapp(f),
+  })
+  return (
+    <Panel title="Recordatorio por WhatsApp" sub={<>El mensaje que se envía antes de cada cita. Variables: {'{paciente} {clinica} {medico} {fecha} {hora} {telefono}'}</>}>
+      <div className="panel__body cfg-reminder">
+        <textarea className="textarea" rows={5} value={f.reminderTemplate} onChange={(e) => set('reminderTemplate', e.target.value)} aria-label="Plantilla del recordatorio" />
+        <div className="wa-preview"><span>Ejemplo con una cita ficticia</span><p>{preview}</p></div>
+      </div>
+    </Panel>
+  )
+}
+
+/**
+ * CF1: Hospitalización y observación (en el consultorio, Observación): horas para resaltar, checklist de órdenes (OB1),
+ * curva térmica y fiebre. En el consultorio, si usa observación.
+ */
+function ObservationForm() {
+  const { settings } = useStore()
+  const { v: f, set } = useSettingsDraft('observacion')
+  const office = features(settings).office
+  const on = !office || f.observationEnabled !== false
+  return (
+    <div className="cfg-grid">
+      <Panel title="Observación" sub={office ? 'Para aplicar medicamentos o hidratar en el consultorio.' : 'Pacientes en observación corta, sin cama.'}>
+        <div className="panel__body form-grid">
+          {office && <label className="check-line span-2"><input type="checkbox" checked={f.observationEnabled !== false} onChange={(e) => set('observationEnabled', e.target.checked)} />
+            <span><b>Uso observación</b><small>Para aplicar medicamentos o hidratar en el consultorio, con su hoja de medicamentos. Si la apagas, la consulta sólo emite receta.</small></span></label>}
+          {on && <label className="field span-2"><span>Resaltar después de (horas)</span>
+            <input className="input num" style={{ maxWidth: 160 }} type="number" min={1} max={240} value={f.obsAlertHours ?? 24} onChange={(e) => set('obsAlertHours', Math.max(1, Number(e.target.value) || 24))} />
+            <small className="muted">Quien lleva más tiempo que esto en observación se resalta en la lista.</small></label>}
+          {/* OB1 (ronda 17): viene activado; la migración v90 lo activó una vez en las clínicas que ya existían */}
+          {!office && <label className="check-line span-2"><input type="checkbox" checked={!!f.obsOrderChecklist} onChange={(e) => set('obsOrderChecklist', e.target.checked)} />
+            <span><b>Órdenes en observación: enfermería las revisa como checklist</b><small>Enfermería revisa una por una las órdenes de cada nota de observación, como en hospitalización.</small></span></label>}
+        </div>
+      </Panel>
+      {on && (
+        <Panel title="Curva térmica y fiebre" sub="Los colores de la curva y la alerta de fiebre del expediente.">
+          <div className="panel__body form-grid">
+            <label className="field"><span>Temperatura normal desde (°C)</span>
+              <input className="input num" type="number" step={0.1} min={34} max={38} value={f.tempLow ?? 36} onChange={(e) => set('tempLow', Math.round(Number(e.target.value) * 10) / 10)} />
+              <small className="muted">Por debajo es hipotermia (azul en la curva).</small></label>
+            <label className="field"><span>Fiebre desde (°C)</span>
+              <input className="input num" type="number" step={0.1} min={36} max={41} value={f.tempHigh ?? 38} onChange={(e) => set('tempHigh', Math.round(Number(e.target.value) * 10) / 10)} />
+              <small className="muted">Desde este valor es fiebre (rojo en la curva y alerta del expediente).</small></label>
+          </div>
+        </Panel>
+      )}
     </div>
   )
 }
@@ -402,12 +557,20 @@ function ConvertToClinic({ onClose }: { onClose: () => void }) {
  */
 function ServiceAreas() {
   const { settings, saveExamAreas } = useStore()
-  const [lab, setLab] = useState(!!settings.hasLab)
-  const [img, setImg] = useState(!!settings.hasImaging)
-  // CF2 (ronda 6): la tarjeta de áreas (dos casillas) ocupa ~1/3; los umbrales, con sus tablas, ~2/3. A 390 px se apilan
+  // CF1 (ronda 17): borrador encima de lo guardado; lo guarda «Guardar cambios» de la sección
+  const [draft, setDraft] = useState<{ hasLab?: boolean; hasImaging?: boolean }>({})
+  const lab = draft.hasLab ?? !!settings.hasLab
+  const img = draft.hasImaging ?? !!settings.hasImaging
+  const setLab = (x: boolean) => setDraft((d) => ({ ...d, hasLab: x }))
+  const setImg = (x: boolean) => setDraft((d) => ({ ...d, hasImaging: x }))
+  useSectionBlock('areas', {
+    dirty: lab !== !!settings.hasLab || img !== !!settings.hasImaging,
+    save: async () => { const ok = !!(await saveExamAreas({ hasLab: lab, hasImaging: img })); if (ok) setDraft({}); return ok },
+    reset: () => setDraft({}),
+  })
   return (
-    <div className="areas-grid">
-      <section className="panel">
+    <div>
+      <section className="panel" data-tour="tab:areas">
         <div className="panel__head"><div><h2>Áreas de servicio</h2><p>¿Quién realiza los exámenes en {features(settings).office ? 'el consultorio' : 'la clínica'}?</p></div></div>
         <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
           <label className="check-line"><input type="checkbox" checked={lab} onChange={(e) => setLab(e.target.checked)} />
@@ -415,7 +578,6 @@ function ServiceAreas() {
           <label className="check-line"><input type="checkbox" checked={img} onChange={(e) => setImg(e.target.checked)} />
             <span><b>Imágenes propias</b><small>Rayos X, ultrasonido, EKG… quedan dirigidos al área de imágenes. Sin ella, enfermería los coordina o realiza.</small></span></label>
           <p className="muted" style={{ fontSize: 13.5 }}>Mientras no haya personas con rol de laboratorio o de imágenes, los pendientes siguen llegando a la bandeja de enfermería. Cuando se agreguen esos roles, bastará con asignarlos.</p>
-          <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={lab === !!settings.hasLab && img === !!settings.hasImaging} onClick={() => saveExamAreas({ hasLab: lab, hasImaging: img })}>Guardar áreas</button>
         </div>
       </section>
     </div>
@@ -426,14 +588,22 @@ function ServiceAreas() {
 function PaymentMethods() {
   const { settings, savePaymentMethods } = useStore()
   const all: PaymentMethod[] = ['cash', 'transfer', 'card', 'deposit', 'insurance', 'other']
-  const [on, setOn] = useState<PaymentMethod[]>(settings.paymentMethods ?? ['cash', 'transfer'])
+  const saved = settings.paymentMethods ?? ['cash', 'transfer']
+  // CF1 (ronda 17): borrador encima de lo guardado; lo guarda «Guardar cambios» de la sección
+  const [draft, setOn] = useState<PaymentMethod[] | null>(null)
+  const on = draft ?? saved
   const hint: Record<PaymentMethod, string> = {
     cash: 'Con cálculo del cambio y arqueo al cierre.', transfer: 'Se anota el banco y, si la dan, la referencia.', card: 'Sólo si la clínica tiene terminal (POS). Pide el número de autorización.',
     deposit: 'Depósito en la cuenta de la clínica, con banco y referencia.', insurance: 'Pagos que cubre la aseguradora, con número de póliza o autorización.', other: 'Cualquier otra forma, con una nota.',
   }
-  const same = on.length === (settings.paymentMethods ?? ['cash', 'transfer']).length && on.every((m) => (settings.paymentMethods ?? ['cash', 'transfer']).includes(m))
+  const same = on.length === saved.length && on.every((m) => saved.includes(m))
+  useSectionBlock('pagos', {
+    dirty: !same,
+    save: async () => { const ok = !!(await savePaymentMethods(on)); if (ok) setOn(null); return ok },
+    reset: () => setOn(null),
+  })
   return (
-    <section className="panel">
+    <section className="panel" data-tour="tab:pagos">
       <div className="panel__head"><div><h2>Formas de pago</h2><p>Marca las que acepta {features(settings).office ? 'el consultorio' : 'la clínica'}. Al cobrar sólo aparecen éstas.</p></div></div>
       <div className="panel__body" style={{ display: 'grid', gap: 8, maxWidth: 640 }}>
         {all.map((m) => (
@@ -442,7 +612,6 @@ function PaymentMethods() {
             <span><b>{METHOD_LABEL[m]}</b><small>{hint[m]}</small></span></label>
         ))}
         <p className="muted" style={{ fontSize: 13.5 }}>Al menos una queda activa.</p>
-        <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={same} onClick={() => savePaymentMethods(on)}>Guardar formas de pago</button>
       </div>
     </section>
   )
@@ -455,7 +624,7 @@ function Services() {
   const [name, setName] = useState('')
   const [price, setPrice] = useState('')
   return (
-    <section className="panel table-wrap">
+    <section className="panel table-wrap" data-tour="tab:servicios">
       <SectionHead title="Servicios y precios" sub="Lo que se cobra en caja, con su precio. Ocultar un servicio lo quita de la caja; los cobros anteriores no cambian."
         action={<button className="btn btn--primary btn--sm" onClick={() => setAdding(true)}><Plus size={15} />Agregar servicio</button>} />
       <table className="table table--sticky table--cards">
@@ -487,6 +656,11 @@ function ServiceRow({ s }: { s: Service }) {
   const [name, setName] = useState(s.name)
   const [price, setPrice] = useState(String(s.price))
   const dirty = name !== s.name || Number(price) !== s.price
+  // CF1 (ronda 17): un precio o nombre cambiado también lo guarda «Guardar cambios» de la sección (y avisa al cambiar de sección)
+  useSectionBlock(`servicio:${s.id}`, {
+    dirty, save: async () => !!(await updateService(s.id, { name: name.trim(), price: Number(price) })),
+    reset: () => { setName(s.name); setPrice(String(s.price)) },
+  })
   return (
     <tr style={s.active ? undefined : { opacity: 0.55 }}>
       <td data-label="Servicio" className="tc-full"><input className="input" value={name} onChange={(e) => setName(e.target.value)} aria-label="Nombre del servicio" /></td>
@@ -517,6 +691,9 @@ function Schedules() {
   const [id, setId] = useState<string>(() => { try { return localStorage.getItem(LAST_DOCTOR) ?? '' } catch { return '' } })
   const [unsaved, setUnsaved] = useState<(() => Promise<boolean>) | null>(null)
   const [asking, setAsking] = useState<string | null>(null)
+  // CF1 (ronda 17): el horario sin guardar cuenta como cambio de la sección; «Descartar» vuelve a montar el formulario
+  const [resetKey, setResetKey] = useState(0)
+  useSectionBlock('horario', { dirty: !!unsaved, save: async () => (unsaved ? unsaved() : true), reset: () => { setUnsaved(null); setResetKey((k) => k + 1) } })
   const current = doctors.find((d) => d.id === id) ?? doctors[0]
   const n = normalize(q)
   const list = doctors.filter((d) => !n || normalize(`${d.name} ${d.specialty ?? ''}`).includes(n))
@@ -528,8 +705,8 @@ function Schedules() {
   const choose = (next: string) => { if (next !== current?.id) { if (unsaved) setAsking(next); else select(next) } }
   if (!current) return <div className="empty">No hay médicos en {office ? 'el consultorio' : 'la clínica'}.</div>
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <p style={{ color: 'var(--muted)' }}>Cada día puede tener una o más franjas (por ejemplo, de 08:00 AM a 12:00 PM y de 02:00 PM a 05:00 PM). La agenda y la reserva en línea solo ofrecen horas dentro del horario. Cada médico también puede cambiar el suyo en <i>Mi configuración</i>.</p>
+    <div style={{ display: 'grid', gap: 16 }} data-tour="tab:horarios">
+      <p style={{ color: 'var(--muted)' }}>Cada día puede tener una o más franjas (por ejemplo, de 08:00 AM a 12:00 PM y de 02:00 PM a 05:00 PM). La agenda y la reserva en línea solo ofrecen horas dentro del horario. Cada médico también puede cambiar el suyo en su <i>Configuración</i>.</p>
       <div className={office || doctors.length < 2 ? '' : 'sched-pick'}>
         {!office && doctors.length > 1 && (
           <nav className="panel sched-pick__list" aria-label="Médicos">
@@ -548,7 +725,7 @@ function Schedules() {
             </ul>
           </nav>
         )}
-        <ScheduleCard key={current.id} d={current} onDirty={(save) => setUnsaved(() => save)} />
+        <ScheduleCard key={`${current.id}-${resetKey}`} d={current} onDirty={(save) => setUnsaved(() => save)} />
       </div>
       {asking && (
         <Modal title="Hay cambios sin guardar" onClose={() => setAsking(null)} footer={<>
