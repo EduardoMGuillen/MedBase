@@ -36,8 +36,17 @@
 .board__table td.board__who.board__state { width: auto; white-space: normal; }
 
 /* Hasta 1180 px (tablet): sin la columna de diagnóstico ancha; la tabla se desplaza a lo ancho si no cabe */
+.board__spec { display: none; }
 @media (max-width: 1180px) {
   .board__table .board__dx { min-width: 140px; }
+}
+/* 1000 px o menos (tableta en vertical): la especialidad pasa debajo del paciente y los avisos se angostan */
+@media (max-width: 1000px) {
+  .board__table .board__col-spec { display: none; }
+  .board__spec { display: block; color: var(--ink-deep) !important; }
+  .board__table .board__dx { min-width: 120px; }
+  .board__table td.board__flags { min-width: 0; max-width: 160px; }
+  .board__table th, .board__table td { padding-left: 10px; padding-right: 10px; }
 }
 
 /* 760 px o menos: cada fila es un bloque. Arriba el cuarto (y la cama) con su estado; abajo paciente, datos y avisos. */

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, BedDouble, BellRing, Building2, CalendarClock, CalendarDays, ChevronDown, ClipboardList, CircleHelp, Compass, Eye, FilePen, FlaskConical, ScanLine, TestTubes, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, SlidersHorizontal, Stethoscope, UserCog,
+  BarChart3, BedDouble, BellRing, Building2, CalendarClock, CalendarDays, ChevronDown, ClipboardList, CircleHelp, Compass, Eye, FilePen, FlaskConical, ScanLine, TestTubes, House, LibraryBig, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Receipt, Search, Settings as SettingsIcon, SlidersHorizontal, Stethoscope, UserCog,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
@@ -16,6 +16,7 @@ import { miniTourFor, tourFor, tourKey, type TourCtx, type TourStep } from '../l
 import { stayPath } from '../lib/inpatient'
 import { ADMISSION_PENDING_TEXT, myPendingAdmissions } from '../lib/alerts'
 import { api } from '../lib/api'
+import { RAIL_QUERY, useMedia } from '../lib/hooks'
 
 /**
  * PF2 (ronda 17): la barra lateral (entradas, grupos, orden y quién ve qué) vive en lib/nav.ts, la misma regla que usan las pruebas;
@@ -108,6 +109,8 @@ export default function AppShell() {
   const myAdmissions = myPendingAdmissions(inpatients, user.id).length
   const platform = user.role === 'superadmin'
   const touring = !!tour
+  // TB (ronda 17): en tablet la barra es una franja de íconos; abierta (open) se despliega encima del contenido
+  const rail = useMedia(RAIL_QUERY)
   const f = features(settings)
   // En un consultorio el médico titular también cobra y administra: "Administración" es "Mi consultorio". El médico tiene
   // «Cobrar» debajo de Recetas (MC7). Enfermería ya no cobra (AD9).
@@ -138,6 +141,8 @@ export default function AppShell() {
   return (
     <div className="shell">
       <aside className={`side ${open || tourMenu ? 'open' : ''}`} aria-label="Navegación principal">
+        <button type="button" className="icon-btn side__toggle" aria-label={open ? 'Cerrar el menú' : 'Abrir el menú'} aria-expanded={open} title={open ? 'Cerrar el menú' : 'Abrir el menú'}
+          onClick={() => setOpen((o) => !o)}>{open ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}</button>
         <div className="side__clinic">
           <Logo size={28} />
           <small>{platform ? 'Plataforma' : f.office ? 'Consultorio' : 'Clínica'}</small>
@@ -148,9 +153,9 @@ export default function AppShell() {
             const links = b.items.map((n) => {
               const c = badge(n.to)
               return (
-                <NavLink key={n.to} to={n.to} end={'end' in n ? n.end : undefined} className="side__link" data-tour={`nav:${n.to}`}>
+                <NavLink key={n.to} to={n.to} end={'end' in n ? n.end : undefined} className="side__link" data-tour={`nav:${n.to}`} title={rail && !open ? n.label : undefined}>
                   <n.icon size={18} strokeWidth={1.9} />
-                  {n.label}
+                  <span className="side__label">{n.label}</span>
                   {c && <span className={`count${c.alert ? ' count--alert' : ''}`} aria-label={c.label}>{c.n}</span>}
                 </NavLink>
               )
@@ -158,13 +163,13 @@ export default function AppShell() {
             if (!b.group) return <Fragment key={b.items[0].to}>{links}</Fragment>
             // RU6 (ronda 15): «Registros» es un encabezado fijo (no se contrae); si el rol no tiene ninguna entrada, no aparece
             if (STATIC_GROUPS.has(b.group)) return <div key={b.group} className="side__grp side__grp--static" role="group" aria-label={b.group}><div className="side__group">{b.group}</div><div className="side__grp-list">{links}</div></div>
-            return <NavGroup key={b.group} title={b.group} userId={user.id} paths={b.items.map((n) => n.to)} badges={b.items.map((n) => badge(n.to)).filter((x) => x !== null)} forceOpen={touring}>{links}</NavGroup>
+            return <NavGroup key={b.group} title={b.group} userId={user.id} paths={b.items.map((n) => n.to)} badges={b.items.map((n) => badge(n.to)).filter((x) => x !== null)} forceOpen={touring || (rail && !open)}>{links}</NavGroup>
           })}
         </nav>
         {/* Ronda 8: la configuración de cada persona (firma, horario, preferencias, seguridad), con su tuerca, justo encima del
             perfil. El perfil ya no es un botón: sólo dice quién entró y con qué vista. */}
-        <NavLink to="/app/mi-configuracion" className="side__link side__config" data-tour="nav:/app/mi-configuracion">
-          <SettingsIcon size={18} strokeWidth={1.9} />Configuración
+        <NavLink to="/app/mi-configuracion" className="side__link side__config" data-tour="nav:/app/mi-configuracion" title={rail && !open ? 'Configuración' : undefined}>
+          <SettingsIcon size={18} strokeWidth={1.9} /><span className="side__label">Configuración</span>
         </NavLink>
         <div className="side__user">
           <div className="side__me" data-tour="me">

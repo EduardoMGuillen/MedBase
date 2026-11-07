@@ -15,6 +15,22 @@ export function useNow(everyMs = 60_000) {
   return now
 }
 
+/** Verdadero mientras se cumple la media query (se actualiza al girar la tableta o cambiar el ancho). */
+export function useMedia(q: string) {
+  const [m, setM] = useState(() => window.matchMedia(q).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(q)
+    const on = () => setM(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [q])
+  return m
+}
+
+/** TB (ronda 17): modo tablet, de 768 a 1180 px: la barra lateral es una franja de íconos (responsive.css). */
+export const RAIL_QUERY = '(min-width: 768px) and (max-width: 1180px)'
+
 /** Verdadero en pantallas de teléfono (hasta 720 px), para elegir entre panel y hoja inferior. */
 export function useIsPhone() {
   const q = '(max-width: 720px)'

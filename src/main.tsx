@@ -4,6 +4,7 @@ import './index.css'
 import './modules.css'
 import './clinical.css'
 import './boards.css'
+import './responsive.css'
 import App from './App.tsx'
 import { installAutoCapitalize } from './lib/autocap'
 

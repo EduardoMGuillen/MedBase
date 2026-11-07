@@ -63,7 +63,7 @@ export function BedBoard({ beds, rowOf, filter, onFilter, counts }: {
                 {anyLabel && <th>Cama</th>}
                 <th>Estado</th>
                 <th>Paciente</th>
-                <th>Especialidad</th>
+                <th className="board__col-spec">Especialidad</th>
                 <th>Diagnóstico</th>
                 <th>Médico tratante</th>
                 <th className="ta-r">Día</th>
@@ -83,8 +83,8 @@ export function BedBoard({ beds, rowOf, filter, onFilter, counts }: {
                       <span className="board__where">{where}</span>
                       <span className={`badge ${r.occupied ? 'badge--ink' : 'badge--mint'}`}>{r.occupied ? 'Ocupada' : 'Libre'}</span>
                     </td>
-                    <td className="board__who">{r.who ?? <span className="muted">—</span>}</td>
-                    <td data-label="Especialidad">{r.specialty}</td>
+                    <td className="board__who">{r.who ?? <span className="muted">—</span>}{r.specialty && <small className="board__spec">{r.specialty}</small>}</td>
+                    <td data-label="Especialidad" className="board__col-spec">{r.specialty}</td>
                     <td data-label="Diagnóstico" className="board__dx">{r.dx}</td>
                     <td data-label="Médico tratante">{r.doctor}</td>
                     <td data-label="Día" className="num ta-r">{r.day}</td>

@@ -1,0 +1,60 @@
+/* TB (ronda 17): tablet y dedo. Va después de los demás estilos para poder corregirlos. */
+
+/* El botón que abre la franja solo existe en modo tablet */
+.side__toggle { display: none; }
+
+/* ---------- Modo tablet, de 768 a 1180 px ----------
+   La barra lateral es una franja de íconos de 72 px (el nombre de cada opción sale al pasar el dedo o el ratón, y los
+   contadores son un punto con su número). El botón de arriba la abre encima del contenido, con los nombres, sin mover la
+   página; se cierra al elegir una opción, con el mismo botón o tocando fuera. Todas las reglas de la franja cerrada van con
+   `.side:not(.open)`: abierta, la barra se ve como en la computadora. */
+@media (min-width: 768px) and (max-width: 1180px) {
+  .shell { grid-template-columns: 72px minmax(0, 1fr); }
+  /* La barra abierta sale de la rejilla (fixed): el contenido se queda en su columna y no se mueve */
+  .shell > .main { grid-column: 2; }
+  .side { position: sticky; top: 0; height: 100vh; transform: none; transition: none; box-shadow: none; z-index: 40; overflow-y: auto; overflow-x: hidden; }
+  .side__toggle { display: grid; width: 44px; height: 44px; flex: none; }
+  .topbar__menu { display: none; }
+  .topbar { padding: 18px 24px 0; }
+  .page { padding: 18px 24px 48px; }
+
+  .side:not(.open) { width: 72px; padding: 10px 14px; align-items: center; scrollbar-width: none; }
+  .side:not(.open)::-webkit-scrollbar { display: none; }
+  .side:not(.open) .side__clinic { padding: 4px 0 10px; margin-bottom: 4px; width: 100%; display: grid; justify-items: center; }
+  .side:not(.open) .side__clinic small, .side:not(.open) .side__clinic strong, .side:not(.open) .logo__word { display: none; }
+  .side:not(.open) nav { width: 100%; justify-items: center; }
+  .side:not(.open) .side__group { display: none; }
+  .side:not(.open) .side__grp { width: 100%; display: grid; justify-items: center; border-top: 1px solid var(--line-soft); margin-top: 6px; padding-top: 6px; }
+  .side:not(.open) .side__grp-body > div, .side:not(.open) .side__grp-list { justify-items: center; }
+  .side:not(.open) .side__link { position: relative; width: 44px; height: 44px; padding: 0; justify-content: center; gap: 0; }
+  .side:not(.open) .side__label { display: none; }
+  .side:not(.open) .side__link .count { position: absolute; top: 3px; right: 1px; min-width: 17px; height: 17px; padding: 0 4px; margin: 0; font-size: 10.5px; line-height: 17px; text-align: center; }
+  .side:not(.open) .side__config::before { left: 0; right: 0; }
+  .side:not(.open) .side__user { flex-direction: column; gap: 8px; padding: 10px 0 2px; width: 100%; align-items: center; }
+  .side:not(.open) .side__me { flex: none; margin: 0; padding: 0; justify-content: center; }
+  .side:not(.open) .side__me > div { display: none; }
+  .side:not(.open) .side__user .icon-btn { width: 44px; height: 44px; }
+
+  /* Abierta: encima del contenido, con sombra, y el fondo oscurecido */
+  .side.open { position: fixed; inset: 0 auto 0 0; width: 272px; box-shadow: var(--shadow-modal); }
+  .side.open .side__toggle { margin-left: auto; }
+  .side__scrim { display: block; position: fixed; inset: 0; background: rgba(14, 34, 51, .35); z-index: 39; }
+}
+
+/* Tableta en horizontal (1000 px o más): con la franja de 72 px cabe lo que en la computadora va en dos columnas */
+@media (min-width: 1000px) and (max-width: 1180px) and (orientation: landscape) {
+  .grid-2 { grid-template-columns: 1.6fr 1fr; }
+  .consult { grid-template-columns: minmax(0, 1fr) 320px; }
+  .consult__aside { position: sticky; }
+}
+
+/* ---------- Con el dedo (pantalla táctil) ----------
+   Botones, campos, pestañas y opciones de al menos 44 px de alto, como pide la guía de accesibilidad para tocar. */
+@media (pointer: coarse) {
+  .btn, .btn--sm, .input, .select, .tab, .segmented button, .side__link, .chip--toggle { min-height: 44px; }
+  .input, .select { height: 44px; }
+  .icon-btn { width: 44px; height: 44px; }
+  .segmented button { display: inline-flex; align-items: center; }
+  .tab { display: inline-flex; align-items: center; }
+  .check-inline, label:has(> input[type='checkbox']), label:has(> input[type='radio']) { min-height: 44px; }
+}
