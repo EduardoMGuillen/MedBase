@@ -24,7 +24,8 @@
 /* ---------- Historia clínica ---------- */
 .hc { display: grid; gap: 18px; }
 .hc__n { color: var(--ink); margin-right: 6px; }
-.hc__sec--alert { border-left: 4px solid var(--red-ink); }
+/* ES (ronda 17): los avisos ya no llevan barra de color a la izquierda; el color va en el borde completo */
+.hc__sec--alert { border-color: var(--err-line); background: var(--red-soft); }
 .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px 24px; margin: 0; }
 .facts dt { font-size: 12.5px; color: var(--muted); font-weight: 600; }
 .facts dd { margin: 2px 0 0; font-size: 14.5px; }
@@ -229,9 +230,9 @@
 
 /* ---------- Hospitalización ---------- */
 .beds { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
-.bed { display: grid; gap: 4px; align-content: start; padding: 14px 16px; background: var(--paper); border: 1px solid var(--line); border-left: 4px solid var(--ink); border-radius: var(--r-md); color: inherit; text-decoration: none; }
+.bed { display: grid; gap: 4px; align-content: start; padding: 14px 16px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); color: inherit; text-decoration: none; }
 a.bed:hover { box-shadow: var(--shadow-lift); }
-.bed--free { border-left-color: var(--line); background: #fbfcfc; }
+.bed--free { border-style: dashed; background: var(--paper-soft); }
 .bed__head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 13px; }
 .bed__head b { font-family: var(--display); font-size: 16px; }
 .bed__head span { color: var(--muted); }
@@ -474,7 +475,7 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .order-check__mark { display: block; color: var(--mint-ink); font-weight: 700; font-size: 12px; text-decoration: none; }
 .order-check__mark--undo { color: var(--amber-ink); font-weight: 600; }
 .order-check__box { width: 20px; height: 20px; margin-top: 1px; accent-color: var(--mint-ink); cursor: pointer; }
-.pending-orders { border-left: 4px solid #e7b45b; }
+.pending-orders { border-color: var(--warn-line); }
 .pending-orders__row { grid-template-columns: 24px 1fr; cursor: pointer; align-items: start; }
 .pending-orders__row input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--mint-ink); }
 .modal--wide:has(.note-editor) { width: min(1120px, 100%); }
@@ -864,10 +865,10 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 @media (max-width: 720px) { .choice-grid--3 { grid-template-columns: 1fr; } }
 
 /* EN2: alertas agrupadas. Barra compacta arriba del expediente; crítico rojo, pendiente ámbar, aviso gris azulado */
-.alert-bar { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 12px; background: var(--paper); margin-bottom: 14px; overflow: hidden; }
-.alert-bar--critical { border-left-color: var(--red-ink); }
-.alert-bar--pending { border-left-color: #d68a00; }
-.alert-bar--info { border-left-color: #6b7f99; }
+.alert-bar { border: 1px solid var(--line); border-radius: var(--r-pop); background: var(--paper); margin-bottom: 14px; overflow: hidden; }
+.alert-bar--critical { border-color: var(--err-line); background: var(--red-soft); }
+.alert-bar--pending { border-color: var(--warn-line); }
+.alert-bar--info { border-color: var(--line); }
 .alert-bar__head { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 14px; background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .alert-bar__head:disabled { cursor: default; }
 .alert-bar__head b { font-size: 14px; }
@@ -889,8 +890,8 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .tab-alert--pending { background: var(--amber); color: var(--amber-ink); }
 /* Inicio de enfermería: pendientes por paciente */
 .ward-alerts__list { display: grid; gap: 10px; padding: 0 16px 16px; }
-.ward-alert { border: 1px solid var(--line); border-left: 4px solid #d68a00; border-radius: 12px; padding: 10px 0 0; }
-.ward-alert--critical { border-left-color: var(--red-ink); }
+.ward-alert { border: 1px solid var(--warn-line); border-radius: var(--r-pop); padding: 10px 0 0; }
+.ward-alert--critical { border-color: var(--err-line); background: var(--red-soft); }
 .ward-alert header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding: 0 14px 6px; }
 .ward-alert header .badge { margin-left: auto; }
 .ward-alert > .linklike { display: inline-block; margin: 0 16px 10px; font-size: 13px; }

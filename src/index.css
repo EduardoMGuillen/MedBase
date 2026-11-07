@@ -39,6 +39,9 @@
   --warn-line: #e7b45b;
   --err-line: #f0b7b0;
   --paper-soft: #f7f9f9;
+  /* Fondos suaves de aviso: urgente (rojo) y pendiente o hueco por llenar (ámbar) */
+  --red-soft: #fff6f5;
+  --amber-soft: #fff4d6;
   --ink-hover: #d6dbf8;
   --ink-on-dark: #c9cff7;
   /* ES (ronda 17): escala corta de tamaños de letra para la interfaz */
