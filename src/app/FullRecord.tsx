@@ -4,7 +4,7 @@ import { ChevronLeft, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
 import { contactLine, date, fullName, recordNumber, shortStaff, time, dxCode } from '../lib/format'
-import { currentEpicrisis, LINE_TAG, medLabel, orderMark, splitOrders, stayPath, yearsOld } from '../lib/inpatient'
+import { attendingText, currentEpicrisis, LINE_TAG, medLabel, orderMark, splitOrders, stayPath, yearsOld } from '../lib/inpatient'
 import type { OrderLineTag } from '../lib/types'
 import { authStatus, authTitle } from '../lib/consent'
 import { PdfPages } from '../components/PdfPages'
@@ -128,6 +128,8 @@ export default function FullRecord() {
             {!obs && <div><dt>Cuarto</dt><dd>{bedLabel(bed(h.bedId))}</dd></div>}
             {h.observationAt && <div><dt>En observación desde</dt><dd>{dm(h.observationAt)}</dd></div>}
             <div><dt>{obs ? 'Médico' : 'Ingresado por'}</dt><dd>{staffById(h.admittedBy)?.name}</dd></div>
+            {/* HO2 (ronda 16) */}
+            {!obs && <div><dt>Médico tratante</dt><dd>{attendingText(h.attendingIds ?? [h.admittedBy], (x) => staffById(x)?.name) || '—'}</dd></div>}
             <div><dt>Procedencia</dt><dd>{h.consultationId ? 'Consulta externa' : 'Emergencia o ingreso directo'}</dd></div>
             {h.dischargedAt && <div><dt>Egreso</dt><dd>{dm(h.dischargedAt)}{h.dischargedBy ? `, ${staffById(h.dischargedBy)?.name}` : ''}</dd></div>}
             {!obs && <div><dt>Acompañante</dt><dd>{h.companionName ? `${h.companionName}${h.companionRelation ? ` (${h.companionRelation})` : ''}${h.companionPhone ? `, ${h.companionPhone}` : ''}` : 'Sin dato'}</dd></div>}

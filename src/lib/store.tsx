@@ -25,7 +25,7 @@ interface Data {
   pendingOrders?: PendingOrders[] // órdenes médicas sin revisar (enfermería)
   stays?: ActiveStay[] // quién está hospitalizado o en observación (todos los roles)
   /** AD3: camas ocupadas (estancia, paciente y especialidad del ingreso), para todos los roles. */
-  bedStays?: { id: string; bedId: string; patientId: string; specialty?: string }[]
+  bedStays?: { id: string; bedId: string; patientId: string; specialty?: string; attendingIds?: string[] }[]
 }
 
 interface Session { user: Staff; permissions: Permission[]; demo: boolean }
@@ -198,13 +198,14 @@ function useStoreValue() {
       run(() => api<Appointment>('/appointments/walk-in', { body: b }), 'Paciente agregado a la consulta externa de hoy'),
 
     // Hospitalización
-    admit: async (b: Pick<Hospitalization, 'patientId' | 'bedId' | 'reason' | 'diagnoses' | 'consultationId' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone' | 'specialty'> & { admittedAt?: string }) => {
-      const h = await run(() => api<Hospitalization & { medOrders: number }>('/inpatient', { body: b }))
+    admit: async (b: Pick<Hospitalization, 'patientId' | 'bedId' | 'reason' | 'diagnoses' | 'consultationId' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone' | 'specialty' | 'attendingIds'> & { admittedAt?: string }) => {
+      // HO2 (ronda 16): con la autorización de hospitalización recién generada (recepción la abre desde Hospitalizados)
+      const h = await run(() => api<Hospitalization & { medOrders: number; authorizationId?: string }>('/inpatient', { body: b }))
       if (h) notify(`Paciente ingresado${h.consultationId ? ', vinculado a su consulta externa' : ''}${h.medOrders ? `; ${h.medOrders} medicamento${h.medOrders > 1 ? 's' : ''} pasaron a la hoja` : ''}.`)
       return h
     },
     /** Editar datos generales de la estancia: cama, acompañante y teléfonos. El ingreso en sí no se edita. */
-    updateAdmission: (id: string, b: Partial<Pick<Hospitalization, 'bedId' | 'specialty' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone'>>) =>
+    updateAdmission: (id: string, b: Partial<Pick<Hospitalization, 'bedId' | 'specialty' | 'companionName' | 'companionRelation' | 'companionPhone' | 'patientPhone' | 'attendingIds'>>) =>
       run(() => api<Hospitalization>(`/inpatient/${id}`, { method: 'PATCH', body: b }), 'Datos generales guardados'),
     addInpatientNote: (id: string, b: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations' | 'evolution' | 'postop' | 'chiefComplaint' | 'history'> & { kind: 'admission' | 'evolution'; meds: NewMed[]; stopMedIds: string[]; orders?: string[]; indicationCount?: number; clientId?: string; exams?: ExamInput[]; chain?: { basedOn: string | null; decisions: { id: string; action: 'omit' | 'change'; text?: string }[] }; vitals?: VitalsMode; vitalsTaken?: Partial<Record<string, number>> & { takenAt?: string } }) =>
       run(() => api<InpatientNote & { examBatch?: string }>(`/inpatient/${id}/notes`, { body: b }), b.kind === 'admission' ? 'Nota de ingreso guardada' : b.format === 'postop' ? 'Nota postquirúrgica guardada' : 'Nota de evolución guardada'),

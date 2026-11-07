@@ -1,8 +1,8 @@
-import { doseTimes, medLabel, pendingOrdersOf, slotState } from './inpatient'
+import { admissionOrdersPending, doseTimes, medLabel, pendingOrdersOf, slotState } from './inpatient'
 import { time } from './format.js'
 import { activeVitals, currentVitalsMode, missedTakes, tempClass, vitalsModeShort, type TempBand } from './vitalsSheet'
 import { examLine, GROUP_LABEL, isPending } from './exams'
-import type { ExamGroup, InpatientFile } from './types'
+import type { ExamGroup, Hospitalization, InpatientFile } from './types'
 
 /**
  * EN2: alertas del expediente agrupadas (una línea por tipo y elemento, con conteo) y con tres niveles:
@@ -135,12 +135,27 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
       : `Autorización quirúrgica pendiente de firma${a.data.procedure ? `: ${a.data.procedure}` : ''}`, count: 1, since: new Date(a.createdAt).getTime(),
       action: hosp && !doctorOnly ? { label: 'Firmar ahora', go: { action: 'sign' } } : { label: 'Ir a Anexos', go: { tab: 'annexes' } } })
   }
+  // HO2 (ronda 16): ingreso directo sin nota de ingreso firmada: el médico tratante debe escribir las órdenes
+  if (admissionOrdersPending(h, file.notes)) {
+    out.push({ key: 'admission-orders', level: 'critical', tab: 'notes', text: `${ADMISSION_PENDING_TEXT}: falta la nota de ingreso del médico tratante`, count: 1, since: new Date(h.admittedAt).getTime(),
+      action: { label: 'Ver notas', go: { tab: 'notes' } } })
+  }
   if (h.kind !== 'observation' && !h.bedId) {
     out.push({ key: 'bed', level: 'pending', tab: 'sheet', text: `Falta asignar la cama${h.companionName ? '' : ' y anotar al acompañante'}`, count: 1, since: new Date(h.admittedAt).getTime(), action: { label: 'Asignar cama', go: { action: 'bed' } } })
   }
 
   return (opts.groups ? out.filter((a) => a.tab === 'labs') : out).sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level] || a.since - b.since)
 }
+
+/** HO2 (ronda 16): el texto de la alerta, igual en Inicio, en el menú y en el expediente. */
+export const ADMISSION_PENDING_TEXT = 'Ingreso con órdenes pendientes'
+
+/**
+ * HO2 (ronda 16): las estancias de las que el médico es tratante y que siguen sin nota de ingreso firmada (lo marca el
+ * servidor en la lista de hospitalizados: `ordersPending`). Desaparecen solas al firmarse la nota de ingreso.
+ */
+export const myPendingAdmissions = (inpatients: Hospitalization[], userId: string) =>
+  inpatients.filter((h) => h.ordersPending && (h.attendingIds ?? [h.admittedBy]).includes(userId))
 
 /** "2 críticas · 3 pendientes · 1 aviso". */
 export function alertSummary(alerts: FileAlert[]) {

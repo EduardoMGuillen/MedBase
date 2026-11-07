@@ -1,4 +1,4 @@
-import type { Dose, InpatientFile, InpatientMed, InpatientNote, OrderLine, OrderLineTag, OrderMark } from './types.js'
+import type { Dose, Hospitalization, InpatientFile, InpatientMed, InpatientNote, OrderLine, OrderLineTag, OrderMark } from './types.js'
 import { clinicParts } from './dateInput.js'
 import { loadingLine, nebulizationLine, type Nebulization } from './medExtras.js'
 import { normalize } from './patients.js'
@@ -160,6 +160,20 @@ export const stayFutureWarning = (kind: string) =>
 export const STAY_CANCEL_REASON = 'Paciente con estancia activa (hospitalizado/observación)'
 
 export const stayPath = (h: { id: string; kind?: string }) => `/app/${h.kind === 'observation' ? 'observacion' : 'hospitalizados'}/${h.id}`
+
+/**
+ * HO2 (ronda 16): ingreso directo a hospitalización que todavía no tiene nota de ingreso firmada: «Ingreso con órdenes
+ * pendientes». No aplica si vino de una consulta externa (su nota es la de ingreso) ni de observación. La misma regla, en SQL,
+ * está en `ORDERS_PENDING_SQL` (server/routes/inpatient.ts).
+ */
+export const admissionOrdersPending = (h: Pick<Hospitalization, 'kind' | 'status' | 'consultationId' | 'observationAt'>, notes: Pick<InpatientNote, 'kind'>[]) =>
+  h.status === 'active' && h.kind !== 'observation' && !h.consultationId && !h.observationAt && !notes.some((n) => n.kind === 'admission')
+
+/** HO2 (ronda 16): «Dr. A (principal), Dr. B». */
+export const attendingText = (ids: string[], nameOf: (id: string) => string | undefined) => {
+  const names = ids.map(nameOf).filter((x): x is string => !!x)
+  return names.length > 1 ? `${names[0]} (principal), ${names.slice(1).join(', ')}` : names[0] ?? ''
+}
 
 /** Tiempo transcurrido legible: "4 h 20 min", "35 min", "1 d 3 h". */
 export function elapsed(minutes: number) {

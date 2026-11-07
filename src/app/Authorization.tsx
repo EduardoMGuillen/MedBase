@@ -314,9 +314,11 @@ function HospitalSheet({ a }: { a: Authorization }) {
  */
 export default function AuthorizationPage() {
   const { id } = useParams()
-  const { fetchAuthorization, notify } = useStore()
+  const { fetchAuthorization, notify, can } = useStore()
   const [a, setA] = useState<Authorization | null>(null)
   const [params] = useSearchParams()
+  // HO2 (ronda 16): recepción y administración no abren el expediente: vuelven al tablero de camas
+  const chart = can('inpatient.view')
   useEffect(() => { if (id) fetchAuthorization(id).then(setA).catch((e: Error) => notify(e.message, 'error')) }, [id, fetchAuthorization, notify])
   // MC1/MC2: «Imprimir para firmar en papel» abre esta hoja en otra pestaña y la manda a imprimir
   useEffect(() => { if (a && params.get('imprimir') === '1') { const t = setTimeout(() => window.print(), 400); return () => clearTimeout(t) } }, [a, params])
@@ -326,7 +328,8 @@ export default function AuthorizationPage() {
   return (
     <div className="page">
       <div className="page-head no-print">
-        <Link className="btn btn--ghost" to={`/app/hospitalizados/${a.hospitalizationId}?tab=anexos`}><ChevronLeft size={16} />Volver a los anexos</Link>
+        {chart ? <Link className="btn btn--ghost" to={`/app/hospitalizados/${a.hospitalizationId}?tab=anexos`}><ChevronLeft size={16} />Volver a los anexos</Link>
+          : <Link className="btn btn--ghost" to="/app/hospitalizados"><ChevronLeft size={16} />Volver a Hospitalizados</Link>}
         <div className="page-head__actions">
           <span className={`badge badge--${st.tone}`}>{st.label}</span>
           {a.pdfId && <button className="btn btn--ghost" onClick={() => openFile(a.pdfId!).catch((e: Error) => notify(e.message, 'error'))}><FileText size={16} />Abrir el PDF</button>}

@@ -14,9 +14,10 @@ import type { Role } from '../lib/types'
 import { cap, localISODate, sameDay } from '../lib/format'
 import { miniTourFor, tourFor, tourKey, type TourCtx, type TourStep } from '../lib/tours'
 import { stayPath } from '../lib/inpatient'
+import { ADMISSION_PENDING_TEXT, myPendingAdmissions } from '../lib/alerts'
 import { api } from '../lib/api'
 
-const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; end?: boolean; group?: string; roles?: Role[] }[] = [
+const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; anyPerm?: Permission[]; end?: boolean; group?: string; roles?: Role[] }[] = [
   { to: '/app', label: 'Inicio', icon: House, end: true, perm: undefined },
   { to: '/app/agenda', label: 'Agenda', icon: CalendarDays, perm: 'agenda.view' },
   // MC7: el médico ve Recetas y Cobrar debajo de Agenda. Recetas sin consulta: renovar un tratamiento sin abrir una consulta completa
@@ -25,7 +26,8 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
   // Pacientes se divide en las tres áreas que pidió el médico, más los crónicos
   { to: '/app/consulta-externa', label: 'Consulta externa', icon: Stethoscope, perm: 'agenda.view', group: 'Pacientes' },
   { to: '/app/observacion', label: 'Observación', icon: Eye, perm: 'inpatient.view', group: 'Pacientes' },
-  { to: '/app/hospitalizados', label: 'Hospitalizados', icon: BedDouble, perm: 'inpatient.view', group: 'Pacientes' },
+  // HO2 (ronda 16): recepción y administración entran al tablero de camas para ingresar (sin ver el expediente)
+  { to: '/app/hospitalizados', label: 'Hospitalizados', icon: BedDouble, perm: 'inpatient.view', anyPerm: ['inpatient.admit'], group: 'Pacientes' },
   // LB5 e IM1 (ronda 12): Laboratorio e Imágenes trabajan por área; la biblioteca va al final del mismo grupo
   { to: '/app/laboratorio/ambulatorio', label: 'Ambulatorio', icon: Stethoscope, perm: 'dept.work', roles: ['lab'], group: 'Pacientes' },
   { to: '/app/laboratorio/observacion', label: 'Observación', icon: Eye, perm: 'dept.work', roles: ['lab'], group: 'Pacientes' },
@@ -120,6 +122,8 @@ export default function AppShell() {
   // Enfermería: órdenes médicas nuevas sin revisar
   const newOrders = pendingOrders.reduce((s, x) => s + x.pending, 0)
   const inObservation = inpatients.filter((h) => h.kind === 'observation').length
+  // HO2 (ronda 16): al médico tratante, sus ingresos con órdenes pendientes (en rojo, en Hospitalizados)
+  const myAdmissions = myPendingAdmissions(inpatients, user.id).length
   const platform = user.role === 'superadmin'
   const touring = !!tour
   const f = features(settings)
@@ -131,7 +135,7 @@ export default function AppShell() {
   const items = platform
     ? [{ to: '/app', label: 'Clínicas y consultorios', icon: Building2, end: true }]
     : NAV.filter((n) => {
-      if (n.perm && !can(n.perm)) return false
+      if (n.perm && !can(n.perm) && !n.anyPerm?.some((p) => can(p))) return false
       if (n.to === '/app/hospitalizados' && !f.hospital) return false
       if (n.to === '/app/observacion' && !f.observation) return false
       // Enfermería entra al paciente: no usa la agenda. Médico y enfermería cobran, pero desde un acceso más discreto.
@@ -154,7 +158,7 @@ export default function AppShell() {
     const b = to === '/app/consulta-externa' ? { n: waiting, label: `${waiting} en sala` }
       : to === '/app/seguimientos' ? { n: due, label: `${due} seguimientos vencidos o de hoy` }
           : to === '/app/observacion' ? { n: inObservation, label: `${inObservation} en observación` }
-            : to === '/app/hospitalizados' ? { n: newOrders, alert: true, label: `${newOrders} órdenes nuevas sin revisar` }
+            : to === '/app/hospitalizados' ? (doctor && myAdmissions ? { n: myAdmissions, alert: true, label: `${myAdmissions} ${ADMISSION_PENDING_TEXT.toLowerCase()}` } : { n: newOrders, alert: true, label: `${newOrders} órdenes nuevas sin revisar` })
               : /^\/app\/(laboratorio|imagenes)\//.test(to) ? deptBadge(deptCount[to.endsWith('ambulatorio') ? 'outpatient' : to.endsWith('observacion') ? 'observation' : 'hospital']) : null
     return b && b.n > 0 ? b : null
   }

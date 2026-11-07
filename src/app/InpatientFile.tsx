@@ -11,7 +11,7 @@ import { MedicationForm } from '../components/Medications'
 import { DateTimeField } from '../components/DateTimeField'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict } from '../lib/catalogs'
-import { activeIndications, chainNote, frequencyHours, doseAt, formatRate, infusionUnitLabel, isLoadingSlot, currentDiagnoses, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
+import { activeIndications, admissionOrdersPending, attendingText, chainNote, frequencyHours, doseAt, formatRate, infusionUnitLabel, isLoadingSlot, currentDiagnoses, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
 import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
 import { NoteColumns, NoteExams, NoteText } from '../components/NoteColumns'
@@ -121,6 +121,9 @@ export default function InpatientFile() {
   const annexes = file.authorizations.length + file.procedures.filter((x) => x.kind === 'authorization').length + file.referrals.length
     + file.epicrises.filter((e) => e.status !== 'voided').length
   const pendingAuth = open && file.authorizations.find((a) => a.template === 'hospital' && a.status === 'pending')
+  // HO2 (ronda 16): ingreso directo sin nota de ingreso firmada (la franja de arriba y, para el médico, «Escribir nota de ingreso»)
+  const ordersPending = admissionOrdersPending(h, file.notes)
+  const writeAdmission = () => { setTab('notes'); setParams({ tab: TAB_PARAM.notes, nota: 'ingreso' }, { replace: true }) }
   const counts = tabCounts(alerts)
   // La pestaña queda en la URL: recargar, volver o el recorrido guiado regresan a ella
   const selectTab = (k: Tab) => {
@@ -191,6 +194,12 @@ export default function InpatientFile() {
       </div>
       {/* EN2: barra compacta; la autorización pendiente y la cama sin asignar van en ella como pendientes */}
       <AlertBar alerts={alerts} onGo={go} />
+      {ordersPending && (
+        <div className="alert-strip admission-pending" role="alert" data-testid="admission-pending">
+          <span><TriangleAlert size={16} style={{ verticalAlign: '-3px' }} /> Ingreso sin nota de ingreso: el médico tratante debe escribir las órdenes</span>
+          {can('inpatient.orders') && <button type="button" className="btn btn--primary btn--sm" onClick={writeAdmission}><NotebookPen size={15} />Escribir nota de ingreso</button>}
+        </div>
+      )}
       {/* NE8 (ronda 13): los dos avisos de la nota abierta van juntos, arriba del contenido de la pestaña */}
       {writingNote && tab !== 'notes' && <div className="note-dock__hints" role="status">
         <p className="note-dock__hint"><NotebookPen size={15} />{writingNote} abierta: la encuentras al final de esta pestaña.
@@ -202,7 +211,12 @@ export default function InpatientFile() {
       {editing && <GeneralDataModal h={h} p={p} onClose={() => setEditing(false)} onDone={() => { setEditing(false); load() }} />}
       {admitting && <AdmitBedStep h={h} p={p} onClose={() => { setAdmitting(false); setParams({}, { replace: true }) }}
         onDone={async () => { setAdmitting(false); const f = await fetchInpatient(h.id); setFile(f); const a = f.authorizations.find((x) => x.template === 'hospital' && x.status === 'pending'); if (a) setConsentFor(a.id); setParams({}, { replace: true }) }} />}
-      {consentFor && <ConsentChoice authorizationId={consentFor} p={p} onDone={() => { setConsentFor(null); setParams({}, { replace: true }); load() }} />}
+      {consentFor && <ConsentChoice authorizationId={consentFor} p={p} onDone={() => {
+        setConsentFor(null)
+        // HO2 (ronda 16): ingreso directo de un médico: al terminar la autorización se abre sola la nota de ingreso
+        if (ordersPending && can('inpatient.orders')) writeAdmission(); else setParams({}, { replace: true })
+        load()
+      }} />}
 
       {tab === 'sheet' && (
         <div className="hc">
@@ -221,6 +235,8 @@ export default function InpatientFile() {
                 {!obs && <div><dt>Especialidad del ingreso</dt><dd>{h.specialty ?? '—'}</dd></div>}
                 {h.observationAt && <div><dt>En observación desde</dt><dd>{dateTime(h.observationAt)}</dd></div>}
                 <div><dt>{obs ? 'Médico' : 'Ingresado por'}</dt><dd>{staffById(h.admittedBy)?.name}</dd></div>
+                {/* HO2 (ronda 16): médico(s) tratante(s), el primero es el principal */}
+                {!obs && <div><dt>Médico tratante</dt><dd>{attendingText(h.attendingIds ?? [h.admittedBy], (x) => staffById(x)?.name) || '—'}</dd></div>}
                 <div><dt>Procedencia</dt><dd>{h.consultationId ? <Link to={`/app/nota/${h.consultationId}`}>Consulta externa</Link> : 'Emergencia o ingreso directo'}</dd></div>
                 {!obs && <div><dt>Quién lo acompaña</dt><dd>{h.companionName ? `${h.companionName}${h.companionRelation ? ` (${h.companionRelation})` : ''}` : <span className="muted">Sin dato</span>}</dd></div>}
                 {!obs && <div><dt>Teléfono del acompañante</dt><dd>{h.companionPhone || <span className="muted">Sin dato</span>}</dd></div>}

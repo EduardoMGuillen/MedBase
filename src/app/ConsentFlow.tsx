@@ -17,7 +17,10 @@ import { ConsentSigning } from './ConsentSigning'
  * Si al paciente adulto le falta la identidad, se escribe aquí y la autorización se actualiza.
  */
 export function ConsentChoice({ authorizationId, p, onDone }: { authorizationId: string; p: Patient; onDone: (how: 'signed' | 'print' | 'later') => void }) {
-  const { fetchAuthorization, updatePatient, notify } = useStore()
+  const { fetchAuthorization, updatePatient, notify, can } = useStore()
+  // HO2 (ronda 16): «Firmar ahora» solo si su rol puede firmar autorizaciones (médico y enfermería); recepción y
+  // administración, al ingresar, ven «Imprimir para firmar en papel» y «Firmar después»
+  const canSign = can('inpatient.orders') || can('inpatient.care')
   const [a, setA] = useState<Authorization | null>(null)
   const [signing, setSigning] = useState(false)
   const [dni, setDni] = useState(p.dni ?? '')
@@ -37,12 +40,12 @@ export function ConsentChoice({ authorizationId, p, onDone }: { authorizationId:
         <FileSignature size={20} />
         <div>
           <b>{a.data.patient.name}</b>
-          <span>{surgical ? `Procedimiento: ${a.data.procedure}` : `Ingreso: ${a.data.admission?.diagnosis ?? a.data.diagnosis ?? ''}`}</span>
+          <span>{surgical ? `Procedimiento: ${a.data.procedure}` : `Ingreso: ${a.data.admission?.diagnosis ?? a.data.diagnosis ?? 'el diagnóstico lo pone el médico en la nota de ingreso'}`}</span>
           {surgical && a.data.diagnosis && <span>Diagnóstico: {a.data.diagnosis}</span>}
           {!surgical && a.data.companion && <span>Acompañante: {a.data.companion.name}{a.data.companion.relation ? ` (${a.data.companion.relation})` : ''}</span>}
         </div>
       </div>
-      {needsDni && (
+      {needsDni && canSign && (
         <div className="consent-choice__dni">
           <label className="field"><span>Identidad del paciente (falta en su ficha)</span><DniInput value={dni} onChange={setDni} /></label>
           <button className="btn btn--soft btn--sm" disabled={dni.replace(/\D/g, '').length < 6} onClick={async () => {
@@ -50,11 +53,11 @@ export function ConsentChoice({ authorizationId, p, onDone }: { authorizationId:
           }}>Guardar identidad</button>
         </div>
       )}
-      <div className="choice-grid choice-grid--3">
-        <button className="choice choice--primary" onClick={() => setSigning(true)} autoFocus><PenLine size={22} /><b>{surgical ? 'Firmar ahora en pantalla' : 'Firmar ahora'}</b>
-          <small>{a.data.patient.minor ? 'Firma su representante' : 'El paciente'} lee, marca que entendió y firma con el dedo; tú confirmas con tu firma guardada.</small></button>
+      <div className={`choice-grid choice-grid--${canSign ? 3 : 2}`}>
+        {canSign && <button className="choice choice--primary" onClick={() => setSigning(true)} autoFocus><PenLine size={22} /><b>{surgical ? 'Firmar ahora en pantalla' : 'Firmar ahora'}</b>
+          <small>{a.data.patient.minor ? 'Firma su representante' : 'El paciente'} lee, marca que entendió y firma con el dedo; tú confirmas con tu firma guardada.</small></button>}
         <button className="choice" onClick={print}><Printer size={22} /><b>Imprimir para firmar en papel</b><small>Después subes la foto o el PDF desde Anexos.</small></button>
-        <button className="choice" onClick={() => onDone('later')}><Clock size={22} /><b>Firmar después</b><small>Queda pendiente de firma en Anexos, con su alerta.</small></button>
+        <button className="choice" onClick={() => onDone('later')}><Clock size={22} /><b>Firmar después</b><small>{canSign ? 'Queda pendiente de firma en Anexos, con su alerta.' : 'Queda pendiente de firma: enfermería o el médico la firman con el paciente.'}</small></button>
       </div>
     </Modal>
   )

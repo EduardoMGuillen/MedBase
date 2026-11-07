@@ -141,6 +141,9 @@ export const toHospitalization = (r: Row): Hospitalization => ({
   vitalsEveryHours: r.vitals_every_hours == null ? undefined : Number(r.vitals_every_hours),
   vitalsPlan: r.vitals_plan ? j(r.vitals_plan, undefined) : undefined,
   specialty: s(r.specialty),
+  // HO2 (ronda 16): sin dato (estancias creadas antes de v88 o desde la consulta), quien ingresó
+  attendingIds: (() => { const ids = j<string[]>(r.attending_ids, []); return ids.length ? ids : [String(r.admitted_by)] })(),
+  ordersPending: r.orders_pending == null ? undefined : Boolean(r.orders_pending),
 })
 
 /** GE4 (ronda 9): número de versión (sólo si se corrigió) y hasta cuándo puede corregirlo su autor. */

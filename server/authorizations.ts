@@ -13,7 +13,9 @@ import type { AuthorizationData } from '../src/lib/types.js'
 export async function authorizationBase(q: Sql, h: Row, generatedBy: { id: string; role: string }) {
   const cid = String(h.clinic_id)
   const p = (await q.one('SELECT * FROM patients WHERE id = ? AND clinic_id = ?', [String(h.patient_id), cid]))!
-  const doc = (await q.one('SELECT name, license FROM staff WHERE id = ?', [generatedBy.role === 'doctor' ? generatedBy.id : String(h.admitted_by)]))!
+  // HO2 (ronda 16): si la genera quien no es médico (enfermería, o recepción al ingresar), firma el médico tratante principal
+  const attending = (() => { try { return (JSON.parse(String(h.attending_ids ?? '[]')) as string[])[0] } catch { return undefined } })()
+  const doc = (await q.one('SELECT name, license FROM staff WHERE id = ?', [generatedBy.role === 'doctor' ? generatedBy.id : attending ?? String(h.admitted_by)]))!
   const cfg = clinicSettings((await q.one('SELECT * FROM clinics WHERE id = ?', [cid]))!)
   const birth = String(p.birth_date ?? '')
   return {

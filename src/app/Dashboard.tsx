@@ -11,7 +11,7 @@ import { WardAlerts } from './WardAlerts'
 import { PageHead, StatusBadge } from '../components/ui'
 import { ReminderButton } from '../components/Reminder'
 import { HBars } from '../components/Charts'
-import { date, fullName, localISODate, money, sameDay, time } from '../lib/format'
+import { date, dmyTime, fullName, localISODate, money, sameDay, time } from '../lib/format'
 import type { Appointment } from '../lib/types'
 import Platform from './Platform'
 import { features, hasRole } from '../lib/permissions'
@@ -20,6 +20,31 @@ import { ArrivalsPanel } from './Arrivals'
 import { CompleteRegistration } from './NewPatient'
 import { pendingArrivals } from '../lib/arrivals'
 import { AnesthesiaPending } from '../components/AnesthesiaSheet'
+import { ADMISSION_PENDING_TEXT, myPendingAdmissions } from '../lib/alerts'
+import { bedLabel } from './Inpatients'
+
+/**
+ * HO2 (ronda 16): «Ingreso con órdenes pendientes»: los ingresos directos de los que el médico es tratante y que todavía no
+ * tienen nota de ingreso firmada (como el pendiente de anestesia). Desaparecen solos al firmarse la nota de ingreso.
+ */
+function AdmissionPending() {
+  const { user, inpatients, patient, bed } = useStore()
+  const list = user ? myPendingAdmissions(inpatients, user.id) : []
+  if (!list.length) return null
+  return (
+    <section className="panel" data-testid="admission-orders-pending">
+      <div className="panel__head"><div><h2>{ADMISSION_PENDING_TEXT}</h2><p>Eres el médico tratante. Escribe la nota de ingreso con las indicaciones, los exámenes y los medicamentos.</p></div></div>
+      <div className="rows">{list.map((h) => {
+        const p = patient(h.patientId)
+        return (
+          <Link key={h.id} className="row anes-row anes-row--link" to={`/app/hospitalizados/${h.id}?tab=notas&nota=ingreso`}>
+            <div className="row__who"><strong>{ADMISSION_PENDING_TEXT} · {p ? fullName(p) : 'Paciente'} · {bedLabel(bed(h.bedId))} · ingresó {dmyTime(h.admittedAt)}</strong><span>Escribir nota de ingreso</span></div>
+          </Link>
+        )
+      })}</div>
+    </section>
+  )
+}
 
 /** Recepción llama el día del control. Los avisos de la semana y de la víspera ya salieron solos. */
 function FollowupCalls() {
@@ -157,6 +182,8 @@ export default function Dashboard() {
         )}
         {/* PQ3 (ronda 14): solo si figura como anestesiólogo con usuario */}
         <AnesthesiaPending />
+        {/* HO2 (ronda 16) */}
+        <AdmissionPending />
         <NewResults />
         {office && <ExamTray />}
         <ArrivalsPanel doctorId={user.id} onArrive={office ? arrive : undefined} />

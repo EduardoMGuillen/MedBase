@@ -26,7 +26,7 @@ import { insertExtraDemoUsers } from './demoUsers.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '87'
+const SCHEMA_VERSION = '88'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1365,6 +1365,11 @@ CREATE TRIGGER surgical_counts_no_delete BEFORE DELETE ON surgical_counts FOR EA
 -- v87 (ronda 16, ME16): un solo formulario de medicamento; las órdenes de la hoja también guardan la «Cantidad total», como la
 -- receta (opcional; las de antes quedan sin dato). La infusión de la consulta con ingreso usa las columnas de infusión de siempre.
 ALTER TABLE hosp_meds ADD COLUMN IF NOT EXISTS quantity TEXT;
+-- v88 (ronda 16, HO2): médico(s) tratante(s) de la estancia: JSON con los id del personal, el primero es el principal. Lo elige
+-- quien ingresa (recepción y administración también ingresan, con el médico tratante obligatorio). Las estancias de antes
+-- quedan con quien las ingresó (siempre un médico). Idempotente: solo llena las vacías.
+ALTER TABLE hospitalizations ADD COLUMN IF NOT EXISTS attending_ids TEXT;
+UPDATE hospitalizations SET attending_ids = json_build_array(admitted_by)::text WHERE attending_ids IS NULL AND admitted_by IS NOT NULL;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

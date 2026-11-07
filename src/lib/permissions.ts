@@ -52,6 +52,8 @@ export const PERMISSIONS = {
   // EN1 (ronda 16): rol de turnos de enfermería (la licenciada lo edita de hoy en adelante; las auxiliares lo ven)
   'roster.view': 'Ver el rol de turnos de su departamento',
   'roster.edit': 'Editar el rol de turnos de su departamento, de hoy en adelante',
+  // HO2 (ronda 16): ingresar a hospitalización (el médico, y también recepción y administración con el médico tratante)
+  'inpatient.admit': 'Ingresar pacientes a hospitalización',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -72,11 +74,15 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'supplies.add', 'sets.manage',
     // RU10 (ronda 16): también registra material (en las clínicas pequeñas cubre a enfermería y a recepción)
     'usage.record',
+    // HO2 (ronda 16): ingresa a hospitalización con el médico tratante (no escribe notas ni órdenes)
+    'inpatient.admit',
   ],
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',
     'consult.write', 'rx.write', 'rx.view', 'billing.manage', 'inpatient.view', 'inpatient.orders', 'followups.view', 'followups.manage',
     'exams.order', 'exams.process',
+    // HO2 (ronda 16)
+    'inpatient.admit',
   ],
   // AD9: enfermería ya no cobra (los cobros los generan recepción, el médico o administración)
   nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'inpatient.view', 'inpatient.care', 'orders.review', 'followups.view',
@@ -90,7 +96,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   // RU2 y RU3 (ronda 14): ve el registro de uso, lo imprime y lo exporta. RU10 (ronda 16): también registra material (no anula
   // lo de otros: usage.void sigue siendo de administración)
   reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view', 'ambulatory.register', 'usage.view', 'usage.export',
-    'usage.record'],
+    'usage.record',
+    // HO2 (ronda 16): ingresa a hospitalización con el médico tratante (no escribe notas ni órdenes)
+    'inpatient.admit'],
   // Asistente de consultorio (secretaria o enfermera): recepción, preclínica, caja y aplicar dosis en observación. RU (ronda 14):
   // como enfermería en el registro de uso de material.
   assistant: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage',
@@ -121,7 +129,8 @@ const POSITION_ROLES: Role[] = ['lab', 'imaging', 'nurse']
 const USAGE_ALL: Permission[] = ['supplies.view', 'supplies.manage', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export', 'usage.void', 'supplies.add', 'sets.manage']
 const OFFICE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
   doctor: [...new Set<Permission>([...ROLE_PERMISSIONS.doctor, 'checkin.manage', 'inpatient.care', ...USAGE_ALL])],
-  admin: [...new Set<Permission>([...ROLE_PERMISSIONS.admin, ...USAGE_ALL])],
+  // HO2 (ronda 16): un consultorio no tiene hospitalización: administración no ingresa
+  admin: [...new Set<Permission>([...ROLE_PERMISSIONS.admin.filter((p) => p !== 'inpatient.admit'), ...USAGE_ALL])],
   // EN1 (ronda 16): un consultorio no tiene rol de turnos
   nurse: ROLE_PERMISSIONS.nurse.filter((p) => p !== 'roster.view'),
   assistant: ROLE_PERMISSIONS.assistant,

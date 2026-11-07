@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Row, Sql } from './sql.js'
 import { clinicSettings, toEpicrisis } from './mappers.js'
 import { age as ageText, contactLine, medicationOrder } from '../src/lib/format.js'
+import { attendingText } from '../src/lib/inpatient.js'
 import type { DischargeData, EpicrisisData, PrescriptionItem } from '../src/lib/types.js'
 
 const j = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(String(v)) as T : fallback } catch { return fallback } }
@@ -23,7 +24,12 @@ export async function buildEpicrisis(q: Sql, h: Row): Promise<EpicrisisData> {
     q.one('SELECT * FROM patients WHERE id = ?', [String(h.patient_id)]),
     q.one('SELECT * FROM clinics WHERE id = ?', [cid]),
     h.bed_id ? q.one('SELECT room, label FROM beds WHERE id = ?', [String(h.bed_id)]) : undefined,
-    q.one('SELECT name FROM staff WHERE id = ?', [String(h.admitted_by)]),
+    // HO2 (ronda 16): los médicos tratantes de la estancia (el primero es el principal); las de antes, quien ingresó
+    (async () => {
+      const ids = j<string[]>(h.attending_ids, []).length ? j<string[]>(h.attending_ids, []) : [String(h.admitted_by)]
+      const rows = await q.query(`SELECT id, name FROM staff WHERE id IN (${ids.map(() => '?').join(',')})`, ids)
+      return { name: attendingText(ids, (x) => rows.find((r) => String(r.id) === x)?.name as string | undefined) }
+    })(),
     q.query('SELECT * FROM hosp_notes WHERE hospitalization_id = ? ORDER BY at, id', [id]),
     q.query('SELECT * FROM hosp_meds WHERE hospitalization_id = ? ORDER BY first_at, id', [id]),
     q.query(`SELECT d.med_id, MIN(d.given_at) AS first_given, MAX(d.given_at) AS last_given FROM hosp_doses d JOIN hosp_meds m ON m.id = d.med_id

@@ -48,13 +48,14 @@ import SupplyCatalogPage from './app/SupplyCatalog'
 import UsagePage from './app/Usage'
 
 /** Entra sólo con sesión, con el permiso y, si se pide, con el módulo activo en la cuenta (un consultorio no tiene hospitalización). */
-function Guard({ perm, feature, children }: { perm?: Permission; feature?: 'hospital' | 'observation'; children: ReactNode }) {
+function Guard({ perm, anyPerm, feature, children }: { perm?: Permission; anyPerm?: Permission[]; feature?: 'hospital' | 'observation'; children: ReactNode }) {
   const { user, can, checking, settings } = useStore()
   if (checking) return <Loading label="Abriendo tu sesión" />
   if (!user) return <Navigate to="/login" replace />
   // AD5: la pantalla es de otro de sus roles: se ofrece cambiar de vista
   // DP4 (ronda 11): una dirección a la que el rol no tiene acceso dice «Sin permiso» (el servidor también la bloquea)
-  if (perm && !can(perm)) return roleWith(user, perm, settings.kind) ? <SwitchViewOffer perm={perm} /> : <NoPermission />
+  // HO2 (ronda 16): `anyPerm`: también entra quien tiene alguno de esos permisos (recepción, al tablero de camas para ingresar)
+  if (perm && !can(perm) && !anyPerm?.some((p) => can(p))) return roleWith(user, perm, settings.kind) ? <SwitchViewOffer perm={perm} /> : <NoPermission />
   if (feature && !features(settings)[feature]) return <Navigate to="/app" replace />
   return children
 }
@@ -102,11 +103,11 @@ export default function App() {
             <Route path="observacion" element={<Guard perm="inpatient.view" feature="observation"><Observation /></Guard>} />
             <Route path="observacion/:id" element={<Guard perm="inpatient.view" feature="observation"><InpatientFile key="observacion" /></Guard>} />
             <Route path="observacion/:id/expediente" element={<Guard perm="inpatient.view"><FullRecord /></Guard>} />
-            <Route path="hospitalizados" element={<Guard perm="inpatient.view" feature="hospital"><Inpatients /></Guard>} />
+            <Route path="hospitalizados" element={<Guard perm="inpatient.view" anyPerm={['inpatient.admit']} feature="hospital"><Inpatients /></Guard>} />
             <Route path="hospitalizados/:id/expediente" element={<Guard perm="inpatient.view"><FullRecord /></Guard>} />
             <Route path="hospitalizados/:id" element={<Guard perm="inpatient.view"><InpatientFile key="hospitalizacion" /></Guard>} />
             <Route path="referencias/:id" element={<Guard perm="chart.view"><ReferralPage /></Guard>} />
-            <Route path="autorizaciones/:id" element={<Guard perm="inpatient.view"><AuthorizationPage /></Guard>} />
+            <Route path="autorizaciones/:id" element={<Guard perm="inpatient.view" anyPerm={['inpatient.admit']}><AuthorizationPage /></Guard>} />
             <Route path="epicrisis/:id" element={<Guard perm="inpatient.view"><EpicrisisPage /></Guard>} />
             <Route path="seguimientos" element={<Guard perm="followups.view"><Followups /></Guard>} />
             <Route path="pacientes" element={<Guard perm="patients.view"><Patients /></Guard>} />

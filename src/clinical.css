@@ -1091,3 +1091,9 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 /* CX5 y NE8 (ronda 13): «Ir a la nota» flotante cuando la nota queda fuera de la vista */
 .go-note { position: fixed; right: 24px; bottom: 24px; z-index: 45; min-height: 44px; box-shadow: 0 12px 28px -10px rgba(14, 34, 51, 0.45); }
 @media (max-width: 640px) { .go-note { right: 16px; bottom: 16px; } }
+
+/* HO2 (ronda 16): médico(s) tratante(s) del ingreso y franja del ingreso sin nota de ingreso */
+.attending__list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.attending__chip { display: inline-flex; align-items: center; gap: 6px; }
+.attending__chip .icon-btn { width: 22px; height: 22px; }
+.admission-pending { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }

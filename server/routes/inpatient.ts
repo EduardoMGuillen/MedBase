@@ -8,12 +8,12 @@ import { type Ctx, diagnosisInput, fail, parse, type Row } from '../http.js'
 import { nextFolio } from '../db.js'
 import { assertGrace, saveVersion } from '../grace.js'
 import { noteMedRows, noteOrderLocks, REMOVED_IN_GRACE } from '../correctionLocks.js'
-import { toAttachment, toAuthorization, toBed, toDose, toEpicrisis, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral, toVitals } from '../mappers.js'
+import { rolesOf, toAttachment, toAuthorization, toBed, toDose, toEpicrisis, toHospitalization, toInpatientMed, toInpatientNote, toOrderMark, toProcedure, toReferral, toVitals } from '../mappers.js'
 import { currentVitalsMode, frequencyFromOrders, sameVitalsMode, VITALS_FREQUENCIES, vitalsModeShort } from '../../src/lib/vitalsSheet.js'
 import { buildEpicrisis, createEpicrisisDraft, missingForIssue } from '../epicrisis.js'
 import { normalizeDni } from '../../src/lib/format.js'
 import type { Sql } from '../sql.js'
-import { activeIndications, chainNote, courseDone, doseAt, indicationLines, isScheduled, LATE_AFTER_MIN, lineOrder, medLabel, twoDecimals } from '../../src/lib/inpatient.js'
+import { activeIndications, attendingText, chainNote, courseDone, doseAt, indicationLines, isScheduled, LATE_AFTER_MIN, lineOrder, medLabel, twoDecimals } from '../../src/lib/inpatient.js'
 import type { InpatientNote, OrderLine, VitalsSegment } from '../../src/lib/types.js'
 import { VITALS_OTHER_RANGE } from '../../src/lib/clinicalConfig.js'
 import { examLine, isPending } from '../../src/lib/exams.js'
@@ -138,6 +138,13 @@ const medInput = z.object({
 })
 
 /**
+ * HO2 (ronda 16): «Ingreso con órdenes pendientes» en SQL (alias `h` de hospitalizations): ingreso directo a hospitalización,
+ * activo, sin consulta de origen ni observación previa y sin nota de ingreso. Es `admissionOrdersPending` (src/lib/inpatient.ts).
+ */
+export const ORDERS_PENDING_SQL = `(h.status = 'active' AND h.kind <> 'observation' AND h.consultation_id IS NULL AND h.observation_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM hosp_notes hn WHERE hn.hospitalization_id = h.id AND hn.kind = 'admission'))`
+
+/**
  * Notas con órdenes que enfermería todavía no revisa, de los pacientes internados ahora. Alimenta el
  * contador del menú y la lista "Órdenes nuevas" del inicio de enfermería.
  */
@@ -187,6 +194,15 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     return h
   }
   const bedName = (b: Row) => `cama ${b.room}${b.label ? `-${b.label}` : ''}`
+  /** HO2 (ronda 16): los médicos tratantes: personal activo de la clínica con el rol de médico, en el orden elegido. */
+  const attendingRows = async (cid: string, ids: string[]) => {
+    const rows = await sql.query(`SELECT * FROM staff WHERE clinic_id = ? AND id IN (${ids.map(() => '?').join(',')})`, [cid, ...ids])
+    return ids.map((x) => {
+      const r = rows.find((y) => String(y.id) === x)
+      if (!r || !r.active || !rolesOf(r).includes('doctor')) fail(400, 'El médico tratante debe ser un médico activo de la clínica.')
+      return r!
+    })
+  }
   /** Un consultorio no tiene camas ni hospitalización (sí observación, si la usa). */
   const assertHospital = async (cid: string) => {
     if ((await sql.one('SELECT kind FROM clinics WHERE id = ?', [cid]))?.kind === 'office') fail(409, 'Un consultorio no tiene hospitalización ni camas.')
@@ -263,13 +279,19 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   })
 
   // ---------- Ingreso ----------
-  app.post('/api/inpatient', auth, need('inpatient.orders'), async (req, res) => {
+  // HO2 (ronda 16): ingresan el médico y también recepción y administración (`inpatient.admit`). Quien no es médico elige
+  // obligatoriamente al médico tratante y puede dejar el diagnóstico para la nota de ingreso. El ingreso directo queda «con
+  // órdenes pendientes» hasta que se firma la nota de ingreso.
+  app.post('/api/inpatient', auth, need('inpatient.admit'), async (req, res) => {
+    const doctor = can(userOf(req), 'inpatient.orders')
     const b = parse(z.object({
       patientId: z.string().min(1, 'Elige al paciente.'),
       bedId: z.string().min(1, 'Elige la cama.'),
       admittedAt: when.optional(),
       reason: z.string().trim().min(3, 'Escribe el motivo del ingreso.').max(1000),
-      diagnoses: dx.min(1, 'Agrega al menos un diagnóstico de ingreso.'),
+      diagnoses: doctor ? dx.min(1, 'Agrega al menos un diagnóstico de ingreso.') : dx.default([]),
+      // HO2: médico(s) tratante(s), el primero es el principal. Si ingresa un médico y no elige, es él mismo
+      attendingIds: z.array(z.string().min(1)).max(5, 'Hasta 5 médicos tratantes.').default([]),
       consultationId: z.string().optional(),
       companionName: z.string().trim().max(100).optional(),
       companionRelation: z.string().trim().max(40).optional(),
@@ -282,7 +304,11 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const cid = clinicOf(req)
     await assertHospital(cid)
     ;(await patientRow(cid, b.patientId)) ?? fail(404, 'El paciente no existe.')
-    const specialty = b.specialty || specialtyOf(user)
+    const attendingIds = [...new Set(b.attendingIds.length ? b.attendingIds : doctor ? [user.id] : [])]
+    if (!attendingIds.length) fail(400, 'Elige al médico tratante.')
+    const attending = await attendingRows(cid, attendingIds)
+    // Sin especialidad elegida: la del médico que ingresa o, si ingresa recepción, la del médico tratante principal
+    const specialty = b.specialty || (doctor ? specialtyOf(user) : specialtyOf({ specialty: attending[0].specialty ? String(attending[0].specialty) : undefined }))
     const bed = await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ? AND active', [b.bedId, cid])
     if (!bed) fail(400, 'La cama elegida no existe o está desactivada.')
     if (b.consultationId && !(await sql.one('SELECT 1 FROM consultations WHERE id = ? AND patient_id = ? AND clinic_id = ?', [b.consultationId, b.patientId, cid]))) {
@@ -297,22 +323,26 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     // indicó y jala sus órdenes y medicamentos
     const consultationId = b.consultationId ?? await findAdmissionConsult(sql, cid, b.patientId)
     let medOrders = 0
+    let authorizationId: string | undefined
     await sql.tx(async (q) => {
       // El candado evita que dos médicos ocupen la misma cama al mismo tiempo
       await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`beds:${cid}`])
       if (await q.one(`SELECT 1 FROM hospitalizations WHERE bed_id = ? AND status = 'active'`, [b.bedId])) fail(409, 'Esa cama ya está ocupada. Elige otra.')
       if (await q.one(`SELECT 1 FROM hospitalizations WHERE patient_id = ? AND status = 'active'`, [b.patientId])) fail(409, 'Este paciente ya está hospitalizado.')
       await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, companion_name, companion_relation,
-          companion_phone, patient_phone, status, specialty) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?)`,
+          companion_phone, patient_phone, status, specialty, attending_ids) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
         [id, cid, b.patientId, b.bedId, consultationId ?? null, admittedAt.toISOString(), user.id, b.reason, JSON.stringify(b.diagnoses),
-          b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null, specialty])
+          b.companionName || null, b.companionRelation || null, b.companionPhone || null, b.patientPhone || null, specialty, JSON.stringify(attendingIds)])
       medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: id })
       // Ronda 8: internado, deja la consulta externa (sus citas abiertas de hoy se cancelan)
       await closeOpenVisits(q, cid, b.patientId, admittedAt)
-      await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [id]))!, user)
-      await audit(user, `Ingresó a ${name} en la ${bedName(bed!)} (${specialty})${consultationId && !b.consultationId ? ', vinculado a su consulta externa' : ''}${medOrders ? ` con ${medOrders} medicamento(s) de la consulta` : ''}`, q)
+      authorizationId = (await ensureHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [id]))!, user)).authorization.id
+      // HO2 (ronda 16): queda quién ingresó (y con qué rol), el médico tratante y si quedó con órdenes pendientes
+      const who = attendingText(attendingIds, (x) => attending.find((r) => String(r.id) === x)?.name as string | undefined)
+      await audit(user, `Ingresó a ${name} en la ${bedName(bed!)} (${specialty})${consultationId && !b.consultationId ? ', vinculado a su consulta externa' : ''}${medOrders ? ` con ${medOrders} medicamento(s) de la consulta` : ''}`
+        + `; médico tratante: ${who}${doctor ? '' : ` (ingreso por ${user.role === 'admin' ? 'administración' : 'recepción'}${b.diagnoses.length ? '' : ', sin diagnóstico'})`}${consultationId ? '' : '; ingreso con órdenes pendientes hasta la nota de ingreso'}`, q)
     })
-    res.status(201).json({ ...toHospitalization((await hospRow(cid, id))!), medOrders })
+    res.status(201).json({ ...toHospitalization((await hospRow(cid, id))!), medOrders, authorizationId })
   })
 
   /**
@@ -372,10 +402,18 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       companionPhone: z.string().trim().max(30).optional(),
       patientPhone: z.string().trim().max(30).optional(),
       specialty: z.string().trim().min(2).max(60).optional(),
-    }).strict(), req.body, 'Sólo se editan los datos generales: cama, especialidad, acompañante y teléfonos.')
+      // HO2 (ronda 16): médico(s) tratante(s); los cambia un médico
+      attendingIds: z.array(z.string().min(1)).min(1, 'Elige al médico tratante.').max(5, 'Hasta 5 médicos tratantes.').optional(),
+    }).strict(), req.body, 'Sólo se editan los datos generales: cama, especialidad, médico tratante, acompañante y teléfonos.')
     const user = userOf(req)
     const cid = clinicOf(req)
     const h = await activeHosp(cid, String(req.params.id))
+    if (b.attendingIds && !can(user, 'inpatient.orders')) fail(403, 'El médico tratante lo cambia un médico.')
+    const prevAttending = toHospitalization(h).attendingIds ?? [String(h.admitted_by)]
+    const nextAttending = b.attendingIds ? [...new Set(b.attendingIds)] : undefined
+    const attendingChanged = !!nextAttending && JSON.stringify(nextAttending) !== JSON.stringify(prevAttending)
+    const names = attendingChanged ? await attendingRows(cid, nextAttending!) : []
+    const nameOf = async (x: string) => String((await sql.one('SELECT name FROM staff WHERE id = ?', [x]))?.name ?? '')
     if (b.bedId && h.kind === 'observation') fail(409, 'En observación no se asigna cama. Usa «Pasar a hospitalización».')
     const bed = b.bedId ? await sql.one('SELECT * FROM beds WHERE id = ? AND clinic_id = ? AND active', [b.bedId, cid]) : undefined
     if (b.bedId && !bed) fail(400, 'La cama elegida no existe o está desactivada.')
@@ -391,7 +429,13 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       const after = k === 'bedId' ? await bedText(next) : next ? `"${next}"` : 'vacío'
       changes.push(`${labels[k]}: ${before} → ${after}`)
     }
+    if (attendingChanged) {
+      const before: string[] = []
+      for (const x of prevAttending) before.push(await nameOf(x))
+      changes.push(`médico tratante: ${attendingText(prevAttending, (x) => before[prevAttending.indexOf(x)] || undefined)} → ${attendingText(nextAttending!, (x) => names.find((r) => String(r.id) === x)?.name as string | undefined)}`)
+    }
     await sql.tx(async (q) => {
+      if (attendingChanged) await q.run('UPDATE hospitalizations SET attending_ids = ? WHERE id = ?', [JSON.stringify(nextAttending), String(h.id)])
       if (b.bedId && b.bedId !== h.bed_id) {
         await q.run('SELECT pg_advisory_xact_lock(hashtext(?))', [`beds:${cid}`])
         if (await q.one(`SELECT 1 FROM hospitalizations WHERE bed_id = ? AND status = 'active' AND id <> ?`, [b.bedId, String(h.id)])) fail(409, 'Esa cama ya está ocupada. Elige otra.')
@@ -635,6 +679,16 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       }
       const changes = [b.meds.length && `${b.meds.length} medicamento(s) indicado(s)`, b.stopMedIds.length && `${b.stopMedIds.length} omitido(s)`, b.exams.length && `${b.exams.length} examen(es)`, taken && 'signos vitales (origen: nota de evolución)'].filter(Boolean).join(', ')
       await audit(user, `Escribió ${what} de ${name}${changes ? `: ${changes}` : ''}`, q)
+      // HO2 (ronda 16): la nota de ingreso resuelve el «Ingreso con órdenes pendientes». Si el ingreso se hizo sin diagnóstico
+      // (recepción o administración), toma los de la nota; la autorización pendiente de firma se actualiza con ellos
+      if (b.kind === 'admission') {
+        const stayDx = JSON.parse(String(h.diagnoses ?? '[]')) as unknown[]
+        if (!stayDx.length && b.diagnoses.length) {
+          await q.run('UPDATE hospitalizations SET diagnoses = ? WHERE id = ?', [JSON.stringify(b.diagnoses), id])
+          await refreshPendingHospitalAuthorization(q, (await q.one('SELECT * FROM hospitalizations WHERE id = ?', [id]))!)
+        }
+        await audit(user, `Firmó la nota de ingreso de ${name}: el ingreso ya no tiene órdenes pendientes${stayDx.length || !b.diagnoses.length ? '' : '; los diagnósticos de ingreso se tomaron de la nota'}`, q)
+      }
       // NE4 (ronda 8): qué diagnóstico se quitó o se agregó respecto de los vigentes (la última nota con diagnósticos o el ingreso)
       if (b.kind === 'evolution') {
         const prev = prevDx
@@ -914,8 +968,10 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     res.status(201).json(toAuthorization((await sql.one('SELECT * FROM authorizations WHERE id = ?', [id]))!))
   })
 
-  app.get('/api/authorizations/:aid', auth, need('inpatient.view'), async (req, res) => {
+  // HO2 (ronda 16): recepción y administración (que ingresan) ven e imprimen la autorización de hospitalización, no las quirúrgicas
+  app.get('/api/authorizations/:aid', auth, need('inpatient.view', 'inpatient.admit'), async (req, res) => {
     const row = (await sql.one('SELECT * FROM authorizations WHERE id = ? AND clinic_id = ?', [String(req.params.aid), clinicOf(req)])) ?? fail(404, 'La autorización no existe.')
+    if (!can(userOf(req), 'inpatient.view') && row!.template !== 'hospital') fail(403, 'Solo puedes ver la autorización de hospitalización.')
     res.json(toAuthorization(row!))
   })
 

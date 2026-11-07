@@ -28,7 +28,7 @@ import { registerBilling } from './routes/billing.js'
 import { registerReports } from './routes/reports.js'
 import { registerFiles } from './routes/files.js'
 import { registerPlatform } from './routes/platform.js'
-import { pendingOrders, registerInpatient, vitalsBody, vitalsModeInput } from './routes/inpatient.js'
+import { ORDERS_PENDING_SQL, pendingOrders, registerInpatient, vitalsBody, vitalsModeInput } from './routes/inpatient.js'
 import { syncStayOrders } from './medOrders.js'
 import { ensureHospitalAuthorization, refreshPendingAuthorizationsForPatient } from './authorizations.js'
 import { createIcdClient, icdConfigFromEnv, type IcdClient } from './icd.js'
@@ -423,7 +423,9 @@ export function createApp(opts: AppOptions) {
       // AD3: todos los roles ven el estado de las camas (libre u ocupada); sólo administración las edita
       sql.query('SELECT * FROM beds WHERE clinic_id = ? ORDER BY room, label', [cid]),
       // Con aviso de la autorización de hospitalización pendiente de firma, para enfermería y el médico
-      can(user, 'inpatient.view') ? sql.query(`SELECT h.*, EXISTS(SELECT 1 FROM authorizations a WHERE a.hospitalization_id = h.id AND a.template = 'hospital' AND a.status = 'pending') AS auth_pending
+      // HO2 (ronda 16): y si es un ingreso directo sin nota de ingreso firmada («Sin órdenes de ingreso»)
+      can(user, 'inpatient.view') ? sql.query(`SELECT h.*, EXISTS(SELECT 1 FROM authorizations a WHERE a.hospitalization_id = h.id AND a.template = 'hospital' AND a.status = 'pending') AS auth_pending,
+        ${ORDERS_PENDING_SQL} AS orders_pending
         FROM hospitalizations h WHERE h.clinic_id = ? AND h.status = 'active' ORDER BY h.admitted_at`, [cid]) : none,
       can(user, 'followups.view') ? sql.query('SELECT * FROM followups WHERE clinic_id = ? AND active ORDER BY due_date', [cid]) : none,
       sql.query(`SELECT DISTINCT ON (patient_id) patient_id, discharged_at FROM hospitalizations
@@ -435,7 +437,8 @@ export function createApp(opts: AppOptions) {
       sql.query(`SELECT h.id, h.patient_id, h.kind, h.admitted_at, h.observation_at, b.room, b.label FROM hospitalizations h LEFT JOIN beds b ON b.id = h.bed_id
         WHERE h.clinic_id = ? AND h.status = 'active'`, [cid]),
       // AD3: estado de cada cama (quién la ocupa y la especialidad del ingreso), sin datos clínicos, para todos los roles
-      sql.query(`SELECT id, bed_id, patient_id, specialty FROM hospitalizations WHERE clinic_id = ? AND status = 'active' AND bed_id IS NOT NULL AND kind = 'hospital'`, [cid]),
+      // HO2 (ronda 16): con el médico tratante (recepción y administración ven el tablero de camas para ingresar)
+      sql.query(`SELECT id, bed_id, patient_id, specialty, attending_ids, admitted_by FROM hospitalizations WHERE clinic_id = ? AND status = 'active' AND bed_id IS NOT NULL AND kind = 'hospital'`, [cid]),
     ])
     res.json({
       staff: staff.map(toStaff),
@@ -454,7 +457,8 @@ export function createApp(opts: AppOptions) {
       pendingOrders: pending,
       stays: stays.map((r) => ({ id: String(r.id), patientId: String(r.patient_id), kind: String(r.kind), since: String(r.observation_at ?? r.admitted_at),
         room: r.room ? `${r.room}${r.label ? `-${r.label}` : ''}` : undefined })),
-      bedStays: bedStays.map((r) => ({ id: String(r.id), bedId: String(r.bed_id), patientId: String(r.patient_id), specialty: r.specialty ? String(r.specialty) : undefined })),
+      bedStays: bedStays.map((r) => ({ id: String(r.id), bedId: String(r.bed_id), patientId: String(r.patient_id), specialty: r.specialty ? String(r.specialty) : undefined,
+        attendingIds: toHospitalization(r).attendingIds ?? [] })),
     })
   })
 
@@ -999,10 +1003,11 @@ export function createApp(opts: AppOptions) {
       await audit(user, rxId ? `Firmó consulta y receta ${folio} de ${name}` : `Firmó consulta de ${name}`, q)
       if (stayId) {
         // La hospitalización se crea sin cama: el médico la elige al terminar de firmar (o la corrige después)
-        await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, patient_phone, status, kind, specialty, vitals_plan)
-          VALUES (?,?,?,NULL,?,?,?,?,?,?,'active',?,?,?)`,
+        // HO2 (ronda 16): el médico que ingresa desde la consulta es el médico tratante
+        await q.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, consultation_id, admitted_at, admitted_by, reason, diagnoses, patient_phone, status, kind, specialty, vitals_plan, attending_ids)
+          VALUES (?,?,?,NULL,?,?,?,?,?,?,'active',?,?,?,?)`,
           [stayId, cid, patientId, consultId, now.toISOString(), user.id, c.reason, JSON.stringify(c.diagnoses), patientPhone || null, stayKind, specialtyOf(user),
-            c.vitalsPlan ? JSON.stringify([{ ...c.vitalsPlan, from: now.toISOString(), by: user.id, noteId: consultId }]) : null])
+            c.vitalsPlan ? JSON.stringify([{ ...c.vitalsPlan, from: now.toISOString(), by: user.id, noteId: consultId }]) : null, JSON.stringify([user.id])])
         medOrders = await syncStayOrders(q, { clinicId: cid, hospitalizationId: stayId })
         // Ronda 8: las otras citas abiertas de hoy (por ejemplo, otra en sala con otro médico) se cancelan
         await closeOpenVisits(q, cid, patientId, now, now)

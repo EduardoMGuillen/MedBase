@@ -574,6 +574,10 @@ export interface Hospitalization {
   /** Cómo terminó: 'referred' si se refirió a otro centro (con el destino en outcomeNote). */
   outcome?: 'referred' | 'discharged'
   outcomeNote?: string
+  /** HO2 (ronda 16): médico(s) tratante(s); el primero es el principal. Las estancias de antes: quien las ingresó. */
+  attendingIds?: string[]
+  /** HO2 (ronda 16): en la lista de hospitalizados: ingreso directo sin nota de ingreso firmada (órdenes pendientes). */
+  ordersPending?: boolean
 }
 
 export interface DischargeData {
