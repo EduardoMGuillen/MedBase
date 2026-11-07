@@ -83,6 +83,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'exams.order', 'exams.process',
     // HO2 (ronda 16)
     'inpatient.admit',
+    // PF1 (ronda 17): registra pacientes sin cita (y la llegada de sus citas), como el médico del consultorio
+    'checkin.manage',
   ],
   // AD9: enfermería ya no cobra (los cobros los generan recepción, el médico o administración)
   nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'inpatient.view', 'inpatient.care', 'orders.review', 'followups.view',
@@ -166,7 +168,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 export const ROLE_SUMMARY: Record<Role, string> = {
   superadmin: 'Crea y administra clínicas y sus usuarios. No ve expedientes de pacientes.',
   admin: 'Configura la clínica, el personal y los precios, y revisa indicadores. Sin acceso a notas clínicas.',
-  doctor: 'Atiende su agenda, registra pacientes nuevos, escribe consultas, diagnostica, emite recetas, cobra cuando hace falta e ingresa y evoluciona a pacientes hospitalizados.',
+  doctor: 'Atiende su agenda, registra pacientes nuevos y sin cita, escribe consultas, diagnostica, emite recetas, cobra cuando hace falta e ingresa y evoluciona a pacientes hospitalizados.',
   nurse: 'Recibe al paciente, lo registra si llega sin expediente, toma la preclínica y, en hospitalización, administra medicamentos y escribe notas de enfermería.',
   reception: 'Agenda citas, registra pacientes, controla la sala de espera y cobra.',
   assistant: 'En el consultorio: agenda citas, recibe y registra al paciente, toma la preclínica, cobra y aplica los medicamentos que el médico indica en observación.',

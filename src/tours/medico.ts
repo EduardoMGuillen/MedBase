@@ -6,6 +6,8 @@ const stay = (tab?: string) => (c: { stay?: string }) => (c.stay ? `${c.stay}${t
 export const medico: TourStep[] = [
   { route: '/app', title: 'Te damos la bienvenida', body: 'Atiendes tu agenda, escribes consultas y recetas, ingresas y evolucionas pacientes y das seguimiento a tus crónicos.' },
   { route: '/app/consulta-externa', target: 'alcance', feature: 'multiDoctor', title: 'Mis pacientes o toda la clínica', body: 'Ves tus pacientes; con «Toda la clínica» puedes atender al de otro médico si hace falta.' },
+  // PF1 (ronda 17): el médico de la clínica también registra pacientes sin cita
+  { route: '/app/consulta-externa', target: 'sin-cita', perm: 'checkin.manage', title: 'Paciente sin cita', body: 'Si alguien llega sin cita, lo pasas a la sala de espera contigo como médico; puedes elegir a otro.' },
   { route: '/app/consulta-externa', target: 'sala-espera', title: 'Atender', body: 'Cuando el paciente ya tiene preclínica, toca «Atender»: historia, examen, diagnóstico CIE-11, indicaciones, medicamentos y exámenes.' },
   { route: (c) => c.consultNote, target: 'nota-consulta', perm: 'chart.view', title: 'La nota de consulta', body: 'Así queda una nota firmada: indicaciones, medicamentos (van a la receta) y exámenes (se imprimen en su propia orden).' },
   { route: (c) => c.consultNote, target: 'constancia', perm: 'consult.write', title: 'Constancia', body: 'Incapacidad, constancia médica o de asistencia, con tu firma y sello guardados.' },
