@@ -181,7 +181,7 @@ export interface Attachment {
   mime: string
   size: number
   /** PQ3 (ronda 14): 'anesthesia', la hoja de anestesia en papel (se sube desde la tarjeta de la nota postquirúrgica). */
-  category: 'lab' | 'imaging' | 'document' | 'other' | 'anesthesia'
+  category: 'lab' | 'imaging' | 'document' | 'other' | 'anesthesia' | 'preanesthesia' | 'surgical_count'
   uploadedBy: string
   uploadedAt: string
   title?: string // qué examen es, p. ej. "Hemograma"
@@ -753,7 +753,7 @@ export interface ClinicExam { id: string; group: ExamGroup; name: string; active
 export interface Addendum {
   id: string
   /** 'anesthesia' (PQ3, ronda 14): la hoja de anestesia llenada en el sistema. */
-  targetKind: 'consultation' | 'note' | 'referral' | 'anesthesia'
+  targetKind: 'consultation' | 'note' | 'referral' | 'anesthesia' | 'preanesthesia' | 'surgical_count'
   targetId: string
   kind: 'correction' | 'info' | 'result'
   /** Si es corrección: qué se corrige ("Dosis de amoxicilina mal escrita"). */

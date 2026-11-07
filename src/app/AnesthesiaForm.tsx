@@ -11,6 +11,8 @@ import { useDraftSync } from '../lib/drafts'
 import { ANESTHESIA_SHEET } from '../lib/clinicalConfig'
 import { aldreteTotal, blankAnesthesia, fluidBalance, prefillAnesthesia, sameAs, signed, type AnesthesiaData, type AnesthesiaPrefill, type AnesthesiaSheet, type DrugRow, type MonitorRow } from '../lib/anesthesia'
 import { anesthesiaNoteLink } from '../components/AnesthesiaSheet'
+import { PreEvalSummary } from '../components/PreEval'
+import { preEvalIntoSheet, type PreEval } from '../lib/preanesthesia'
 import '../components/anesthesia.css'
 
 /**
@@ -21,22 +23,22 @@ import '../components/anesthesia.css'
  */
 const newId = () => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)
 
-function Radio({ label, options, value, onChange }: { label: string; options: readonly string[]; value: string; onChange: (v: string) => void }) {
+export function Radio({ label, options, value, onChange }: { label: string; options: readonly string[]; value: string; onChange: (v: string) => void }) {
   return <div className="anes-group" role="radiogroup" aria-label={label}><span>{label}</span><div className="anes-opts">
     {options.map((o) => <label key={o} className="anes-opt"><input type="radio" checked={value === o} onChange={() => onChange(o)} onClick={() => { if (value === o) onChange('') }} />{o}</label>)}</div></div>
 }
-function Checks({ label, options, value, onChange }: { label: string; options: readonly string[]; value: string[]; onChange: (v: string[]) => void }) {
+export function Checks({ label, options, value, onChange }: { label: string; options: readonly string[]; value: string[]; onChange: (v: string[]) => void }) {
   return <div className="anes-group" role="group" aria-label={label}><span>{label}</span><div className="anes-opts">
     {options.map((o) => <label key={o} className="anes-opt"><input type="checkbox" checked={value.includes(o)} onChange={(e) => onChange(e.target.checked ? [...value, o] : value.filter((x) => x !== o))} />{o}</label>)}</div></div>
 }
-function Txt({ label, value, onChange, num, wide, area, placeholder }: { label: string; value: string; onChange: (v: string) => void; num?: boolean; wide?: boolean; area?: boolean; placeholder?: string }) {
+export function Txt({ label, value, onChange, num, wide, area, placeholder }: { label: string; value: string; onChange: (v: string) => void; num?: boolean; wide?: boolean; area?: boolean; placeholder?: string }) {
   return <label className={`field${wide ? ' span-2' : ''}`}><span>{label}</span>
     {area ? <textarea className="textarea textarea--sm" rows={2} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
       : <input className={`input${num ? ' num' : ''}`} inputMode={num ? 'decimal' : undefined} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />}</label>
 }
-const Box = ({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) =>
+export const Box = ({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) =>
   <label className="anes-opt"><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />{label}</label>
-const Section = ({ title, children }: { title: string; children: ReactNode }) =>
+export const Section = ({ title, children }: { title: string; children: ReactNode }) =>
   <section className="panel"><div className="panel__head"><h2>{title}</h2></div><div className="panel__body">{children}</div></section>
 
 export default function AnesthesiaFormPage() {
@@ -45,27 +47,29 @@ export default function AnesthesiaFormPage() {
   const correcting = params.get('corregir')
   const nav = useNavigate()
   const { notify, user } = useStore()
-  const [ctx, setCtx] = useState<{ prefill: AnesthesiaPrefill; hospitalizationId: string; stayKind: string; sheet?: AnesthesiaSheet } | null>(null)
+  const [ctx, setCtx] = useState<{ prefill: AnesthesiaPrefill; hospitalizationId: string; stayKind: string; sheet?: AnesthesiaSheet; preEval?: PreEval | null } | null>(null)
   const [error, setError] = useState('')
   const [d, setD] = useState<AnesthesiaData>(blankAnesthesia)
   const [initial, setInitial] = useState<AnesthesiaData | null>(null)
   const [why, setWhy] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => {
-    type Ctx = { prefill: AnesthesiaPrefill; hospitalizationId: string; stayKind: string; sheet?: AnesthesiaSheet }
+    type Ctx = { prefill: AnesthesiaPrefill; hospitalizationId: string; stayKind: string; sheet?: AnesthesiaSheet; preEval?: PreEval | null }
     const load: Promise<Ctx> = correcting
-      ? api<{ sheet: AnesthesiaSheet; stayKind: string; prefill: AnesthesiaPrefill }>(`/anesthesia/sheets/${correcting}`).then((r) => ({ prefill: r.prefill, hospitalizationId: r.sheet.hospitalizationId, stayKind: r.stayKind, sheet: r.sheet }))
-      : api<{ prefill: AnesthesiaPrefill; hospitalizationId: string; stayKind: string }>(`/anesthesia/notes/${noteId}/prefill`)
+      ? api<{ sheet: AnesthesiaSheet; stayKind: string; prefill: AnesthesiaPrefill; preEval?: PreEval | null }>(`/anesthesia/sheets/${correcting}`).then((r) => ({ prefill: r.prefill, hospitalizationId: r.sheet.hospitalizationId, stayKind: r.stayKind, sheet: r.sheet, preEval: r.preEval }))
+      : api<{ prefill: AnesthesiaPrefill; hospitalizationId: string; stayKind: string; preEval?: PreEval | null }>(`/anesthesia/notes/${noteId}/prefill`)
     load.then((r) => {
-      const start = r.sheet?.data ?? prefillAnesthesia(r.prefill)
+      // PQ4 (ronda 16): con una valoración preanestésica vigente, su resumen va de solo lectura (sus datos se copian al firmar)
+      const base = r.sheet?.data ?? prefillAnesthesia(r.prefill)
+      const start = r.preEval?.data ? { ...base, ...preEvalIntoSheet(r.preEval.data), weightKg: base.weightKg || r.preEval.data.weightKg, heightCm: base.heightCm || r.preEval.data.heightCm } : base
       setInitial(start)
       setD((cur) => (sameAs(cur, blankAnesthesia()) ? start : cur))
       setCtx(r)
     }).catch((e: Error) => setError(e.message))
   }, [noteId, correcting])
   const draft = useDraftSync('anestesia', ctx ? (correcting ? `${noteId}:corregir:${correcting}` : noteId) : undefined, { d }, (x) => { if (x.d) setD({ ...blankAnesthesia(), ...x.d }) }, !initial || sameAs(d, initial))
-  if (error) return <div className="page"><section className="panel"><div className="empty"><b>No puedes llenar esta hoja.</b> {error} <Link to="/app">Volver al inicio</Link></div></section></div>
-  if (!ctx || !user) return <Loading label="Abriendo la hoja de anestesia" />
+  if (error) return <div className="page"><section className="panel"><div className="empty"><b>No puedes llenar este registro.</b> {error} <Link to="/app">Volver al inicio</Link></div></section></div>
+  if (!ctx || !user) return <Loading label="Abriendo el registro de anestesia" />
   const set = (patch: Partial<AnesthesiaData>) => setD((x) => ({ ...x, ...patch }))
   const setIn = <K extends 'labs' | 'times' | 'fluids' | 'exit' | 'aldrete'>(k: K, patch: Partial<AnesthesiaData[K]>) => setD((x) => ({ ...x, [k]: { ...x[k], ...patch } }))
   const setRow = (i: number, patch: Partial<MonitorRow>) => setD((x) => ({ ...x, monitoring: x.monitoring.map((r, j) => (j === i ? { ...r, ...patch } : r)) }))
@@ -80,9 +84,9 @@ export default function AnesthesiaFormPage() {
     setBusy(true)
     try {
       if (correcting && ctx.sheet) await api(`/anesthesia/sheets/${correcting}/correct`, { body: { data: d, version: ctx.sheet.version, why: why.trim() || undefined } })
-      else await api(`/anesthesia/notes/${noteId}/sign`, { body: { data: d } })
+      else await api(`/anesthesia/notes/${noteId}/sign`, { body: { data: d, preEvalId: ctx.preEval?.id } })
       draft.clear()
-      notify(correcting ? 'Hoja de anestesia corregida' : 'Hoja de anestesia firmada')
+      notify(correcting ? 'Registro de anestesia corregido' : 'Registro de anestesia firmado')
       nav(back)
     } catch (e) {
       notify((e as Error).message, 'error')
@@ -95,7 +99,7 @@ export default function AnesthesiaFormPage() {
     <div className="page">
       <div className="page-head">
         <div><Link className="btn btn--ghost btn--sm anes-btn" to={back}><ChevronLeft size={15} />Volver a la nota</Link>
-          <h1 style={{ marginTop: 8 }}>{correcting ? 'Corregir la hoja de anestesia' : 'Hoja de anestesia'}</h1>
+          <h1 style={{ marginTop: 8 }}>{correcting ? 'Corregir el registro de anestesia' : 'Registro de anestesia'}</h1>
           <p>{`${p.firstName} ${p.lastName}`.trim()} · Expediente {p.record} · {d.operation || d.proposedSurgery}</p></div>
       </div>
       <div className="anes-form">
@@ -117,7 +121,10 @@ export default function AnesthesiaFormPage() {
             <Txt label="Anestesiólogo" value={d.anesthesiologist} onChange={(v) => set({ anesthesiologist: v })} />
           </div>
         </Section>
-        <Section title="Valoración preanestésica">
+        {ctx.preEval ? <Section title="Valoración preanestésica">
+          <PreEvalSummary pe={ctx.preEval} />
+        </Section> : <Section title="Valoración preanestésica">
+          <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Esta estancia no tiene valoración preanestésica: llénala aquí.</p>
           <div className="anes-group"><span>ASA</span><div className="anes-opts">
             {ANESTHESIA_SHEET.asa.map((o) => <label key={o} className="anes-opt"><input type="radio" name="asa" checked={d.asa === o} onChange={() => set({ asa: o })} />{o}</label>)}
             <Box label="E (urgencia)" checked={d.asaE} onChange={(v) => set({ asaE: v })} /></div></div>
@@ -137,7 +144,7 @@ export default function AnesthesiaFormPage() {
             <Txt label="Glucosa" value={d.labs.glucose} onChange={(v) => setIn('labs', { glucose: v })} num />
             <Txt label="Tipo y Rh" value={d.labs.bloodType} onChange={(v) => setIn('labs', { bloodType: v })} />
           </div>
-        </Section>
+        </Section>}
         <Section title="Verificación y técnica">
           <Checks label="Lista OMS" options={ANESTHESIA_SHEET.who} value={d.who} onChange={(v) => set({ who: v })} />
           <Checks label="Verificación" options={ANESTHESIA_SHEET.checks} value={d.checks} onChange={(v) => set({ checks: v })} />
@@ -150,7 +157,7 @@ export default function AnesthesiaFormPage() {
           </div>
         </Section>
         <Section title="Monitoreo transanestésico (cada 5 min)">
-          <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Un registro por toma. Al imprimir se dibujan en la cuadrícula de 0 a 240 minutos, desde el inicio de la anestesia.</p>
+          <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Un registro por toma. Al imprimir se dibujan en la cuadrícula de 0 a 120 minutos desde el inicio de la anestesia; si dura más, sale una hoja de continuación.</p>
           {d.monitoring.length > 0 && <table className="anes-table">
             <thead><tr><th>Hora</th><th>PAS</th><th>PAD</th><th>FC</th><th>SpO₂</th><th>EtCO₂</th><th>Temp. °C</th><th /></tr></thead>
             <tbody>{d.monitoring.map((r, i) => <tr key={r.id}>
@@ -240,7 +247,7 @@ export default function AnesthesiaFormPage() {
         <div className="anes-foot">
           <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />
           <Link className="btn btn--ghost anes-btn" to={back}>Salir (se guarda)</Link>
-          <button type="button" className="btn btn--primary anes-btn" disabled={!ready} onClick={submit}><FileSignature size={16} />{correcting ? 'Guardar la corrección' : 'Firmar hoja de anestesia'}</button>
+          <button type="button" className="btn btn--primary anes-btn" disabled={!ready} onClick={submit}><FileSignature size={16} />{correcting ? 'Guardar la corrección' : 'Firmar registro de anestesia'}</button>
         </div>
       </div>
     </div>

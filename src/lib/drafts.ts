@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { time } from './format'
 import { api } from './api'
 
-export type DraftScope = 'consulta' | 'evolucion' | 'procedimiento' | 'egreso' | 'enfermeria' | 'referencia' | 'material' | 'anestesia' | 'set'
+export type DraftScope = 'consulta' | 'evolucion' | 'procedimiento' | 'egreso' | 'enfermeria' | 'referencia' | 'material' | 'anestesia' | 'set' | 'valoracion' | 'recuento'
 
 /**
  * AN1: borrador que se guarda solo mientras se escribe. Al instante en este navegador (sobrevive a recargar) y cada

@@ -37,6 +37,8 @@ import ExamOrderPage from './app/ExamOrder'
 import PrintJobPage from './app/PrintJob'
 import AnesthesiaSheetPage, { AnesthesiaBlankPage } from './app/AnesthesiaDoc'
 import AnesthesiaFormPage from './app/AnesthesiaForm'
+import PreEvalPage, { PreEvalBlankPage } from './app/PreEvalDoc'
+import PreEvalFormPage from './app/PreEvalForm'
 import DeptTray, { AREA_SLUG } from './app/DeptTray'
 import DeptHome from './app/DeptHome'
 import { ChartOrDept, DeptConfig, DeptOnly, DeptRosterPage } from './app/DeptPages'
@@ -118,6 +120,10 @@ export default function App() {
             <Route path="anestesia/blanco/:stayId" element={<Guard perm="chart.view"><AnesthesiaBlankPage /></Guard>} />
             <Route path="anestesia/nota/:noteId" element={<Guard perm="chart.view"><AnesthesiaFormPage /></Guard>} />
             <Route path="anestesia/:id" element={<Guard perm="chart.view"><AnesthesiaSheetPage /></Guard>} />
+            {/* PQ4 y PQ5 (ronda 16): valoración preanestésica y recuento quirúrgico (el servidor comprueba los permisos) */}
+            <Route path="valoracion/blanco/:stayId" element={<Guard perm="chart.view"><PreEvalBlankPage /></Guard>} />
+            <Route path="valoracion/nueva/:stayId" element={<Guard perm="chart.view"><PreEvalFormPage /></Guard>} />
+            <Route path="valoracion/:id" element={<Guard perm="chart.view"><PreEvalPage /></Guard>} />
             <Route path="recetas" element={<Guard perm="rx.view"><Prescriptions /></Guard>} />
             <Route path="recetas/:id" element={<Guard perm="rx.view"><PrescriptionSheet /></Guard>} />
             <Route path="caja" element={<Guard perm="billing.manage"><Billing /></Guard>} />

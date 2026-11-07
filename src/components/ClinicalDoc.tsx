@@ -105,7 +105,7 @@ export function DocSigns({ signers }: { signers: DocSigner[] }) {
 /** Texto de CSS seguro dentro de `content: "…"` del margen de la hoja. */
 const cssText = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ')
 
-export function ClinicalDoc({ kind, folio, at, folioNote, place, patient, rows, signers = [], legends = [], brand = DOC_BRAND_LEGEND, stamp, className = '', heading, children }: {
+export function ClinicalDoc({ kind, folio, at, folioNote, place, patient, rows, signers = [], legends = [], brand = DOC_BRAND_LEGEND, stamp, className = '', heading, marginCm = PRINT_PAGE.marginCm, children }: {
   /** Tipo de documento (arriba a la derecha): «Receta», «Orden de laboratorio», «Constancia»… */
   kind: string
   folio?: string
@@ -123,12 +123,14 @@ export function ClinicalDoc({ kind, folio, at, folioNote, place, patient, rows, 
   className?: string
   /** Título grande del cuerpo («Constancia de atención médica», «Hoja de referencia»). */
   heading?: ReactNode
+  /** PQ4 (ronda 16): margen de la hoja (el registro de anestesia de una hoja usa uno menor, como el formato del PNG). */
+  marginCm?: number
   children?: ReactNode
 }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '')
   const pageName = `cdoc${uid}`
   const short = [place.name, folio && `Folio ${folio}`, patient?.name].filter(Boolean).join(' · ')
-  const m = `${PRINT_PAGE.marginCm}cm`
+  const m = `${marginCm}cm`
   const pageCss = `@page ${pageName} { size: ${PRINT_PAGE.widthIn}in ${PRINT_PAGE.heightIn}in; margin: ${m};
   @top-left { content: "${cssText(short)}"; font-size: 8.5pt; color: #444; vertical-align: bottom; padding-bottom: 4mm; }
   @bottom-right { content: "Página " counter(page) " de " counter(pages); font-size: 8.5pt; color: #444; vertical-align: top; padding-top: 4mm; } }

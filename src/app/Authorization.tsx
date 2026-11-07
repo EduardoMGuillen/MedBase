@@ -14,6 +14,7 @@ import { PdfPages } from '../components/PdfPages'
 import { DniInput } from '../components/DniInput'
 import { ClinicalDoc, SignSpace, type DocRow } from '../components/ClinicalDoc'
 import { BlankAnesthesiaButton } from '../components/AnesthesiaSheet'
+import { PreEvalButton } from '../components/PreEval'
 
 /**
  * Nueva autorización, sin pestañas: cada botón abre la suya.
@@ -137,6 +138,8 @@ export function AuthorizationEntry({ a, file, p, reload }: { a: Authorization; f
           <Link className="btn btn--ghost btn--sm" to={`/app/autorizaciones/${a.id}`}><Printer size={14} />Ver e imprimir</Link>
           {/* PQ3 (ronda 14): la hoja de anestesia para llenarla a mano en sala */}
           {isSurgical(a) && <BlankAnesthesiaButton stayId={a.hospitalizationId} authorizationId={a.id} />}
+          {/* PQ4 (ronda 16): la valoración preanestésica con la cirugía y el diagnóstico de esta autorización */}
+          {isSurgical(a) && open && <PreEvalButton stayId={a.hospitalizationId} patientId={p.id} authorizationId={a.id} small />}
           {a.pdfId && <button className="btn btn--ghost btn--sm" onClick={() => view(a.pdfId!)}><FileText size={14} />PDF firmado</button>}
           {a.fileId && <button className="btn btn--ghost btn--sm" onClick={() => view(a.fileId!)}><FileText size={14} />Hoja escaneada</button>}
           {manage && a.status === 'pending' && (waitingDoctor

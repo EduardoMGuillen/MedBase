@@ -41,7 +41,7 @@ function sheetLine(s: AnesthesiaSheet, who: (id: string) => string | undefined) 
 export function BlankAnesthesiaButton({ stayId, authorizationId }: { stayId: string; authorizationId?: string }) {
   if (!useAnesthesiaAccess()) return null
   return <Link className="btn btn--ghost btn--sm anes-btn" to={`/app/anestesia/blanco/${stayId}?${authorizationId ? `autorizacion=${authorizationId}&` : ''}accion=imprimir`}>
-    <Printer size={14} />Imprimir hoja de anestesia en blanco</Link>
+    <Printer size={14} />Imprimir registro de anestesia en blanco</Link>
 }
 
 /** En la tarjeta de la nota postquirúrgica: «Hoja de anestesia · Sin agregar» o quién la subió o la firmó, con «Ver» e «Imprimir». */
@@ -75,13 +75,13 @@ export function AnesthesiaCard({ note }: { note: InpatientNote }) {
     <div ref={ref} className={`anes-card no-print${focus ? ' anes-card--focus' : ''}`} data-testid="anesthesia-card">
       <div className="anes-card__line">
         <ClipboardList size={16} />
-        <span><b>Hoja de anestesia</b> · {current ? sheetLine(current, who) : <span className="anes-card__none">Sin agregar</span>}</span>
+        <span><b>Registro de anestesia</b> · {current ? sheetLine(current, who) : <span className="anes-card__none">Sin agregar</span>}</span>
       </div>
       {current && <p className="anes-card__meta">
         {current.mode === 'upload' ? `En papel · Anestesia realizada por ${current.performedBy.name}` : 'Llenada en el sistema'}
         {current.observation ? ` · ${current.observation}` : ''}{current.version > 1 ? ` · Corregida (v${current.version})` : ''}</p>}
       <div className="anes-card__acts">
-        {!current && <button type="button" className="btn btn--soft btn--sm anes-btn" onClick={() => setChoosing(true)}><ClipboardList size={14} />Agregar hoja de anestesia</button>}
+        {!current && <button type="button" className="btn btn--soft btn--sm anes-btn" onClick={() => setChoosing(true)}><ClipboardList size={14} />Agregar registro de anestesia</button>}
         {current && <>
           <Link className="btn btn--ghost btn--sm anes-btn" to={`/app/anestesia/${current.id}`}><Eye size={14} />Ver</Link>
           <Link className="btn btn--ghost btn--sm anes-btn" to={`/app/anestesia/${current.id}?accion=imprimir`}><Printer size={14} />Imprimir</Link>
@@ -91,19 +91,19 @@ export function AnesthesiaCard({ note }: { note: InpatientNote }) {
       </div>
       {current?.mode === 'system' && <Addenda list={addenda} targetKind="anesthesia" targetId={current.id} canAdd={current.createdBy === user?.id} onAdded={load} />}
       {old.length > 0 && <details className="anes-card__old">
-        <summary className="muted">Hojas anteriores, anuladas ({old.length})</summary>
+        <summary className="muted">Registros anteriores, anulados ({old.length})</summary>
         <ul>{old.map((s) => <li key={s.id}><Link to={`/app/anestesia/${s.id}`}>{sheetLine(s, who)}</Link> · anulada {s.voidedAt && dmyTime(s.voidedAt)} por {s.voidedBy ? who(s.voidedBy) : '—'}: {s.voidReason}</li>)}</ul>
       </details>}
       {choosing && (
-        <Modal title="Agregar hoja de anestesia" onClose={() => setChoosing(false)}>
+        <Modal title="Agregar registro de anestesia" onClose={() => setChoosing(false)}>
           <div className="choice-grid">
             <button type="button" className="choice" onClick={() => { setChoosing(false); setUploading({}) }}><Camera size={22} /><b>Subir hoja en papel</b><small>Fotos o el PDF de la hoja que se llenó a mano en sala.</small></button>
             <button type="button" className="choice" disabled={!info.canFill} aria-disabled={!info.canFill} onClick={() => { if (info.canFill) fill() }}><PenLine size={22} /><b>Llenar en el sistema</b>
-              <small>{info.canFill ? 'El formulario de la hoja, con lo que ya tiene la nota. Lo firmas tú.' : `Solo la llena y la firma quien hizo la anestesia${info.anesthesiologist ? ` (${info.anesthesiologist.name})` : ''}, con su usuario. Si no tiene usuario, sube la hoja en papel.`}</small></button>
+              <small>{info.canFill ? 'El formulario del registro, con lo que ya tiene la nota y la valoración preanestésica vigente. Lo firmas tú.' : `Solo la llena y la firma quien hizo la anestesia${info.anesthesiologist ? ` (${info.anesthesiologist.name})` : ''}, con su usuario. Si no tiene usuario, sube la hoja en papel.`}</small></button>
           </div>
         </Modal>
       )}
-      {uploading && <AnesthesiaUpload info={info} replaces={uploading.replaces} onClose={() => setUploading(null)} onDone={() => { setUploading(null); notify(uploading.replaces ? 'Hoja reemplazada; la anterior queda anulada' : 'Hoja de anestesia subida'); load() }} />}
+      {uploading && <AnesthesiaUpload info={info} replaces={uploading.replaces} onClose={() => setUploading(null)} onDone={() => { setUploading(null); notify(uploading.replaces ? 'Registro reemplazado; el anterior queda anulado' : 'Registro de anestesia subido'); load() }} />}
     </div>
   )
 }
@@ -134,7 +134,7 @@ function AnesthesiaUpload({ info, replaces, onClose, onDone }: { info: NoteInfo;
     }
   }
   return (
-    <Modal title={replaces ? 'Reemplazar la hoja de anestesia' : 'Subir hoja en papel'} wide onClose={onClose} footer={<>
+    <Modal title={replaces ? 'Reemplazar el registro de anestesia' : 'Subir hoja en papel'} wide onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       {!preview
         ? <button className="btn btn--primary" disabled={!files.length || building} onClick={build}>{building ? 'Preparando…' : 'Ver vista previa'}</button>
@@ -168,7 +168,7 @@ export function AnesthesiaAnnex({ stayId }: { stayId: string }) {
   return (
     <section className="panel" data-testid="anesthesia-annex">
       <div className="panel__head">
-        <div><h2>Hoja de anestesia</h2><p>Se sube o se llena desde la tarjeta de cada nota postquirúrgica.</p></div>
+        <div><h2>Registro de anestesia</h2><p>Se sube o se llena desde la tarjeta de cada nota postquirúrgica.</p></div>
         <BlankAnesthesiaButton stayId={stayId} />
       </div>
       {list && list.length > 0 && <div className="rows">{list.map((s) => (
@@ -194,10 +194,10 @@ export function AnesthesiaPending() {
   if (!list.length) return null
   return (
     <section className="panel" data-testid="anesthesia-pending">
-      <div className="panel__head"><div><h2>Hojas de anestesia pendientes</h2><p>Figuras como anestesiólogo en estas notas postquirúrgicas. Súbela en papel o llénala en el sistema.</p></div></div>
+      <div className="panel__head"><div><h2>Registros de anestesia pendientes</h2><p>Figuras como anestesiólogo en estas notas postquirúrgicas. Súbelo en papel o llénalo en el sistema.</p></div></div>
       <div className="rows">{list.map((x) => (
         <Link key={x.noteId} className="row anes-row anes-row--link" to={anesthesiaNoteLink(x.stayKind, x.hospitalizationId, x.noteId)}>
-          <div className="row__who"><strong>Hoja de anestesia pendiente · {x.patient} · {x.procedure} · {dmy(x.at)}</strong><span>Abrir la nota</span></div>
+          <div className="row__who"><strong>Registro de anestesia pendiente · {x.patient} · {x.procedure} · {dmy(x.at)}</strong><span>Abrir la nota</span></div>
         </Link>
       ))}</div>
     </section>
