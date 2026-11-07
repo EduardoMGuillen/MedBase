@@ -1,4 +1,5 @@
 import type { ExamGroup, ExamOrder, ExamStatus } from './types'
+import { toLocalDate } from './dateInput.js'
 import { EXISTING_SUBGROUP, LAB_AREAS, LAB_ORDER, SECTION_SEP } from './labCatalog.js'
 import { CONTRAST_PHRASE, CT_CONTRAST_BUTTONS, CT_CONTRASTS, CT_MULTI_CONTRASTS, IMAGING_SEARCH_SYNONYMS, IMAGING_SIDES, MR_CONTRAST_BUTTONS, MR_CONTRASTS, PROJECTION_KEEP_CASE, XRAY_PREFIXES, XRAY_SUBGROUPS } from './clinicalConfig.js'
 import { IMAGING_REMOVED_CA6, IMAGING_SAME, IMAGING_STUDIES, IMAGING_SUBGROUPS as IMAGING_AREAS, type ImagingDetails } from './imagingCatalog.js'
@@ -223,6 +224,14 @@ export const isPending = (e: Pick<ExamOrder, 'status'> & Partial<Pick<ExamOrder,
   ['ordered', 'sample'].includes(e.status) || (e.status === 'done' && !(e.group && e.name && reportOptional({ group: e.group, name: e.name })))
 
 /** ¿Lo puede marcar revisado el médico? Con resultado o, si el informe es opcional (Rayos X), ya realizado. */
+/**
+ * RX1 (ronda 16): ¿lo terminó (informó, cargó el resultado o realizó) el día `day` (aaaa-mm-dd, fecha local)? Las fechas se
+ * guardan en UTC: se compara por la fecha local para que lo terminado después de las 18:00 (UTC−6) quede en el mismo día.
+ */
+export const finishedOn = (e: Pick<ExamOrder, 'statusAt'> & { result?: { at?: string } }, day: string) => {
+  const at = e.result?.at ?? e.statusAt
+  return !!at && toLocalDate(new Date(at)) === day
+}
 export const canReview = (e: Pick<ExamOrder, 'status' | 'group' | 'name'>) => e.status === 'result' || (e.status === 'done' && reportOptional(e))
 
 /**

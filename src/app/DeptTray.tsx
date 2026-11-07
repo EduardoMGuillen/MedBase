@@ -7,7 +7,7 @@ import { api } from '../lib/api'
 import { Loading, PageHead } from '../components/ui'
 import { Pagination, usePage } from '../components/Pagination'
 import { age, dateTime, localISODate, shortStaff } from '../lib/format'
-import { examLine, GROUP_LABEL, reportOptional } from '../lib/exams'
+import { examLine, finishedOn, GROUP_LABEL, reportOptional } from '../lib/exams'
 import { PAGE_SIZE } from '../lib/clinicalConfig'
 import { ExamRow } from './ExamsTab'
 import { AmbulatoryModal } from './Ambulatory'
@@ -69,7 +69,8 @@ export default function DeptTray({ group, area }: { group: ExamGroup; area?: Dep
   useEffect(() => { const t = setInterval(load, 20_000); return () => clearInterval(t) }, [load])
   const fold = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   const today = localISODate(new Date())
-  const inTab = (e: Item, k: TabKey) => tabOf(e) === k && (k !== 'done' || (e.result?.at ?? e.statusAt ?? '').slice(0, 10) === day || (!e.result && (e.statusAt ?? '').slice(0, 10) === day))
+  // RX1 (ronda 16): «Terminados hoy» por la fecha local, no por la fecha UTC (lo de después de las 18:00 se perdía)
+  const inTab = (e: Item, k: TabKey) => tabOf(e) === k && (k !== 'done' || finishedOn(e, day))
   const filtered = useMemo(() => (items ?? []).filter((e) => (!area || areaOf(e) === area) && (!where || e.locationText.startsWith(where)) && (!urgentOnly || e.priority === 'urgent')
     && (!q.trim() || fold(`${e.patient.name} ${e.patient.record} ${examLine(e)}`).includes(fold(q.trim())))), [items, where, urgentOnly, q, area])
   const list = filtered.filter((e) => inTab(e, tab))
