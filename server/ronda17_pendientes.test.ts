@@ -7,6 +7,8 @@ import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
 import { placeOf } from './http.js'
 import { contactLine, docPhone } from '../src/lib/format.js'
+import { rxToSetMed, setMedToRx } from '../src/lib/orderSets.js'
+import { consultItemIssue, INFUSION_FREQUENCY } from '../src/lib/medForm.js'
 
 // Ronda 17, pendientes de las rondas de corrección (PE): con la base y la API (copia en memoria de la demo)
 let server: Server
@@ -92,5 +94,48 @@ describe('Consultorio (pendiente): los mensajes del servidor dicen «consultorio
     const r = await office.patch(`/api/drugs/${b.body.id}`, { name: 'Zetaprueba PE uno' })
     assert.equal(r.status, 409)
     assert.match(r.body.error, /vademécum del consultorio/)
+  })
+})
+
+describe('Sets de órdenes (pendiente): una infusión guarda y vuelve a poner su velocidad', () => {
+  test('de la receta al set y de vuelta (consulta)', () => {
+    const it = { drug: 'Norepinefrina', presentation: '4 mg/4 mL', dose: '8 mg en 250 mL SSN', route: 'Intravenosa', frequency: INFUSION_FREQUENCY, duration: '', instructions: '',
+      infusionRate: 7.5, infusionUnit: 'ml/h' as const }
+    const m = rxToSetMed(it)
+    assert.equal(m.infusionRate, 7.5)
+    assert.equal(m.infusionUnit, 'ml/h')
+    assert.equal(m.everyHours, undefined)
+    assert.equal(m.prn, false)
+    const back = setMedToRx(m)
+    assert.equal(back.frequency, INFUSION_FREQUENCY)
+    assert.equal(back.infusionRate, 7.5)
+    assert.equal(back.infusionUnit, 'ml/h')
+    assert.equal(consultItemIssue(back, { admitting: false }), '')
+    // Un medicamento con horario sigue igual
+    const q12 = rxToSetMed({ drug: 'Ceftriaxona', presentation: '1 g', dose: '1 g', route: 'Intravenosa', frequency: 'Cada 12 horas', duration: '7 días', instructions: '' })
+    assert.equal(q12.everyHours, 12)
+    assert.equal(q12.infusionRate, undefined)
+    assert.equal(setMedToRx(q12).frequency, 'Cada 12 horas')
+  })
+
+  test('el servidor guarda la velocidad en el set y la devuelve', async () => {
+    const doc = await as('hnolasco@demo.clinara')
+    const r = await doc.post('/api/order-sets', { name: 'Choque séptico PE', items: [
+      { text: 'Monitoreo continuo.' },
+      { med: { drug: 'Norepinefrina', dose: '8 mg en 250 mL SSN', route: 'Intravenosa', prn: false, infusionRate: 7.5, infusionUnit: 'ml/h' } },
+      { med: { drug: 'Ceftriaxona', dose: '1 g', route: 'Intravenosa', everyHours: 12, prn: false } },
+    ] })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    const sets = (await doc.get('/api/order-sets')).body as { id: string; items: { med?: { drug: string; infusionRate?: number; infusionUnit?: string; everyHours?: number } }[] }[]
+    const set = sets.find((s) => s.id === r.body.id)!
+    const nor = set.items.find((x) => x.med?.drug === 'Norepinefrina')!.med!
+    assert.equal(nor.infusionRate, 7.5)
+    assert.equal(nor.infusionUnit, 'ml/h')
+    const cef = set.items.find((x) => x.med?.drug === 'Ceftriaxona')!.med!
+    assert.equal(cef.infusionRate, undefined)
+    assert.equal(cef.everyHours, 12)
+    // Una velocidad no válida se rechaza
+    const bad = await doc.post('/api/order-sets', { name: 'Infusión mala PE', items: [{ med: { drug: 'X', dose: '1', route: 'Intravenosa', prn: false, infusionRate: -1, infusionUnit: 'ml/h' } }] })
+    assert.equal(bad.status, 400)
   })
 })

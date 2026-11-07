@@ -1562,7 +1562,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
       {correct && fix ? <CorrectionOrders n={correct} file={file} p={p} value={fix} onChange={setFix} locks={locks} /> : notesOnly ? null : <div className="note-editor__orders">
       <div className="set-bar">
         <OrderSetPicker where={file.hospitalization.kind === 'observation' ? 'observation' : 'hospital'} patientId={p.id} onApply={applySet} />
-        <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions }) => ({ med: { drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions: instructions || undefined } })), ...exams.map((e) => ({ exam: e }))]} />
+        <SaveSetButton items={[...extra.map((text) => ({ text })), ...meds.map(({ drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions, infusionRate, infusionUnit }) => ({ med: { drug, presentation, dose, route, everyHours, prn, prnCondition, days, instructions: instructions || undefined, infusionRate, infusionUnit } })), ...exams.map((e) => ({ exam: e }))]} />
       </div>
       <fieldset className="fs"><legend>Indicaciones</legend>
         <VitalsFrequency value={vitalsMode} onChange={setVitalsMode} />

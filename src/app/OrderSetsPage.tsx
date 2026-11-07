@@ -6,7 +6,7 @@ import { Loading, Modal, PageHead } from '../components/ui'
 import { useOrderSets } from '../lib/useOrderSets'
 import { features } from '../lib/permissions'
 import { RouteField } from '../components/RouteField'
-import { INPATIENT_FREQUENCIES } from '../lib/inpatient'
+import { formatRate, infusionUnitLabel, INPATIENT_FREQUENCIES } from '../lib/inpatient'
 import { hasBlank, itemText, medHasBlank } from '../lib/orderSets'
 import { ExamPicker } from '../components/Exams'
 import { GROUP_LABEL } from '../lib/exams'
@@ -154,7 +154,8 @@ function SetEditor({ set, office, onClose, onSaved }: { set?: OrderSet; office: 
 function SetMedForm({ initial, onSave, onCancel }: { initial: SetMed; onSave: (m: SetMed) => void; onCancel: () => void }) {
   const vademecum = useVademecum()
   const [m, setM] = useState<SetMed>(initial)
-  const [freq, setFreq] = useState(initial.everyHours ? String(initial.everyHours) : initial.drug ? 'once' : '8')
+  // Pendiente (ronda 17): una infusión del set se conserva con su velocidad mientras no se elija otra frecuencia
+  const [freq, setFreq] = useState(initial.infusionRate ? 'infusion' : initial.everyHours ? String(initial.everyHours) : initial.drug ? 'once' : '8')
   const known = vademecum.some((d) => normalize(d.name) === normalize(m.drug) || d.aliases?.some((a) => normalize(a) === normalize(m.drug)))
   const ok = m.drug.trim() && m.dose.trim()
   return (
@@ -168,6 +169,7 @@ function SetMedForm({ initial, onSave, onCancel }: { initial: SetMed; onSave: (m
         <RouteField value={m.route} onChange={(r) => setM({ ...m, route: r })} />
         <label className="field"><span>Frecuencia</span>
           <select className="select" value={freq} onChange={(e) => setFreq(e.target.value)}>
+            {initial.infusionRate && !m.prn && <option value="infusion">Infusión a {formatRate(initial.infusionRate)} {infusionUnitLabel(initial.infusionUnit)}</option>}
             {INPATIENT_FREQUENCIES.filter((f) => !m.prn || f.hours).map((f) => <option key={f.label} value={f.hours ?? 'once'}>{m.prn ? `${f.label} como máximo` : f.label}</option>)}
           </select></label>
         <label className="field"><span>Total de días (opcional)</span>
@@ -175,12 +177,13 @@ function SetMedForm({ initial, onSave, onCancel }: { initial: SetMed; onSave: (m
             onChange={(e) => setM({ ...m, days: e.target.value ? Math.max(1, Math.min(365, Math.round(Number(e.target.value)))) : undefined })} /></label>
         <label className="field" style={{ alignContent: 'end' }}><span>Según necesidad</span>
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', height: 42 }}>
-            <input type="checkbox" checked={m.prn} onChange={(e) => { setM({ ...m, prn: e.target.checked }); if (e.target.checked && freq === 'once') setFreq('8') }} />PRN</label></label>
+            <input type="checkbox" checked={m.prn} onChange={(e) => { setM({ ...m, prn: e.target.checked }); if (e.target.checked && (freq === 'once' || freq === 'infusion')) setFreq('8') }} />PRN</label></label>
         {m.prn && <label className="field"><span>Condición (opcional en el set)</span><input className="input" value={m.prnCondition ?? ''} onChange={(e) => setM({ ...m, prnCondition: e.target.value })} placeholder="Ej. si dolor" /></label>}
         <label className="field"><span>Indicaciones</span><input className="input" value={m.instructions ?? ''} onChange={(e) => setM({ ...m, instructions: e.target.value })} placeholder="Ej. Diluir en 100 ml" /></label>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
-        <button type="button" className="btn btn--primary" disabled={!ok} onClick={() => onSave({ ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours: freq === 'once' ? undefined : Number(freq), instructions: m.instructions?.trim() || undefined, prnCondition: m.prn ? m.prnCondition?.trim() || undefined : undefined, presentation: m.presentation || undefined })}>
+        <button type="button" className="btn btn--primary" disabled={!ok} onClick={() => onSave({ ...m, drug: m.drug.trim(), dose: m.dose.trim(), everyHours: freq === 'once' || freq === 'infusion' ? undefined : Number(freq),
+          infusionRate: freq === 'infusion' ? initial.infusionRate : undefined, infusionUnit: freq === 'infusion' ? initial.infusionUnit : undefined, instructions: m.instructions?.trim() || undefined, prnCondition: m.prn ? m.prnCondition?.trim() || undefined : undefined, presentation: m.presentation || undefined })}>
           <Plus size={16} />{initial.drug ? 'Guardar medicamento' : 'Agregar al set'}</button>
         <button type="button" className="btn btn--ghost" onClick={onCancel}>Cancelar</button>
       </div>

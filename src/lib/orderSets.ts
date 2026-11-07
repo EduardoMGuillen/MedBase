@@ -2,6 +2,7 @@ import type { ExamInput, OrderSetItem, PrescriptionItem, SetMed } from './types.
 import { examLine } from './exams.js'
 import { durationDays, frequencyHours, medLabel } from './inpatient.js'
 import { normalize } from './patients.js'
+import { INFUSION_FREQUENCY } from './medForm.js'
 
 /**
  * Sets de órdenes (O1). Un set guarda indicaciones de texto y medicamentos con su estructura; al aplicarlo se
@@ -24,6 +25,11 @@ export const itemText = (it: OrderSetItem) => (it.med ? setMedText(it.med) : it.
 
 /** Del set a la receta de la consulta externa. Sin días, la duración queda vacía: la consulta pide completarla. */
 export function setMedToRx(m: SetMed): PrescriptionItem {
+  // Pendiente (ronda 17): una infusión del set vuelve como infusión, con su velocidad
+  if (m.infusionRate) {
+    return { drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route, frequency: INFUSION_FREQUENCY, duration: '',
+      instructions: m.instructions ?? '', infusionRate: m.infusionRate, infusionUnit: m.infusionUnit ?? 'ml/h' }
+  }
   return {
     drug: m.drug, presentation: m.presentation ?? '', dose: m.dose, route: m.route,
     frequency: m.prn ? (m.everyHours ? `Cada ${m.everyHours} horas si es necesario` : 'PRN (si es necesario)') : m.everyHours ? `Cada ${m.everyHours} horas` : 'Dosis única',
@@ -34,6 +40,11 @@ export function setMedToRx(m: SetMed): PrescriptionItem {
 
 /** De la receta de la consulta externa al set. */
 export function rxToSetMed(it: PrescriptionItem): SetMed {
+  // Pendiente (ronda 17): la infusión se guarda con su velocidad (antes quedaba como «Dosis única»)
+  if (it.frequency === INFUSION_FREQUENCY || it.infusionRate) {
+    return { drug: it.drug, presentation: it.presentation || undefined, dose: it.dose, route: it.route ?? 'Intravenosa', prn: false,
+      instructions: it.instructions || undefined, infusionRate: it.infusionRate, infusionUnit: it.infusionRate ? it.infusionUnit ?? 'ml/h' : undefined }
+  }
   return {
     drug: it.drug, presentation: it.presentation || undefined, dose: it.dose, route: it.route ?? 'Oral',
     everyHours: frequencyHours(it.frequency), prn: /necesidad|necesario|prn/i.test(it.frequency), days: durationDays(it.duration),

@@ -17,6 +17,9 @@ const med = z.object({
   prnCondition: z.string().trim().max(120).optional(),
   days: z.number().int().min(1).max(365).optional(),
   instructions: z.string().trim().max(300).optional(),
+  // Pendiente (ronda 17): la velocidad de una infusión continua (antes zod la quitaba y el set la perdía)
+  infusionRate: z.number().positive('La velocidad de infusión debe ser mayor que 0.').max(1000).optional(),
+  infusionUnit: z.enum(['ml/h', 'ml/min']).optional(),
 })
 // EX1: un set también puede traer exámenes (se insertan en la sección Exámenes, no como texto)
 const item = z.union([z.object({ text: z.string().trim().min(1).max(500) }), z.object({ med }), z.object({ exam: examInput })])

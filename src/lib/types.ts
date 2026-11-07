@@ -794,6 +794,9 @@ export interface SetMed {
   prnCondition?: string
   days?: number
   instructions?: string
+  /** Pendiente (ronda 17): una infusión continua guarda su velocidad en el set (antes se perdía al guardarlo). */
+  infusionRate?: number
+  infusionUnit?: InfusionUnit
 }
 
 /** Una orden de un set: texto (indicación), medicamento estructurado o examen (EX1). */
