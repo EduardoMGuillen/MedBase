@@ -360,6 +360,10 @@ tr.clickable { cursor: pointer; }
 .bed__spec { justify-self: start; }
 
 /* AD7: filtros de la bitácora */
+/* Ronda 17: filtros de Personal (buscar, rol, estado), con el mismo patrón que los de la Bitácora */
+.staff-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px 12px; align-items: end; border-bottom: 1px solid var(--line); }
+.staff-filters__count { grid-column: 1 / -1; margin: 0; font-size: 13.5px; }
+@media (max-width: 720px) { .staff-filters { grid-template-columns: 1fr 1fr; } .staff-filters__q { grid-column: 1 / -1; } }
 .audit-filters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 12px; align-items: end; }
 .audit-filters__q { grid-column: span 2; }
 .audit-filters__patient { grid-column: span 3; }

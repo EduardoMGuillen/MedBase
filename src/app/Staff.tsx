@@ -1,6 +1,7 @@
 import { DEPT_POSITIONS } from '../lib/clinicalConfig'
 import { positionFor, type DeptKey } from '../lib/positions'
 import { useState } from 'react'
+import { normalize } from '../lib/patients'
 import { Check, Minus, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Avatar, Modal, PageHead } from '../components/ui'
@@ -23,8 +24,17 @@ export default function StaffPage() {
   const [secret, setSecret] = useState<{ name: string; email: string; password: string } | null>(null)
   const [rolesOf, setRolesOf] = useState<Staff | null>(null)
   // GE5 (ronda 10): el personal por páginas (la página en la dirección)
-  const [staffPageNo, setStaffPage] = usePage(tab)
-  const staffPage = paginate(staff, staffPageNo)
+  // Ronda 17: filtros del personal (buscar, rol, estado); la página vuelve a 1 al cambiarlos
+  const [q, setQ] = useState('')
+  const [roleF, setRoleF] = useState<Role | ''>('')
+  const [stateF, setStateF] = useState<'' | 'active' | 'inactive' | 'twofactor'>('')
+  const nq = normalize(q)
+  const shown = staff.filter((s) => (!nq || normalize([s.name, s.email, s.specialty, s.license].filter(Boolean).join(' ')).includes(nq))
+    && (!roleF || (s.roles ?? [s.role]).includes(roleF))
+    && (!stateF || (stateF === 'active' ? s.active : stateF === 'inactive' ? !s.active : !!s.twoFactor)))
+  const filtered = !!(nq || roleF || stateF)
+  const [staffPageNo, setStaffPage] = usePage(`${tab}|${nq}|${roleF}|${stateF}`)
+  const staffPage = paginate(shown, staffPageNo)
 
   return (
     <div className="page">
@@ -42,7 +52,26 @@ export default function StaffPage() {
       {tab === 'people' && (
         // UI1 (ronda 17): sin encabezado fijo (dentro del recuadro con desplazamiento a lo ancho quedaba corrido hacia abajo,
         // tapaba las primeras filas y dejaba una barra blanca arriba). La tabla crece con la página; a 720 px o menos, tarjetas.
-        <section className="panel table-wrap">
+        <section className="panel staff-list">
+          <div className="panel__body staff-filters">
+            <label className="field staff-filters__q"><span>Buscar</span>
+              <input className="input" type="search" data-nocap value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre, correo, especialidad o colegiación" /></label>
+            <label className="field"><span>Rol</span>
+              <select className="select" value={roleF} onChange={(e) => setRoleF(e.target.value as Role | '')}>
+                <option value="">Todos los roles</option>
+                {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+              </select></label>
+            <label className="field"><span>Estado</span>
+              <select className="select" value={stateF} onChange={(e) => setStateF(e.target.value as typeof stateF)}>
+                <option value="">Todos</option>
+                <option value="active">Activos</option>
+                <option value="inactive">Desactivados</option>
+                <option value="twofactor">Con verificación en dos pasos</option>
+              </select></label>
+            <p className="muted staff-filters__count" aria-live="polite">{filtered ? `${shown.length} de ${staff.length} personas` : `${staff.length} personas`}
+              {filtered && <> · <button type="button" className="link-btn" onClick={() => { setQ(''); setRoleF(''); setStateF('') }}>Quitar filtros</button></>}</p>
+          </div>
+          {shown.length === 0 ? <p className="empty">Nadie coincide con los filtros.</p> : <div className="table-wrap">
           <table className="table table--cards staff-table">
             <thead><tr><th>Nombre</th><th>Rol</th><th>Correo</th><th>Estado</th><th /></tr></thead>
             <tbody>{staffPage.rows.map((s) => (
@@ -74,6 +103,7 @@ export default function StaffPage() {
               </tr>
             ))}</tbody>
           </table>
+          </div>}
           <Pagination {...staffPage} onPage={setStaffPage} label="Páginas del personal" />
         </section>
       )}
