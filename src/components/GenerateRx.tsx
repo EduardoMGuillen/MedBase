@@ -23,7 +23,7 @@ export function GenerateRxModal({ meds, onClose, only }: { meds: InpatientMed[];
   const active = meds.filter((m) => !m.stoppedAt && (doctor || m.buyOutside))
   const [picked, setPicked] = useState<string[]>(() => active.filter((m) => (only ? only.includes(m.id) : m.buyOutside)).map((m) => m.id))
   const [extras, setExtras] = useState<Record<string, { days: string; quantity: string }>>(() =>
-    Object.fromEntries(active.map((m) => [m.id, { days: '', quantity: m.buyQuantity ?? '' }])))
+    Object.fromEntries(active.map((m) => [m.id, { days: '', quantity: m.buyQuantity ?? m.quantity ?? '' }])))
   const [busy, setBusy] = useState(false)
   const set = (id: string, patch: Partial<{ days: string; quantity: string }>) => setExtras({ ...extras, [id]: { ...extras[id], ...patch } })
   const badDays = doctor && picked.some((id) => extras[id]?.days.trim() && !(Number(extras[id].days) >= 1 && Number.isInteger(Number(extras[id].days))))

@@ -199,6 +199,9 @@ export default function Consultation() {
   // Sin ingreso, lo que se aplica en la clínica es solo dosis STAT: «Terminar consulta» no deja firmar otra frecuencia
   const statWarn = (m: PrescriptionItem) => (!admitting && m.applyInClinic && (!/única/i.test(m.frequency) || m.loadingDose) ? 'Sin ingreso solo se permite dosis STAT. Cámbiala o marca el ingreso.' : undefined)
   const notStat = meds.filter((m) => statWarn(m))
+  // ME16 (ronda 16): la infusión va con ingreso (si se desmarca el ingreso después de indicarla, no se firma así)
+  const infusionWarn = (m: PrescriptionItem) => (!admitting && m.infusionRate ? 'La infusión va con ingreso. Marca el ingreso o cambia la frecuencia.' : undefined)
+  const noInfusion = meds.filter((m) => infusionWarn(m))
   // Huecos "___" que trajo un set: no se firma hasta llenarlos
   const blanks = [...indications.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : [])),
     // MC2 (ronda 6): un PRN que vino de un set sin condición
@@ -210,6 +213,7 @@ export default function Consultation() {
     noDays.length > 0 && `el total de días de ${noDays.map((m) => m.drug).join(', ')} (va a la receta)`,
     needsDni && 'el número de identidad para la receta',
     blanks.length > 0 && `los espacios ___ de ${blanks.join(', ')}`,
+    noInfusion.length > 0 && `marcar el ingreso o cambiar la frecuencia de ${noInfusion.map((m) => m.drug).join(', ')} (la infusión va con ingreso)`,
     notStat.length > 0 && `cambiar a dosis STAT ${notStat.map((m) => m.drug).join(', ')} (sin ingreso solo se permite dosis STAT) o marcar el ingreso`].filter(Boolean)
 
   /** Un set agrega sus indicaciones al bloque Indicaciones y sus medicamentos al bloque Medicamentos, al final. */
@@ -419,11 +423,11 @@ export default function Consultation() {
               <div className="plan-block" data-tour="medicamentos">
                 <h3 className="plan-block__title">Medicamentos <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'todos van a la receta; los que se aplican en la clínica, también a la hoja' : 'todos van a la receta'}</span></h3>
                 {admitting && <p className="muted" style={{ fontSize: 13.5 }}>Con ingreso, lo que se aplica en la clínica no necesita días: sin días queda «hasta nueva orden».</p>}
-                <MedicationList items={admitting ? meds.map((m) => ({ ...m, applyInClinic: applied(m) })) : meds} patient={p} editing={medForm?.index ?? null} requireDuration warn={statWarn}
+                <MedicationList items={admitting ? meds.map((m) => ({ ...m, applyInClinic: applied(m) })) : meds} patient={p} editing={medForm?.index ?? null} requireDuration warn={(m) => statWarn(m) ?? infusionWarn(m)}
                   onEdit={(i) => setMedForm({ index: i, initial: meds[i] })} onRemove={(i) => { setMeds(meds.filter((_, j) => j !== i)); setMedForm(null) }} />
                 {!meds.length && !medForm && <p className="muted" style={{ fontSize: 14 }}>Sin medicamentos indicados.</p>}
                 {medForm ? (
-                  <MedicationForm key={medForm.index} patient={p} current={meds} initial={medForm.initial} requireDuration clinicOption={store.can('inpatient.orders')} clinicMode={admitting ? 'stay' : 'ambulatory'}
+                  <MedicationForm key={medForm.index} patient={p} current={meds} initial={medForm.initial} place={{ where: 'consult', admitting, canApply: store.can('inpatient.orders') }}
                     submitLabel={medForm.index >= 0 ? 'Guardar cambios' : 'Agregar medicamento'}
                     onSave={(item) => { setMeds(medForm.index >= 0 ? meds.map((x, j) => (j === medForm.index ? item : x)) : [...meds, item]); setMedForm(null) }}
                     onCancel={() => setMedForm(null)} />

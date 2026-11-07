@@ -355,6 +355,13 @@ export interface PrescriptionItem {
    * la receta al emitirla (lo emitido no cambia aunque cambie el texto en la configuración).
    */
   legend?: string
+  /**
+   * ME16 (ronda 16): infusión continua indicada en la consulta con ingreso (frecuencia «Infusión»): velocidad, unidad y hora de
+   * inicio (ISO). Llega a la hoja de la estancia como infusión (server/medOrders.ts).
+   */
+  infusionRate?: number
+  infusionUnit?: InfusionUnit
+  firstAt?: string
 }
 
 export interface Prescription {
@@ -1011,6 +1018,8 @@ export interface InpatientMed {
   /** ME10 (ronda 10): la clínica no lo tiene: sigue en la hoja y va a una receta («Cantidad a comprar», opcional). */
   buyOutside?: boolean
   buyQuantity?: string
+  /** ME16 (ronda 16): cantidad total, como en la receta (opcional). */
+  quantity?: string
   /** ME1 (ronda 8): enfermería suspendió la infusión en curso (hora, quién y motivo opcional). */
   infusionStoppedAt?: string
   infusionStoppedBy?: string

@@ -39,10 +39,22 @@ export interface OrderInput {
   /** ME10 (ronda 10): la clínica no lo tiene: va a una receta, con la cantidad a comprar. */
   buyOutside?: boolean
   buyQuantity?: string
+  /** ME16 (ronda 16): cantidad total (como en la receta). */
+  quantity?: string
 }
 
 /** Un medicamento de la consulta externa como orden de la hoja: "Cada 8 horas" → cada 8 h; "3 días" → 3. */
 export function orderFromItem(it: PrescriptionItem, firstAt: string): OrderInput {
+  // ME16 (ronda 16): una infusión de la consulta con ingreso llega como infusión, con su velocidad, su unidad y su hora de inicio
+  // (no antes de la llegada a la unidad: `firstAt` ya es la más tardía entre la consulta, el ingreso y la llegada)
+  if (it.infusionRate) {
+    return {
+      drug: it.drug, presentation: it.presentation || undefined, dose: it.dose, route: it.route || 'Intravenosa', prn: false,
+      firstAt: it.firstAt && it.firstAt > firstAt ? it.firstAt : firstAt, instructions: it.instructions || undefined, days: durationDays(it.duration),
+      infusionRate: it.infusionRate, infusionUnit: it.infusionUnit || 'ml/h', quantity: it.quantity || undefined,
+      buyOutside: it.buyOutside || undefined, buyQuantity: it.buyOutside ? it.quantity || undefined : undefined,
+    }
+  }
   return {
     drug: it.drug, presentation: it.presentation || undefined, dose: it.dose, route: it.route || 'Oral',
     everyHours: frequencyHours(it.frequency), prn: /necesidad|necesario|\bprn\b/i.test(it.frequency), prnCondition: it.prnCondition || undefined, firstAt,
@@ -50,7 +62,7 @@ export function orderFromItem(it: PrescriptionItem, firstAt: string): OrderInput
     // ME3 y ME4 (ronda 9): «Aplicar en la clínica» con primera dosis distinta (STAT, ahora) o nebulización
     loadingDose: it.loadingDose || undefined, loadingStat: it.loadingDose ? true : undefined, nebulization: it.nebulization,
     // ME10 (ronda 10): «No hay en la clínica (va a receta)» con «Aplicar en la clínica»: la cantidad total es la que se compra
-    buyOutside: it.buyOutside || undefined, buyQuantity: it.buyOutside ? it.quantity || undefined : undefined,
+    buyOutside: it.buyOutside || undefined, buyQuantity: it.buyOutside ? it.quantity || undefined : undefined, quantity: it.quantity || undefined,
   }
 }
 
@@ -70,14 +82,14 @@ export async function createMedOrders(q: Sql, o: {
   for (const [index, m] of o.items.entries()) {
     if (!m || active.has(normalize(m.drug))) continue
     const row = await q.one(`INSERT INTO hosp_meds (id, clinic_id, hospitalization_id, patient_id, note_id, source, source_id, source_index, drug, presentation, dose, route,
-        every_hours, prn, first_at, instructions, days, replaces_id, ordered_by, ordered_at, prn_condition, infusion_rate, infusion_unit, loading_dose, loading_stat, nebulization, buy_outside, buy_quantity)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        every_hours, prn, first_at, instructions, days, replaces_id, ordered_by, ordered_at, prn_condition, infusion_rate, infusion_unit, loading_dose, loading_stat, nebulization, buy_outside, buy_quantity, quantity)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT (hospitalization_id, source_id, source_index) WHERE source_id IS NOT NULL AND source_index IS NOT NULL DO NOTHING RETURNING id`,
       [randomUUID(), o.clinicId, o.hospitalizationId, o.patientId, o.source === 'note' ? o.sourceId : null, o.source, o.sourceId, index, m.drug, m.presentation || null,
         m.dose, m.route, m.everyHours ?? null, m.prn, new Date(m.firstAt).toISOString(), m.instructions || null, m.days ?? null, m.replacesId ?? null, o.orderedBy, o.orderedAt, m.prn ? m.prnCondition || null : null,
         m.infusionRate ?? null, m.infusionRate ? m.infusionUnit || 'ml/h' : null, m.loadingDose && m.everyHours && !m.prn && !m.infusionRate ? m.loadingDose : null,
         m.loadingDose && m.everyHours && !m.prn && !m.infusionRate ? m.loadingStat !== false : null, m.nebulization ? JSON.stringify(m.nebulization) : null,
-        !!m.buyOutside, m.buyOutside ? m.buyQuantity || null : null])
+        !!m.buyOutside, m.buyOutside ? m.buyQuantity || null : null, m.quantity || null])
     if (row) created++
   }
   return created
@@ -197,7 +209,7 @@ export async function consultRxRows(q: Sql, h: Row): Promise<Row[]> {
     source: 'consultation', source_id: c.id, source_index: index, drug: it.drug, presentation: it.presentation || null, dose: it.dose, route: it.route || 'Oral',
     every_hours: frequencyHours(it.frequency) ?? null, prn: /necesidad|necesario|\bprn\b/i.test(it.frequency), first_at: c.date, instructions: it.instructions || null,
     days: durationDays(it.duration) ?? null, ordered_by: c.doctor_id, ordered_at: c.date, prn_condition: it.prnCondition || null, loading_dose: it.loadingDose || null,
-    nebulization: it.nebulization ? JSON.stringify(it.nebulization) : null, buy_outside: !!it.buyOutside, buy_quantity: it.buyOutside ? it.quantity || null : null,
+    nebulization: it.nebulization ? JSON.stringify(it.nebulization) : null, buy_outside: !!it.buyOutside, buy_quantity: it.buyOutside ? it.quantity || null : null, quantity: it.quantity || null,
     stopped_at: null,
   } as Row]))
 }

@@ -120,6 +120,8 @@ const medInput = z.object({
   // ME10 (ronda 10): la clínica no lo tiene: sigue en la hoja y va a una receta (con lo que hay que comprar)
   buyOutside: z.boolean().optional(),
   buyQuantity: z.string().trim().max(60).optional(),
+  // ME16 (ronda 16): cantidad total, como en la receta
+  quantity: z.string().trim().max(80).optional(),
   // ME4 (ronda 9): nebulización (vía «Nebulización») con sus componentes y diluyente
   nebulization: z.object({ components: z.array(z.object({ drug: z.string().trim().min(1, 'Escribe el medicamento de la nebulización.').max(160), amount: z.string().trim().min(1, 'Escribe la cantidad de cada medicamento de la nebulización.').max(40) })).min(1).max(NEB_MAX_COMPONENTS, `Una nebulización lleva hasta ${NEB_MAX_COMPONENTS} medicamentos.`),
     diluentVolume: z.string().trim().max(40).optional(), diluent: z.string().trim().max(80).optional() }).optional(),
@@ -1035,9 +1037,9 @@ export function registerInpatient(app: Express, ctx: Ctx) {
   })
   const sameMed = (r: Row, m: z.infer<typeof medInput>) => JSON.stringify([r.drug, r.presentation ?? '', r.dose, r.route, r.every_hours ?? null, Boolean(r.prn), r.prn ? r.prn_condition ?? '' : '',
     new Date(String(r.first_at)).getTime(), r.instructions ?? '', r.days ?? null, r.infusion_rate == null ? null : Number(r.infusion_rate), r.infusion_rate ? r.infusion_unit ?? 'ml/h' : null,
-    r.loading_dose ?? null, r.nebulization ? JSON.parse(String(r.nebulization)) : null, Boolean(r.buy_outside), r.buy_outside ? r.buy_quantity ?? '' : '']) === JSON.stringify([m.drug, m.presentation ?? '', m.dose, m.route, m.everyHours ?? null, m.prn, m.prn ? m.prnCondition ?? '' : '',
+    r.loading_dose ?? null, r.nebulization ? JSON.parse(String(r.nebulization)) : null, Boolean(r.buy_outside), r.buy_outside ? r.buy_quantity ?? '' : '', r.quantity ?? '']) === JSON.stringify([m.drug, m.presentation ?? '', m.dose, m.route, m.everyHours ?? null, m.prn, m.prn ? m.prnCondition ?? '' : '',
     new Date(m.firstAt ?? String(r.first_at)).getTime(), m.instructions ?? '', m.days ?? null, m.infusionRate ?? null, m.infusionRate ? m.infusionUnit ?? 'ml/h' : null,
-    m.loadingDose && m.everyHours && !m.prn && !m.infusionRate ? m.loadingDose : null, m.nebulization ?? null, !!m.buyOutside, m.buyOutside ? m.buyQuantity ?? '' : ''])
+    m.loadingDose && m.everyHours && !m.prn && !m.infusionRate ? m.loadingDose : null, m.nebulization ?? null, !!m.buyOutside, m.buyOutside ? m.buyQuantity ?? '' : '', m.quantity ?? ''])
   const rowLabel = (r: Row) => medLabel(toInpatientMed(r))
   async function correctOrders(q: Sql, h: Row, n: Row, data: Record<string, unknown>, o: z.infer<typeof ordersFix>, userId: string) {
     const locks = await noteOrderLocks(q, n)
@@ -1083,10 +1085,10 @@ export function registerInpatient(app: Express, ctx: Ctx) {
         const m = p.med
         const loading = m.loadingDose && m.everyHours && !m.prn && !m.infusionRate
         await q.run(`UPDATE hosp_meds SET drug = ?, presentation = ?, dose = ?, route = ?, every_hours = ?, prn = ?, prn_condition = ?, first_at = ?, instructions = ?, days = ?,
-            infusion_rate = ?, infusion_unit = ?, loading_dose = ?, loading_stat = ?, nebulization = ?, buy_outside = ?, buy_quantity = ? WHERE id = ?`,
+            infusion_rate = ?, infusion_unit = ?, loading_dose = ?, loading_stat = ?, nebulization = ?, buy_outside = ?, buy_quantity = ?, quantity = ? WHERE id = ?`,
           [m.drug, m.presentation || null, m.dose, m.route, m.everyHours ?? null, m.prn, m.prn ? m.prnCondition || null : null, new Date(m.firstAt ?? String(r.first_at)).toISOString(), m.instructions || null,
             m.days ?? null, m.infusionRate ?? null, m.infusionRate ? m.infusionUnit || 'ml/h' : null, loading ? m.loadingDose : null, loading ? m.loadingStat !== false : null,
-            m.nebulization ? JSON.stringify(m.nebulization) : null, !!m.buyOutside, m.buyOutside ? m.buyQuantity || null : null, id])
+            m.nebulization ? JSON.stringify(m.nebulization) : null, !!m.buyOutside, m.buyOutside ? m.buyQuantity || null : null, m.quantity || null, id])
         changes.push(`cambió ${rowLabel(r)} por ${medLabel({ ...m, everyHours: m.everyHours, prn: m.prn })} en la hoja`)
       }
     }

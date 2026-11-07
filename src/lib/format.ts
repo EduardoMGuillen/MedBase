@@ -259,10 +259,16 @@ export const defaultRoute = (presentation = '') =>
 /** Texto de una orden médica de medicamento, p. ej. "Azitromicina 500 mg tableta: 1 tableta vía oral cada 24 horas por 3 días." */
 /** MC2 (ronda 6): la frecuencia como se lee: «PRN: si dolor» para un PRN con condición; si no, la frecuencia escrita. */
 export function frequencyText(i: Pick<PrescriptionItem, 'frequency' | 'prnCondition'>) {
-  return i.prnCondition?.trim() && /necesidad|necesario|\bprn\b/i.test(i.frequency) ? `PRN: ${i.prnCondition.trim()}` : i.frequency
+  // ME16 (ronda 16): un PRN con intervalo mínimo («Cada 8 horas si es necesario») lo conserva: «PRN: si dolor, máximo cada 8 h»
+  const hours = /cada\s+(\d+)\s*h/i.exec(i.frequency)?.[1]
+  return i.prnCondition?.trim() && /necesidad|necesario|\bprn\b/i.test(i.frequency) ? `PRN: ${i.prnCondition.trim()}${hours ? `, máximo cada ${hours} h` : ''}` : i.frequency
 }
 
+/** ME16 (ronda 16): «IV en infusión a 125 mL/h», la parte de la infusión en la receta y en la nota de la consulta. */
+const infusionText = (i: PrescriptionItem, route: string) => `${route ? `${route} ` : ''}en infusión a ${String(Math.round(i.infusionRate! * 100) / 100)} ${i.infusionUnit === 'ml/min' ? 'mL/min' : 'mL/h'}`
+
 export function medicationOrder(i: PrescriptionItem) {
+  if (i.infusionRate) return `${medicationLine(i)}.${i.instructions ? ` ${i.instructions}` : ''}`
   // ME3 y ME4 (ronda 9): primera dosis distinta y nebulización, con el mismo texto de la receta
   if (i.nebulization?.components?.length || i.loadingDose?.trim()) return `${medicationLine(i)}.${i.instructions ? ` ${i.instructions}` : ''}`
   const route = i.route ? ` vía ${isKnownRoute(i.route) ? i.route.toLowerCase() : i.route}` : ''
@@ -360,6 +366,8 @@ export function medicationLine(i: PrescriptionItem) {
   // ME17 (ronda 16): una vía escrita a mano sale tal cual («Intraósea»)
   const route = i.route ? ROUTE_SHORT[i.route] ?? (isKnownRoute(i.route) ? i.route.toLowerCase() : i.route) : ''
   const days = !once ? (i.duration ? ` por ${i.duration}` : ' hasta nueva orden') : ''
+  // ME16 (ronda 16): «Solución salina 0.9 % 1000 mL bolsa — 1000 mL IV en infusión a 125 mL/h hasta nueva orden»
+  if (i.infusionRate) return `${i.drug}${i.presentation ? ` ${presentationShort(i.presentation)}` : ''} — ${[doseText(i.dose), infusionText(i, route), i.duration ? `por ${i.duration}` : 'hasta nueva orden'].filter(Boolean).join(' ')}`
   // ME4 (ronda 9): una sola línea para la nebulización, con el mismo generador que las notas
   if (i.nebulization?.components?.length) return `${nebulizationLine(i.nebulization, freq)}${days}`
   // ME3 (ronda 9): primera dosis distinta, el mismo texto de ME2 («Ceftriaxona IM · 2 g STAT y luego 1 g c/12h»)

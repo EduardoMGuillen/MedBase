@@ -26,7 +26,7 @@ import { insertExtraDemoUsers } from './demoUsers.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '84'
+const SCHEMA_VERSION = '87'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1298,6 +1298,9 @@ CREATE TABLE IF NOT EXISTS supply_sets (
 CREATE UNIQUE INDEX IF NOT EXISTS supply_sets_md ON supply_sets (clinic_id, md_key) WHERE md_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS supply_sets_clinic ON supply_sets (clinic_id);
 ALTER TABLE material_uses ADD COLUMN IF NOT EXISTS sets TEXT;
+-- v87 (ronda 16, ME16): un solo formulario de medicamento; las órdenes de la hoja también guardan la «Cantidad total», como la
+-- receta (opcional; las de antes quedan sin dato). La infusión de la consulta con ingreso usa las columnas de infusión de siempre.
+ALTER TABLE hosp_meds ADD COLUMN IF NOT EXISTS quantity TEXT;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
