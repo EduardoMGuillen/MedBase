@@ -178,7 +178,8 @@ export function TakeAllButton({ list, reload, className = 'btn btn--soft btn--sm
 /** ¿Este usuario puede marcar ahora «Muestra tomada» / «Realizado» de este examen? (las mismas reglas que el botón individual) */
 export function useCanTake() {
   const { can, user } = useStore()
-  return (e: ExamOrder, open = true) => open && e.status === 'ordered' && !e.notDone && can('exams.process') && (!user || deptAllows(user, e.group))
+  // Pendiente (ronda 17): un examen externo se hace fuera de la clínica: no lleva «Muestra tomada» / «Realizado»
+  return (e: ExamOrder, open = true) => open && e.status === 'ordered' && !e.notDone && e.place !== 'external' && can('exams.process') && (!user || deptAllows(user, e.group))
 }
 
 /**
@@ -212,7 +213,7 @@ export function ExamRow({ e, reload, open, expanded, onToggle, compact = false }
   )
   const ordered = <span className="muted" style={{ fontSize: 13 }}>Pedido {dateTime(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)}{e.indication ? ` · ${e.indication}` : ''}</span>
   const brief = compact && !expanded ? resultBrief(e.result) : { flags: [] as string[], text: undefined }
-  const canNext = open && mine && can('exams.process') && isPending(e) && e.status === 'ordered'
+  const canNext = open && mine && can('exams.process') && isPending(e) && e.status === 'ordered' && e.place !== 'external'
   const canCancel = open && isPending(e) && !dept && (can('exams.process') || can('exams.order'))
   return (
     <div className={`exam-row${compact ? ' exam-row--compact' : ''}${e.priority === 'urgent' && isPending(e) ? ' exam-row--urgent' : ''}${expanded ? '' : ' is-folded'}`}>
