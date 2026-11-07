@@ -18,3 +18,14 @@ export function lateLabel(minutes: number) {
   const m = minutes % 60
   return `retrasado ${h} h${m ? ` ${m} min` : ''}`
 }
+
+/**
+ * RE2 (ronda 16): orden de llegada (la hora en que se marcó «Llegó» o se registró sin cita); el que no ha llegado, por la
+ * hora de su cita y después de los que ya llegaron.
+ */
+export function byArrival(a: Appointment, b: Appointment) {
+  if (!!a.arrivedAt !== !!b.arrivedAt) return a.arrivedAt ? -1 : 1
+  // Se comparan como fechas: la llegada se guarda en UTC («…Z») y la cita en hora local
+  const t = (x: Appointment) => new Date(x.arrivedAt ?? x.start).getTime()
+  return t(a) - t(b) || a.start.localeCompare(b.start)
+}

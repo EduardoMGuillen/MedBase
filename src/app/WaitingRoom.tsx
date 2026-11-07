@@ -15,7 +15,8 @@ import { parseDecimal, VITALS, type VitalKey } from '../lib/vitals'
 import { EMPTY_VITALS, FIELDS, fieldIssue, vitalNumber, type VitalsForm } from '../lib/vitalsForm'
 import { VitalsFields } from '../components/VitalsFields'
 import { ApptGroupList, GroupTools, groupAppointments, useFold, type ApptGroupView } from '../components/ApptGroups'
-import { QUEUE_GROUP_ROLES } from '../lib/clinicalConfig'
+import { QUEUE_DEFAULT_VIEW, QUEUE_GROUP_ROLES } from '../lib/clinicalConfig'
+import { byArrival } from '../lib/arrivals'
 import { stayConflictText, stayPath, yearsOld } from '../lib/inpatient'
 import { PatientPicker } from './Inpatients'
 import { IdentificationForm } from './PatientForms'
@@ -64,16 +65,20 @@ export default function WaitingRoom() {
   })
   const setMine = (v: boolean) => { setMineState(v); try { localStorage.setItem(viewKey, v ? 'mios' : 'clinica') } catch { /* sin almacenamiento */ } }
   const ofToday = appointments.filter((a) => sameDay(a.start, new Date()) && !['cancelled'].includes(a.status))
+  // RE2 (ronda 16): en una clínica, el médico ve a sus pacientes por orden de llegada (el primero en llegar arriba); los demás,
+  // por la hora de la cita, como antes
+  const arrivalOrder = multiDoctor && user?.role === 'doctor'
   const today = ofToday
     // En "Mis pacientes" también sale el que otro médico tomó, para que se vea quién lo atiende
     .filter((a) => !mine || a.doctorId === user?.id || a.reassignedFrom === user?.id)
-    .sort((a, b) => a.start.localeCompare(b.start))
+    .sort(arrivalOrder ? byArrival : (a, b) => a.start.localeCompare(b.start))
   // CX1 (ronda 8): en una clínica, Administración agrupa las tres columnas «Por hora | Por médico» (el mismo componente de
   // «Por llegar hoy»). Recordado por usuario y entre sesiones. Los roles que lo ven están en clinicalConfig (QUEUE_GROUP_ROLES).
+  // RE2 (ronda 16): también recepción; por defecto «Por médico» con los grupos de médico contraídos
   const grouped = multiDoctor && !!user && QUEUE_GROUP_ROLES.includes(user.role)
-  const [view, setViewState] = useState<ApptGroupView>(user?.prefs?.queueView ?? 'hour')
-  const setView = (v: ApptGroupView) => { setViewState(v); if (v !== (user?.prefs?.queueView ?? 'hour')) void saveMyProfile({ queueView: v }) }
-  const fold = useFold()
+  const [view, setViewState] = useState<ApptGroupView>(user?.prefs?.queueView ?? QUEUE_DEFAULT_VIEW)
+  const setView = (v: ApptGroupView) => { setViewState(v); if (v !== (user?.prefs?.queueView ?? QUEUE_DEFAULT_VIEW)) void saveMyProfile({ queueView: v }) }
+  const fold = useFold((k) => !k.includes(':d:'))
   const lanes = [
     { title: 'En sala', hint: multiDoctor ? 'Esperan que enfermería les abra la preclínica.' : 'Esperan la preclínica (signos vitales).', list: today.filter((a) => a.status === 'arrived') },
     { title: 'Listos para consulta', hint: 'Con preclínica hecha; el médico los llamará.', list: today.filter((a) => ['triaged', 'in_consult'].includes(a.status)) },

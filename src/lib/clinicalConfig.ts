@@ -81,9 +81,11 @@ export const LATE_RECORD_MINUTES = 60
 
 /**
  * CX1 (ronda 8). VALIDAR: Emil. Roles que ven la Consulta externa agrupada «Por hora | Por médico» (sólo en una clínica:
- * en un consultorio hay un solo médico). Para activarlo en otro rol, se agrega aquí ('reception', 'nurse', 'doctor').
+ * en un consultorio hay un solo médico). Para activarlo en otro rol, se agrega aquí ('nurse', 'doctor'). RE2 (ronda 16): y recepción.
  */
-export const QUEUE_GROUP_ROLES: string[] = ['admin']
+export const QUEUE_GROUP_ROLES: string[] = ['admin', 'reception']
+/** RE2 (ronda 16). VALIDAR: Emil. Vista con que abre la Consulta externa agrupada si la persona no ha elegido otra (los grupos de médico, contraídos). */
+export const QUEUE_DEFAULT_VIEW: 'hour' | 'doctor' = 'doctor'
 
 /**
  * ME1 (ronda 8). VALIDAR: Emil. Infusión: unidades de la velocidad (la primera es la de por omisión) y su máximo. El máximo
