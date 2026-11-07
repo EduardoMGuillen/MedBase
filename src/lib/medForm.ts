@@ -67,8 +67,11 @@ export const blankDraft = (place: MedPlace): MedDraft => ({
   instructions: '', buyOutside: false, loading: false, loadingDose: '', loadingNow: true, firstAt: '', rate: '', infusionUnit: 'ml/h',
 })
 
-/** ¿En este lugar se puede indicar una infusión? Solo con ingreso o en una estancia (ME13: sin ingreso, solo dosis STAT). */
-export const canInfuse = (place: MedPlace) => place.where === 'stay' || (place.where === 'consult' && place.admitting)
+/**
+ * ¿En este lugar se puede indicar una infusión? IF1 (ronda 17): en cualquier paciente, como en observación (antes, ME13: solo
+ * con ingreso o en una estancia). Lo que no lleva infusión lo decide el formulario: la nebulización y «Aplicar en la clínica» (STAT).
+ */
+export const canInfuse = (_place: MedPlace) => true
 
 /** La frecuencia del borrador como texto de la receta («Cada 8 horas», «Cada 8 horas si es necesario», «PRN (si es necesario)»). */
 export function frequencyOf(d: Pick<MedDraft, 'freq' | 'prn' | 'customFreq'>) {
@@ -124,13 +127,12 @@ export function stayDays(duration: string): number | undefined | null {
 }
 
 /**
- * ME16 (ronda 16): qué valida el servidor en un renglón de la receta de la consulta. La infusión solo con ingreso (ME13: sin
- * ingreso, solo dosis STAT) y con su velocidad; la misma regla que el formulario. Devuelve el mensaje o vacío.
+ * ME16 (ronda 16): qué valida el servidor en un renglón de la receta de la consulta. La infusión, con su velocidad y sin otra
+ * frecuencia; IF1 (ronda 17): con o sin ingreso (`admitting` queda por compatibilidad); la misma regla que el formulario. Devuelve el mensaje o vacío.
  */
-export function consultItemIssue(it: Pick<PrescriptionItem, 'drug' | 'frequency' | 'infusionRate' | 'infusionUnit' | 'loadingDose' | 'nebulization'>, o: { admitting: boolean }) {
+export function consultItemIssue(it: Pick<PrescriptionItem, 'drug' | 'frequency' | 'infusionRate' | 'infusionUnit' | 'loadingDose' | 'nebulization'>, _o: { admitting: boolean }) {
   const infusion = it.frequency === INFUSION_FREQUENCY || !!it.infusionRate
   if (!infusion) return ''
-  if (!o.admitting) return `${it.drug}: la infusión va con ingreso a observación u hospitalización. Sin ingreso solo se aplica una dosis STAT.`
   if (it.frequency !== INFUSION_FREQUENCY) return `${it.drug}: una infusión continua no lleva otra frecuencia.`
   if (it.loadingDose || it.nebulization) return `${it.drug}: una infusión no lleva primera dosis distinta ni nebulización.`
   const r = rateIssue(it.infusionRate, it.infusionUnit)

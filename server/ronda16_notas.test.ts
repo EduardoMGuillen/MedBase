@@ -219,10 +219,10 @@ describe('ME16 (ronda 16): un solo formulario de medicamentos, con infusión don
     assert.equal(custom.freq, 'custom'); assert.equal(frequencyOf(custom), 'Cada noche', 'una frecuencia escrita se conserva')
     const stay = draftFromStay({ drug: 'Ondansetrón', dose: '8 mg', route: 'Intravenosa', everyHours: 8, prn: false, days: 3, quantity: '6 ampollas' }, { where: 'stay' })
     assert.equal(stay.freq, '8'); assert.equal(stay.duration, '3 días'); assert.equal(stay.quantity, '6 ampollas')
-    assert.equal(canInfuse({ where: 'consult', admitting: false }), false, 'sin ingreso no hay infusión (ME13)')
+    assert.equal(canInfuse({ where: 'consult', admitting: false }), true, 'IF1 (ronda 17): también sin ingreso')
     assert.equal(canInfuse(consult), true)
     assert.equal(canInfuse({ where: 'stay' }), true)
-    assert.equal(canInfuse({ where: 'rx' }), false)
+    assert.equal(canInfuse({ where: 'rx' }), true, 'IF1 (ronda 17): en cualquier paciente')
   })
 
   test('la receta escribe la infusión legible y valida la velocidad como la nota', () => {
@@ -230,7 +230,7 @@ describe('ME16 (ronda 16): un solo formulario de medicamentos, con infusión don
     assert.equal(medicationLine(it), 'Solución salina 0.9 % 1000 mL bolsa — 1000 mL IV en infusión a 125 mL/h hasta nueva orden')
     assert.match(medicationOrder(it), /IV en infusión a 125 mL\/h/)
     assert.equal(consultItemIssue(it, { admitting: true }), '')
-    assert.match(consultItemIssue(it, { admitting: false }), /va con ingreso/)
+    assert.equal(consultItemIssue(it, { admitting: false }), '', 'IF1 (ronda 17): la infusión también sin ingreso')
     assert.match(consultItemIssue({ ...it, infusionRate: 5000 }, { admitting: true }), /no puede pasar de 1000/)
     assert.match(consultItemIssue({ ...it, infusionRate: undefined }, { admitting: true }), /velocidad/)
     assert.equal(rateIssue('2.555'), 'Hasta dos decimales.')
@@ -261,15 +261,14 @@ describe('ME16 (ronda 16): un solo formulario de medicamentos, con infusión don
     assert.match(medicationLine(rx[0]), /en infusión a 125 mL\/h/, 'la receta la escribe legible')
   })
 
-  test('sin ingreso no hay infusión (400), ni en la receta suelta', async () => {
+  test('IF1 (ronda 17): la infusión continua también sin ingreso y en la receta suelta', async () => {
     const { id, pid } = await consultFor(2)
     const doc = await as('hnolasco@demo.clinara')
     const item = { drug: 'Solución salina 0.9 %', presentation: 'Bolsa 1000 mL', dose: '1000 mL', route: 'Intravenosa', frequency: 'Infusión', duration: '', infusionRate: 125, infusionUnit: 'ml/h' }
     const r = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor', diagnoses: dx, items: [item] })
-    assert.equal(r.status, 400)
-    assert.match(r.body.error, /va con ingreso/)
+    assert.ok(r.status < 300, JSON.stringify(r.body))
     const rx = await doc.post('/api/prescriptions', { patientId: pid, items: [item] })
-    assert.equal(rx.status, 400)
+    assert.ok(rx.status < 300, JSON.stringify(rx.body))
   })
 
   test('la nota de la estancia guarda la presentación y la cantidad total', async () => {

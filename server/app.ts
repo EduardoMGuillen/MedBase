@@ -930,7 +930,7 @@ export function createApp(opts: AppOptions) {
       if (repeat) fail(400, `${repeat.drug}: sin ingreso solo se permite dosis STAT. Cámbiala o marca el ingreso.`)
     }
     // La receta necesita el total de días; lo que se aplica en la clínica (con ingreso, «hasta nueva orden») no
-    const noDays = rxItems.find((it) => !it.applyInClinic && !it.duration && !/única/i.test(it.frequency))
+    const noDays = rxItems.find((it) => !it.applyInClinic && !it.duration && !/única/i.test(it.frequency) && !it.infusionRate)
     if (noDays) fail(400, `Escribe el total de días de ${noDays.drug}: va a la receta.`)
     const cid = clinicOf(req)
     // Un consultorio no hospitaliza; la observación la puede tener apagada
@@ -1065,9 +1065,9 @@ export function createApp(opts: AppOptions) {
       validityDays: validityInput,
     }), req.body)
     if (!b.patientId === !b.guest) fail(400, 'Elige al paciente o escribe sus datos.')
-    // ME16 (ronda 16): la receta suelta no lleva infusión (no hay estancia)
+    // IF1 (ronda 17): la receta suelta también lleva infusión continua (con su velocidad; «hasta nueva orden», sin total de días)
     for (const it of b.items) { const issue = consultItemIssue(it, { admitting: false }); if (issue) fail(400, issue) }
-    const noDays = b.items.find((it) => !it.duration && !/única/i.test(it.frequency))
+    const noDays = b.items.find((it) => !it.duration && !/única/i.test(it.frequency) && !it.infusionRate)
     if (noDays) fail(400, `Escribe el total de días de ${noDays.drug}.`)
     const cid = clinicOf(req)
     const p = b.patientId ? (await patientRow(cid, b.patientId)) ?? fail(404, 'El paciente no existe.') : undefined

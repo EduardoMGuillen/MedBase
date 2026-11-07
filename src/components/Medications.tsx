@@ -89,7 +89,7 @@ type StayForm = FormCommon & {
  * - Medicamento (DrugSearch, ME8), «Agregar al vademécum» (ME11), presentación y concentración, dosis, vía (ME17), frecuencia,
  *   PRN con su condición, primera dosis diferente (ME2/ME3, solo IV), nebulización (ME4), total de días, cantidad total,
  *   indicaciones, alergias y repetidos: en todos los lugares.
- * - «Infusión» (ME1: velocidad, unidad y «Hora de inicio» con «Ahora»): solo con ingreso o en una estancia (ME13).
+ * - «Infusión continua» (ME1: velocidad, unidad y «Hora de inicio» con «Ahora»): en cualquier paciente (IF1, ronda 17).
  * - «Hora de la dosis» y la hora de la dosis inicial: en la estancia (en la consulta con ingreso la primera dosis es la llegada
  *   a la unidad, como siempre).
  * - «Aplicar en la clínica»: solo en la consulta sin ingreso (ME13: dosis STAT); con ingreso todo pasa a la hoja (NO1).
@@ -232,7 +232,7 @@ export function MedicationForm(props: ItemForm | StayForm) {
     : [...hourOptions.map((h) => ({ value: String(h), label: prn ? `Cada ${h} horas como máximo` : `Cada ${h} horas` })),
       { value: 'once', label: prn ? 'Sin intervalo fijo' : 'Dosis única' },
       ...(d.freq === 'custom' ? [{ value: 'custom', label: d.customFreq ?? '' }] : []),
-      ...(infusionOk && !prn ? [{ value: 'infusion', label: 'Infusión' }] : [])]
+      ...(infusionOk && !prn ? [{ value: 'infusion', label: 'Infusión continua' }] : [])]
   const preview = ready ? (props.kind === 'stay' ? (() => { const x = toStay(); return `${medLabel(x)}${x.days ? ` por ${x.days} días` : ''}` })() : medicationLine(toItem())) : ''
   const timeField = (label: string): ReactNode => (
     <div className="field"><span>{label}</span>
