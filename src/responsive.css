@@ -58,3 +58,7 @@
   .tab { display: inline-flex; align-items: center; }
   .check-inline, label:has(> input[type='checkbox']), label:has(> input[type='radio']) { min-height: 44px; }
 }
+
+/* Dos columnas iguales (las gráficas de Reportes); a 720 px o menos, una debajo de otra */
+.grid-2.grid-2--even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+@media (max-width: 720px) { .grid-2.grid-2--even { grid-template-columns: minmax(0, 1fr); } }

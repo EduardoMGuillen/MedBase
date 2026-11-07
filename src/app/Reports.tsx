@@ -62,7 +62,7 @@ export default function Reports() {
           <div className="stat"><b className="num">{report.totals.online}</b><span>Reservas en línea</span><small className="c-muted">{report.totals.newPatients} {report.totals.newPatients === 1 ? 'paciente nuevo' : 'pacientes nuevos'}</small></div>
         </div>
 
-        <div className="grid-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        <div className="grid-2 grid-2--even">
           <section className="panel panel__body">
             <BarChart title="Citas por día" valueLabel="Citas" data={report.days.map((d) => ({
               key: d.date, label: short(d.date), value: d.appointments, display: `${d.appointments} citas, ${d.done} atendidas`, tip: long(d.date),

@@ -128,7 +128,7 @@ tr.clickable { cursor: pointer; }
 .chart__tip--left { left: auto; right: 0; transform: none; }
 .chart__tip span { color: #b9c6cd; }
 .chart__x { position: absolute; top: 100%; left: 0; right: 0; display: flex; gap: 2px; padding-top: 6px; }
-.chart__x span { flex: 1; font-size: 11px; color: var(--faint); white-space: nowrap; text-align: center; overflow: visible; }
+.chart__x span { flex: 1; min-width: 0; font-size: 11px; color: var(--faint); white-space: nowrap; text-align: center; overflow: visible; }
 .chart__table { max-height: 260px; overflow: auto; border: 1px solid var(--line-soft); border-radius: var(--r-md); }
 
 .hbars { display: grid; gap: 12px; }
@@ -1138,7 +1138,13 @@ button.src-tag--none { cursor: pointer; }
 .dept-home__notes { display: grid; gap: 6px; font-size: 14px; }
 .dept-home__notes p { margin: 0; }
 .dept-home .panel__head h2 svg { vertical-align: -3px; margin-right: 6px; }
-@media (max-width: 720px) { .dept-home__list li { grid-template-columns: auto 1fr; } .dept-home__wait { text-align: left; } }
+/* TB (ronda 17): en el teléfono, el ícono, el estudio a todo lo ancho y debajo la espera con «Atender» (antes la espera
+   ensanchaba la columna del ícono y el texto quedaba angosto) */
+@media (max-width: 720px) {
+  .dept-home__list li { grid-template-columns: 20px minmax(0, 1fr) auto; }
+  .dept-home__what { grid-column: 2 / -1; }
+  .dept-home__wait { grid-column: 2; text-align: left; }
+}
 
 /* ---------- IM1 (ronda 13): plantilla única de impresión (Carta, márgenes de 2 cm) ---------- */
 .cdoc { position: relative; box-sizing: border-box; width: min(100%, 8.5in); aspect-ratio: var(--cdoc-ratio, 8.5 / 11); margin: 0 auto; padding: var(--cdoc-margin, 2cm);
