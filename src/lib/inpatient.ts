@@ -293,7 +293,10 @@ export function chainNote(file: Pick<InpatientFile, 'notes'>) {
 export function activeIndications(file: Pick<InpatientFile, 'notes' | 'meds' | 'hospitalization'> & Partial<Pick<InpatientFile, 'consultIndications'>>): { id: string; text: string }[] {
   if (file.hospitalization.status !== 'active') return []
   const last = chainNote(file)
+  // NO1 (ronda 16): «Ingreso a hospitalización / observación» es la primera orden de la consulta, pero ya se cumplió al ingresar:
+  // no baja como indicación activa a la primera nota (los identificadores conservan su posición)
   if (!last) return (file.consultIndications ?? []).map((text, i) => ({ id: `${file.hospitalization.consultationId ?? 'consulta'}:${i}`, text }))
+    .filter((x) => !(Object.values(ADMIT_ORDER) as string[]).includes(x.text))
   if (last.lines) return last.lines.filter((l) => l.kind === 'ind' && (l.tag === 'continue' || l.tag === 'new')).map((l) => ({ id: l.id, text: l.text }))
   return splitOrders(last, file).indications.filter((o) => !o.text.startsWith('OMITIR ')).map((o) => ({ id: `${last.id}:${o.index}`, text: o.text }))
 }

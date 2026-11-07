@@ -164,7 +164,8 @@ describe('M1 orden médica → hoja de medicamentos (regresión)', () => {
     const rx = (await doc.get(`/api/prescriptions/${c.body.prescriptionId}`)).body
     // ME15 (ronda 15): la receta trae los dos; a la hoja, solo lo marcado
     assert.deepEqual(rx.prescription.items.map((i: any) => i.drug), ['Acetaminofén', 'Solución salina 0.9 %'])
-    assert.deepEqual((await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds.map((m: any) => m.drug), ['Solución salina 0.9 %'])
+    // NO1 (ronda 16): con ingreso ya no hay «Aplicar en la clínica»: todos pasan a la hoja (antes, ME14: solo lo marcado)
+    assert.deepEqual((await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body.meds.map((m: any) => m.drug).sort(), ['Acetaminofén', 'Solución salina 0.9 %'])
   })
 
   test('suspender desde la hoja deja motivo y autor; la orden no se borra', async () => {
