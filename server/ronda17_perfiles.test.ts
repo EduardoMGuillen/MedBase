@@ -102,23 +102,27 @@ describe('AD1 (ronda 17): administración y recepción, Observación y Laborator
     const office = permissionsFor('admin', 'office')
     assert.ok(!office.includes('observation.board') && !office.includes('dept.view'), 'consultorio: no aplica (MI1)')
     const rec = permissionsFor('reception', 'clinic')
-    assert.ok(rec.includes('ambulatory.register') && !rec.includes('observation.board') && !rec.includes('dept.view'))
+    assert.ok(rec.includes('ambulatory.register') && rec.includes('observation.board') && !rec.includes('dept.view'))
+    assert.ok(!rec.includes('inpatient.view') && !rec.includes('chart.view'), 'recepción sin expediente')
   })
 
-  test('administración ve la lista de Observación sin diagnósticos y no abre el expediente; recepción, 403', async () => {
+  test('administración y recepción ven la lista de Observación sin diagnósticos y no abren el expediente', async () => {
     const cid = await clinicOfUser('rmoncada@demo.clinara')
     const obs = await sql.query(`SELECT id FROM hospitalizations WHERE clinic_id = ? AND status = 'active' AND kind = 'observation'`, [cid])
     assert.ok(obs.length > 0, 'la demo trae pacientes en observación')
-    const adm = await as('rmoncada@demo.clinara')
-    const r = await adm.get('/api/observation/board')
-    assert.equal(r.status, 200)
-    assert.equal(r.body.length, obs.length)
-    for (const row of r.body) {
-      assert.ok(row.patientId && row.since && row.doctorIds.length, JSON.stringify(row))
-      for (const k of ['diagnoses', 'reason', 'notes', 'meds', 'vitals']) assert.equal(row[k], undefined, k)
+    for (const email of ['rmoncada@demo.clinara', 'aquiroz@demo.clinara']) {
+      const u = await as(email)
+      const r = await u.get('/api/observation/board')
+      assert.equal(r.status, 200, email)
+      assert.equal(r.body.length, obs.length, email)
+      for (const row of r.body) {
+        assert.ok(row.patientId && row.since && row.doctorIds.length, JSON.stringify(row))
+        for (const k of ['diagnoses', 'reason', 'notes', 'meds', 'vitals']) assert.equal(row[k], undefined, k)
+      }
+      assert.equal((await u.get(`/api/inpatient/${String(obs[0].id)}`)).status, 403, `${email}: no abre el expediente`)
+      assert.equal((await u.get('/api/inpatient/alerts')).status, 403, email)
     }
-    assert.equal((await adm.get(`/api/inpatient/${String(obs[0].id)}`)).status, 403, 'no abre el expediente')
-    assert.equal((await (await as('aquiroz@demo.clinara')).get('/api/observation/board')).status, 403, 'recepción')
+    for (const email of ['psuazo@demo.clinara', 'echinchilla@demo.clinara']) assert.equal((await (await as(email)).get('/api/observation/board')).status, 403, email)
     assert.equal((await (await as('murbina@demo.clinara')).get('/api/observation/board')).status, 200, 'enfermería (inpatient.view)')
   })
 
@@ -197,7 +201,7 @@ describe('PF2 (ronda 17): la barra lateral de cada perfil, por flujo de trabajo'
     assert.ok(!permissionsFor('admin', 'office').includes('ambulatory.register'))
     assert.deepEqual(lab('lab', 'clinic', 'lab_tech'), ['/app/laboratorio/ambulatorio', '/app/laboratorio/observacion', '/app/laboratorio/hospitalizacion', '/app/configuracion-laboratorio'])
     assert.equal(sidebarFor({ role: 'lab', kind: 'clinic' }).find((i) => i.to === '/app/rol-de-turnos')?.group, 'Registros')
-    assert.ok(to('admin', 'clinic').includes('/app/observacion') && !to('reception', 'clinic').includes('/app/observacion'))
+    assert.ok(to('admin', 'clinic').includes('/app/observacion') && to('reception', 'clinic').includes('/app/observacion'))
     assert.ok(!to('admin', 'office').includes('/app/observacion'), 'MI1: en el consultorio lo clínico va en la vista de médico')
     assert.ok(!to('nurse', 'office').includes('/app/rol-de-turnos-enfermeria'), 'un consultorio no tiene rol de turnos')
     assert.equal(sidebarFor({ role: 'admin', kind: 'office' }).find((i) => i.to === '/app/configuracion')?.label, 'Configuración del consultorio')

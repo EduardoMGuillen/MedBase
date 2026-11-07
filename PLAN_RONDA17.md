@@ -100,7 +100,8 @@ La barra lateral sale de una sola regla, `src/lib/nav.ts` (`sidebarFor`), que us
 (`server/ronda17_perfiles.test.ts`). Grupos, en este orden y los mismos para todos los roles:
 
 1. sueltas: Inicio, Agenda, Recetas, Caja (el médico la ve como «Cobrar»);
-2. **Pacientes**: Consulta externa, Observación, Hospitalizados, Biblioteca de pacientes, Crónicos y seguimientos;
+2. **Pacientes**: Consulta externa, Observación, Hospitalizados, Biblioteca de pacientes, Crónicos y seguimientos (administración y
+   recepción ven Observación y Hospitalizados como tablero de solo lectura, sin abrir el expediente);
 3. **Laboratorio e imágenes**: Pacientes ambulatorios (administración y recepción) y las bandejas de Laboratorio e Imágenes en solo
    lectura (administración). Para Laboratorio el grupo se llama «Laboratorio» (Ambulatorio, Observación, Hospitalización,
    Configuración de laboratorio) y para Imágenes, «Imágenes» (lo mismo de su tipo). Decisión: su configuración va aquí porque es de su
@@ -124,7 +125,7 @@ los recorridos usan la ruta, así que siguen funcionando. Pasos nuevos: «Pacien
 | Clínica · Médico (cualquier especialidad) | Inicio, Agenda, Recetas, Cobrar · **Pacientes**: Consulta externa, Observación, Hospitalizados, Biblioteca, Crónicos | «Ir a consulta externa»; tarjetas a Consulta externa | **Sí (nuevo, PF1)** | No | Sí | Sí | Sí | No |
 | Clínica · Enfermería licenciada | Inicio · **Pacientes**: Consulta externa, Observación, Hospitalizados, Biblioteca, Crónicos · **Registros**: Uso de medicamentos y material, Rol de turnos (lo edita) | «Abrir consulta externa»; tarjetas a Consulta externa | Sí | No | No | Sí | Sí | Sí |
 | Clínica · Enfermería auxiliar | Igual que la licenciada (el rol de turnos solo lo ve) | Igual | Sí | No | No | Sí | Sí | Sí |
-| Clínica · Recepción | Inicio, Agenda, Caja · **Pacientes**: Consulta externa, Hospitalizados, Biblioteca, Crónicos · **Laboratorio e imágenes**: Pacientes ambulatorios · **Registros**: Uso de medicamentos y material | «Abrir sala de espera»; tarjetas a Agenda, Caja y Pacientes ambulatorios | Sí, en Consulta externa | Sí, en Pacientes ambulatorios | Sí (tablero sin expediente) | No | Sí, tablero sin expediente | Sí |
+| Clínica · Recepción | Inicio, Agenda, Caja · **Pacientes**: Consulta externa, Observación, Hospitalizados, Biblioteca, Crónicos · **Laboratorio e imágenes**: Pacientes ambulatorios · **Registros**: Uso de medicamentos y material | «Abrir sala de espera»; tarjetas a Agenda, Caja, Pacientes ambulatorios y Observación | Sí, en Consulta externa | Sí, en Pacientes ambulatorios | Sí (tablero sin expediente) | **Sí, solo lectura (nuevo, AD1)** | Sí, tablero sin expediente | Sí |
 | Clínica · Laboratorio (microbiólogo) | Inicio · **Pacientes**: Biblioteca · **Laboratorio**: Ambulatorio, Observación, Hospitalización, Configuración de laboratorio (edita) · **Registros**: Rol de turnos (edita) | «Paciente ambulatorio» y «Atender» de su Inicio de departamento | No | Sí, en su bandeja Ambulatorio | No | Su área de la bandeja | Su área de la bandeja | No |
 | Clínica · Laboratorio (técnico) | Igual que el microbiólogo (configuración y rol de turnos en solo lectura) | Igual | No | Sí | No | Su área | Su área | No |
 | Clínica · Imágenes (radiólogo) | Inicio · **Pacientes**: Biblioteca · **Imágenes**: Ambulatorio, Observación, Hospitalización, Configuración de imágenes (edita) · **Registros**: Rol de turnos (edita) | «Paciente ambulatorio» y «Atender» | No | Sí | No | Su área (y el expediente en solo lectura) | Su área | No |
@@ -161,7 +162,7 @@ entrada de su barra lateral escribiendo la URL: **ninguna** dio «Sin permiso»,
 | Administración (rmoncada) | 15 | todas abren; Observación en solo lectura; Laboratorio e Imágenes con el aviso «Solo lectura» |
 | Médico (vsolorzano, tgalvez, mvilleda en vista de médico) | 9 cada uno | todas abren; «Paciente sin cita» visible (tgalvez: el médico por defecto es ella y está «Registrar paciente nuevo») |
 | Enfermería licenciada (murbina) y auxiliar (rvallecillo) | 8 | todas abren |
-| Recepción (aquiroz) | 9 | todas abren |
+| Recepción (aquiroz) | 10 | todas abren; Observación en solo lectura |
 | Laboratorio microbiólogo (psuazo) y técnico (berazo) | 7 | todas abren |
 | Imágenes radiólogo (rzepeda) y técnico (echinchilla) | 7 | todas abren |
 | Consultorio médico (ipacheco, vista de médico) | 9 | todas abren |
@@ -170,7 +171,7 @@ entrada de su barra lateral escribiendo la URL: **ninguna** dio «Sin permiso»,
 | Médico y administración en vista de administrador (mvilleda) | 15 | todas abren |
 
 Direcciones fuera del menú (lo que no debe abrir): administración → `/app/observacion/:id` «Sin permiso» (no abre el expediente) y
-`/app/configuracion-laboratorio` «Sin permiso»; recepción → `/app/observacion` y `/app/laboratorio` «Sin permiso»; médico →
+`/app/configuracion-laboratorio` «Sin permiso»; recepción → `/app/observacion/:id` y `/app/laboratorio` «Sin permiso»; médico →
 `/app/pacientes-ambulatorios` y `/app/laboratorio` «Sin permiso»; administrador del consultorio → `/app/pacientes-ambulatorios`
 «Sin permiso» y `/app/observacion` ofrece cambiar a la vista de médico; laboratorio → `/app/imagenes/ambulatorio` «Esta pantalla es
 de Imágenes». Laboratorio sí abre `/app/pacientes-ambulatorios` por URL (tiene `ambulatory.register` y ve solo lo de su tipo); no está

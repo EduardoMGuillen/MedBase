@@ -255,6 +255,7 @@ export default function Dashboard() {
           <Link className="stat" to="/app/caja"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></Link>
           {owed && owed.n > 0 && <Link className="stat" to="/app/caja"><b className="num">{money(owed.total, settings.currency)}</b><span>Saldos pendientes</span><small>{owed.n} {owed.n === 1 ? 'paciente' : 'cobros'}</small></Link>}
           {ambulatoryCard && <Link className="stat" to="/app/pacientes-ambulatorios" data-testid="stat-ambulatory"><b>{ambulatoryToday ?? '—'}</b><span>Ambulatorios hoy</span><small>Laboratorio e imágenes</small></Link>}
+          {can('observation.board') && features(settings).observation && <Link className="stat" to="/app/observacion"><b>{(stays ?? []).filter((x) => x.kind === 'observation').length}</b><span>En observación</span></Link>}
         </div>
         {can('vitals.record') && triageQueue.length > 0 && (
           <section className="panel">

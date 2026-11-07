@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Navigate, NavLink, useParams } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { TriangleAlert } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
@@ -26,13 +26,15 @@ export function DeptOnly({ dept, children, view = false }: { dept: ExamGroup; ch
 /** AD1 (ronda 17): aviso de solo lectura y las áreas de la bandeja (todas, ambulatorio, observación, hospitalización). */
 function DeptViewBar({ dept }: { dept: ExamGroup }) {
   const base = `/app/${dept === 'lab' ? 'laboratorio' : 'imagenes'}`
+  const loc = useLocation()
+  const nav = useNavigate()
   const areas: [string, string][] = [['', 'Todas las áreas'], ['/ambulatorio', 'Ambulatorio'], ['/observacion', 'Observación'], ['/hospitalizacion', 'Hospitalización']]
   return (
     <div className="page dept-view-bar" style={{ paddingBottom: 0 }} data-testid="dept-view-bar">
       <p role="note" className="muted" style={{ margin: '0 0 12px', padding: '10px 14px', background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13.5 }}>Solo lectura: ves los estudios, su estado, la espera y los urgentes. Las muestras y los resultados son de {dept === 'lab' ? 'Laboratorio' : 'Imágenes'}.</p>
-      <nav className="segmented" aria-label="Área de la bandeja" style={{ flexWrap: 'wrap' }}>
-        {areas.map(([slug, label]) => <NavLink key={slug} to={`${base}${slug}`} end className={({ isActive }) => (isActive ? 'is-active' : undefined)} aria-current={undefined}>{label}</NavLink>)}
-      </nav>
+      <div className="segmented" role="radiogroup" aria-label="Área de la bandeja">
+        {areas.map(([slug, label]) => <button key={slug} type="button" role="radio" aria-checked={loc.pathname === `${base}${slug}`} onClick={() => nav(`${base}${slug}`)}>{label}</button>)}
+      </div>
     </div>
   )
 }

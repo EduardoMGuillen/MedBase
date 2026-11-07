@@ -24,7 +24,7 @@ export const NAV: NavEntry[] = [
   { to: '/app/caja', label: 'Caja', perm: 'billing.manage' },
   // Pacientes se divide en las tres áreas que pidió el médico, más la biblioteca y los crónicos
   { to: '/app/consulta-externa', label: 'Consulta externa', perm: 'agenda.view', group: 'Pacientes' },
-  // AD1 (ronda 17): administración ve la lista de Observación en solo lectura (sin expediente)
+  // AD1 (ronda 17): administración y recepción ven la lista de Observación en solo lectura (sin expediente)
   { to: '/app/observacion', label: 'Observación', perm: 'inpatient.view', anyPerm: ['observation.board'], group: 'Pacientes' },
   // HO2 (ronda 16): recepción y administración entran al tablero de camas para ingresar (sin ver el expediente)
   { to: '/app/hospitalizados', label: 'Hospitalizados', perm: 'inpatient.view', anyPerm: ['inpatient.admit'], group: 'Pacientes' },

@@ -54,7 +54,8 @@ export const PERMISSIONS = {
   'roster.edit': 'Editar el rol de turnos de su departamento, de hoy en adelante',
   // HO2 (ronda 16): ingresar a hospitalización (el médico, y también recepción y administración con el médico tratante)
   'inpatient.admit': 'Ingresar pacientes a hospitalización',
-  // AD1 (ronda 17): administración ve la lista de Observación (quién, dónde y con qué médico) sin abrir el expediente, y las
+  // AD1 (ronda 17): administración y recepción ven la lista de Observación (quién, dónde y con qué médico) sin abrir el expediente;
+  // administración, además, las
   // bandejas de Laboratorio e Imágenes en solo lectura (estudios, estado, espera y urgentes; nunca los resultados)
   'observation.board': 'Ver la lista de Observación (sin expediente)',
   'dept.view': 'Ver las bandejas de Laboratorio e Imágenes en solo lectura (sin resultados)',
@@ -106,7 +107,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view', 'ambulatory.register', 'usage.view', 'usage.export',
     'usage.record',
     // HO2 (ronda 16): ingresa a hospitalización con el médico tratante (no escribe notas ni órdenes)
-    'inpatient.admit'],
+    'inpatient.admit',
+    // AD1 (ronda 17): la lista de Observación en solo lectura, como su tablero de Hospitalizados (sin expediente)
+    'observation.board'],
   // Asistente de consultorio (secretaria o enfermera): recepción, preclínica, caja y aplicar dosis en observación. RU (ronda 14):
   // como enfermería en el registro de uso de material.
   assistant: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage',
