@@ -90,6 +90,47 @@ async function consultFor(n: number, doctorId = 's-nolasco') {
   return { id, pid, cid }
 }
 
+describe('NO1 (ronda 16): el ingreso es la primera indicación y todos los medicamentos pasan a la hoja', () => {
+  test('con ingreso a hospitalización: «Ingreso a hospitalización» es la indicación 1 y lo desmarcado también va a la hoja', async () => {
+    const { id } = await consultFor(3)
+    const doc = await as('hnolasco@demo.clinara')
+    const r = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor abdominal', diagnoses: dx, admit: true,
+      orders: ['Ingreso a hospitalización', 'Dieta blanda.'], indications: ['Ingreso a hospitalización', 'Dieta blanda.'],
+      items: [{ drug: 'Omeprazol', presentation: 'Vial 40 mg', dose: '40 mg', route: 'Intravenosa', frequency: 'Cada 24 horas', duration: '', applyInClinic: false }] })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    const c = (await sql.one('SELECT * FROM consultations WHERE id = ?', [r.body.consultationId]))!
+    assert.deepEqual(JSON.parse(String(c.indications)), ['Ingreso a hospitalización', 'Dieta blanda.'])
+    assert.equal(JSON.parse(String(c.orders))[0], 'Ingreso a hospitalización')
+    const meds = await sql.query('SELECT drug FROM hosp_meds WHERE hospitalization_id = ?', [r.body.hospitalizationId])
+    assert.deepEqual(meds.map((m) => m.drug), ['Omeprazol'], 'con ingreso, todos pasan a la hoja (NO1)')
+    const rx = JSON.parse(String((await sql.one('SELECT items FROM prescriptions WHERE id = ?', [r.body.prescriptionId]))!.items))
+    assert.equal(rx.length, 1, 'y a la receta (ME15)')
+  })
+
+  test('el servidor la pone (o la corrige) si no viene: una sola vez y en el número 1', async () => {
+    const { id } = await consultFor(4)
+    const doc = await as('hnolasco@demo.clinara')
+    const r = await doc.post('/api/consultations', { appointmentId: id, reason: 'Crisis asmática', diagnoses: dx, observe: true,
+      orders: ['Oxígeno por cánula.', 'Ingreso a hospitalización'], indications: ['Oxígeno por cánula.', 'Ingreso a hospitalización'] })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    const c = (await sql.one('SELECT indications FROM consultations WHERE id = ?', [r.body.consultationId]))!
+    assert.deepEqual(JSON.parse(String(c.indications)), ['Ingreso a observación', 'Oxígeno por cánula.'])
+  })
+
+  test('sin ingreso, como ME13: lo que se aplica en la clínica es STAT y no hay indicación de ingreso', async () => {
+    const { id } = await consultFor(5)
+    const doc = await as('hnolasco@demo.clinara')
+    const bad = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor', diagnoses: dx,
+      items: [{ drug: 'Ketorolaco', presentation: 'Ampolla 30 mg', dose: '30 mg', route: 'Intramuscular', frequency: 'Cada 8 horas', duration: '', applyInClinic: true }] })
+    assert.equal(bad.status, 400)
+    const ok = await doc.post('/api/consultations', { appointmentId: id, reason: 'Dolor', diagnoses: dx, orders: ['Reposo.'], indications: ['Reposo.'],
+      items: [{ drug: 'Ketorolaco', presentation: 'Ampolla 30 mg', dose: '30 mg', route: 'Intramuscular', frequency: 'Dosis única', duration: '', applyInClinic: true }] })
+    assert.equal(ok.status, 201, JSON.stringify(ok.body))
+    assert.equal(ok.body.hospitalizationId, null)
+    assert.deepEqual(JSON.parse(String((await sql.one('SELECT indications FROM consultations WHERE id = ?', [ok.body.consultationId]))!.indications)), ['Reposo.'])
+  })
+})
+
 describe('ME16 (ronda 16): un solo formulario de medicamentos, con infusión donde hay ingreso', () => {
   test('el borrador del formulario va y vuelve igual entre la receta y la hoja', () => {
     const consult = { where: 'consult', admitting: true } as const

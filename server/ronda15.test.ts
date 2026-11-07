@@ -117,8 +117,9 @@ describe('ME15 (ronda 15): los medicamentos «Aplicar en la clínica» también 
     assert.equal(items[2].legend, 'Se aplica en la clínica.')
     assert.equal(items[2].quantity, undefined, 'cada 12 horas sin días: sin cantidad (A2)')
     assert.ok(r.body.examBatch)
-    const sheet = await sql.query('SELECT drug FROM hosp_meds WHERE hospitalization_id = ?', [r.body.hospitalizationId])
-    assert.deepEqual(sheet.map((m) => m.drug), ['Ceftriaxona'])
+    const sheet = await sql.query('SELECT drug FROM hosp_meds WHERE hospitalization_id = ? ORDER BY source_index', [r.body.hospitalizationId])
+    // NO1 (ronda 16): con ingreso ya no hay «Aplicar en la clínica»: todos pasan a la hoja (antes, ME14: solo la Ceftriaxona)
+    assert.deepEqual(sheet.map((m) => m.drug), ['Acetaminofén', 'Ibuprofeno', 'Ceftriaxona'])
   })
 
   test('adulto sin identidad y todo se aplica en la clínica: se firma sin receta, como antes (no se bloquea la atención)', async () => {

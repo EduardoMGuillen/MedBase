@@ -52,7 +52,7 @@ import { registerSupplySets } from './routes/supplySets.js'
 import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permission } from '../src/lib/permissions.js'
 import { positionOf } from '../src/lib/positions.js'
 import { NEB_MAX_COMPONENTS, PAGE_SIZE } from '../src/lib/clinicalConfig.js'
-import { yearsOld } from '../src/lib/inpatient.js'
+import { ADMIT_ORDER, yearsOld } from '../src/lib/inpatient.js'
 import { consultRxItems, dmy, medicationLine, normalizeDni } from '../src/lib/format.js'
 import { consultItemIssue } from '../src/lib/medForm.js'
 import { normalize } from '../src/lib/patients.js'
@@ -898,7 +898,17 @@ export function createApp(opts: AppOptions) {
     // Con ingreso, lo que no trae la casilla se aplica en la clínica (como hasta ahora: va a la hoja); solo lo desmarcado a
     // propósito (false) va a la receta. Sin ingreso, solo lo marcado se aplica aquí.
     const stayKind = c.admit ? 'hospital' : c.observe ? 'observation' : null
-    const items = c.items.map((it) => ({ ...it, applyInClinic: stayKind ? it.applyInClinic !== false : !!it.applyInClinic }))
+    // NO1 (ronda 16): con ingreso ya no hay casilla: todos los medicamentos pasan a la hoja (y a la receta, ME15). Antes (ME14,
+    // ronda 14) lo desmarcado a propósito (false) iba solo a la receta: `stayKind ? it.applyInClinic !== false : …`
+    const items = c.items.map((it) => ({ ...it, applyInClinic: stayKind ? true : !!it.applyInClinic }))
+    // NO1 (ronda 16): con ingreso, la primera indicación es «Ingreso a hospitalización» u «Ingreso a observación» (la pone el
+    // formulario; si no viene, o viene la del otro ingreso, se corrige aquí: va una sola vez y en el número 1)
+    if (stayKind) {
+      const line = ADMIT_ORDER[stayKind]
+      const isAdmit = (o: string) => (Object.values(ADMIT_ORDER) as string[]).includes(o.replace(/\.$/, ''))
+      c.orders = [line, ...c.orders.filter((o) => !isAdmit(o))]
+      c.indications = [line, ...(c.indications ?? []).filter((o) => !isAdmit(o))]
+    }
     // ME15 (ronda 15): la receta lleva TODOS los medicamentos, también los «Aplicar en la clínica» (con su leyenda y su
     // cantidad), con o sin ingreso: el paciente puede comprarlo y traerlo, y la receta es la constancia de lo indicado. Antes
     // (ME13, ronda 14) aquí se quitaban: `items.filter((it) => !it.applyInClinic || it.buyOutside)`.

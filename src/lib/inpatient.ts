@@ -12,6 +12,9 @@ import { ROUTE_OPTIONS } from './clinicalConfig.js'
 
 export const HOUR = 3_600_000
 
+/** NO1 (ronda 16): la primera indicación de la consulta con ingreso (fija en el número 1). */
+export const ADMIT_ORDER = { hospital: 'Ingreso a hospitalización', observation: 'Ingreso a observación' } as const
+
 /** Frecuencias que el médico puede indicar. `null` es dosis única. */
 export const INPATIENT_FREQUENCIES: { label: string; hours: number | null }[] = [
   { label: 'Cada 4 horas', hours: 4 }, { label: 'Cada 6 horas', hours: 6 }, { label: 'Cada 8 horas', hours: 8 },

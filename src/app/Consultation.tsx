@@ -10,7 +10,7 @@ import { normalize } from '../lib/patients'
 import { useVademecum } from '../lib/vademecum'
 import { MedicationForm, MedicationList } from '../components/Medications'
 import { followupLabel } from '../lib/followups'
-import { yearsOld } from '../lib/inpatient'
+import { ADMIT_ORDER, yearsOld } from '../lib/inpatient'
 import { features } from '../lib/permissions'
 import PatientChart, { BackgroundView, useChart, VitalsGrid } from './PatientChart'
 import { BackgroundForm, IdentityPrompt } from './PatientForms'
@@ -186,10 +186,12 @@ export default function Consultation() {
   // Un borrador guardado antes puede traer una casilla que esta cuenta no usa
   const admitting = !hospitalized && ((admit && place.hospital) || (observe && place.observation))
   const ambulatory = !admitting
-  // ME13 y ME14 (ronda 14): con o sin ingreso, «Aplicar en la clínica» decide: marcado se aplica aquí (con ingreso, a la hoja;
-  // sin ingreso, una sola dosis que aplica enfermería); sin marcar, a la receta. Los «No hay en la clínica», a los dos lados.
-  // Con ingreso, lo que no se desmarcó a propósito se aplica en la clínica (como el servidor)
-  const applied = (m: PrescriptionItem) => (admitting ? m.applyInClinic !== false : !!m.applyInClinic)
+  // ME13 (ronda 14): sin ingreso, «Aplicar en la clínica» decide: marcado, una sola dosis que aplica enfermería; sin marcar, a la
+  // receta. NO1 (ronda 16): con ingreso no hay casilla: todos pasan a la hoja de medicamentos (y a la receta), como el servidor
+  const applied = (m: PrescriptionItem) => (admitting ? true : !!m.applyInClinic)
+  // NO1 (ronda 16): con ingreso, la primera indicación es el ingreso; va fija en el número 1 (no se mueve ni se borra)
+  const admitLine = admitting ? (admit && place.hospital ? ADMIT_ORDER.hospital : ADMIT_ORDER.observation) : null
+  const off = admitLine ? 1 : 0
   // ME15 (ronda 15): la receta lleva todos los medicamentos, también los que se aplican en la clínica (si todo se aplica aquí y
   // el adulto no tiene identidad, se firma sin receta, como el servidor)
   const onlyInClinic = !meds.some((m) => !applied(m) || m.buyOutside)
@@ -203,13 +205,13 @@ export default function Consultation() {
   const infusionWarn = (m: PrescriptionItem) => (!admitting && m.infusionRate ? 'La infusión va con ingreso. Marca el ingreso o cambia la frecuencia.' : undefined)
   const noInfusion = meds.filter((m) => infusionWarn(m))
   // Huecos "___" que trajo un set: no se firma hasta llenarlos
-  const blanks = [...indications.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : [])),
+  const blanks = [...indications.flatMap((t, i) => (hasBlank(t) ? [`la indicación ${i + 1 + off}`] : [])), ...meds.flatMap((m) => (medHasBlank(m) ? [m.drug] : [])),
     // MC2 (ronda 6): un PRN que vino de un set sin condición
     ...meds.flatMap((m) => (isPrnFrequency(m.frequency) && !m.prnCondition?.trim() ? [`la condición PRN de ${m.drug}`] : []))]
   // La receta lleva la identidad del paciente; en adultos es obligatoria
   // ME15: si todo se aplica en la clínica, sin identidad se firma sin receta (como antes); la receta se genera después
   const needsDni = !onlyInClinic && !p.dni && yearsOld(p.birthDate) >= 18
-  const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !indications.length && !meds.length && !exams.length && 'al menos una indicación, un medicamento o un examen',
+  const missing = [!reason.trim() && 'el motivo de consulta', !dx.length && 'la impresión diagnóstica', !indications.length && !admitLine && !meds.length && !exams.length && 'al menos una indicación, un medicamento o un examen',
     noDays.length > 0 && `el total de días de ${noDays.map((m) => m.drug).join(', ')} (va a la receta)`,
     needsDni && 'el número de identidad para la receta',
     blanks.length > 0 && `los espacios ___ de ${blanks.join(', ')}`,
@@ -254,10 +256,11 @@ export default function Consultation() {
     const r = await store.finishConsult({
       appointmentId: appt.id, reason: reason.trim(), symptoms: [], history, exam, observations: observations.trim(), diagnoses: dx,
       // En el expediente el manejo se lee completo: primero las indicaciones y luego los medicamentos
-      orders: [...indications, ...meds.map(medicationOrder)], indications,
+      // NO1 (ronda 16): con ingreso, «Ingreso a hospitalización» u «Ingreso a observación» es la primera orden
+      orders: [...(admitLine ? [admitLine] : []), ...indications, ...meds.map(medicationOrder)], indications: admitLine ? [admitLine, ...indications] : indications,
       plan: '', vitalsId: todayVitals?.id, followups, validityDays: validity, exams, observe: observe && !hospitalized && place.observation, admit: admit && !hospitalized && place.hospital,
       vitalsPlan: admitting ? vitalsPlan : undefined,
-    }, meds)
+    }, admitting ? meds.map((m) => ({ ...m, applyInClinic: true })) : meds)
     setSigning(false)
     if (r) {
       draft.clear()
@@ -374,16 +377,36 @@ export default function Consultation() {
                 <OrderSetPicker where="consultation" patientId={p.id} onApply={applySet} />
                 <SaveSetButton items={[...indications.map((text) => ({ text })), ...meds.map((m) => ({ med: rxToSetMed(m) })), ...exams.map((e) => ({ exam: e }))]} />
               </div>
+              {/* NO1 (ronda 16): el ingreso va arriba de «Indicaciones y plan»: es lo primero que se ordena */}
+              {store.can('inpatient.orders') && (
+                hospitalized
+                  ? <p style={{ fontSize: 14 }}><BedDouble size={15} style={{ verticalAlign: '-3px' }} /> {p.firstName} ya está {hospitalized.kind === 'observation' ? 'en observación' : 'hospitalizado'}. <Link to={`/app/${hospitalized.kind === 'observation' ? 'observacion' : 'hospitalizados'}/${hospitalized.id}`}>Abrir su expediente</Link>.</p>
+                  : (place.observation || place.hospital) && <div className="admit-choice" role="group" aria-label="Ingreso">
+                    {/* Son excluyentes: marcar una desmarca la otra */}
+                    {/* Un consultorio no hospitaliza y puede no usar observación */}
+                    {place.observation && <label className="check-line"><input type="checkbox" checked={observe} onChange={(e) => { setObserve(e.target.checked); if (e.target.checked) setAdmit(false) }} />
+                      <span><b>Ingreso a observación</b><small>Observación corta (hidratar, nebulizar, vigilar). Esta nota es la primera nota; todos los medicamentos pasan a la hoja de medicamentos y a la receta.</small></span></label>}
+                    {place.hospital && <label className="check-line"><input type="checkbox" checked={admit} onChange={(e) => { setAdmit(e.target.checked); if (e.target.checked) setObserve(false) }} />
+                      <span><b>Ingreso a hospitalización</b><small>Esta nota queda como nota de ingreso; todos los medicamentos pasan a la hoja de medicamentos y a la receta. Al firmar eliges la cama.</small></span></label>}
+                  </div>
+              )}
               <div className="plan-block" data-tour="indicaciones">
                 <h3 className="plan-block__title">Indicaciones y plan</h3>
                 {admitting && <VitalsFrequency value={vitalsPlan} onChange={setVitalsPlan} />}
-                {indications.length ? (
+                {indications.length || admitLine ? (
                   <ol className="orders">
+                    {admitLine && (
+                      <li className="orders__fixed" title="Va fija en el número 1 mientras el ingreso esté marcado">
+                        <span className="orders__n">1.</span>
+                        <span className="orders__text orders__text--fixed">{admitLine}</span>
+                        <span className="orders__tools"><span className="muted" style={{ fontSize: 12.5 }}>Fija</span></span>
+                      </li>
+                    )}
                     {indications.map((o, i) => (
                       <li key={i}>
-                        <span className="orders__n">{i + 1}.</span>
+                        <span className="orders__n">{i + 1 + off}.</span>
                         {editingOrder === i ? (
-                          <input className="input" autoFocus defaultValue={o} aria-label={`Editar indicación ${i + 1}`}
+                          <input className="input" autoFocus defaultValue={o} aria-label={`Editar indicación ${i + 1 + off}`}
                             onBlur={(e) => { const t = e.target.value.trim(); setIndications(t ? indications.map((x, j) => (j === i ? t : x)) : indications.filter((_, j) => j !== i)); setEditingOrder(null) }}
                             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingOrder(null) }} />
                         ) : (
@@ -392,14 +415,14 @@ export default function Consultation() {
                         <span className="orders__tools">
                           <button className="icon-btn" aria-label="Subir" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp size={14} /></button>
                           <button className="icon-btn" aria-label="Bajar" disabled={i === indications.length - 1} onClick={() => move(i, 1)}><ArrowDown size={14} /></button>
-                          <button className="icon-btn" aria-label={`Quitar indicación ${i + 1}`} onClick={() => setIndications(indications.filter((_, j) => j !== i))}><X size={14} /></button>
+                          <button className="icon-btn" aria-label={`Quitar indicación ${i + 1 + off}`} onClick={() => setIndications(indications.filter((_, j) => j !== i))}><X size={14} /></button>
                         </span>
                       </li>
                     ))}
                   </ol>
                 ) : <p className="muted" style={{ fontSize: 14 }}>Dieta, cuidados, cita de control, lo que necesite. Una por línea. Los exámenes van en su sección.</p>}
                 <form className="order-add" onSubmit={(e) => { e.preventDefault(); addOrder(orderText) }}>
-                  <input ref={orderInput} className="input" value={orderText} onChange={(e) => setOrderText(e.target.value)} placeholder={`${indications.length + 1}. Escribe una indicación y presiona Enter`} aria-label="Nueva indicación" enterKeyHint="done" />
+                  <input ref={orderInput} className="input" value={orderText} onChange={(e) => setOrderText(e.target.value)} placeholder={`${indications.length + 1 + off}. Escribe una indicación y presiona Enter`} aria-label="Nueva indicación" enterKeyHint="done" />
                   <button className="btn btn--soft" disabled={!orderText.trim()} aria-label="Agregar indicación"><Plus size={16} /></button>
                 </form>
                 {typedExamHit && !typedDrug && (
@@ -421,8 +444,10 @@ export default function Consultation() {
                 <ExamsBlock value={exams} onChange={setExams} inStay={admitting} />
               </div>
               <div className="plan-block" data-tour="medicamentos">
-                <h3 className="plan-block__title">Medicamentos <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'todos van a la receta; los que se aplican en la clínica, también a la hoja' : 'todos van a la receta'}</span></h3>
-                {admitting && <p className="muted" style={{ fontSize: 13.5 }}>Con ingreso, lo que se aplica en la clínica no necesita días: sin días queda «hasta nueva orden».</p>}
+                <h3 className="plan-block__title">Medicamentos <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'Con ingreso, todos pasan a la hoja de medicamentos y a la receta' : 'todos van a la receta'}</span></h3>
+                {admitting && <p className="muted" style={{ fontSize: 13.5 }}>Sin días quedan «hasta nueva orden». La infusión está en «Frecuencia».</p>}
+                {/* NO1 (ronda 16): lo que se agregó sin «Aplicar en la clínica» antes de marcar el ingreso también pasa a la hoja */}
+                {admitting && meds.some((m) => !m.applyInClinic) && <div className="alert-strip alert-strip--calm" role="status">Con el ingreso, todos los medicamentos pasan a la hoja de medicamentos</div>}
                 <MedicationList items={admitting ? meds.map((m) => ({ ...m, applyInClinic: applied(m) })) : meds} patient={p} editing={medForm?.index ?? null} requireDuration warn={(m) => statWarn(m) ?? infusionWarn(m)}
                   onEdit={(i) => setMedForm({ index: i, initial: meds[i] })} onRemove={(i) => { setMeds(meds.filter((_, j) => j !== i)); setMedForm(null) }} />
                 {!meds.length && !medForm && <p className="muted" style={{ fontSize: 14 }}>Sin medicamentos indicados.</p>}
@@ -466,18 +491,6 @@ export default function Consultation() {
           <section className="panel sign-box">
             <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
               {needsDni && <IdentityPrompt p={p} />}
-              {store.can('inpatient.orders') && (
-                hospitalized
-                  ? <p style={{ fontSize: 14 }}><BedDouble size={15} style={{ verticalAlign: '-3px' }} /> {p.firstName} ya está {hospitalized.kind === 'observation' ? 'en observación' : 'hospitalizado'}. <Link to={`/app/${hospitalized.kind === 'observation' ? 'observacion' : 'hospitalizados'}/${hospitalized.id}`}>Abrir su expediente</Link>.</p>
-                  : (place.observation || place.hospital) && <div className="admit-choice" role="group" aria-label="Ingreso">
-                    {/* Son excluyentes: marcar una desmarca la otra */}
-                    {/* Un consultorio no hospitaliza y puede no usar observación */}
-                    {place.observation && <label className="check-line"><input type="checkbox" checked={observe} onChange={(e) => { setObserve(e.target.checked); if (e.target.checked) setAdmit(false) }} />
-                      <span><b>Ingreso a observación</b><small>Observación corta (hidratar, nebulizar, vigilar). Esta nota es la primera nota; lo que se aplica en la clínica pasa a la hoja y la receta lleva todos los medicamentos.</small></span></label>}
-                    {place.hospital && <label className="check-line"><input type="checkbox" checked={admit} onChange={(e) => { setAdmit(e.target.checked); if (e.target.checked) setObserve(false) }} />
-                      <span><b>Ingreso a hospitalización</b><small>Esta nota queda como nota de ingreso; lo que se aplica en la clínica pasa a la hoja y la receta lleva todos los medicamentos. Al firmar eliges la cama.</small></span></label>}
-                  </div>
-              )}
               {/* RF1 (ronda 8): referir a otro centro con la nota todavía en borrador (también desde la nota firmada) */}
               {store.user?.role === 'doctor' && appt.doctorId === store.user.id && (
                 <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => setReferring(true)}><Send size={15} />Referir a otro centro</button>
