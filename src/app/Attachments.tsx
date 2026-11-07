@@ -4,23 +4,15 @@ import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
 import { date, fileSize, time } from '../lib/format'
 import type { Attachment } from '../lib/types'
+import { MAX_SCAN_BYTES, openFile, uploadLarge } from '../lib/files'
 
 // PQ3 (ronda 14): «Hoja de anestesia» se sube desde la tarjeta de la nota postquirúrgica, no desde aquí
 const CATEGORY: Record<Attachment['category'], string> = { lab: 'Laboratorio', imaging: 'Imagen', document: 'Documento', other: 'Otro', anesthesia: 'Hoja de anestesia', preanesthesia: 'Valoración preanestésica', surgical_count: 'Recuento quirúrgico' }
-const MAX = 3 * 1024 * 1024
 const TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp']
-
-// eslint-disable-next-line react-refresh/only-export-components
-export const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
-  const r = new FileReader()
-  r.onload = () => resolve(String(r.result).split(',')[1] ?? '')
-  r.onerror = () => reject(new Error('No se pudo leer el archivo.'))
-  r.readAsDataURL(file)
-})
 
 /** Archivos del expediente: subir arrastrando, abrir en otra pestaña y eliminar. */
 export function Attachments({ patientId }: { patientId: string }) {
-  const { fetchAttachments, uploadAttachment, deleteAttachment, staffById, user, notify } = useStore()
+  const { fetchAttachments, deleteAttachment, staffById, user, notify } = useStore()
   const [list, setList] = useState<Attachment[] | null>(null)
   const [category, setCategory] = useState<Attachment['category']>('lab')
   const [drag, setDrag] = useState(false)
@@ -35,20 +27,20 @@ export function Attachments({ patientId }: { patientId: string }) {
     setBusy(true)
     for (const file of Array.from(files)) {
       if (!TYPES.includes(file.type)) { notify(`"${file.name}" no es PDF ni imagen. Sólo se aceptan PDF, PNG, JPG o WEBP.`, 'error'); continue }
-      if (file.size > MAX) { notify(`"${file.name}" pesa ${fileSize(file.size)}. El máximo es 3 MB.`, 'error'); continue }
-      await uploadAttachment(patientId, { name: file.name, mime: file.type, category, data: await toBase64(file) })
+      // R2 pendiente (ronda 17): antes el máximo era 3 MB (subida en una sola petición). Ahora va por partes, como los
+      // resultados de exámenes (uploadLarge), con el mismo máximo de 15 MB
+      if (file.size > MAX_SCAN_BYTES) { notify(`"${file.name}" pesa ${fileSize(file.size)}. El máximo es 15 MB.`, 'error'); continue }
+      try {
+        await uploadLarge(patientId, file, { name: file.name, mime: file.type, category })
+        notify('Archivo adjuntado')
+      } catch (e) { notify((e as Error).message, 'error') }
     }
     setBusy(false)
     load()
   }
 
-  const open = async (a: Attachment) => {
-    const res = await fetch(`/api/attachments/${a.id}`, { credentials: 'same-origin' })
-    if (!res.ok) { notify('No se pudo abrir el archivo.', 'error'); return }
-    const url = URL.createObjectURL(await res.blob())
-    window.open(url, '_blank', 'noopener')
-    setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  }
+  // Se baja por partes: un archivo de más de 4,5 MB no cabe en una sola respuesta
+  const open = (a: Attachment) => { openFile(a.id).catch(() => notify('No se pudo abrir el archivo.', 'error')) }
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -58,7 +50,7 @@ export function Attachments({ patientId }: { patientId: string }) {
         <Upload size={22} />
         <div>
           <strong>{busy ? 'Subiendo…' : 'Arrastra aquí resultados o imágenes'}</strong>
-          <p>PDF, PNG, JPG o WEBP de hasta 3 MB.</p>
+          <p>PDF, PNG, JPG o WEBP de hasta 15 MB.</p>
         </div>
         <select className="select" style={{ width: 'auto' }} value={category} onChange={(e) => setCategory(e.target.value as Attachment['category'])} aria-label="Tipo de archivo">
           {Object.entries(CATEGORY).filter(([k]) => !['anesthesia', 'preanesthesia', 'surgical_count'].includes(k)).map(([k, v]) => <option key={k} value={k}>{v}</option>)}

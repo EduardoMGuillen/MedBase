@@ -214,12 +214,27 @@ export default function FullRecord() {
                     <b>{examLine(e)}</b>{e.priority === 'urgent' ? ' (urgente)' : ''} · pedido {dm(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)} · {examStatusLabel(e)}{e.cancelReason ? `: ${e.cancelReason}` : ''}
                     {e.indication && <p>Indicación: {e.indication}</p>}
                     {e.result && <ResultView e={e} withFiles={false} />}
-                    {e.result?.fileIds?.map((f) => <PdfOrImage key={f} id={f} />)}
+                    {/* R2 pendiente (ronda 17): antes el PDF del resultado solo se nombraba; ahora sus páginas se imprimen, como las autorizaciones */}
+                    {e.result?.fileIds?.map((f) => <PdfPages key={f} fileId={f} label={`El resultado de ${e.name}`} />)}
                   </div>
                 )) : <p className="muted">Sin exámenes de {GROUP_LABEL[g].toLowerCase()}.</p>}
               </div>
             )
           })}
+          {/* R2 pendiente (ronda 17): archivos de laboratorio de la estancia que no están en un examen (subidos aparte) */}
+          {(() => {
+            const inExams = new Set((file.exams ?? []).flatMap((e) => e.result?.fileIds ?? []))
+            const loose = file.labs.filter((l) => !inExams.has(l.id) && !l.voidedAt)
+            return loose.length ? <>
+              <h3 className="fr-h3">Archivos adjuntos</h3>
+              {loose.map((l) => (
+                <div key={l.id} className="fr-lab">
+                  <b>{l.title ?? l.name}</b> · {dm(l.takenAt ?? l.uploadedAt)}
+                  <PdfPages fileId={l.id} label={`El archivo ${l.title ?? l.name}`} />
+                </div>
+              ))}
+            </> : null
+          })()}
         </>, true)}
 
         {page('fr-autorizaciones', 'Autorizaciones (anexos)', <>
@@ -304,11 +319,3 @@ function PrintedAddenda({ list, id }: { list: Addendum[]; id: string }) {
   )
 }
 
-/** Archivo de un resultado en la impresión: la foto se imprime; el PDF se nombra (está en el expediente electrónico). */
-function PdfOrImage({ id }: { id: string }) {
-  const { fetchAttachmentMeta } = useStore()
-  const [meta, setMeta] = useState<{ mime: string; name: string } | null>(null)
-  useEffect(() => { fetchAttachmentMeta(id).then(setMeta).catch(() => null) }, [id, fetchAttachmentMeta])
-  if (!meta) return null
-  return meta.mime.startsWith('image/') ? <img src={`/api/attachments/${id}`} alt={meta.name} /> : <p className="muted">Documento PDF en el expediente electrónico ({meta.name}).</p>
-}
