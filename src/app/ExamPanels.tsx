@@ -67,7 +67,7 @@ export function NewResults() {
               {notDone ? <span>{GROUP_LABEL[e.group]} · No se realizó: {e.notDone!.reason} ({shortStaff(staffById(e.notDone!.by)?.name)}, {dateTime(e.notDone!.at)}). Sigue pendiente: cancélalo o déjalo para que lo reintenten.</span>
                 : <span>{GROUP_LABEL[e.group]} · resultado {e.result ? dateTime(e.result.at) : ''} por {shortStaff(staffById(e.result?.by ?? '')?.name)}</span>}
               {/* MC1 (ronda 16): los valores fuera de rango como chips, debajo */}
-              {!notDone && flagged.length > 0 && <span className="chips">{flagged.map((v, i) => <span key={i} className="chip chip--red">{v.analyte} {v.flag === 'high' ? 'alto' : 'bajo'}</span>)}</span>}
+              {!notDone && flagged.length > 0 && <span className="chips">{flagged.map((v, i) => <span key={i} className="badge badge--red">{v.analyte} {v.flag === 'high' ? 'alto' : 'bajo'}</span>)}</span>}
             </div>
             <span className={`badge ${notDone ? 'badge--amber' : 'badge--mint'}`}>{notDone ? 'No se realizó' : 'Resultado nuevo'}</span>
           </Link>

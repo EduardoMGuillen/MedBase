@@ -101,8 +101,12 @@ img, svg { display: block; }
 .badge {
   display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px;
   font-size: 12px; font-weight: 600; white-space: nowrap; background: var(--line-soft); color: var(--muted);
+  justify-self: start; /* ES (ronda 17): en una rejilla, el estado mide lo que su texto (no todo el ancho) */
 }
 .badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.8; }
+/* ES (ronda 17): `badge` es para estados (alergias, pendientes, urgente, corregida); `chip`, para filtros y etiquetas de datos.
+   Con ícono propio, sin el punto. */
+.badge:has(svg)::before { display: none; }
 .badge--ink { background: var(--ink-soft); color: var(--ink-deep); }
 .badge--ink-solid { background: var(--ink); color: #fff; }
 .badge--mint { background: var(--mint); color: var(--mint-ink); }
@@ -375,7 +379,6 @@ a.row:hover { background: var(--ward); }
 .cell-person small { display: block; color: var(--muted); font-size: 12.5px; font-weight: 400; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { font-size: 12.5px; padding: 3px 10px; border-radius: 99px; background: var(--ward); border: 1px solid var(--line-soft); }
-.chip--red { background: var(--red); color: var(--red-ink); border-color: transparent; font-weight: 600; }
 .chip--amber { background: var(--amber); color: var(--amber-ink); border-color: transparent; font-weight: 600; }
 button.chip { cursor: pointer; }
 button.chip[aria-pressed='true'] { background: var(--ink); color: #fff; border-color: var(--ink); }

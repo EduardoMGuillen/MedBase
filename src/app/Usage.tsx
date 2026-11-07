@@ -310,7 +310,7 @@ function RecordLine({ r, onEdit, onVoid }: { r: MaterialRecord; onEdit: (r: Mate
         <span className="num">{dmyTime(r.recordedAt)}</span> · {r.recordedByName} · <span className="muted">{r.periodLabel}</span>
         {r.sets && r.sets.length > 0 && <div className="usage-records__set">{r.sets.length === 1 ? 'Set' : 'Sets'}: {r.sets.map((x) => x.name).join(', ')}</div>}
         <div className="usage-records__items">{itemsLine(r)}</div>
-        {r.version > 1 && <span className="chip version-tag">Corregido · v{r.version}</span>}
+        {r.version > 1 && <span className="badge version-tag">Corregido · v{r.version}</span>}
         {r.voidedAt && <small className="usage-records__void">Anulado por {r.voidedByName} el {dmyTime(r.voidedAt)}. Motivo: {r.voidReason}</small>}
       </div>
       <div className="usage-records__acts">

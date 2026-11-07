@@ -431,7 +431,7 @@ function MedSheet({ file, p, reload, onWriteNote, focusDose, onFocused }: { file
                     {m.stoppedAt
                       ? <span className="muted">{m.stopReason === 'Egreso' ? 'Terminó con el egreso' : `Suspendido por ${shortStaff(staffById(m.stoppedBy ?? '')?.name)} ${dm(m.stoppedAt)}${m.stopReason ? `: ${m.stopReason}` : ''}`}</span>
                       : <span className="muted"><b>{treatmentDay(m, start)}</b></span>}
-                    {conflict && <span className="chip chip--red"><TriangleAlert size={12} />Alergia a {conflict}</span>}
+                    {conflict && <span className="badge badge--red"><TriangleAlert size={12} />Alergia a {conflict}</span>}
                   </div>
                   <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     {m.stoppedAt ? <span className="badge badge--red">{m.stopReason?.startsWith('Cambiado') ? 'Modificado' : 'Suspendido'} {dateTime(m.stoppedAt)}</span>
@@ -1676,7 +1676,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
           <li key={i} className={medHasBlank(m) ? 'orders__blank' : undefined}><span className="orders__n">–</span>
             <span className="orders__text"><Pill size={13} className="orders__pill" />{medLabel(m)}{m.days ? ` por ${m.days} días` : ''}{m.instructions ? `. ${m.instructions}` : ''}{m.quantity && !m.buyOutside ? ` · Cantidad: ${m.quantity}` : ''}
               {m.buyOutside && <span className="badge badge--amber rx-tag">Receta{m.buyQuantity ? ` · comprar ${m.buyQuantity}` : ''}</span>}
-              {!inVademecum(m.drug) && <span className="chip chip--amber" style={{ marginLeft: 6 }}>No está en el vademécum de la clínica</span>}</span>
+              {!inVademecum(m.drug) && <span className="badge badge--amber" style={{ marginLeft: 6 }}>No está en el vademécum de la clínica</span>}</span>
             <span className="orders__tools">
               <button type="button" className="icon-btn" aria-label={`Editar ${m.drug}`} onClick={() => { setEditingMed(i); setAdding(false); setReplacing(null) }}><Pencil size={14} /></button>
               <button type="button" className="icon-btn" aria-label={`Quitar ${m.drug}`} onClick={() => { setMeds(meds.filter((_, j) => j !== i)); setEditingMed(null) }}><X size={14} /></button></span></li>

@@ -220,7 +220,7 @@ export function ExamRow({ e, reload, open, expanded, onToggle, compact = false }
       <div className="exam-row__main">
         {compact ? <div className="exam-row__line">{toggle}{ordered}</div> : <>{toggle}{ordered}</>}
         {compact && (brief.flags.length > 0 || brief.text) && <span className="exam-row__brief">
-          {brief.flags.map((f) => <span key={f} className="chip chip--red">{f}</span>)}{brief.text && <span className="muted">{brief.text}</span>}</span>}
+          {brief.flags.map((f) => <span key={f} className="badge badge--red">{f}</span>)}{brief.text && <span className="muted">{brief.text}</span>}</span>}
         {expanded && <div id={id} className="exam-row__body">
           <span className="exam-row__trail">{(e.events ?? []).filter((x) => x.status !== 'ordered').map((x) => `${STATUS_LABEL[e.group][x.status]} ${dateTime(x.at)} (${shortStaff(staffById(x.by)?.name)})`).join(' · ')}</span>
           {e.status === 'cancelled' && <span className="muted" style={{ fontSize: 13 }}>Cancelado: {e.cancelReason}</span>}

@@ -268,7 +268,7 @@ export default function PatientChart({ patientId, embedded = false }: { patientI
                 <button className="btn btn--ghost btn--sm" onClick={() => setEditing('allergies')}><Pencil size={14} />Editar</button></div>
               <div className="panel__body">
                 {p.allergies.length
-                  ? <div className="chips">{p.allergies.map((a) => <span key={a} className="chip chip--red">{a}</span>)}</div>
+                  ? <div className="chips">{p.allergies.map((a) => <span key={a} className="badge badge--red">{a}</span>)}</div>
                   : <p className="muted">Sin alergias conocidas.</p>}
                 <p style={{ marginTop: 10, fontSize: 13.5 }}>Tipo de sangre: <b>{p.bloodType ?? 'Sin dato'}</b></p>
               </div>

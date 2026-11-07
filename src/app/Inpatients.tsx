@@ -95,10 +95,10 @@ export default function Inpatients() {
                 <span className="bed__meta">{age(p.birthDate)}, {p.sex === 'F' ? 'femenino' : 'masculino'} · Día {stayDay(h.admittedAt)} de estancia</span>
                 <span className="bed__dx">{h.diagnoses.map((d) => d.label).join('; ')}</span>
                 <span className="bed__meta">Médico tratante: {attendingText(h.attendingIds ?? [h.admittedBy], nameOf)}</span>
-                {p.allergies.length > 0 && <span className="chip chip--red">Alergias: {p.allergies.join(', ')}</span>}
+                {p.allergies.length > 0 && <span className="badge badge--red">Alergias: {p.allergies.join(', ')}</span>}
                 {/* HO2 (ronda 16): ingreso directo sin nota de ingreso firmada; se quita sola al firmarla */}
-                {h.ordersPending && <span className="chip chip--red">Sin órdenes de ingreso</span>}
-                {h.authPending && <span className="chip chip--amber">Autorización pendiente de firma</span>}
+                {h.ordersPending && <span className="badge badge--red">Sin órdenes de ingreso</span>}
+                {h.authPending && <span className="badge badge--amber">Autorización pendiente de firma</span>}
                 <span className="bed__meta">Ingresó {dateTime(h.admittedAt)}</span>
               </Link>
             )

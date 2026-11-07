@@ -50,7 +50,7 @@ export function VersionTag({ version, kind, id, render }: { version?: number; ki
   const [list, setList] = useState<Version[] | null>(null)
   if (!version || version < 2) return null
   return (<>
-    <span className="chip version-tag">Corregida · v{version}</span>
+    <span className="badge version-tag">Corregida · v{version}</span>
     <button type="button" className="btn btn--ghost btn--sm version-link" onClick={() => api<Version[]>(`/versions/${kind}/${id}`).then(setList).catch(() => setList([]))}><History size={13} />Ver versiones</button>
     {list && (
       <Modal title="Versiones anteriores" onClose={() => setList(null)} footer={<button className="btn btn--primary" onClick={() => setList(null)}>Cerrar</button>}>
