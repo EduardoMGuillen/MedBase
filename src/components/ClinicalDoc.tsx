@@ -145,6 +145,7 @@ export function ClinicalDoc({ kind, folio, at, folioNote, place, patient, rows, 
         <div className="cdoc__place">
           <div className="cdoc__brand">{place.logo && <img src={place.logo} alt="" className="cdoc__logo" />}<b>{place.name}</b></div>
           {place.address && <p>{place.address}</p>}
+          {/* R13 IM1 pendiente (ronda 17): contactLine ya quita el «+504» del teléfono */}
           {phone && <p>Tel. {phone}</p>}
         </div>
         <div className="cdoc__folio">

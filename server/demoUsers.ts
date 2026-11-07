@@ -67,7 +67,7 @@ export const EXTRA_DEMO_USERS: ExtraDemoUser[] = [
 
 const EXTRA_CLINICS = [
   { id: SUSPENDED_CLINIC, slug: 'san-miguel', name: 'Clínica San Miguel', kind: 'clinic', active: false, address: 'Choluteca, Barrio El Centro, 3.ª avenida',
-    phone: '+504 2782-4410', email: 'info@clinicasanmiguel.hn', services: [['Consulta general', 500], ['Curación', 300]] as const },
+    phone: '2782-4410', email: 'info@clinicasanmiguel.hn', services: [['Consulta general', 500], ['Curación', 300]] as const },
   { id: PENDING_OFFICE, slug: 'luis-trochez', name: 'Consultorio Dr. Luis Trochez', kind: 'office', active: true, owner: 's5-trochez', specialty: 'Medicina familiar', license: 'CMH-21233',
     address: '', phone: '', email: '', services: [['Consulta', 500], ['Control o reconsulta', 300], ['Aplicación de inyección', 150], ['Curación', 300]] as const },
 ]

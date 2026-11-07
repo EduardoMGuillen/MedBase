@@ -10,7 +10,7 @@ import { slotsOn } from './schedule.js'
 export const CLINIC = {
   name: 'Clínica Santa Brígida',
   address: 'Col. Palmira, Av. República de Chile #412',
-  phone: '+504 2232-7710',
+  phone: '2232-7710',
 }
 
 export const MAIN_CLINIC = 'c-sb'
@@ -302,7 +302,7 @@ export const DEMO_CLINICS: (ClinicSettings & { id: string; slug: string })[] = [
   { id: MAIN_CLINIC, slug: 'santa-brigida', ...DEFAULT_SETTINGS },
   {
     id: SECOND_CLINIC, slug: 'san-lucas', name: 'Centro Médico San Lucas', address: 'San Pedro Sula, Barrio Río de Piedras, 7 calle',
-    phone: '+504 2550-1188', email: 'citas@sanlucas.hn', currency: 'L', rxValidityDays: 30, reminderTemplate: DEFAULT_SETTINGS.reminderTemplate, recordUsesDni: true,
+    phone: '2550-1188', email: 'citas@sanlucas.hn', currency: 'L', rxValidityDays: 30, reminderTemplate: DEFAULT_SETTINGS.reminderTemplate, recordUsesDni: true,
   },
 ]
 
@@ -340,7 +340,7 @@ export function seedOffice() {
   const doc = 's3-pacheco'
   const clinic = {
     id: C, slug: 'isabel-pacheco', name: 'Consultorio Dra. Isabel Pacheco', address: 'Tegucigalpa, Col. Lomas del Guijarro, Edificio Plaza Médica, local 4',
-    phone: '+504 2239-4410', email: 'consultorio@isabelpacheco.hn', currency: 'L', rxValidityDays: 30, specialty: 'Medicina general', license: 'CMH-20561',
+    phone: '2239-4410', email: 'consultorio@isabelpacheco.hn', currency: 'L', rxValidityDays: 30, specialty: 'Medicina general', license: 'CMH-20561',
     reminderTemplate: 'Hola {paciente}, le recordamos su cita con {medico} el {fecha} a las {hora}. Responda SÍ para confirmar o llame al {telefono} si necesita cambiarla.',
   }
   const staff: Staff[] = [

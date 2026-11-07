@@ -150,8 +150,15 @@ export function clinicWhatsapp(s: { phone: string; contacts?: ClinicContact[] })
 /** AD1: lo que dicen los membretes: "2232-7710" o, si la clínica lo pidió, "2232-7710 · WhatsApp 9876-5432". */
 export function contactLine(s: { phone: string; contacts?: ClinicContact[]; docsWhatsapp?: boolean }) {
   const wa = s.contacts?.find((c) => c.whatsapp)?.number
-  return s.docsWhatsapp && wa && wa !== s.phone ? `${s.phone} · WhatsApp ${wa}` : s.phone
+  const phone = docPhone(s.phone)
+  return s.docsWhatsapp && wa && docPhone(wa) !== phone ? `${phone} · WhatsApp ${docPhone(wa)}` : phone
 }
+
+/**
+ * R13 IM1 pendiente (ronda 17): en los documentos impresos el teléfono va sin el «+504» (formato local, «2232-7710»).
+ * Se quita al imprimir: no se cambian los datos guardados de las clínicas.
+ */
+export const docPhone = (phone: string) => phone.replace(/^\s*\+\s*504[\s-]*/, '').trim()
 
 /** Enlace para llamar desde el teléfono. */
 export const telUrl = (phone: string) => `tel:${phone.replace(/[^\d+]/g, '')}`
