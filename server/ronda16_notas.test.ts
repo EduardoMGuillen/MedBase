@@ -8,7 +8,7 @@ import { createSql, type Sql } from './sql.js'
 import { canonicalRoute, medicationLine, medicationOrder, routeLabel, routeMatches } from '../src/lib/format.js'
 import { canInfuse, consultItemIssue, draftFromItem, draftFromStay, frequencyOf, rateIssue } from '../src/lib/medForm.js'
 import { loadingAllowed } from '../src/lib/medExtras.js'
-import { medLabel } from '../src/lib/inpatient.js'
+import { activeIndications, medLabel } from '../src/lib/inpatient.js'
 
 // Ronda 16 (rama notas): ME17, ME16, NO1, NO3 y NO2, con la base y la API (copia en memoria de la demo)
 let server: Server
@@ -103,6 +103,8 @@ describe('NO1 (ronda 16): el ingreso es la primera indicación y todos los medic
     assert.equal(JSON.parse(String(c.orders))[0], 'Ingreso a hospitalización')
     const meds = await sql.query('SELECT drug FROM hosp_meds WHERE hospitalization_id = ?', [r.body.hospitalizationId])
     assert.deepEqual(meds.map((m) => m.drug), ['Omeprazol'], 'con ingreso, todos pasan a la hoja (NO1)')
+    const file = await doc.get(`/api/inpatient/${r.body.hospitalizationId}`)
+    assert.deepEqual(activeIndications(file.body).map((a) => a.text), ['Dieta blanda.'], 'el ingreso ya se cumplió: no baja como indicación activa')
     const rx = JSON.parse(String((await sql.one('SELECT items FROM prescriptions WHERE id = ?', [r.body.prescriptionId]))!.items))
     assert.equal(rx.length, 1, 'y a la receta (ME15)')
   })
@@ -160,6 +162,46 @@ describe('NO3 (ronda 16): SOAP con «A. Análisis» y diagnósticos CIE-11 apart
       assessment: 'Cuadro de 2 días.', plan: 'Antibiótico.', diagnoses: [dxs[0]] })
     assert.equal(fix.status, 200, JSON.stringify(fix.body))
     assert.deepEqual(fix.body.diagnoses, [dxs[0]])
+  })
+})
+
+describe('NO2 (ronda 16): nota de ingreso con el formato estándar de la consulta externa', () => {
+  test('se firma con motivo, historia, examen físico, observaciones e impresión diagnóstica; pide lo mismo que la consulta', async () => {
+    const h = await directStay(1)
+    const doc = await as('hnolasco@demo.clinara')
+    const dxs = [{ code: 'DC12.0', label: 'Colecistitis aguda' }]
+    const base = { kind: 'admission', format: 'dx', chiefComplaint: 'Dolor abdominal', history: 'Dolor en hipocondrio derecho de 2 días, con náusea.', exam: 'Murphy positivo.',
+      observations: 'Viene con su esposo.', diagnoses: dxs, orders: ['Nada por boca.'],
+      meds: [{ drug: 'Solución salina 0.9 %', presentation: 'Bolsa 1000 mL', dose: '1000 mL', route: 'Intravenosa', prn: false, infusionRate: 125, infusionUnit: 'ml/h', quantity: '2 bolsas' }],
+      exams: [{ group: 'lab', name: 'Hemograma', priority: 'routine', place: 'clinic' }] }
+    const noReason = await doc.post(`/api/inpatient/${h}/notes`, { ...base, chiefComplaint: '' })
+    assert.equal(noReason.status, 400)
+    assert.match(noReason.body.error, /motivo de consulta/)
+    const noDx = await doc.post(`/api/inpatient/${h}/notes`, { ...base, diagnoses: [] })
+    assert.equal(noDx.status, 400)
+    assert.match(noDx.body.error, /impresión diagnóstica/)
+    const r = await doc.post(`/api/inpatient/${h}/notes`, base)
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(r.body.format, 'dx')
+    assert.equal(r.body.chiefComplaint, 'Dolor abdominal')
+    assert.equal(r.body.history, 'Dolor en hipocondrio derecho de 2 días, con náusea.')
+    assert.deepEqual(r.body.diagnoses, dxs)
+    const file = await doc.get(`/api/inpatient/${h}`)
+    assert.equal(file.body.meds.length, 1)
+    assert.equal(file.body.meds[0].infusionRate, 125, 'la infusión de la nota de ingreso va a la hoja')
+    assert.equal(file.body.exams.filter((e: { noteId?: string }) => e.noteId === r.body.id).length, 1)
+    // Corrección en el periodo de gracia, con lo mismo que pide al firmarse
+    const bad = await doc.post(`/api/inpatient/notes/${r.body.id}/correct`, { version: 1, chiefComplaint: '', history: 'x', diagnoses: dxs })
+    assert.equal(bad.status, 400)
+    const fix = await doc.post(`/api/inpatient/notes/${r.body.id}/correct`, { version: 1, reason: 'Faltaba el tiempo de evolución', chiefComplaint: 'Dolor abdominal', history: 'Dolor de 3 días.', exam: 'Murphy positivo.', observations: '', diagnoses: dxs })
+    assert.equal(fix.status, 200, JSON.stringify(fix.body))
+    assert.equal(fix.body.history, 'Dolor de 3 días.')
+    // Después de la nota de ingreso estándar, las evoluciones siguen igual (y heredan sus diagnósticos)
+    const evo = await doc.post(`/api/inpatient/${h}/notes`, { kind: 'evolution', format: 'dx', evolution: 'Mejor.', diagnoses: dxs, chain: { basedOn: r.body.id, decisions: [] } })
+    assert.equal(evo.status, 201, JSON.stringify(evo.body))
+    // Recepción no escribe notas ni órdenes (403)
+    const rec = await as('aquiroz@demo.clinara')
+    assert.equal((await rec.post(`/api/inpatient/${h}/notes`, { ...base, kind: 'evolution' })).status, 403)
   })
 })
 

@@ -11,6 +11,7 @@ import { useVademecum } from '../lib/vademecum'
 import { MedicationForm, MedicationList } from '../components/Medications'
 import { followupLabel } from '../lib/followups'
 import { ADMIT_ORDER, yearsOld } from '../lib/inpatient'
+import { EXAM_GUIDE } from '../lib/clinicalConfig'
 import { features } from '../lib/permissions'
 import PatientChart, { BackgroundView, useChart, VitalsGrid } from './PatientChart'
 import { BackgroundForm, IdentityPrompt } from './PatientForms'
@@ -61,8 +62,6 @@ function loadDraft(id?: string): Partial<Draft> {
   } catch { return {} }
 }
 
-const EXAM_GUIDE = ['Aspecto general', 'Piel y mucosas', 'Cabeza y cuello', 'Tórax y pulmones', 'Corazón', 'Abdomen', 'Genitourinario', 'Extremidades', 'Neurológico']
-  .map((s) => `${s}: `).join('\n')
 
 
 
@@ -422,7 +421,15 @@ export default function Consultation() {
                   </ol>
                 ) : <p className="muted" style={{ fontSize: 14 }}>Dieta, cuidados, cita de control, lo que necesite. Una por línea. Los exámenes van en su sección.</p>}
                 <form className="order-add" onSubmit={(e) => { e.preventDefault(); addOrder(orderText) }}>
-                  <input ref={orderInput} className="input" value={orderText} onChange={(e) => setOrderText(e.target.value)} placeholder={`${indications.length + 1 + off}. Escribe una indicación y presiona Enter`} aria-label="Nueva indicación" enterKeyHint="done" />
+                  <input ref={orderInput} className="input" value={orderText} onChange={(e) => setOrderText(e.target.value)} placeholder={`${indications.length + 1 + off}. Escribe una indicación y presiona Enter, o pega varias líneas`} aria-label="Nueva indicación" enterKeyHint="done"
+                    onPaste={(e) => {
+                      // NO2 (ronda 16): pegar una lista agrega una indicación por línea, como en las notas de la estancia
+                      const text = e.clipboardData.getData('text')
+                      if (!text.includes('\n')) return
+                      e.preventDefault()
+                      const lines = text.split(/\r?\n/).map((t) => t.replace(/^\s*(\d+\s*[.)-]|[-•*])\s*/, '').trim()).filter(Boolean)
+                      setIndications([...indications, ...lines.map((t) => (/[.!?]$/.test(t) ? t : `${t}.`))])
+                    }} />
                   <button className="btn btn--soft" disabled={!orderText.trim()} aria-label="Agregar indicación"><Plus size={16} /></button>
                 </form>
                 {typedExamHit && !typedDrug && (
@@ -439,6 +446,8 @@ export default function Consultation() {
                 )}
               </div>
 
+              {/* NO2 (ronda 16): el lugar del bloque de órdenes extra (IE1: «Ingestas y excretas» con ingreso), debajo de Indicaciones y
+                  antes de Exámenes, como en NoteEditor (prop `afterIndications`) */}
               <div className="plan-block">
                 <h3 className="plan-block__title">Exámenes <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· {admitting ? 'enfermería los recibe en su bandeja' : 'se imprimen aparte de la receta'}</span></h3>
                 <ExamsBlock value={exams} onChange={setExams} inStay={admitting} />
@@ -452,7 +461,8 @@ export default function Consultation() {
                   onEdit={(i) => setMedForm({ index: i, initial: meds[i] })} onRemove={(i) => { setMeds(meds.filter((_, j) => j !== i)); setMedForm(null) }} />
                 {!meds.length && !medForm && <p className="muted" style={{ fontSize: 14 }}>Sin medicamentos indicados.</p>}
                 {medForm ? (
-                  <MedicationForm key={medForm.index} patient={p} current={meds} initial={medForm.initial} place={{ where: 'consult', admitting, canApply: store.can('inpatient.orders') }}
+                  <MedicationForm key={medForm.index >= 0 ? `e${medForm.index}` : `n${meds.length}`} patient={p} current={meds} initial={medForm.initial}
+                    onSaveAnother={medForm.index < 0 ? (item) => { setMeds([...meds, item]); setMedForm({ index: -1 }) } : undefined} place={{ where: 'consult', admitting, canApply: store.can('inpatient.orders') }}
                     submitLabel={medForm.index >= 0 ? 'Guardar cambios' : 'Agregar medicamento'}
                     onSave={(item) => { setMeds(medForm.index >= 0 ? meds.map((x, j) => (j === medForm.index ? item : x)) : [...meds, item]); setMedForm(null) }}
                     onCancel={() => setMedForm(null)} />

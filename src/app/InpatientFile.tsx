@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { fromLocalValue } from '../lib/dateInput'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { BedDouble, ChevronLeft, ChevronRight, FileSignature, FileText, FlaskConical, LogOut, NotebookPen, Pencil, Pill, Plus, Printer, Send, Syringe, TriangleAlert, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, BedDouble, ChevronLeft, ChevronRight, ClipboardList, FileSignature, FileText, FlaskConical, LogOut, NotebookPen, Pencil, Pill, Plus, Printer, Send, Syringe, TriangleAlert, X } from 'lucide-react'
 import { useStore, type NewMed } from '../lib/store'
+import { EXAM_GUIDE } from '../lib/clinicalConfig'
 import { AutoTextarea, Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
 import { date, dateTime, dmyTime, inputDateTime, localISODate, shortStaff, time, dxCode } from '../lib/format'
@@ -10,7 +11,7 @@ import { MedicationForm } from '../components/Medications'
 import { DateTimeField } from '../components/DateTimeField'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict } from '../lib/catalogs'
-import { activeIndications, chainNote, doseAt, formatRate, infusionUnitLabel, isLoadingSlot, currentDiagnoses, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
+import { activeIndications, chainNote, frequencyHours, doseAt, formatRate, infusionUnitLabel, isLoadingSlot, currentDiagnoses, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
 import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
 import { NoteColumns, NoteExams, NoteText } from '../components/NoteColumns'
@@ -758,6 +759,16 @@ function MedicalNotes({ file, p, reload, show = true, onWriting }: { file: File;
     if (transfer && doctor && hasAdmission && !discharged && h.status === 'active') setWriting('discharge')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transfer])
+  // NO2 (ronda 16): «?nota=ingreso» abre la nota de ingreso (formato estándar) de una estancia que no la tiene. Es la entrada para
+  // HO2 (ingreso directo: al terminar el ingreso y la autorización se abre sola); el borrador se guarda como siempre
+  const openAdmission = notesParams.get('nota') === 'ingreso'
+  useEffect(() => {
+    if (!openAdmission) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (doctor && !hasAdmission && h.status === 'active') setWriting('note')
+    const q = new URLSearchParams(notesParams); q.delete('nota'); setNotesParams(q, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openAdmission])
   const editors = <>
       {writing === 'procedure' && <ProcedureNoteForm inline file={file} initial={procDraft} onClose={() => { setWriting(null); setProcDraft(undefined) }} onSaved={() => { setWriting(null); setProcDraft(undefined); reload() }}
         onAuthorize={(draft) => { setProcDraft(draft); setBack('procedure'); setAuthFor(draft.name); setWriting('authorization') }}
@@ -917,6 +928,7 @@ function noteFromVersion(n: InpatientNote, x: Record<string, unknown>): Partial<
   const data = (typeof x.data === 'string' ? JSON.parse(x.data) : x.data ?? {}) as Record<string, unknown>
   return { subjective: String(x.subjective ?? ''), objective: String(x.objective ?? ''), assessment: String(x.assessment ?? ''), plan: String(x.plan ?? ''), text: String(x.text ?? ''),
     diagnoses: data.diagnoses as InpatientNote['diagnoses'], exam: data.exam as string | undefined, observations: data.observations as string | undefined, evolution: data.evolution as string | undefined,
+    chiefComplaint: data.chiefComplaint as string | undefined, history: data.history as string | undefined,
     postop: n.format === 'postop' ? data.postop as InpatientNote['postop'] : undefined, procedure: n.kind === 'procedure' ? data as unknown as InpatientNote['procedure'] : undefined }
 }
 
@@ -1251,7 +1263,12 @@ function CorrectionOrders({ n, file, p, value, onChange, locks }: { n: Inpatient
   )
 }
 
-function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAuthorize, seed, correct, onExpired, inline = false, notesOnly = false }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: (examBatch?: string, rxNoteId?: string) => void; onStale?: () => void
+function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAuthorize, seed, correct, onExpired, inline = false, notesOnly = false, afterIndications }: { file: File; p: Patient; kind: 'admission' | 'evolution'; onClose: () => void; onSaved: (examBatch?: string, rxNoteId?: string) => void; onStale?: () => void
+  /**
+   * NO2 (ronda 16): lugar para un bloque de órdenes más, debajo de «Indicaciones» y antes de «Exámenes», en la nota de ingreso y
+   * en las de evolución (IE1, «Ingestas y excretas», rama ronda16-ingreso). La consulta externa tiene el mismo lugar marcado.
+   */
+  afterIndications?: ReactNode
   /** HO1 (ronda 12): dentro del expediente, debajo de las notas (no en ventana), para seguir viendo las otras pestañas. */
   inline?: boolean
   /** IM2 (ronda 12): el radiólogo escribe la nota (evolución o postquirúrgica) sin indicaciones ni medicamentos. */
@@ -1261,6 +1278,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   /** GE4 (ronda 9): «Corregir»: la misma ventana, ya llenada, con «Guardar corrección». `onExpired` pasa lo escrito a una adenda. */
   correct?: InpatientNote; onExpired?: (text: string) => void }) {
   const { addInpatientNote, staffById, settings } = useStore()
+  const postop = variant === 'postop'
   // Una nota, un identificador: si se guarda dos veces no se duplica (ni sus medicamentos en la hoja)
   const [clientId] = useState(() => crypto.randomUUID())
   const [n, setN] = useState(() => correct ? { subjective: correct.subjective, objective: correct.objective, assessment: correct.assessment, plan: correct.plan }
@@ -1269,14 +1287,18 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   // Dos formatos (MC4): Estándar ('dx': diagnóstico, examen físico y observaciones) y SOAP. Empieza en el que el médico
   // eligió en Mi configuración (Estándar si no eligió); cada formato guarda su borrador mientras el modal está abierto
   const { user } = useStore()
-  const [format, setFormat] = useState<'soap' | 'dx'>(() => (correct ? (correct.format === 'dx' ? 'dx' : 'soap') : kind === 'admission' ? 'soap' : user?.prefs?.noteFormat ?? 'dx'))
+  // NO2 (ronda 16): la nota de ingreso empieza SIEMPRE en el formato estándar de la consulta externa (la preferencia del médico
+  // vale para las evoluciones); se puede cambiar a SOAP y volver sin perder lo escrito
+  const [format, setFormat] = useState<'soap' | 'dx'>(() => (correct ? (correct.format === 'dx' ? 'dx' : 'soap') : kind === 'admission' ? 'dx' : user?.prefs?.noteFormat ?? 'dx'))
+  const admissionStd = kind === 'admission' && format === 'dx' && !postop
   // NE4 (ronda 8): los diagnósticos vigentes bajan de la última nota firmada de la estancia (o de la impresión diagnóstica
   // del ingreso), como las órdenes; se quitan o se agregan. Estándar y SOAP usan el mismo campo. El borrador manda.
   // NO3 (ronda 16): la nota de ingreso empieza con los diagnósticos del ingreso
   const [carried, setCarried] = useState<Diagnosis[]>(() => (kind === 'evolution' ? currentDiagnoses(file) : file.hospitalization.diagnoses ?? []))
-  const [d, setD] = useState<{ diagnoses: Diagnosis[]; evolution: string; exam: string; observations: string }>(() => (correct
-    ? { diagnoses: correct.diagnoses ?? [], evolution: correct.evolution ?? '', exam: correct.exam ?? '', observations: correct.observations ?? '' }
-    : { diagnoses: carried, evolution: '', exam: '', observations: '' }))
+  // NO2 (ronda 16): la nota de ingreso estándar lleva además el motivo de consulta y la historia de la enfermedad actual
+  const [d, setD] = useState<{ diagnoses: Diagnosis[]; evolution: string; exam: string; observations: string; chiefComplaint: string; history: string }>(() => (correct
+    ? { diagnoses: correct.diagnoses ?? [], evolution: correct.evolution ?? '', exam: correct.exam ?? '', observations: correct.observations ?? '', chiefComplaint: correct.chiefComplaint ?? '', history: correct.history ?? '' }
+    : { diagnoses: carried, evolution: '', exam: '', observations: '', chiefComplaint: kind === 'admission' ? file.hospitalization.reason ?? '' : '', history: '' }))
   const [why, setWhy] = useState('')
   const [expired, setExpired] = useState(false)
   // GE4: las órdenes de la nota que se corrige y qué está bloqueado (lo dice el servidor)
@@ -1290,15 +1312,16 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   const fixChanged = !!fix && !locks?.all && JSON.stringify(fix) !== JSON.stringify(fixStart)
   // GE4: si venció el plazo, lo escrito pasa a una adenda (texto plano, como se leería en la nota)
   const correctionText = () => postop ? [pq.procedureName, pq.description].filter(Boolean).join('. ')
-    : format === 'soap' ? SOAP.map((x) => `${x.letter}. ${n[x.key]}`).join('\n') : [d.evolution, d.exam, d.observations].filter((x) => x.trim()).join('\n')
+    : format === 'soap' ? SOAP.map((x) => `${x.letter}. ${n[x.key]}`).join('\n') : [d.chiefComplaint, d.history, d.evolution, d.exam, d.observations].filter((x) => x.trim()).join('\n')
   void staffById
   const dxChanged = JSON.stringify(d.diagnoses) !== JSON.stringify(carried)
-  // PQ1 y PQ2 (ronda 9): nota postquirúrgica
-  const postop = variant === 'postop'
+  // PQ1 y PQ2 (ronda 9): nota postquirúrgica (`postop`, arriba)
   const [pq, setPq] = useState<PostopDraft>(() => (correct?.postop ? postopDraftOf(correct) : { ...blankPostop(carried, user), ...seed }))
   const [meds, setMeds] = useState<NewMed[]>([])
   const [stop, setStop] = useState<string[]>([])
   const [adding, setAdding] = useState(kind === 'admission')
+  // NO2 (ronda 16): un medicamento escrito como indicación se ofrece pasarlo a Medicamentos, como en la consulta externa
+  const [addSeed, setAddSeed] = useState<NewMed | undefined>()
   const [replacing, setReplacing] = useState<string | null>(null)
   // MC7 (ronda 6): las indicaciones nuevas de esta nota; las vigentes bajan solas en «Indicaciones activas»
   const [extra, setExtra] = useState<string[]>([])
@@ -1329,11 +1352,11 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   const vademecum = useVademecum()
   const active = file.meds.filter((m) => !m.stoppedAt && !courseDone(m))
   // AN1: la nota se guarda sola como borrador (aquí y en el servidor) mientras se escribe
-  const noteBlank = (!postop || (!pq.procedureName.trim() && !pq.description.trim() && !pq.postDiagnoses.length && !pq.anesthesia)) && !Object.values(n).some((v) => v.trim()) && !dxChanged && !d.evolution.trim() && !d.exam.trim() && !d.observations.trim() && !meds.length && !stop.length && !exams.length && !extra.length && !Object.keys(decisions).length && !nvFilled
+  const noteBlank = (!postop || (!pq.procedureName.trim() && !pq.description.trim() && !pq.postDiagnoses.length && !pq.anesthesia)) && !Object.values(n).some((v) => v.trim()) && !dxChanged && !d.evolution.trim() && !d.exam.trim() && !d.observations.trim() && !d.history.trim() && (kind !== 'admission' || d.chiefComplaint.trim() === (file.hospitalization.reason ?? '').trim()) && !meds.length && !stop.length && !exams.length && !extra.length && !Object.keys(decisions).length && !nvFilled
   const draft = useDraftSync('evolucion', correct ? `${file.hospitalization.id}:correct:${correct.id}` : `${file.hospitalization.id}:${postop ? 'postop' : kind}`, { n, format, d, meds, stop, extra, exams, decisions, vitalsMode, nv, nvAt, pq }, (x) => {
     if (seed) return // viene de un borrador de procedimiento mayor: manda lo que se traía
     if (x.pq) setPq(x.pq)
-    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD({ ...x.d, evolution: x.d.evolution ?? '' }); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams); if (x.decisions) setDecisions(x.decisions); if (x.vitalsMode) setVitalsMode(x.vitalsMode); if (x.nv) { setNv(x.nv); if (x.nvAt) setNvAt(x.nvAt) }
+    if (x.n) setN(x.n); if (x.format) setFormat(x.format); if (x.d) setD({ ...x.d, evolution: x.d.evolution ?? '', chiefComplaint: x.d.chiefComplaint ?? '', history: x.d.history ?? '' }); if (x.meds) setMeds(x.meds); if (x.stop) setStop(x.stop); if (x.extra) setExtra(x.extra); if (x.exams) setExams(x.exams); if (x.decisions) setDecisions(x.decisions); if (x.vitalsMode) setVitalsMode(x.vitalsMode); if (x.nv) { setNv(x.nv); if (x.nvAt) setNvAt(x.nvAt) }
   }, noteBlank)
   const inVademecum = (drug: string) => vademecum.some((x) => normalize(x.name) === normalize(drug))
   // Huecos "___" de un set aplicado: la nota no se firma hasta llenarlos
@@ -1346,7 +1369,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   // GE4: al corregir, la autorización ya quedó resuelta al firmar
   const pqCheck = correct ? { ...pqAll, missing: pqAll.missing.filter((m) => !m.startsWith('la autorización')) } : pqAll
   const fixBlank = !!fix && (fix.indications.some((x) => hasBlank(x.text)) || fix.meds.some((x) => medHasBlank(x.med)))
-  const ready = !blanks.length && !fixBlank && (postop ? !pqCheck.missing.length : !nvErrors.length && !nvFuture && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
+  // NO2 (ronda 16): la nota de ingreso estándar pide lo mismo que la consulta externa: el motivo y la impresión diagnóstica
+  const admissionMissing = admissionStd ? [!d.chiefComplaint.trim() && 'el motivo de consulta', !d.diagnoses.length && 'la impresión diagnóstica'].filter((x): x is string => !!x) : []
+  const ready = !blanks.length && !fixBlank && !admissionMissing.length && (postop ? !pqCheck.missing.length : !nvErrors.length && !nvFuture && (format === 'soap' ? SOAP.every((s) => n[s.key].trim())
     : (dxChanged && d.diagnoses.length > 0) || !!d.evolution.trim() || !!d.exam.trim() || !!d.observations.trim() || extra.length > 0 || meds.length > 0 || stop.length > 0 || exams.length > 0 || Object.keys(decisions).length > 0))
   /** Un set se agrega al final: indicaciones y medicamentos (que pasan a la hoja al guardar), todo editable. */
   const applySet = (set: OrderSet) => {
@@ -1378,10 +1403,12 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   const { exams: clinicExams } = useExamCatalog()
   const examList = useMemo(() => examCatalog(clinicExams), [clinicExams])
   const typedExamHit = typedExam(extraText, examList)
+  const typedDrug = extraText.trim().length >= 4 ? vademecum.find((x) => normalize(extraText).startsWith(normalize(x.name))) : undefined
   const toExam = (hit: { group: ExamInput['group']; name: string }) =>
     setExams((x) => (x.some((y) => examKey(y.name) === examKey(hit.name)) ? x : [...x, { group: hit.group, name: hit.name, priority: 'routine', place: defaultPlace(hit.group, true, settings) }]))
   const dxField = (<>
-    <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label="Diagnósticos (CIE-11)" />
+    {/* NO2 (ronda 16): en la nota de ingreso estándar se llama como en la consulta externa */}
+    <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label={admissionStd ? 'Impresión diagnóstica · CIE-11' : 'Diagnósticos (CIE-11)'} />
     {carried.length > 0 && !correct && <small className="muted" style={{ marginTop: -6 }}>{kind === 'admission'
       ? (dxChanged ? 'Cambiaste los diagnósticos del ingreso.' : 'Vienen del ingreso. Agrega, quita o cambia lo que haga falta.')
       : dxChanged ? 'Cambiaste los diagnósticos de la nota anterior.' : 'Vienen de la nota anterior. Agrega, quita o cambia lo que haga falta.'}</small>}
@@ -1401,6 +1428,18 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
               </>)}
             </fieldset>
   )
+  // Examen físico (con la «Guía por sistemas» de la consulta externa, NO2) y Observaciones: los mismos en la nota de ingreso y la evolución
+  const examField = (
+    <div className="field dictate-field"><span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>Examen físico
+      {!d.exam.trim() && <button type="button" className="btn btn--ghost btn--sm" onClick={() => setD((x) => ({ ...x, exam: EXAM_GUIDE }))}><ClipboardList size={15} />Guía por sistemas</button>}</span>
+      <AutoTextarea value={d.exam} onChange={(e) => setD({ ...d, exam: e.target.value })} aria-label="Examen físico" />
+      <DictateButton label="Examen físico" onText={(f) => setD((x) => ({ ...x, exam: f(x.exam) }))} /></div>
+  )
+  const observationsField = (
+    <label className="field dictate-field"><span>Observaciones</span>
+      <AutoTextarea value={d.observations} onChange={(e) => setD({ ...d, observations: e.target.value })} />
+      <DictateButton label="Observaciones" onText={(f) => setD((x) => ({ ...x, observations: f(x.observations) }))} /></label>
+  )
   return (
     <Modal title={`${correct ? 'Corregir: ' : ''}${postop ? 'Nota postquirúrgica' : kind === 'admission' ? 'Nota de ingreso' : 'Nota de evolución'}`} wide inline={inline && !correct} className="note-modal" onClose={onClose}
       top={(!noteBlank || p.allergies.length > 0) && <>
@@ -1414,7 +1453,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
       <button className="btn btn--primary" disabled={!ready || busy || expired} onClick={async () => {
         setBusy(true)
         try {
-          const body = postop ? { diagnoses: pq.postDiagnoses, postop: postopPayload(pq, pqCheck) } : format === 'soap' ? { ...n, diagnoses: d.diagnoses } : { ...d }
+          const body = postop ? { diagnoses: pq.postDiagnoses, postop: postopPayload(pq, pqCheck) } : format === 'soap' ? { ...n, diagnoses: d.diagnoses }
+            : kind === 'admission' ? { ...d, evolution: '' } : { ...d, chiefComplaint: undefined, history: undefined }
           const orders = fixChanged && fix ? { indications: fix.indications.map(({ id, text }) => ({ id, text: text.trim() })).filter((x) => x.text), meds: fix.meds, keepExams: fix.keepExams, exams: fix.exams } : undefined
           const r = await api<{ examBatch?: string }>(`/inpatient/notes/${correct.id}/correct`, { body: { version: correct.version ?? 1, reason: why.trim() || undefined, ...body, orders } })
           draft.clear(); notify('Corrección guardada'); onSaved(r.examBatch, fixChanged && fix?.meds.some((x) => x.med.buyOutside) ? correct.id : undefined)
@@ -1426,6 +1466,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
       }}>Guardar corrección</button>
     </> : <>
       {postop && pqCheck.missing.length && !blanks.length ? <span className="field__msg field__msg--warn" style={{ marginRight: 'auto' }} role="status">Para firmar falta {pqCheck.missing.join(', ')}.</span>
+        : admissionMissing.length && !blanks.length ? <span className="field__msg field__msg--warn" style={{ marginRight: 'auto' }} role="status">Para firmar falta {admissionMissing.join(' y ')}.</span>
         : blanks.length ? <span className="field__msg field__msg--error" style={{ marginRight: 'auto' }} role="status">Completa los espacios ___ de {blanks.join(', ')}.</span>
         : <span className="muted" style={{ marginRight: 'auto', fontSize: 13.5 }}>{meds.length ? `${meds.length} medicamento(s) nuevo(s)` : ''}{stop.length ? `${meds.length ? ', ' : ''}${stop.length} omitido(s)` : ''}</span>}
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
@@ -1433,7 +1474,8 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         setBusy(true)
         // MC7 (ronda 6): el servidor arma el cuadro completo (Continúa, Nueva, Modificada, Omitida) sobre la última nota firmada
         const chain = { basedOn, decisions: Object.entries(decisions).filter(([id]) => activeInd.some((a) => a.id === id)).map(([id, x]) => ({ id, ...x })) }
-        const ok = await addInpatientNote(file.hospitalization.id, { kind, format: postop ? 'postop' : format, exams, ...(postop ? { subjective: '', objective: '', assessment: '', plan: '', diagnoses: pq.postDiagnoses, postop: postopPayload(pq, pqCheck) } : format === 'soap' ? { ...n, diagnoses: d.diagnoses } : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, evolution: d.evolution.trim(), exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId,
+        const ok = await addInpatientNote(file.hospitalization.id, { kind, format: postop ? 'postop' : format, exams, ...(postop ? { subjective: '', objective: '', assessment: '', plan: '', diagnoses: pq.postDiagnoses, postop: postopPayload(pq, pqCheck) } : format === 'soap' ? { ...n, diagnoses: d.diagnoses } : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, exam: d.exam.trim(), observations: d.observations.trim(),
+            ...(kind === 'admission' ? { chiefComplaint: d.chiefComplaint.trim(), history: d.history.trim() } : { evolution: d.evolution.trim() }) }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId,
           vitalsTaken: !postop && nvFilled ? { takenAt: fromLocalValue(nvAt).toISOString(), ...Object.fromEntries(FIELDS.map((k) => [k, vitalNumber(nv!, k)]).filter(([, x]) => x !== undefined)) } : undefined })
         setBusy(false)
         // EX2 (ronda 8): con estudios externos se ofrece el cuadro «Órdenes de exámenes: Imprimir / Descargar PDF»
@@ -1441,9 +1483,10 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         if (ok) { draft.clear(); onSaved(ok.examBatch ?? undefined, meds.some((m) => m.buyOutside) ? ok.id : undefined) } else onStale?.()
       }}>Firmar nota</button>
     </>}>
-      {kind === 'evolution' && !postop && !correct && (
+      {/* NO2 (ronda 16): el mismo selector en la nota de ingreso y en las de evolución */}
+      {!postop && !correct && (
         <div className="segmented" role="radiogroup" aria-label="Formato de la nota">
-          <button type="button" role="radio" aria-checked={format === 'dx'} onClick={() => setFormat('dx')} title="Diagnóstico, evolución, examen físico y observaciones">Estándar</button>
+          <button type="button" role="radio" aria-checked={format === 'dx'} onClick={() => setFormat('dx')} title={kind === 'admission' ? 'El de la consulta externa: motivo, historia, examen físico, observaciones e impresión diagnóstica' : 'Diagnóstico, evolución, examen físico y observaciones'}>Estándar</button>
           <button type="button" role="radio" aria-checked={format === 'soap'} onClick={() => setFormat('soap')} title="Subjetivo, objetivo, análisis y plan">SOAP</button>
         </div>
       )}
@@ -1460,19 +1503,27 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
           <label className="field dictate-field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
             <AutoTextarea value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} />
             <DictateButton label={s.label} onText={(f) => setN((x) => ({ ...x, [s.key]: f(x[s.key]) }))} /></label></div>
-        )) : (<>
+        )) : admissionStd ? (<>
+          {/* NO2 (ronda 16): la nota de ingreso con el formato estándar de la consulta externa (es una historia clínica) */}
+          <label className="field"><span>Motivo de consulta</span>
+            <textarea className="textarea textarea--sm" rows={2} value={d.chiefComplaint} onChange={(e) => setD({ ...d, chiefComplaint: e.target.value })} aria-label="Motivo de consulta" /></label>
+          <label className="field dictate-field"><span>Historia de la enfermedad actual</span>
+            <AutoTextarea value={d.history} onChange={(e) => setD({ ...d, history: e.target.value })} aria-label="Historia de la enfermedad actual"
+              placeholder="Inicio, evolución, características, factores que agravan o alivian, síntomas acompañantes y tratamientos recibidos." />
+            <DictateButton label="Historia de la enfermedad actual" onText={(f) => setD((x) => ({ ...x, history: f(x.history) }))} /></label>
+          {vitalsBlock}
+          {examField}
+          {observationsField}
+          {dxField}
+        </>) : (<>
           {dxField}
           {/* Ronda 8: el cuadro entre el diagnóstico y el examen físico */}
           <label className="field dictate-field"><span>Evolución <small style={{ fontWeight: 400 }}>Cómo ha seguido desde la nota anterior y lo que refiere el paciente.</small></span>
             <AutoTextarea value={d.evolution} onChange={(e) => setD({ ...d, evolution: e.target.value })} />
             <DictateButton label="Evolución" onText={(f) => setD((x) => ({ ...x, evolution: f(x.evolution) }))} /></label>
           {vitalsBlock}
-          <label className="field dictate-field"><span>Examen físico</span>
-            <AutoTextarea value={d.exam} onChange={(e) => setD({ ...d, exam: e.target.value })} />
-            <DictateButton label="Examen físico" onText={(f) => setD((x) => ({ ...x, exam: f(x.exam) }))} /></label>
-          <label className="field dictate-field"><span>Observaciones</span>
-            <AutoTextarea value={d.observations} onChange={(e) => setD({ ...d, observations: e.target.value })} />
-            <DictateButton label="Observaciones" onText={(f) => setD((x) => ({ ...x, observations: f(x.observations) }))} /></label>
+          {examField}
+          {observationsField}
         </>)}
         </>}
       </div>
@@ -1528,6 +1579,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
               {(() => { const hit = typedExam(o, examList); return hit && (
                 <button type="button" className="icon-btn" aria-label={`Pasar «${hit.name}» a Exámenes`} title={`Pasar «${hit.name}» a Exámenes`}
                   onClick={() => { toExam(hit); setExtra(extra.filter((_, j) => j !== i)) }}><FlaskConical size={14} /></button>) })()}
+              {/* NO2 (ronda 16): subir y bajar, como en la consulta externa */}
+              <button type="button" className="icon-btn" aria-label="Subir" disabled={i === 0} onClick={() => setExtra(moveItem(extra, i, -1))}><ArrowUp size={14} /></button>
+              <button type="button" className="icon-btn" aria-label="Bajar" disabled={i === extra.length - 1} onClick={() => setExtra(moveItem(extra, i, 1))}><ArrowDown size={14} /></button>
               <button type="button" className="icon-btn" aria-label="Quitar indicación" onClick={() => setExtra(extra.filter((_, j) => j !== i))}><X size={14} /></button></span></li>
         ))}</ol>}
         <div className="order-add">
@@ -1543,13 +1597,25 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
             }} />
           <button className="btn btn--soft" disabled={!extraText.trim()} type="button" onClick={addExtra} aria-label="Agregar indicación"><Plus size={16} /></button>
         </div>
-        {typedExamHit && !extraText.includes('\n') && (
+        {typedDrug && !extraText.includes('\n') && (
+          <div className="suggest-med" role="status">
+            <Pill size={15} />«{typedDrug.name}» es un medicamento. ¿Agregarlo como medicamento para que pase a la hoja de medicamentos?
+            <button type="button" className="btn btn--soft btn--sm" onClick={() => {
+              setAddSeed({ drug: typedDrug.name, presentation: typedDrug.presentation, dose: typedDrug.usual?.dose ?? '', route: typedDrug.usual?.route ?? (/ampolla|vial|frasco|bolsa/i.test(typedDrug.presentation) ? 'Intravenosa' : 'Oral'),
+                everyHours: frequencyHours(typedDrug.usual?.frequency ?? '') ?? 8, prn: false })
+              setAdding(true); setEditingMed(null); setReplacing(null); setExtraText('')
+            }}>Sí, agregarlo</button>
+          </div>
+        )}
+        {typedExamHit && !typedDrug && !extraText.includes('\n') && (
           <div className="suggest-med" role="status">
             <FlaskConical size={15} />¿Agregar «{typedExamHit.name}» como examen? Así se imprime en su orden y enfermería le da seguimiento.
             <button type="button" className="btn btn--soft btn--sm" onClick={() => { toExam(typedExamHit); setExtraText('') }}>Sí, agregarlo</button>
           </div>
         )}
       </fieldset>
+      {/* NO2 (ronda 16): aquí va el bloque de órdenes extra (IE1: «Ingestas y excretas»), debajo de Indicaciones y antes de Exámenes */}
+      {afterIndications}
       {/* MC3 (ronda 5): Indicaciones → Exámenes → Medicamentos (con los activos dentro, antes de «Agregar medicamento») */}
       <fieldset className="fs"><legend>Exámenes</legend>
         <ExamsBlock value={exams} onChange={setExams} inStay />
@@ -1586,13 +1652,21 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         {editingMed !== null && meds[editingMed] ? <MedicationForm kind="stay" key={`edit-${editingMed}`} patient={p} current={[...meds.filter((_, j) => j !== editingMed), ...active]} initial={editInitial(meds[editingMed])}
             onSave={(m) => { setMeds(meds.map((x, j) => (j === editingMed ? { ...m, replacesId: x.replacesId } : x))); setEditingMed(null) }} onCancel={() => setEditingMed(null)} />
           : replacing ? <MedicationForm kind="stay" patient={p} current={meds} initial={medToNew(active.find((m) => m.id === replacing)!, file.doses)} onSave={(m) => { setMeds([...meds, { ...m, replacesId: replacing }]); setReplacing(null) }} onCancel={() => setReplacing(null)} />
-          : adding ? <MedicationForm kind="stay" key={meds.length} patient={p} current={[...meds, ...active]} onSave={(m) => { setMeds([...meds, m]); setAdding(false) }} onSaveAnother={(m) => setMeds([...meds, m])} onCancel={() => setAdding(false)} />
+          : adding ? <MedicationForm kind="stay" key={`${meds.length}-${addSeed?.drug ?? ''}`} patient={p} current={[...meds, ...active]} initial={addSeed} onSave={(m) => { setMeds([...meds, m]); setAdding(false); setAddSeed(undefined) }} onSaveAnother={(m) => { setMeds([...meds, m]); setAddSeed(undefined) }} onCancel={() => { setAdding(false); setAddSeed(undefined) }} />
           : <button className="btn btn--soft" onClick={() => setAdding(true)}><Plus size={15} />Agregar medicamento</button>}
       </fieldset>
       </div>}
       </div>
     </Modal>
   )
+}
+
+/** NO2 (ronda 16): mueve una indicación una posición (subir o bajar). */
+const moveItem = <T,>(list: T[], i: number, d: -1 | 1) => {
+  const j = i + d
+  if (j < 0 || j >= list.length) return list
+  const next = [...list]; [next[i], next[j]] = [next[j], next[i]]
+  return next
 }
 
 /** Un medicamento de la nota (p. ej. de un set) para editarlo en el formulario; sin hora, el formulario pone la actual. */

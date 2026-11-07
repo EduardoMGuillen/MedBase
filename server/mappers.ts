@@ -160,9 +160,11 @@ export const toInpatientNote = (r: Row): InpatientNote => ({
   ...(r.kind === 'evolution' && j<{ format?: string }>(r.data, {}).format === 'postop'
     ? { format: 'postop' as const, diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses ?? [], postop: j<{ postop?: InpatientNote['postop'] }>(r.data, {}).postop }
     : {}),
-  ...(r.kind === 'evolution' && j<{ format?: string }>(r.data, {}).format === 'dx'
+  // NO2 (ronda 16): la nota de ingreso también puede ser estándar (con el motivo y la historia de la enfermedad actual)
+  ...((r.kind === 'evolution' || r.kind === 'admission') && j<{ format?: string }>(r.data, {}).format === 'dx'
     ? { format: 'dx' as const, diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses ?? [], exam: j<{ exam?: string }>(r.data, {}).exam ?? '',
-      observations: j<{ observations?: string }>(r.data, {}).observations ?? '', evolution: j<{ evolution?: string }>(r.data, {}).evolution || undefined }
+      observations: j<{ observations?: string }>(r.data, {}).observations ?? '', evolution: j<{ evolution?: string }>(r.data, {}).evolution || undefined,
+      ...(r.kind === 'admission' ? { chiefComplaint: j<{ chiefComplaint?: string }>(r.data, {}).chiefComplaint ?? '', history: j<{ history?: string }>(r.data, {}).history ?? '' } : {}) }
     // NE4 (ronda 8): la evolución SOAP también guarda los diagnósticos vigentes; NO3 (ronda 16): y la nota de ingreso SOAP
     : (r.kind === 'evolution' || r.kind === 'admission') && j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses?.length ? { diagnoses: j<{ diagnoses?: InpatientNote['diagnoses'] }>(r.data, {}).diagnoses } : {}),
   procedure: r.kind === 'procedure' ? j(r.data, undefined) : undefined,

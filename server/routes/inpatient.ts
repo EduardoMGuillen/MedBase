@@ -503,6 +503,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       exam: text, observations: text,
       // Ronda 8: Estándar: el cuadro de evolución, entre los diagnósticos y el examen físico
       evolution: text,
+      // NO2 (ronda 16): la nota de ingreso estándar es la de la consulta externa: motivo de consulta e historia de la enfermedad actual
+      chiefComplaint: z.string().trim().max(1000).default(''), history: text,
       meds: z.array(medInput).max(20).default([]),
       stopMedIds: z.array(z.string()).max(30).default([]),
       orders: z.array(z.string().trim().min(1).max(500)).max(40).default([]),
@@ -532,7 +534,11 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       const empty = ([['subjective', 'el subjetivo (S)'], ['objective', 'el objetivo (O)'], ['assessment', 'el análisis (A)'], ['plan', 'el plan (P)']] as const).find(([k]) => !b[k])
       if (empty) fail(400, `Escribe ${empty[1]}.`)
     } else if (b.kind === 'admission') {
-      fail(400, 'La nota de ingreso se escribe en formato SOAP.')
+      // NO2 (ronda 16): por defecto, el formato estándar de la consulta externa; pide lo mismo que la consulta: el motivo y la
+      // impresión diagnóstica (antes la nota de ingreso solo se escribía en SOAP)
+      if (b.format !== 'dx') fail(400, 'La nota de ingreso se escribe en formato estándar o SOAP.')
+      if (!b.chiefComplaint) fail(400, 'Escribe el motivo de consulta.')
+      if (!b.diagnoses.length) fail(400, 'Agrega al menos un diagnóstico en la impresión diagnóstica.')
     } else if (b.format === 'postop') {
       // PQ1 (ronda 9): obligatorios; el cierre no antes del inicio; ninguna hora en el futuro
       checkPostop(b.diagnoses, b.postop ?? fail(400, 'Faltan los datos de la nota postquirúrgica.'))
@@ -614,6 +620,7 @@ export function registerInpatient(app: Express, ctx: Ctx) {
         [noteId, cid, id, b.kind, user.id, at, b.format === 'soap' ? b.subjective : '', b.format === 'soap' ? b.objective : '', b.format === 'soap' ? b.assessment : '', b.format === 'soap' ? b.plan : '',
           JSON.stringify({ orders, checklist, indications: indicationCount === undefined ? undefined : Math.min(indicationCount, orders.length), lines, basedOn: b.chain ? b.chain.basedOn ?? undefined : undefined, vitals: b.vitals && vitalsTag ? { ...b.vitals, tag: vitalsTag } : undefined, vitalsId,
             ...(b.format === 'postop' ? { format: 'postop', diagnoses: b.diagnoses, postop: { ...b.postop!, startAt: new Date(b.postop!.startAt).toISOString(), endAt: new Date(b.postop!.endAt).toISOString(), ...postopAuth } }
+              : b.format === 'dx' && b.kind === 'admission' ? { format: 'dx', diagnoses: b.diagnoses, chiefComplaint: b.chiefComplaint, history: b.history, exam: b.exam, observations: b.observations }
               : b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, evolution: b.evolution || undefined, exam: b.exam, observations: b.observations }
               // NO3 (ronda 16): toda nota SOAP (también la de ingreso) guarda sus diagnósticos CIE-11
               : b.diagnoses.length ? { diagnoses: b.diagnoses } : {}) })])
@@ -1139,6 +1146,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       subjective: text, objective: text, assessment: text, plan: text,
       diagnoses: z.array(diagnosisInput).max(20).default([]),
       exam: text, observations: text, evolution: text,
+      // NO2 (ronda 16): nota de ingreso estándar
+      chiefComplaint: z.string().trim().max(1000).default(''), history: text,
       postop: postopInput.optional(),
       // Nota de procedimiento y de enfermería
       name: z.string().trim().max(200).optional(), performedAt: when.optional(), text: z.string().trim().max(10000).optional(),
@@ -1173,6 +1182,11 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       // La autorización (o la urgencia) quedó resuelta al firmar: no se corrige aquí
       set.data = { ...data, diagnoses: b.diagnoses, postop: { ...x, startAt: new Date(x!.startAt).toISOString(), endAt: new Date(x!.endAt).toISOString(), authorizationId: old.authorizationId, urgent: old.urgent, justification: old.justification } }
       what = 'nota postquirúrgica'
+    } else if (format === 'dx' && kind === 'admission') {
+      // NO2 (ronda 16): la nota de ingreso estándar se corrige con lo mismo que pide al firmarse
+      if (!b.chiefComplaint) fail(400, 'Escribe el motivo de consulta.')
+      if (!b.diagnoses.length) fail(400, 'Agrega al menos un diagnóstico en la impresión diagnóstica.')
+      set.data = { ...data, diagnoses: b.diagnoses, chiefComplaint: b.chiefComplaint, history: b.history, exam: b.exam, observations: b.observations }
     } else if (format === 'dx') {
       if (!b.diagnoses.length && !b.evolution && !b.exam && !b.observations) fail(400, 'Escribe al menos un diagnóstico, la evolución, el examen físico o una observación.')
       set.data = { ...data, diagnoses: b.diagnoses, evolution: b.evolution || undefined, exam: b.exam, observations: b.observations }

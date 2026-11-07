@@ -90,6 +90,13 @@ export const QUEUE_GROUP_ROLES: string[] = ['admin']
  * sólo frena un error de dedo (p. ej. 5000 en vez de 50); no es una dosis máxima de ningún medicamento.
  */
 /**
+ * «Guía por sistemas» del examen físico: la de la consulta externa y, desde NO2 (ronda 16), también la de las notas de ingreso y
+ * de evolución en formato estándar. VALIDAR: Emil.
+ */
+export const EXAM_GUIDE = ['Aspecto general', 'Piel y mucosas', 'Cabeza y cuello', 'Tórax y pulmones', 'Corazón', 'Abdomen', 'Genitourinario', 'Extremidades', 'Neurológico']
+  .map((x) => `${x}: `).join('\n')
+
+/**
  * ME17 (ronda 16). VALIDAR: Emil. Vías de administración con su abreviatura. El campo «Vía» busca por nombre o por abreviatura
  * («iv» → «Intravenosa (IV)») y guarda el nombre (de él dependen la dosis de carga IV, la nebulización y las ingestas IV). Una
  * vía que no está aquí se acepta como texto libre. El orden es el de la lista.

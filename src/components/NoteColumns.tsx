@@ -107,7 +107,7 @@ const SOAP_TEXT = [['subjective', 'S. Subjetivo'], ['objective', 'O. Objetivo'],
  * Texto clínico de una nota de evolución u observación (columna izquierda), según su formato: S, O, A y P, o
  * Diagnósticos, Examen físico y Observaciones.
  */
-export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { evolution?: string; postop?: PostopData }; vitals?: Vitals; ageYears?: number }) {
+export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subjective' | 'objective' | 'assessment' | 'plan' | 'format' | 'diagnoses' | 'exam' | 'observations'> & { evolution?: string; postop?: PostopData; kind?: InpatientNote['kind']; chiefComplaint?: string; history?: string }; vitals?: Vitals; ageYears?: number }) {
   const empty = <span className="muted">Sin datos.</span>
   const dxList = (list?: Diagnosis[]) => list?.length ? <ol className="note__list">{list.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol> : <p>{empty}</p>
   // PQ1 y PQ2 (ronda 9): nota postquirúrgica; del equipo, sólo los cargos llenos
@@ -127,6 +127,17 @@ export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subj
   }
   // MC8 (ronda 6): los signos vitales anotados en la nota, en la franja de siempre, encima del examen físico (en SOAP, arriba de la S: NE6, ronda 9)
   const strip = vitals && <div className="note__sec"><h4>Signos vitales</h4><VitalsStrip v={vitals} ageYears={ageYears} />{vitals.takenAt && <small className="muted">Tomados a las {new Date(vitals.takenAt).toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit', hour12: false })}</small>}</div>
+  // NO2 (ronda 16): la nota de ingreso estándar, con las secciones de la consulta externa
+  if (n.format === 'dx' && n.kind === 'admission') {
+    return <>
+      <div className="note__sec"><h4>Motivo de consulta</h4><p>{n.chiefComplaint || empty}</p></div>
+      <div className="note__sec"><h4>Historia de la enfermedad actual</h4><p>{n.history || empty}</p></div>
+      {strip}
+      <div className="note__sec"><h4>Examen físico</h4><p>{examText(n.exam) || empty}</p></div>
+      <div className="note__sec"><h4>Observaciones</h4><p>{n.observations || empty}</p></div>
+      <div className="note__sec"><h4>Impresión diagnóstica (CIE-11)</h4>{dxList(n.diagnoses)}</div>
+    </>
+  }
   if (n.format === 'dx') {
     return <>
       <div className="note__sec"><h4>Diagnósticos</h4>

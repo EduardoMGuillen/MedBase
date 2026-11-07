@@ -645,6 +645,9 @@ export interface InpatientNote extends Correctable {
   evolution?: string
   exam?: string
   observations?: string
+  /** NO2 (ronda 16): nota de ingreso en formato estándar (el de la consulta externa): motivo de consulta e historia de la enfermedad actual. */
+  chiefComplaint?: string
+  history?: string
   procedure?: ProcedureData
   /**
    * MC7 (ronda 6): el cuadro completo al firmar: cada indicación y cada medicamento vigentes, con su etiqueta. Cada línea es
