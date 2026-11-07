@@ -29,7 +29,8 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
       reminderTemplate: z.string().trim().min(10, 'El mensaje de recordatorio es muy corto.').max(600),
       recordUsesDni: z.boolean().default(false),
       obsAlertHours: z.number().int().min(1, 'Las horas de alerta deben ser al menos 1.').max(240).default(24),
-      obsOrderChecklist: z.boolean().default(false),
+      // OB1 (ronda 17): activado por omisión, como en las clínicas nuevas
+      obsOrderChecklist: z.boolean().default(true),
       // Curva térmica: banda normal (fiebre desde tempHigh, hipotermia por debajo de tempLow)
       tempLow: z.number().min(34, 'La temperatura mínima normal no puede ser menor de 34 °C.').max(38).optional(),
       tempHigh: z.number().min(36).max(41, 'La temperatura de fiebre no puede pasar de 41 °C.').optional(),

@@ -414,7 +414,9 @@ describe('M6 observación', () => {
     assert.equal(obs.hospitalization.kind, 'observation')
     assert.equal(obs.hospitalization.consultationId, c.body.consultationId)
     assert.equal(obs.hospitalization.bedId, undefined)
-    // Primera nota: la de consulta; se evoluciona sin nota de ingreso y sin checklist
+    // Primera nota: la de consulta; se evoluciona sin nota de ingreso. OB1 (ronda 17): el checklist de órdenes en observación viene
+    // activado; esta prueba revisa la observación con el checklist apagado (la clínica lo apaga en Configuración)
+    await sql.run(`UPDATE clinics SET obs_order_checklist = FALSE WHERE id = 'c-sb'`)
     const note = await doc.post(`/api/inpatient/${c.body.observationId}/notes`, { kind: 'evolution', subjective: 'S', objective: 'O', assessment: 'A', plan: 'P', orders: ['Signos vitales cada hora.'],
       meds: [{ drug: 'Captopril', dose: '25 mg', route: 'Sublingual', prn: false }] })
     assert.equal(note.status, 201)

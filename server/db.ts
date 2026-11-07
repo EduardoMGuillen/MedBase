@@ -26,7 +26,7 @@ import { insertExtraDemoUsers } from './demoUsers.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '88'
+const SCHEMA_VERSION = '90'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -437,7 +437,7 @@ ALTER TABLE hospitalizations ADD CONSTRAINT hospitalizations_kind_check CHECK (k
 ALTER TABLE hospitalizations ALTER COLUMN bed_id DROP NOT NULL;
 ALTER TABLE clinics
   ADD COLUMN IF NOT EXISTS obs_alert_hours INTEGER NOT NULL DEFAULT 24,
-  ADD COLUMN IF NOT EXISTS obs_order_checklist BOOLEAN NOT NULL DEFAULT FALSE;
+  ADD COLUMN IF NOT EXISTS obs_order_checklist BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- v22: segunda ronda de correcciones.
 -- Identidad: formato configurable por clínica; las de 13 dígitos guardadas sin guiones pasan a 0000-0000-00000.
@@ -1395,6 +1395,9 @@ CREATE TABLE IF NOT EXISTS fluid_entries (
   void_reason TEXT
 );
 CREATE INDEX IF NOT EXISTS fluid_entries_stay ON fluid_entries (clinic_id, hospitalization_id, at);
+-- v90 (ronda 17, OB1): «Órdenes en observación → Enfermería las revisa como checklist» viene activado en las clínicas nuevas.
+-- Solo cambia el valor por omisión; activarlo en las que ya existen lo hace enableObsChecklistOnce (una sola vez).
+ALTER TABLE clinics ALTER COLUMN obs_order_checklist SET DEFAULT TRUE;
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */
@@ -1479,6 +1482,8 @@ export function ensureDb(sql: Sql) {
       await resetQueueViewOnce(q)
       // v85 (ronda 16, EN1): el puesto de enfermería (Licenciada o Auxiliar) según el prefijo del nombre
       await migrateNursePositions(q)
+      // v90 (ronda 17, OB1): el checklist de órdenes en observación se activa en las clínicas existentes (una sola vez)
+      await enableObsChecklistOnce(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -1991,6 +1996,27 @@ export async function resetQueueViewOnce(q: Sql) {
     WHERE prefs IS NOT NULL AND prefs <> '' AND jsonb_exists(prefs::jsonb, 'queueView')
       AND jsonb_exists_any(COALESCE(NULLIF(roles, ''), json_build_array(role)::text)::jsonb, array['admin', 'reception'])`)
   await q.run(`INSERT INTO meta (key, value) VALUES ('re2_queue_view', ?) ON CONFLICT (key) DO NOTHING`, [new Date().toISOString()])
+}
+
+/**
+ * v90 (ronda 17, OB1): activa «Enfermería las revisa como checklist» en las clínicas y consultorios que lo tienen apagado
+ * (default de Emil: nadie lo apagó a propósito). Corre una sola vez (marca `ob1_obs_checklist` en meta): quien lo apague
+ * después lo sigue teniendo apagado aunque el esquema vuelva a correr. Antes guarda en config_backups qué cuentas lo tenían
+ * apagado y deja la nota en la bitácora de cada una.
+ */
+export async function enableObsChecklistOnce(q: Sql) {
+  if (await q.one(`SELECT 1 FROM meta WHERE key = 'ob1_obs_checklist'`)) return
+  const now = new Date().toISOString()
+  const off = await q.query('SELECT id, name FROM clinics WHERE obs_order_checklist = FALSE ORDER BY id')
+  for (const c of off) {
+    const cid = String(c.id)
+    await q.run('INSERT INTO config_backups (id, clinic_id, kind, created_at, data, note) VALUES (?,?,?,?,?,?)',
+      [randomUUID(), cid, 'obs_order_checklist', now, JSON.stringify({ obsOrderChecklist: false }), 'OB1 (ronda 17): valor antes de activar el checklist de órdenes en observación'])
+    await q.run('UPDATE clinics SET obs_order_checklist = TRUE WHERE id = ?', [cid])
+    await q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?,?,?,?)',
+      [now, 'sistema', 'Se activó «Enfermería revisa las órdenes de observación como checklist» (OB1, ronda 17). Se puede apagar en Configuración › Hospitalización y observación.', cid])
+  }
+  await q.run(`INSERT INTO meta (key, value) VALUES ('ob1_obs_checklist', ?) ON CONFLICT (key) DO NOTHING`, [now])
 }
 
 export async function migrateOfficeOwners(q: Sql) {
