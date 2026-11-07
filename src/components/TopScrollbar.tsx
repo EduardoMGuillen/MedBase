@@ -47,10 +47,7 @@ export function TopScrollbar({ children, head }: {
       <div style={{ width }} />
     </div>
   )
-  return (
-    <>
-      {head ? <div className="sticky-head">{bar}{head(headRef)}</div> : bar}
-      {children(main)}
-    </>
-  )
+  // Con cabecera, todo va en un solo bloque: el contenedor de la página separa a sus hijos (gap) y la cabecera quedaría lejos
+  if (head) return <div className="sticky-wrap"><div className="sticky-head">{bar}{head(headRef)}</div>{children(main)}</div>
+  return <>{bar}{children(main)}</>
 }
