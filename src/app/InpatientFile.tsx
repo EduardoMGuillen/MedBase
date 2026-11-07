@@ -698,7 +698,8 @@ function CorrectDoseModal({ med, dose, onClose, onSaved }: { med: InpatientMed; 
 const SOAP: { key: 'subjective' | 'objective' | 'assessment' | 'plan'; letter: string; label: string; hint: string }[] = [
   { key: 'subjective', letter: 'S', label: 'Subjetivo', hint: 'Lo que refiere el paciente.' },
   { key: 'objective', letter: 'O', label: 'Objetivo', hint: 'Signos vitales, examen físico y resultados.' },
-  { key: 'assessment', letter: 'A', label: 'Análisis', hint: 'Impresión diagnóstica y evolución.' },
+  // NO3 (ronda 16): la A es el análisis (la evolución), no el diagnóstico: los diagnósticos van aparte, codificados (CIE-11)
+  { key: 'assessment', letter: 'A', label: 'Análisis', hint: 'Evolución y razonamiento clínico: cómo va el paciente y por qué.' },
   { key: 'plan', letter: 'P', label: 'Plan', hint: 'Lo que piensas hacer, en texto. Las órdenes van a la derecha.' },
 ]
 
@@ -1263,14 +1264,16 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   // Una nota, un identificador: si se guarda dos veces no se duplica (ni sus medicamentos en la hoja)
   const [clientId] = useState(() => crypto.randomUUID())
   const [n, setN] = useState(() => correct ? { subjective: correct.subjective, objective: correct.objective, assessment: correct.assessment, plan: correct.plan }
-    : { subjective: '', objective: '', assessment: kind === 'admission' ? file.hospitalization.diagnoses.map((d) => d.label).join('. ') : '', plan: '' })
+    // NO3 (ronda 16): la A ya no se precarga con los diagnósticos del ingreso: van en «Diagnósticos (CIE-11)»
+    : { subjective: '', objective: '', assessment: '', plan: '' })
   // Dos formatos (MC4): Estándar ('dx': diagnóstico, examen físico y observaciones) y SOAP. Empieza en el que el médico
   // eligió en Mi configuración (Estándar si no eligió); cada formato guarda su borrador mientras el modal está abierto
   const { user } = useStore()
   const [format, setFormat] = useState<'soap' | 'dx'>(() => (correct ? (correct.format === 'dx' ? 'dx' : 'soap') : kind === 'admission' ? 'soap' : user?.prefs?.noteFormat ?? 'dx'))
   // NE4 (ronda 8): los diagnósticos vigentes bajan de la última nota firmada de la estancia (o de la impresión diagnóstica
   // del ingreso), como las órdenes; se quitan o se agregan. Estándar y SOAP usan el mismo campo. El borrador manda.
-  const [carried, setCarried] = useState<Diagnosis[]>(() => (kind === 'evolution' ? currentDiagnoses(file) : []))
+  // NO3 (ronda 16): la nota de ingreso empieza con los diagnósticos del ingreso
+  const [carried, setCarried] = useState<Diagnosis[]>(() => (kind === 'evolution' ? currentDiagnoses(file) : file.hospitalization.diagnoses ?? []))
   const [d, setD] = useState<{ diagnoses: Diagnosis[]; evolution: string; exam: string; observations: string }>(() => (correct
     ? { diagnoses: correct.diagnoses ?? [], evolution: correct.evolution ?? '', exam: correct.exam ?? '', observations: correct.observations ?? '' }
     : { diagnoses: carried, evolution: '', exam: '', observations: '' }))
@@ -1379,7 +1382,9 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
     setExams((x) => (x.some((y) => examKey(y.name) === examKey(hit.name)) ? x : [...x, { group: hit.group, name: hit.name, priority: 'routine', place: defaultPlace(hit.group, true, settings) }]))
   const dxField = (<>
     <DiagnosisPicker value={d.diagnoses} onChange={(v) => setD({ ...d, diagnoses: v })} label="Diagnósticos (CIE-11)" />
-    {carried.length > 0 && !correct && <small className="muted" style={{ marginTop: -6 }}>{dxChanged ? 'Cambiaste los diagnósticos de la nota anterior.' : 'Vienen de la nota anterior. Agrega, quita o cambia lo que haga falta.'}</small>}
+    {carried.length > 0 && !correct && <small className="muted" style={{ marginTop: -6 }}>{kind === 'admission'
+      ? (dxChanged ? 'Cambiaste los diagnósticos del ingreso.' : 'Vienen del ingreso. Agrega, quita o cambia lo que haga falta.')
+      : dxChanged ? 'Cambiaste los diagnósticos de la nota anterior.' : 'Vienen de la nota anterior. Agrega, quita o cambia lo que haga falta.'}</small>}
   </>)
   const vitalsBlock = correct ? null : (
             <fieldset className="fs note-vitals" key="nv"><legend>Signos vitales (opcional)</legend>
@@ -1428,7 +1433,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         setBusy(true)
         // MC7 (ronda 6): el servidor arma el cuadro completo (Continúa, Nueva, Modificada, Omitida) sobre la última nota firmada
         const chain = { basedOn, decisions: Object.entries(decisions).filter(([id]) => activeInd.some((a) => a.id === id)).map(([id, x]) => ({ id, ...x })) }
-        const ok = await addInpatientNote(file.hospitalization.id, { kind, format: postop ? 'postop' : format, exams, ...(postop ? { subjective: '', objective: '', assessment: '', plan: '', diagnoses: pq.postDiagnoses, postop: postopPayload(pq, pqCheck) } : format === 'soap' ? { ...n, diagnoses: kind === 'evolution' ? d.diagnoses : [] } : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, evolution: d.evolution.trim(), exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId,
+        const ok = await addInpatientNote(file.hospitalization.id, { kind, format: postop ? 'postop' : format, exams, ...(postop ? { subjective: '', objective: '', assessment: '', plan: '', diagnoses: pq.postDiagnoses, postop: postopPayload(pq, pqCheck) } : format === 'soap' ? { ...n, diagnoses: d.diagnoses } : { subjective: '', objective: '', assessment: '', plan: '', diagnoses: d.diagnoses, evolution: d.evolution.trim(), exam: d.exam.trim(), observations: d.observations.trim() }), meds, stopMedIds: stop, orders: extra, chain, vitals: vitalsMode, clientId,
           vitalsTaken: !postop && nvFilled ? { takenAt: fromLocalValue(nvAt).toISOString(), ...Object.fromEntries(FIELDS.map((k) => [k, vitalNumber(nv!, k)]).filter(([, x]) => x !== undefined)) } : undefined })
         setBusy(false)
         // EX2 (ronda 8): con estudios externos se ofrece el cuadro «Órdenes de exámenes: Imprimir / Descargar PDF»
@@ -1447,10 +1452,11 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         {/* MC8 (ronda 6): opcional; si no se toca, no se guarda nada. Va antes del examen físico (en SOAP, arriba de la S: NE6) */}
         {postop && <PostopFields pq={pq} setPq={setPq} file={file} check={pqCheck} onAuthorize={onAuthorize} noAuth={!!correct} />}
         {!postop && <>
-        {format === 'soap' && kind === 'evolution' && dxField}
-        {/* NE6 (ronda 9): en SOAP, los signos vitales van arriba, antes de «S. Subjetivo» (los diagnósticos, NE4, quedan encima) */}
+        {/* NE6 (ronda 9): en SOAP, los signos vitales van arriba, antes de «S. Subjetivo» */}
         {format === 'soap' && vitalsBlock}
         {format === 'soap' ? SOAP.map((s) => (<div key={s.key} style={{ display: 'contents' }}>
+          {/* NO3 (ronda 16): «Diagnósticos (CIE-11)» aparte, debajo de A y antes de P, en todas las notas SOAP (ingreso y evolución) */}
+          {s.key === 'plan' && dxField}
           <label className="field dictate-field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
             <AutoTextarea value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} />
             <DictateButton label={s.label} onText={(f) => setN((x) => ({ ...x, [s.key]: f(x[s.key]) }))} /></label></div>

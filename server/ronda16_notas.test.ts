@@ -131,6 +131,38 @@ describe('NO1 (ronda 16): el ingreso es la primera indicación y todos los medic
   })
 })
 
+/** Una estancia de hospitalización directa (sin consulta de origen y sin nota de ingreso) del Dr. Nolasco. */
+async function directStay(n: number) {
+  const cid = String((await sql.one(`SELECT clinic_id FROM staff WHERE id = 's-nolasco'`))!.clinic_id)
+  const pts = await sql.query(`SELECT p.id FROM patients p WHERE p.clinic_id = ? AND p.dni IS NOT NULL AND p.dni <> '' AND p.birth_date < '2000-01-01'
+    AND NOT EXISTS (SELECT 1 FROM hospitalizations h WHERE h.patient_id = p.id AND h.status = 'active') ORDER BY p.id`, [cid])
+  const pid = String(pts[n].id)
+  const id = `r16h-${n}-${Date.now()}`
+  await sql.run(`INSERT INTO hospitalizations (id, clinic_id, patient_id, bed_id, admitted_at, admitted_by, reason, diagnoses, status, kind) VALUES (?,?,?,NULL,?,?,?,?,'active','hospital')`,
+    [id, cid, pid, new Date(Date.now() - 3_600_000).toISOString(), 's-nolasco', 'Colecistitis', JSON.stringify([{ code: 'DC12.0', label: 'Colecistitis aguda' }])])
+  return id
+}
+
+describe('NO3 (ronda 16): SOAP con «A. Análisis» y diagnósticos CIE-11 aparte', () => {
+  test('la nota de ingreso SOAP guarda sus diagnósticos y la evolución los hereda', async () => {
+    const h = await directStay(0)
+    const doc = await as('hnolasco@demo.clinara')
+    const dxs = [{ code: 'DC12.0', label: 'Colecistitis aguda' }, { code: '5A11', label: 'Diabetes mellitus tipo 2' }]
+    const r = await doc.post(`/api/inpatient/${h}/notes`, { kind: 'admission', format: 'soap', subjective: 'Dolor en hipocondrio derecho.', objective: 'Murphy positivo.',
+      assessment: 'Cuadro de 2 días, sin datos de sepsis.', plan: 'Antibiótico y valoración quirúrgica.', diagnoses: dxs, orders: ['Nada por boca.'] })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.deepEqual(r.body.diagnoses, dxs)
+    const file = await doc.get(`/api/inpatient/${h}`)
+    const note = file.body.notes.find((n: { kind: string }) => n.kind === 'admission')
+    assert.deepEqual(note.diagnoses, dxs, 'el expediente la muestra con sus diagnósticos')
+    // La corrección en el periodo de gracia también corrige los diagnósticos
+    const fix = await doc.post(`/api/inpatient/notes/${note.id}/correct`, { version: 1, subjective: 'Dolor en hipocondrio derecho.', objective: 'Murphy positivo.',
+      assessment: 'Cuadro de 2 días.', plan: 'Antibiótico.', diagnoses: [dxs[0]] })
+    assert.equal(fix.status, 200, JSON.stringify(fix.body))
+    assert.deepEqual(fix.body.diagnoses, [dxs[0]])
+  })
+})
+
 describe('ME16 (ronda 16): un solo formulario de medicamentos, con infusión donde hay ingreso', () => {
   test('el borrador del formulario va y vuelve igual entre la receta y la hoja', () => {
     const consult = { where: 'consult', admitting: true } as const

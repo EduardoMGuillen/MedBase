@@ -138,11 +138,13 @@ export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subj
       <div className="note__sec"><h4>Observaciones</h4><p>{n.observations || empty}</p></div>
     </>
   }
-  // NE4 (ronda 8): una evolución SOAP también lleva los diagnósticos vigentes (las de antes no)
+  // NE4 (ronda 8): una nota SOAP también lleva los diagnósticos (las de antes no). NO3 (ronda 16): van aparte, debajo de la A
+  // (el análisis) y antes de la P, con su código CIE-11; también en la nota de ingreso
   return <>
-    {!!n.diagnoses?.length && <div className="note__sec"><h4>Diagnósticos</h4><ol className="note__list">{n.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol></div>}
     {/* NE6 (ronda 9): los signos vitales arriba, antes de la S */}
     {strip}
-    {SOAP_TEXT.map(([k, label]) => <div key={k}><div className="note__sec"><h4>{label}</h4><p>{n[k] || empty}</p></div></div>)}
+    {SOAP_TEXT.map(([k, label]) => <div key={k}>
+      {k === 'plan' && !!n.diagnoses?.length && <div className="note__sec"><h4>Diagnósticos (CIE-11)</h4><ol className="note__list">{n.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol></div>}
+      <div className="note__sec"><h4>{label}</h4><p>{n[k] || empty}</p></div></div>)}
   </>
 }

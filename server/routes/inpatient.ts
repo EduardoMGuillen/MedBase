@@ -615,7 +615,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
           JSON.stringify({ orders, checklist, indications: indicationCount === undefined ? undefined : Math.min(indicationCount, orders.length), lines, basedOn: b.chain ? b.chain.basedOn ?? undefined : undefined, vitals: b.vitals && vitalsTag ? { ...b.vitals, tag: vitalsTag } : undefined, vitalsId,
             ...(b.format === 'postop' ? { format: 'postop', diagnoses: b.diagnoses, postop: { ...b.postop!, startAt: new Date(b.postop!.startAt).toISOString(), endAt: new Date(b.postop!.endAt).toISOString(), ...postopAuth } }
               : b.format === 'dx' ? { format: 'dx', diagnoses: b.diagnoses, evolution: b.evolution || undefined, exam: b.exam, observations: b.observations }
-              : b.kind === 'evolution' && b.diagnoses.length ? { diagnoses: b.diagnoses } : {}) })])
+              // NO3 (ronda 16): toda nota SOAP (también la de ingreso) guarda sus diagnósticos CIE-11
+              : b.diagnoses.length ? { diagnoses: b.diagnoses } : {}) })])
       await applyMeds(q, h, noteId, user.id, at, b.meds, b.stopMedIds)
       examBatch = await insertExams(q, { clinicId: cid, patientId: String(h.patient_id), hospitalizationId: id, noteId, by: user.id, at }, b.exams)
       if (vitalsTag && b.vitals && vitalsTag !== 'continue') await audit(user, `Indicó ${vitalsModeShort(b.vitals) === 'sin control programado' ? 'sin control programado de signos vitales' : `signos vitales ${vitalsModeShort(b.vitals)}`} a ${name} en su nota`, q)
@@ -1179,7 +1180,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
       const empty = ([['subjective', 'el subjetivo (S)'], ['objective', 'el objetivo (O)'], ['assessment', 'el análisis (A)'], ['plan', 'el plan (P)']] as const).find(([k]) => !b[k])
       if (empty) fail(400, `Escribe ${empty[1]}.`)
       Object.assign(set, { subjective: b.subjective, objective: b.objective, assessment: b.assessment, plan: b.plan })
-      if (kind === 'evolution') set.data = { ...data, diagnoses: b.diagnoses.length ? b.diagnoses : undefined }
+      // NO3 (ronda 16): también la nota de ingreso SOAP corrige sus diagnósticos
+      set.data = { ...data, diagnoses: b.diagnoses.length ? b.diagnoses : undefined }
     }
     if (kind === 'admission') what = 'nota de ingreso'
     const version = Number(n!.version ?? 1)
