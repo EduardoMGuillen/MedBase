@@ -1120,6 +1120,9 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .fluids__table tbody th { border-bottom: 1px solid var(--line-soft); }
 .fluids__table tbody tr:last-child > * { border-bottom: 0; }
 .fluids__total { font-weight: 600; }
+/* IE2 (ronda 17): día sin registros: aviso corto y el botón, en vez de una tabla llena de guiones */
+.fluids__empty { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--r-md); }
+.fluids__empty p { margin: 0; }
 .fluid-entry.modal { width: min(600px, 100%); }
 .fluid-entry .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 @media (max-width: 600px) { .fluid-entry .form-grid { grid-template-columns: minmax(0, 1fr); } }

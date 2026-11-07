@@ -180,6 +180,22 @@ export function fluidBalance(x: { plan?: FluidsSegment[]; meds: InpatientMed[]; 
   }).reverse()
 }
 
+/**
+ * IE2 (ronda 17): qué rubros se muestran en la tabla de un día: solo los que tienen al menos un registro (no anulado) ese día,
+ * y «Líquidos IV (calculado)» solo si ese día hubo líquidos IV en la hoja de medicamentos (con volumen calculado o aplicados
+ * sin volumen reconocible, que llevan el aviso «*»). Los encabezados, los totales y el balance se muestran siempre; `empty`:
+ * nada que mostrar (la pantalla pone «Sin registros este día»). En «Registrar ingreso o egreso» siguen todos los rubros.
+ */
+export function fluidVisibleItems(t: Pick<FluidTotals, 'iv' | 'noVolume' | 'in' | 'out'>) {
+  const iv = t.iv > 0 || t.noVolume.length > 0
+  const inItems = FLUID_IN_ITEMS.filter((i) => (t.in[i.key] ?? 0) > 0)
+  const outItems = FLUID_OUT_ITEMS.filter((i) => (t.out[i.key] ?? 0) > 0)
+  return { iv, in: inItems, out: outItems, empty: !iv && !inItems.length && !outItems.length }
+}
+
+/** UI3 (ronda 17): un solo corte de 24 horas en el día (orden cada 24 horas): la tabla lleva una sola columna, «24 horas». */
+export const fluidSingleColumn = (periods: Pick<FluidPeriod, 'start' | 'end'>[]) => periods.length === 1 && periods[0].end - periods[0].start >= 24 * HOUR
+
 /** «+300 mL», «−250 mL», «0 mL»: el balance siempre con su signo. */
 export const signedMl = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmtMl(Math.abs(n))}`
 export const fmtMl = (n: number) => `${Number.isInteger(n) ? n.toLocaleString('es-HN') : n.toLocaleString('es-HN', { maximumFractionDigits: 1 })} mL`
