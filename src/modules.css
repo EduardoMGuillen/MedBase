@@ -951,6 +951,28 @@ button.src-tag--none { cursor: pointer; }
 .dept__wait { margin-left: auto; font-size: 13px; }
 .dept__meta { font-size: 13px; margin: 4px 0 6px; }
 .dept__item .exam-row { border-left: 0; padding-left: 0; }
+/* LB8 (ronda 16): una tarjeta por paciente, con los exámenes agrupados por categoría del catálogo */
+.dept-card { overflow: visible; padding-bottom: 8px; }
+.dept-card__count { font-weight: 700; font-size: 14px; color: var(--ink-deep); background: var(--ink-soft); border-radius: 99px; padding: 2px 10px; }
+.dept-card__all { margin: 8px 0 2px; }
+.dept-card__cat { border-top: 1px solid var(--line-soft); margin-top: 8px; padding-top: 6px; }
+.dept-card__cat h4 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 2px; font-size: 13.5px; color: var(--petrol); }
+.dept-card__cat h4 .btn { margin-left: auto; }
+.dept-card .exam-row { border-bottom: 0; }
+.dept-card .exam-row--urgent { padding-left: 10px; }
+/* EX12 y LB8 (ronda 16): renglón compacto de un examen (una línea; las acciones a la derecha) */
+.exam-row--compact { padding: 6px 22px; align-items: center; }
+.exam-row--compact.is-folded { padding-top: 6px; padding-bottom: 6px; }
+.exam-row__line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
+.exam-row__brief { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding-left: 22px; font-size: 13px; }
+.exam-row--compact .exam-row__side { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.exam-row--compact .row-menu__btn { width: 34px; height: 34px; }
+@media (max-width: 640px) {
+  .exam-row--compact { padding: 8px 14px; }
+  .exam-row--compact .exam-row__side { justify-content: flex-start; padding-left: 22px; }
+  .dept-card .exam-row--compact { padding-right: 0; }
+  .dept-card__cat h4 .btn { margin-left: 0; }
+}
 .dept-pt { display: grid; gap: 8px; }
 .dept-pt__renal { margin: 4px 0 0; font-size: 14px; }
 .dept-pt__flag { color: var(--red-ink); }

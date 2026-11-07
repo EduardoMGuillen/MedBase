@@ -6,7 +6,7 @@ import type { Server } from 'node:http'
 import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
-import { finishedOn } from '../src/lib/exams.js'
+import { EXAMS, finishedOn, orderGroups, resultBrief } from '../src/lib/exams.js'
 
 // Ronda 16 (rama ronda16-ui): con la base y la API (copia en memoria de la demo)
 let server: Server
@@ -73,5 +73,24 @@ describe('RX1 (ronda 16): «Terminados hoy» por fecha local (Honduras, UTC−6)
     // El día anterior ya no lo trae (antes el margen de un día lo mezclaba)
     const day5 = (await rad.get('/api/dept/tray?day=2026-11-05')).body.items.find((e: any) => e.id === ct.id)
     assert.ok(!day5 || !finishedOn(day5, '2026-11-05'))
+  })
+})
+
+describe('LB8 y EX12 (ronda 16): exámenes agrupados por categoría del catálogo, con el resultado en el renglón', () => {
+  const names = ['Hemograma', 'Coprocultivo', 'Procalcitonina', 'Urea nitrogenada (BUN)', 'Sodio (Na)', 'Proteína C reactiva', 'Potasio (K)', 'Examen general de heces', 'Cloruro (Cl)', 'Creatinina']
+  test('10 exámenes de laboratorio quedan en sus categorías, en el orden del catálogo, sin perder ninguno', () => {
+    const xs = names.map((name, i) => ({ id: String(i), group: 'lab' as const, name }))
+    const groups = orderGroups(xs, EXAMS)
+    assert.equal(groups.flatMap((g) => g.items).length, 10)
+    assert.ok(groups.length >= 4, 'varias categorías')
+    assert.equal(groups[0].title, 'Hematología')
+    const titles = groups.map((g) => g.title)
+    assert.equal(new Set(titles).size, titles.length, 'cada categoría una sola vez')
+  })
+  test('el resumen del resultado: los valores fuera de rango primero; si no hay, los valores o el inicio del informe', () => {
+    assert.deepEqual(resultBrief({ at: '', by: '', values: [{ analyte: 'Sodio', value: '128', unit: 'mmol/L', flag: 'low' }, { analyte: 'Potasio', value: '4', unit: 'mmol/L' }] }).flags, ['Sodio 128 mmol/L (bajo)'])
+    assert.equal(resultBrief({ at: '', by: '', values: [{ analyte: 'Hemoglobina', value: '12', unit: 'g/dL' }] }).text, 'Hemoglobina 12 g/dL')
+    assert.equal(resultBrief({ at: '', by: '', report: 'Sin alteraciones agudas.' }).text, 'Sin alteraciones agudas.')
+    assert.deepEqual(resultBrief(undefined), { flags: [] })
   })
 })

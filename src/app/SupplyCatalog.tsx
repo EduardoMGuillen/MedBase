@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { setShiftList, useSupplies } from '../lib/useSupplies'
-import { Archive, ChevronDown, ChevronsDownUp, ChevronsUpDown, Ellipsis, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { Archive, ChevronDown, ChevronsDownUp, ChevronsUpDown, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api, ApiError } from '../lib/api'
 import { Modal, PageHead, SectionHead } from '../components/ui'
@@ -8,6 +8,7 @@ import { TimeField } from '../components/DateTimeField'
 import { TabRow } from '../components/TabRow'
 import { Highlight, SupplySearch, supplyMatches } from '../components/SupplySearch'
 import { SupplySetsTab } from './SupplySets'
+import { RowMenu } from '../components/RowMenu'
 import { dmyTime } from '../lib/format'
 import { SUPPLY_GAUGE_HINT, SUPPLY_MAX_SHIFTS, SUPPLY_PERIODS, SUPPLY_SCOPES } from '../lib/clinicalConfig'
 import {
@@ -203,34 +204,6 @@ function SupplyMaterials({ items, error, reload, setItems, archived, setArchived
         </Modal>
       )}
     </section>
-  )
-}
-
-type RowAction = { label: string; icon: React.ReactNode; run: () => void } | false
-/** Menú «⋯» de una fila. */
-function RowMenu({ label, actions }: { label: string; actions: RowAction[] }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', close)
-    document.addEventListener('keydown', close)
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close) }
-  }, [open])
-  const list = actions.filter((a): a is Exclude<RowAction, false> => !!a)
-  if (!list.length) return null
-  return (
-    <div className="row-menu" ref={ref}>
-      <button type="button" className="icon-btn row-menu__btn" aria-label={`Acciones de ${label}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}><Ellipsis size={18} /></button>
-      {open && (
-        <div className="row-menu__pop" role="menu">
-          {list.map((a) => <button key={a.label} type="button" role="menuitem" onClick={() => { setOpen(false); a.run() }}>{a.icon}{a.label}</button>)}
-        </div>
-      )}
-    </div>
   )
 }
 
