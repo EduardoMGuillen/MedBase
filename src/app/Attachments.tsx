@@ -52,7 +52,7 @@ export function Attachments({ patientId }: { patientId: string }) {
           <strong>{busy ? 'Subiendo…' : 'Arrastra aquí resultados o imágenes'}</strong>
           <p>PDF, PNG, JPG o WEBP de hasta 15 MB.</p>
         </div>
-        <select className="select" style={{ width: 'auto' }} value={category} onChange={(e) => setCategory(e.target.value as Attachment['category'])} aria-label="Tipo de archivo">
+        <select className="select select--auto" value={category} onChange={(e) => setCategory(e.target.value as Attachment['category'])} aria-label="Tipo de archivo">
           {Object.entries(CATEGORY).filter(([k]) => !['anesthesia', 'preanesthesia', 'surgical_count'].includes(k)).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <button className="btn btn--soft" disabled={busy} onClick={() => input.current?.click()}>Elegir archivo</button>

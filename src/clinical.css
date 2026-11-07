@@ -107,8 +107,8 @@
 .cal-bar__tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cal-bar__date { width: 170px; }
 /* UI2 (ronda 17): el alto va en el campo, no en el contenedor (con alto fijo el botón se salía y quedaba sobre la barra de arriba) */
-.cal-bar__date .dtf__input { height: 36px; }
-.cal-bar__doc { width: auto; height: 36px; max-width: 230px; }
+.cal-bar__date .dtf__input { height: 34px; }
+.cal-bar__doc { width: auto; max-width: 230px; }
 .cal__inner--week { min-width: 900px; }
 .cal__head--day { flex-direction: column; gap: 0; border: 0; border-left: 1px solid var(--line-soft); background: transparent; cursor: pointer; padding: 8px 4px; }
 .cal__head--day strong { font-family: var(--display); font-size: 20px; }
@@ -342,8 +342,8 @@ button.slot2:not(:disabled):hover { border-color: var(--ink); }
 }
 
 /* ---------- Preclínica: avisos por campo ---------- */
-.input--error { border-color: var(--red-ink); background: var(--red); }
-.input--warn { border-color: #e7b45b; background: var(--amber); }
+.input--error { border-color: var(--red-ink); background-color: var(--red); }
+.input--warn { border-color: var(--warn-line); background-color: var(--amber); }
 .field__msg { font-size: 12.5px; font-weight: 600; }
 .field__msg--error { color: var(--red-ink); }
 .field__msg--warn { color: var(--amber-ink); }
@@ -726,7 +726,7 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .input-icon svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--faint); pointer-events: none; }
 .input-icon .input { padding-left: 36px; }
 /* Huecos "___" de un set: en amarillo hasta llenarlos */
-.input--blank { border-color: #e7b45b; background: #fff4d6; }
+.input--blank { border-color: var(--warn-line); background-color: var(--amber); }
 .orders__blank, .set-items .has-blank { background: #fff4d6; border-radius: 8px; }
 .orders__text--blank { background: #fff4d6; border-radius: 6px; box-shadow: inset 0 0 0 1px #e7b45b; }
 .orders__text--fixed { cursor: default; font-weight: 600; }
@@ -774,7 +774,7 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .vs__head { align-items: center; }
 .vs__bar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding-top: 0; }
 .vs__every { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
-.vs__every .select { width: auto; min-width: 84px; }
+.vs__every .select { min-width: 84px; }
 .vs__every small { font-weight: 500; }
 .vs__empty { display: grid; justify-items: center; gap: 10px; color: var(--muted); }
 .vs-curve__scroll { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; border-radius: var(--r-md); }
@@ -1102,7 +1102,7 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 
 /* IE1 (ronda 16): ingestas y excretas (botón del editor de órdenes y tabla por turno y por día) */
 .fluids-order { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px dashed var(--line); }
-.fluids-order__freq .input { min-width: 170px; }
+.fluids-order__freq .select { min-width: 170px; }
 .fluids-order__hint { flex-basis: 100%; font-size: 13px; }
 .fluids__day { margin-bottom: 18px; }
 .fluids__day h4 { margin: 0 0 6px; }

@@ -231,7 +231,7 @@ export function ClinicDetail() {
                 <tr key={s.id} style={s.active ? undefined : { opacity: 0.6 }}>
                   <td><div className="cell-person"><Avatar name={s.name} color={s.color} /><span style={{ fontWeight: 600 }}>{s.name}<small>{s.email}</small></span></div></td>
                   <td>
-                    <select className="select" style={{ height: 34, width: 'auto' }} value={s.role} aria-label={`Rol de ${s.name}`}
+                    <select className="select select--sm select--auto" value={s.role} aria-label={`Rol de ${s.name}`}
                       onChange={async (e) => { if (await updatePlatformStaff(s.id, { role: e.target.value as ClinicRole })) load() }}>
                       {ROLES_BY_KIND[clinic.kind ?? 'clinic'].map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                     </select>

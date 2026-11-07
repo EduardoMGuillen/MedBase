@@ -290,7 +290,7 @@ export function AttendingPicker({ value, onChange, required = false }: { value: 
         </div>
       )}
       {rest.length > 0 && (
-        <select className="input" aria-label={value.length ? 'Agregar otro médico tratante' : 'Médico tratante'} value="" onChange={(e) => { if (e.target.value) onChange([...value, e.target.value]) }}>
+        <select className="select" aria-label={value.length ? 'Agregar otro médico tratante' : 'Médico tratante'} value="" onChange={(e) => { if (e.target.value) onChange([...value, e.target.value]) }}>
           <option value="">{value.length ? 'Agregar otro médico tratante…' : 'Elige al médico tratante'}</option>
           {rest.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? ` · ${d.specialty}` : ''}</option>)}
         </select>

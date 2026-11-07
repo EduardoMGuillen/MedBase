@@ -115,7 +115,7 @@ export function VitalsSheet({ file, p, reload, autoRecord, autoRecordPast, onFoc
                 <small className="muted">Indicado en la nota médica</small></div>
             ) : <label className="vs__every"><span>Toma cada</span>
               {can('inpatient.orders') && open
-                ? <select className="select" value={every} onChange={(e) => setEvery(Number(e.target.value))} aria-label="Frecuencia de toma">{VITALS_FREQUENCIES.map((n) => <option key={n} value={n}>{n} h</option>)}</select>
+                ? <select className="select select--auto" value={every} onChange={(e) => setEvery(Number(e.target.value))} aria-label="Frecuencia de toma">{VITALS_FREQUENCIES.map((n) => <option key={n} value={n}>{n} h</option>)}</select>
                 : <b>{every} h</b>}
               <small className="muted">{source}</small></label>}
             <div className="segmented" role="radiogroup" aria-label="Rango de la curva y la tabla">

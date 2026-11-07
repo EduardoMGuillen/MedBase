@@ -29,8 +29,23 @@
 
   --r-sm: 6px;
   --r-md: 10px;
+  --r-pop: 12px;
   --r-lg: 18px;
   --shadow-lift: 0 1px 0 rgba(14, 34, 51, 0.04), 0 12px 32px -12px rgba(23, 35, 138, 0.18);
+  /* ES (ronda 17): sombras con nombre: menús emergentes (todos iguales) y ventanas */
+  --shadow-pop: 0 1px 2px rgba(14, 34, 51, 0.06), 0 12px 28px -8px rgba(14, 34, 51, 0.22);
+  --shadow-modal: 0 40px 80px -20px rgba(14, 34, 51, 0.45);
+  /* ES (ronda 17): bordes de los estados (en vez de hex sueltos) y un papel apenas gris para encabezados de tabla */
+  --warn-line: #e7b45b;
+  --err-line: #f0b7b0;
+  --paper-soft: #f7f9f9;
+  --ink-hover: #d6dbf8;
+  --ink-on-dark: #c9cff7;
+  /* ES (ronda 17): escala corta de tamaños de letra para la interfaz */
+  --fs-xs: 11.5px;
+  --fs-sm: 12.5px;
+  --fs-md: 13.5px;
+  --fs-base: 14px;
 
   color-scheme: light;
   font-family: var(--text);
@@ -96,10 +111,23 @@ img, svg { display: block; }
 .field > span { font-size: 13px; font-weight: 600; color: var(--muted); }
 .input, .select, .textarea {
   width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-md);
-  background: var(--paper); transition: border-color 0.15s, box-shadow 0.15s;
+  background-color: var(--paper); transition: border-color 0.15s, box-shadow 0.15s;
 }
 .textarea { height: auto; min-height: 88px; padding: 10px 12px; resize: vertical; line-height: 1.55; }
 .input:focus, .select:focus, .textarea:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px var(--ink-soft); }
+/* ES (ronda 17): un solo menú desplegable en toda la app. Sin la flecha del sistema (cambia según el navegador): la nuestra,
+   gris, a 12 px del borde; mismo alto, borde, radio y anillo de foco que un campo. `.select--sm` (34 px) solo donde la fila
+   es compacta (tablas editables, barras de filtros). Los avisos (`.input--warn`, `.input--error`) cambian solo el color de
+   fondo, así la flecha no se pierde. */
+.select {
+  appearance: none; -webkit-appearance: none; padding-right: 36px; cursor: pointer; text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2356676f' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 16px 16px;
+}
+.select:hover:not(:disabled):not(:focus) { border-color: var(--faint); }
+.select:disabled, .input:disabled { background-color: var(--paper-soft); color: var(--muted); cursor: not-allowed; }
+.select--sm { height: 34px; padding-left: 10px; padding-right: 30px; font-size: var(--fs-md); background-position: right 9px center; background-size: 14px 14px; }
+.select--auto { width: auto; max-width: 100%; }
 
 .avatar {
   display: inline-grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 50%;
@@ -395,9 +423,24 @@ button.chip[aria-pressed='true'] { background: var(--ink); color: #fff; border-c
 .span-2 { grid-column: span 2; }
 .span-all { grid-column: 1 / -1; }
 .suggest { position: relative; }
-.suggest__list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lift); z-index: 10; max-height: 240px; overflow: auto; padding: 4px; }
-.suggest__list button { display: flex; width: 100%; text-align: left; gap: 10px; border: 0; background: transparent; padding: 9px 10px; border-radius: 7px; cursor: pointer; font-size: 14px; }
-.suggest__list button:hover, .suggest__list button:focus { background: var(--ward); outline: none; }
+/* ES (ronda 17): UN solo estilo de menú emergente. Sugerencias de los buscadores, menú de fila (⋯), menú de rol, menú de
+   ayuda, sets de material, la cita de una fuente, el calendario del campo de fecha y la lista de materiales elegidos comparten
+   superficie (papel, borde de 1 px, radio --r-pop, sombra --shadow-pop, 4 px por dentro) y renglones (al menos 40 px, radio
+   --r-sm, gris de sala al pasar o al enfocar, misma letra). Cada componente solo dice dónde se abre y su ancho. */
+.suggest__list, .row-menu__pop, .role-menu__pop, .help-menu__pop, .set-picker__pop, .src-pop, .dtf__pop, .mat-foot__list {
+  background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-pop); box-shadow: var(--shadow-pop);
+  padding: 4px; font-family: var(--text); font-size: var(--fs-base); line-height: 1.4; color: var(--petrol);
+}
+.suggest__list button, .row-menu__pop button, .role-menu__pop button, .help-menu__pop button, .set-picker__pop button {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px 12px; border: 0; border-radius: var(--r-sm);
+  background: none; font: inherit; font-size: var(--fs-base); line-height: 1.35; text-align: left; color: var(--petrol); cursor: pointer;
+}
+.suggest__list button:hover, .suggest__list button:focus, .row-menu__pop button:hover, .role-menu__pop button:hover,
+.help-menu__pop button:hover, .set-picker__pop button:hover,
+.row-menu__pop button:focus-visible, .role-menu__pop button:focus-visible, .help-menu__pop button:focus-visible, .set-picker__pop button:focus-visible {
+  background: var(--ward); outline: none;
+}
+.suggest__list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 10; max-height: 240px; overflow: auto; }
 /* ME5 (ronda 9): etiquetas del LNME en las sugerencias del vademécum */
 .drug-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; vertical-align: 1px; }
 .drug-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700; line-height: 1; padding: 3px 6px; border-radius: 999px; background: var(--ink-soft); color: var(--ink-deep); white-space: nowrap; }

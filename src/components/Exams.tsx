@@ -80,7 +80,7 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
                         <div className="xrow__more">
                           {needsRegion && <input className="input" value={e.region ?? ''} onChange={(x) => set(i, { region: x.target.value || undefined })} placeholder="Región (ej. rodilla)" aria-label={`Región de ${e.name}`} />}
                           {!e.detailed && (needsRegion || cat?.side) && (
-                            <select className="select" value={e.side ?? ''} onChange={(x) => set(i, { side: (x.target.value || undefined) as ExamInput['side'] })} aria-label={`Lado de ${e.name}`}>
+                            <select className="select select--sm select--auto" value={e.side ?? ''} onChange={(x) => set(i, { side: (x.target.value || undefined) as ExamInput['side'] })} aria-label={`Lado de ${e.name}`}>
                               <option value="">Sin lado</option><option value="right">Derecha</option><option value="left">Izquierda</option><option value="both">Bilateral</option>
                             </select>
                           )}

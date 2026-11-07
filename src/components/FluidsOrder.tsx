@@ -24,7 +24,7 @@ export function FluidsOrder({ value, current, onChange }: { value: FluidsChoice;
       </button>
       {value.on && (
         <label className="fluids-order__freq"><span className="sr-only">Frecuencia de corte</span>
-          <select className="input" aria-label="Frecuencia de corte de ingestas y excretas" value={value.mode} onChange={(e) => onChange({ ...value, mode: e.target.value as FluidsMode })}>
+          <select className="select select--sm" aria-label="Frecuencia de corte de ingestas y excretas" value={value.mode} onChange={(e) => onChange({ ...value, mode: e.target.value as FluidsMode })}>
             {FLUID_FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
           </select>
         </label>

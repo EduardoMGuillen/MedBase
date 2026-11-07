@@ -99,7 +99,7 @@ export default function Agenda() {
           <DateField className="cal-bar__date" value={localISODate(cursor)} label="Ir a una fecha" required
             onChange={(v) => v && setCursor(new Date(`${v}T12:00:00`))} />
           {/* Con un solo médico (consultorio) no hay a quién filtrar */}
-          {doctors.length > 1 && <select className="select cal-bar__doc" value={doctorFilter} onChange={(e) => setDoctorFilter(e.target.value)} aria-label="Médico">
+          {doctors.length > 1 && <select className="select select--sm cal-bar__doc" value={doctorFilter} onChange={(e) => setDoctorFilter(e.target.value)} aria-label="Médico">
             <option value="all">Todos los médicos</option>
             {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>}

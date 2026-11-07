@@ -235,7 +235,7 @@ function RefEditor({ exam, rows, setRows, comment, setComment }: { exam: ClinicE
               <div key={r.id ?? `new-${i}`} className={`refed__tr${r.archive ? ' is-archived' : ''}`} role="row">
                 <span className="refed__name">
                   {r.id ? <b>{r.analyte || 'Resultado'}</b> : <input className="input" value={r.analyte} onChange={(e) => set(i, { analyte: e.target.value })} placeholder="Parámetro" aria-label="Parámetro" />}
-                  {r.id ? r.sex !== 'all' && <span className="badge">{SEX_LABEL[r.sex]}</span> : <select className="select" value={r.sex} onChange={(e) => set(i, { sex: e.target.value as RefDraft['sex'] })} aria-label="Sexo">{(['all', 'F', 'M'] as const).map((x) => <option key={x} value={x}>{SEX_LABEL[x]}</option>)}</select>}
+                  {r.id ? r.sex !== 'all' && <span className="badge">{SEX_LABEL[r.sex]}</span> : <select className="select select--sm" value={r.sex} onChange={(e) => set(i, { sex: e.target.value as RefDraft['sex'] })} aria-label="Sexo">{(['all', 'F', 'M'] as const).map((x) => <option key={x} value={x}>{SEX_LABEL[x]}</option>)}</select>}
                   {cur?.warn && <span className="badge badge--amber" title="Revisa la unidad que usa tu laboratorio">⚠️</span>}
                 </span>
                 <input className="input num" inputMode="decimal" value={r.low} onChange={(e) => set(i, { low: e.target.value })} placeholder="—" aria-label={`Mínimo de ${r.analyte || 'resultado'}`} />

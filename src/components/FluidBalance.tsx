@@ -153,7 +153,7 @@ function FluidEntryModal({ stayId, entry, onClose, onSaved }: { stayId: string; 
     </>}>
       <div className="form-grid">
         <label className="field"><span>Tipo</span>
-          <select className="input" value={type} onChange={(e) => setType(e.target.value)} aria-label="Tipo de ingreso o egreso">
+          <select className="select" value={type} onChange={(e) => setType(e.target.value)} aria-label="Tipo de ingreso o egreso">
             <option value="">Elige…</option>
             <optgroup label="Ingresos">{FLUID_IN_ITEMS.map((i) => <option key={i.key} value={`in:${i.key}`}>{i.label}{i.hint ? ` (${i.hint.toLowerCase()})` : ''}</option>)}</optgroup>
             <optgroup label="Egresos">{FLUID_OUT_ITEMS.map((i) => <option key={i.key} value={`out:${i.key}`}>{i.label}</option>)}</optgroup>
