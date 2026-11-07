@@ -93,3 +93,86 @@ No se quitó ningún ajuste. Además, siguen igual tres cosas que viven fuera de
 - Preferencias sube junto a Mi horario, porque las dos dicen cómo empieza tu agenda.
 - Los títulos de grupo se ven en pantallas anchas y se ocultan en la fila del teléfono.
 - Enfermería, administración, laboratorio e imágenes siguen viendo solo Seguridad y Mi actividad, sin títulos de grupo.
+
+## PF2 · Perfiles y barra lateral (rama `ronda17-perfiles`)
+
+La barra lateral sale de una sola regla, `src/lib/nav.ts` (`sidebarFor`), que usan la pantalla (`AppShell.tsx`) y las pruebas
+(`server/ronda17_perfiles.test.ts`). Grupos, en este orden y los mismos para todos los roles:
+
+1. sueltas: Inicio, Agenda, Recetas, Caja (el médico la ve como «Cobrar»);
+2. **Pacientes**: Consulta externa, Observación, Hospitalizados, Biblioteca de pacientes, Crónicos y seguimientos;
+3. **Laboratorio e imágenes**: Pacientes ambulatorios (administración y recepción) y las bandejas de Laboratorio e Imágenes en solo
+   lectura (administración). Para Laboratorio el grupo se llama «Laboratorio» (Ambulatorio, Observación, Hospitalización,
+   Configuración de laboratorio) y para Imágenes, «Imágenes» (lo mismo de su tipo). Decisión: su configuración va aquí porque es de su
+   departamento; su rol de turnos va en «Registros», junto al de enfermería, para que todos los roles de turnos estén en un solo
+   lugar. El grupo «Departamento» desaparece.
+4. **Registros**: Uso de medicamentos y material, Rol de turnos (enfermería, Laboratorio e Imágenes);
+5. **Administración** (en el consultorio, «Mi consultorio»): Reportes, Personal y roles (o Personal), Configuración de la clínica (o del consultorio).
+
+Las URL no cambian; solo cambia el grupo donde aparecen (`/app/sala` sigue llevando a Consulta externa). Los pasos `nav:/app/...` de
+los recorridos usan la ruta, así que siguen funcionando. Pasos nuevos: «Paciente sin cita» en el del médico de la clínica (PF1),
+«Pacientes ambulatorios» en el de recepción, y «Observación» y «Laboratorio e imágenes» en el de administración (AD1).
+
+### Tabla por perfil (después de PF1, AD1 y PF2)
+
+«Sin cita» = «Paciente sin cita» (`checkin.manage`). «Ambulatorio» = «Paciente ambulatorio» (`ambulatory.register`). «Ingresar» =
+«Ingresar paciente» en Hospitalizados (`inpatient.admit`). «Material» = registrar material (`usage.record`).
+
+| Perfil | Barra lateral | Botones del Inicio | Sin cita | Ambulatorio | Ingresar | Observación | Hospitalizados | Material |
+|---|---|---|---|---|---|---|---|---|
+| Clínica · Administración | Inicio, Agenda, Caja · **Pacientes**: Consulta externa, Observación, Hospitalizados, Biblioteca, Crónicos · **Laboratorio e imágenes**: Pacientes ambulatorios, Laboratorio, Imágenes · **Registros**: Uso de medicamentos y material · **Administración**: Reportes, Personal y roles, Configuración de la clínica | «Ver reportes»; tarjetas a Agenda, Caja, Reportes, Biblioteca, Pacientes ambulatorios y Observación | Sí, en Consulta externa | Sí, en Pacientes ambulatorios y en las bandejas | Sí (tablero sin expediente) | **Sí, solo lectura (nuevo, AD1)** | Sí, tablero sin expediente | Sí |
+| Clínica · Médico (cualquier especialidad) | Inicio, Agenda, Recetas, Cobrar · **Pacientes**: Consulta externa, Observación, Hospitalizados, Biblioteca, Crónicos | «Ir a consulta externa»; tarjetas a Consulta externa | **Sí (nuevo, PF1)** | No | Sí | Sí | Sí | No |
+| Clínica · Enfermería licenciada | Inicio · **Pacientes**: Consulta externa, Observación, Hospitalizados, Biblioteca, Crónicos · **Registros**: Uso de medicamentos y material, Rol de turnos (lo edita) | «Abrir consulta externa»; tarjetas a Consulta externa | Sí | No | No | Sí | Sí | Sí |
+| Clínica · Enfermería auxiliar | Igual que la licenciada (el rol de turnos solo lo ve) | Igual | Sí | No | No | Sí | Sí | Sí |
+| Clínica · Recepción | Inicio, Agenda, Caja · **Pacientes**: Consulta externa, Hospitalizados, Biblioteca, Crónicos · **Laboratorio e imágenes**: Pacientes ambulatorios · **Registros**: Uso de medicamentos y material | «Abrir sala de espera»; tarjetas a Agenda, Caja y Pacientes ambulatorios | Sí, en Consulta externa | Sí, en Pacientes ambulatorios | Sí (tablero sin expediente) | No | Sí, tablero sin expediente | Sí |
+| Clínica · Laboratorio (microbiólogo) | Inicio · **Pacientes**: Biblioteca · **Laboratorio**: Ambulatorio, Observación, Hospitalización, Configuración de laboratorio (edita) · **Registros**: Rol de turnos (edita) | «Paciente ambulatorio» y «Atender» de su Inicio de departamento | No | Sí, en su bandeja Ambulatorio | No | Su área de la bandeja | Su área de la bandeja | No |
+| Clínica · Laboratorio (técnico) | Igual que el microbiólogo (configuración y rol de turnos en solo lectura) | Igual | No | Sí | No | Su área | Su área | No |
+| Clínica · Imágenes (radiólogo) | Inicio · **Pacientes**: Biblioteca · **Imágenes**: Ambulatorio, Observación, Hospitalización, Configuración de imágenes (edita) · **Registros**: Rol de turnos (edita) | «Paciente ambulatorio» y «Atender» | No | Sí | No | Su área (y el expediente en solo lectura) | Su área | No |
+| Clínica · Imágenes (técnico) | Igual que el radiólogo (configuración y rol de turnos en solo lectura) | Igual | No | Sí | No | Su área | Su área | No |
+| Consultorio · Médico | Inicio, Agenda, Recetas, Cobrar · **Pacientes**: Consulta externa, Observación, Biblioteca, Crónicos · **Registros**: Uso de medicamentos y material | «Ir a consulta externa»; tarjetas a Consulta externa y Caja; «Llegó» en Por llegar | Sí | No | No aplica (sin camas) | Sí (si la usa) | No aplica | Sí |
+| Consultorio · Administrador | Inicio, Agenda, Caja · **Registros**: Uso de medicamentos y material · **Mi consultorio**: Reportes, Personal, Configuración del consultorio | «Ver reportes»; tarjetas a Agenda, Caja, Reportes y Biblioteca; «Llegó» en Por llegar | Sí (permiso; lo clínico está en la vista de médico) | **No (corregido, PF2)** | No | No (MI1) | No aplica | Sí |
+| Consultorio · Enfermería | Inicio · **Pacientes**: Consulta externa, Observación, Biblioteca, Crónicos · **Registros**: Uso de medicamentos y material | «Abrir consulta externa» | Sí | No | No | Sí | No aplica | Sí |
+| Consultorio · Asistente | Inicio, Agenda, Caja · **Pacientes**: Consulta externa, Observación, Biblioteca, Crónicos · **Registros**: Uso de medicamentos y material | «Abrir sala de espera»; tarjetas a Agenda y Caja | Sí | No | No | Sí (aplica dosis) | No aplica | Sí |
+
+### Diferencias entre clínica y consultorio para el mismo rol
+
+| Rol | Diferencia | Estado |
+|---|---|---|
+| Médico | «Paciente sin cita»: el del consultorio lo tenía y el de la clínica no. | **Corregido** (PF1): `checkin.manage` para todo médico de la clínica. Le agrega también «Registrar llegada» y «Marcar que no asistió» en la Agenda; se dejan porque ya cancela y reprograma citas (`agenda.manage`) y el del consultorio también los tiene, así que no se separó otro permiso. |
+| Médico | El del consultorio aplica dosis en observación y registra material (Registros); el de la clínica no. | **Justificado**: el consultorio puede no tener personal (MI1, RU1–RU3); en la clínica lo hace enfermería. |
+| Médico | En el Inicio del consultorio: «Cobrado hoy», bandeja de exámenes, «Llamar hoy» y «Llegó» en Por llegar. | **Justificado**: en la clínica eso es de recepción, enfermería y los departamentos; el médico de la clínica registra llegadas desde la Agenda y «sin cita» desde Consulta externa. |
+| Médico | Hospitalizados e «Ingresar». | **Justificado**: un consultorio no tiene camas (`features().hospital`). |
+| Administración | En el consultorio no ve el grupo Pacientes (ni Observación). | **Justificado** (MI1): el titular ve lo clínico en su vista de médico. |
+| Administración | En el consultorio no tiene «Laboratorio e imágenes» (ni ambulatorios ni bandejas). | **Corregido**: tenía `ambulatory.register` sin poder usarlo (el servidor ya rechazaba ambulatorios en un consultorio, DP3); se le quita. El resto, **justificado**: un consultorio no tiene departamentos de Laboratorio ni Imágenes. |
+| Administración | En el consultorio no ingresa ni ve Hospitalizados. | **Justificado**: sin camas (HO2). |
+| Administración | Nombres: «Mi consultorio», «Personal», «Configuración del consultorio». | **Justificado**: solo cambia el nombre. |
+| Enfermería | En el consultorio no tiene Rol de turnos. | **Justificado** (EN1): un consultorio no tiene rol de turnos. |
+| Enfermería | En el consultorio no ve Hospitalizados. | **Justificado**: sin camas. |
+| Recepción / Asistente | Son roles distintos (recepción solo en clínica, asistente solo en consultorio); la asistente además hace preclínica y aplica dosis. | **Justificado**: la asistente cubre recepción y enfermería en un consultorio (ROLE_SUMMARY). |
+| Laboratorio / Imágenes | Solo existen en la clínica. | **Justificado**: un consultorio no tiene departamentos. |
+
+### Revisión por URL (escribiendo cada dirección del menú con cada perfil)
+
+Hecha en el navegador (build de producción, base demo nueva, 1366 px) el 7 de noviembre de 2026. Para cada perfil se abrió cada
+entrada de su barra lateral escribiendo la URL: **ninguna** dio «Sin permiso», «Esta pantalla es de…» ni redirigió.
+
+| Perfil (usuario demo) | Entradas revisadas | Resultado |
+|---|---|---|
+| Administración (rmoncada) | 15 | todas abren; Observación en solo lectura; Laboratorio e Imágenes con el aviso «Solo lectura» |
+| Médico (vsolorzano, tgalvez, mvilleda en vista de médico) | 9 cada uno | todas abren; «Paciente sin cita» visible (tgalvez: el médico por defecto es ella y está «Registrar paciente nuevo») |
+| Enfermería licenciada (murbina) y auxiliar (rvallecillo) | 8 | todas abren |
+| Recepción (aquiroz) | 9 | todas abren |
+| Laboratorio microbiólogo (psuazo) y técnico (berazo) | 7 | todas abren |
+| Imágenes radiólogo (rzepeda) y técnico (echinchilla) | 7 | todas abren |
+| Consultorio médico (ipacheco, vista de médico) | 9 | todas abren |
+| Consultorio administrador (ipacheco, vista de administrador) | 7 | todas abren |
+| Consultorio asistente (arodas) | 8 | todas abren |
+| Médico y administración en vista de administrador (mvilleda) | 15 | todas abren |
+
+Direcciones fuera del menú (lo que no debe abrir): administración → `/app/observacion/:id` «Sin permiso» (no abre el expediente) y
+`/app/configuracion-laboratorio` «Sin permiso»; recepción → `/app/observacion` y `/app/laboratorio` «Sin permiso»; médico →
+`/app/pacientes-ambulatorios` y `/app/laboratorio` «Sin permiso»; administrador del consultorio → `/app/pacientes-ambulatorios`
+«Sin permiso» y `/app/observacion` ofrece cambiar a la vista de médico; laboratorio → `/app/imagenes/ambulatorio` «Esta pantalla es
+de Imágenes». Laboratorio sí abre `/app/pacientes-ambulatorios` por URL (tiene `ambulatory.register` y ve solo lo de su tipo); no está
+en su menú porque ya tiene su bandeja Ambulatorio. Enfermería del consultorio: no hay usuario demo; se revisó con la regla
+(`sidebarFor`) en las pruebas, no en el navegador.

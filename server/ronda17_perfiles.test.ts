@@ -9,6 +9,8 @@ import bcrypt from 'bcryptjs'
 import { MEMBRENO } from './demoData.js'
 import { can, permissionsFor } from '../src/lib/permissions.js'
 import { tourFor } from '../src/lib/tours.js'
+import { NAV, sidebarFor } from '../src/lib/nav.js'
+import type { ClinicKind, Role } from '../src/lib/types.js'
 
 // Ronda 17, perfiles (PF1, AD1, PF2): con la base y la API (copia en memoria de la demo)
 let server: Server
@@ -157,5 +159,47 @@ describe('AD1 (ronda 17): administración y recepción, Observación y Laborator
     assert.equal((await (await as('aquiroz@demo.clinara')).get('/api/dept/tray?group=lab')).status, 403, 'recepción no ve las bandejas')
     // Laboratorio sí ve el resultado en su bandeja
     assert.ok(JSON.stringify((await lab.get('/api/dept/tray?group=lab')).body).includes('VALSECRETO'))
+  })
+})
+
+describe('PF2 (ronda 17): la barra lateral de cada perfil, por flujo de trabajo', () => {
+  const PROFILES: [string, Role, ClinicKind, string?][] = [
+    ['admin', 'admin', 'clinic'], ['doctor', 'doctor', 'clinic'], ['nurse_lic', 'nurse', 'clinic', 'nurse_lic'], ['nurse_aux', 'nurse', 'clinic', 'nurse_aux'],
+    ['reception', 'reception', 'clinic'], ['microbiologist', 'lab', 'clinic', 'microbiologist'], ['lab_tech', 'lab', 'clinic', 'lab_tech'],
+    ['radiologist', 'imaging', 'clinic', 'radiologist'], ['imaging_tech', 'imaging', 'clinic', 'imaging_tech'],
+    ['office doctor', 'doctor', 'office'], ['office admin', 'admin', 'office'], ['office nurse', 'nurse', 'office'], ['office assistant', 'assistant', 'office'],
+  ]
+  const ORDER = ['', 'Pacientes', 'Laboratorio e imágenes', 'Laboratorio', 'Imágenes', 'Registros', 'Administración', 'Mi consultorio']
+
+  test('los grupos van en el orden del pedido y cada entrada la puede usar su rol', () => {
+    for (const [name, role, kind, pos] of PROFILES) {
+      const items = sidebarFor({ role, kind, position: pos })
+      const ranks = items.map((i) => ORDER.indexOf(i.group ?? ''))
+      assert.ok(ranks.every((r) => r >= 0), `${name}: grupo desconocido ${JSON.stringify(items.map((i) => i.group))}`)
+      assert.deepEqual(ranks, [...ranks].sort((a, b) => a - b), `${name}: orden de los grupos`)
+      assert.equal(items[0].to, '/app', name)
+      assert.ok(!items.some((i) => i.group === 'Departamento'), `${name}: ya no hay grupo «Departamento»`)
+      const perms = permissionsFor(role, kind, pos)
+      for (const i of items) {
+        const n = NAV.find((x) => x.to === i.to)!
+        assert.ok(!n.perm || perms.includes(n.perm) || n.anyPerm?.some((p) => perms.includes(p)), `${name}: ${i.to}`)
+      }
+    }
+  })
+
+  test('cada rol ve lo suyo en cada grupo', () => {
+    const to = (role: Role, kind: ClinicKind, pos?: string) => sidebarFor({ role, kind, position: pos }).map((i) => i.to)
+    const lab = (role: Role, kind: ClinicKind, pos?: string) => sidebarFor({ role, kind, position: pos }).filter((i) => /^Laboratorio|^Imágenes/.test(i.group ?? '')).map((i) => i.to)
+    assert.deepEqual(lab('admin', 'clinic'), ['/app/pacientes-ambulatorios', '/app/laboratorio', '/app/imagenes'])
+    assert.deepEqual(lab('reception', 'clinic'), ['/app/pacientes-ambulatorios'])
+    assert.deepEqual(lab('doctor', 'clinic'), [])
+    assert.deepEqual(lab('admin', 'office'), [], 'un consultorio no tiene Laboratorio ni Imágenes')
+    assert.ok(!permissionsFor('admin', 'office').includes('ambulatory.register'))
+    assert.deepEqual(lab('lab', 'clinic', 'lab_tech'), ['/app/laboratorio/ambulatorio', '/app/laboratorio/observacion', '/app/laboratorio/hospitalizacion', '/app/configuracion-laboratorio'])
+    assert.equal(sidebarFor({ role: 'lab', kind: 'clinic' }).find((i) => i.to === '/app/rol-de-turnos')?.group, 'Registros')
+    assert.ok(to('admin', 'clinic').includes('/app/observacion') && !to('reception', 'clinic').includes('/app/observacion'))
+    assert.ok(!to('admin', 'office').includes('/app/observacion'), 'MI1: en el consultorio lo clínico va en la vista de médico')
+    assert.ok(!to('nurse', 'office').includes('/app/rol-de-turnos-enfermeria'), 'un consultorio no tiene rol de turnos')
+    assert.equal(sidebarFor({ role: 'admin', kind: 'office' }).find((i) => i.to === '/app/configuracion')?.label, 'Configuración del consultorio')
   })
 })

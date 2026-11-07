@@ -135,11 +135,13 @@ const POSITION_ROLES: Role[] = ['lab', 'imaging', 'nurse']
  */
 /** RU1–RU3 (ronda 14): en el consultorio la médica titular tiene los permisos de médico, enfermería y administración. */
 const USAGE_ALL: Permission[] = ['supplies.view', 'supplies.manage', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export', 'usage.void', 'supplies.add', 'sets.manage']
+const OFFICE_ADMIN_OUT: Permission[] = ['inpatient.admit', 'observation.board', 'dept.view', 'ambulatory.register']
 const OFFICE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
   doctor: [...new Set<Permission>([...ROLE_PERMISSIONS.doctor, 'checkin.manage', 'inpatient.care', ...USAGE_ALL])],
   // HO2 (ronda 16): un consultorio no tiene hospitalización: administración no ingresa. AD1 (ronda 17): ni ve Observación (MI1: lo
-  // clínico va en la vista de médico) ni bandejas de departamento (un consultorio no tiene Laboratorio ni Imágenes)
-  admin: [...new Set<Permission>([...ROLE_PERMISSIONS.admin.filter((p) => !(['inpatient.admit', 'observation.board', 'dept.view'] as Permission[]).includes(p)), ...USAGE_ALL])],
+  // clínico va en la vista de médico) ni bandejas de departamento. PF2 (ronda 17): tampoco registra ambulatorios (un consultorio no
+  // tiene Laboratorio ni Imágenes; el servidor ya los rechazaba, DP3)
+  admin: [...new Set<Permission>([...ROLE_PERMISSIONS.admin.filter((p) => !OFFICE_ADMIN_OUT.includes(p)), ...USAGE_ALL])],
   // EN1 (ronda 16): un consultorio no tiene rol de turnos
   nurse: ROLE_PERMISSIONS.nurse.filter((p) => p !== 'roster.view'),
   assistant: ROLE_PERMISSIONS.assistant,

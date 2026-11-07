@@ -8,54 +8,29 @@ import { Avatar } from '../components/ui'
 import { SearchPalette } from '../components/Search'
 import { Tour, TourResume, type TourEnd } from '../components/Tour'
 import { useStore } from '../lib/store'
-import { features, type Permission } from '../lib/permissions'
+import { features, PERMISSIONS, type Permission } from '../lib/permissions'
+import { sidebarFor } from '../lib/nav'
 import { RoleMenu } from '../components/ViewSwitch'
-import type { Role } from '../lib/types'
 import { cap, localISODate, sameDay } from '../lib/format'
 import { miniTourFor, tourFor, tourKey, type TourCtx, type TourStep } from '../lib/tours'
 import { stayPath } from '../lib/inpatient'
 import { ADMISSION_PENDING_TEXT, myPendingAdmissions } from '../lib/alerts'
 import { api } from '../lib/api'
 
-const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; anyPerm?: Permission[]; end?: boolean; group?: string; roles?: Role[] }[] = [
-  { to: '/app', label: 'Inicio', icon: House, end: true, perm: undefined },
-  { to: '/app/agenda', label: 'Agenda', icon: CalendarDays, perm: 'agenda.view' },
-  // MC7: el médico ve Recetas y Cobrar debajo de Agenda. Recetas sin consulta: renovar un tratamiento sin abrir una consulta completa
-  { to: '/app/recetas', label: 'Recetas', icon: FilePen, perm: 'rx.write' },
-  { to: '/app/caja', label: 'Caja', icon: Receipt, perm: 'billing.manage' },
-  // Pacientes se divide en las tres áreas que pidió el médico, más los crónicos
-  { to: '/app/consulta-externa', label: 'Consulta externa', icon: Stethoscope, perm: 'agenda.view', group: 'Pacientes' },
-  // AD1 (ronda 17): administración ve la lista de Observación en solo lectura (sin expediente)
-  { to: '/app/observacion', label: 'Observación', icon: Eye, perm: 'inpatient.view', anyPerm: ['observation.board'], group: 'Pacientes' },
-  // HO2 (ronda 16): recepción y administración entran al tablero de camas para ingresar (sin ver el expediente)
-  { to: '/app/hospitalizados', label: 'Hospitalizados', icon: BedDouble, perm: 'inpatient.view', anyPerm: ['inpatient.admit'], group: 'Pacientes' },
-  // LB5 e IM1 (ronda 12): Laboratorio e Imágenes trabajan por área; la biblioteca va al final del mismo grupo
-  { to: '/app/laboratorio/ambulatorio', label: 'Ambulatorio', icon: Stethoscope, perm: 'dept.work', roles: ['lab'], group: 'Pacientes' },
-  { to: '/app/laboratorio/observacion', label: 'Observación', icon: Eye, perm: 'dept.work', roles: ['lab'], group: 'Pacientes' },
-  { to: '/app/laboratorio/hospitalizacion', label: 'Hospitalización', icon: BedDouble, perm: 'dept.work', roles: ['lab'], group: 'Pacientes' },
-  { to: '/app/imagenes/ambulatorio', label: 'Ambulatorio', icon: Stethoscope, perm: 'dept.work', roles: ['imaging'], group: 'Pacientes' },
-  { to: '/app/imagenes/observacion', label: 'Observación', icon: Eye, perm: 'dept.work', roles: ['imaging'], group: 'Pacientes' },
-  { to: '/app/imagenes/hospitalizacion', label: 'Hospitalización', icon: BedDouble, perm: 'dept.work', roles: ['imaging'], group: 'Pacientes' },
-  { to: '/app/pacientes', label: 'Biblioteca de pacientes', icon: LibraryBig, perm: 'patients.view', group: 'Pacientes' },
-  { to: '/app/seguimientos', label: 'Crónicos y seguimientos', icon: BellRing, perm: 'followups.view', group: 'Pacientes' },
-  // AD1 (ronda 17): «Laboratorio e imágenes» de administración y recepción: los pacientes ambulatorios (registrar y ver el estado) y,
-  // administración, las dos bandejas en solo lectura
-  { to: '/app/pacientes-ambulatorios', label: 'Pacientes ambulatorios', icon: FlaskConical, perm: 'ambulatory.register', roles: ['admin', 'reception'], group: 'Laboratorio e imágenes' },
-  { to: '/app/laboratorio', label: 'Laboratorio', icon: TestTubes, perm: 'dept.view', roles: ['admin'], group: 'Laboratorio e imágenes' },
-  { to: '/app/imagenes', label: 'Imágenes', icon: ScanLine, perm: 'dept.view', roles: ['admin'], group: 'Laboratorio e imágenes' },
-  // RU2 (ronda 14): registro administrativo de enfermería (en Administración, dentro de su grupo)
-  // RU6 (ronda 15): registro administrativo de enfermería, fuera de «Pacientes»: entrada propia bajo el encabezado «Registros»
-  { to: '/app/uso-medicamentos-material', label: 'Uso de medicamentos y material', icon: ClipboardList, perm: 'usage.view', group: 'Registros' },
-  // EN1 (ronda 16): enfermería ve el rol de turnos de enfermería (la licenciada lo edita de hoy en adelante)
-  { to: '/app/rol-de-turnos-enfermeria', label: 'Rol de turnos', icon: CalendarClock, perm: 'roster.view', roles: ['nurse'], group: 'Registros' },
-  { to: '/app/configuracion-laboratorio', label: 'Configuración de laboratorio', icon: SlidersHorizontal, perm: 'dept.work', roles: ['lab'], group: 'Departamento' },
-  { to: '/app/configuracion-imagenes', label: 'Configuración de imágenes', icon: SlidersHorizontal, perm: 'dept.work', roles: ['imaging'], group: 'Departamento' },
-  { to: '/app/rol-de-turnos', label: 'Rol de turnos', icon: CalendarClock, perm: 'dept.work', roles: ['lab', 'imaging'], group: 'Departamento' },
-  { to: '/app/reportes', label: 'Reportes', icon: BarChart3, perm: 'reports.view', group: 'Administración' },
-  { to: '/app/personal', label: 'Personal y roles', icon: UserCog, perm: 'staff.manage', group: 'Administración' },
-  // Ronda 8: «Configuración» (la de cada persona) va abajo, sobre el perfil; la de la clínica se nombra completa para no repetirla
-  { to: '/app/configuracion', label: 'Configuración de la clínica', icon: SettingsIcon, perm: 'settings.manage', group: 'Administración' },
-]
+/**
+ * PF2 (ronda 17): la barra lateral (entradas, grupos, orden y quién ve qué) vive en lib/nav.ts, la misma regla que usan las pruebas;
+ * aquí solo el ícono de cada ruta.
+ */
+const ICONS: Record<string, typeof House> = {
+  '/app': House, '/app/agenda': CalendarDays, '/app/recetas': FilePen, '/app/caja': Receipt,
+  '/app/consulta-externa': Stethoscope, '/app/observacion': Eye, '/app/hospitalizados': BedDouble, '/app/pacientes': LibraryBig, '/app/seguimientos': BellRing,
+  '/app/pacientes-ambulatorios': FlaskConical, '/app/laboratorio': TestTubes, '/app/imagenes': ScanLine,
+  '/app/laboratorio/ambulatorio': Stethoscope, '/app/laboratorio/observacion': Eye, '/app/laboratorio/hospitalizacion': BedDouble,
+  '/app/imagenes/ambulatorio': Stethoscope, '/app/imagenes/observacion': Eye, '/app/imagenes/hospitalizacion': BedDouble,
+  '/app/configuracion-laboratorio': SlidersHorizontal, '/app/configuracion-imagenes': SlidersHorizontal,
+  '/app/uso-medicamentos-material': ClipboardList, '/app/rol-de-turnos-enfermeria': CalendarClock, '/app/rol-de-turnos': CalendarClock,
+  '/app/reportes': BarChart3, '/app/personal': UserCog, '/app/configuracion': SettingsIcon,
+}
 
 export default function AppShell() {
   const { user, can, signOut, appointments, followups, refresh, settings, pendingOrders = [], inpatients, stays: activeStays, saveTour } = useStore()
@@ -137,30 +112,10 @@ export default function AppShell() {
   // En un consultorio el médico titular también cobra y administra: "Administración" es "Mi consultorio". El médico tiene
   // «Cobrar» debajo de Recetas (MC7). Enfermería ya no cobra (AD9).
   const doctor = user.role === 'doctor'
-  const dept = user.role === 'lab' || user.role === 'imaging'
-  const quietBilling = false
-  const items = platform
-    ? [{ to: '/app', label: 'Clínicas y consultorios', icon: Building2, end: true }]
-    : NAV.filter((n) => {
-      if (n.perm && !can(n.perm) && !n.anyPerm?.some((p) => can(p))) return false
-      if (n.to === '/app/hospitalizados' && !f.hospital) return false
-      if (n.to === '/app/observacion' && !f.observation) return false
-      // AD1 (ronda 17): los ambulatorios de laboratorio e imágenes son de las clínicas (un consultorio no tiene departamentos)
-      if (n.to === '/app/pacientes-ambulatorios' && !f.hospital) return false
-      // Enfermería entra al paciente: no usa la agenda. Médico y enfermería cobran, pero desde un acceso más discreto.
-      if (user.role === 'nurse' && n.to === '/app/agenda') return false
-      if (quietBilling && n.to === '/app/caja') return false
-      if (n.roles && !n.roles.includes(user.role)) return false
-      // MI1: el titular de un consultorio en su vista de administrador ve sólo lo administrativo (lo clínico, en la de médico)
-      if (f.office && user.role === 'admin' && n.group === 'Pacientes') return false
-      // LB5 e IM1 (ronda 12): Laboratorio e Imágenes ven sus áreas, no las listas de Observación y Hospitalizados de enfermería
-      if (dept && (n.to === '/app/observacion' || n.to === '/app/hospitalizados')) return false
-      return true
-    }).map((n) => (f.office && n.group === 'Administración'
-      ? { ...n, group: 'Mi consultorio', label: n.to === '/app/personal' ? 'Personal' : n.to === '/app/configuracion' ? 'Configuración del consultorio' : n.label }
-      : doctor && n.to === '/app/caja' ? { ...n, label: 'Cobrar' } : n))
-    // MC7: Inicio → Agenda → Recetas → Cobrar → Pacientes → Configuración (y en el consultorio, lo administrativo al final)
-    .sort((a, b) => navRank(a) - navRank(b))
+  // PF2 (ronda 17): Inicio, Agenda, Recetas y Caja; Pacientes; Laboratorio e imágenes; Registros; Administración (o Mi consultorio)
+  const items = (platform ? [{ to: '/app', label: 'Clínicas y consultorios', end: true }]
+    : sidebarFor({ role: user.role, kind: settings.kind ?? 'clinic', observationEnabled: settings.observationEnabled, permissions: (Object.keys(PERMISSIONS) as Permission[]).filter((p) => can(p)) })
+  ).map((n) => ({ ...n, icon: platform ? Building2 : ICONS[n.to] ?? House }))
   const label = today.toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })
   // Contador de cada opción: lo que está esperando ahí (en rojo, lo que es una alerta)
   const badge = (to: string): { n: number; alert?: boolean; label: string } | null => {
@@ -205,9 +160,6 @@ export default function AppShell() {
             if (STATIC_GROUPS.has(b.group)) return <div key={b.group} className="side__grp side__grp--static" role="group" aria-label={b.group}><div className="side__group">{b.group}</div><div className="side__grp-list">{links}</div></div>
             return <NavGroup key={b.group} title={b.group} userId={user.id} paths={b.items.map((n) => n.to)} badges={b.items.map((n) => badge(n.to)).filter((x) => x !== null)} forceOpen={touring}>{links}</NavGroup>
           })}
-          {quietBilling && can('billing.manage') && (
-            <NavLink to="/app/caja" className="side__link side__link--quiet" data-tour="nav:/app/caja"><Receipt size={16} strokeWidth={1.9} />Cobrar</NavLink>
-          )}
         </nav>
         {/* Ronda 8: la configuración de cada persona (firma, horario, preferencias, seguridad), con su tuerca, justo encima del
             perfil. El perfil ya no es un botón: sólo dice quién entró y con qué vista. */}
@@ -267,13 +219,6 @@ const deptBadge = (c?: { n: number; urgent: number }) => (c ? { n: c.n, alert: c
 /** RU6 (ronda 15): grupos que son solo un encabezado (siempre abiertos). */
 const STATIC_GROUPS = new Set(['Registros'])
 
-function navRank(n: { to: string; group?: string }) {
-  if (n.group === 'Pacientes') return 20
-  if (n.group === 'Laboratorio e imágenes') return 25
-  if (n.group === 'Registros') return 30
-  if (n.group) return 40
-  return 10
-}
 
 /**
  * Grupo desplegable del menú ("Pacientes", "Mi consultorio", "Administración"). Se abre o se cierra al tocar el

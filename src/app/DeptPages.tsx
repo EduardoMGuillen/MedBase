@@ -29,7 +29,7 @@ function DeptViewBar({ dept }: { dept: ExamGroup }) {
   const areas: [string, string][] = [['', 'Todas las áreas'], ['/ambulatorio', 'Ambulatorio'], ['/observacion', 'Observación'], ['/hospitalizacion', 'Hospitalización']]
   return (
     <div className="page dept-view-bar" style={{ paddingBottom: 0 }} data-testid="dept-view-bar">
-      <div className="alert-strip" role="note" style={{ marginBottom: 12 }}>Solo lectura: ves los estudios, su estado, la espera y los urgentes. Las muestras y los resultados son de {dept === 'lab' ? 'Laboratorio' : 'Imágenes'}.</div>
+      <p role="note" className="muted" style={{ margin: '0 0 12px', padding: '10px 14px', background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13.5 }}>Solo lectura: ves los estudios, su estado, la espera y los urgentes. Las muestras y los resultados son de {dept === 'lab' ? 'Laboratorio' : 'Imágenes'}.</p>
       <nav className="segmented" aria-label="Área de la bandeja" style={{ flexWrap: 'wrap' }}>
         {areas.map(([slug, label]) => <NavLink key={slug} to={`${base}${slug}`} end className={({ isActive }) => (isActive ? 'is-active' : undefined)} aria-current={undefined}>{label}</NavLink>)}
       </nav>
