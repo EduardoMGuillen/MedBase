@@ -39,7 +39,7 @@ import AnesthesiaSheetPage, { AnesthesiaBlankPage } from './app/AnesthesiaDoc'
 import AnesthesiaFormPage from './app/AnesthesiaForm'
 import DeptTray, { AREA_SLUG } from './app/DeptTray'
 import DeptHome from './app/DeptHome'
-import { ChartOrDept, DeptConfig, DeptOnly, DeptRosterPage } from './app/DeptPages'
+import { ChartOrDept, DeptConfig, DeptOnly, DeptRosterPage, NurseRosterPage } from './app/DeptPages'
 import SupplyCatalogPage from './app/SupplyCatalog'
 import UsagePage from './app/Usage'
 
@@ -91,6 +91,7 @@ export default function App() {
             <Route path="configuracion-laboratorio" element={<Guard perm="dept.work"><DeptOnly dept="lab"><DeptConfig group="lab" /></DeptOnly></Guard>} />
             <Route path="configuracion-imagenes" element={<Guard perm="dept.work"><DeptOnly dept="imaging"><DeptConfig group="imaging" /></DeptOnly></Guard>} />
             <Route path="rol-de-turnos" element={<Guard perm="dept.work"><DeptRosterPage /></Guard>} />
+            <Route path="rol-de-turnos-enfermeria" element={<Guard perm="roster.view"><NurseRosterPage /></Guard>} />
             <Route path="agenda" element={<Guard perm="agenda.view"><Agenda /></Guard>} />
             <Route path="consulta-externa" element={<Guard perm="agenda.view"><WaitingRoom /></Guard>} />
             <Route path="sala" element={<Navigate to="/app/consulta-externa" replace />} />

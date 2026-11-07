@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { dmyTime } from '../src/lib/format.js'
-import { defaultAnalyte, defaultValues, groupsFromLimits, mergeCriticalGroups, type CriticalGroup } from '../src/lib/clinicalConfig.js'
+import { defaultAnalyte, defaultValues, groupsFromLimits, mergeCriticalGroups, NURSE_DEFAULT_POSITION, type CriticalGroup } from '../src/lib/clinicalConfig.js'
 import { EXAMS, examKey } from '../src/lib/exams.js'
 import { randomUUID } from 'node:crypto'
 import {
@@ -1380,6 +1380,8 @@ export function ensureDb(sql: Sql) {
       for (const c of await q.query('SELECT id FROM clinics')) await loadSupplyCatalog(q, String(c.id))
       // v85 (ronda 16, RE2): administración y recepción abren la Consulta externa «Por médico» (una sola vez)
       await resetQueueViewOnce(q)
+      // v85 (ronda 16, EN1): el puesto de enfermería (Licenciada o Auxiliar) según el prefijo del nombre
+      await migrateNursePositions(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -1871,6 +1873,17 @@ export async function markDemoClinics(q: Sql) {
 }
 
 /**
+ * v85 (ronda 16, EN1): el personal de enfermería sin puesto recibe el suyo según el prefijo del nombre: «Lic.» → Licenciado(a)
+ * en enfermería; «Aux.» o sin prefijo → Auxiliar. Quien también es de Laboratorio o Imágenes conserva ese cargo. Idempotente:
+ * solo toca a quien no tiene puesto (después Administración lo cambia en Personal y roles).
+ */
+export async function migrateNursePositions(q: Sql) {
+  const roles = `COALESCE(NULLIF(roles, ''), json_build_array(role)::text)::jsonb`
+  await q.run(`UPDATE staff SET position = CASE WHEN name LIKE 'Lic.%' OR name LIKE 'Lic %' OR name LIKE 'Licda.%' THEN 'nurse_lic' ELSE ? END
+    WHERE (position IS NULL OR position = '') AND ${roles} @> '["nurse"]'::jsonb AND NOT ${roles} @> '["lab"]'::jsonb AND NOT ${roles} @> '["imaging"]'::jsonb`, [NURSE_DEFAULT_POSITION])
+}
+
+/**
  * v85 (ronda 16, RE2): se borra la vista guardada de la Consulta externa («Por hora | Por médico») de quien tiene el rol de
  * administración o de recepción, para que abran con la nueva vista por defecto («Por médico»). Una sola vez (marca en meta):
  * lo que elijan después se respeta.
@@ -1977,6 +1990,8 @@ export async function resetDemo(sql: Sql) {
     await seed(q)
     // Lo que las migraciones hacen sobre una base nueva: roles, titular del consultorio como administrador y clínicas demo
     await migrateRoles(q)
+    // EN1 (ronda 16): el puesto de enfermería
+    await migrateNursePositions(q)
     await q.run(`DELETE FROM meta WHERE key = 'office_owner_admin'`)
     await migrateOfficeOwners(q)
     await markDemoClinics(q)

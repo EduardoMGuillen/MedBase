@@ -378,7 +378,15 @@ export const DEPT_POSITIONS = {
     { key: 'radiologist', label: 'Médico(a) radiólogo(a)', prefix: 'Dr./Dra.', license: true, licenseBody: 'Colegio Médico de Honduras', lead: true },
     { key: 'imaging_tech', label: 'Técnico(a) en imágenes (radiotecnología)', prefix: 'Téc.', license: false, licenseBody: '', lead: false },
   ],
+  // EN1 (ronda 16): puesto en enfermería. La licenciada es la jefa de las auxiliares y edita el rol de turnos de enfermería
+  // (de hoy en adelante). Sin número de colegiación obligatorio (no se pidió).
+  nursing: [
+    { key: 'nurse_lic', label: 'Licenciado(a) en enfermería', prefix: 'Lic.', license: false, licenseBody: '', lead: true },
+    { key: 'nurse_aux', label: 'Auxiliar de enfermería', prefix: 'Aux.', license: false, licenseBody: '', lead: false },
+  ],
 } as const
+/** EN1 (ronda 16). VALIDAR: Emil. Puesto de enfermería de quien no tiene uno (la migración y al crear sin elegirlo): auxiliar. */
+export const NURSE_DEFAULT_POSITION = 'nurse_aux'
 /** Prefijos que ya puede traer el nombre (no se repiten en la firma). */
 export const NAME_PREFIXES = ['Dr.', 'Dra.', 'Lic.', 'Téc.', 'Aux.', 'Ing.']
 /**
