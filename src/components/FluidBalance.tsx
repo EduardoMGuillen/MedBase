@@ -6,7 +6,7 @@ import { fromLocalValue } from '../lib/dateInput'
 import { dateToDisplay } from '../lib/dateInput'
 import { dmyTime, inputDateTime, shortStaff } from '../lib/format'
 import { FLUID_IN_ITEMS, FLUID_MAX_ENTRY_ML, FLUID_OUT_ITEMS } from '../lib/clinicalConfig'
-import { currentFluidsMode, fluidBalance, fluidItemLabel, fluidsOrderText, fmtMl, signedMl, type FluidRow, type FluidTotals } from '../lib/fluids'
+import { currentFluidsMode, fluidBalance, fluidItemLabel, fluidsSentence, fmtMl, signedMl, type FluidRow, type FluidTotals } from '../lib/fluids'
 import { DateTimeField } from './DateTimeField'
 import { GraceButton, VersionTag } from './Grace'
 import { Modal } from './ui'
@@ -27,9 +27,14 @@ function IvCell({ t }: { t: FluidTotals }) {
 
 const cell = (n: number) => (n ? fmtMl(n) : '—')
 
-/** Una tabla por día clínico (07:00 a 07:00): columnas por corte y el total de 24 horas. */
+/**
+ * Una tabla por día clínico (07:00 a 07:00): columnas por corte y el total de 24 horas.
+ * UI3 (ronda 17): con un solo corte de 24 horas (orden cada 24 horas) no se repite «07:00–07:00» junto a «24 horas»: queda una
+ * sola columna.
+ */
 function DayTable({ periods, total, day }: { periods: FluidRow[]; total: FluidTotals; day: string }) {
-  const cols: { key: string; label: string; t: FluidTotals }[] = [...periods.map((p) => ({ key: String(p.start), label: p.label, t: p as FluidTotals })), { key: 'day', label: '24 horas', t: total }]
+  const single = periods.length === 1 && periods[0].end - periods[0].start >= 24 * 3_600_000
+  const cols: { key: string; label: string; t: FluidTotals }[] = [...(single ? [] : periods.map((p) => ({ key: String(p.start), label: p.label, t: p as FluidTotals }))), { key: 'day', label: '24 horas', t: total }]
   const bal = (n: number) => <b className={n < 0 ? 'fluids__neg' : 'fluids__pos'}>{signedMl(n)}</b>
   return (
     <div className="fluids__day">
@@ -78,7 +83,8 @@ export function FluidBalance({ file, reload, print = false }: { file: InpatientF
   return (
     <section className="panel fluids" data-testid="fluid-balance">
       <div className="panel__head">
-        <div><h2>Ingestas y excretas</h2><p>{mode ? fluidsOrderText(mode) : 'Orden suspendida: el registro queda como estaba.'} Los líquidos IV se calculan de la hoja de medicamentos{print ? '.' : '; toca un número para ver de qué sale.'}</p></div>
+        {/* UI3 (ronda 17): «Cuantificar ingestas y excretas cada 24 horas. Los líquidos IV se calculan de la hoja de medicamentos; toca un número para ver de dónde sale.» */}
+        <div><h2>Ingestas y excretas</h2><p>{mode ? fluidsSentence(mode) : 'Orden suspendida: el registro queda como estaba.'} Los líquidos IV se calculan de la hoja de medicamentos{print ? '.' : '; toca un número para ver de dónde sale.'}</p></div>
         {record && <button type="button" className="btn btn--primary btn--sm" onClick={() => setEditing('new')}><Plus size={15} />Registrar ingreso o egreso</button>}
       </div>
       <div className="panel__body">
@@ -125,7 +131,8 @@ function FluidEntryModal({ stayId, entry, onClose, onSaved }: { stayId: string; 
   const future = fromLocalValue(at).getTime() > Date.now() + 60_000
   const ok = !!type && n > 0 && n <= FLUID_MAX_ENTRY_ML && !future
   return (
-    <Modal title={entry ? 'Corregir registro' : 'Registrar ingreso o egreso'} onClose={onClose} footer={<>
+    // UI3 (ronda 17): dos columnas parejas (Tipo y Cantidad; Hora con «Ahora» en la misma línea y Nota), alineadas por arriba
+    <Modal title={entry ? 'Corregir registro' : 'Registrar ingreso o egreso'} className="fluid-entry" onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!ok || busy} onClick={async () => {
         setBusy(true)

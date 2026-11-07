@@ -21,6 +21,15 @@ export function fluidsOrderText(m: FluidsMode | 'off') {
   return `${FLUIDS_ORDER} · ${fluidsModeLabel(m)}${detail}`
 }
 
+/**
+ * UI3 (ronda 17): la frase de la tarjeta, bien puntuada: «Cuantificar ingestas y excretas cada 24 horas.», «… por turno
+ * (07:00, 15:00 y 23:00).». La orden en las notas sigue con `fluidsOrderText` («… · Cada 24 horas»).
+ */
+export function fluidsSentence(m: FluidsMode) {
+  const detail = m === 'shift' ? ` (${VITALS_SHIFT_TIMES.slice(0, -1).join(', ')} y ${VITALS_SHIFT_TIMES.at(-1)})` : ''
+  return `${FLUIDS_ORDER} ${fluidsModeLabel(m).toLowerCase()}${detail}.`
+}
+
 /** La orden vigente (el último tramo), o undefined si nunca se indicó o está suspendida. */
 export function currentFluidsMode(plan?: FluidsSegment[]): FluidsMode | undefined {
   const last = plan?.at(-1)

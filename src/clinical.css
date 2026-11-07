@@ -1113,7 +1113,16 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; fo
 .fluids__group th { background: var(--ward, #f1f6f4); color: var(--petrol, inherit); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
 .fluids__sum th, .fluids__sum td { font-weight: 700; }
 .fluids__balance th, .fluids__balance td { border-top: 2px solid var(--line); }
-.fluids__total { background: rgba(0, 0, 0, .025); font-weight: 600; }
+/* UI3 (ronda 17): cada fila con un solo fondo de punta a punta (el rubro es un th y tomaba el fondo de los encabezados) */
+.fluids__table tbody tr > * { background: var(--paper); }
+.fluids__table tbody tr:hover > * { background: #fafcfb; }
+.fluids__table tbody tr.fluids__group > th { background: var(--ward, #f1f6f4); }
+.fluids__table tbody th { border-bottom: 1px solid var(--line-soft); }
+.fluids__table tbody tr:last-child > * { border-bottom: 0; }
+.fluids__total { font-weight: 600; }
+.fluid-entry.modal { width: min(600px, 100%); }
+.fluid-entry .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+@media (max-width: 600px) { .fluid-entry .form-grid { grid-template-columns: minmax(0, 1fr); } }
 .fluids__neg { color: var(--red-ink, #b42318); }
 .fluids__pos { color: var(--mint-ink, #146c43); }
 .fluids__warn { color: var(--amber-ink, #8a5a00); }
