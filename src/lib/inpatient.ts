@@ -338,3 +338,14 @@ export function indicationLines(active: { id: string; text: string }[], decision
 
 /** Texto de una línea como orden del checklist: la omitida se lee «OMITIR …», como los medicamentos de antes. */
 export const lineOrder = (l: OrderLine) => (l.tag === 'omitted' ? `OMITIR ${l.text}` : l.text)
+
+/**
+ * NO4 (ronda 17): el orden de los bloques de una nota SOAP. En la nota de ingreso, los «Diagnósticos (CIE-11)» van debajo de
+ * A. Análisis (NO3, ronda 16): ahí se plantea el diagnóstico. En la evolución (observación u hospitalización) el diagnóstico ya
+ * se conoce y va primero, arriba de los signos vitales (NE6) y de S, O, A y P. El editor y el documento firmado (el mismo que
+ * se imprime en el expediente completo) recorren esta lista: siempre el mismo orden.
+ */
+export type SoapBlock = 'dx' | 'vitals' | 'subjective' | 'objective' | 'assessment' | 'plan'
+export const soapBlocks = (kind?: InpatientNote['kind']): SoapBlock[] => (kind === 'admission'
+  ? ['vitals', 'subjective', 'objective', 'assessment', 'dx', 'plan']
+  : ['dx', 'vitals', 'subjective', 'objective', 'assessment', 'plan'])

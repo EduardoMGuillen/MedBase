@@ -429,3 +429,22 @@ export function orderGroups<T extends Pick<ExamOrder, 'group' | 'name'> & { unca
   if (loose.length) out.push({ title: UNCATALOGUED_GROUP, items: loose })
   return out
 }
+
+/**
+ * LB9 (ronda 17): las tarjetas de la bandeja de Laboratorio y de Imágenes, iguales en las tres áreas (Ambulatorio, Observación y
+ * Hospitalización): una por paciente y ubicación, en el orden de la lista (los urgentes arriba), con sus exámenes por categoría
+ * del catálogo. La regla de los botones es una sola: un botón general con todo lo que se puede marcar ahora y uno por cada
+ * categoría que tenga pendientes, aunque sea una sola categoría.
+ */
+export function trayCards<T extends Pick<ExamOrder, 'group' | 'name' | 'patientId' | 'priority' | 'orderedAt'> & { uncatalogued?: boolean; locationText: string }>(
+  list: T[], catalog: Pick<CatalogExam, 'group' | 'name' | 'subgroup'>[], canTake: (e: T) => boolean) {
+  const cards = new Map<string, T[]>()
+  for (const e of list) { const k = `${e.patientId}|${e.locationText}`; cards.set(k, [...(cards.get(k) ?? []), e]) }
+  return [...cards.entries()].map(([key, items]) => ({
+    key, items,
+    urgent: items.some((x) => x.priority === 'urgent'),
+    oldest: items.reduce((a, x) => (x.orderedAt < a ? x.orderedAt : a), items[0].orderedAt),
+    takeable: items.filter(canTake),
+    cats: orderGroups(items, catalog).map((c) => ({ ...c, takeable: c.items.filter(canTake) })),
+  }))
+}
