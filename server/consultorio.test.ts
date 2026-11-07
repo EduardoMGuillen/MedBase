@@ -53,7 +53,8 @@ describe('C1 permisos por tipo de cuenta', () => {
   test('en una clínica cada rol conserva exactamente sus permisos', async () => {
     for (const role of ['admin', 'doctor', 'nurse', 'reception'] as Role[]) assert.deepEqual(permissionsFor(role, 'clinic'), ROLE_PERMISSIONS[role])
     const nurse = await as('murbina@demo.clinara')
-    assert.deepEqual(nurse.login.permissions, ROLE_PERMISSIONS.nurse)
+    // EN1 (ronda 16): Lic. Marta Urbina es licenciada: su puesto suma «roster.edit»
+    assert.deepEqual(nurse.login.permissions, [...ROLE_PERMISSIONS.nurse, 'roster.edit'])
     assert.equal(nurse.login.user.clinicKind, 'clinic')
   })
   test('el médico titular administra su consultorio desde la vista de administrador; la asistente no', async () => {

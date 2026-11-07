@@ -14,8 +14,17 @@ export function positionOf(key?: string) {
   return undefined
 }
 
-/** ¿Es jefe de su departamento (Microbiólogo o Radiólogo: configura y edita turnos)? */
-export const isDeptLead = (s?: { position?: string }) => !!positionOf(s?.position)?.lead
+/** ¿Es jefe de su departamento de Laboratorio o Imágenes (Microbiólogo o Radiólogo: configura y edita turnos)? */
+export const isDeptLead = (s?: { position?: string }) => { const p = positionOf(s?.position); return !!p?.lead && p.dept !== 'nursing' }
+
+/** EN1 (ronda 16): el departamento del cargo o puesto de cada rol (Laboratorio, Imágenes, Enfermería). */
+export const POSITION_DEPT: Partial<Record<Role, DeptKey>> = { lab: 'lab', imaging: 'imaging', nurse: 'nursing' }
+
+/** EN1 (ronda 16): el cargo o puesto de la persona en el departamento de ese rol (o undefined si no tiene). */
+export function positionFor(s: { position?: string }, role: Role) {
+  const p = positionOf(s.position)
+  return p && p.dept === POSITION_DEPT[role] ? p : undefined
+}
 
 /** Nombre con el prefijo del cargo («Lic. Paula Suazo», «Téc. Bryan Erazo»), sin repetirlo si ya lo trae. */
 export function signedName(s: { name: string; docName?: string; position?: string }) {

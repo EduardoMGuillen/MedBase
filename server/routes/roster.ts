@@ -33,7 +33,8 @@ const SHIFT_LABEL: Record<string, string> = { morning: 'Mañana', afternoon: 'Ta
  * DP6 (ronda 11): por departamento («Médicos | Enfermería | Laboratorio | Imágenes»); fuera de Médicos, por turno (Mañana,
  * Tarde, Noche; horas en clinicalConfig, VALIDAR: Emil). Solo se asigna personal con el rol del departamento. Editan
  * Administración (todo) y, en su departamento y de hoy en adelante, el Microbiólogo (Laboratorio) y el Radiólogo (Imágenes);
- * los técnicos ven el de su departamento.
+ * los técnicos ven el de su departamento. EN1 (ronda 16): Enfermería ve el suyo y la Licenciada en enfermería lo edita de hoy en
+ * adelante (como el jefe de Laboratorio con el suyo); las auxiliares solo lo ven. Nadie de enfermería toca los otros.
  */
 export function registerRoster(app: Express, { sql, auth, userOf, clinicOf, audit }: Ctx) {
   const clinicOnly = async (cid: string) => {
@@ -41,9 +42,11 @@ export function registerRoster(app: Express, { sql, auth, userOf, clinicOf, audi
   }
   const toRow = (r: Record<string, unknown>) => ({ id: String(r.id), day: String(r.day), staffId: String(r.staff_id), assignedBy: String(r.assigned_by), assignedAt: String(r.assigned_at),
     dept: String(r.dept ?? 'doctors') as Dept, shift: r.shift ? String(r.shift) : undefined })
-  const ownDept = (u: Staff): Dept | undefined => (u.role === 'lab' ? 'lab' : u.role === 'imaging' ? 'imaging' : undefined)
+  // EN1 (ronda 16): enfermería (con roster.view) ve el de enfermería; la licenciada (roster.edit) lo edita de hoy en adelante
+  const ownDept = (u: Staff): Dept | undefined => (u.role === 'lab' ? 'lab' : u.role === 'imaging' ? 'imaging' : u.role === 'nurse' && can(u, 'roster.view') ? 'nursing' : undefined)
   const canView = (u: Staff, d: Dept) => can(u, 'settings.manage') || ownDept(u) === d
-  const canEdit = (u: Staff, d: Dept, day: string) => can(u, 'settings.manage') || (ownDept(u) === d && can(u, 'dept.config') && day >= localISODate(new Date()))
+  const canEdit = (u: Staff, d: Dept, day: string) => can(u, 'settings.manage')
+    || (ownDept(u) === d && (d === 'nursing' ? can(u, 'roster.edit') : can(u, 'dept.config')) && day >= localISODate(new Date()))
   const deptQ = z.enum(['doctors', 'nursing', 'lab', 'imaging']).default('doctors')
   const assign = async (cid: string, user: Staff, b: { day: string; staffId: string; dept: Dept; shift?: string }) => {
     if (!canEdit(user, b.dept, b.day)) fail(403, b.day < localISODate(new Date()) && !can(user, 'settings.manage') ? 'Solo se editan los turnos de hoy en adelante.' : 'No puedes editar este rol de turnos.')

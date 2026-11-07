@@ -81,9 +81,11 @@ export const LATE_RECORD_MINUTES = 60
 
 /**
  * CX1 (ronda 8). VALIDAR: Emil. Roles que ven la Consulta externa agrupada «Por hora | Por médico» (sólo en una clínica:
- * en un consultorio hay un solo médico). Para activarlo en otro rol, se agrega aquí ('reception', 'nurse', 'doctor').
+ * en un consultorio hay un solo médico). Para activarlo en otro rol, se agrega aquí ('nurse', 'doctor'). RE2 (ronda 16): y recepción.
  */
-export const QUEUE_GROUP_ROLES: string[] = ['admin']
+export const QUEUE_GROUP_ROLES: string[] = ['admin', 'reception']
+/** RE2 (ronda 16). VALIDAR: Emil. Vista con que abre la Consulta externa agrupada si la persona no ha elegido otra (los grupos de médico, contraídos). */
+export const QUEUE_DEFAULT_VIEW: 'hour' | 'doctor' = 'doctor'
 
 /**
  * ME1 (ronda 8). VALIDAR: Emil. Infusión: unidades de la velocidad (la primera es la de por omisión) y su máximo. El máximo
@@ -376,7 +378,15 @@ export const DEPT_POSITIONS = {
     { key: 'radiologist', label: 'Médico(a) radiólogo(a)', prefix: 'Dr./Dra.', license: true, licenseBody: 'Colegio Médico de Honduras', lead: true },
     { key: 'imaging_tech', label: 'Técnico(a) en imágenes (radiotecnología)', prefix: 'Téc.', license: false, licenseBody: '', lead: false },
   ],
+  // EN1 (ronda 16): puesto en enfermería. La licenciada es la jefa de las auxiliares y edita el rol de turnos de enfermería
+  // (de hoy en adelante). Sin número de colegiación obligatorio (no se pidió).
+  nursing: [
+    { key: 'nurse_lic', label: 'Licenciado(a) en enfermería', prefix: 'Lic.', license: false, licenseBody: '', lead: true },
+    { key: 'nurse_aux', label: 'Auxiliar de enfermería', prefix: 'Aux.', license: false, licenseBody: '', lead: false },
+  ],
 } as const
+/** EN1 (ronda 16). VALIDAR: Emil. Puesto de enfermería de quien no tiene uno (la migración y al crear sin elegirlo): auxiliar. */
+export const NURSE_DEFAULT_POSITION = 'nurse_aux'
 /** Prefijos que ya puede traer el nombre (no se repiten en la firma). */
 export const NAME_PREFIXES = ['Dr.', 'Dra.', 'Lic.', 'Téc.', 'Aux.', 'Ing.']
 /**

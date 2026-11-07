@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Camera, Plus, UserPlus, X } from 'lucide-react'
+import { Camera, FlaskConical, Plus, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
@@ -9,6 +9,7 @@ import { uploadLarge } from '../lib/files'
 import { examLine, GROUP_LABEL } from '../lib/exams'
 import { hasRole } from '../lib/permissions'
 import type { ExamGroup, ExamInput } from '../lib/types'
+import { WalkInModal } from './WalkIn'
 
 /**
  * DP3 (ronda 11): paciente que viene solo a hacerse exámenes. Tres pasos en una ventana: el paciente (buscar en la Biblioteca o
@@ -74,8 +75,11 @@ export function AmbulatoryModal({ group: fixed, onClose, onDone }: { group?: Exa
   const [doctorName, setDoctorName] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
+  // RE1 (ronda 16): «Paciente sin cita» desde esta ventana: se cierra esta y se abre la otra con el mismo paciente
+  const [toWalkIn, setToWalkIn] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const doctors = staff.filter((s) => s.active && hasRole(s, 'doctor')).sort((a, b) => a.name.localeCompare(b.name, 'es'))
+  if (toWalkIn) return <WalkInModal initialPatientId={patientId} onClose={onClose} />
   if (registering) return <QuickPatient onClose={() => setRegistering(false)} onCreated={(id) => { setPatientId(id); setRegistering(false) }} />
   const save = async () => {
     if (!group) return
@@ -89,20 +93,26 @@ export function AmbulatoryModal({ group: fixed, onClose, onDone }: { group?: Exa
     } catch (x) { notify((x as Error).message, 'error'); setBusy(false) }
   }
   return (
-    <Modal title="Paciente ambulatorio" wide onClose={onClose} footer={<>
+    <Modal title="Paciente ambulatorio · laboratorio o imágenes" wide onClose={onClose} footer={<>
       <button className="btn btn--ghost" onClick={onClose}>Cancelar</button>
       <button className="btn btn--primary" disabled={!patientId || !group || !exams.length || busy} onClick={save}>Enviar a la bandeja</button>
     </>}>
+      {/* RE1 (ronda 16): deja claro que es solo para estudios; quien viene a consulta va por «Paciente sin cita» */}
+      {!fixed && <p className="amb-intro">Para el paciente que viene solo a hacerse exámenes o estudios. Si viene a consulta, usa {can('checkin.manage')
+        ? <button type="button" className="link-btn" onClick={() => setToWalkIn(true)}>«Paciente sin cita»</button> : '«Paciente sin cita»'}.</p>}
       <fieldset className="fs"><legend>1. Paciente</legend>
         <PatientPicker value={patientId} onChange={setPatientId} />
         {can('patients.manage') && <button type="button" className="btn btn--soft btn--sm" style={{ justifySelf: 'start' }} onClick={() => setRegistering(true)}><UserPlus size={15} />No está registrado: registrarlo</button>}
       </fieldset>
       <fieldset className="fs"><legend>2. Estudios</legend>
-        {!fixed && <div className="segmented" role="radiogroup" aria-label="Departamento">
+        {!fixed && <div className="segmented segmented--strong" role="radiogroup" aria-label="Departamento">
           {(['lab', 'imaging'] as ExamGroup[]).map((g) => <button key={g} type="button" role="radio" aria-checked={group === g} onClick={() => { if (g !== group) { setGroup(g); setExams([]) } }}>{GROUP_LABEL[g]}</button>)}
         </div>}
         {exams.length > 0 && <div className="chips">{exams.map((e, i) => <span key={i} className="chip">{examLine(e)}<button type="button" className="icon-btn" aria-label={`Quitar ${examLine(e)}`} onClick={() => setExams(exams.filter((_, j) => j !== i))}><X size={12} /></button></span>)}</div>}
-        <button type="button" className="btn btn--soft btn--sm" style={{ justifySelf: 'start' }} disabled={!group} onClick={() => setPicking(true)}><Plus size={15} />Elegir estudios</button>
+        <div className="amb-pick">
+          <button type="button" className="btn btn--soft btn--sm" disabled={!group} aria-describedby={group ? undefined : 'amb-pick-hint'} onClick={() => setPicking(true)}><Plus size={15} />Elegir estudios</button>
+          {!group && <small id="amb-pick-hint" className="muted">Elige primero Laboratorio o Imagen y gabinete</small>}
+        </div>
         <div className="segmented segmented--sm" role="radiogroup" aria-label="Prioridad" style={{ justifySelf: 'start' }}>
           <button type="button" role="radio" aria-checked={!urgent} onClick={() => setUrgent(false)}>Rutina</button>
           <button type="button" role="radio" aria-checked={urgent} onClick={() => setUrgent(true)}>Urgente</button>
@@ -115,7 +125,8 @@ export function AmbulatoryModal({ group: fixed, onClose, onDone }: { group?: Exa
         {!doctorId && <label className="field"><span>Nombre del médico (si es de afuera)</span><input className="input" value={doctorName} onChange={(e) => setDoctorName(e.target.value)} placeholder="Ej. Dr. Carlos Medina" /></label>}
         <div className="field"><span>Foto o archivo de la orden (opcional)</span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn--soft btn--sm" disabled={!patientId || !group} onClick={() => input.current?.click()}><Camera size={15} />{file ? 'Cambiar archivo' : 'Tomar foto o elegir archivo'}</button>
+            {/* RE1 (ronda 16): siempre activo (el archivo se sube al enviar, cuando ya hay paciente y departamento) */}
+            <button type="button" className="btn btn--soft btn--sm" onClick={() => input.current?.click()}><Camera size={15} />{file ? 'Cambiar archivo' : 'Tomar foto o elegir archivo'}</button>
             {file && <span className="muted">{file.name}</span>}
           </div>
           <input ref={input} type="file" accept="image/*,application/pdf" hidden onChange={(x) => setFile(x.target.files?.[0] ?? null)} /></div>
@@ -123,4 +134,19 @@ export function AmbulatoryModal({ group: fixed, onClose, onDone }: { group?: Exa
       {picking && group && <ExamPicker only={group} current={exams} title={`Estudios de ${GROUP_LABEL[group].toLowerCase()}`} onClose={() => setPicking(false)} onAdd={(list) => { setExams([...exams, ...list]); setPicking(false) }} />}
     </Modal>
   )
+}
+
+/**
+ * DP3 (ronda 11) y RE1 (ronda 16): el botón «Paciente ambulatorio» de Consulta externa y del Inicio, con la línea que aclara que
+ * es solo para estudios, sin consulta.
+ */
+export function AmbulatoryButton() {
+  const [open, setOpen] = useState(false)
+  const hint = 'Solo laboratorio o imágenes, sin consulta'
+  return <>
+    <button className="btn btn--soft btn--twoline" title={hint} onClick={() => setOpen(true)}>
+      <FlaskConical size={17} /><span>Paciente ambulatorio<small>{hint}</small></span>
+    </button>
+    {open && <AmbulatoryModal onClose={() => setOpen(false)} onDone={() => setOpen(false)} />}
+  </>
 }

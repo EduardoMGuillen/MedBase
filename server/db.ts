@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { dmyTime } from '../src/lib/format.js'
-import { defaultAnalyte, defaultValues, groupsFromLimits, mergeCriticalGroups, type CriticalGroup } from '../src/lib/clinicalConfig.js'
+import { defaultAnalyte, defaultValues, groupsFromLimits, mergeCriticalGroups, NURSE_DEFAULT_POSITION, type CriticalGroup } from '../src/lib/clinicalConfig.js'
 import { EXAMS, examKey } from '../src/lib/exams.js'
 import { randomUUID } from 'node:crypto'
 import {
@@ -26,7 +26,7 @@ import { insertExtraDemoUsers } from './demoUsers.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '84'
+const SCHEMA_VERSION = '85'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1378,6 +1378,10 @@ export function ensureDb(sql: Sql) {
       // v82 (ronda 14, RU1) y v83 (ronda 15, RU5 y RU8): el catálogo de material médico quirúrgico (v2), su periodo de registro y
       // los sets iniciales en cada clínica y consultorio
       for (const c of await q.query('SELECT id FROM clinics')) await loadSupplyCatalog(q, String(c.id))
+      // v85 (ronda 16, RE2): administración y recepción abren la Consulta externa «Por médico» (una sola vez)
+      await resetQueueViewOnce(q)
+      // v85 (ronda 16, EN1): el puesto de enfermería (Licenciada o Auxiliar) según el prefijo del nombre
+      await migrateNursePositions(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -1868,6 +1872,30 @@ export async function markDemoClinics(q: Sql) {
     AND NOT EXISTS (SELECT 1 FROM staff s WHERE s.clinic_id = c.id AND s.email NOT LIKE '%@demo.clinara')`)
 }
 
+/**
+ * v85 (ronda 16, EN1): el personal de enfermería sin puesto recibe el suyo según el prefijo del nombre: «Lic.» → Licenciado(a)
+ * en enfermería; «Aux.» o sin prefijo → Auxiliar. Quien también es de Laboratorio o Imágenes conserva ese cargo. Idempotente:
+ * solo toca a quien no tiene puesto (después Administración lo cambia en Personal y roles).
+ */
+export async function migrateNursePositions(q: Sql) {
+  const roles = `COALESCE(NULLIF(roles, ''), json_build_array(role)::text)::jsonb`
+  await q.run(`UPDATE staff SET position = CASE WHEN name LIKE 'Lic.%' OR name LIKE 'Lic %' OR name LIKE 'Licda.%' THEN 'nurse_lic' ELSE ? END
+    WHERE (position IS NULL OR position = '') AND ${roles} @> '["nurse"]'::jsonb AND NOT ${roles} @> '["lab"]'::jsonb AND NOT ${roles} @> '["imaging"]'::jsonb`, [NURSE_DEFAULT_POSITION])
+}
+
+/**
+ * v85 (ronda 16, RE2): se borra la vista guardada de la Consulta externa («Por hora | Por médico») de quien tiene el rol de
+ * administración o de recepción, para que abran con la nueva vista por defecto («Por médico»). Una sola vez (marca en meta):
+ * lo que elijan después se respeta.
+ */
+export async function resetQueueViewOnce(q: Sql) {
+  if (await q.one(`SELECT 1 FROM meta WHERE key = 're2_queue_view'`)) return
+  await q.run(`UPDATE staff SET prefs = (COALESCE(NULLIF(prefs, ''), '{}')::jsonb - 'queueView')::text
+    WHERE prefs IS NOT NULL AND prefs <> '' AND jsonb_exists(prefs::jsonb, 'queueView')
+      AND jsonb_exists_any(COALESCE(NULLIF(roles, ''), json_build_array(role)::text)::jsonb, array['admin', 'reception'])`)
+  await q.run(`INSERT INTO meta (key, value) VALUES ('re2_queue_view', ?) ON CONFLICT (key) DO NOTHING`, [new Date().toISOString()])
+}
+
 export async function migrateOfficeOwners(q: Sql) {
   if (await q.one(`SELECT 1 FROM meta WHERE key = 'office_owner_admin'`)) return
   await q.run(`UPDATE staff s SET roles = (COALESCE(NULLIF(s.roles, ''), json_build_array(s.role)::text)::jsonb || '["admin"]'::jsonb)::text
@@ -1962,6 +1990,8 @@ export async function resetDemo(sql: Sql) {
     await seed(q)
     // Lo que las migraciones hacen sobre una base nueva: roles, titular del consultorio como administrador y clínicas demo
     await migrateRoles(q)
+    // EN1 (ronda 16): el puesto de enfermería
+    await migrateNursePositions(q)
     await q.run(`DELETE FROM meta WHERE key = 'office_owner_admin'`)
     await migrateOfficeOwners(q)
     await markDemoClinics(q)

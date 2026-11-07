@@ -38,6 +38,8 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; e
   // RU2 (ronda 14): registro administrativo de enfermería (en Administración, dentro de su grupo)
   // RU6 (ronda 15): registro administrativo de enfermería, fuera de «Pacientes»: entrada propia bajo el encabezado «Registros»
   { to: '/app/uso-medicamentos-material', label: 'Uso de medicamentos y material', icon: ClipboardList, perm: 'usage.view', group: 'Registros' },
+  // EN1 (ronda 16): enfermería ve el rol de turnos de enfermería (la licenciada lo edita de hoy en adelante)
+  { to: '/app/rol-de-turnos-enfermeria', label: 'Rol de turnos', icon: CalendarClock, perm: 'roster.view', roles: ['nurse'], group: 'Registros' },
   { to: '/app/configuracion-laboratorio', label: 'Configuración de laboratorio', icon: SlidersHorizontal, perm: 'dept.work', roles: ['lab'], group: 'Departamento' },
   { to: '/app/configuracion-imagenes', label: 'Configuración de imágenes', icon: SlidersHorizontal, perm: 'dept.work', roles: ['imaging'], group: 'Departamento' },
   { to: '/app/rol-de-turnos', label: 'Rol de turnos', icon: CalendarClock, perm: 'dept.work', roles: ['lab', 'imaging'], group: 'Departamento' },

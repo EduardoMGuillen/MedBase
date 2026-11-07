@@ -181,10 +181,11 @@ describe('RU1 (ronda 14): permisos del catálogo (en el servidor)', () => {
     await nurse.post(`/api/supplies/${n95.id}/shift-list`, { on: false })
   })
 
-  test('Recepción y el médico no ven el catálogo', async () => {
+  // RU10 (ronda 16): recepción registra material, así que lee el catálogo para el formulario (pero no marca la lista de turno)
+  test('El médico no ve el catálogo; recepción lo lee pero no marca la lista de turno', async () => {
     for (const email of ['aquiroz@demo.clinara', 'vsolorzano@demo.clinara']) {
       const u = await as(email)
-      assert.equal((await u.get('/api/supplies')).status, 403, email)
+      assert.equal((await u.get('/api/supplies')).status, email === 'aquiroz@demo.clinara' ? 200 : 403, email)
       const cid = await clinicOf(email)
       const any = (await itemsOf(cid))[0]
       assert.equal((await u.post(`/api/supplies/${any.id}/shift-list`, { on: true })).status, 403, email)
@@ -253,7 +254,8 @@ describe('RU2 (ronda 14): pestaña «Medicamentos»', () => {
     const ceftri = mine.filter((x) => x.drug === 'Ceftriaxona RU')
     assert.equal(ceftri.length, 2, '«No aplicada» y «Omitida» no salen')
     assert.equal(ceftri[0].appliedBy, 'Lic. Marta Urbina')
-    assert.equal(ceftri[0].appliedByTitle, 'Enfermería')
+    // EN1 (ronda 16): con su puesto, el título es el del puesto (como en Laboratorio e Imágenes)
+    assert.equal(ceftri[0].appliedByTitle, 'Licenciado(a) en enfermería')
     assert.equal(ceftri[0].orderedBy, 'Dra. Valeria Solórzano')
     assert.match(ceftri[0].medication, /^Ceftriaxona RU \(vial 1 g\) 1 g vía intravenosa$/)
     assert.match(ceftri[0].location, /^Hospitalización · Cuarto /)
@@ -341,10 +343,9 @@ describe('RU2 (ronda 14): pestaña «Material»', () => {
     assert.equal(v.status, 200)
     assert.ok(v.body.voidedAt)
     assert.equal(materialTotals(await material(nurse)).find((s) => s.itemId === ids.jeringa)!.quantity, 5, 'el anulado no suma')
-    for (const u of [admin, recep]) {
-      assert.equal((await u.get(`/api/usage/material?${win()}`)).status, 200)
-      assert.equal((await u.post('/api/usage/material', body(p1, [['gasa', 1]]))).status, 403)
-    }
+    for (const u of [admin, recep]) assert.equal((await u.get(`/api/usage/material?${win()}`)).status, 200)
+    // RU10 (ronda 16): administración y recepción ya registran material; laboratorio sigue sin poder
+    assert.equal((await (await as('psuazo@demo.clinara')).post('/api/usage/material', body(p1, [['gasa', 1]]))).status, 403)
     assert.ok(await sql.one(`SELECT 1 FROM audit WHERE action LIKE 'Registro de uso de material: anuló%Motivo: Registro duplicado'`))
   })
 
@@ -403,7 +404,9 @@ describe('RU2 (ronda 14): pestaña «Material»', () => {
     assert.equal(s.status, 200)
     // RU7 (ronda 15): { patients, general }
     assert.ok(Array.isArray(s.body.patients))
-    assert.equal((await (await as('aquiroz@demo.clinara')).get(`/api/usage/suggest?${win()}`)).status, 403)
+    // RU10 (ronda 16): recepción ya registra material; laboratorio no
+    assert.equal((await (await as('aquiroz@demo.clinara')).get(`/api/usage/suggest?${win()}`)).status, 200)
+    assert.equal((await (await as('psuazo@demo.clinara')).get(`/api/usage/suggest?${win()}`)).status, 403)
   })
 })
 

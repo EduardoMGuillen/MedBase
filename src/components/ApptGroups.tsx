@@ -39,13 +39,16 @@ export function groupAppointments(list: Appointment[], view: ApptGroupView, staf
   return out
 }
 
-/** Estado de los grupos abiertos/cerrados. Abiertos por defecto; «Expandir/Contraer todo» aplica a todos los grupos dados. */
-export function useFold() {
+/**
+ * Estado de los grupos abiertos/cerrados. Abiertos por defecto (RE2, ronda 16: quien lo usa puede decir qué grupos empiezan
+ * contraídos); «Expandir/Contraer todo» aplica a todos los grupos dados.
+ */
+export function useFold(openByDefault: (key: string) => boolean = () => true) {
   const [fold, setFold] = useState<Record<string, boolean>>({})
-  const isOpen = (k: string) => fold[k] ?? true
+  const isOpen = (k: string) => fold[k] ?? openByDefault(k)
   return {
     isOpen,
-    toggle: (k: string) => setFold((f) => ({ ...f, [k]: !(f[k] ?? true) })),
+    toggle: (k: string) => setFold((f) => ({ ...f, [k]: !(f[k] ?? openByDefault(k)) })),
     setAll: (keys: string[], open: boolean) => setFold((f) => ({ ...f, ...Object.fromEntries(keys.map((k) => [k, open])) })),
   }
 }

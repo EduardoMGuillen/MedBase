@@ -47,6 +47,15 @@ export function DeptRosterPage() {
   return <div className="page"><Roster fixed={user.role} canEdit={can('dept.config')} /></div>
 }
 
+/**
+ * EN1 (ronda 16): «Rol de turnos» del menú de Enfermería (bajo «Registros»): solo el de enfermería; lo edita la licenciada, de
+ * hoy en adelante (el servidor también lo exige); las auxiliares lo ven sin editar.
+ */
+export function NurseRosterPage() {
+  const { can } = useStore()
+  return <div className="page"><Roster fixed="nursing" canEdit={can('roster.edit')} /></div>
+}
+
 interface DeptView {
   patient: { id: string; name: string; record: string; birthDate: string; sex: string; dni?: string; phone: string; allergies: string[] }
   location?: string; group: ExamGroup; exams: ExamOrder[]; creatinine?: { value: string; unit?: string; at: string; flag?: string; exam: string }

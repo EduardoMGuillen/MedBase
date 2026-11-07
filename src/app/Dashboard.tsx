@@ -2,7 +2,8 @@ import { PendingApplications } from '../components/ApplyMeds'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Activity, Globe, Phone, Receipt, Stethoscope } from 'lucide-react'
-import { AmbulatoryModal } from './Ambulatory'
+import { AmbulatoryButton } from './Ambulatory'
+import { WalkInButton } from './WalkIn'
 import { useStore } from '../lib/store'
 import { receivedIn } from '../lib/billing'
 import { ExamTray, NewResults } from './ExamPanels'
@@ -216,7 +217,11 @@ export default function Dashboard() {
     return (
       <div className="page">
         <PageHead title={`${greeting()}, ${first}`} sub={`${pending.length} pacientes aún no llegan hoy.`}
-          actions={<Link className="btn btn--primary" to="/app/sala">Abrir sala de espera</Link>} />
+          actions={<>
+            {/* RE1 (ronda 16): en una clínica, recepción también mete al paciente a la consulta o lo manda solo a estudios desde Inicio */}
+            {settings.kind !== 'office' && can('checkin.manage') && <WalkInButton primary={false} />}
+            {settings.kind !== 'office' && can('ambulatory.register') && <AmbulatoryButton />}
+            <Link className="btn btn--primary" to="/app/sala">Abrir sala de espera</Link></>} />
         <div className="stats">
           <div className="stat"><b>{today.filter((a) => a.status !== 'cancelled').length}</b><span>Citas hoy</span></div>
           <button className="stat stat--btn" onClick={toArrivals}><b>{pending.length}</b><span>Por llegar</span>{pending.length > 0 && <small>Ver quiénes son</small>}</button>
@@ -289,7 +294,11 @@ export default function Dashboard() {
   return (
     <div className="page">
       <PageHead title={`${greeting()}, ${first}`} sub="Resumen operativo de la clínica."
-        actions={<>{settings.kind !== 'office' && can('ambulatory.register') && <AmbulatoryButton />}<Link className="btn btn--primary" to="/app/reportes">Ver reportes</Link></>} />
+        actions={<>
+          {/* RE1 (ronda 16): administración cubre a recepción: «Paciente sin cita» junto a «Paciente ambulatorio» */}
+          {settings.kind !== 'office' && can('checkin.manage') && <WalkInButton primary={false} />}
+          {settings.kind !== 'office' && can('ambulatory.register') && <AmbulatoryButton />}
+          <Link className="btn btn--primary" to="/app/reportes">Ver reportes</Link></>} />
       <div className="stats">
         <div className="stat"><b>{today.filter((a) => a.status !== 'cancelled').length}</b><span>Citas hoy</span></div>
         <div className="stat"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></div>
@@ -324,13 +333,4 @@ export default function Dashboard() {
       </div>
     </div>
   )
-}
-
-/** DP3 (ronda 11): «Paciente ambulatorio» en la pantalla de Administración (la misma ventana de la bandeja y de Recepción). */
-function AmbulatoryButton() {
-  const [open, setOpen] = useState(false)
-  return <>
-    <button className="btn btn--soft" onClick={() => setOpen(true)}>Paciente ambulatorio</button>
-    {open && <AmbulatoryModal onClose={() => setOpen(false)} onDone={() => setOpen(false)} />}
-  </>
 }

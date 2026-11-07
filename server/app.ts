@@ -51,7 +51,7 @@ import { registerUsage } from './routes/usage.js'
 import { registerSupplySets } from './routes/supplySets.js'
 import { can, permissionsFor, ROLE_LABEL, ROLES_BY_KIND, VIEW_LABEL, type Permission } from '../src/lib/permissions.js'
 import { positionOf } from '../src/lib/positions.js'
-import { NEB_MAX_COMPONENTS, PAGE_SIZE } from '../src/lib/clinicalConfig.js'
+import { NEB_MAX_COMPONENTS, NURSE_DEFAULT_POSITION, PAGE_SIZE } from '../src/lib/clinicalConfig.js'
 import { yearsOld } from '../src/lib/inpatient.js'
 import { consultRxItems, dmy, medicationLine, normalizeDni } from '../src/lib/format.js'
 import { normalize } from '../src/lib/patients.js'
@@ -1350,6 +1350,8 @@ export function createApp(opts: AppOptions) {
     }), req.body)
     await assertRoleFits(sql, clinicOf(req), s.role)
     checkPosition([s.role], s.position, s.license, s.name)
+    // EN1 (ronda 16): enfermería con su puesto (Licenciada o Auxiliar); si no se elige, auxiliar
+    if (s.role === 'nurse') s.position = nursePosition(s.position, s.name)
     const { user: created, password } = await createStaffMember(sql, clinicOf(req), s)
     await audit(userOf(req), `Creó el usuario ${s.name} (${ROLE_LABEL[s.role]}${s.position ? `, ${positionOf(s.position)?.label}` : ''})`)
     res.status(201).json({ user: created, password })
@@ -1385,7 +1387,10 @@ export function createApp(opts: AppOptions) {
     const roles = nextRoles ?? prev
     const position = b.position === undefined ? (row!.position ? String(row!.position) : undefined) : b.position ?? undefined
     if (roles.some((r) => r === 'lab' || r === 'imaging') || b.position !== undefined) checkPosition(roles, position, b.license ?? (row!.license ? String(row!.license) : undefined), String(row!.name))
-    const keptPosition = roles.some((r) => r === 'lab' || r === 'imaging') ? position : undefined
+    // EN1 (ronda 16): solo con Enfermería (sin Laboratorio ni Imágenes), el puesto es el de enfermería (auxiliar si no tenía)
+    const nurseOnly = roles.includes('nurse') && !roles.some((r) => r === 'lab' || r === 'imaging')
+    const keptPosition = roles.some((r) => r === 'lab' || r === 'imaging') ? position
+      : nurseOnly ? nursePosition(b.position ?? (positionOf(position)?.dept === 'nursing' ? position : undefined), String(row!.name)) : undefined
     const addsDoctor = nextRoles?.includes('doctor') && !prev.includes('doctor')
     if (addsDoctor && !row!.license && !b.license) fail(400, `Para darle el rol de médico a ${row!.name} escribe su número de colegiación.`)
     const changes: string[] = []
@@ -1550,7 +1555,7 @@ export async function createStaffMember(sql: Sql, clinicId: string, s: { name: s
   const schedule = s.role === 'doctor' ? JSON.stringify(scheduleFromWeek({ 1: [{ start: '08:00', end: '17:00' }], 2: [{ start: '08:00', end: '17:00' }], 3: [{ start: '08:00', end: '17:00' }], 4: [{ start: '08:00', end: '17:00' }], 5: [{ start: '08:00', end: '17:00' }] }, 30)) : null
   await sql.run(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id,clinic_id,roles,position) VALUES (?,?,?,?,?,?,?,TRUE,?,?,?,?,?,?)`,
     [id, s.name, s.role, s.specialty || null, s.email, s.license || null, COLORS[count % COLORS.length], bcrypt.hashSync(password, 10),
-      schedule, service ? String(service.id) : null, clinicId, JSON.stringify([s.role]), s.role === 'lab' || s.role === 'imaging' ? s.position ?? null : null])
+      schedule, service ? String(service.id) : null, clinicId, JSON.stringify([s.role]), s.role === 'lab' || s.role === 'imaging' || s.role === 'nurse' ? s.position ?? null : null])
   return { user: toStaff((await sql.one('SELECT * FROM staff WHERE id = ?', [id]))!), password }
 }
 
@@ -1612,6 +1617,13 @@ async function persistentSecret(sql: Sql) {
  * DP1 (ronda 11): Laboratorio e Imágenes llevan cargo obligatorio, del departamento que corresponde (una persona trabaja en
  * uno solo), y Microbiólogo o Radiólogo, número de colegiación.
  */
+/** EN1 (ronda 16): el puesto de enfermería elegido (debe ser de enfermería) o, si no se eligió, el de auxiliar. */
+function nursePosition(position: string | undefined, name: string) {
+  if (!position) return NURSE_DEFAULT_POSITION
+  if (positionOf(position)?.dept !== 'nursing') fail(400, `Elige el puesto de ${name} en Enfermería: Licenciado(a) o Auxiliar.`)
+  return position
+}
+
 function checkPosition(roles: string[], position: string | undefined, license: string | undefined, name: string) {
   const depts = roles.filter((r) => r === 'lab' || r === 'imaging')
   if (!depts.length) return

@@ -49,6 +49,9 @@ export const PERMISSIONS = {
   // RU4 y RU8 (ronda 15): agregar material y variantes al catálogo (editar y archivar sigue siendo supplies.manage); sets
   'supplies.add': 'Agregar materiales y variantes al catálogo de material',
   'sets.manage': 'Crear, editar, duplicar y archivar sets de material',
+  // EN1 (ronda 16): rol de turnos de enfermería (la licenciada lo edita de hoy en adelante; las auxiliares lo ven)
+  'roster.view': 'Ver el rol de turnos de su departamento',
+  'roster.edit': 'Editar el rol de turnos de su departamento, de hoy en adelante',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -67,6 +70,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'supplies.view', 'supplies.manage', 'supplies.shiftlist', 'usage.view', 'usage.export', 'usage.void',
     // RU4 y RU8 (ronda 15): agrega materiales y administra los sets
     'supplies.add', 'sets.manage',
+    // RU10 (ronda 16): también registra material (en las clínicas pequeñas cubre a enfermería y a recepción)
+    'usage.record',
   ],
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',
@@ -79,9 +84,13 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // RU1–RU3 (ronda 14): ve el catálogo y arma la lista de turno; registra material; ve, imprime y exporta el registro
     'supplies.view', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export',
     // RU4 y RU8 (ronda 15, A4 y A13): agrega materiales y variantes (no edita ni archiva) y administra los sets
-    'supplies.add', 'sets.manage'],
-  // RU2 y RU3 (ronda 14): ve el registro de uso, lo imprime y lo exporta (no registra material)
-  reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view', 'ambulatory.register', 'usage.view', 'usage.export'],
+    'supplies.add', 'sets.manage',
+    // EN1 (ronda 16): ve el rol de turnos de enfermería (editarlo es del puesto de licenciada: POSITION_PERMISSIONS)
+    'roster.view'],
+  // RU2 y RU3 (ronda 14): ve el registro de uso, lo imprime y lo exporta. RU10 (ronda 16): también registra material (no anula
+  // lo de otros: usage.void sigue siendo de administración)
+  reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view', 'ambulatory.register', 'usage.view', 'usage.export',
+    'usage.record'],
   // Asistente de consultorio (secretaria o enfermera): recepción, preclínica, caja y aplicar dosis en observación. RU (ronda 14):
   // como enfermería en el registro de uso de material.
   assistant: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'billing.manage',
@@ -97,7 +106,11 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 const POSITION_PERMISSIONS: Record<string, Permission[]> = {
   microbiologist: ['dept.config'],
   radiologist: ['dept.config', 'chart.view', 'inpatient.view', 'inpatient.notes'],
+  // EN1 (ronda 16): la licenciada en enfermería edita el rol de turnos de enfermería
+  nurse_lic: ['roster.edit'],
 }
+/** EN1 (ronda 16): roles cuyo cargo o puesto suma permisos. */
+const POSITION_ROLES: Role[] = ['lab', 'imaging', 'nurse']
 
 /**
  * MI1: en un consultorio el médico titular es médico y administrador (dos roles, AD5) y cambia de vista: en la de
@@ -109,7 +122,8 @@ const USAGE_ALL: Permission[] = ['supplies.view', 'supplies.manage', 'supplies.s
 const OFFICE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
   doctor: [...new Set<Permission>([...ROLE_PERMISSIONS.doctor, 'checkin.manage', 'inpatient.care', ...USAGE_ALL])],
   admin: [...new Set<Permission>([...ROLE_PERMISSIONS.admin, ...USAGE_ALL])],
-  nurse: ROLE_PERMISSIONS.nurse,
+  // EN1 (ronda 16): un consultorio no tiene rol de turnos
+  nurse: ROLE_PERMISSIONS.nurse.filter((p) => p !== 'roster.view'),
   assistant: ROLE_PERMISSIONS.assistant,
 }
 
@@ -117,7 +131,9 @@ const OFFICE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
 export function permissionsFor(role: Role, kind: ClinicKind = 'clinic', position?: string): Permission[] {
   if (kind === 'office') return OFFICE_PERMISSIONS[role] ?? []
   const base = ROLE_PERMISSIONS[role] ?? []
-  const extra = (role === 'lab' || role === 'imaging') && position ? POSITION_PERMISSIONS[position] ?? [] : []
+  // El cargo suma solo en la vista de su rol (el puesto de enfermería, en la de enfermería; el de Laboratorio, en la de Laboratorio)
+  const fits = !!position && POSITION_ROLES.includes(role) && (role === 'nurse') === position.startsWith('nurse_')
+  const extra = fits ? POSITION_PERMISSIONS[position!] ?? [] : []
   return extra.length ? [...new Set([...base, ...extra])] : base
 }
 
