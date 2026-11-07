@@ -545,6 +545,18 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     res.json(out)
   })
 
+  /**
+   * AD1 (ronda 17): la lista de Observación para administración, como el tablero de camas de HO2: quién está, dónde, desde cuándo
+   * y con qué médico. Sin diagnósticos, motivo ni expediente (el expediente sigue pidiendo inpatient.view).
+   */
+  app.get('/api/observation/board', auth, need('inpatient.view', 'observation.board'), async (req, res) => {
+    const cid = clinicOf(req)
+    const rows = await sql.query(`SELECT h.id, h.patient_id, h.admitted_at, h.observation_at, h.admitted_by, h.attending_ids, h.specialty, b.room, b.label AS bed_label
+      FROM hospitalizations h LEFT JOIN beds b ON b.id = h.bed_id WHERE h.clinic_id = ? AND h.status = 'active' AND h.kind = 'observation' ORDER BY h.admitted_at`, [cid])
+    res.json(rows.map((r) => ({ id: String(r.id), patientId: String(r.patient_id), since: String(r.observation_at ?? r.admitted_at), specialty: r.specialty ? String(r.specialty) : undefined,
+      room: r.room ? `${r.room}${r.bed_label ? `-${r.bed_label}` : ''}` : undefined, doctorIds: toHospitalization(r).attendingIds ?? [String(r.admitted_by)] })))
+  })
+
   app.get('/api/inpatient/:id', auth, need('inpatient.view'), async (req, res) => {
     const cid = clinicOf(req)
     const h = (await hospRow(cid, String(req.params.id)))!

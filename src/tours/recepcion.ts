@@ -7,6 +7,8 @@ export const recepcion: TourStep[] = [
   { route: '/app/agenda', target: 'nueva-cita', perm: 'agenda.manage', title: 'Agendar una cita', body: 'Elige médico, fecha y hora libre. Si el paciente es nuevo, escribe sólo su nombre y teléfono: completa su registro cuando llegue.' },
   { route: '/app/consulta-externa', target: 'sala-espera', title: 'Sala de espera', body: 'Cada paciente avanza de izquierda a derecha: en sala, listo para consulta (con preclínica) y atendido. Aquí ves cuánto lleva esperando.' },
   { route: '/app/consulta-externa', target: 'sin-cita', perm: 'checkin.manage', title: 'Paciente sin cita', body: 'Quien llega sin cita entra directo a la sala con el médico que lo atenderá.' },
+  // AD1 (ronda 17): «Paciente ambulatorio» se mudó de Consulta externa a Laboratorio e imágenes › Pacientes ambulatorios
+  { target: 'nav:/app/pacientes-ambulatorios', perm: 'ambulatory.register', feature: 'hospital', title: 'Pacientes ambulatorios', body: 'Quien viene solo a hacerse exámenes: lo registras aquí con «Paciente ambulatorio» y ves cómo van sus estudios, sin los resultados.' },
   { route: '/app/pacientes', target: 'nuevo-paciente', perm: 'patients.manage', title: 'Registrar un paciente', body: 'Datos personales, identidad y contacto de emergencia. El número de expediente se asigna solo.' },
   { route: '/app/pacientes', target: 'filtros', title: 'Buscar y filtrar', body: 'Busca por nombre, expediente o teléfono y filtra por edad, sexo, última consulta o médico.' },
   { route: '/app/caja', target: 'nuevo-cobro', perm: 'billing.manage', title: 'Cobrar', body: 'Elige los servicios (o crea uno nuevo), la forma de pago y cuánto paga ahora. El recibo sale para imprimir o enviar por WhatsApp.' },

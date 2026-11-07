@@ -9,6 +9,9 @@ export const administracion: TourStep[] = [
   { route: '/app/configuracion/agenda', target: 'tab:horarios', perm: 'settings.manage', title: 'Horarios', body: 'El horario de atención de cada médico; la agenda y la reserva en línea sólo ofrecen esas horas.' },
   { route: '/app/configuracion/observacion', target: 'tab:camas', perm: 'settings.manage', feature: 'hospital', title: 'Camas', body: 'Agrega camas, márcalas fuera de servicio y mira cuáles están ocupadas.' },
   { route: '/app/configuracion/examenes', target: 'tab:areas', perm: 'settings.manage', title: 'Áreas de servicio', body: 'Si la clínica tiene laboratorio o imágenes propios, los exámenes les llegan a ellos; si no, a enfermería.' },
+  // AD1 (ronda 17): Observación en solo lectura y el grupo «Laboratorio e imágenes»
+  { target: 'nav:/app/observacion', perm: 'observation.board', feature: 'observation', title: 'Observación', body: 'Quién está en observación, dónde y con qué médico. Por privacidad no abres el expediente.' },
+  { target: 'nav:/app/pacientes-ambulatorios', perm: 'ambulatory.register', feature: 'hospital', title: 'Laboratorio e imágenes', body: 'Registras pacientes que vienen solo a exámenes y miras las bandejas de Laboratorio e Imágenes en solo lectura: estado y espera, sin resultados.' },
   { route: '/app/personal', target: 'tab:personal', perm: 'staff.manage', title: 'Personal y roles', body: 'Agrega usuarios y dales uno o varios roles. Con varios, cada persona cambia entre sus vistas.' },
   { route: '/app/personal', target: 'tab:bitacora', perm: 'audit.view', title: 'Bitácora', body: 'Quién hizo qué y cuándo, con filtros por persona, rol, paciente y fechas. Nadie la puede editar.' },
   { route: '/app/reportes', target: 'reportes', perm: 'reports.view', title: 'Reportes', body: 'Citas, asistencia e ingresos por médico, por servicio y por forma de pago. Se exportan a CSV.' },

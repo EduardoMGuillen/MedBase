@@ -62,3 +62,71 @@ describe('PF1 (ronda 17): el médico de la clínica registra pacientes sin cita'
     assert.ok(tourFor('doctor', 'clinic').some((s) => s.target === 'sin-cita'))
   })
 })
+
+describe('AD1 (ronda 17): administración y recepción, Observación y Laboratorio e imágenes', () => {
+  test('permisos: Observación en solo lectura y bandejas en solo lectura, solo administración de la clínica', () => {
+    const adm = permissionsFor('admin', 'clinic')
+    assert.ok(adm.includes('observation.board') && adm.includes('dept.view') && adm.includes('ambulatory.register'))
+    assert.ok(!adm.includes('inpatient.view') && !adm.includes('chart.view') && !adm.includes('dept.work') && !adm.includes('exams.process'), 'sin expediente ni trabajo de bandeja')
+    const office = permissionsFor('admin', 'office')
+    assert.ok(!office.includes('observation.board') && !office.includes('dept.view'), 'consultorio: no aplica (MI1)')
+    const rec = permissionsFor('reception', 'clinic')
+    assert.ok(rec.includes('ambulatory.register') && !rec.includes('observation.board') && !rec.includes('dept.view'))
+  })
+
+  test('administración ve la lista de Observación sin diagnósticos y no abre el expediente; recepción, 403', async () => {
+    const cid = await clinicOfUser('rmoncada@demo.clinara')
+    const obs = await sql.query(`SELECT id FROM hospitalizations WHERE clinic_id = ? AND status = 'active' AND kind = 'observation'`, [cid])
+    assert.ok(obs.length > 0, 'la demo trae pacientes en observación')
+    const adm = await as('rmoncada@demo.clinara')
+    const r = await adm.get('/api/observation/board')
+    assert.equal(r.status, 200)
+    assert.equal(r.body.length, obs.length)
+    for (const row of r.body) {
+      assert.ok(row.patientId && row.since && row.doctorIds.length, JSON.stringify(row))
+      for (const k of ['diagnoses', 'reason', 'notes', 'meds', 'vitals']) assert.equal(row[k], undefined, k)
+    }
+    assert.equal((await adm.get(`/api/inpatient/${String(obs[0].id)}`)).status, 403, 'no abre el expediente')
+    assert.equal((await (await as('aquiroz@demo.clinara')).get('/api/observation/board')).status, 403, 'recepción')
+    assert.equal((await (await as('murbina@demo.clinara')).get('/api/observation/board')).status, 200, 'enfermería (inpatient.view)')
+  })
+
+  test('«Pacientes ambulatorios»: nombre del examen y estado, nunca los valores; prohibido sin ambulatory.register', async () => {
+    const cid = await clinicOfUser('aquiroz@demo.clinara')
+    const [pid] = await freePatients(cid, 1)
+    const rec = await as('aquiroz@demo.clinara')
+    const reg = await rec.post('/api/dept/ambulatory', { patientId: pid, group: 'lab', exams: [{ group: 'lab', name: 'Glucosa', priority: 'routine', place: 'clinic' }], requestedByName: 'Dr. Externo' })
+    assert.equal(reg.status, 201, JSON.stringify(reg.body))
+    const examId = String(reg.body.exams[0].id)
+    const lab = await as('psuazo@demo.clinara')
+    const res = await lab.post(`/api/exams/${examId}/result`, { values: [{ analyte: 'Glucosa', value: 'VALSECRETO', unit: 'mg/dL' }], report: 'INFORME-SECRETO' })
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    for (const email of ['aquiroz@demo.clinara', 'rmoncada@demo.clinara']) {
+      const r = await (await as(email)).get('/api/dept/ambulatory')
+      assert.equal(r.status, 200, email)
+      const mine = r.body.patients.find((x: any) => x.patient.id === pid)
+      assert.ok(mine, email)
+      const e = mine.exams.find((x: any) => x.id === examId)
+      assert.equal(e.name, 'Glucosa')
+      assert.equal(e.stage, 'ready')
+      const text = JSON.stringify(r.body)
+      assert.ok(!text.includes('VALSECRETO') && !text.includes('INFORME-SECRETO') && !text.includes('"result"') && !text.includes('"values"'), `${email}: sin resultados`)
+    }
+    for (const email of ['vsolorzano@demo.clinara', 'murbina@demo.clinara']) assert.equal((await (await as(email)).get('/api/dept/ambulatory')).status, 403, email)
+    // Las bandejas en solo lectura: administración ve el estudio pero no el resultado; no toma muestras, no carga resultados
+    const adm = await as('rmoncada@demo.clinara')
+    const tray = await adm.get('/api/dept/tray?group=lab')
+    assert.equal(tray.status, 200)
+    const item = tray.body.items.find((x: any) => x.id === examId)
+    assert.ok(item, 'el estudio está en la bandeja')
+    assert.equal(item.result, undefined)
+    assert.ok(!JSON.stringify(tray.body).includes('VALSECRETO'))
+    assert.equal((await adm.get('/api/dept/tray?group=imaging')).status, 200)
+    assert.equal((await adm.post(`/api/exams/${examId}/status`, { status: 'sample' })).status, 403)
+    assert.equal((await adm.post(`/api/exams/${examId}/result`, { values: [{ analyte: 'Glucosa', value: '1' }] })).status, 403)
+    assert.equal((await adm.post(`/api/exams/${examId}/not-done`, { reason: 'No vino' })).status, 403)
+    assert.equal((await (await as('aquiroz@demo.clinara')).get('/api/dept/tray?group=lab')).status, 403, 'recepción no ve las bandejas')
+    // Laboratorio sí ve el resultado en su bandeja
+    assert.ok(JSON.stringify((await lab.get('/api/dept/tray?group=lab')).body).includes('VALSECRETO'))
+  })
+})

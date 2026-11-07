@@ -2,8 +2,7 @@ import { PendingApplications } from '../components/ApplyMeds'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Activity, Globe, Phone, Receipt, Stethoscope } from 'lucide-react'
-import { AmbulatoryButton } from './Ambulatory'
-import { WalkInButton } from './WalkIn'
+import { useAmbulatoryToday } from './AmbulatoryPatients'
 import { useStore } from '../lib/store'
 import { receivedIn } from '../lib/billing'
 import { ExamTray, NewResults } from './ExamPanels'
@@ -114,11 +113,14 @@ export function ApptRows({ list, showDoctor = false, action, empty = 'No hay cit
 }
 
 export default function Dashboard() {
-  const { user, appointments, patients, staff, audit, staffById, settings, can, fetchPayments, fetchBalances, setStatus, stayOf } = useStore()
+  const { user, appointments, patients, staff, audit, staffById, settings, can, fetchPayments, fetchBalances, setStatus, stayOf, stays } = useStore()
   const [todayRevenue, setTodayRevenue] = useState<number | null>(null)
   const [owed, setOwed] = useState<{ n: number; total: number } | null>(null)
   const [triage, setTriage] = useState<Appointment | null>(null)
   const [completing, setCompleting] = useState<Appointment | null>(null)
+  // AD1 (ronda 17): la tarjeta «Ambulatorios hoy» de administración y recepción (en clínicas) lleva a «Pacientes ambulatorios»
+  const ambulatoryCard = settings.kind !== 'office' && (user?.role === 'admin' || user?.role === 'reception') && can('ambulatory.register')
+  const ambulatoryToday = useAmbulatoryToday(ambulatoryCard)
   useEffect(() => {
     if (!can('billing.manage')) return
     const k = localISODate(new Date())
@@ -245,15 +247,14 @@ export default function Dashboard() {
       <div className="page">
         <PageHead title={`${greeting()}, ${first}`} sub={`${pending.length} pacientes aún no llegan hoy.`}
           actions={<>
-            {/* RE1 (ronda 16): en una clínica, recepción también mete al paciente a la consulta o lo manda solo a estudios desde Inicio */}
-            {settings.kind !== 'office' && can('checkin.manage') && <WalkInButton primary={false} />}
-            {settings.kind !== 'office' && can('ambulatory.register') && <AmbulatoryButton />}
-            <Link className="btn btn--primary" to="/app/sala">Abrir sala de espera</Link></>} />
+            {/* AD1 (ronda 17): «Paciente sin cita» queda en Consulta externa y «Paciente ambulatorio» en Pacientes ambulatorios */}
+            <Link className="btn btn--primary" to="/app/consulta-externa">Abrir sala de espera</Link></>} />
         <div className="stats">
-          <div className="stat"><b>{today.filter((a) => a.status !== 'cancelled').length}</b><span>Citas hoy</span></div>
+          <Link className="stat" to="/app/agenda"><b>{today.filter((a) => a.status !== 'cancelled').length}</b><span>Citas hoy</span></Link>
           <button className="stat stat--btn" onClick={toArrivals}><b>{pending.length}</b><span>Por llegar</span>{pending.length > 0 && <small>Ver quiénes son</small>}</button>
           <Link className="stat" to="/app/caja"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></Link>
           {owed && owed.n > 0 && <Link className="stat" to="/app/caja"><b className="num">{money(owed.total, settings.currency)}</b><span>Saldos pendientes</span><small>{owed.n} {owed.n === 1 ? 'paciente' : 'cobros'}</small></Link>}
+          {ambulatoryCard && <Link className="stat" to="/app/pacientes-ambulatorios" data-testid="stat-ambulatory"><b>{ambulatoryToday ?? '—'}</b><span>Ambulatorios hoy</span><small>Laboratorio e imágenes</small></Link>}
         </div>
         {can('vitals.record') && triageQueue.length > 0 && (
           <section className="panel">
@@ -322,15 +323,15 @@ export default function Dashboard() {
     <div className="page">
       <PageHead title={`${greeting()}, ${first}`} sub="Resumen operativo de la clínica."
         actions={<>
-          {/* RE1 (ronda 16): administración cubre a recepción: «Paciente sin cita» junto a «Paciente ambulatorio» */}
-          {settings.kind !== 'office' && can('checkin.manage') && <WalkInButton primary={false} />}
-          {settings.kind !== 'office' && can('ambulatory.register') && <AmbulatoryButton />}
+          {/* AD1 (ronda 17): los botones del Inicio pasan a su lugar (Consulta externa y Pacientes ambulatorios); cada tarjeta lleva a su página */}
           <Link className="btn btn--primary" to="/app/reportes">Ver reportes</Link></>} />
       <div className="stats">
-        <div className="stat"><b>{today.filter((a) => a.status !== 'cancelled').length}</b><span>Citas hoy</span></div>
-        <div className="stat"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></div>
-        <div className="stat"><b className="num">{attendance == null ? '—' : `${attendance}%`}</b><span>Asistencia, últimos 30 días</span></div>
-        <div className="stat"><b>{patients.filter((p) => !p.pending).length}</b><span>Pacientes registrados</span></div>
+        <Link className="stat" to={can('agenda.view') ? '/app/agenda' : '/app/consulta-externa'}><b>{today.filter((a) => a.status !== 'cancelled').length}</b><span>Citas hoy</span></Link>
+        <Link className="stat" to="/app/caja"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span></Link>
+        <Link className="stat" to="/app/reportes"><b className="num">{attendance == null ? '—' : `${attendance}%`}</b><span>Asistencia, últimos 30 días</span></Link>
+        <Link className="stat" to="/app/pacientes"><b>{patients.filter((p) => !p.pending).length}</b><span>Pacientes registrados</span></Link>
+        {ambulatoryCard && <Link className="stat" to="/app/pacientes-ambulatorios" data-testid="stat-ambulatory"><b>{ambulatoryToday ?? '—'}</b><span>Ambulatorios hoy</span><small>Laboratorio e imágenes</small></Link>}
+        {can('observation.board') && features(settings).observation && <Link className="stat" to="/app/observacion"><b>{(stays ?? []).filter((x) => x.kind === 'observation').length}</b><span>En observación</span></Link>}
       </div>
       <ArrivalsPanel id="por-llegar" onArrive={arrive} />
       {completion}

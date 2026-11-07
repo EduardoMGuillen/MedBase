@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Camera, FlaskConical, Plus, UserPlus, X } from 'lucide-react'
+import { Camera, Plus, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { Modal } from '../components/ui'
@@ -136,17 +136,5 @@ export function AmbulatoryModal({ group: fixed, onClose, onDone }: { group?: Exa
   )
 }
 
-/**
- * DP3 (ronda 11) y RE1 (ronda 16): el botón «Paciente ambulatorio» de Consulta externa y del Inicio, con la línea que aclara que
- * es solo para estudios, sin consulta.
- */
-export function AmbulatoryButton() {
-  const [open, setOpen] = useState(false)
-  const hint = 'Solo laboratorio o imágenes, sin consulta'
-  return <>
-    <button className="btn btn--soft btn--twoline" title={hint} onClick={() => setOpen(true)}>
-      <FlaskConical size={17} /><span>Paciente ambulatorio<small>{hint}</small></span>
-    </button>
-    {open && <AmbulatoryModal onClose={() => setOpen(false)} onDone={() => setOpen(false)} />}
-  </>
-}
+// AD1 (ronda 17): el botón «Paciente ambulatorio» de Consulta externa y del Inicio se quitó; la ventana se abre desde «Pacientes
+// ambulatorios» (AmbulatoryPatients.tsx) y desde la bandeja «Ambulatorio» de Laboratorio e Imágenes.

@@ -46,6 +46,7 @@ import DeptHome from './app/DeptHome'
 import { ChartOrDept, DeptConfig, DeptOnly, DeptRosterPage, NurseRosterPage } from './app/DeptPages'
 import SupplyCatalogPage from './app/SupplyCatalog'
 import UsagePage from './app/Usage'
+import AmbulatoryPatients from './app/AmbulatoryPatients'
 
 /** Entra sólo con sesión, con el permiso y, si se pide, con el módulo activo en la cuenta (un consultorio no tiene hospitalización). */
 function Guard({ perm, anyPerm, feature, children }: { perm?: Permission; anyPerm?: Permission[]; feature?: 'hospital' | 'observation'; children: ReactNode }) {
@@ -88,11 +89,13 @@ export default function App() {
             <Route index element={<Home />} />
             <Route path="bienvenida" element={<Guard perm="settings.manage"><Onboarding /></Guard>} />
             {/* DP (ronda 11): departamentos de Laboratorio e Imágenes */}
-            <Route path="laboratorio" element={<Guard perm="dept.work"><DeptOnly dept="lab"><DeptTray group="lab" /></DeptOnly></Guard>} />
-            <Route path="imagenes" element={<Guard perm="dept.work"><DeptOnly dept="imaging"><DeptTray group="imaging" /></DeptOnly></Guard>} />
+            {/* AD1 (ronda 17): administración las abre en solo lectura (dept.view) */}
+            <Route path="laboratorio" element={<Guard perm="dept.work" anyPerm={['dept.view']}><DeptOnly dept="lab" view><DeptTray group="lab" /></DeptOnly></Guard>} />
+            <Route path="imagenes" element={<Guard perm="dept.work" anyPerm={['dept.view']}><DeptOnly dept="imaging" view><DeptTray group="imaging" /></DeptOnly></Guard>} />
+            <Route path="pacientes-ambulatorios" element={<Guard perm="ambulatory.register" feature="hospital"><AmbulatoryPatients /></Guard>} />
             {/* LB5 e IM1 (ronda 12): la bandeja por área */}
             {(['lab', 'imaging'] as const).flatMap((g) => (['outpatient', 'observation', 'hospital'] as const).map((a) => (
-              <Route key={`${g}-${a}`} path={`${g === 'lab' ? 'laboratorio' : 'imagenes'}/${AREA_SLUG[a]}`} element={<Guard perm="dept.work"><DeptOnly dept={g}><DeptTray key={a} group={g} area={a} /></DeptOnly></Guard>} />)))}
+              <Route key={`${g}-${a}`} path={`${g === 'lab' ? 'laboratorio' : 'imagenes'}/${AREA_SLUG[a]}`} element={<Guard perm="dept.work" anyPerm={['dept.view']}><DeptOnly dept={g} view><DeptTray key={a} group={g} area={a} /></DeptOnly></Guard>} />)))}
             <Route path="configuracion-laboratorio" element={<Guard perm="dept.work"><DeptOnly dept="lab"><DeptConfig group="lab" /></DeptOnly></Guard>} />
             <Route path="configuracion-imagenes" element={<Guard perm="dept.work"><DeptOnly dept="imaging"><DeptConfig group="imaging" /></DeptOnly></Guard>} />
             <Route path="rol-de-turnos" element={<Guard perm="dept.work"><DeptRosterPage /></Guard>} />
@@ -100,7 +103,8 @@ export default function App() {
             <Route path="agenda" element={<Guard perm="agenda.view"><Agenda /></Guard>} />
             <Route path="consulta-externa" element={<Guard perm="agenda.view"><WaitingRoom /></Guard>} />
             <Route path="sala" element={<Navigate to="/app/consulta-externa" replace />} />
-            <Route path="observacion" element={<Guard perm="inpatient.view" feature="observation"><Observation /></Guard>} />
+            {/* AD1 (ronda 17): administración ve la lista en solo lectura; el expediente (observacion/:id) sigue pidiendo inpatient.view */}
+            <Route path="observacion" element={<Guard perm="inpatient.view" anyPerm={['observation.board']} feature="observation"><Observation /></Guard>} />
             <Route path="observacion/:id" element={<Guard perm="inpatient.view" feature="observation"><InpatientFile key="observacion" /></Guard>} />
             <Route path="observacion/:id/expediente" element={<Guard perm="inpatient.view"><FullRecord /></Guard>} />
             <Route path="hospitalizados" element={<Guard perm="inpatient.view" anyPerm={['inpatient.admit']} feature="hospital"><Inpatients /></Guard>} />

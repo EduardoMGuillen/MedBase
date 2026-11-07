@@ -54,6 +54,10 @@ export const PERMISSIONS = {
   'roster.edit': 'Editar el rol de turnos de su departamento, de hoy en adelante',
   // HO2 (ronda 16): ingresar a hospitalización (el médico, y también recepción y administración con el médico tratante)
   'inpatient.admit': 'Ingresar pacientes a hospitalización',
+  // AD1 (ronda 17): administración ve la lista de Observación (quién, dónde y con qué médico) sin abrir el expediente, y las
+  // bandejas de Laboratorio e Imágenes en solo lectura (estudios, estado, espera y urgentes; nunca los resultados)
+  'observation.board': 'Ver la lista de Observación (sin expediente)',
+  'dept.view': 'Ver las bandejas de Laboratorio e Imágenes en solo lectura (sin resultados)',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -76,6 +80,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'usage.record',
     // HO2 (ronda 16): ingresa a hospitalización con el médico tratante (no escribe notas ni órdenes)
     'inpatient.admit',
+    // AD1 (ronda 17): la lista de Observación y las bandejas de Laboratorio e Imágenes, en solo lectura
+    'observation.board', 'dept.view',
   ],
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',
@@ -131,8 +137,9 @@ const POSITION_ROLES: Role[] = ['lab', 'imaging', 'nurse']
 const USAGE_ALL: Permission[] = ['supplies.view', 'supplies.manage', 'supplies.shiftlist', 'usage.view', 'usage.record', 'usage.export', 'usage.void', 'supplies.add', 'sets.manage']
 const OFFICE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
   doctor: [...new Set<Permission>([...ROLE_PERMISSIONS.doctor, 'checkin.manage', 'inpatient.care', ...USAGE_ALL])],
-  // HO2 (ronda 16): un consultorio no tiene hospitalización: administración no ingresa
-  admin: [...new Set<Permission>([...ROLE_PERMISSIONS.admin.filter((p) => p !== 'inpatient.admit'), ...USAGE_ALL])],
+  // HO2 (ronda 16): un consultorio no tiene hospitalización: administración no ingresa. AD1 (ronda 17): ni ve Observación (MI1: lo
+  // clínico va en la vista de médico) ni bandejas de departamento (un consultorio no tiene Laboratorio ni Imágenes)
+  admin: [...new Set<Permission>([...ROLE_PERMISSIONS.admin.filter((p) => !(['inpatient.admit', 'observation.board', 'dept.view'] as Permission[]).includes(p)), ...USAGE_ALL])],
   // EN1 (ronda 16): un consultorio no tiene rol de turnos
   nurse: ROLE_PERMISSIONS.nurse.filter((p) => p !== 'roster.view'),
   assistant: ROLE_PERMISSIONS.assistant,

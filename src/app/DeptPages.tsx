@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Navigate, useParams } from 'react-router-dom'
+import { Navigate, NavLink, useParams } from 'react-router-dom'
 import { TriangleAlert } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
@@ -14,10 +14,27 @@ import { TabRow } from '../components/TabRow'
 import type { ExamGroup, ExamOrder } from '../lib/types'
 
 /** DP1 (ronda 11): una pantalla de un departamento solo la abre ese departamento (Laboratorio o Imágenes). */
-export function DeptOnly({ dept, children }: { dept: ExamGroup; children: ReactNode }) {
-  const { user } = useStore()
+export function DeptOnly({ dept, children, view = false }: { dept: ExamGroup; children: ReactNode; view?: boolean }) {
+  const { user, can } = useStore()
+  // AD1 (ronda 17): administración de la clínica abre las bandejas en solo lectura (el servidor no le manda resultados ni la deja
+  // tomar muestras, cargar resultados ni marcar «No se realizó»)
+  if (view && user?.role !== dept && can('dept.view')) return <><DeptViewBar dept={dept} />{children}</>
   if (user?.role !== dept) return <div className="page"><section className="panel"><div className="empty"><b>Sin permiso.</b> Esta pantalla es de {dept === 'lab' ? 'Laboratorio' : 'Imágenes'}.</div></section></div>
   return children
+}
+
+/** AD1 (ronda 17): aviso de solo lectura y las áreas de la bandeja (todas, ambulatorio, observación, hospitalización). */
+function DeptViewBar({ dept }: { dept: ExamGroup }) {
+  const base = `/app/${dept === 'lab' ? 'laboratorio' : 'imagenes'}`
+  const areas: [string, string][] = [['', 'Todas las áreas'], ['/ambulatorio', 'Ambulatorio'], ['/observacion', 'Observación'], ['/hospitalizacion', 'Hospitalización']]
+  return (
+    <div className="page dept-view-bar" style={{ paddingBottom: 0 }} data-testid="dept-view-bar">
+      <div className="alert-strip" role="note" style={{ marginBottom: 12 }}>Solo lectura: ves los estudios, su estado, la espera y los urgentes. Las muestras y los resultados son de {dept === 'lab' ? 'Laboratorio' : 'Imágenes'}.</div>
+      <nav className="segmented" aria-label="Área de la bandeja" style={{ flexWrap: 'wrap' }}>
+        {areas.map(([slug, label]) => <NavLink key={slug} to={`${base}${slug}`} end className={({ isActive }) => (isActive ? 'is-active' : undefined)} aria-current={undefined}>{label}</NavLink>)}
+      </nav>
+    </div>
+  )
 }
 
 /**

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, BedDouble, BellRing, Building2, CalendarClock, CalendarDays, ChevronDown, ClipboardList, CircleHelp, Compass, Eye, FilePen, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, SlidersHorizontal, Stethoscope, UserCog,
+  BarChart3, BedDouble, BellRing, Building2, CalendarClock, CalendarDays, ChevronDown, ClipboardList, CircleHelp, Compass, Eye, FilePen, FlaskConical, ScanLine, TestTubes, House, LibraryBig, LogOut, Menu, Receipt, Search, Settings as SettingsIcon, SlidersHorizontal, Stethoscope, UserCog,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Avatar } from '../components/ui'
@@ -25,7 +25,8 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; a
   { to: '/app/caja', label: 'Caja', icon: Receipt, perm: 'billing.manage' },
   // Pacientes se divide en las tres áreas que pidió el médico, más los crónicos
   { to: '/app/consulta-externa', label: 'Consulta externa', icon: Stethoscope, perm: 'agenda.view', group: 'Pacientes' },
-  { to: '/app/observacion', label: 'Observación', icon: Eye, perm: 'inpatient.view', group: 'Pacientes' },
+  // AD1 (ronda 17): administración ve la lista de Observación en solo lectura (sin expediente)
+  { to: '/app/observacion', label: 'Observación', icon: Eye, perm: 'inpatient.view', anyPerm: ['observation.board'], group: 'Pacientes' },
   // HO2 (ronda 16): recepción y administración entran al tablero de camas para ingresar (sin ver el expediente)
   { to: '/app/hospitalizados', label: 'Hospitalizados', icon: BedDouble, perm: 'inpatient.view', anyPerm: ['inpatient.admit'], group: 'Pacientes' },
   // LB5 e IM1 (ronda 12): Laboratorio e Imágenes trabajan por área; la biblioteca va al final del mismo grupo
@@ -37,6 +38,11 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; a
   { to: '/app/imagenes/hospitalizacion', label: 'Hospitalización', icon: BedDouble, perm: 'dept.work', roles: ['imaging'], group: 'Pacientes' },
   { to: '/app/pacientes', label: 'Biblioteca de pacientes', icon: LibraryBig, perm: 'patients.view', group: 'Pacientes' },
   { to: '/app/seguimientos', label: 'Crónicos y seguimientos', icon: BellRing, perm: 'followups.view', group: 'Pacientes' },
+  // AD1 (ronda 17): «Laboratorio e imágenes» de administración y recepción: los pacientes ambulatorios (registrar y ver el estado) y,
+  // administración, las dos bandejas en solo lectura
+  { to: '/app/pacientes-ambulatorios', label: 'Pacientes ambulatorios', icon: FlaskConical, perm: 'ambulatory.register', roles: ['admin', 'reception'], group: 'Laboratorio e imágenes' },
+  { to: '/app/laboratorio', label: 'Laboratorio', icon: TestTubes, perm: 'dept.view', roles: ['admin'], group: 'Laboratorio e imágenes' },
+  { to: '/app/imagenes', label: 'Imágenes', icon: ScanLine, perm: 'dept.view', roles: ['admin'], group: 'Laboratorio e imágenes' },
   // RU2 (ronda 14): registro administrativo de enfermería (en Administración, dentro de su grupo)
   // RU6 (ronda 15): registro administrativo de enfermería, fuera de «Pacientes»: entrada propia bajo el encabezado «Registros»
   { to: '/app/uso-medicamentos-material', label: 'Uso de medicamentos y material', icon: ClipboardList, perm: 'usage.view', group: 'Registros' },
@@ -52,7 +58,7 @@ const NAV: { to: string; label: string; icon: typeof House; perm?: Permission; a
 ]
 
 export default function AppShell() {
-  const { user, can, signOut, appointments, followups, refresh, settings, pendingOrders = [], inpatients, saveTour } = useStore()
+  const { user, can, signOut, appointments, followups, refresh, settings, pendingOrders = [], inpatients, stays: activeStays, saveTour } = useStore()
   const nav = useNavigate()
   const loc = useLocation()
   const [open, setOpen] = useState(false)
@@ -121,7 +127,8 @@ export default function AppShell() {
   const due = followups.filter((f) => f.dueDate <= localISODate(today) && !f.notifiedAt).length
   // Enfermería: órdenes médicas nuevas sin revisar
   const newOrders = pendingOrders.reduce((s, x) => s + x.pending, 0)
-  const inObservation = inpatients.filter((h) => h.kind === 'observation').length
+  // AD1 (ronda 17): con `stays` (todos los roles), así administración también ve el contador sin el expediente
+  const inObservation = (activeStays ?? inpatients).filter((h) => h.kind === 'observation').length
   // HO2 (ronda 16): al médico tratante, sus ingresos con órdenes pendientes (en rojo, en Hospitalizados)
   const myAdmissions = myPendingAdmissions(inpatients, user.id).length
   const platform = user.role === 'superadmin'
@@ -138,6 +145,8 @@ export default function AppShell() {
       if (n.perm && !can(n.perm) && !n.anyPerm?.some((p) => can(p))) return false
       if (n.to === '/app/hospitalizados' && !f.hospital) return false
       if (n.to === '/app/observacion' && !f.observation) return false
+      // AD1 (ronda 17): los ambulatorios de laboratorio e imágenes son de las clínicas (un consultorio no tiene departamentos)
+      if (n.to === '/app/pacientes-ambulatorios' && !f.hospital) return false
       // Enfermería entra al paciente: no usa la agenda. Médico y enfermería cobran, pero desde un acceso más discreto.
       if (user.role === 'nurse' && n.to === '/app/agenda') return false
       if (quietBilling && n.to === '/app/caja') return false
@@ -260,6 +269,7 @@ const STATIC_GROUPS = new Set(['Registros'])
 
 function navRank(n: { to: string; group?: string }) {
   if (n.group === 'Pacientes') return 20
+  if (n.group === 'Laboratorio e imágenes') return 25
   if (n.group === 'Registros') return 30
   if (n.group) return 40
   return 10

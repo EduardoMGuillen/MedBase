@@ -11,7 +11,15 @@ import { localISODate, normalizeDni } from '../../src/lib/format.js'
 import { localValueToIso } from '../../src/lib/dateInput.js'
 import { createPatient } from '../db.js'
 import { microbiologistsFor, onDutyNow } from '../roster.js'
-import type { ExamGroup, ExamOrder, Staff } from '../../src/lib/types.js'
+import type { ExamGroup, ExamOrder, ExamStatus, Staff } from '../../src/lib/types.js'
+import { ambulatoryStage } from '../../src/lib/ambulatory.js'
+
+/** AD1 (ronda 17): la orden sin su resultado ni datos clínicos (indicación, notas de los eventos), para quien solo ve el estado. */
+export const withoutResult = (e: ExamOrder): ExamOrder => {
+  const { result: _r, resultVersion: _v, resultGraceUntil: _g, indication: _i, orderFileId: _f, ...rest } = e
+  void _r; void _v; void _g; void _i; void _f
+  return { ...rest, notDone: e.notDone ? { ...e.notDone, reason: '' } : undefined, events: (e.events ?? []).map((x) => ({ status: x.status, by: x.by, at: x.at })) }
+}
 
 /** El departamento de quien mira: Laboratorio o Imágenes (los demás eligen). */
 export const deptOf = (u: Staff): ExamGroup | undefined => (u.role === 'lab' ? 'lab' : u.role === 'imaging' ? 'imaging' : undefined)
@@ -38,12 +46,13 @@ export function registerDept(app: Express, { sql, auth, need, userOf, clinicOf, 
   const groupFor = (u: Staff, asked?: string): ExamGroup => {
     const own = deptOf(u)
     if (own) { if (asked && asked !== own) fail(403, 'Esa bandeja es de otro departamento.'); return own }
-    if (!can(u, 'settings.manage')) fail(403, 'Tu rol no tiene bandeja de departamento.')
+    // AD1 (ronda 17): administración de la clínica mira las dos bandejas en solo lectura (dept.view)
+    if (!can(u, 'settings.manage') && !can(u, 'dept.view')) fail(403, 'Tu rol no tiene bandeja de departamento.')
     return asked === 'imaging' ? 'imaging' : 'lab'
   }
 
   /** Bandeja: las órdenes «En la clínica» del tipo del departamento, de donde vengan, con paciente, ubicación y espera. */
-  app.get('/api/dept/tray', auth, need('dept.work', 'settings.manage'), async (req, res) => {
+  app.get('/api/dept/tray', auth, need('dept.work', 'dept.view', 'settings.manage'), async (req, res) => {
     const q = parse(z.object({ group: z.enum(['lab', 'imaging']).optional(), day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }), req.query)
     const cid = clinicOf(req)
     const group = groupFor(userOf(req), q.group)
@@ -60,9 +69,11 @@ export function registerDept(app: Express, { sql, auth, need, userOf, clinicOf, 
     const ids = rows.map((r) => String(r.id))
     const exams = ids.length ? await examsWhere(sql, `id IN (${ids.map(() => '?').join(',')})`, ids) : []
     const byId = new Map(rows.map((r) => [String(r.id), r]))
+    // AD1 (ronda 17): quien no trabaja la bandeja ni ve el expediente (administración) ve el estudio y su estado, nunca el resultado
+    const clinical = can(userOf(req), 'dept.work') || can(userOf(req), 'chart.view')
     res.json({ group, day, items: exams.map((e) => {
       const r = byId.get(e.id)!
-      return { ...e, patient: { id: e.patientId, name: `${r.first_name} ${r.last_name}`, birthDate: String(r.birth_date ?? ''), sex: String(r.sex ?? ''), record: String(r.record) }, locationText: locationText(r) }
+      return { ...(clinical ? e : withoutResult(e)), patient: { id: e.patientId, name: `${r.first_name} ${r.last_name}`, birthDate: String(r.birth_date ?? ''), sex: String(r.sex ?? ''), record: String(r.record) }, locationText: locationText(r) }
     }) })
   })
 
@@ -195,6 +206,34 @@ export function registerDept(app: Express, { sql, auth, need, userOf, clinicOf, 
     const who = await patientName(b.patientId)
     await audit(user, `Registró paciente ambulatorio para ${GROUP_LABEL[b.group].toLowerCase()}: ${who}; ${list.map((e) => e.name).join(', ')}${requester ? `; solicitado por ${requester.name}` : b.requestedByName ? `; solicitado por ${b.requestedByName}` : ''}`, undefined, b.patientId)
     res.status(201).json({ batchId: batch, exams: await examsWhere(sql, 'batch_id = ?', [batch!]) })
+  })
+
+  /**
+   * AD1 (ronda 17): «Pacientes ambulatorios» de administración y recepción: los que vinieron solo a hacerse exámenes en el día
+   * (local), con el nombre de cada estudio y su etapa (ordenado, muestra tomada, en proceso, resultado listo). Nunca los valores
+   * ni el informe: solo lo que hace falta para avisar al paciente. Laboratorio e Imágenes, solo los de su tipo.
+   */
+  app.get('/api/dept/ambulatory', auth, need('ambulatory.register'), async (req, res) => {
+    const q = parse(z.object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }), req.query)
+    const cid = clinicOf(req)
+    const own = deptOf(userOf(req))
+    const day = q.day ?? localISODate(new Date())
+    const next = new Date(`${day}T12:00:00`); next.setDate(next.getDate() + 1)
+    const rows = await sql.query(`SELECT e.id, e.patient_id, e.grp, e.name, e.status, e.priority, e.ordered_at, e.not_done_at, e.requested_by_id, e.requested_by_name,
+      p.first_name, p.last_name, p.record, p.phone
+      FROM exam_orders e JOIN patients p ON p.id = e.patient_id
+      WHERE e.clinic_id = ? AND e.location = 'ambulatory' AND e.status <> 'cancelled' AND e.ordered_at >= ? AND e.ordered_at < ?${own ? ' AND e.grp = ?' : ''}
+      ORDER BY e.ordered_at, e.id`, [cid, localValueToIso(day), localValueToIso(localISODate(next)), ...(own ? [own] : [])])
+    const byPatient = new Map<string, { patient: { id: string; name: string; record: string; phone: string }; firstAt: string; exams: unknown[] }>()
+    for (const r of rows) {
+      const pid = String(r.patient_id)
+      const entry = byPatient.get(pid) ?? { patient: { id: pid, name: `${r.first_name} ${r.last_name}`, record: String(r.record), phone: String(r.phone ?? '') }, firstAt: String(r.ordered_at), exams: [] }
+      entry.exams.push({ id: String(r.id), group: String(r.grp), name: String(r.name), priority: String(r.priority), orderedAt: String(r.ordered_at),
+        stage: ambulatoryStage({ group: r.grp as ExamGroup, name: String(r.name), status: r.status as ExamStatus, notDone: !!r.not_done_at }),
+        requestedBy: r.requested_by_id ? undefined : r.requested_by_name ? String(r.requested_by_name) : undefined, requestedById: r.requested_by_id ? String(r.requested_by_id) : undefined })
+      byPatient.set(pid, entry)
+    }
+    res.json({ day, patients: [...byPatient.values()] })
   })
 
   /**

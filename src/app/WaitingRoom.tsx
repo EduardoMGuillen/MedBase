@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Activity, BedDouble, LogIn, NotebookPen, Stethoscope, Syringe } from 'lucide-react'
-import { AmbulatoryButton } from './Ambulatory'
 import { WalkInButton } from './WalkIn'
 import { useStore } from '../lib/store'
 import { features } from '../lib/permissions'
@@ -146,9 +145,9 @@ export default function WaitingRoom() {
               <button role="radio" aria-checked={!mine} onClick={() => setMine(false)}>Toda la clínica</button>
             </div>
           )}
+          {/* PF1 (ronda 17): también el médico de la clínica (cualquier especialidad) */}
           {can('checkin.manage') && <WalkInButton tour="sin-cita" />}
-          {/* DP3 (ronda 11): paciente que viene solo a hacerse exámenes (Recepción y Administración; solo en clínicas) */}
-          {multiDoctor && can('ambulatory.register') && <AmbulatoryButton />}
+          {/* AD1 (ronda 17): «Paciente ambulatorio» ya no va aquí: está en Laboratorio e imágenes › Pacientes ambulatorios */}
         </>} />
       {applying && <ApplyModal list={applying} onClose={() => setApplying(null)} onSaved={() => { setApplying(null); loadApps() }} />}
       {grouped && (
