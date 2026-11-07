@@ -358,7 +358,6 @@ tr.clickable { cursor: pointer; }
   .tabs--sticky .tab { white-space: nowrap; }
 }
 
-.bed__spec { justify-self: start; }
 
 /* AD7: filtros de la bitácora */
 /* Ronda 17: filtros de Personal (buscar, rol, estado), con el mismo patrón que los de la Bitácora */

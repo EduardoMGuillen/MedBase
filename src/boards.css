@@ -1,0 +1,66 @@
+/* TB (ronda 17): tableros de Hospitalizados y Observación. Una tabla sobria, sin tarjetas: el cuarto agrupa sus camas,
+   el estado va en una etiqueta y los avisos (alergias, órdenes, autorización) al final de la fila. */
+.board { overflow: hidden; }
+.board__bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 14px 22px; border-bottom: 1px solid var(--line); }
+.board__bar .segmented .num { color: var(--faint); font-weight: 600; margin-left: 2px; }
+.board__bar .segmented button[aria-checked='true'] .num { color: var(--ink); }
+.board__table th, .board__table td { padding: 12px 14px; }
+.board__table th:first-child, .board__table td:first-child { padding-left: 22px; }
+.board__table th:last-child, .board__table td:last-child { padding-right: 22px; }
+.board__table td { vertical-align: top; font-size: var(--fs-md); }
+.board__table tbody tr.is-first > * { border-top: 1px solid var(--line); }
+.board__table tbody tr:first-child > * { border-top: 0; }
+.board__table tbody tr.is-link { cursor: pointer; }
+.board__table tbody tr.is-free td { color: var(--muted); background: var(--paper-soft); }
+.board__table .board__room { font-family: var(--display); font-size: 17px; font-weight: 700; color: var(--petrol); vertical-align: top; background: var(--paper);
+  border-right: 1px solid var(--line-soft); width: 1%; white-space: nowrap; }
+.board__table tbody tr:hover .board__room { background: var(--paper); }
+.board__bed { width: 1%; white-space: nowrap; font-weight: 600; }
+.board__state { width: 1%; white-space: nowrap; }
+.board__where { display: none; }
+.board__who a { color: var(--petrol); }
+.board__who small { display: block; color: var(--muted); font-size: var(--fs-sm); margin-top: 2px; }
+.board__dx { min-width: 180px; }
+/* Los avisos, uno debajo de otro y pegados a la derecha */
+.board__flags > * { display: flex; width: fit-content; margin-left: auto; }
+.board__flags > * + * { margin-top: 4px; }
+.board__flags .badge { white-space: normal; text-align: left; }
+.board__table td.board__flags { min-width: 150px; }
+
+/* Observación: la misma tabla, sin cuartos; el tiempo se resalta pasado el límite. En la tabla el tiempo va en su columna;
+   en el teléfono, junto al nombre. */
+.board__table .obs-time { white-space: nowrap; display: inline-flex; gap: 4px; align-items: center; }
+.board__table tr.is-over td { background: var(--red-soft); }
+.board__table tbody tr.is-over:hover td { background: var(--red); }
+.board__where-time { display: none; }
+.board__table td.board__who.board__state { width: auto; white-space: normal; }
+
+/* Hasta 1180 px (tablet): sin la columna de diagnóstico ancha; la tabla se desplaza a lo ancho si no cabe */
+@media (max-width: 1180px) {
+  .board__table .board__dx { min-width: 140px; }
+}
+
+/* 760 px o menos: cada fila es un bloque. Arriba el cuarto (y la cama) con su estado; abajo paciente, datos y avisos. */
+@media (max-width: 760px) {
+  .board__bar { padding: 12px 16px; }
+  .board__table, .board__table tbody, .board__table tr, .board__table td { display: block; width: 100%; }
+  .board__table thead, .board__room, .board__bed { display: none; }
+  .board__table tbody tr { padding: 12px 16px; border-top: 1px solid var(--line); }
+  .board__table tbody tr:first-child { border-top: 0; }
+  .board__table tbody tr > * { border: 0 !important; padding: 0 !important; background: none !important; }
+  .board__table tbody tr.is-free { background: var(--paper-soft); }
+  .board__table tbody tr.is-over { background: var(--red-soft); }
+  .board__state { display: flex !important; align-items: center; justify-content: space-between; gap: 8px; width: 100%; margin-bottom: 6px; }
+  .board__where-time { display: inline-flex; }
+  .board__time { display: none !important; }
+  .board__where { display: inline; font-family: var(--display); font-weight: 700; font-size: 16px; color: var(--petrol); }
+  .board__who { font-size: 15px; margin-bottom: 4px; }
+  .board__table tr.is-free .board__who { display: none; }
+  .board__table td[data-label]:empty { display: none; }
+  .board__table td[data-label] { font-size: var(--fs-md); color: var(--muted); text-align: left !important; }
+  .board__table td[data-label]::before { content: attr(data-label) ': '; font-weight: 600; }
+  .board__flags { display: flex !important; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .board__flags:empty { display: none !important; }
+  .board__flags > * { margin: 0; }
+  .board__flags .btn { min-height: 44px; }
+}

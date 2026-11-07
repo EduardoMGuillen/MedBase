@@ -5,6 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { BedDouble, Plus, Search, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Modal, PageHead } from '../components/ui'
+import { BedBoard, type BoardFilter } from '../components/BedBoard'
 import { age, dateTime, dniDigits, fullName, inputDateTime } from '../lib/format'
 import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { attendingText, defaultSpecialty, stayDay, stayPath } from '../lib/inpatient'
@@ -37,6 +38,9 @@ export default function Inpatients() {
   const byBed = new Map(inpatients.filter((h) => h.kind !== 'observation' && h.bedId).map((h) => [h.bedId!, h]))
   const occupied = shown.filter((b) => (chart ? byBed.has(b.id) : bedStays.some((x) => x.bedId === b.id))).length
   const waiting = inpatients.filter((h) => h.kind !== 'observation' && !h.bedId)
+  // TB (ronda 17): filtro del tablero (todas, ocupadas, libres), en la URL para volver al mismo
+  const filter = (params.get('ver') as BoardFilter | null) ?? 'all'
+  const setFilter = (f: BoardFilter) => { const n = new URLSearchParams(params); if (f === 'all') n.delete('ver'); else n.set('ver', f); setParams(n, { replace: true }) }
 
   return (
     <div className="page">
@@ -61,49 +65,35 @@ export default function Inpatients() {
       {!beds.length ? (
         <section className="panel"><div className="empty">La clínica todavía no tiene camas. Administración las agrega en Configuración de la clínica › Hospitalización y observación.</div></section>
       ) : (
-        <div className="beds">
-          {shown.map((b) => {
+        <BedBoard beds={shown} filter={filter} onFilter={setFilter} counts={{ all: shown.length, occupied, free: shown.length - occupied }}
+          rowOf={(b) => {
             const h = byBed.get(b.id)
             const p = h && patient(h.patientId)
             // HO2 (ronda 16): sin acceso al expediente, la cama ocupada solo dice quién está, la especialidad y el médico tratante
             const lite = !chart ? bedStays.find((x) => x.bedId === b.id) : undefined
             const lp = lite && patient(lite.patientId)
-            if (lite && lp) {
-              return (
-                <div key={b.id} className="bed">
-                  <div className="bed__head"><b>{bedLabel(b)}</b><span>Ocupado</span></div>
-                  <strong className="bed__name">{fullName(lp)}</strong>
-                  {lite.specialty && <span className="badge badge--ink bed__spec">{lite.specialty}</span>}
-                  {lite.attendingIds?.length ? <span className="bed__meta">Médico tratante: {attendingText(lite.attendingIds, nameOf)}</span> : null}
-                </div>
-              )
+            if (lite && lp) return {
+              occupied: true, who: <strong>{fullName(lp)}</strong>, specialty: lite.specialty,
+              doctor: lite.attendingIds?.length ? attendingText(lite.attendingIds, nameOf) : undefined,
             }
-            if (!h || !p) {
-              return (
-                <div key={b.id} className="bed bed--free">
-                  <div className="bed__head"><b>{bedLabel(b)}</b><span>Libre</span></div>
-                  <p className="muted">La especialidad la da quien ingresa</p>
-                  {can('inpatient.admit') && <button className="btn btn--ghost btn--sm" onClick={() => setAdmitting({ bedId: b.id })}><Plus size={14} />Ingresar aquí</button>}
-                </div>
-              )
+            if (!h || !p) return {
+              occupied: false,
+              action: can('inpatient.admit') ? <button className="btn btn--ghost btn--sm" onClick={() => setAdmitting({ bedId: b.id })}><Plus size={14} />Ingresar aquí</button> : undefined,
             }
-            return (
-              <Link key={b.id} to={`/app/hospitalizados/${h.id}`} className="bed">
-                <div className="bed__head"><b>{bedLabel(b)}</b><span>Ocupado</span></div>
-                <strong className="bed__name">{fullName(p)}</strong>
-                {h.specialty && <span className="badge badge--ink bed__spec">{h.specialty}</span>}
-                <span className="bed__meta">{age(p.birthDate)}, {p.sex === 'F' ? 'femenino' : 'masculino'} · Día {stayDay(h.admittedAt)} de estancia</span>
-                <span className="bed__dx">{h.diagnoses.map((d) => d.label).join('; ')}</span>
-                <span className="bed__meta">Médico tratante: {attendingText(h.attendingIds ?? [h.admittedBy], nameOf)}</span>
+            return {
+              occupied: true, to: `/app/hospitalizados/${h.id}`,
+              who: <><Link to={`/app/hospitalizados/${h.id}`}>{fullName(p)}</Link><small>{age(p.birthDate)}, {p.sex === 'F' ? 'femenino' : 'masculino'}</small></>,
+              specialty: h.specialty, dx: h.diagnoses.map((d) => d.label).join('; '),
+              doctor: attendingText(h.attendingIds ?? [h.admittedBy], nameOf),
+              day: stayDay(h.admittedAt), since: dateTime(h.admittedAt),
+              flags: <>
                 {p.allergies.length > 0 && <span className="badge badge--red">Alergias: {p.allergies.join(', ')}</span>}
                 {/* HO2 (ronda 16): ingreso directo sin nota de ingreso firmada; se quita sola al firmarla */}
                 {h.ordersPending && <span className="badge badge--red">Sin órdenes de ingreso</span>}
                 {h.authPending && <span className="badge badge--amber">Autorización pendiente de firma</span>}
-                <span className="bed__meta">Ingresó {dateTime(h.admittedAt)}</span>
-              </Link>
-            )
-          })}
-        </div>
+              </>,
+            }
+          }} />
       )}
 
       {admitting && (
