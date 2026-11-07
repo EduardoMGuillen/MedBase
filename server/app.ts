@@ -926,7 +926,8 @@ export function createApp(opts: AppOptions) {
     // cantidad), con o sin ingreso: el paciente puede comprarlo y traerlo, y la receta es la constancia de lo indicado. Antes
     // (ME13, ronda 14) aquí se quitaban: `items.filter((it) => !it.applyInClinic || it.buyOutside)`.
     const rxItems = consultRxItems(items)
-    // ME16 (ronda 16): la infusión solo con ingreso y con su velocidad (como el formulario: sin ingreso no aparece)
+    // ME16 (ronda 16): la infusión lleva su velocidad. Desde IF1 (ronda 17) se indica en cualquier paciente, con o sin ingreso
+    // (antes: «la infusión solo con ingreso y con su velocidad (como el formulario: sin ingreso no aparece)»)
     for (const it of c.items) { const issue = consultItemIssue(it, { admitting: !!stayKind }); if (issue) fail(400, issue) }
     // ME13: sin ingreso, lo que se aplica en la clínica es una sola dosis (STAT): no se programan dosis siguientes (A6)
     if (!stayKind) {
