@@ -9,6 +9,7 @@ import { cap, dmyTime, dniDigits, formatPhone, fullName, localISODate, time } fr
 import { stayFutureWarning } from '../lib/inpatient'
 import { StayConflict } from './WaitingRoom'
 import { DniInput } from '../components/DniInput'
+import { TopScrollbar } from '../components/TopScrollbar'
 import { DAY_NAMES_PLURAL, describeSchedule, slotsOn, weekday } from '../lib/schedule'
 import { normalize, similarPatients } from '../lib/patients'
 import { hasRole } from '../lib/permissions'
@@ -233,7 +234,7 @@ function ApptBlock({ a, p, color, style, compact, onPick }: { a: Appointment; p:
 function DayGrid({ day, doctors, list, patient, onPick }: { day: Date; doctors: Staff[]; list: Appointment[]; patient: (id: string) => Patient | undefined; onPick: (id: string) => void }) {
   const cols = `56px repeat(${doctors.length}, minmax(180px, 1fr))`
   return (
-    <section className="panel cal">
+    <TopScrollbar>{(ref) => <section className="panel cal" ref={ref}>
       <div className="cal__inner">
         <div className="cal__heads" style={{ gridTemplateColumns: cols }}>
           <div />
@@ -254,7 +255,7 @@ function DayGrid({ day, doctors, list, patient, onPick }: { day: Date; doctors: 
           ))}
         </div>
       </div>
-    </section>
+    </section>}</TopScrollbar>
   )
 }
 
@@ -265,7 +266,7 @@ function WeekGrid({ start, onDay, doctors, colorOf, patient, onPick, onOpenDay }
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i))
   const cols = '56px repeat(7, minmax(110px, 1fr))'
   return (
-    <section className="panel cal">
+    <TopScrollbar>{(ref) => <section className="panel cal" ref={ref}>
       <div className="cal__inner cal__inner--week">
         <div className="cal__heads" style={{ gridTemplateColumns: cols }}>
           <div />
@@ -290,7 +291,7 @@ function WeekGrid({ start, onDay, doctors, colorOf, patient, onPick, onOpenDay }
         </div>
       </div>
       {doctors.length > 1 && <div className="cal__legend">{doctors.map((d) => <span key={d.id}><i style={{ background: d.color }} />{d.name}</span>)}</div>}
-    </section>
+    </section>}</TopScrollbar>
   )
 }
 

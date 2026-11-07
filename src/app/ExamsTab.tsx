@@ -10,7 +10,7 @@ import { api } from '../lib/api'
 import { Modal } from '../components/ui'
 import { ExamPrintModal } from '../components/ExamPrintModal'
 import { age, cap, date, dateTime, inputDateTime, shortStaff } from '../lib/format'
-import { canReview, examCatalog, examLine, examStatusLabel, findExam, flagOf, GROUP_LABEL, isPending, NEXT_ACTION, reportOptional, STATUS_LABEL } from '../lib/exams'
+import { canReview, examCatalog, examLine, examStatusLabel, findExam, flagOf, GROUP_LABEL, isPending, NEXT_ACTION, orderGroups, reportOptional, resultBrief, STATUS_LABEL } from '../lib/exams'
 import { useExamCatalog } from '../lib/useExamCatalog'
 import { analyteSection, isQualitative, rangeFor, rangeText, type LabReference } from '../lib/labReference'
 import { SourceTag } from '../components/SourceTag'
@@ -18,6 +18,7 @@ import { uploadLarge } from '../lib/files'
 import { FileChip, FileThumb, FileViewer } from '../components/FilePreview'
 import { deptAllows } from '../lib/permissions'
 import { NOT_DONE_ELSEWHERE, NOT_DONE_REASONS } from '../lib/clinicalConfig'
+import { RowMenu } from '../components/RowMenu'
 import type { ExamGroup, ExamOrder } from '../lib/types'
 
 const TONE: Record<string, string> = { ordered: 'amber', sample: 'ink', done: 'ink', result: 'mint', reviewed: 'done', cancelled: '' }
@@ -37,6 +38,8 @@ const EXAM_FILTERS: { key: ExamFilter; label: string; test: (e: ExamOrder) => bo
 ]
 const fold = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 const dayKey = (iso: string) => new Date(iso).toDateString()
+/** Los exámenes ya ordenados, cortados por día (en el mismo orden). */
+const daysOf = <T extends { orderedAt: string }>(list: T[]) => list.reduce<T[][]>((out, e) => { const last = out[out.length - 1]; if (last && dayKey(last[0].orderedAt) === dayKey(e.orderedAt)) last.push(e); else out.push([e]); return out }, [])
 
 /**
  * EX1: exámenes de un paciente (en una estancia o en su historial) en dos subsecciones, Laboratorio e Imagen y gabinete,
@@ -72,6 +75,11 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
   const order = (a: ExamOrder, b: ExamOrder) => (sort === 'oldest' ? a.orderedAt.localeCompare(b.orderedAt) : b.orderedAt.localeCompare(a.orderedAt))
   const visible = exams.filter((e) => match(e) && passes(e))
   const setAll = (v: boolean) => setShown((x) => ({ ...x, ...Object.fromEntries(visible.map((e) => [e.id, v])) }))
+  // EX12 (ronda 16): grupos por categoría contraídos a mano; el catálogo de la clínica da la categoría
+  const [folded, setFolded] = useState<Record<string, boolean>>({})
+  const { exams: clinicExams } = useExamCatalog()
+  const catalog = examCatalog(clinicExams)
+  const canTake = useCanTake()
   return (
     <div className="hc" data-tour="examenes-tab">
       {exams.length > 0 && (
@@ -103,10 +111,25 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
                 {canResults(g) && all.some((e) => e.result) && <button className="btn btn--ghost btn--sm" onClick={() => setResults(g)}><Printer size={14} />Imprimir resultados</button>}
                 {open && can('exams.process') && (!user || deptAllows(user, g)) && <button className="btn btn--ghost btn--sm" onClick={() => setUploading(g)}><Upload size={14} />Subir resultado externo</button>}
               </div></div>
-            {list.length ? <div className="rows">{list.map((e, i) => (
-              <Fragment key={e.id}>
-                {(i === 0 || dayKey(list[i - 1].orderedAt) !== dayKey(e.orderedAt)) && <div className="exam-day">{cap(date(e.orderedAt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>}
-                <ExamRow e={e} reload={reload} open={open} expanded={isOpen(e)} onToggle={() => setShown((x) => ({ ...x, [e.id]: !isOpen(e) }))} />
+            {list.length ? <div className="rows">{daysOf(list).map((day) => (
+              <Fragment key={day[0].id}>
+                <div className="exam-day">{cap(date(day[0].orderedAt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>
+                {/* EX12 (ronda 16): dentro del día, por categoría del catálogo (el orden de la orden impresa, IM3); cada grupo se contrae
+                    y lleva un «Muestra tomada» para todos sus exámenes (DP2) */}
+                {orderGroups(day, catalog).map((c) => {
+                  const key = `${g}|${dayKey(day[0].orderedAt)}|${c.title}`
+                  const closed = !!folded[key]
+                  return (
+                    <section key={key} className={`exam-cat${closed ? ' is-closed' : ''}`}>
+                      <div className="exam-cat__head">
+                        <button type="button" className="exam-cat__toggle" aria-expanded={!closed} onClick={() => setFolded((x) => ({ ...x, [key]: !closed }))}>
+                          <ChevronRight size={16} className="exam-cat__chev" aria-hidden /><b>{c.title}</b> <span className="muted">({c.items.length})</span></button>
+                        <TakeAllButton list={c.items.filter((x) => canTake(x, open))} reload={reload} />
+                      </div>
+                      {!closed && c.items.map((e) => <ExamRow key={e.id} e={e} reload={reload} open={open} compact expanded={isOpen(e)} onToggle={() => setShown((x) => ({ ...x, [e.id]: !isOpen(e) }))} />)}
+                    </section>
+                  )
+                })}
               </Fragment>
             ))}</div>
               : <div className="empty">{all.length ? 'Ningún examen coincide' : `Sin exámenes de ${GROUP_LABEL[g].toLowerCase()}.`}</div>}
@@ -134,7 +157,36 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
   )
 }
 
-export function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder; reload: () => void; open: boolean; expanded: boolean; onToggle: () => void }) {
+/**
+ * LB8 y EX12 (ronda 16): «Muestra tomada» (o «Realizado» en imagen) de varios exámenes a la vez: el de DP2 (ronda 11), ahora para
+ * todos los de un paciente o los de una categoría. Cada uno pasa por la misma acción del servidor que el botón individual.
+ */
+export function TakeAllButton({ list, reload, className = 'btn btn--soft btn--sm' }: { list: ExamOrder[]; reload: () => void; className?: string }) {
+  const { notify } = useStore()
+  const [busy, setBusy] = useState(false)
+  if (!list.length) return null
+  const run = async () => {
+    setBusy(true)
+    const errors: string[] = []
+    for (const x of list) await api(`/exams/${x.id}/status`, { body: { status: x.group === 'lab' ? 'sample' : 'done' } }).catch((err: Error) => errors.push(`${x.name}: ${err.message}`))
+    if (errors.length) notify(errors.join(' · '), 'error')
+    setBusy(false); reload()
+  }
+  return <button type="button" className={className} disabled={busy} onClick={run}>{NEXT_ACTION[list[0].group].ordered} ({list.length})</button>
+}
+
+/** ¿Este usuario puede marcar ahora «Muestra tomada» / «Realizado» de este examen? (las mismas reglas que el botón individual) */
+export function useCanTake() {
+  const { can, user } = useStore()
+  return (e: ExamOrder, open = true) => open && e.status === 'ordered' && !e.notDone && can('exams.process') && (!user || deptAllows(user, e.group))
+}
+
+/**
+ * EX12 y LB8 (ronda 16): `compact` es el renglón de una sola línea: nombre, quién lo pidió y cuándo (en gris), el resultado o los
+ * valores fuera de rango, el estado y, a la derecha, «Cargar resultado» y el menú «⋯» con «Muestra tomada» (individual) y
+ * «Cancelar». Las acciones y los permisos son los mismos que en el renglón normal.
+ */
+export function ExamRow({ e, reload, open, expanded, onToggle, compact = false }: { e: ExamOrder; reload: () => void; open: boolean; expanded: boolean; onToggle: () => void; compact?: boolean }) {
   const { can, staffById, notify, user } = useStore()
   const [result, setResult] = useState(false)
   const [cancelling, setCancelling] = useState(false)
@@ -152,14 +204,22 @@ export function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder;
   // Ronda 8: una radiografía realizada todavía acepta su informe (opcional)
   const canResult = open && mine && can('exams.process') && (isPending(e) || (optional && e.status === 'done')) && !(imagingTech && e.status === 'ordered')
   const id = `exam-${e.id}`
+  const toggle = (
+    <button type="button" className="exam-row__toggle" aria-expanded={expanded} aria-controls={id} onClick={onToggle}>
+      <ChevronRight size={16} className="exam-row__chev" aria-hidden />
+      <strong>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red" style={{ marginLeft: 6 }}>Urgente</span>}{e.place === 'external' && <span className="badge" style={{ marginLeft: 6 }}>Externo</span>}{e.uncatalogued && <span className="badge badge--neutral" style={{ marginLeft: 6 }}>No catalogado</span>}</strong>
+    </button>
+  )
+  const ordered = <span className="muted" style={{ fontSize: 13 }}>Pedido {dateTime(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)}{e.indication ? ` · ${e.indication}` : ''}</span>
+  const brief = compact && !expanded ? resultBrief(e.result) : { flags: [] as string[], text: undefined }
+  const canNext = open && mine && can('exams.process') && isPending(e) && e.status === 'ordered'
+  const canCancel = open && isPending(e) && !dept && (can('exams.process') || can('exams.order'))
   return (
-    <div className={`exam-row${e.priority === 'urgent' && isPending(e) ? ' exam-row--urgent' : ''}${expanded ? '' : ' is-folded'}`}>
+    <div className={`exam-row${compact ? ' exam-row--compact' : ''}${e.priority === 'urgent' && isPending(e) ? ' exam-row--urgent' : ''}${expanded ? '' : ' is-folded'}`}>
       <div className="exam-row__main">
-        <button type="button" className="exam-row__toggle" aria-expanded={expanded} aria-controls={id} onClick={onToggle}>
-          <ChevronRight size={16} className="exam-row__chev" aria-hidden />
-          <strong>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red" style={{ marginLeft: 6 }}>Urgente</span>}{e.place === 'external' && <span className="badge" style={{ marginLeft: 6 }}>Externo</span>}{e.uncatalogued && <span className="badge badge--neutral" style={{ marginLeft: 6 }}>No catalogado</span>}</strong>
-        </button>
-        <span className="muted" style={{ fontSize: 13 }}>Pedido {dateTime(e.orderedAt)} por {shortStaff(staffById(e.orderedBy)?.name)}{e.indication ? ` · ${e.indication}` : ''}</span>
+        {compact ? <div className="exam-row__line">{toggle}{ordered}</div> : <>{toggle}{ordered}</>}
+        {compact && (brief.flags.length > 0 || brief.text) && <span className="exam-row__brief">
+          {brief.flags.map((f) => <span key={f} className="chip chip--red">{f}</span>)}{brief.text && <span className="muted">{brief.text}</span>}</span>}
         {expanded && <div id={id} className="exam-row__body">
           <span className="exam-row__trail">{(e.events ?? []).filter((x) => x.status !== 'ordered').map((x) => `${STATUS_LABEL[e.group][x.status]} ${dateTime(x.at)} (${shortStaff(staffById(x.by)?.name)})`).join(' · ')}</span>
           {e.status === 'cancelled' && <span className="muted" style={{ fontSize: 13 }}>Cancelado: {e.cancelReason}</span>}
@@ -174,7 +234,7 @@ export function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder;
         {e.notDone && e.status !== 'cancelled' && <span className="badge badge--red" title={`${shortStaff(staffById(e.notDone.by)?.name)}, ${dateTime(e.notDone.at)}`}>No se realizó: {e.notDone.reason}</span>}
         {/* EX1: las acciones se usan sin abrir la fila. EX5 (ronda 10): en una fila horizontal, no apiladas */}
         {<span className="exam-row__acts">
-          {open && mine && can('exams.process') && isPending(e) && e.status === 'ordered' && <button className="btn btn--soft btn--sm" onClick={() => act('status', { status: e.group === 'lab' ? 'sample' : 'done' })}>{next}</button>}
+          {!compact && canNext && <button className="btn btn--soft btn--sm" onClick={() => act('status', { status: e.group === 'lab' ? 'sample' : 'done' })}>{next}</button>}
           {canResult && <button className={`btn ${optional ? 'btn--ghost' : 'btn--primary'} btn--sm`} onClick={() => setResult(true)}>{e.group === 'lab' ? 'Cargar resultado' : imagingTech ? 'Subir imágenes' : optional ? 'Agregar informe (opcional)' : 'Cargar informe'}</button>}
           {/* GE4 (ronda 9): quien cargó el resultado lo corrige unos minutos, mientras no se revise */}
           {e.status === 'result' && e.result && <GraceButton record={{ graceUntil: e.resultGraceUntil }} authorId={e.result.by} onCorrect={() => setResult(true)} />}
@@ -182,10 +242,13 @@ export function ExamRow({ e, reload, open, expanded, onToggle }: { e: ExamOrder;
           {/* EX6 (ronda 11): el resultado en PDF (vista previa con Descargar e Imprimir) o directo a imprimir */}
           {e.result && <ResultPrintButtons e={e} />}
           {canReview(e) && can('exams.order') && user?.role === 'doctor' && <button className="btn btn--primary btn--sm" onClick={() => act('review')}><CheckCheck size={14} />Marcar revisado</button>}
-          {open && isPending(e) && !dept && (can('exams.process') || can('exams.order')) && <button className="btn btn--ghost btn--sm" onClick={() => setCancelling(true)}>Cancelar</button>}
+          {!compact && canCancel && <button className="btn btn--ghost btn--sm" onClick={() => setCancelling(true)}>Cancelar</button>}
           {dept && mine && isPending(e) && can('dept.work') && (e.notDone
             ? <button className="btn btn--soft btn--sm" onClick={() => act('retry')}>Reintentar</button>
             : <button className="btn btn--ghost btn--sm" onClick={() => setNotDone(true)}>No se realizó</button>)}
+          {compact && <RowMenu label={examLine(e)} actions={[
+            canNext && { label: next ?? '', run: () => act('status', { status: e.group === 'lab' ? 'sample' : 'done' }) },
+            canCancel && { label: 'Cancelar', run: () => setCancelling(true) }]} />}
         </span>}
       </div>
       {result && <ResultModal e={e} onClose={() => setResult(false)} onDone={() => { setResult(false); reload() }} />}

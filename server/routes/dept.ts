@@ -8,6 +8,7 @@ import { isDeptLead } from '../../src/lib/positions.js'
 import { examKey, GROUP_LABEL } from '../../src/lib/exams.js'
 import { RENAL_FUNCTION_ANALYTES } from '../../src/lib/clinicalConfig.js'
 import { localISODate, normalizeDni } from '../../src/lib/format.js'
+import { localValueToIso } from '../../src/lib/dateInput.js'
 import { createPatient } from '../db.js'
 import { microbiologistsFor, onDutyNow } from '../roster.js'
 import type { ExamGroup, ExamOrder, Staff } from '../../src/lib/types.js'
@@ -47,12 +48,15 @@ export function registerDept(app: Express, { sql, auth, need, userOf, clinicOf, 
     const cid = clinicOf(req)
     const group = groupFor(userOf(req), q.group)
     const day = q.day ?? localISODate(new Date())
-    // Pendientes (de estancias activas o sin estancia) y lo terminado del día elegido
+    // Pendientes (de estancias activas o sin estancia) y lo terminado del día elegido. RX1 (ronda 16): el día es local (zona de
+    // la clínica, server/tz.ts) y las fechas se guardan en UTC: se compara contra el inicio del día local en UTC. El estado puede
+    // cambiar después (el médico lo revisa), por eso solo el límite inferior; el cliente filtra el día exacto (finishedOn).
+    const dayStart = localValueToIso(day)
     const rows = await sql.query(`SELECT e.id, e.location, h.kind AS h_kind, b.room, b.label AS bed_label, p.first_name, p.last_name, p.birth_date, p.sex, p.record
       FROM exam_orders e JOIN patients p ON p.id = e.patient_id LEFT JOIN hospitalizations h ON h.id = e.hospitalization_id LEFT JOIN beds b ON b.id = h.bed_id
       WHERE e.clinic_id = ? AND e.grp = ? AND e.place = 'clinic' AND (
         (e.status IN ('ordered','sample','done') AND (e.hospitalization_id IS NULL OR h.status = 'active'))
-        OR (e.status IN ('done','result','reviewed') AND substr(COALESCE(e.status_at, e.ordered_at), 1, 10) >= ?))`, [cid, group, shiftDay(day, -1)])
+        OR (e.status IN ('done','result','reviewed') AND COALESCE(e.status_at, e.ordered_at) >= ?))`, [cid, group, dayStart])
     const ids = rows.map((r) => String(r.id))
     const exams = ids.length ? await examsWhere(sql, `id IN (${ids.map(() => '?').join(',')})`, ids) : []
     const byId = new Map(rows.map((r) => [String(r.id), r]))
@@ -224,6 +228,5 @@ export function registerDept(app: Express, { sql, auth, need, userOf, clinicOf, 
   })
 }
 
-const shiftDay = (d: string, n: number) => { const x = new Date(`${d}T12:00:00`); x.setDate(x.getDate() + n); return localISODate(x) }
 
 export type DeptTrayItem = ExamOrder & { patient: { id: string; name: string; birthDate: string; sex: string; record: string }; locationText: string }

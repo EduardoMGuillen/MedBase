@@ -33,7 +33,7 @@ export function ExamTray() {
             {items.length ? <div className="rows">{items.map((e) => {
               const p = patient(e.patientId)
               return (
-                <Link key={e.id} to={examPath(e, inpatients)} className={`row tray-row${e.priority === 'urgent' ? ' tray-row--urgent' : ''}`}>
+                <Link key={e.id} to={examPath(e, inpatients)} className={`row row--plain tray-row${e.priority === 'urgent' ? ' tray-row--urgent' : ''}`}>
                   <div className="row__who"><strong>{examLine(e)}{e.priority === 'urgent' && <span className="badge badge--red" style={{ marginLeft: 6 }}>Urgente</span>}</strong>
                     <span>{p ? fullName(p) : ''} · {dateTime(e.orderedAt)}{e.indication ? ` · ${e.indication}` : ''}</span></div>
                   <span className="badge badge--amber">{NEXT_ACTION[e.group][e.status] ?? 'Pendiente'}</span>
@@ -58,14 +58,18 @@ export function NewResults() {
       <div className="panel__head"><div><h2>Resultados nuevos</h2><p>{list.length} por atender. Ábrelos y márcalos como revisados.</p></div></div>
       <div className="rows">{list.map((e) => {
         const p = patient(e.patientId)
+        const notDone = !!e.notDone && e.status !== 'result'
+        const flagged = e.result?.values?.filter((v) => v.flag) ?? []
         return (
-          <Link key={e.id} to={examPath(e, inpatients)} className="row">
-            <div className="row__who"><strong>{examLine(e)} · {p ? fullName(p) : ''}</strong>
+          <Link key={e.id} to={examPath(e, inpatients)} className="row row--plain">
+            <div className="row__who"><strong>{examLine(e)}<span style={{ fontWeight: 400 }}> · {p ? fullName(p) : ''}</span></strong>
               {/* DP2 (ronda 11): «No se realizó» también avisa al médico que lo pidió */}
-              {e.notDone && e.status !== 'result' ? <span>{GROUP_LABEL[e.group]} · No se realizó: {e.notDone.reason} ({shortStaff(staffById(e.notDone.by)?.name)}, {dateTime(e.notDone.at)}). Sigue pendiente: cancélalo o déjalo para que lo reintenten.</span>
-                : <span>{GROUP_LABEL[e.group]} · resultado {e.result ? dateTime(e.result.at) : ''} por {shortStaff(staffById(e.result?.by ?? '')?.name)}
-                {e.result?.values?.some((v) => v.flag) ? ` · ${e.result.values.filter((v) => v.flag).map((v) => `${v.analyte} ${v.flag === 'high' ? 'alto' : 'bajo'}`).join(', ')}` : ''}</span>}</div>
-            <span className={`badge ${e.notDone && e.status !== 'result' ? 'badge--amber' : 'badge--mint'}`}>{e.notDone && e.status !== 'result' ? 'No se realizó' : 'Resultado nuevo'}</span>
+              {notDone ? <span>{GROUP_LABEL[e.group]} · No se realizó: {e.notDone!.reason} ({shortStaff(staffById(e.notDone!.by)?.name)}, {dateTime(e.notDone!.at)}). Sigue pendiente: cancélalo o déjalo para que lo reintenten.</span>
+                : <span>{GROUP_LABEL[e.group]} · resultado {e.result ? dateTime(e.result.at) : ''} por {shortStaff(staffById(e.result?.by ?? '')?.name)}</span>}
+              {/* MC1 (ronda 16): los valores fuera de rango como chips, debajo */}
+              {!notDone && flagged.length > 0 && <span className="chips">{flagged.map((v, i) => <span key={i} className="chip chip--red">{v.analyte} {v.flag === 'high' ? 'alto' : 'bajo'}</span>)}</span>}
+            </div>
+            <span className={`badge ${notDone ? 'badge--amber' : 'badge--mint'}`}>{notDone ? 'No se realizó' : 'Resultado nuevo'}</span>
           </Link>
         )
       })}</div>

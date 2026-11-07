@@ -1,4 +1,5 @@
 import type { ExamGroup, ExamOrder, ExamStatus } from './types'
+import { toLocalDate } from './dateInput.js'
 import { EXISTING_SUBGROUP, LAB_AREAS, LAB_ORDER, SECTION_SEP } from './labCatalog.js'
 import { CONTRAST_PHRASE, CT_CONTRAST_BUTTONS, CT_CONTRASTS, CT_MULTI_CONTRASTS, IMAGING_SEARCH_SYNONYMS, IMAGING_SIDES, MR_CONTRAST_BUTTONS, MR_CONTRASTS, PROJECTION_KEEP_CASE, XRAY_PREFIXES, XRAY_SUBGROUPS } from './clinicalConfig.js'
 import { IMAGING_REMOVED_CA6, IMAGING_SAME, IMAGING_STUDIES, IMAGING_SUBGROUPS as IMAGING_AREAS, type ImagingDetails } from './imagingCatalog.js'
@@ -223,6 +224,29 @@ export const isPending = (e: Pick<ExamOrder, 'status'> & Partial<Pick<ExamOrder,
   ['ordered', 'sample'].includes(e.status) || (e.status === 'done' && !(e.group && e.name && reportOptional({ group: e.group, name: e.name })))
 
 /** ¿Lo puede marcar revisado el médico? Con resultado o, si el informe es opcional (Rayos X), ya realizado. */
+/**
+ * RX1 (ronda 16): ¿lo terminó (informó, cargó el resultado o realizó) el día `day` (aaaa-mm-dd, fecha local)? Las fechas se
+ * guardan en UTC: se compara por la fecha local para que lo terminado después de las 18:00 (UTC−6) quede en el mismo día.
+ */
+export const finishedOn = (e: Pick<ExamOrder, 'statusAt'> & { result?: { at?: string } }, day: string) => {
+  const at = e.result?.at ?? e.statusAt
+  return !!at && toLocalDate(new Date(at)) === day
+}
+/**
+ * EX12 (ronda 16): el resultado en el mismo renglón del examen, sin abrirlo: los valores fuera de rango (con su valor) y, si no
+ * hay ninguno, los primeros valores o el inicio del informe. No interpreta nada: solo copia lo que se cargó.
+ */
+export function resultBrief(r?: ExamOrder['result']): { flags: string[]; text?: string } {
+  if (!r) return { flags: [] }
+  const vals = r.values ?? []
+  const fmt = (v: { analyte: string; value: string; unit?: string }) => `${v.analyte} ${v.value}${v.unit ? ` ${v.unit}` : ''}`
+  const flags = vals.filter((v) => v.flag).map((v) => `${fmt(v)} (${v.flag === 'high' ? 'alto' : 'bajo'})`)
+  if (flags.length) return { flags }
+  if (vals.length) return { flags, text: vals.slice(0, 3).map(fmt).join(' · ') + (vals.length > 3 ? ` · y ${vals.length - 3} más` : '') }
+  if (r.report) return { flags, text: r.report.length > 110 ? `${r.report.slice(0, 110).trimEnd()}…` : r.report }
+  if (r.fileIds?.length) return { flags, text: r.fileIds.length === 1 ? 'Imagen adjunta' : `${r.fileIds.length} imágenes adjuntas` }
+  return { flags }
+}
 export const canReview = (e: Pick<ExamOrder, 'status' | 'group' | 'name'>) => e.status === 'result' || (e.status === 'done' && reportOptional(e))
 
 /**
@@ -385,7 +409,7 @@ export const UNCATALOGUED_GROUP = 'Otros exámenes'
  * Catálogo: por área del subgrupo (Hematología, Coagulación, Química en sangre…; en imagen, Rayos X, Ultrasonido…), las áreas
  * en el orden del catálogo y los exámenes también (sección por sección y en el orden del formulario). El subgrupo es el que
  * la clínica tiene guardado en su catálogo. Los escritos a mano o que ya no están en el catálogo van al final, en «Otros
- * exámenes». La numeración reinicia en cada grupo (la pone quien imprime).
+ * exámenes». IM4 (ronda 16): en la orden impresa van con viñetas, no numerados.
  */
 export function orderGroups<T extends Pick<ExamOrder, 'group' | 'name'> & { uncatalogued?: boolean }>(list: T[], catalog: Pick<CatalogExam, 'group' | 'name' | 'subgroup'>[]) {
   const known = new Map(catalog.map((c) => [`${c.group}:${examKey(c.name)}`, c]))

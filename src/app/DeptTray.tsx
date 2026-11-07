@@ -7,9 +7,10 @@ import { api } from '../lib/api'
 import { Loading, PageHead } from '../components/ui'
 import { Pagination, usePage } from '../components/Pagination'
 import { age, dateTime, localISODate, shortStaff } from '../lib/format'
-import { examLine, GROUP_LABEL, reportOptional } from '../lib/exams'
+import { examCatalog, examLine, finishedOn, GROUP_LABEL, orderGroups, reportOptional } from '../lib/exams'
+import { useExamCatalog } from '../lib/useExamCatalog'
 import { PAGE_SIZE } from '../lib/clinicalConfig'
-import { ExamRow } from './ExamsTab'
+import { ExamRow, TakeAllButton, useCanTake } from './ExamsTab'
 import { AmbulatoryModal } from './Ambulatory'
 import type { ExamGroup, ExamOrder } from '../lib/types'
 
@@ -51,7 +52,7 @@ export const waitText = (iso: string, now: number) => {
  * pestaña Exámenes (la misma fuente de verdad). Urgentes primero, después los más antiguos. Se actualiza sola.
  */
 export default function DeptTray({ group, area }: { group: ExamGroup; area?: DeptArea }) {
-  const { staffById, can, notify } = useStore()
+  const { staffById, can } = useStore()
   const [items, setItems] = useState<Item[] | null>(null)
   const [tab, setTab] = useState<TabKey>('todo')
   const [q, setQ] = useState('')
@@ -69,7 +70,8 @@ export default function DeptTray({ group, area }: { group: ExamGroup; area?: Dep
   useEffect(() => { const t = setInterval(load, 20_000); return () => clearInterval(t) }, [load])
   const fold = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   const today = localISODate(new Date())
-  const inTab = (e: Item, k: TabKey) => tabOf(e) === k && (k !== 'done' || (e.result?.at ?? e.statusAt ?? '').slice(0, 10) === day || (!e.result && (e.statusAt ?? '').slice(0, 10) === day))
+  // RX1 (ronda 16): «Terminados hoy» por la fecha local, no por la fecha UTC (lo de después de las 18:00 se perdía)
+  const inTab = (e: Item, k: TabKey) => tabOf(e) === k && (k !== 'done' || finishedOn(e, day))
   const filtered = useMemo(() => (items ?? []).filter((e) => (!area || areaOf(e) === area) && (!where || e.locationText.startsWith(where)) && (!urgentOnly || e.priority === 'urgent')
     && (!q.trim() || fold(`${e.patient.name} ${e.patient.record} ${examLine(e)}`).includes(fold(q.trim())))), [items, where, urgentOnly, q, area])
   const list = filtered.filter((e) => inTab(e, tab))
@@ -78,15 +80,15 @@ export default function DeptTray({ group, area }: { group: ExamGroup; area?: Dep
   const [page, setPage] = usePage(`${tab}|${q}|${where}|${urgentOnly}|${day}|${area}`)
   const paged = tab === 'done' ? list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : list
   const places = area === 'outpatient' ? ['Consulta externa', 'Ambulatorio'] : area ? [] : ['Consulta externa', 'Observación', 'Hospitalización', 'Ambulatorio']
-  const sameTodo = (e: Item) => list.filter((x) => x.patientId === e.patientId && x.status === 'ordered' && !x.notDone)
-  const [busyAll, setBusyAll] = useState(false)
-  const takeAll = async (xs: Item[]) => {
-    setBusyAll(true)
-    const errors: string[] = []
-    for (const x of xs) await api(`/exams/${x.id}/status`, { body: { status: 'sample' } }).catch((err: Error) => errors.push(`${x.name}: ${err.message}`))
-    if (errors.length) notify(errors.join(' · '), 'error')
-    setBusyAll(false); load()
-  }
+  const canTake = useCanTake()
+  const { exams: clinicExams } = useExamCatalog()
+  const catalog = useMemo(() => examCatalog(clinicExams), [clinicExams])
+  // LB8 (ronda 16): en Laboratorio, una tarjeta por paciente (y por ubicación), en el orden de la lista: los urgentes arriba
+  const byPatient = group === 'lab'
+  const cards = new Map<string, Item[]>()
+  if (byPatient) for (const e of list) { const k = `${e.patientId}|${e.locationText}`; cards.set(k, [...(cards.get(k) ?? []), e]) }
+  const cardList = [...cards.values()]
+  const pagedCards = tab === 'done' ? cardList.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : cardList
   return (
     <div className="page dept">
       <PageHead title={area ? `${AREA_LABEL[area]} · ${group === 'lab' ? 'Laboratorio' : 'Imágenes'}` : group === 'lab' ? 'Bandeja de laboratorio' : 'Bandeja de imágenes'}
@@ -101,7 +103,40 @@ export default function DeptTray({ group, area }: { group: ExamGroup; area?: Dep
         <label className="check-inline"><input type="checkbox" checked={urgentOnly} onChange={(e) => setUrgentOnly(e.target.checked)} />Solo urgentes</label>
         <DateField value={day} max={today} onChange={(v) => setDay(v || today)} label="Fecha" />
       </div>
-      {items === null ? <Loading label="Cargando la bandeja" /> : !list.length ? <section className="panel"><div className="empty">Nada en «{TABS[group].find((t) => t.key === tab)!.label}».</div></section> : (
+      {items === null ? <Loading label="Cargando la bandeja" /> : !list.length ? <section className="panel"><div className="empty">Nada en «{TABS[group].find((t) => t.key === tab)!.label}».</div></section> : byPatient ? (
+        <div className="dept__list">
+          {pagedCards.map((xs) => {
+            const e = xs[0]
+            const urgent = xs.some((x) => x.priority === 'urgent')
+            const oldest = xs.reduce((a, x) => (x.orderedAt < a ? x.orderedAt : a), e.orderedAt)
+            const cats = orderGroups(xs, catalog)
+            const takeable = xs.filter((x) => canTake(x))
+            const catsToTake = cats.filter((c) => c.items.some((x) => canTake(x))).length
+            return (
+              <article key={`${e.patientId}|${e.locationText}`} className={`panel dept__item dept-card${urgent ? ' dept__item--urgent' : ''}`}>
+                <header className="dept__who">
+                  {urgent && <span className="badge badge--red">Urgente</span>}
+                  <Link to={patientLink(e, can('chart.view'))} className="dept__name">{e.patient.name}</Link>
+                  <span className="muted">{e.patient.birthDate ? age(e.patient.birthDate) : ''}{e.patient.sex ? `, ${e.patient.sex === 'F' ? 'femenino' : 'masculino'}` : ''} · Exp. {e.patient.record}</span>
+                  <span className="badge badge--ink">{e.locationText}</span>
+                  <span className="dept-card__count">{xs.length} {xs.length === 1 ? 'examen' : 'exámenes'}</span>
+                  <span className="muted dept__wait">{dateTime(oldest)} · espera {waitText(oldest, now)}</span>
+                </header>
+                {/* DP2: «Muestra tomada» de una vez para todos los exámenes de este paciente que esperan muestra */}
+                {takeable.length > 0 && <div className="dept-card__all"><TakeAllButton list={takeable} reload={load} className="btn btn--primary btn--sm" /></div>}
+                {cats.map((c) => (
+                  <section key={c.title} className="dept-card__cat">
+                    <h4>{c.title} <span className="muted">({c.items.length})</span>
+                      {catsToTake > 1 && <TakeAllButton list={c.items.filter((x) => canTake(x))} reload={load} />}</h4>
+                    {c.items.map((x) => <ExamRow key={x.id} e={x} reload={load} open compact expanded={!!open[x.id]} onToggle={() => setOpen((o) => ({ ...o, [x.id]: !o[x.id] }))} />)}
+                  </section>
+                ))}
+              </article>
+            )
+          })}
+          {tab === 'done' && <Pagination page={page} pages={Math.ceil(cardList.length / PAGE_SIZE)} total={cardList.length} size={PAGE_SIZE} onPage={setPage} />}
+        </div>
+      ) : (
         <div className="dept__list">
           {paged.map((e) => (
             <article key={e.id} className={`panel dept__item${e.priority === 'urgent' ? ' dept__item--urgent' : ''}`}>
@@ -112,9 +147,6 @@ export default function DeptTray({ group, area }: { group: ExamGroup; area?: Dep
                 <span className="badge badge--ink">{e.locationText}</span>
                 <span className="muted dept__wait">{dateTime(e.orderedAt)} · espera {waitText(e.orderedAt, now)}</span>
               </header>
-              {/* DP2: «Muestra tomada» de una vez para todos los exámenes de este paciente que esperan muestra */}
-              {group === 'lab' && tab === 'todo' && can('exams.process') && sameTodo(e).length > 1 && sameTodo(e)[0].id === e.id && (
-                <button className="btn btn--soft btn--sm dept__all" disabled={busyAll} onClick={() => takeAll(sameTodo(e))}>Muestra tomada de los {sameTodo(e).length} exámenes de este paciente</button>)}
               <p className="muted dept__meta">Pidió {shortStaff(staffById(e.orderedBy)?.name)}{e.requestedById || e.requestedByName ? ` · Solicitado por ${e.requestedById ? staffById(e.requestedById)?.name : e.requestedByName}` : ''}{e.indication ? ` · Indicación: ${e.indication}` : ''}</p>
               <ExamRow e={e} reload={load} open expanded={!!open[e.id]} onToggle={() => setOpen((x) => ({ ...x, [e.id]: !x[e.id] }))} />
             </article>
