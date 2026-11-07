@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import { Pill, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { canPrintExamOrders, ExamPrintModal } from './ExamPrintModal'
@@ -7,6 +7,7 @@ import { vitalLevel, type VitalKey } from '../lib/vitals'
 import { examLine, GROUP_LABEL } from '../lib/exams'
 import { dmyTime, dxCode, examText } from '../lib/format'
 import { anesthesiaText, teamLines } from '../lib/postop'
+import { soapBlocks } from '../lib/inpatient'
 
 /**
  * Una nota como en papel: a la izquierda el texto clínico; a la derecha las indicaciones (órdenes que no son
@@ -149,13 +150,13 @@ export function NoteText({ n, vitals, ageYears }: { n: Pick<InpatientNote, 'subj
       <div className="note__sec"><h4>Observaciones</h4><p>{n.observations || empty}</p></div>
     </>
   }
-  // NE4 (ronda 8): una nota SOAP también lleva los diagnósticos (las de antes no). NO3 (ronda 16): van aparte, debajo de la A
-  // (el análisis) y antes de la P, con su código CIE-11; también en la nota de ingreso
+  // NE4 (ronda 8): una nota SOAP también lleva los diagnósticos (las de antes no). NO3 (ronda 16): van aparte, con su código
+  // CIE-11; en la nota de ingreso, debajo de la A (el análisis) y antes de la P. NO4 (ronda 17): en la evolución, primero,
+  // arriba de los signos vitales y de la S, igual que en el editor
+  const dx = !!n.diagnoses?.length && <div className="note__sec"><h4>Diagnósticos (CIE-11)</h4><ol className="note__list">{n.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol></div>
+  // NE6 (ronda 9): los signos vitales arriba, antes de la S
   return <>
-    {/* NE6 (ronda 9): los signos vitales arriba, antes de la S */}
-    {strip}
-    {SOAP_TEXT.map(([k, label]) => <div key={k}>
-      {k === 'plan' && !!n.diagnoses?.length && <div className="note__sec"><h4>Diagnósticos (CIE-11)</h4><ol className="note__list">{n.diagnoses.map((d) => <li key={d.code + d.label}>{d.label} <span className="muted">({dxCode(d)})</span></li>)}</ol></div>}
-      <div className="note__sec"><h4>{label}</h4><p>{n[k] || empty}</p></div></div>)}
+    {soapBlocks(n.kind).map((b) => b === 'dx' ? <Fragment key={b}>{dx}</Fragment> : b === 'vitals' ? <Fragment key={b}>{strip}</Fragment>
+      : <div key={b} className="note__sec"><h4>{SOAP_TEXT.find(([k]) => k === b)![1]}</h4><p>{n[b] || empty}</p></div>)}
   </>
 }

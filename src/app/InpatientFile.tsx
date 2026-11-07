@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { fromLocalValue } from '../lib/dateInput'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowDown, ArrowUp, BedDouble, ChevronLeft, ChevronRight, ClipboardList, FileSignature, FileText, FlaskConical, LogOut, NotebookPen, Pencil, Pill, Plus, Printer, Send, Syringe, TriangleAlert, X } from 'lucide-react'
@@ -11,7 +11,7 @@ import { MedicationForm } from '../components/Medications'
 import { DateTimeField } from '../components/DateTimeField'
 import { mainRole, ROLE_LABEL } from '../lib/permissions'
 import { allergyConflict } from '../lib/catalogs'
-import { activeIndications, admissionOrdersPending, attendingText, chainNote, frequencyHours, doseAt, formatRate, infusionUnitLabel, isLoadingSlot, currentDiagnoses, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
+import { activeIndications, admissionOrdersPending, attendingText, chainNote, frequencyHours, doseAt, formatRate, infusionUnitLabel, isLoadingSlot, currentDiagnoses, LINE_TAG, yearsOld, defaultSpecialty, courseDone, courseEnd, doseTimes, elapsed, LATE_AFTER_MIN, medLabel, orderMark, pendingOrdersOf, slotState, soapBlocks, splitOrders, stayDay, treatmentDay, type SlotState } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
 import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
 import { NoteColumns, NoteExams, NoteText } from '../components/NoteColumns'
@@ -1526,15 +1526,16 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
         {/* MC8 (ronda 6): opcional; si no se toca, no se guarda nada. Va antes del examen físico (en SOAP, arriba de la S: NE6) */}
         {postop && <PostopFields pq={pq} setPq={setPq} file={file} check={pqCheck} onAuthorize={onAuthorize} noAuth={!!correct} />}
         {!postop && <>
-        {/* NE6 (ronda 9): en SOAP, los signos vitales van arriba, antes de «S. Subjetivo» */}
-        {format === 'soap' && vitalsBlock}
-        {format === 'soap' ? SOAP.map((s) => (<div key={s.key} style={{ display: 'contents' }}>
-          {/* NO3 (ronda 16): «Diagnósticos (CIE-11)» aparte, debajo de A y antes de P, en todas las notas SOAP (ingreso y evolución) */}
-          {s.key === 'plan' && dxField}
-          <label className="field dictate-field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
+        {/* NE6 (ronda 9): en SOAP, los signos vitales van arriba, antes de «S. Subjetivo». NO3 (ronda 16): «Diagnósticos (CIE-11)»
+            aparte; en la nota de ingreso, debajo de A y antes de P. NO4 (ronda 17): en la evolución, el primer bloque */}
+        {format === 'soap' ? soapBlocks(kind).map((b) => {
+          if (b === 'dx') return <Fragment key={b}>{dxField}</Fragment>
+          if (b === 'vitals') return <Fragment key={b}>{vitalsBlock}</Fragment>
+          const s = SOAP.find((x) => x.key === b)!
+          return <label key={b} className="field dictate-field"><span>{s.letter}. {s.label} <small style={{ fontWeight: 400 }}>{s.hint}</small></span>
             <AutoTextarea value={n[s.key]} onChange={(e) => setN({ ...n, [s.key]: e.target.value })} />
-            <DictateButton label={s.label} onText={(f) => setN((x) => ({ ...x, [s.key]: f(x[s.key]) }))} /></label></div>
-        )) : admissionStd ? (<>
+            <DictateButton label={s.label} onText={(f) => setN((x) => ({ ...x, [s.key]: f(x[s.key]) }))} /></label>
+        }) : admissionStd ? (<>
           {/* NO2 (ronda 16): la nota de ingreso con el formato estándar de la consulta externa (es una historia clínica) */}
           <label className="field"><span>Motivo de consulta</span>
             <textarea className="textarea textarea--sm" rows={2} value={d.chiefComplaint} onChange={(e) => setD({ ...d, chiefComplaint: e.target.value })} aria-label="Motivo de consulta" /></label>
