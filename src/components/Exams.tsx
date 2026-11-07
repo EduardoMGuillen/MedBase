@@ -252,7 +252,7 @@ export function ExamPicker({ current, onClose, onAdd, title = 'Ordenar exámenes
                 <small className="muted">{pr.items.map((e) => (off.includes(e) ? `${e.name} (no disponible)` : e.name)).join(', ')}</small>
                 {pr.note && <small className="exam-picker__note">{pr.note}</small>}</button>
               <button type="button" className="btn btn--ghost btn--sm" onClick={() => copyToMine(pr)}>Copiar a Mis sets</button>
-            </div> }) : <p className="muted">La clínica todavía no tiene perfiles de laboratorio (Configuración › Catálogo de exámenes).</p>}
+            </div> }) : <p className="muted">La clínica todavía no tiene perfiles de laboratorio (Configuración de la clínica › Exámenes).</p>}
         </div>
       )}
       <div className="exam-picker__results">

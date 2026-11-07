@@ -59,7 +59,7 @@ export default function Inpatients() {
       )}
 
       {!beds.length ? (
-        <section className="panel"><div className="empty">La clínica todavía no tiene camas. Administración las agrega en Configuración, pestaña Camas.</div></section>
+        <section className="panel"><div className="empty">La clínica todavía no tiene camas. Administración las agrega en Configuración de la clínica › Hospitalización y observación.</div></section>
       ) : (
         <div className="beds">
           {shown.map((b) => {
