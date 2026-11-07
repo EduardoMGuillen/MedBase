@@ -304,11 +304,16 @@ a.row:hover { background: var(--ward); }
 .cal-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .cal-toolbar h2 { font-size: 20px; min-width: 230px; text-transform: none; }
 .cal { display: grid; overflow-x: auto; }
+/* Pendiente R16 (ronda 17): los nombres de los médicos y la barra de arriba (TopScrollbar con `head`) quedan fijos al bajar la
+   página. La cabecera es un bloque aparte, pegado al cuerpo de la agenda, que copia su desplazamiento a lo ancho. */
+.sticky-head { position: sticky; top: 0; z-index: 6; background: var(--ward); }
+.cal--head { overflow: hidden; border-bottom: 0; border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.cal--body { border-top: 0; border-radius: 0 0 var(--r-lg) var(--r-lg); }
 /* AG1 (ronda 16): la barra horizontal de arriba (TopScrollbar), pegada a la agenda y sincronizada con la de abajo */
 .top-scroll { overflow-x: auto; overflow-y: hidden; height: 14px; margin: 0 1px 2px; }
 .top-scroll > div { height: 1px; }
 .cal__inner { display: grid; min-width: 760px; }
-.cal__heads { display: grid; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--paper); z-index: 2; border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.cal__heads { display: grid; border-bottom: 1px solid var(--line); background: var(--paper); border-radius: var(--r-lg) var(--r-lg) 0 0; }
 .cal__head { padding: 14px 16px; display: flex; gap: 10px; align-items: center; border-left: 1px solid var(--line-soft); }
 .cal__head strong { display: block; font-size: 14px; }
 .cal__head small { color: var(--muted); font-size: 12px; }

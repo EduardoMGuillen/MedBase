@@ -234,12 +234,15 @@ function ApptBlock({ a, p, color, style, compact, onPick }: { a: Appointment; p:
 function DayGrid({ day, doctors, list, patient, onPick }: { day: Date; doctors: Staff[]; list: Appointment[]; patient: (id: string) => Patient | undefined; onPick: (id: string) => void }) {
   const cols = `56px repeat(${doctors.length}, minmax(180px, 1fr))`
   return (
-    <TopScrollbar>{(ref) => <section className="panel cal" ref={ref}>
+    <TopScrollbar head={(ref) => <div className="panel cal cal--head" ref={ref}>
       <div className="cal__inner">
         <div className="cal__heads" style={{ gridTemplateColumns: cols }}>
           <div />
           {doctors.map((d) => <div key={d.id} className="cal__head"><Avatar name={d.name} color={d.color} /><div><strong>{d.name}</strong><small>{d.specialty}</small></div></div>)}
         </div>
+      </div>
+    </div>}>{(ref) => <section className="panel cal cal--body" ref={ref}>
+      <div className="cal__inner">
         <div className="cal__body" style={{ gridTemplateColumns: cols }}>
           <Hours />
           {doctors.map((d) => (
@@ -266,7 +269,7 @@ function WeekGrid({ start, onDay, doctors, colorOf, patient, onPick, onOpenDay }
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i))
   const cols = '56px repeat(7, minmax(110px, 1fr))'
   return (
-    <TopScrollbar>{(ref) => <section className="panel cal" ref={ref}>
+    <TopScrollbar head={(ref) => <div className="panel cal cal--head" ref={ref}>
       <div className="cal__inner cal__inner--week">
         <div className="cal__heads" style={{ gridTemplateColumns: cols }}>
           <div />
@@ -276,6 +279,9 @@ function WeekGrid({ start, onDay, doctors, colorOf, patient, onPick, onOpenDay }
             </button>
           ))}
         </div>
+      </div>
+    </div>}>{(ref) => <section className="panel cal cal--body" ref={ref}>
+      <div className="cal__inner cal__inner--week">
         <div className="cal__body" style={{ gridTemplateColumns: cols }}>
           <Hours />
           {days.map((d, i) => (
