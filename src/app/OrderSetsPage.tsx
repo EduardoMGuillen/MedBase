@@ -5,7 +5,7 @@ import { api } from '../lib/api'
 import { Loading, Modal, PageHead } from '../components/ui'
 import { useOrderSets } from '../lib/useOrderSets'
 import { features } from '../lib/permissions'
-import { ROUTES } from '../lib/format'
+import { RouteField } from '../components/RouteField'
 import { INPATIENT_FREQUENCIES } from '../lib/inpatient'
 import { hasBlank, itemText, medHasBlank } from '../lib/orderSets'
 import { ExamPicker } from '../components/Exams'
@@ -165,7 +165,7 @@ function SetMedForm({ initial, onSave, onCancel }: { initial: SetMed; onSave: (m
         below={m.drug.trim() && !known ? <small className="field__msg field__msg--warn">No está en el vademécum de la clínica. Se puede guardar igual.</small> : null} />
       <div className="form-grid">
         <label className="field"><span>Dosis</span><input className="input" data-nocap value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g o ___ mg" /></label>
-        <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => setM({ ...m, route: e.target.value })}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
+        <RouteField value={m.route} onChange={(r) => setM({ ...m, route: r })} />
         <label className="field"><span>Frecuencia</span>
           <select className="select" value={freq} onChange={(e) => setFreq(e.target.value)}>
             {INPATIENT_FREQUENCIES.filter((f) => !m.prn || f.hours).map((f) => <option key={f.label} value={f.hours ?? 'once'}>{m.prn ? `${f.label} como máximo` : f.label}</option>)}

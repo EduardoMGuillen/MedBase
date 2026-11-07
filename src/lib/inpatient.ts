@@ -3,6 +3,7 @@ import { clinicParts } from './dateInput.js'
 import { loadingLine, nebulizationLine, type Nebulization } from './medExtras.js'
 import { normalize } from './patients.js'
 import { doseText } from './doseText.js'
+import { ROUTE_OPTIONS } from './clinicalConfig.js'
 
 /**
  * Horario de medicamentos en hospitalización. Lo usan el servidor (para validar que la dosis que
@@ -16,6 +17,9 @@ export const INPATIENT_FREQUENCIES: { label: string; hours: number | null }[] = 
   { label: 'Cada 4 horas', hours: 4 }, { label: 'Cada 6 horas', hours: 6 }, { label: 'Cada 8 horas', hours: 8 },
   { label: 'Cada 12 horas', hours: 12 }, { label: 'Cada 24 horas', hours: 24 }, { label: 'Dosis única', hours: null },
 ]
+
+/** Las vías de la lista (ME17): las demás son texto libre. */
+const KNOWN_ROUTES = new Set(ROUTE_OPTIONS.map((r) => r.name))
 
 export const ROUTE_ABBR: Record<string, string> = {
   Intravenosa: 'IV', Intramuscular: 'IM', Subcutánea: 'SC', Oral: 'VO', Sublingual: 'SL', Inhalada: 'inhalada', Tópica: 'tópica', Rectal: 'rectal',
@@ -48,7 +52,8 @@ const dmyHm = (iso: string) => {
  *   «Ceftriaxona IM · 2 gr el 02/11/2026 14:00 y luego 1 gr c/12h».
  */
 export function medLabel(m: Labelable) {
-  const route = ROUTE_ABBR[m.route] ?? m.route.toLowerCase()
+  // ME17 (ronda 16): una vía escrita a mano sale tal cual («Intraósea»); las de la lista sin abreviatura corta, en minúscula
+  const route = ROUTE_ABBR[m.route] ?? (KNOWN_ROUTES.has(m.route) ? m.route.toLowerCase() : m.route)
   if (m.infusionRate) return `${[m.drug, m.dose, route].filter(Boolean).join(' ')} · Infusión a ${formatRate(m.infusionRate)} ${infusionUnitLabel(m.infusionUnit)}`
   const freq = m.everyHours ? `c/${m.everyHours}h` : m.prn ? '' : 'dosis única'
   // MC2 (ronda 6): «PRN · si dolor»

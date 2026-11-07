@@ -5,7 +5,8 @@ import { BedDouble, ChevronLeft, ChevronRight, FileSignature, FileText, FlaskCon
 import { useStore, type NewMed } from '../lib/store'
 import { AutoTextarea, Loading, Modal } from '../components/ui'
 import { PatientHeader } from '../components/PatientHeader'
-import { date, dateTime, defaultRoute, dmyTime, inputDateTime, localISODate, ROUTES, shortStaff, time, dxCode } from '../lib/format'
+import { date, dateTime, defaultRoute, dmyTime, inputDateTime, localISODate, shortStaff, time, dxCode } from '../lib/format'
+import { RouteField } from '../components/RouteField'
 import { DateTimeField } from '../components/DateTimeField'
 import { INFUSION_UNITS } from '../lib/clinicalConfig'
 import { isNebulization, loadingAllowed, loadingDroppedByRoute, nebulizationBody, nebulizationReady } from '../lib/medExtras'
@@ -1694,7 +1695,7 @@ function MedForm({ p, initial, onAdd, onAddAnother, onCancel }: { p: Patient; in
             onLinked={(d) => setM({ ...m, drug: d.name, presentation: d.presentation, route: lnmeRoute(d, m.route) ?? m.route })} /></>} />}
       <div className="form-grid">
         {!neb && <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder={infusion ? 'Ej. 50 mg en 100 mL' : 'Ej. 8 mg'} /></label>}
-        <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => { const r = e.target.value; setM({ ...m, route: r, nebulization: isNebulization(r) ? m.nebulization ?? structuredClone(EMPTY_NEB) : m.nebulization }); if (isNebulization(r) && freq === 'infusion') setFreq('6') }}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
+        <RouteField value={m.route} onChange={(r) => { setM({ ...m, route: r, nebulization: isNebulization(r) ? m.nebulization ?? structuredClone(EMPTY_NEB) : m.nebulization }); if (isNebulization(r) && freq === 'infusion') setFreq('6') }} />
         {neb && <NebulizerFields value={nebValue} onChange={(n) => setM({ ...m, nebulization: n })} allergies={p.allergies} firstName={p.firstName} />}
         <label className="field"><span>Frecuencia</span>
           <select className="select" value={freq} onChange={(e) => { setFreq(e.target.value); if (e.target.value === 'infusion') setM({ ...m, prn: false, route: m.route === 'Oral' ? 'Intravenosa' : m.route }) }}>

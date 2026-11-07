@@ -783,6 +783,8 @@ button.src-tag--none { cursor: pointer; }
    vista y desplazamiento; cada fila acomoda nombre (hasta dos líneas), etiquetas y presentación sin cortarse. */
 .drug-search__list { max-height: min(calc(var(--visible, 8) * 50px), 50vh); z-index: 30; }
 .drug-search__list button.is-active { background: var(--ward); }
+.route-field .suggest__list { z-index: 30; }
+.route-field .suggest__list button.is-active { background: var(--ward); }
 .drug-opt { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: start; width: 100%; }
 .drug-opt__name { min-width: 0; overflow-wrap: anywhere; line-height: 1.35; }
 .drug-opt__note { display: block; font-size: 12px; }

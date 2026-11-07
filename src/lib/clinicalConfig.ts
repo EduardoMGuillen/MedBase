@@ -89,6 +89,17 @@ export const QUEUE_GROUP_ROLES: string[] = ['admin']
  * ME1 (ronda 8). VALIDAR: Emil. Infusión: unidades de la velocidad (la primera es la de por omisión) y su máximo. El máximo
  * sólo frena un error de dedo (p. ej. 5000 en vez de 50); no es una dosis máxima de ningún medicamento.
  */
+/**
+ * ME17 (ronda 16). VALIDAR: Emil. Vías de administración con su abreviatura. El campo «Vía» busca por nombre o por abreviatura
+ * («iv» → «Intravenosa (IV)») y guarda el nombre (de él dependen la dosis de carga IV, la nebulización y las ingestas IV). Una
+ * vía que no está aquí se acepta como texto libre. El orden es el de la lista.
+ */
+export const ROUTE_OPTIONS: readonly { name: string; abbr: string }[] = [
+  { name: 'Oral', abbr: 'VO' }, { name: 'Sublingual', abbr: 'SL' }, { name: 'Intramuscular', abbr: 'IM' }, { name: 'Intravenosa', abbr: 'IV' },
+  { name: 'Subcutánea', abbr: 'SC' }, { name: 'Inhalada', abbr: 'INH' }, { name: 'Nebulización', abbr: 'NEB' }, { name: 'Tópica', abbr: 'TOP' },
+  { name: 'Oftálmica', abbr: 'OFT' }, { name: 'Ótica', abbr: 'ÓT' }, { name: 'Nasal', abbr: 'NAS' }, { name: 'Rectal', abbr: 'VR' }, { name: 'Vaginal', abbr: 'VV' },
+]
+
 export const INFUSION_UNITS = [{ value: 'ml/h', label: 'mL/h', max: 1000 }, { value: 'ml/min', label: 'mL/min', max: 20 }] as const
 
 /**

@@ -5,7 +5,8 @@ import { frequencyHours } from '../lib/inpatient'
 import { useStore } from '../lib/store'
 import { Pencil, Pill, Plus, TriangleAlert, X } from 'lucide-react'
 import { allergyConflict, EMPTY_MED, FREQUENCIES, isPrnFrequency, STAT_FREQUENCY, type Drug } from '../lib/catalogs'
-import { autoQuantity, defaultRoute, medicationLine, missingDays, ROUTES } from '../lib/format'
+import { autoQuantity, defaultRoute, medicationLine, missingDays } from '../lib/format'
+import { RouteField } from './RouteField'
 import { normalize } from '../lib/patients'
 import { useVademecum } from '../lib/vademecum'
 import { lnmeRoute, searchDrugs } from '../lib/drugProvider'
@@ -149,7 +150,7 @@ export function MedicationForm({ patient, current, initial, onSave, onCancel, su
       <div className="form-grid">
         {!neb && <label className="field"><span>Presentación y concentración</span><input className="input" value={m.presentation} onChange={(e) => setM({ ...m, presentation: e.target.value })} placeholder="Ej. Tableta 500 mg" /><DrugPickedHint drugs={drugs} name={m.drug} presentation={m.presentation} /></label>}
         {!neb && <label className="field"><span>{withLoading ? 'Dosis siguientes' : 'Dosis'}</span><input className="input" data-nocap value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g, 1 tableta, 5 ml" /></label>}
-        <label className="field"><span>Vía</span><select className="select" value={m.route} onChange={(e) => { const r = e.target.value; setM({ ...m, route: r, nebulization: isNebulization(r) ? m.nebulization ?? structuredClone(EMPTY_NEB) : m.nebulization }) }}>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
+        <RouteField value={m.route ?? ''} onChange={(r) => setM({ ...m, route: r, nebulization: isNebulization(r) ? m.nebulization ?? structuredClone(EMPTY_NEB) : m.nebulization })} />
         {neb && <NebulizerFields value={nebValue} onChange={(n) => setM({ ...m, nebulization: n })} allergies={patient.allergies} firstName={patient.firstName} />}
         <label className="field"><span>Frecuencia</span><select className={`select ${statBad ? 'input--warn' : ''}`} value={m.frequency} onChange={(e) => setM({ ...m, frequency: e.target.value })}>{freqs.map((f) => <option key={f} value={f}>{freqLabel(f)}</option>)}</select>
           {statBad && <small className="field__msg field__msg--warn">Sin ingreso solo se permite dosis STAT. Cámbiala o marca el ingreso.</small>}</label>

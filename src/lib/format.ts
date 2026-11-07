@@ -3,7 +3,8 @@ import { loadingLine, nebulizationLine } from './medExtras.js'
 import { isPrnFrequency } from './catalogs.js'
 import { doseText } from './doseText.js'
 import { ROUTE_ABBR } from './inpatient.js'
-import { RX_LEGEND_BUY_AND_BRING, RX_LEGEND_IN_CLINIC } from './clinicalConfig.js'
+import { ROUTE_OPTIONS, RX_LEGEND_BUY_AND_BRING, RX_LEGEND_IN_CLINIC } from './clinicalConfig.js'
+import { normalize } from './patients.js'
 import type { ApptStatus, Background, ClinicContact, Diagnosis, Patient, PrescriptionItem } from './types'
 
 export const fullName = (p: Patient) => `${p.firstName} ${p.lastName}`
@@ -218,7 +219,39 @@ export function toxicOf(b: Background): string {
 /** El valor de un campo de antecedentes como se muestra (Toxicomanías se arma con los campos de antes). */
 export const backgroundValue = (b: Background, key: keyof Background) => (key === 'toxic' ? toxicOf(b) || undefined : b[key])
 
-export const ROUTES = ['Oral', 'Sublingual', 'Intramuscular', 'Intravenosa', 'Subcutánea', 'Inhalada', 'Nebulización', 'Tópica', 'Oftálmica', 'Ótica', 'Nasal', 'Rectal', 'Vaginal']
+/** Las vías de la lista (ME17, ronda 16: con su abreviatura en ROUTE_OPTIONS de clinicalConfig). */
+export const ROUTES = ROUTE_OPTIONS.map((r) => r.name)
+
+/** ME17 (ronda 16): ¿la vía es de la lista? (una escrita a mano no lo es). */
+export const isKnownRoute = (route = '') => ROUTES.includes(route)
+
+/** ME17: «Intravenosa (IV)»; una vía escrita a mano, tal cual. */
+export function routeLabel(route = '') {
+  const r = ROUTE_OPTIONS.find((x) => x.name === route)
+  return r ? `${r.name} (${r.abbr})` : route
+}
+
+/**
+ * ME17: lo escrito en «Vía» como se guarda: el nombre de la lista si coincide con el nombre, la abreviatura o «Nombre (ABR)»
+ * (sin mayúsculas ni tildes: «iv», «vo», «subcutanea»); si no, el texto libre tal cual (sin espacios de más).
+ */
+export function canonicalRoute(text = '') {
+  const q = normalize(text)
+  if (!q) return ''
+  const hit = ROUTE_OPTIONS.find((r) => normalize(r.name) === q || normalize(r.abbr) === q || normalize(`${r.name} (${r.abbr})`) === q)
+  return hit ? hit.name : text.trim().replace(/\s+/g, ' ')
+}
+
+/** ME17: las vías que coinciden con lo escrito, por nombre o abreviatura (primero la abreviatura exacta y lo que empieza igual). */
+export function routeMatches(text = '') {
+  const q = normalize(text).replace(/[()]/g, '').trim()
+  if (!q) return [...ROUTE_OPTIONS]
+  const rank = (r: { name: string; abbr: string }) => {
+    const n = normalize(r.name); const a = normalize(r.abbr)
+    return a === q ? 0 : n.startsWith(q) ? 1 : a.startsWith(q) ? 2 : n.includes(q) || normalize(`${r.name} ${r.abbr}`).includes(q) ? 3 : 9
+  }
+  return ROUTE_OPTIONS.map((r) => ({ r, k: rank(r) })).filter((x) => x.k < 9).sort((a, b) => a.k - b.k).map((x) => x.r)
+}
 
 export const defaultRoute = (presentation = '') =>
   /inhalador/i.test(presentation) ? 'Inhalada' : /crema|ungüento|gel/i.test(presentation) ? 'Tópica' : /gotas oft/i.test(presentation) ? 'Oftálmica' : 'Oral'
@@ -232,7 +265,7 @@ export function frequencyText(i: Pick<PrescriptionItem, 'frequency' | 'prnCondit
 export function medicationOrder(i: PrescriptionItem) {
   // ME3 y ME4 (ronda 9): primera dosis distinta y nebulización, con el mismo texto de la receta
   if (i.nebulization?.components?.length || i.loadingDose?.trim()) return `${medicationLine(i)}.${i.instructions ? ` ${i.instructions}` : ''}`
-  const route = i.route ? ` vía ${i.route.toLowerCase()}` : ''
+  const route = i.route ? ` vía ${isKnownRoute(i.route) ? i.route.toLowerCase() : i.route}` : ''
   const how = /única/i.test(i.frequency) ? '' : i.duration ? ` por ${i.duration}` : ', hasta nueva orden'
   return `${i.drug}${i.presentation ? ` (${i.presentation.toLowerCase()})` : ''}: ${doseText(i.dose)}${route} ${i.prnCondition ? frequencyText(i) : i.frequency.toLowerCase()}${how}.${i.instructions ? ` ${i.instructions}` : ''}`
 }
@@ -324,7 +357,8 @@ const ROUTE_SHORT: Record<string, string> = {
 export function medicationLine(i: PrescriptionItem) {
   const freq = i.prnCondition?.trim() ? frequencyText(i) : i.frequency.replace(/^Cada (\d+) horas?$/i, 'cada $1 h').replace(/^Dosis única$/i, 'dosis única').replace(/^Según necesidad$/i, 'según necesidad')
   const once = /dosis única/i.test(i.frequency)
-  const route = i.route ? ROUTE_SHORT[i.route] ?? i.route.toLowerCase() : ''
+  // ME17 (ronda 16): una vía escrita a mano sale tal cual («Intraósea»)
+  const route = i.route ? ROUTE_SHORT[i.route] ?? (isKnownRoute(i.route) ? i.route.toLowerCase() : i.route) : ''
   const days = !once ? (i.duration ? ` por ${i.duration}` : ' hasta nueva orden') : ''
   // ME4 (ronda 9): una sola línea para la nebulización, con el mismo generador que las notas
   if (i.nebulization?.components?.length) return `${nebulizationLine(i.nebulization, freq)}${days}`
