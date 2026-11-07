@@ -42,8 +42,9 @@ export const EXTRA_DEMO_USERS: ExtraDemoUser[] = [
   { id: 's-arita', clinicId: MAIN, name: 'Dra. Silvia Arita', email: 'sarita@demo.clinara', role: 'doctor', roles: ['doctor'], specialty: 'Anestesiología',
     license: 'CMH-20891', color: '#1F7A8C', caso: 'Anestesióloga sin horario: no da consulta externa ni ofrece horas en la reserva en línea; llena y firma la hoja de anestesia' },
   { id: 's-galvez', clinicId: MAIN, name: 'Dra. Teresa Gálvez', email: 'tgalvez@demo.clinara', role: 'doctor', roles: ['doctor'], specialty: 'Dermatología',
-    license: 'CMH-21010', color: '#C0392B', week: days([5], ['08:00', '12:00']), serviceId: 'svc-der', totp: true,
-    caso: `Verificación en dos pasos activa: pide el código de 6 dígitos (secreto ${DEMO_TOTP_SECRET})` },
+    license: 'CMH-21010', color: '#C0392B', week: days([5], ['08:00', '12:00']), serviceId: 'svc-der',
+    // Ronda 17: ya no pide código (Edu lo pidió para poder entrar); la verificación en dos pasos se prueba en api.test
+    caso: 'Dermatología: entra con la contraseña de la demo, sin código' },
   { id: 's-oseguera', clinicId: MAIN, name: 'Dr. Julio Oseguera', email: 'joseguera@demo.clinara', role: 'doctor', roles: ['doctor'], specialty: 'Medicina general',
     license: 'CMH-19876', color: '#7F8C8D', active: false, caso: 'Cuenta desactivada: el login la rechaza y no aparece en agenda ni reserva' },
   { id: 's-vallecillo', clinicId: MAIN, name: 'Aux. Rosa Vallecillo', email: 'rvallecillo@demo.clinara', role: 'nurse', roles: ['nurse'], color: '#D35400',

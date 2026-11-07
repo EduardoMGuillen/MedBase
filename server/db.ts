@@ -21,12 +21,12 @@ import { cleanArchivedThresholds, loadImagingCatalog } from './ronda10.js'
 import { loadRonda11Catalog } from './ronda11.js'
 import { addDeptDemo } from './demoDept.js'
 import { loadSupplyCatalog } from './supplies.js'
-import { insertExtraDemoUsers } from './demoUsers.js'
+import { DEMO_TOTP_SECRET, insertExtraDemoUsers } from './demoUsers.js'
 
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '88'
+const SCHEMA_VERSION = '89'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1479,6 +1479,8 @@ export function ensureDb(sql: Sql) {
       await resetQueueViewOnce(q)
       // v85 (ronda 16, EN1): el puesto de enfermería (Licenciada o Auxiliar) según el prefijo del nombre
       await migrateNursePositions(q)
+      // v89 (ronda 17): la Dra. Gálvez de la demo entra sin código de verificación (una sola vez)
+      await disableDemoTotpOnce(q)
       await q.run(`INSERT INTO meta (key, value) VALUES ('schema', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [SCHEMA_VERSION])
     })
   })().catch((e) => { initialized.delete(sql); throw e })
@@ -1991,6 +1993,16 @@ export async function resetQueueViewOnce(q: Sql) {
     WHERE prefs IS NOT NULL AND prefs <> '' AND jsonb_exists(prefs::jsonb, 'queueView')
       AND jsonb_exists_any(COALESCE(NULLIF(roles, ''), json_build_array(role)::text)::jsonb, array['admin', 'reception'])`)
   await q.run(`INSERT INTO meta (key, value) VALUES ('re2_queue_view', ?) ON CONFLICT (key) DO NOTHING`, [new Date().toISOString()])
+}
+
+/**
+ * v89 (ronda 17): la usuaria demo de Dermatología (Dra. Gálvez) tenía la verificación en dos pasos activa con el secreto fijo
+ * de la demo. Se apaga una vez (marca en meta), solo si sigue con ese secreto: si alguien la activó con su propio teléfono, no se toca.
+ */
+export async function disableDemoTotpOnce(q: Sql) {
+  if (await q.one(`SELECT 1 FROM meta WHERE key = 'demo_totp_off'`)) return
+  await q.run(`UPDATE staff SET totp_enabled = FALSE, totp_secret = NULL WHERE id = 's-galvez' AND totp_secret = ?`, [DEMO_TOTP_SECRET])
+  await q.run(`INSERT INTO meta (key, value) VALUES ('demo_totp_off', ?) ON CONFLICT (key) DO NOTHING`, [new Date().toISOString()])
 }
 
 export async function migrateOfficeOwners(q: Sql) {

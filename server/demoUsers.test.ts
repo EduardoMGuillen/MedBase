@@ -5,8 +5,7 @@ import type { Server } from 'node:http'
 import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb, resetDemo } from './db.js'
 import { seedDemo } from './demoData.js'
-import { DEMO_TOTP_SECRET, EXTRA_DEMO_USERS, PENDING_OFFICE, SUSPENDED_CLINIC } from './demoUsers.js'
-import { totp } from './totp.js'
+import { EXTRA_DEMO_USERS, PENDING_OFFICE, SUSPENDED_CLINIC } from './demoUsers.js'
 import { createSql, type Sql } from './sql.js'
 
 let server: Server
@@ -77,15 +76,11 @@ describe('usuarios demo v2', () => {
     assert.match(s.login.error, /clínica está desactivada/)
   })
 
-  test('verificación en dos pasos: sin código pide el código; con uno inválido no entra; con el de la app, sí', async () => {
-    const first = await as('tgalvez@demo.clinara')
-    assert.equal(first.status, 200)
-    assert.equal(first.login.twoFactor, true)
-    assert.equal(first.login.user, undefined)
-    assert.equal((await as('tgalvez@demo.clinara', { code: '000000' === totp(DEMO_TOTP_SECRET) ? '111111' : '000000' })).status, 401)
-    const ok = await as('tgalvez@demo.clinara', { code: totp(DEMO_TOTP_SECRET) })
-    assert.equal(ok.status, 200)
-    assert.equal(ok.login.user.name, 'Dra. Teresa Gálvez')
+  test('ronda 17: la Dra. Gálvez (Dermatología) entra sin código de verificación', async () => {
+    const r = await as('tgalvez@demo.clinara')
+    assert.equal(r.status, 200)
+    assert.equal(r.login.twoFactor, undefined)
+    assert.equal(r.login.user.name, 'Dra. Teresa Gálvez')
   })
 
   test('el director médico tiene médico y administración; recepción y enfermería en una sola persona', async () => {
