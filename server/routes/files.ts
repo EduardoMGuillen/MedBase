@@ -137,6 +137,8 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
     const user = userOf(req)
     const row = (await sql.one('SELECT id, name, patient_id, uploaded_by, category FROM attachments WHERE id = ? AND clinic_id = ?', [String(req.params.id), clinicOf(req)])) ?? fail(404, 'El archivo no existe.')
     // PQ3 (ronda 14): la hoja de anestesia no se borra (ni la vigente ni la ya reemplazada): se reemplaza con motivo
+    // PQ4 y PQ5 (ronda 16): tampoco la valoración preanestésica ni el recuento quirúrgico subidos en papel
+    if (['preanesthesia', 'surgical_count'].includes(String(row!.category)) || await sql.one('SELECT 1 FROM preanesthesia_evals WHERE file_id = ? UNION ALL SELECT 1 FROM surgical_counts WHERE file_id = ?', [String(row!.id), String(row!.id)])) fail(409, 'El documento quirúrgico no se elimina. Para cambiarlo, reemplázalo con el motivo.')
     if (row!.category === 'anesthesia' || await sql.one('SELECT 1 FROM anesthesia_sheets WHERE file_id = ?', [String(row!.id)])) fail(409, 'La hoja de anestesia no se elimina. Para cambiarla, reemplázala con el motivo desde la nota postquirúrgica.')
     if (row!.uploaded_by !== user.id && user.role !== 'doctor') fail(403, 'Sólo quien subió el archivo o un médico puede eliminarlo.')
     await sql.run('DELETE FROM attachments WHERE id = ?', [String(row!.id)])

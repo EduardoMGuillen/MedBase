@@ -2,6 +2,7 @@ import express, { type Express, type Request } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
+import type { Sql } from '../sql.js'
 import { assertGrace, graceUntil, saveVersion } from '../grace.js'
 import { can } from '../../src/lib/permissions.js'
 import { ANESTHESIA_SHEET } from '../../src/lib/clinicalConfig.js'
@@ -10,6 +11,8 @@ import type { PostopData, Staff } from '../../src/lib/types.js'
 import { currentMarks } from './me.js'
 import { specialtyOf } from '../prefs.js'
 import { positionOf, signedName } from '../../src/lib/positions.js'
+import { preEvalIntoSheet } from '../../src/lib/preanesthesia.js'
+import { currentPreEval, toPreEval } from './preanesthesia.js'
 
 /**
  * PQ3 (ronda 14): hoja de anestesia de la nota postquirúrgica.
@@ -40,7 +43,7 @@ export const anesthesiaInput = z.object({
   preDiagnosis: text(600), proposedSurgery: text(300), surgeon: text(120), assistant1: text(120), assistant2: text(120), anesthesiologist: text(120),
   asa: pick(ANESTHESIA_SHEET.asa), asaE: z.boolean().default(false), mallampati: pick(ANESTHESIA_SHEET.mallampati), difficultAirway: pick(['Sí', 'No'] as const),
   allergies: text(300), fastingSolids: text(10), fastingLiquids: text(10), history: text(2000),
-  labs: z.object({ hb: text(12), hto: text(12), plt: text(12), inr: text(20), glucose: text(12), bloodType: text(12) }).default({ hb: '', hto: '', plt: '', inr: '', glucose: '', bloodType: '' }),
+  labs: z.object({ hb: text(20), hto: text(20), plt: text(20), inr: text(20), glucose: text(20), bloodType: text(20) }).default({ hb: '', hto: '', plt: '', inr: '', glucose: '', bloodType: '' }),
   who: marks(ANESTHESIA_SHEET.who), checks: marks(ANESTHESIA_SHEET.checks),
   techniques: marks(ANESTHESIA_SHEET.techniques),
   times: z.object(Object.fromEntries(ANESTHESIA_SHEET.times.map((t) => [t.key, hhmm])) as Record<(typeof ANESTHESIA_SHEET.times)[number]['key'], typeof hhmm>),
@@ -66,9 +69,27 @@ export const toSheet = (r: Row): AnesthesiaSheet => ({
   createdBy: String(r.created_by), createdAt: String(r.created_at), version: Number(r.version ?? 1),
   graceUntil: r.mode === 'system' && !r.voided_at ? graceUntil(r.created_at) : undefined,
   voidedAt: r.voided_at ? String(r.voided_at) : undefined, voidedBy: r.voided_by ? String(r.voided_by) : undefined, voidReason: r.void_reason ? String(r.void_reason) : undefined,
-  replacedBy: r.replaced_by ? String(r.replaced_by) : undefined,
+  replacedBy: r.replaced_by ? String(r.replaced_by) : undefined, preEvalId: r.pre_eval_id ? String(r.pre_eval_id) : undefined,
   ...(r.note_data ? (() => { const pq = postopOf({ data: r.note_data }); return pq ? { procedure: pq.procedureName, surgeryAt: pq.startAt } : {} })() : {}),
 })
+
+/** Datos de la hoja que ya existen: paciente, alergias, peso y talla, diagnóstico y cirugía (de la nota o de la autorización). */
+export async function prefillOf(sql: Sql, cid: string, patientId: string, from: { pq?: PostopData; authorization?: Row; stayDx?: unknown }): Promise<AnesthesiaPrefill> {
+  const p = (await sql.one('SELECT * FROM patients WHERE id = ? AND clinic_id = ?', [patientId, cid]))!
+  const vit = await sql.query(`SELECT weight_kg, height_cm FROM vitals WHERE patient_id = ? AND voided_at IS NULL AND (weight_kg IS NOT NULL OR height_cm IS NOT NULL) ORDER BY taken_at DESC LIMIT 20`, [patientId])
+  const first = (k: string) => { const r = vit.find((v) => v[k] != null); return r ? Number(r[k]) : undefined }
+  const auth = from.authorization ? j<{ procedure?: string; diagnosis?: string }>(from.authorization.data, {}) : {}
+  let proposed = auth.procedure
+  if (!proposed && from.pq?.authorizationId) proposed = j<{ procedure?: string }>((await sql.one('SELECT data FROM authorizations WHERE id = ?', [from.pq.authorizationId]))?.data, {}).procedure
+  return {
+    patient: { id: String(p.id), firstName: String(p.first_name), lastName: String(p.last_name ?? ''), record: String(p.record), dni: p.dni ? String(p.dni) : undefined, birthDate: p.birth_date ? String(p.birth_date) : undefined,
+      sex: p.sex ? String(p.sex) : undefined, allergies: j<string[]>(p.allergies, []), guardianName: p.guardian_name ? String(p.guardian_name) : undefined,
+      guardianDni: p.guardian_dni ? String(p.guardian_dni) : undefined, guardianRelation: p.guardian_relation ? String(p.guardian_relation) : undefined },
+    weightKg: first('weight_kg'), heightCm: first('height_cm'),
+    diagnosis: auth.diagnosis || j<{ label: string }[]>(from.stayDx, []).map((d) => d.label).join('; ') || undefined,
+    procedure: auth.procedure, postop: from.pq, surgeryProposed: proposed,
+  }
+}
 
 export function registerAnesthesia(app: Express, { sql, auth, userOf, clinicOf, audit, patientName }: Ctx) {
   const guard = (req: Request) => { const u = userOf(req); if (!canSheet(u)) fail(403, 'Sin permiso para la hoja de anestesia.'); return u }
@@ -83,23 +104,16 @@ export function registerAnesthesia(app: Express, { sql, auth, userOf, clinicOf, 
   const sheetsOf = async (noteId: string) => (await sql.query('SELECT * FROM anesthesia_sheets WHERE note_id = ? ORDER BY created_at, id', [noteId])).map(toSheet)
   const activeOf = (noteId: string) => sql.one('SELECT * FROM anesthesia_sheets WHERE note_id = ? AND voided_at IS NULL', [noteId])
   const what = (pq: PostopData) => `la hoja de anestesia de «${pq.procedureName}»`
-
-  /** Datos de la hoja que ya existen: paciente, alergias, peso y talla, diagnóstico y cirugía (de la nota o de la autorización). */
-  async function prefillOf(cid: string, patientId: string, from: { pq?: PostopData; authorization?: Row; stayDx?: unknown }): Promise<AnesthesiaPrefill> {
-    const p = (await sql.one('SELECT * FROM patients WHERE id = ? AND clinic_id = ?', [patientId, cid]))!
-    const vit = await sql.query(`SELECT weight_kg, height_cm FROM vitals WHERE patient_id = ? AND voided_at IS NULL AND (weight_kg IS NOT NULL OR height_cm IS NOT NULL) ORDER BY taken_at DESC LIMIT 20`, [patientId])
-    const first = (k: string) => { const r = vit.find((v) => v[k] != null); return r ? Number(r[k]) : undefined }
-    const auth = from.authorization ? j<{ procedure?: string; diagnosis?: string }>(from.authorization.data, {}) : {}
-    let proposed = auth.procedure
-    if (!proposed && from.pq?.authorizationId) proposed = j<{ procedure?: string }>((await sql.one('SELECT data FROM authorizations WHERE id = ?', [from.pq.authorizationId]))?.data, {}).procedure
-    return {
-      patient: { id: String(p.id), firstName: String(p.first_name), lastName: String(p.last_name ?? ''), record: String(p.record), dni: p.dni ? String(p.dni) : undefined, birthDate: p.birth_date ? String(p.birth_date) : undefined,
-        sex: p.sex ? String(p.sex) : undefined, allergies: j<string[]>(p.allergies, []), guardianName: p.guardian_name ? String(p.guardian_name) : undefined,
-        guardianDni: p.guardian_dni ? String(p.guardian_dni) : undefined, guardianRelation: p.guardian_relation ? String(p.guardian_relation) : undefined },
-      weightKg: first('weight_kg'), heightCm: first('height_cm'),
-      diagnosis: auth.diagnosis || j<{ label: string }[]>(from.stayDx, []).map((d) => d.label).join('; ') || undefined,
-      procedure: auth.procedure, postop: from.pq, surgeryProposed: proposed,
-    }
+  /**
+   * PQ4 (ronda 16): el registro resume la valoración preanestésica de la estancia. Los datos de la valoración (ASA, Mallampati,
+   * VAD, ayuno, laboratorios…) se copian de ella, no de lo que mande el formulario. Una valoración en papel solo queda enlazada.
+   */
+  async function withPreEval(data: z.infer<typeof anesthesiaInput>, stayId: string, preEvalId: string, linked = false) {
+    const r = (await sql.one('SELECT * FROM preanesthesia_evals WHERE id = ? AND hospitalization_id = ?', [preEvalId, stayId])) ?? fail(409, 'La valoración preanestésica no es de esta estancia.')
+    if (r!.voided_at && !linked) fail(409, 'La valoración preanestésica está anulada. Actualiza la página.')
+    const pe = toPreEval(r!)
+    if (pe.data) Object.assign(data, preEvalIntoSheet(pe.data))
+    return pe
   }
 
   /** La hoja (vigente y anteriores) de una nota postquirúrgica, y si quien pregunta puede llenarla. */
@@ -126,7 +140,9 @@ export function registerAnesthesia(app: Express, { sql, auth, userOf, clinicOf, 
     const r = (await sql.one('SELECT s.*, n.data AS note_data FROM anesthesia_sheets s JOIN hosp_notes n ON n.id = s.note_id WHERE s.id = ? AND s.clinic_id = ?', [String(req.params.id), cid])) ?? fail(404, 'La hoja no existe.')
     const { n, pq } = await noteOf(cid, String(r!.note_id))
     await audit(u, `Abrió ${what(pq)} de ${await patientName(String(r!.patient_id))}`, sql, String(r!.patient_id))
-    res.json({ sheet: toSheet(r!), stayKind: String(n.stay_kind), prefill: await prefillOf(cid, String(r!.patient_id), { pq, stayDx: n.stay_dx }) })
+    // PQ4 (ronda 16): la valoración que resumió el registro (las hojas de PQ3 la llevan adentro)
+    const pre = r!.pre_eval_id ? await sql.one('SELECT * FROM preanesthesia_evals WHERE id = ?', [String(r!.pre_eval_id)]) : undefined
+    res.json({ sheet: toSheet(r!), stayKind: String(n.stay_kind), prefill: await prefillOf(sql, cid, String(r!.patient_id), { pq, stayDx: n.stay_dx }), preEval: pre ? toPreEval(pre) : null })
   })
 
   /** «Llenar en el sistema»: lo que la hoja trae lleno. Solo el anestesiólogo de la nota (también por URL directa). */
@@ -136,7 +152,9 @@ export function registerAnesthesia(app: Express, { sql, auth, userOf, clinicOf, 
     const { n, pq } = await noteOf(cid, String(req.params.noteId))
     if (!canFill(u, pq)) fail(403, `Solo la llena y la firma quien hizo la anestesia${anesthesiologistOf(pq) ? ` (${anesthesiologistOf(pq)!.name})` : ''}. Para esta cirugía, sube la hoja en papel.`)
     if (await activeOf(String(n.id))) fail(409, 'Esta cirugía ya tiene su hoja de anestesia.')
-    res.json({ prefill: await prefillOf(cid, String(n.patient_id), { pq, stayDx: n.stay_dx }), hospitalizationId: String(n.hospitalization_id), stayKind: String(n.stay_kind) })
+    // PQ4 (ronda 16): la valoración preanestésica vigente de la estancia, para el resumen de solo lectura
+    res.json({ prefill: await prefillOf(sql, cid, String(n.patient_id), { pq, stayDx: n.stay_dx }), hospitalizationId: String(n.hospitalization_id), stayKind: String(n.stay_kind),
+      preEval: await currentPreEval(sql, String(n.hospitalization_id)) })
   })
 
   /** IM1: hoja en blanco para llenarla a mano en sala, con los datos que ya existen (de la autorización quirúrgica, si se elige). */
@@ -148,9 +166,10 @@ export function registerAnesthesia(app: Express, { sql, auth, userOf, clinicOf, 
     const a = authId
       ? (await sql.one('SELECT * FROM authorizations WHERE id = ? AND hospitalization_id = ?', [authId, String(h!.id)])) ?? fail(404, 'La autorización no existe.')
       : await sql.one(`SELECT * FROM authorizations WHERE hospitalization_id = ? AND template IN ('surgical','procedure') AND archived_at IS NULL AND status IN ('pending','signed') ORDER BY created_at DESC LIMIT 1`, [String(h!.id)])
-    const pre = await prefillOf(cid, String(h!.patient_id), { authorization: a ?? undefined, stayDx: h!.diagnoses })
+    const pre = await prefillOf(sql, cid, String(h!.patient_id), { authorization: a ?? undefined, stayDx: h!.diagnoses })
     await audit(u, `Imprimió la hoja de anestesia en blanco de ${await patientName(String(h!.patient_id))}${pre.procedure ? ` («${pre.procedure}»)` : ''}`, sql, String(h!.patient_id))
-    res.json({ prefill: pre, hospitalizationId: String(h!.id), stayKind: String(h!.kind) })
+    // PQ4 (ronda 16): con una valoración vigente, la hoja en blanco la trae resumida
+    res.json({ prefill: pre, hospitalizationId: String(h!.id), stayKind: String(h!.kind), preEval: await currentPreEval(sql, String(h!.id)) })
   })
 
   /**
@@ -203,8 +222,9 @@ export function registerAnesthesia(app: Express, { sql, auth, userOf, clinicOf, 
       await audit(u, `Intentó firmar ${what(pq)} de ${await patientName(String(n.patient_id))} sin ser el anestesiólogo de la nota; se rechazó`, sql, String(n.patient_id))
       fail(403, 'Solo la firma quien hizo la anestesia (el anestesiólogo de la nota postquirúrgica).')
     }
-    const b = parse(z.object({ data: anesthesiaInput }), req.body)
+    const b = parse(z.object({ data: anesthesiaInput, preEvalId: z.string().optional() }), req.body)
     if (await activeOf(String(n.id))) fail(409, 'Esta cirugía ya tiene su hoja de anestesia.')
+    const pre = b.preEvalId ? await withPreEval(b.data, String(n.hospitalization_id), b.preEvalId) : null
     const me = (await sql.one('SELECT * FROM staff WHERE id = ?', [u.id]))!
     const id = randomUUID()
     const at = new Date().toISOString()
@@ -214,8 +234,8 @@ export function registerAnesthesia(app: Express, { sql, auth, userOf, clinicOf, 
       const pos = me.position ? String(me.position) : undefined
       const signer: AnesthesiaSigner = { name: signedName({ name: String(me.name), docName: me.doc_name ? String(me.doc_name) : undefined, position: pos }), title: positionOf(pos)?.label ?? specialtyOf({ specialty: me.specialty ? String(me.specialty) : undefined }),
         license: me.license ? String(me.license) : undefined, signatureId: m.signatureId ?? undefined, stampId: m.stampId ?? undefined }
-      await q.run(`INSERT INTO anesthesia_sheets (id, clinic_id, hospitalization_id, note_id, patient_id, mode, performed_by_name, performed_by_id, data, signer, created_by, created_at)
-        VALUES (?,?,?,?,?,'system',?,?,?,?,?,?)`, [id, cid, String(n.hospitalization_id), String(n.id), String(n.patient_id), signer.name, u.id, JSON.stringify(b.data), JSON.stringify(signer), u.id, at])
+      await q.run(`INSERT INTO anesthesia_sheets (id, clinic_id, hospitalization_id, note_id, patient_id, mode, performed_by_name, performed_by_id, data, signer, created_by, created_at, pre_eval_id)
+        VALUES (?,?,?,?,?,'system',?,?,?,?,?,?,?)`, [id, cid, String(n.hospitalization_id), String(n.id), String(n.patient_id), signer.name, u.id, JSON.stringify(b.data), JSON.stringify(signer), u.id, at, pre?.id ?? null])
       await q.run(`DELETE FROM note_drafts WHERE user_id = ? AND scope = 'anestesia' AND ref_id = ?`, [u.id, String(n.id)])
       await audit(u, `Llenó y firmó ${what(pq)} de ${name} en el sistema (técnica: ${b.data.techniques.join(', ')}; ${b.data.monitoring.length} registro(s) de monitoreo)`, q, String(n.patient_id))
     })
@@ -232,6 +252,8 @@ export function registerAnesthesia(app: Express, { sql, auth, userOf, clinicOf, 
     assertGrace(u.id, r!.created_by, r!.created_at, 'firmó la hoja')
     if (Number(r!.version) !== b.version) fail(409, 'La hoja cambió mientras la corregías. Actualiza la página.')
     const { pq } = await noteOf(cid, String(r!.note_id))
+    // PQ4: la valoración resumida no se cambia desde el registro (se corrige en la valoración misma)
+    if (r!.pre_eval_id) await withPreEval(b.data, String(r!.hospitalization_id), String(r!.pre_eval_id), true)
     const name = await patientName(String(r!.patient_id))
     await sql.tx(async (q) => {
       const next = await saveVersion(q, { clinicId: cid, kind: 'anesthesia', id: String(r!.id), version: Number(r!.version), data: { data: j(r!.data, {}) }, authorId: String(r!.created_by), at: String(r!.created_at), by: u.id, reason: b.why })

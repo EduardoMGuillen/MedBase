@@ -502,7 +502,55 @@ export const ANESTHESIA_TECHNIQUE_OF: Record<string, string> = {
   General: 'General balanceada', Raquídea: 'Subaracnoidea', Epidural: 'Epidural', 'Bloqueo regional': 'Bloqueo periférico', Sedación: 'Sedación',
 }
 /**
- * PQ3 (ronda 14). VALIDAR: Emil. Cuadrícula del monitoreo transanestésico al imprimir: de 0 a 240 minutos con una columna cada
- * 5 minutos; escala de 0 a 220 para PA y FC. Si el registro pasa de 240 minutos se dibuja otra cuadrícula a continuación.
+ * PQ3 (ronda 14) y PQ4 (ronda 16). VALIDAR: Emil. Cuadrícula del monitoreo transanestésico al imprimir: 120 minutos por hoja
+ * (como el PNG de la «Hoja única»), una columna cada 5 minutos, escala de 0 a 240 para PA y FC. Si la anestesia pasa de 120
+ * minutos se agrega una hoja de continuación solo con la cuadrícula y las filas de monitoreo.
  */
-export const ANESTHESIA_GRID = { minutes: 240, step: 5, max: 220, lines: 20 } as const
+export const ANESTHESIA_GRID = { minutes: 120, step: 5, max: 240, lines: 20 } as const
+/** PQ4 (ronda 16). Pie de la valoración preanestésica y del registro de anestesia impresos (las bases del formato, como el PNG). */
+export const ANESTHESIA_SOURCES = 'Basado en: ASA Statement on Documentation of Anesthesia Care (2023) · Estándares Internacionales OMS-WFSA (2018) · Lista OMS de Verificación de la Seguridad de la Cirugía'
+/**
+ * PQ4 (ronda 16). VALIDAR: Emil. Laboratorios de la valoración preanestésica que se prellenan con el último resultado del
+ * paciente: se busca el analito por su nombre (sin mayúsculas ni tildes). Todo se puede cambiar.
+ */
+export const PREANESTHESIA_LABS = [
+  { key: 'hb', label: 'Hb', match: /^(hemoglobina|hb|hgb)\b/ },
+  { key: 'hto', label: 'Hto', match: /^(hematocrito|hto|hct)\b/ },
+  { key: 'plt', label: 'Plaquetas', match: /^(plaquetas|recuento de plaquetas|plt)\b/ },
+  { key: 'inr', label: 'TP/INR', match: /^(inr|tp\b|tiempo de protrombina)/ },
+  { key: 'glucose', label: 'Glucosa', match: /^(glucosa|glicemia|glucemia)\b/ },
+  { key: 'bloodType', label: 'Tipo y Rh', match: /^(tipo y rh|grupo sanguineo|tipo sanguineo|grupo y rh|tipeo)/ },
+] as const
+/**
+ * PQ5 (ronda 16). VALIDAR: Emil. Recuento quirúrgico (momentos de recuento de AORN; fase «Salida» de la Lista OMS).
+ * - `rows`: lo que se cuenta; «Otros» se agrega como filas de texto libre.
+ * - `columns`: los momentos del recuento, en orden. `instrument`: las columnas en que se cuenta el instrumental (las demás se
+ *   pueden dejar en blanco; el cambio de personal va aparte).
+ * - `results`: «Resultado» de cada fila. Con un «Incorrecto» se piden `searches` (Sí / No cada una) y la nota.
+ */
+export const SURGICAL_COUNT = {
+  rows: [
+    { key: 'sponges', label: 'Compresas' }, { key: 'gauze', label: 'Gasas' }, { key: 'pledgets', label: 'Torundas' },
+    { key: 'needles', label: 'Agujas de sutura' }, { key: 'blades', label: 'Hojas de bisturí' }, { key: 'sharps', label: 'Otros cortopunzantes' },
+    { key: 'instruments', label: 'Instrumental' },
+  ],
+  otherLabel: 'Otros',
+  maxOther: 8,
+  /** Filas «Otros» en blanco en la hoja para llenar a mano. */
+  blankOther: 2,
+  columns: [
+    { key: 'initial', label: 'Inicial (antes de la incisión)' }, { key: 'added', label: 'Agregados' },
+    { key: 'cavity', label: 'Antes de cerrar cavidad' }, { key: 'wound', label: 'Antes de cerrar herida' }, { key: 'final', label: 'Final (cierre de piel)' },
+  ],
+  instrumentColumns: ['initial', 'wound'],
+  results: ['Correcto', 'Incorrecto'],
+  searches: [
+    { key: 'surgeonInformed', label: 'Se informó al cirujano' }, { key: 'searched', label: 'Se hizo búsqueda' },
+    { key: 'xray', label: 'Se tomó radiografía' }, { key: 'found', label: 'Se encontró' },
+  ],
+  /** Filas de «Cambio de personal» en blanco en la hoja para llenar a mano. */
+  blankHandoffs: 2,
+  maxHandoffs: 10,
+  handoffRoles: ['Instrumentista', 'Circulante'],
+  confirmation: 'Recuento completo y correcto, confirmado en voz alta antes de que el paciente salga de sala',
+} as const

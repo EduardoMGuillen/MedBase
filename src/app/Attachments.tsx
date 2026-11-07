@@ -6,7 +6,7 @@ import { date, fileSize, time } from '../lib/format'
 import type { Attachment } from '../lib/types'
 
 // PQ3 (ronda 14): «Hoja de anestesia» se sube desde la tarjeta de la nota postquirúrgica, no desde aquí
-const CATEGORY: Record<Attachment['category'], string> = { lab: 'Laboratorio', imaging: 'Imagen', document: 'Documento', other: 'Otro', anesthesia: 'Hoja de anestesia' }
+const CATEGORY: Record<Attachment['category'], string> = { lab: 'Laboratorio', imaging: 'Imagen', document: 'Documento', other: 'Otro', anesthesia: 'Hoja de anestesia', preanesthesia: 'Valoración preanestésica', surgical_count: 'Recuento quirúrgico' }
 const MAX = 3 * 1024 * 1024
 const TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp']
 
@@ -61,7 +61,7 @@ export function Attachments({ patientId }: { patientId: string }) {
           <p>PDF, PNG, JPG o WEBP de hasta 3 MB.</p>
         </div>
         <select className="select" style={{ width: 'auto' }} value={category} onChange={(e) => setCategory(e.target.value as Attachment['category'])} aria-label="Tipo de archivo">
-          {Object.entries(CATEGORY).filter(([k]) => k !== 'anesthesia').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          {Object.entries(CATEGORY).filter(([k]) => !['anesthesia', 'preanesthesia', 'surgical_count'].includes(k)).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <button className="btn btn--soft" disabled={busy} onClick={() => input.current?.click()}>Elegir archivo</button>
         <input ref={input} type="file" accept={TYPES.join(',')} multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = '' }} />
@@ -74,7 +74,7 @@ export function Attachments({ patientId }: { patientId: string }) {
               <strong>{a.name}</strong>
               <span>{CATEGORY[a.category]}{a.voidedAt ? ` (anulada: ${a.voidReason ?? ''})` : ''}, {fileSize(a.size)}, {date(a.uploadedAt)} {time(a.uploadedAt)}, {staffById(a.uploadedBy)?.name}</span>
             </button>
-            {(a.uploadedBy === user?.id || user?.role === 'doctor') && a.category !== 'anesthesia' && (
+            {(a.uploadedBy === user?.id || user?.role === 'doctor') && !['anesthesia', 'preanesthesia', 'surgical_count'].includes(a.category) && (
               <button className="icon-btn" aria-label={`Eliminar ${a.name}`} onClick={async () => {
                 if (confirm(`¿Eliminar "${a.name}" del expediente? Esta acción no se puede deshacer.`) && await deleteAttachment(a.id)) load()
               }}><Trash2 size={16} /></button>

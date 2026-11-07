@@ -184,7 +184,7 @@ describe('pacientes y personal', () => {
       await ensureDb(old)
       // Estado de una base v5: una sola clínica implícita, sin clinic_id ni hospitalización
       await old.exec(`
-        TRUNCATE anesthesia_sheets, record_versions, print_log, exam_ref_values, exam_events, exam_orders, exam_profiles, exam_catalog, epicrises, order_set_uses, order_sets, referrals, authorizations, order_marks, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups, clinic_drugs, duty_roster, supply_sets, supply_items, supply_settings, material_uses;
+        TRUNCATE surgical_counts, preanesthesia_evals, anesthesia_sheets, record_versions, print_log, exam_ref_values, exam_events, exam_orders, exam_profiles, exam_catalog, epicrises, order_set_uses, order_sets, referrals, authorizations, order_marks, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups, clinic_drugs, duty_roster, supply_sets, supply_items, supply_settings, material_uses;
         DELETE FROM attachments WHERE patient_id IN ('p11', 'p12', 'p13', 'p14');
         DELETE FROM patients WHERE id IN ('p11', 'p12', 'p13', 'p14');
         TRUNCATE audit;

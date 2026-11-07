@@ -56,6 +56,8 @@ import { DrugPickedHint } from '../components/DrugSuggestion'
 import { NotInVademecum } from '../components/AddToVademecum'
 import { GenerateRxModal, RxAnnex } from '../components/GenerateRx'
 import { AnesthesiaAnnex, AnesthesiaCard } from '../components/AnesthesiaSheet'
+import { PreEvalAnnex, PreEvalButton } from '../components/PreEval'
+import { SurgicalCountAnnex, SurgicalCountCard } from '../components/SurgicalCount'
 import { DrugSearch } from '../components/DrugSearch'
 import type { OrderSet } from '../lib/types'
 import { TabRow } from '../components/TabRow'
@@ -792,6 +794,8 @@ function MedicalNotes({ file, p, reload, show = true, onWriting }: { file: File;
               {(doctor || (writer && hasAdmission)) && <button className="btn btn--primary" data-tour="nueva-evolucion" onClick={() => setWriting('note')}><NotebookPen size={16} />{hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso'}</button>}
               {writer && <button className="btn btn--primary" onClick={() => setWriting('procedure')}><Syringe size={16} />{doctor ? 'Procedimiento' : 'Procedimiento menor'}</button>}
               {(doctor || can('inpatient.care')) && <button className={`btn ${doctor ? 'btn--primary' : 'btn--soft'}`} onClick={() => { setAuthFor(undefined); setWriting('authorization') }}><FileSignature size={16} />Autorización quirúrgica</button>}
+              {/* PQ4 (ronda 16): la valoración preanestésica, antes de la cirugía */}
+              <PreEvalButton stayId={file.hospitalization.id} patientId={p.id} />
               {writer && hasAdmission && <button className="btn btn--primary" onClick={() => setWriting('postop')}><NotebookPen size={16} />{doctor ? 'Nota postquirúrgica' : 'Procedimiento mayor (nota postquirúrgica)'}</button>}
               {doctor && hasAdmission && !discharged && <button className="btn btn--primary" data-tour="egreso" onClick={() => setWriting('discharge')}><LogOut size={16} />Egreso</button>}
               {doctor && obs && features(settings).hospital && <button className="btn btn--soft" onClick={() => setConverting(true)}><BedDouble size={16} />Pasar a hospitalización</button>}
@@ -898,6 +902,8 @@ function SoapNote({ n, file, reload }: { n: InpatientNote; file: File; reload: (
         <Addenda list={file.addenda ?? []} targetKind="note" targetId={n.id} canAdd={can('inpatient.orders') && user?.role === 'doctor'} onAdded={reload} openWith={toAddendum} />
         {/* PQ3 (ronda 14): hoja de anestesia de la nota postquirúrgica */}
         {n.format === 'postop' && <AnesthesiaCard note={n} />}
+        {/* PQ5 (ronda 16): recuento quirúrgico */}
+        {n.format === 'postop' && <SurgicalCountCard note={n} />}
       </div>
       {correcting && p && <NoteEditor file={file} p={p} kind={n.kind === 'admission' ? 'admission' : 'evolution'} variant={n.format === 'postop' ? 'postop' : undefined} correct={n}
         onClose={() => setCorrecting(false)} onSaved={(b, rx) => { setCorrecting(false); reload(); if (b || rx) setOrdersFor({ batch: b, rxNote: rx }) }} onExpired={(t) => { setCorrecting(false); setToAddendum(t) }} />}
@@ -1877,7 +1883,10 @@ function Annexes({ file, p, reload }: { file: File; p: Patient; reload: () => vo
       {choiceFor && <ConsentChoice authorizationId={choiceFor} p={p} onDone={() => { setChoiceFor(null); reload() }} />}
       <DischargeDocuments file={file} />
       {/* PQ3 (ronda 14): hojas de anestesia de la estancia e «Imprimir hoja de anestesia en blanco» */}
+      {/* PQ4 y PQ5 (ronda 16): valoración preanestésica (de la estancia) y recuento quirúrgico */}
+      <PreEvalAnnex stayId={file.hospitalization.id} />
       <AnesthesiaAnnex stayId={file.hospitalization.id} />
+      <SurgicalCountAnnex stayId={file.hospitalization.id} />
       {file.referrals.map((r) => (
         <article key={r.id} className="panel consult-entry">
           <div className="panel__head"><div><h2>Referencia {r.number} {r.voidedAt ? <span className="badge badge--red">Anulada</span> : <span className="badge badge--mint">Firmada</span>}</h2>

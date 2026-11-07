@@ -26,7 +26,7 @@ import { insertExtraDemoUsers } from './demoUsers.js'
 export const DEMO_PASSWORD = 'demo1234'
 
 /** Sube este número cuando cambie el esquema; las bases existentes se actualizan solas. */
-const SCHEMA_VERSION = '85'
+const SCHEMA_VERSION = '86'
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1272,7 +1272,7 @@ CREATE TRIGGER anesthesia_sheets_no_delete BEFORE DELETE ON anesthesia_sheets FO
 ALTER TABLE attachments ADD COLUMN IF NOT EXISTS voided_at TEXT;
 ALTER TABLE attachments ADD COLUMN IF NOT EXISTS void_reason TEXT;
 ALTER TABLE addenda DROP CONSTRAINT IF EXISTS addenda_target_kind_check;
-ALTER TABLE addenda ADD CONSTRAINT addenda_target_kind_check CHECK (target_kind IN ('consultation','note','referral','anesthesia'));
+ALTER TABLE addenda ADD CONSTRAINT addenda_target_kind_check CHECK (target_kind IN ('consultation','note','referral','anesthesia','preanesthesia','surgical_count'));
 -- v83 (ronda 15). RU5: «Registro» de cada línea del catálogo (a quién se le registra: paciente, uso general o ambos). Las
 -- líneas que ya existían (y las que crea la clínica) quedan en «Ambos» (A6); la carga del .md v2 (server/supplies.ts) pone al día
 -- las del .md que la clínica no editó ni archivó. RU8: sets de material por clínica (nombre único, descripción y líneas con su
@@ -1298,6 +1298,70 @@ CREATE TABLE IF NOT EXISTS supply_sets (
 CREATE UNIQUE INDEX IF NOT EXISTS supply_sets_md ON supply_sets (clinic_id, md_key) WHERE md_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS supply_sets_clinic ON supply_sets (clinic_id);
 ALTER TABLE material_uses ADD COLUMN IF NOT EXISTS sets TEXT;
+-- v86 (ronda 16, PQ4): la valoración preanestésica es un documento aparte, ligado a la ESTANCIA (no a la nota postquirúrgica):
+-- se escribe antes de la cirugía. Puede haber varias por estancia (se reprograma la cirugía): la vigente es la última firmada
+-- (o subida) sin anular. La escribe y la firma cualquier médico (en signer queda su firma); en papel la sube médico o
+-- enfermería. Nada se borra: la subida se reemplaza con motivo (voided_*, replaced_by); la llenada se corrige en el periodo de
+-- gracia (record_versions 'preanesthesia') o con adenda (addenda 'preanesthesia'). Las hojas de anestesia de PQ3 conservan su
+-- valoración adentro; el registro de anestesia nuevo apunta a la valoración vigente que resumió (pre_eval_id). Idempotente.
+CREATE TABLE IF NOT EXISTS preanesthesia_evals (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  hospitalization_id TEXT NOT NULL REFERENCES hospitalizations(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  authorization_id TEXT,
+  mode TEXT NOT NULL CHECK (mode IN ('upload','system')),
+  performed_by_name TEXT NOT NULL,
+  performed_by_id TEXT REFERENCES staff(id),
+  observation TEXT,
+  file_id TEXT,
+  data TEXT,
+  signer TEXT,
+  created_by TEXT NOT NULL REFERENCES staff(id),
+  created_at TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  voided_at TEXT,
+  voided_by TEXT REFERENCES staff(id),
+  void_reason TEXT,
+  replaced_by TEXT
+);
+CREATE INDEX IF NOT EXISTS preanesthesia_evals_stay ON preanesthesia_evals (clinic_id, hospitalization_id, created_at);
+CREATE OR REPLACE FUNCTION surgical_doc_no_delete() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  IF current_setting('clinara.note_maintenance', true) = 'on' THEN RETURN OLD; END IF;
+  RAISE EXCEPTION 'El documento quirúrgico no se borra: se reemplaza con motivo o se corrige con adenda.';
+END $fn$;
+DROP TRIGGER IF EXISTS preanesthesia_evals_no_delete ON preanesthesia_evals;
+CREATE TRIGGER preanesthesia_evals_no_delete BEFORE DELETE ON preanesthesia_evals FOR EACH ROW EXECUTE FUNCTION surgical_doc_no_delete();
+-- v86 (ronda 16, PQ4): el registro de anestesia guarda qué valoración vigente resumió (las hojas de PQ3 quedan en NULL).
+ALTER TABLE anesthesia_sheets ADD COLUMN IF NOT EXISTS pre_eval_id TEXT;
+-- v86 (ronda 16, PQ5): recuento quirúrgico de la nota postquirúrgica, mismo patrón que la hoja de anestesia: uno vigente por
+-- nota, subido en papel o llenado y firmado en el sistema (médico, enfermería o quien entró a la cirugía con usuario). Nada se
+-- borra; corrección en el periodo de gracia (record_versions 'surgical_count') o adenda (addenda 'surgical_count'). Opcional:
+-- no genera avisos ni bloquea el egreso. Idempotente.
+CREATE TABLE IF NOT EXISTS surgical_counts (
+  id TEXT PRIMARY KEY,
+  clinic_id TEXT NOT NULL REFERENCES clinics(id),
+  hospitalization_id TEXT NOT NULL REFERENCES hospitalizations(id),
+  note_id TEXT NOT NULL REFERENCES hosp_notes(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  mode TEXT NOT NULL CHECK (mode IN ('upload','system')),
+  observation TEXT,
+  file_id TEXT,
+  data TEXT,
+  signer TEXT,
+  created_by TEXT NOT NULL REFERENCES staff(id),
+  created_at TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  voided_at TEXT,
+  voided_by TEXT REFERENCES staff(id),
+  void_reason TEXT,
+  replaced_by TEXT
+);
+CREATE INDEX IF NOT EXISTS surgical_counts_stay ON surgical_counts (clinic_id, hospitalization_id);
+CREATE UNIQUE INDEX IF NOT EXISTS surgical_counts_active ON surgical_counts (note_id) WHERE voided_at IS NULL;
+DROP TRIGGER IF EXISTS surgical_counts_no_delete ON surgical_counts;
+CREATE TRIGGER surgical_counts_no_delete BEFORE DELETE ON surgical_counts FOR EACH ROW EXECUTE FUNCTION surgical_doc_no_delete();
 `
 
 /** Inserta muchas filas en lotes, para que la carga inicial sea rápida aunque la base esté lejos. */

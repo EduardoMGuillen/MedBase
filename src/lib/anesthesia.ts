@@ -90,6 +90,8 @@ export interface AnesthesiaSheet {
   voidedBy?: string
   voidReason?: string
   replacedBy?: string
+  /** PQ4 (ronda 16): la valoración preanestésica (documento aparte) que resumió el registro. Las hojas de PQ3 no la tienen. */
+  preEvalId?: string
   /** La nota postquirúrgica: procedimiento y fecha (para la lista de Anexos y los pendientes). */
   procedure?: string
   surgeryAt?: string
