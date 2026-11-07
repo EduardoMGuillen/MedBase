@@ -5,6 +5,8 @@ import type { Server } from 'node:http'
 import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
+import bcrypt from 'bcryptjs'
+import { MEMBRENO } from './demoData.js'
 import { can, permissionsFor } from '../src/lib/permissions.js'
 import { tourFor } from '../src/lib/tours.js'
 
@@ -18,6 +20,11 @@ before(async () => {
   const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
   await new Promise<void>((r) => { server = app.listen(0, () => r()) })
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  // Dr. Joaquín Membreño (Medicina general; lo agrega la demo diaria): médico de la clínica principal
+  if (!(await sql.one('SELECT 1 FROM staff WHERE id = ?', [MEMBRENO.id]))) {
+    await sql.run(`INSERT INTO staff (id, name, role, roles, specialty, email, license, color, active, password_hash, clinic_id) VALUES (?,?,'doctor',?,?,?,?,?,TRUE,?,?)`,
+      [MEMBRENO.id, MEMBRENO.name, JSON.stringify(['doctor']), MEMBRENO.specialty, MEMBRENO.email, MEMBRENO.license, '#9A5B13', bcrypt.hashSync(DEMO_PASSWORD, 10), 'c-sb'])
+  }
 })
 after(async () => { server.close(); await sql.close() })
 
@@ -56,6 +63,28 @@ describe('PF1 (ronda 17): el médico de la clínica registra pacientes sin cita'
     assert.equal(r.body.status, 'arrived')
     assert.equal(r.body.source, 'walkin')
     assert.equal(r.body.doctorId, 's-solorzano')
+  })
+
+  test('cualquier médico de la clínica (Dermatología, Medicina general, médico y administración en su vista de médico) registra un paciente sin cita consigo', async () => {
+    const cid = await clinicOfUser('tgalvez@demo.clinara')
+    const free = await freePatients(cid, 6)
+    let i = 0
+    for (const [email, id] of [['tgalvez@demo.clinara', 's-galvez'], ['jmembreno@demo.clinara', MEMBRENO.id], ['mvilleda@demo.clinara', 's-villeda'], ['hnolasco@demo.clinara', 's-nolasco']]) {
+      const doc = await as(email)
+      const me = await doc.get('/api/auth/me')
+      assert.equal(me.status, 200, `${email} entra sin código`)
+      if (me.body.user.role !== 'doctor') assert.equal((await doc.post('/api/me/view', { role: 'doctor' })).status, 200)
+      // Paciente nuevo desde la misma ventana («Registrar paciente nuevo»: patients.manage)
+      const p = await doc.post('/api/patients', { firstName: `Sin cita ${i}`, lastName: 'Ronda Diecisiete', birthDate: '1990-05-05', sex: 'F', phone: '9999-0000' })
+      assert.equal(p.status, 201, `${email}: ${JSON.stringify(p.body)}`)
+      for (const pid of [free[i], String(p.body.id)]) {
+        const r = await doc.post('/api/appointments/walk-in', { patientId: pid, doctorId: id, reason: 'Consulta sin cita' })
+        assert.equal(r.status, 201, `${email}: ${JSON.stringify(r.body)}`)
+        assert.equal(r.body.doctorId, id)
+        assert.equal(r.body.status, 'arrived')
+      }
+      i++
+    }
   })
 
   test('el recorrido del médico de la clínica señala «Paciente sin cita»', () => {
