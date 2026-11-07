@@ -59,7 +59,7 @@ export default function ExamOrderPage() {
   const number = first.orderNo ?? first.batchId.slice(0, 8).toUpperCase()
   // El mismo envío por WhatsApp que ya tenía la orden: sin diagnóstico (privacidad) y sin la palabra «Externo»
   const text = (g: ExamGroup) => [`${settings.name}. ${TITLE[g]} ${number} del ${dmyTime(first.orderedAt)}.`, `Paciente: ${fullName(p)}.`, `${data.doctor.name}${data.doctor.license ? `, colegiación ${data.doctor.license}` : ''}.`, '',
-    ...shown.filter((e) => e.group === g).map((e, i) => `${i + 1}. ${examLine(e)}${e.priority === 'urgent' ? ' (URGENTE)' : ''}${e.indication ? `. ${e.indication}` : ''}`)].join('\n')
+    ...shown.filter((e) => e.group === g).map((e) => `• ${examLine(e)}${e.priority === 'urgent' ? ' (URGENTE)' : ''}${e.indication ? `. ${e.indication}` : ''}`)].join('\n')
   return (
     <div className={`page${only ? ` print-only-${only.g}` : ''}`}>
       <div className="page-head no-print">
@@ -179,10 +179,11 @@ export function ExamOrderSheet({ group: g, exams: list, doctor, number, patient:
       legends={[SIGN_AND_STAMP_LEGEND, `${TITLE[g]} ${number}, separada de la receta.`]}>
       <div className="order-groups">{groups.map((grp) => (
         <section key={grp.title} className="order-group"><h3>{grp.title}</h3>
-          <ol>{grp.items.map((e) => (
+          {/* IM4 (ronda 16): viñetas, no números (la numeración volvía a empezar en 1 en cada grupo); la receta sigue numerada */}
+          <ul>{grp.items.map((e) => (
             <li key={e.id}><b>{examLine(e)}</b>{e.priority === 'urgent' && <span className="exam-order__urgent">Urgente</span>}
               {e.indication && <small>Indicación clínica: {e.indication}</small>}</li>
-          ))}</ol>
+          ))}</ul>
         </section>
       ))}</div>
     </ClinicalDoc>
