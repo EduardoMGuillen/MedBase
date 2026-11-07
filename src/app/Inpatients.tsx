@@ -44,7 +44,7 @@ export default function Inpatients() {
           <div className="rows">{waiting.map((h) => {
             const p = patient(h.patientId)
             return p && (
-              <Link key={h.id} to={`/app/hospitalizados/${h.id}?completar=1`} className="row">
+              <Link key={h.id} to={`/app/hospitalizados/${h.id}?completar=1`} className="row row--plain">
                 <div className="row__who"><strong>{fullName(p)}</strong><span>{h.diagnoses.map((d) => d.label).join('; ')} · ingresó {dateTime(h.admittedAt)}</span></div>
                 <span className="badge badge--amber">Asignar cama</span>
               </Link>

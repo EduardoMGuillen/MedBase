@@ -292,6 +292,12 @@ a.stat:hover { background: var(--ward); }
 .row__who > span { font-size: 13px; color: var(--muted); }
 .row__end { display: flex; gap: 8px; align-items: center; }
 .row--now { background: linear-gradient(90deg, var(--ink-soft), transparent 70%); }
+/* MC1 (ronda 16): fila sin columna de hora (Resultados nuevos, Exámenes pendientes, Sin cama asignada): el texto a lo ancho y
+   la píldora de su tamaño a la derecha, centrada en la altura; en pantallas angostas la píldora baja debajo del texto. */
+.row--plain { grid-template-columns: minmax(0, 1fr) auto; }
+.row--plain > .badge { justify-self: end; white-space: nowrap; }
+.row--plain .row__who > span { display: block; }
+.row--plain .row__who > .chips { display: flex; margin-top: 6px; }
 a.row:hover { background: var(--ward); }
 
 /* Agenda por consultorio */
@@ -492,6 +498,8 @@ button.chip[aria-pressed='true'] { background: var(--ink); color: #fff; border-c
   .mod--wide, .mod--narrow, .mod--half { grid-column: span 1; }
   .row { grid-template-columns: 52px 1fr; }
   .row__end { grid-column: 2; }
+  .row--plain { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .row--plain > .badge { justify-self: start; }
   .lp-wrap { width: calc(100% - 32px); }
 }
 
