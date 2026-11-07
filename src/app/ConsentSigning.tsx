@@ -192,7 +192,7 @@ export function ConsentSigning({ a, p, action, doctorOnly = false, onClose, onDo
               <label className="field"><span>{usePin ? 'Tu PIN' : 'Tu contraseña'}</span><input className="input" type="password" inputMode={usePin ? 'numeric' : undefined}
                 autoComplete={usePin ? 'off' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && doctorOk && !busy) void submit(true) }} /></label>
-              {user?.hasPin && <button type="button" className="linklike" style={{ justifySelf: 'start' }} onClick={() => { setUsePin(!usePin); setPassword('') }}>{usePin ? 'Usar mi contraseña' : 'Usar mi PIN'}</button>}
+              {user?.hasPin && <button type="button" className="linklike self-start" onClick={() => { setUsePin(!usePin); setPassword('') }}>{usePin ? 'Usar mi contraseña' : 'Usar mi PIN'}</button>}
             </>)}
           </section>
         )}

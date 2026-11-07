@@ -151,7 +151,7 @@ function GuestFields({ value, onChange, onPick, onCancel }: { value: GuestPatien
         <label className="field"><span>Teléfono (opcional)</span><input className="input" inputMode="tel" value={value.phone ?? ''} onChange={set('phone')} placeholder="0000-0000" /></label>
       </div>
       <SimilarPatients list={similar} pickLabel="Sí, usar su expediente" onPick={(p) => onPick(p.id)} />
-      <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={onCancel}>Buscar en la biblioteca</button>
+      <button type="button" className="btn btn--ghost btn--sm self-start" onClick={onCancel}>Buscar en la biblioteca</button>
     </fieldset>
   )
 }
@@ -181,7 +181,7 @@ function NewPrescription({ initial, onClose }: { initial: Omit<Draft, 'key'>; on
         {guest ? <GuestFields value={guest} onChange={setGuest} onPick={usePatient} onCancel={() => setGuest(null)} />
           : <PatientPicker value={patientId} onChange={setPatientId} notFoundLabel="receta para paciente no registrado"
             onNotFound={(q) => setGuest({ ...EMPTY_GUEST, name: q.replace(/\b\p{L}/gu, (c) => c.toUpperCase()) })} />}
-        {!guest && !p && <button type="button" className="linklike" style={{ justifySelf: 'start' }} onClick={() => setGuest({ ...EMPTY_GUEST })}>Receta para paciente no registrado</button>}
+        {!guest && !p && <button type="button" className="linklike self-start" onClick={() => setGuest({ ...EMPTY_GUEST })}>Receta para paciente no registrado</button>}
         {p && p.allergies.length > 0 && <div className="alert-strip">Alergias: {p.allergies.join(', ')}</div>}
         {p && needsDni && <IdentityPrompt p={p} />}
         {who && (<>
@@ -193,7 +193,7 @@ function NewPrescription({ initial, onClose }: { initial: Omit<Draft, 'key'>; on
               <MedicationForm key={medForm.index} patient={who} current={items} initial={medForm.initial}
                 onSave={(it) => { setItems(medForm.index >= 0 ? items.map((x, j) => (j === medForm.index ? it : x)) : [...items, it]); setMedForm(null) }}
                 onCancel={() => setMedForm(null)} />
-            ) : <button className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setMedForm({ index: -1 })}><Plus size={16} />Agregar medicamento</button>}
+            ) : <button className="btn btn--soft self-start" onClick={() => setMedForm({ index: -1 })}><Plus size={16} />Agregar medicamento</button>}
           </div>
           <label className="field"><span>Indicaciones (opcional, una por línea)</span>
             <textarea className="textarea textarea--sm" rows={3} value={indications} onChange={(e) => setIndications(e.target.value)} placeholder="Ej. Control de presión arterial en casa. Cita de control en 3 meses." /></label>

@@ -121,7 +121,7 @@ export function PreEvalSummary({ pe }: { pe: PreEval }) {
         {pe.data.techniques.length > 0 && <p style={{ margin: 0 }}>Técnica propuesta: {pe.data.techniques.join(', ')}</p>}
       </> : <p className="muted" style={{ margin: 0 }}>Los datos están en la hoja en papel.</p>}
       <p className="muted" style={{ margin: 0, fontSize: 13 }}>De solo lectura: si algo cambió, corrige la valoración o escribe una nueva antes de firmar el registro.</p>
-      <Link className="btn btn--ghost btn--sm anes-btn" style={{ justifySelf: 'start' }} to={`/app/valoracion/${pe.id}`} target="_blank"><Eye size={14} />Ver valoración</Link>
+      <Link className="btn btn--ghost btn--sm anes-btn self-start" to={`/app/valoracion/${pe.id}`} target="_blank"><Eye size={14} />Ver valoración</Link>
     </div>
   )
 }

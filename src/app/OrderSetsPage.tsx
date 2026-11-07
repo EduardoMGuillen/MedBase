@@ -140,9 +140,9 @@ function SetEditor({ set, office, onClose, onSaved }: { set?: OrderSet; office: 
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addText() } }} />
           <button type="button" className="btn btn--soft" disabled={!text.trim()} onClick={addText} aria-label="Agregar orden"><Plus size={16} /></button>
         </div>
-        <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setMed({ index: -1, value: EMPTY_SET_MED })}><Pill size={15} />Agregar medicamento</button>
+        <button type="button" className="btn btn--soft self-start" onClick={() => setMed({ index: -1, value: EMPTY_SET_MED })}><Pill size={15} />Agregar medicamento</button>
         {/* EX1: un set puede incluir exámenes de los dos grupos */}
-        <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setPickingExams(true)}><FlaskConical size={15} />Agregar exámenes</button>
+        <button type="button" className="btn btn--soft self-start" onClick={() => setPickingExams(true)}><FlaskConical size={15} />Agregar exámenes</button>
         {pickingExams && <ExamPicker current={items.flatMap((x) => (x.exam ? [x.exam] : []))} title="Exámenes del set" onClose={() => setPickingExams(false)}
           onAdd={(l) => { setItems([...items, ...l.map((exam) => ({ exam }))]); setPickingExams(false) }} />}
       </>)}

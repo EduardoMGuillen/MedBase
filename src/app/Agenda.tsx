@@ -225,7 +225,7 @@ function ApptBlock({ a, p, color, style, compact, onPick }: { a: Appointment; p:
       style={{ ...style, ['--c' as string]: color, textAlign: 'left', border: 0, borderLeft: `3px solid ${color}` }} onClick={() => onPick(a.id)}
       title={`${time(a.start)} ${fullName(p)}: ${a.reason}`}>
       {compact ? <><strong>{time(a.start)}</strong><span className="appt__name">{shortName(p)}</span></> : <strong>{time(a.start)} {fullName(p)}</strong>}
-      {!compact && conflict && <span className="badge badge--red" style={{ justifySelf: 'start' }}>Hospitalizado: cita en conflicto</span>}
+      {!compact && conflict && <span className="badge badge--red self-start">Hospitalizado: cita en conflicto</span>}
       {!compact && <span>{a.source === 'online' && <Globe size={11} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }} aria-label="Reservada en línea" />}{a.reason}</span>}
     </button>
   )
@@ -467,7 +467,7 @@ function AppointmentForm({ title, submitLabel, doctors, patients, initial, lockP
             <label className="field"><span>Identidad (opcional)</span><DniInput value={np.dni} onChange={(dni) => set('newPatient', { ...np, dni })} /></label>
           </div>
           <SimilarPatients list={similar} onPick={(p) => setF((x) => ({ ...x, patientId: p.id, newPatient: null }))} />
-          <button type="button" className="linklike" style={{ justifySelf: 'start' }} onClick={() => set('newPatient', null)}>Buscar entre los pacientes registrados</button>
+          <button type="button" className="linklike self-start" onClick={() => set('newPatient', null)}>Buscar entre los pacientes registrados</button>
         </fieldset>
       ) : (
         <ApptPatientPicker patients={patients} value={f.patientId} onChange={(id) => set('patientId', id)}

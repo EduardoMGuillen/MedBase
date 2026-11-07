@@ -19,7 +19,7 @@ function IvCell({ t }: { t: FluidTotals }) {
   if (!t.iv) return <>{t.noVolume.length ? <span className="fluids__warn" title={`Sin volumen: ${t.noVolume.join('; ')}`}>0 mL*</span> : '—'}</>
   return (
     <span className="fluids__iv">
-      <button type="button" className="link-btn" title={detail} aria-expanded={open} onClick={() => setOpen(!open)}>{fmtMl(t.iv)}{t.noVolume.length ? '*' : ''}</button>
+      <button type="button" className="linklike" title={detail} aria-expanded={open} onClick={() => setOpen(!open)}>{fmtMl(t.iv)}{t.noVolume.length ? '*' : ''}</button>
       {open && <span className="fluids__src" role="note">{t.ivSources.map((s) => <span key={s.medId}>{s.label}: <b>{fmtMl(s.ml)}</b></span>)}</span>}
     </span>
   )

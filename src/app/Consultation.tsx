@@ -474,7 +474,7 @@ export default function Consultation() {
                     onSave={(item) => { setMeds(medForm.index >= 0 ? meds.map((x, j) => (j === medForm.index ? item : x)) : [...meds, item]); setMedForm(null) }}
                     onCancel={() => setMedForm(null)} />
                 ) : (
-                  <button className="btn btn--primary" style={{ justifySelf: 'start' }} onClick={() => setMedForm({ index: -1 })}><Plus size={16} />Agregar medicamento</button>
+                  <button className="btn btn--primary self-start" onClick={() => setMedForm({ index: -1 })}><Plus size={16} />Agregar medicamento</button>
                 )}
               </div>
 
@@ -510,7 +510,7 @@ export default function Consultation() {
               {needsDni && <IdentityPrompt p={p} />}
               {/* RF1 (ronda 8): referir a otro centro con la nota todavía en borrador (también desde la nota firmada) */}
               {store.user?.role === 'doctor' && appt.doctorId === store.user.id && (
-                <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => setReferring(true)}><Send size={15} />Referir a otro centro</button>
+                <button type="button" className="btn btn--ghost btn--sm self-start" onClick={() => setReferring(true)}><Send size={15} />Referir a otro centro</button>
               )}
               {rxCount > 0 && <RxValidityField value={validity} onChange={setValidity} />}
               <p style={{ fontSize: 14, color: 'var(--muted)' }}>

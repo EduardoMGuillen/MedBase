@@ -56,7 +56,7 @@ export function WalkInModal({ onClose, initialPatientId = '' }: { onClose: () =>
     </>}>
       <PatientPicker value={patientId} onChange={setPatientId} />
       {patientId && activeStayOf(patientId) && <StayConflict stay={activeStayOf(patientId)!} />}
-      {can('patients.manage') && <button className="btn btn--primary" style={{ justifySelf: 'start' }} onClick={() => setRegistering(true)}><UserPlus size={16} />Registrar paciente nuevo</button>}
+      {can('patients.manage') && <button className="btn btn--primary self-start" onClick={() => setRegistering(true)}><UserPlus size={16} />Registrar paciente nuevo</button>}
       {doctors.length > 1 && <label className="field"><span>Médico</span>
         <select className="select" value={doctorId} onChange={(e) => setDoctorId(e.target.value)}>
           {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? `, ${d.specialty.toLowerCase()}` : ''}</option>)}

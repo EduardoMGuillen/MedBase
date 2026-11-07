@@ -148,7 +148,7 @@ export default function Billing() {
           <div className="no-print"><Pagination {...pg} onPage={setPage} label="Páginas de los cobros" /></div>
           {!shown.length && <div className="empty">{charged.length ? 'Ningún cobro coincide con la búsqueda.' : tab === 'today' ? 'Todavía no hay cobros hoy. Toca «Nuevo cobro» para cobrar.' : 'No hay cobros en este periodo.'}</div>}
         </section>
-        {tab === 'today' && charged.length > 0 && <button className="btn btn--ghost no-print" style={{ justifySelf: 'start' }} onClick={() => window.print()}><Printer size={16} />Imprimir cierre de caja</button>}
+        {tab === 'today' && charged.length > 0 && <button className="btn btn--ghost no-print self-start" onClick={() => window.print()}><Printer size={16} />Imprimir cierre de caja</button>}
       </>))}
 
       {charging && <ChargeModal appt={charging.appt} onClose={closeCharge} onPaid={(p) => { closeCharge(); nav(`/app/recibos/${p.id}`) }} />}
@@ -325,7 +325,7 @@ function ChargeModal({ appt, onClose, onPaid }: { appt?: Appointment; onClose: (
             </div>}
           </div>
         )}
-        {!newSvc && <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => startNew('')}><Plus size={14} />Servicio nuevo</button>}
+        {!newSvc && <button type="button" className="btn btn--ghost btn--sm self-start" onClick={() => startNew('')}><Plus size={14} />Servicio nuevo</button>}
       </div>
 
       <div className="form-grid">

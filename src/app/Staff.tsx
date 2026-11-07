@@ -69,7 +69,7 @@ export default function StaffPage() {
                 <option value="twofactor">Con verificación en dos pasos</option>
               </select></label>
             <p className="muted staff-filters__count" aria-live="polite">{filtered ? `${shown.length} de ${staff.length} personas` : `${staff.length} personas`}
-              {filtered && <> · <button type="button" className="link-btn" onClick={() => { setQ(''); setRoleF(''); setStateF('') }}>Quitar filtros</button></>}</p>
+              {filtered && <> · <button type="button" className="linklike" onClick={() => { setQ(''); setRoleF(''); setStateF('') }}>Quitar filtros</button></>}</p>
           </div>
           {shown.length === 0 ? <p className="empty">Nadie coincide con los filtros.</p> : <div className="table-wrap">
           <table className="table table--cards staff-table">

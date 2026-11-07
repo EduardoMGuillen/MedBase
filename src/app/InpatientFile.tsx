@@ -205,9 +205,9 @@ export default function InpatientFile() {
       {/* NE8 (ronda 13): los dos avisos de la nota abierta van juntos, arriba del contenido de la pestaña */}
       {writingNote && tab !== 'notes' && <div className="note-dock__hints" role="status">
         <p className="note-dock__hint"><NotebookPen size={15} />{writingNote} abierta: la encuentras al final de esta pestaña.
-          <button type="button" className="link-btn" onClick={() => document.querySelector('.note-dock')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Ir a la nota</button></p>
+          <button type="button" className="linklike" onClick={() => document.querySelector('.note-dock')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Ir a la nota</button></p>
         <p className="note-dock__hint"><NotebookPen size={15} />Sigues escribiendo la {writingNote.toLowerCase()}: está aquí abajo.
-          <button type="button" className="link-btn" onClick={showNotes}>Ver las notas</button></p>
+          <button type="button" className="linklike" onClick={showNotes}>Ver las notas</button></p>
       </div>}
       {writingNote && tab !== 'notes' && <GoToNote target=".note-dock" />}
       {editing && <GeneralDataModal h={h} p={p} onClose={() => setEditing(false)} onDone={() => { setEditing(false); load() }} />}
@@ -1172,7 +1172,7 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize, onCon
       {f.major ? (
         <div className="alert-strip alert-strip--calm" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
           <span>Este borrador se empezó como procedimiento mayor. Las cirugías ahora se escriben en la nota postquirúrgica (diagnósticos, horas, anestesia y equipo quirúrgico).</span>
-          <button type="button" className="btn btn--soft btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => { draft.clear(); onConvert(f) }}>Continuar como nota postquirúrgica</button>
+          <button type="button" className="btn btn--soft btn--sm self-start" onClick={() => { draft.clear(); onConvert(f) }}>Continuar como nota postquirúrgica</button>
         </div>
       ) : <small className="muted">Para procedimientos menores: no piden autorización. Una cirugía se escribe en «Nota postquirúrgica».</small>}
       {f.major && auths.length > 0 && (
@@ -1186,7 +1186,7 @@ function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize, onCon
       {f.major && !covered && (
         <div className="alert-strip alert-strip--amber" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
           <span>No hay autorización quirúrgica firmada para este procedimiento.</span>
-          <button type="button" className="btn btn--soft btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => onAuthorize({ ...f, name: f.name.trim() })}><FileSignature size={14} />Generar la autorización quirúrgica</button>
+          <button type="button" className="btn btn--soft btn--sm self-start" onClick={() => onAuthorize({ ...f, name: f.name.trim() })}><FileSignature size={14} />Generar la autorización quirúrgica</button>
           <label className="check-line" style={{ background: '#fff' }}><input type="checkbox" checked={f.urgent} onChange={(e) => setF({ ...f, urgent: e.target.checked })} />
             <span><b>Urgencia, sin autorización previa</b><small>Escribe por qué no se pudo obtener antes.</small></span></label>
           {f.urgent && <textarea className="textarea textarea--sm" rows={2} value={f.justification} onChange={(e) => setF({ ...f, justification: e.target.value })} placeholder="Justificación" aria-label="Justificación de la urgencia" />}
@@ -1446,7 +1446,7 @@ function NoteEditor({ file, p, kind, onClose, onSaved, onStale, variant, onAutho
   </>)
   const vitalsBlock = correct ? null : (
             <fieldset className="fs note-vitals" key="nv"><legend>Signos vitales (opcional)</legend>
-              {!nv ? <button type="button" className="btn btn--soft btn--sm" style={{ justifySelf: 'start' }} onClick={() => { setNv({ ...EMPTY_VITALS }); setNvAt(inputDateTime(new Date())) }}><Plus size={15} />Agregar signos vitales</button> : (<>
+              {!nv ? <button type="button" className="btn btn--soft btn--sm self-start" onClick={() => { setNv({ ...EMPTY_VITALS }); setNvAt(inputDateTime(new Date())) }}><Plus size={15} />Agregar signos vitales</button> : (<>
                 <VitalsFields v={nv} setV={setNv} checked={nvChecked} setChecked={setNvChecked} ageYears={ageYears} />
                 <div className="form-grid">
                   <div className="field"><span>Hora de la toma</span>
@@ -1770,7 +1770,7 @@ function NursingNotes({ file, reload }: { file: File; reload: () => void }) {
           <div className="panel__head"><div><h2>Nueva nota de enfermería</h2><p>Se guarda con la fecha, la hora y tu nombre.</p></div>{text.trim() && <DraftBadge savedAt={draft.savedAt} restored={draft.restored} offline={draft.offline} />}</div>
           <div className="panel__body" style={{ display: 'grid', gap: 10 }}>
             <DictateField label="Nota de enfermería" onText={(f) => setText(f)}><textarea className="textarea" rows={3} value={text} onChange={(e) => setText(e.target.value)} aria-label="Nota de enfermería" placeholder="Estado del paciente, cuidados realizados, novedades del turno." /></DictateField>
-            <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={text.trim().length < 3 || busy} onClick={async () => {
+            <button className="btn btn--primary self-start" disabled={text.trim().length < 3 || busy} onClick={async () => {
               setBusy(true)
               if (await addNursingNote(file.hospitalization.id, text.trim())) { setText(''); draft.clear(); reload() }
               setBusy(false)

@@ -31,7 +31,7 @@ export function ContactsEditor({ value, onChange }: { value: ClinicContact[]; on
             onClick={() => { const rest = value.filter((_, j) => j !== i); onChange(c.primary && rest.length ? rest.map((x, j) => (j === 0 ? { ...x, primary: true } : x)) : rest) }}><X size={16} /></button>
         </div>
       ))}
-      <button type="button" className="btn btn--soft btn--sm" style={{ justifySelf: 'start' }} onClick={add}><Plus size={15} />Agregar contacto</button>
+      <button type="button" className="btn btn--soft btn--sm self-start" onClick={add}><Plus size={15} />Agregar contacto</button>
     </div>
   )
 }

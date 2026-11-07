@@ -75,7 +75,7 @@ export function ScheduleEditor({ d, extra, onSaved, onDirty }: {
         {extra}
       </div>
       {problems.length > 0 && <ul className="sched__problems">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
-      <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={!dirty || problems.length > 0 || busy} onClick={save}>Guardar horario</button>
+      <button className="btn btn--primary self-start" disabled={!dirty || problems.length > 0 || busy} onClick={save}>Guardar horario</button>
     </div>
   )
 }

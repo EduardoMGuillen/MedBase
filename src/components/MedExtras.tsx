@@ -83,7 +83,7 @@ export function NebulizerFields({ value, onChange, allergies, firstName }: { val
         )
       })}
       {value.components.length < NEB_MAX_COMPONENTS && (
-        <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => onChange({ ...value, components: [...value.components, { drug: '', amount: '' }] })}>
+        <button type="button" className="btn btn--ghost btn--sm self-start" onClick={() => onChange({ ...value, components: [...value.components, { drug: '', amount: '' }] })}>
           <Plus size={14} />Agregar otro medicamento</button>
       )}
       <div className="neb__dil">

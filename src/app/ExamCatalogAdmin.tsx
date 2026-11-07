@@ -245,7 +245,7 @@ function RefEditor({ exam, rows, setRows, comment, setComment }: { exam: ClinicE
                 <span className="refed__text"><input className="input" value={r.expected} onChange={(e) => set(i, { expected: e.target.value })} placeholder={r.low || r.high ? 'Opcional' : 'Ej. Negativo'} aria-label="Resultado esperado o texto" title={r.expected} />
                   {r.note && <small className="muted" title={r.note}>{r.note}</small>}</span>
                 <span className="refed__src"><SourceTag codes={cur ? cur.sources : ['clinic']} />{cur?.origin === 'clinic' && <small className="muted">Clínica{cur.editedBy ? ` · ${staffById(cur.editedBy)?.name ?? ''}` : ''}</small>}</span>
-                <span className="refed__act">{r.id ? <button type="button" className="link-btn" onClick={() => set(i, { archive: !r.archive })}>{r.archive ? 'Deshacer' : 'Quitar'}</button>
+                <span className="refed__act">{r.id ? <button type="button" className="linklike" onClick={() => set(i, { archive: !r.archive })}>{r.archive ? 'Deshacer' : 'Quitar'}</button>
                   : <button type="button" className="icon-btn" aria-label="Quitar" onClick={() => setRows(rows.filter((_, j) => j !== i))}><X size={14} /></button>}</span>
               </div>
             )
@@ -338,7 +338,7 @@ function ProfileForm({ profile, onClose, onSaved }: { profile?: ClinicProfile; o
           <span key={e.name} className="chip">{e.name}<button type="button" className="icon-btn" aria-label={`Quitar ${e.name}`} onClick={() => setItems(items.filter((x) => x !== e))}><X size={12} /></button></span>
         ))}</div>
         {items.length < 2 && <small className="muted">Un perfil lleva al menos dos exámenes.</small>}</div>
-      <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setPicking(true)}><Plus size={15} />Agregar exámenes</button>
+      <button type="button" className="btn btn--soft self-start" onClick={() => setPicking(true)}><Plus size={15} />Agregar exámenes</button>
       {picking && <ExamPicker current={items.map((e) => ({ ...e, priority: 'routine', place: 'clinic' }))} catalogOnly title="Exámenes del perfil" onClose={() => setPicking(false)}
         onAdd={(list) => { setItems([...items, ...list.map((e) => ({ group: e.group, name: e.name }))]); setPicking(false) }} />}
     </Modal>

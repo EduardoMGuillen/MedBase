@@ -21,7 +21,7 @@ export function PasswordPanel() {
         <label className="field"><span>Nueva contraseña, mínimo 8 caracteres</span><input className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} /></label>
         <label className="field"><span>Repite la nueva contraseña</span><input className="input" type="password" autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)} aria-invalid={mismatch} /></label>
         {mismatch && <p style={{ color: 'var(--red-ink)', fontSize: 13.5 }}>Las contraseñas no coinciden.</p>}
-        <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={!valid}>Cambiar contraseña</button>
+        <button className="btn btn--primary self-start" disabled={!valid}>Cambiar contraseña</button>
       </form>
     </section>
   )
@@ -40,10 +40,10 @@ export function TwoFactorPanel() {
         {user.twoFactor ? (<>
           <div className="alert-strip alert-strip--calm"><ShieldCheck size={18} />Activada. Necesitarás tu app de códigos para entrar.</div>
           <label className="field"><span>Para desactivarla escribe tu contraseña</span><input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-          <button className="btn btn--danger" style={{ justifySelf: 'start' }} disabled={!password} onClick={async () => { if (await disableTwoFactor(password)) setPassword('') }}>Desactivar</button>
+          <button className="btn btn--danger self-start" disabled={!password} onClick={async () => { if (await disableTwoFactor(password)) setPassword('') }}>Desactivar</button>
         </>) : !setup ? (<>
           <p style={{ color: 'var(--muted)', fontSize: 14 }}>Recomendado para médicos y administración. Necesitas una app como Google Authenticator o Microsoft Authenticator.</p>
-          <button className="btn btn--primary" style={{ justifySelf: 'start' }} onClick={async () => { const r = await setupTwoFactor(); if (r) setSetup(r) }}>Configurar</button>
+          <button className="btn btn--primary self-start" onClick={async () => { const r = await setupTwoFactor(); if (r) setSetup(r) }}>Configurar</button>
         </>) : (<>
           <ol className="steps">
             <li>Abre tu app de autenticación y escanea este código.</li>

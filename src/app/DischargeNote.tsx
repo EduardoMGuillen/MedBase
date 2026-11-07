@@ -158,7 +158,7 @@ export function DischargeWriter({ file, p, onDone, initialCondition }: { file: I
                 submitLabel={medForm.index >= 0 ? 'Guardar cambios' : 'Agregar medicamento'}
                 onSave={(item) => { setItems(medForm.index >= 0 ? items.map((x, j) => (j === medForm.index ? item : x)) : [...items, item]); setMedForm(null) }}
                 onCancel={() => setMedForm(null)} />
-            ) : <button type="button" className="btn btn--primary" style={{ justifySelf: 'start' }} onClick={() => setMedForm({ index: -1 })}><Plus size={16} />Agregar medicamento</button>}
+            ) : <button type="button" className="btn btn--primary self-start" onClick={() => setMedForm({ index: -1 })}><Plus size={16} />Agregar medicamento</button>}
             {items.length > 0 && <RxValidityField value={validity} onChange={setValidity} />}
           </section>
           <section className="epi__sec"><h3>10. Exámenes pendientes al alta</h3>

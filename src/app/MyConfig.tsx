@@ -109,7 +109,7 @@ function ProfessionalPanel() {
           <label className="field"><span>Especialidad</span><input className="input" value={f.specialty} onChange={(e) => setF({ ...f, specialty: e.target.value })} /></label>
           <label className="field"><span>Número de colegiado (CMH)</span><input className="input" value={f.license} onChange={(e) => setF({ ...f, license: e.target.value })} placeholder="CMH-00000" /></label>
         </div>
-        <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={!dirty || f.license.trim().length < 3 || f.docName.trim().length < 3}
+        <button className="btn btn--primary self-start" disabled={!dirty || f.license.trim().length < 3 || f.docName.trim().length < 3}
           onClick={() => saveMyProfile({ docName: f.docName.trim() === user.name ? '' : f.docName.trim(), specialty: f.specialty.trim(), license: f.license.trim() }, 'Datos profesionales guardados')}>Guardar datos</button>
         <div className="field"><span>Sello (imagen opcional)</span>
           <div className="mark-box">
@@ -143,7 +143,7 @@ function PersonalPanel() {
           <label className="field span-2"><span>Nombre como aparece en documentos</span><input className="input" value={docName} onChange={(e) => setDocName(e.target.value)} /></label>
           <label className="field span-2"><span>Correo para entrar</span><input className="input" value={user.email} disabled /></label>
         </div>
-        <button className="btn btn--primary" style={{ justifySelf: 'start' }} disabled={!dirty || docName.trim().length < 3}
+        <button className="btn btn--primary self-start" disabled={!dirty || docName.trim().length < 3}
           onClick={() => saveMyProfile({ docName: docName.trim() === user.name ? '' : docName.trim() }, 'Datos personales guardados')}>Guardar datos</button>
       </div>
     </section>

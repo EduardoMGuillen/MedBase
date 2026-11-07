@@ -409,7 +409,7 @@ export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () 
               <button className="icon-btn" aria-label="Quitar" onClick={() => setExtra(extra.filter((_, j) => j !== i))}><X size={15} /></button></div>
           </div>
         ))}
-        <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => setExtra([...extra, { analyte: '', value: '', unit: '' }])}>Agregar otro parámetro</button>
+        <button type="button" className="btn btn--ghost btn--sm self-start" onClick={() => setExtra([...extra, { analyte: '', value: '', unit: '' }])}>Agregar otro parámetro</button>
       </>)}
       {!imagesOnly && <label className="field"><span>{e.group === 'lab' ? 'Comentario (opcional)' : 'Informe (conclusión)'}</span>
         <textarea className="textarea" rows={e.group === 'lab' ? 2 : 4} value={report} onChange={(x) => setReport(x.target.value)} placeholder={e.group === 'lab' ? 'Observaciones del laboratorio sobre la muestra o el resultado.' : 'Ej. Vesícula con litos múltiples, pared de 3 mm; vía biliar sin dilatación.'} /></label>}

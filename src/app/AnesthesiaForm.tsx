@@ -167,7 +167,7 @@ export default function AnesthesiaFormPage() {
                 <input className="input num" inputMode="decimal" value={r[k]} onChange={(e) => setRow(i, { [k]: e.target.value })} aria-label={`${k.toUpperCase()} del registro ${i + 1}`} /></td>)}
               <td className="anes-table__x"><button type="button" className="btn btn--ghost btn--sm anes-btn" aria-label={`Quitar el registro ${i + 1}`} onClick={() => set({ monitoring: d.monitoring.filter((_, j) => j !== i) })}><Trash2 size={14} /></button></td>
             </tr>)}</tbody></table>}
-          <button type="button" className="btn btn--soft btn--sm anes-btn" style={{ justifySelf: 'start' }} onClick={() => set({ monitoring: [...d.monitoring, { id: newId(), time: nextTime, sys: '', dia: '', hr: '', spo2: '', etco2: '', temp: '' }] })}><Plus size={14} />Agregar registro</button>
+          <button type="button" className="btn btn--soft btn--sm anes-btn self-start" onClick={() => set({ monitoring: [...d.monitoring, { id: newId(), time: nextTime, sys: '', dia: '', hr: '', spo2: '', etco2: '', temp: '' }] })}><Plus size={14} />Agregar registro</button>
         </Section>
         <Section title="Fármacos">
           {d.drugs.length > 0 && <table className="anes-table">
@@ -183,7 +183,7 @@ export default function AnesthesiaFormPage() {
               <td data-label="Hora" className="anes-table__wide"><TimeField value={r.time} onChange={(v) => setDrug(i, { time: v })} label={`Hora del fármaco ${i + 1}`} /></td>
               <td className="anes-table__x"><button type="button" className="btn btn--ghost btn--sm anes-btn" aria-label={`Quitar el fármaco ${i + 1}`} onClick={() => set({ drugs: d.drugs.filter((_, j) => j !== i) })}><Trash2 size={14} /></button></td>
             </tr>)}</tbody></table>}
-          <button type="button" className="btn btn--soft btn--sm anes-btn" style={{ justifySelf: 'start' }} onClick={() => set({ drugs: [...d.drugs, { id: newId(), category: '', drug: '', dose: '', route: '', time: '' }] })}><Plus size={14} />Agregar fármaco</button>
+          <button type="button" className="btn btn--soft btn--sm anes-btn self-start" onClick={() => set({ drugs: [...d.drugs, { id: newId(), category: '', drug: '', dose: '', route: '', time: '' }] })}><Plus size={14} />Agregar fármaco</button>
           <Txt label="Mantenimiento (agente, CAM o TIVA con su ritmo)" value={d.maintenance} onChange={(v) => set({ maintenance: v })} />
         </Section>
         <Section title="Vía aérea y ventilación">

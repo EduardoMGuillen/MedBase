@@ -100,7 +100,7 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
         )
       })}
       {!value.length && <p className="muted" style={{ fontSize: 14 }}>Sin exámenes. {inStay ? receiversText(settings) : 'Se imprimen aparte de la receta: una orden de laboratorio y otra de imagen y gabinete.'}</p>}
-      <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setPicking(true)}><Plus size={16} />Ordenar exámenes</button>
+      <button type="button" className="btn btn--soft self-start" onClick={() => setPicking(true)}><Plus size={16} />Ordenar exámenes</button>
       {picking && <ExamPicker current={value} onClose={() => setPicking(false)} onAdd={(list) => { onChange([...value, ...withPlace(list)]); setPicking(false) }} />}
     </div>
   )
@@ -394,7 +394,7 @@ export function ExamSetForm({ set, initial = [], onClose, onSaved }: { set?: Ord
         )
       })}
       {!exams.length && <p className="muted">Sin exámenes todavía.</p>}
-      <button type="button" className="btn btn--soft" style={{ justifySelf: 'start' }} onClick={() => setPicking(true)}><Plus size={15} />Agregar exámenes</button>
+      <button type="button" className="btn btn--soft self-start" onClick={() => setPicking(true)}><Plus size={15} />Agregar exámenes</button>
       {picking && <ExamPicker current={exams} catalogOnly title="Agregar exámenes al set" onClose={() => setPicking(false)} onAdd={(list) => { setExams([...exams, ...list]); setPicking(false) }} />}
     </Modal>
   )

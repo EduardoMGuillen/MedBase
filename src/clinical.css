@@ -412,7 +412,7 @@ button.stat--btn:hover b { color: var(--ink); }
 .similar__row { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; color: var(--petrol); }
 .similar__row .muted { font-size: 12.5px; }
 /* Enlaces con forma de botón dentro de formularios */
-button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; font-size: 14px; text-decoration: underline; text-underline-offset: 2px; }
+button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 
 /* ---------- Plan y manejo: indicaciones y medicamentos ---------- */
 .plan-block { display: grid; gap: 10px; }

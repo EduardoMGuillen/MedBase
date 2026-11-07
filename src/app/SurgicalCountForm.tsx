@@ -107,7 +107,7 @@ export default function SurgicalCountFormPage() {
               <td className="anes-table__x">{isOther(r) && <button type="button" className="btn btn--ghost btn--sm anes-btn" aria-label={`Quitar la fila ${i + 1}`} onClick={() => set({ rows: d.rows.filter((_, j) => j !== i) })}><Trash2 size={14} /></button>}</td>
             </tr>)}</tbody>
           </table>
-          {others < SURGICAL_COUNT.maxOther && <button type="button" className="btn btn--soft btn--sm anes-btn" style={{ justifySelf: 'start' }} onClick={() => set({ rows: [...d.rows, blankCountRow(`other:${newId()}`, '')] })}><Plus size={14} />Agregar fila «{SURGICAL_COUNT.otherLabel}»</button>}
+          {others < SURGICAL_COUNT.maxOther && <button type="button" className="btn btn--soft btn--sm anes-btn self-start" onClick={() => set({ rows: [...d.rows, blankCountRow(`other:${newId()}`, '')] })}><Plus size={14} />Agregar fila «{SURGICAL_COUNT.otherLabel}»</button>}
         </Section>
         <Section title="Cambio de personal">
           <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Un recuento cada vez que se releva la instrumentista o la circulante.</p>
@@ -122,7 +122,7 @@ export default function SurgicalCountFormPage() {
               <td data-label="Recuento" className="anes-table__wide"><input className="input" value={h.count} maxLength={200} placeholder="Ej. Completo: 20 compresas, 30 gasas…" onChange={(e) => setHandoff(i, { count: e.target.value })} aria-label={`Recuento del cambio ${i + 1}`} /></td>
               <td className="anes-table__x"><button type="button" className="btn btn--ghost btn--sm anes-btn" aria-label={`Quitar el cambio ${i + 1}`} onClick={() => set({ handoffs: d.handoffs.filter((_, j) => j !== i) })}><Trash2 size={14} /></button></td>
             </tr>)}</tbody></table>}
-          {d.handoffs.length < SURGICAL_COUNT.maxHandoffs && <button type="button" className="btn btn--soft btn--sm anes-btn" style={{ justifySelf: 'start' }}
+          {d.handoffs.length < SURGICAL_COUNT.maxHandoffs && <button type="button" className="btn btn--soft btn--sm anes-btn self-start"
             onClick={() => set({ handoffs: [...d.handoffs, { id: newId(), time: '', role: '', from: '', to: '', count: '' }] })}><Plus size={14} />Agregar cambio de personal</button>}
         </Section>
         {wrong && <Section title="Resultado incorrecto">

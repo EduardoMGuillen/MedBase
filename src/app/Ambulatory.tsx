@@ -99,10 +99,10 @@ export function AmbulatoryModal({ group: fixed, onClose, onDone }: { group?: Exa
     </>}>
       {/* RE1 (ronda 16): deja claro que es solo para estudios; quien viene a consulta va por «Paciente sin cita» */}
       {!fixed && <p className="amb-intro">Para el paciente que viene solo a hacerse exámenes o estudios. Si viene a consulta, usa {can('checkin.manage')
-        ? <button type="button" className="link-btn" onClick={() => setToWalkIn(true)}>«Paciente sin cita»</button> : '«Paciente sin cita»'}.</p>}
+        ? <button type="button" className="linklike" onClick={() => setToWalkIn(true)}>«Paciente sin cita»</button> : '«Paciente sin cita»'}.</p>}
       <fieldset className="fs"><legend>1. Paciente</legend>
         <PatientPicker value={patientId} onChange={setPatientId} />
-        {can('patients.manage') && <button type="button" className="btn btn--soft btn--sm" style={{ justifySelf: 'start' }} onClick={() => setRegistering(true)}><UserPlus size={15} />No está registrado: registrarlo</button>}
+        {can('patients.manage') && <button type="button" className="btn btn--soft btn--sm self-start" onClick={() => setRegistering(true)}><UserPlus size={15} />No está registrado: registrarlo</button>}
       </fieldset>
       <fieldset className="fs"><legend>2. Estudios</legend>
         {!fixed && <div className="segmented segmented--strong" role="radiogroup" aria-label="Departamento">
@@ -113,7 +113,7 @@ export function AmbulatoryModal({ group: fixed, onClose, onDone }: { group?: Exa
           <button type="button" className="btn btn--soft btn--sm" disabled={!group} aria-describedby={group ? undefined : 'amb-pick-hint'} onClick={() => setPicking(true)}><Plus size={15} />Elegir estudios</button>
           {!group && <small id="amb-pick-hint" className="muted">Elige primero Laboratorio o Imagen y gabinete</small>}
         </div>
-        <div className="segmented segmented--sm" role="radiogroup" aria-label="Prioridad" style={{ justifySelf: 'start' }}>
+        <div className="segmented segmented--sm self-start" role="radiogroup" aria-label="Prioridad">
           <button type="button" role="radio" aria-checked={!urgent} onClick={() => setUrgent(false)}>Rutina</button>
           <button type="button" role="radio" aria-checked={urgent} onClick={() => setUrgent(true)}>Urgente</button>
         </div>

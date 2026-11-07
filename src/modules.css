@@ -153,7 +153,8 @@ tr.clickable { cursor: pointer; }
 .dropzone strong { color: var(--petrol); }
 .dropzone p { font-size: 13px; }
 .dropzone.is-drag { border-color: var(--ink); background: var(--ink-soft); }
-.linklike { border: 0; background: transparent; text-align: left; cursor: pointer; padding: 0; }
+/* ES (ronda 17): un solo botón con aspecto de enlace (antes también `.link-btn`). Toma la letra del texto que lo rodea. */
+.linklike { border: 0; background: transparent; text-align: left; cursor: pointer; padding: 0; font: inherit; color: inherit; }
 .linklike:hover strong { color: var(--ink); text-decoration: underline; }
 
 .notfound { display: grid; justify-items: center; gap: 16px; text-align: center; padding: 64px 16px; }
@@ -767,7 +768,6 @@ tr.clickable { cursor: pointer; }
 
 /* Ronda 8: fuente de cada umbral crítico y «Volver al de la app» */
 .crit__src { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-top: -2px; }
-.link-btn { background: none; border: 0; padding: 0; font: inherit; color: var(--petrol); text-decoration: underline; cursor: pointer; }
 
 /* GE2 (ronda 8): cambio de rol dentro de la tarjeta del usuario; la tarjeta no es botón */
 .role-menu { position: relative; }

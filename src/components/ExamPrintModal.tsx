@@ -41,7 +41,7 @@ export function ExamPrintModal({ exams, onClose, title }: { exams: ExamOrder[]; 
       <button className="btn btn--primary" disabled={!picked.length || busy} onClick={() => go('imprimir')}><Printer size={15} />Imprimir</button>
     </>}>
       <p className="muted" style={{ fontSize: 14, margin: 0 }}>Los externos ya van marcados. Sale con los datos del médico que los pidió y sin su firma y sello en papel no vale.</p>
-      {list.length > 1 && <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => setPicked(all ? [] : list.map((e) => e.id))}>{all ? 'Desmarcar todos' : 'Marcar todos'}</button>}
+      {list.length > 1 && <button type="button" className="btn btn--ghost btn--sm self-start" onClick={() => setPicked(all ? [] : list.map((e) => e.id))}>{all ? 'Desmarcar todos' : 'Marcar todos'}</button>}
       {groups.map((g) => (
         <div key={g} className="print-pick">
           {groups.length > 1 && <h4 className="print-pick__title">{GROUP_LABEL[g]}</h4>}

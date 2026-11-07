@@ -265,7 +265,7 @@ function ClinicDrugs() {
         <div className={`alert-strip ${result.added ? 'alert-strip--calm' : 'alert-strip--amber'}`} style={{ margin: '12px 22px 0', flexDirection: 'column', alignItems: 'stretch' }}>
           <span>Se importaron {result.added} medicamento(s).{result.skipped.length ? ` ${result.skipped.length} fila(s) no se importaron:` : ''}</span>
           {result.skipped.length > 0 && <ul className="note__list" style={{ margin: 0, fontWeight: 400 }}>{result.skipped.slice(0, 8).map((x) => <li key={x.row}>Fila {x.row}{x.name ? ` (${x.name})` : ''}: {x.reason}</li>)}</ul>}
-          <button className="linklike" style={{ alignSelf: 'flex-start' }} onClick={() => setResult(null)}>Cerrar</button>
+          <button className="linklike self-start" onClick={() => setResult(null)}>Cerrar</button>
         </div>
       )}
       <table className="table table--sticky table--cards vdm-table">

@@ -283,7 +283,7 @@ export function AttendingPicker({ value, onChange, required = false }: { value: 
           {value.map((id, i) => (
             <span key={id} className="chip attending__chip">
               {name(id)}{i === 0 && value.length > 1 ? ' · principal' : ''}
-              {i > 0 && <button type="button" className="link-btn" onClick={() => onChange([id, ...value.filter((x) => x !== id)])}>Hacer principal</button>}
+              {i > 0 && <button type="button" className="linklike" onClick={() => onChange([id, ...value.filter((x) => x !== id)])}>Hacer principal</button>}
               <button type="button" className="icon-btn" aria-label={`Quitar a ${name(id)}`} onClick={() => onChange(value.filter((x) => x !== id))}><X size={13} /></button>
             </span>
           ))}

@@ -100,7 +100,7 @@ export function PostopFields({ pq, setPq, check, onAuthorize, noAuth }: { pq: Po
     <DiagnosisPicker value={pq.preDiagnoses} onChange={(v) => set({ preDiagnoses: v })} label="Diagnóstico preoperatorio" />
     <div className="field">
       <DiagnosisPicker value={pq.postDiagnoses} onChange={(v) => { setSame(false); set({ postDiagnoses: v }) }} label="Diagnóstico postoperatorio" />
-      <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} disabled={!pq.preDiagnoses.length || same}
+      <button type="button" className="btn btn--ghost btn--sm self-start" disabled={!pq.preDiagnoses.length || same}
         onClick={() => { setSame(true); set({ postDiagnoses: pq.preDiagnoses }) }}>Igual al preoperatorio</button>
     </div>
     <div className="form-grid">
@@ -135,7 +135,7 @@ export function PostopFields({ pq, setPq, check, onAuthorize, noAuth }: { pq: Po
     {noAuth ? null : chosen ? <div className="alert-strip alert-strip--calm">Autorización firmada ✓ {chosen.name}</div> : (
       <div className="alert-strip alert-strip--amber" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
         <span>No hay autorización quirúrgica firmada para este procedimiento.</span>
-        {onAuthorize && <button type="button" className="btn btn--soft btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => onAuthorize(pq.procedureName.trim())}><FileSignature size={14} />Generar la autorización quirúrgica</button>}
+        {onAuthorize && <button type="button" className="btn btn--soft btn--sm self-start" onClick={() => onAuthorize(pq.procedureName.trim())}><FileSignature size={14} />Generar la autorización quirúrgica</button>}
         <label className="check-line" style={{ background: '#fff' }}><input type="checkbox" checked={pq.urgent} onChange={(e) => set({ urgent: e.target.checked })} />
           <span><b>Urgencia, sin autorización previa</b><small>Escribe por qué no se pudo obtener antes.</small></span></label>
         {pq.urgent && <textarea className="textarea textarea--sm" rows={2} value={pq.justification} onChange={(e) => set({ justification: e.target.value })} placeholder="Justificación" aria-label="Justificación de la urgencia" />}
