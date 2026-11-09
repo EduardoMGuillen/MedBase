@@ -42,6 +42,11 @@ function rng(seed: number) {
   return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
 }
 type Rand = ReturnType<typeof rng>
+/**
+ * Semillas de la demo: mientras no cambien, cada corrida (y la tarea diaria) genera los mismos pacientes.
+ * 2026-11-09: se cambiaron (antes 2027 y 4111) para reemplazar a todos los pacientes demo por otros.
+ */
+const SEED = { clinic: 3119, office: 5287 }
 const pick = <T>(r: Rand, xs: readonly T[]) => xs[Math.floor(r() * xs.length)]
 const int = (r: Rand, lo: number, hi: number) => lo + Math.floor(r() * (hi - lo + 1))
 const pad = (n: number, w = 2) => String(n).padStart(w, '0')
@@ -256,7 +261,7 @@ export async function backupDemo(q: Sql, clinicIds: string[]) {
   return json
 }
 
-async function wipeDemoPatients(q: Sql, clinicIds: string[]) {
+export async function wipeDemoPatients(q: Sql, clinicIds: string[]) {
   const marks = clinicIds.map(() => '?').join(',')
   // Consultas y notas firmadas son inmutables: el borrado de la demo es la única excepción (AN1)
   await q.run(`SELECT set_config('clinara.note_maintenance', 'on', true)`)
@@ -361,7 +366,7 @@ export async function seedDemo(sql: Sql, opts: { now?: Date; by?: string; onBack
 interface Doc { id: string; name: string; specialty: string; schedule: Schedule; serviceId?: string; price: number; serviceName: string }
 
 async function generateClinic(q: Sql, clinicId: string, office: boolean, now: Date) {
-  const r = rng(office ? 4111 : 2027)
+  const r = rng(office ? SEED.office : SEED.clinic)
   const docs: Doc[] = (await q.query(`SELECT s.id, s.name, s.specialty, s.schedule, s.service_id, v.price, v.name AS svc FROM staff s LEFT JOIN services v ON v.id = s.service_id
     WHERE s.clinic_id = ? AND s.active AND s.roles LIKE '%doctor%' AND s.email LIKE '%@demo.clinara' AND s.schedule IS NOT NULL ORDER BY s.id`, [clinicId]))
     .map((d) => ({ id: String(d.id), name: String(d.name), specialty: String(d.specialty ?? 'Medicina general'), schedule: JSON.parse(String(d.schedule ?? '{}')) as Schedule,

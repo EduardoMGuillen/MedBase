@@ -309,9 +309,9 @@ export const DEMO_CLINICS: (ClinicSettings & { id: string; slug: string })[] = [
 /** Datos mínimos de la segunda clínica: algunos pacientes y la agenda de hoy. */
 export function seedSecondClinic() {
   const patients: Patient[] = [
-    p('q1', 'EXP-00401', 'Óscar Daniel', 'Paz Reyes', '1979-08-15', 'M', '9512-3344', { dni: '0501-1979-04411', civilStatus: 'Casado', occupation: 'Mecánico', address: 'San Pedro Sula, Col. Trejo', allergies: ['Ibuprofeno'], conditions: ['Gota'] }),
-    p('q2', 'EXP-00402', 'Wendy Carolina', 'Mejía Lara', '1992-02-27', 'F', '3388-1020', { dni: '0501-1992-00982', civilStatus: 'Soltera', occupation: 'Enfermera', address: 'San Pedro Sula, Res. Los Álamos' }),
-    p('q3', 'EXP-00403', 'Roberto', 'Bú Hándal', '1955-12-03', 'M', '9901-7766', { dni: '0501-1955-02210', civilStatus: 'Casado', occupation: 'Comerciante', address: 'San Pedro Sula, Barrio Guamilito', conditions: ['Hipertensión arterial', 'Diabetes tipo 2'] }),
+    p('q1', 'EXP-00401', 'Edgardo Josué', 'Romero Fiallos', '1981-04-22', 'M', '9547-2108', { dni: '0501-1981-03157', civilStatus: 'Casado', occupation: 'Mecánico', address: 'San Pedro Sula, Col. Trejo', allergies: ['Ibuprofeno'], conditions: ['Gota'] }),
+    p('q2', 'EXP-00402', 'Nidia Esther', 'Zavala Coello', '1994-09-11', 'F', '3362-7415', { dni: '0501-1994-01836', civilStatus: 'Soltera', occupation: 'Enfermera', address: 'San Pedro Sula, Res. Los Álamos' }),
+    p('q3', 'EXP-00403', 'Ramón Alcides', 'Paredes Suazo', '1953-06-17', 'M', '9928-4051', { dni: '0501-1953-02674', civilStatus: 'Casado', occupation: 'Comerciante', address: 'San Pedro Sula, Barrio Guamilito', conditions: ['Hipertensión arterial', 'Diabetes tipo 2'] }),
   ]
   n = 100
   const appointments: Appointment[] = [
