@@ -198,3 +198,23 @@ describe('DM1 ronda 5: los mínimos del pedido', () => {
     console.log(JSON.stringify({ antes: sum.before, despues: sum.after, porMedico: counts }))
   })
 })
+
+describe('DM1: el reinicio borra también lo que se agregó en rondas posteriores', () => {
+  test('impresiones, material usado y aplicaciones de la consulta no impiden borrar a los pacientes demo', async () => {
+    await seedDemo(sql, { now: SUNDAY })
+    const pt = String((await sql.one(`SELECT id FROM patients WHERE clinic_id = 'c-sb' ORDER BY id LIMIT 1`))!.id)
+    const by = String((await sql.one(`SELECT id FROM staff WHERE clinic_id = 'c-sb' AND email LIKE '%@demo.clinara' ORDER BY id LIMIT 1`))!.id)
+    const at = new Date().toISOString()
+    await sql.run(`INSERT INTO print_jobs (id, clinic_id, patient_id, kind, items, created_by, created_at) VALUES ('pj-dm', 'c-sb', ?, 'rx', '[]', ?, ?)`, [pt, by, at])
+    const mu = `INSERT INTO material_uses (id, clinic_id, patient_id, general, period_kind, period_start, period_end, period_label, items, recorded_by, recorded_at) VALUES (?, 'c-sb', ?, ?, 'day', ?, ?, 'Hoy', '[]', ?, ?)`
+    await sql.run(mu, ['mu-dm-pt', pt, false, at, at, by, at])
+    await sql.run(mu, ['mu-dm-general', null, true, at, at, by, at])
+    await sql.run(`INSERT INTO consult_applications (id, clinic_id, patient_id, consultation_id, item_index, drug, order_text, ordered_by, ordered_at) VALUES ('ca-dm', 'c-sb', ?, 'cx-dm', 0, 'Acetaminofén', '1 g', ?, ?)`, [pt, by, at])
+    await seedDemo(sql, { now: SUNDAY })
+    assert.equal(await n(`SELECT COUNT(*)::int AS n FROM print_jobs WHERE id = 'pj-dm'`), 0)
+    assert.equal(await n(`SELECT COUNT(*)::int AS n FROM material_uses WHERE id = 'mu-dm-pt'`), 0)
+    assert.equal(await n(`SELECT COUNT(*)::int AS n FROM consult_applications WHERE id = 'ca-dm'`), 0)
+    // El registro general de material no es de ningún paciente: se queda
+    assert.equal(await n(`SELECT COUNT(*)::int AS n FROM material_uses WHERE id = 'mu-dm-general'`), 1)
+  })
+})

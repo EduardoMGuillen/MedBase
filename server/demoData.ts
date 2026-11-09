@@ -240,9 +240,12 @@ function vitalsFor(r: Rand, age: number, c: Case) {
 // ---------- Respaldo y borrado ----------
 
 /** Tablas con datos de pacientes, en el orden en que se pueden borrar (lo que depende de otra va antes). */
-const PATIENT_TABLES = ['fluid_entries', 'surgical_counts', 'preanesthesia_evals', 'anesthesia_sheets', 'exam_events', 'exam_orders', 'addenda', 'note_drafts', 'epicrises', 'referrals', 'authorizations', 'order_marks', 'hosp_doses', 'hosp_meds', 'hosp_procedures',
+// print_jobs, material_uses y consult_applications (rondas 14 a 17) también cuelgan del paciente: sin ellas el borrado choca con la llave foránea
+const PATIENT_TABLES = ['print_jobs', 'material_uses', 'consult_applications', 'fluid_entries', 'surgical_counts', 'preanesthesia_evals', 'anesthesia_sheets', 'exam_events', 'exam_orders', 'addenda', 'note_drafts', 'epicrises', 'referrals', 'authorizations', 'order_marks', 'hosp_doses', 'hosp_meds', 'hosp_procedures',
   'hosp_notes', 'order_set_uses', 'certificates', 'payment_installments', 'payments', 'prescriptions', 'followups', 'attachments', 'hospitalizations', 'consultations', 'vitals',
   'appointments', 'patients'] as const
+/** Tablas con filas que no son de ningún paciente (protocolos y registros generales de material): de éstas sólo se borran las del paciente. */
+const PATIENT_ROWS_ONLY: readonly string[] = ['order_set_uses', 'material_uses']
 /** Tablas que no se pueden borrar por sus reglas de sólo agregar: se apaga la regla dentro de la transacción. */
 const APPEND_ONLY: [string, string][] = [['order_marks', 'order_marks_no_change'], ['addenda', 'addenda_no_change'], ['exam_events', 'exam_events_no_change']]
 
@@ -251,7 +254,7 @@ export async function backupDemo(q: Sql, clinicIds: string[]) {
   const marks = clinicIds.map(() => '?').join(',')
   const data: Record<string, unknown> = {}
   for (const t of [...PATIENT_TABLES, 'audit']) {
-    const where = t === 'order_set_uses' || t === 'audit' ? `clinic_id IN (${marks}) AND patient_id IS NOT NULL` : `clinic_id IN (${marks})`
+    const where = PATIENT_ROWS_ONLY.includes(t) || t === 'audit' ? `clinic_id IN (${marks}) AND patient_id IS NOT NULL` : `clinic_id IN (${marks})`
     const r = await q.one<{ rows: unknown }>(`SELECT COALESCE(json_agg(t), '[]'::json)::text AS rows FROM ${t} t WHERE ${where}`, clinicIds)
     data[t] = JSON.parse(String(r?.rows ?? '[]'))
   }
@@ -267,7 +270,7 @@ export async function wipeDemoPatients(q: Sql, clinicIds: string[]) {
   await q.run(`SELECT set_config('clinara.note_maintenance', 'on', true)`)
   for (const [t, trg] of APPEND_ONLY) await q.exec(`ALTER TABLE ${t} DISABLE TRIGGER ${trg}`)
   for (const t of PATIENT_TABLES) {
-    await q.run(`DELETE FROM ${t} WHERE clinic_id IN (${marks})${t === 'order_set_uses' ? ' AND patient_id IS NOT NULL' : ''}`, clinicIds)
+    await q.run(`DELETE FROM ${t} WHERE clinic_id IN (${marks})${PATIENT_ROWS_ONLY.includes(t) ? ' AND patient_id IS NOT NULL' : ''}`, clinicIds)
   }
   // Ronda 5: la bitácora de los pacientes borrados se descarta con ellos (queda en el respaldo); lo demás no se toca
   await q.exec('ALTER TABLE audit DISABLE TRIGGER audit_no_change')
