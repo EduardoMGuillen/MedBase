@@ -47,6 +47,8 @@ async function neon(url: string): Promise<Sql> {
   // `sslmode=require` ya se trata como verificación completa; se explicita para evitar la advertencia de pg
   const connectionString = url.replace(/sslmode=(require|prefer|verify-ca)/, 'sslmode=verify-full')
   const pool = new pg.Pool({ connectionString, max: 3, idleTimeoutMillis: 10_000 })
+  // Neon cierra las conexiones inactivas: sin este manejador, ese error en un cliente en reposo tumbaría el proceso
+  pool.on('error', (e) => console.error('Conexión inactiva cerrada por la base:', e.message))
   const self: Sql = wrap(pool, 'neon', async (text) => { await pool.query(text) }, async (fn) => {
     const client = await pool.connect()
     try {

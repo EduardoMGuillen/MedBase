@@ -69,7 +69,8 @@ export function registerPlatform(app: Express, { sql, auth, need, userOf, audit 
     if (await sql.one('SELECT 1 FROM clinics WHERE slug = ?', [slug])) fail(409, `Ya existe una cuenta con la dirección de reserva "${slug}". Elige otra.`)
     if (await sql.one('SELECT 1 FROM staff WHERE lower(email) = lower(?)', [person!.email])) fail(409, office ? 'Ya existe un usuario con el correo del médico. Si también trabaja en una clínica, usa otro correo para su consultorio.' : 'Ya existe un usuario con el correo de administración.')
     const id = randomUUID()
-    await sql.tx(async (q) => {
+    // Todo en una transacción: una cuenta nunca queda creada sin la persona que la administra
+    const { user, password } = await sql.tx(async (q) => {
       await q.run(`INSERT INTO clinics (id, slug, name, address, phone, email, currency, rx_validity_days, reminder_template, active, created_at, kind, specialty, license) VALUES (?,?,?,?,?,?,?,?,?,TRUE,?,?,?,?)`,
         [id, slug, b.name, b.address, b.phone, b.email, b.currency, DEFAULT_SETTINGS.rxValidityDays, DEFAULT_SETTINGS.reminderTemplate.replace('{clinica}', office ? 'el consultorio de {medico}' : '{clinica}'),
           new Date().toISOString(), b.kind, b.owner?.specialty || null, b.owner?.license ?? null])
@@ -78,16 +79,17 @@ export function registerPlatform(app: Express, { sql, auth, need, userOf, audit 
       await loadLnme(q, id)
       // RU1 (ronda 14): y con el catálogo de material médico quirúrgico (73 líneas, 15 en la lista de turno)
       await loadSupplyCatalog(q, id)
+      const created = office
+        ? await createStaffMember(q, id, { name: b.owner!.name, role: 'doctor', email: b.owner!.email, license: b.owner!.license, specialty: b.owner!.specialty })
+        : await createStaffMember(q, id, { name: b.admin!.name, role: 'admin', email: b.admin!.email })
+      if (office) {
+        await q.run('UPDATE clinics SET owner_id = ? WHERE id = ?', [created.user.id, id])
+        // MI1: el titular es médico y administrador; empieza en la vista de administrador para configurar el consultorio
+        await q.run(`UPDATE staff SET roles = ?, role = 'admin' WHERE id = ?`, [JSON.stringify(['doctor', 'admin']), created.user.id])
+      }
+      await audit({ id: userOf(req).id, clinicId: id }, office ? `Creó el consultorio ${b.name} de ${b.owner!.name}` : `Creó la clínica ${b.name} y su usuario de administración ${b.admin!.name}`, q)
+      return created
     })
-    const { user, password } = office
-      ? await createStaffMember(sql, id, { name: b.owner!.name, role: 'doctor', email: b.owner!.email, license: b.owner!.license, specialty: b.owner!.specialty })
-      : await createStaffMember(sql, id, { name: b.admin!.name, role: 'admin', email: b.admin!.email })
-    if (office) {
-      await sql.run('UPDATE clinics SET owner_id = ? WHERE id = ?', [user.id, id])
-      // MI1: el titular es médico y administrador; empieza en la vista de administrador para configurar el consultorio
-      await sql.run(`UPDATE staff SET roles = ?, role = 'admin' WHERE id = ?`, [JSON.stringify(['doctor', 'admin']), user.id])
-    }
-    await audit({ id: userOf(req).id, clinicId: id }, office ? `Creó el consultorio ${b.name} de ${b.owner!.name}` : `Creó la clínica ${b.name} y su usuario de administración ${b.admin!.name}`)
     const d = since()
     res.status(201).json({ clinic: toClinic((await sql.one(`SELECT c.*, ${CLINIC_STATS} FROM clinics c WHERE c.id = ?`, [d, d, id]))!), admin: user, password })
   })
@@ -143,11 +145,13 @@ export function registerPlatform(app: Express, { sql, auth, need, userOf, audit 
     if (b.active === true && !row.active) for (const r of nextRoles) await assertRoleFits(sql, cid, r, String(row.id))
     // Ni la plataforma deja a una clínica sin nadie activo con Administración
     if ((prev.includes('admin') && !nextRoles.includes('admin')) || (b.active === false && row.active && prev.includes('admin'))) await assertNotLastAdmin(sql, cid, String(row.id))
-    if (b.active !== undefined) await sql.run('UPDATE staff SET active = ?, token_version = token_version + 1 WHERE id = ?', [b.active, row.id])
-    if (b.role) await sql.run('UPDATE staff SET role = ?, roles = ?, token_version = token_version + 1 WHERE id = ?', [b.role, JSON.stringify(nextRoles), row.id])
-    if (b.twoFactor === false) await sql.run('UPDATE staff SET totp_enabled = FALSE, totp_secret = NULL WHERE id = ?', [row.id])
     const what = b.active === false ? 'Desactivó a' : b.active ? 'Reactivó a' : b.role ? 'Cambió el rol de' : 'Quitó la verificación en dos pasos de'
-    await audit({ id: userOf(req).id, clinicId: String(row.clinic_id) }, `${what} ${row.name}`)
+    await sql.tx(async (q) => {
+      if (b.active !== undefined) await q.run('UPDATE staff SET active = ?, token_version = token_version + 1 WHERE id = ?', [b.active, row.id])
+      if (b.role) await q.run('UPDATE staff SET role = ?, roles = ?, token_version = token_version + 1 WHERE id = ?', [b.role, JSON.stringify(nextRoles), row.id])
+      if (b.twoFactor === false) await q.run('UPDATE staff SET totp_enabled = FALSE, totp_secret = NULL WHERE id = ?', [row.id])
+      await audit({ id: userOf(req).id, clinicId: String(row.clinic_id) }, `${what} ${row.name}`, q)
+    })
     res.json(toStaff((await sql.one('SELECT * FROM staff WHERE id = ?', [row.id]))!))
   })
 
