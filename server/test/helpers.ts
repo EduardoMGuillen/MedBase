@@ -44,8 +44,11 @@ export interface TestApp {
 /**
  * Base en memoria con la demo, la aplicación escuchando en un puerto libre y el cierre al terminar el archivo.
  * Se llama una vez por archivo, fuera de los `describe`; `app.sql` y `app.base` valen desde el primer `test`.
+ *
+ * `ready` corre al final del arranque, ya con la aplicación arriba: ahí va la preparación propia del archivo. No uses
+ * otro `before` para eso: los `before` de un mismo nivel no esperan unos a otros.
  */
-export function bootApp(opts: Partial<Omit<AppOptions, 'sql'>> = {}): TestApp {
+export function bootApp(ready?: () => void | Promise<void>, opts: Partial<Omit<AppOptions, 'sql'>> = {}): TestApp {
   let server: Server
   const app: TestApp = { sql: undefined as unknown as Sql, base: '', as: (email, password) => login(app.base, email, password) }
   before(async () => {
@@ -54,6 +57,7 @@ export function bootApp(opts: Partial<Omit<AppOptions, 'sql'>> = {}): TestApp {
     const express = createApp({ sql: app.sql, jwtSecret: 'test-secret', demoMode: true, ...opts })
     await new Promise<void>((r) => { server = express.listen(0, () => r()) })
     app.base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    await ready?.()
   })
   after(async () => { server.close(); await app.sql.close() })
   return app
@@ -63,8 +67,11 @@ export async function login(base: string, email: string, password: string = DEMO
   const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) })
   const cookie = res.headers.get('set-cookie')?.split(';')[0] ?? ''
   const call = async (method: string, path: string, body?: unknown): Promise<Reply> => {
-    const r = await fetch(`${base}${path}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
-    return { status: r.status, body: await r.json().catch(() => null) }
+    const r = await fetch(`${base}${path}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    const text = await r.text()
+    let parsed: unknown = text
+    try { parsed = JSON.parse(text) } catch { /* no es JSON: queda el texto */ }
+    return { status: r.status, body: parsed }
   }
   return {
     status: res.status, login: await res.json().catch(() => null), cookie, call,

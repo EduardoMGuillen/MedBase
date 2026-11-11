@@ -1,12 +1,8 @@
-import { after, before, describe, test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import type { AddressInfo } from 'node:net'
-import type { Server } from 'node:http'
-import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb } from './db.js'
-import { createSql, type Sql } from './sql.js'
+import { type Sql } from './sql.js'
 import { loadLnme } from './lnmeLoader.js'
 import { buildLnme, LNME_ORIGIN } from '../src/lib/lnme/build.js'
 import { LNME_BASE, LNME_ITEMS } from '../src/lib/lnme/generated.js'
@@ -15,32 +11,13 @@ import { DRUGS } from '../src/lib/catalogs.js'
 import { ROUTES } from '../src/lib/format.js'
 import { lnmeRoute, localDrugProvider, searchDrugs } from '../src/lib/drugProvider.js'
 import type { ClinicDrug } from '../src/lib/types.js'
+import { bootApp } from './test/helpers.js'
 
-let server: Server
 let sql: Sql
-let base = ''
 
-before(async () => {
-  sql = createSql({ memory: true })
-  await ensureDb(sql)
-  const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
-  await new Promise<void>((r) => { server = app.listen(0, () => r()) })
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-})
-after(async () => { server.close(); await sql.close() })
+const booted = bootApp(() => { sql = booted.sql })
 
-async function as(email: string, password = DEMO_PASSWORD) {
-  const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) })
-  const cookie = res.headers.get('set-cookie')?.split(';')[0] ?? ''
-  const call = async (method: string, path: string, body?: unknown) => {
-    const r = await fetch(`${base}${path}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
-    const text = await r.text()
-    let parsed: any = text
-    try { parsed = JSON.parse(text) } catch { /* no es JSON */ }
-    return { status: r.status, body: parsed }
-  }
-  return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), patch: (p: string, b: unknown) => call('PATCH', p, b) }
-}
+const as = booted.as
 
 /** ME6 (ronda 10): la carga crea las 530 filas, también las que son del catálogo base (antes 509: ver ronda10.test.ts). */
 const EXPECTED_CREATED = LNME_ITEMS.length

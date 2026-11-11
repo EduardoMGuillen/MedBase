@@ -1,25 +1,15 @@
-import { after, before, describe, test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { AddressInfo } from 'node:net'
-import type { Server } from 'node:http'
-import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb } from './db.js'
-import { createSql, type Sql } from './sql.js'
+import { DEMO_PASSWORD } from './db.js'
+import { type Sql } from './sql.js'
 import { capFirst } from '../src/lib/autocap.js'
 import { defaultPlace } from '../src/lib/exams.js'
+import { bootApp } from './test/helpers.js'
 
 // Ronda 14: con la base y la API (copia en memoria de la demo)
-let server: Server
 let sql: Sql
 let base = ''
-before(async () => {
-  sql = createSql({ memory: true })
-  await ensureDb(sql)
-  const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
-  await new Promise<void>((r) => { server = app.listen(0, () => r()) })
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-})
-after(async () => { server.close(); await sql.close() })
+const booted = bootApp(() => { sql = booted.sql; base = booted.base })
 
 export async function as(email: string, password = DEMO_PASSWORD) {
   const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) })

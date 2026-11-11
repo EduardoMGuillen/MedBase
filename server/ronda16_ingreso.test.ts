@@ -1,42 +1,19 @@
-import { after, before, describe, test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { AddressInfo } from 'node:net'
-import type { Server } from 'node:http'
-import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb } from './db.js'
-import { createSql, type Sql } from './sql.js'
+import { type Sql } from './sql.js'
 import { fileAlerts, myPendingAdmissions } from '../src/lib/alerts.js'
 import { admissionOrdersPending, attendingText } from '../src/lib/inpatient.js'
 import { permissionsFor } from '../src/lib/permissions.js'
 import { fluidBalance, fluidPeriods, fluidsTag, fluidTotals, parseVolumeMl, signedMl } from '../src/lib/fluids.js'
 import { fromLocalValue } from '../src/lib/dateInput.js'
 import type { Dose, FluidEntry, InpatientMed } from '../src/lib/types.js'
+import { bootApp } from './test/helpers.js'
 
 // Ronda 16 (rama ingreso): HO2 (ingreso directo con nota de ingreso, médico tratante, recepción ingresa) e IE1 (ingestas y excretas)
-let server: Server
 let sql: Sql
-let base = ''
-before(async () => {
-  sql = createSql({ memory: true })
-  await ensureDb(sql)
-  const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
-  await new Promise<void>((r) => { server = app.listen(0, () => r()) })
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-})
-after(async () => { server.close(); await sql.close() })
+const booted = bootApp(() => { sql = booted.sql })
 
-async function as(email: string, password = DEMO_PASSWORD) {
-  const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) })
-  const cookie = res.headers.get('set-cookie')?.split(';')[0] ?? ''
-  const call = async (method: string, path: string, body?: unknown) => {
-    const r = await fetch(`${base}${path}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
-    const text = await r.text()
-    let parsed: any = text
-    try { parsed = JSON.parse(text) } catch { /* no es JSON */ }
-    return { status: r.status, body: parsed }
-  }
-  return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), patch: (p: string, b?: unknown) => call('PATCH', p, b) }
-}
+const as = booted.as
 
 const dx = [{ code: 'DC10', label: 'Colecistitis aguda' }]
 const staffId = async (email: string) => String((await sql.one('SELECT id FROM staff WHERE email = ?', [email]))!.id)

@@ -1,40 +1,17 @@
-import { after, before, describe, test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { AddressInfo } from 'node:net'
-import type { Server } from 'node:http'
-import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb } from './db.js'
-import { createSql, type Sql } from './sql.js'
+import { type Sql } from './sql.js'
 import { canonicalRoute, medicationLine, medicationOrder, routeLabel, routeMatches } from '../src/lib/format.js'
 import { canInfuse, consultItemIssue, draftFromItem, draftFromStay, frequencyOf, rateIssue } from '../src/lib/medForm.js'
 import { loadingAllowed } from '../src/lib/medExtras.js'
 import { activeIndications, medLabel } from '../src/lib/inpatient.js'
+import { bootApp } from './test/helpers.js'
 
 // Ronda 16 (rama notas): ME17, ME16, NO1, NO3 y NO2, con la base y la API (copia en memoria de la demo)
-let server: Server
 let sql: Sql
-let base = ''
-before(async () => {
-  sql = createSql({ memory: true })
-  await ensureDb(sql)
-  const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
-  await new Promise<void>((r) => { server = app.listen(0, () => r()) })
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-})
-after(async () => { server.close(); await sql.close() })
+const booted = bootApp(() => { sql = booted.sql })
 
-async function as(email: string, password = DEMO_PASSWORD) {
-  const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) })
-  const cookie = res.headers.get('set-cookie')?.split(';')[0] ?? ''
-  const call = async (method: string, path: string, body?: unknown) => {
-    const r = await fetch(`${base}${path}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
-    const text = await r.text()
-    let parsed: any = text
-    try { parsed = JSON.parse(text) } catch { /* no es JSON */ }
-    return { status: r.status, body: parsed }
-  }
-  return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b) }
-}
+const as = booted.as
 
 describe('ME17 (ronda 16): «Vía» escrita o elegida, con abreviaturas', () => {
   test('busca por nombre o abreviatura y guarda el nombre de la lista', () => {

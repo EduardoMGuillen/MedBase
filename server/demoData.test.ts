@@ -1,26 +1,16 @@
-import { after, before, describe, test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { AddressInfo } from 'node:net'
-import type { Server } from 'node:http'
-import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb } from './db.js'
-import { createSql, type Sql } from './sql.js'
+import { DEMO_PASSWORD } from './db.js'
+import { type Sql } from './sql.js'
 import { MEMBRENO, PATIENT_TABLES, seedDemo } from './demoData.js'
 import { fileAlerts } from '../src/lib/alerts.js'
 import { bandOf } from '../src/lib/vitalsSheet.js'
 import { slotsOn } from '../src/lib/schedule.js'
+import { bootApp } from './test/helpers.js'
 
-let server: Server
 let sql: Sql
 let base = ''
-before(async () => {
-  sql = createSql({ memory: true })
-  await ensureDb(sql)
-  const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
-  await new Promise<void>((r) => { server = app.listen(0, () => r()) })
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-})
-after(async () => { server.close(); await sql.close() })
+const booted = bootApp(() => { sql = booted.sql; base = booted.base })
 
 const n = async (q: string, p: unknown[] = []) => Number((await sql.one<{ n: number }>(q, p))!.n)
 /** Un domingo a media mañana: el peor caso para «hay actividad todos los días». */

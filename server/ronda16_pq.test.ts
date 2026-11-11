@@ -1,28 +1,18 @@
-import { after, before, describe, test } from 'node:test'
+import { before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { AddressInfo } from 'node:net'
-import type { Server } from 'node:http'
 import { randomUUID } from 'node:crypto'
-import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb } from './db.js'
-import { createSql, type Sql } from './sql.js'
+import { DEMO_PASSWORD } from './db.js'
+import { type Sql } from './sql.js'
 import { blankAnesthesia, gridPoints } from '../src/lib/anesthesia.js'
 import { blankPreEval, latestLabs, prefillPreEval } from '../src/lib/preanesthesia.js'
 import { blankCount, countMissing, prefillCount } from '../src/lib/surgicalCount.js'
 import { ANESTHESIA_GRID, SURGICAL_COUNT } from '../src/lib/clinicalConfig.js'
+import { bootApp } from './test/helpers.js'
 
 // PQ4 y PQ5 (ronda 16): valoración preanestésica ligada a la estancia, registro de anestesia y recuento quirúrgico
-let server: Server
 let sql: Sql
 let base = ''
-before(async () => {
-  sql = createSql({ memory: true })
-  await ensureDb(sql)
-  const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
-  await new Promise<void>((r) => { server = app.listen(0, () => r()) })
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-})
-after(async () => { server.close(); await sql.close() })
+const booted = bootApp(() => { sql = booted.sql; base = booted.base })
 
 async function as(email: string, password = DEMO_PASSWORD) {
   const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) })

@@ -28,39 +28,15 @@ describe('GE3: fecha y hora en 24 horas, hora de Honduras', () => {
   })
 })
 
-import { after, before } from 'node:test'
-import type { AddressInfo } from 'node:net'
-import type { Server } from 'node:http'
-import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb } from './db.js'
-import { createSql, type Sql } from './sql.js'
+import { type Sql } from './sql.js'
 import { medicationLine } from '../src/lib/format.js'
 import { medLabel } from '../src/lib/inpatient.js'
+import { bootApp } from './test/helpers.js'
 
-let server: Server
 let sql: Sql
-let base = ''
-before(async () => {
-  sql = createSql({ memory: true })
-  await ensureDb(sql)
-  const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
-  await new Promise<void>((r) => { server = app.listen(0, () => r()) })
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-})
-after(async () => { server.close(); await sql.close() })
+const booted = bootApp(() => { sql = booted.sql })
 
-async function as(email: string, password = DEMO_PASSWORD) {
-  const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) })
-  const cookie = res.headers.get('set-cookie')?.split(';')[0] ?? ''
-  const call = async (method: string, path: string, body?: unknown) => {
-    const r = await fetch(`${base}${path}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
-    const text = await r.text()
-    let parsed: any = text
-    try { parsed = JSON.parse(text) } catch { /* no es JSON */ }
-    return { status: r.status, body: parsed }
-  }
-  return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), put: (p: string, b: unknown) => call('PUT', p, b), patch: (p: string, b: unknown) => call('PATCH', p, b) }
-}
+const as = booted.as
 const day = () => { const d = new Date(); const p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` }
 async function freePatient(doc: Awaited<ReturnType<typeof as>>) {
   const boot = (await doc.get('/api/bootstrap')).body

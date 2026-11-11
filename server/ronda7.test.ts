@@ -1,41 +1,18 @@
-import { after, before, describe, test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { AddressInfo } from 'node:net'
-import type { Server } from 'node:http'
 import { randomUUID } from 'node:crypto'
-import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb } from './db.js'
-import { createSql, type Sql } from './sql.js'
+import { type Sql } from './sql.js'
 import { convertPackages, expandPackages, loadLabCatalog, loadRonda7, looseKey } from './catalogLoader.js'
 import { EXAMS, byArea, examCatalog, subgroupOf } from '../src/lib/exams.js'
 import { LAB_CATALOG, LAB_EQUIVALENCES, LAB_PROFILES, PACKAGE_REPLACEMENTS } from '../src/lib/labCatalog.js'
 import { normalize } from '../src/lib/patients.js'
+import { bootApp } from './test/helpers.js'
 
-let server: Server
 let sql: Sql
-let base = ''
 
-before(async () => {
-  sql = createSql({ memory: true })
-  await ensureDb(sql)
-  const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
-  await new Promise<void>((r) => { server = app.listen(0, () => r()) })
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-})
-after(async () => { server.close(); await sql.close() })
+const booted = bootApp(() => { sql = booted.sql })
 
-async function as(email: string, password = DEMO_PASSWORD) {
-  const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) })
-  const cookie = res.headers.get('set-cookie')?.split(';')[0] ?? ''
-  const call = async (method: string, path: string, body?: unknown) => {
-    const r = await fetch(`${base}${path}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
-    const text = await r.text()
-    let parsed: any = text
-    try { parsed = JSON.parse(text) } catch { /* no es JSON */ }
-    return { status: r.status, body: parsed }
-  }
-  return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), patch: (p: string, b?: unknown) => call('PATCH', p, b) }
-}
+const as = booted.as
 
 const CLINICS = ['c-sb', 'c-al']
 const PACKAGES = Object.keys(PACKAGE_REPLACEMENTS)

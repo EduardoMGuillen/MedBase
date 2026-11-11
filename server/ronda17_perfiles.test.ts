@@ -1,47 +1,27 @@
-import { after, before, describe, test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { AddressInfo } from 'node:net'
-import type { Server } from 'node:http'
-import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb } from './db.js'
-import { createSql, type Sql } from './sql.js'
+import { DEMO_PASSWORD } from './db.js'
+import { type Sql } from './sql.js'
 import bcrypt from 'bcryptjs'
 import { MEMBRENO } from './demoData.js'
 import { can, permissionsFor } from '../src/lib/permissions.js'
 import { tourFor } from '../src/lib/tours.js'
 import { NAV, sidebarFor } from '../src/lib/nav.js'
 import type { ClinicKind, Role } from '../src/lib/types.js'
+import { bootApp } from './test/helpers.js'
 
 // Ronda 17, perfiles (PF1, AD1, PF2): con la base y la API (copia en memoria de la demo)
-let server: Server
 let sql: Sql
-let base = ''
-before(async () => {
-  sql = createSql({ memory: true })
-  await ensureDb(sql)
-  const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
-  await new Promise<void>((r) => { server = app.listen(0, () => r()) })
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+const booted = bootApp(async () => {
+  sql = booted.sql
   // Dr. Joaquín Membreño (Medicina general; lo agrega la demo diaria): médico de la clínica principal
   if (!(await sql.one('SELECT 1 FROM staff WHERE id = ?', [MEMBRENO.id]))) {
     await sql.run(`INSERT INTO staff (id, name, role, roles, specialty, email, license, color, active, password_hash, clinic_id) VALUES (?,?,'doctor',?,?,?,?,?,TRUE,?,?)`,
       [MEMBRENO.id, MEMBRENO.name, JSON.stringify(['doctor']), MEMBRENO.specialty, MEMBRENO.email, MEMBRENO.license, '#9A5B13', bcrypt.hashSync(DEMO_PASSWORD, 10), 'c-sb'])
   }
 })
-after(async () => { server.close(); await sql.close() })
 
-async function as(email: string, password = DEMO_PASSWORD) {
-  const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) })
-  const cookie = res.headers.get('set-cookie')?.split(';')[0] ?? ''
-  const call = async (method: string, path: string, body?: unknown) => {
-    const r = await fetch(`${base}${path}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
-    const text = await r.text()
-    let parsed: any = text
-    try { parsed = JSON.parse(text) } catch { /* no es JSON */ }
-    return { status: r.status, body: parsed }
-  }
-  return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b) }
-}
+const as = booted.as
 const clinicOfUser = async (email: string) => String((await sql.one(`SELECT clinic_id FROM staff WHERE email = ?`, [email]))!.clinic_id)
 /** Pacientes de la clínica sin estancia activa ni cita abierta hoy (para registrarlos sin cita). */
 const freePatients = async (cid: string, n: number) => (await sql.query(`SELECT p.id FROM patients p WHERE p.clinic_id = ? AND NOT p.pending AND p.merged_into IS NULL

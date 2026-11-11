@@ -1,30 +1,23 @@
-import { after, before, describe, test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import zlib from 'node:zlib'
-import type { AddressInfo } from 'node:net'
-import type { Server } from 'node:http'
-import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb, migrateObservationAuthorizations, resetDemo } from './db.js'
-import { createSql, type Sql } from './sql.js'
+import { DEMO_PASSWORD, migrateObservationAuthorizations, resetDemo } from './db.js'
+import { type Sql } from './sql.js'
 import { bandOf, expectedTakes, frequencyFromOrders, missedTakes, tempClass, takeStatuses } from '../src/lib/vitalsSheet.js'
 import { fileAlerts } from '../src/lib/alerts.js'
+import { bootApp } from './test/helpers.js'
 
-let server: Server
 let sql: Sql
 let base = ''
 
-before(async () => {
-  sql = createSql({ memory: true })
-  await ensureDb(sql)
-  const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
-  await new Promise<void>((r) => { server = app.listen(0, () => r()) })
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+const booted = bootApp(async () => {
+  sql = booted.sql
+  base = booted.base
   const admin = await as('rmoncada@demo.clinara')
   const all = Object.fromEntries(['0', '1', '2', '3', '4', '5', '6'].map((d) => [d, [{ start: '00:00', end: '23:45' }]]))
   await admin.patch('/api/staff/s-solorzano/schedule', { slot: 15, week: all })
 })
-after(async () => { server.close(); await sql.close() })
 
 /** Cliente mínimo que conserva la cookie de sesión. */
 async function as(email: string) {

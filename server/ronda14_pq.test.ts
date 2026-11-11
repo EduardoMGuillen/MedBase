@@ -1,45 +1,25 @@
-import { after, before, describe, test } from 'node:test'
+import { before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { AddressInfo } from 'node:net'
-import type { Server } from 'node:http'
 import { randomUUID } from 'node:crypto'
-import { createApp } from './app.js'
-import { DEMO_PASSWORD, ensureDb } from './db.js'
-import { createSql, type Sql } from './sql.js'
+import { DEMO_PASSWORD } from './db.js'
+import { type Sql } from './sql.js'
 import bcrypt from 'bcryptjs'
 import { MEMBRENO } from './demoData.js'
 import { aldreteTotal, blankAnesthesia, fluidBalance, gridPoints, prefillAnesthesia } from '../src/lib/anesthesia.js'
+import { bootApp } from './test/helpers.js'
 
 // PQ3 (ronda 14): hoja de anestesia ligada a la nota postquirúrgica (copia en memoria de la demo)
-let server: Server
 let sql: Sql
-let base = ''
-before(async () => {
-  sql = createSql({ memory: true })
-  await ensureDb(sql)
-  const app = createApp({ sql, jwtSecret: 'test-secret', demoMode: true })
-  await new Promise<void>((r) => { server = app.listen(0, () => r()) })
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+const booted = bootApp(async () => {
+  sql = booted.sql
   // Dr. Joaquín Membreño (lo agrega la demo diaria): médico de la clínica principal
   if (!(await sql.one('SELECT 1 FROM staff WHERE id = ?', [MEMBRENO.id]))) {
     await sql.run(`INSERT INTO staff (id, name, role, roles, specialty, email, license, color, active, password_hash, clinic_id) VALUES (?,?,'doctor',?,?,?,?,?,TRUE,?,?)`,
       [MEMBRENO.id, MEMBRENO.name, JSON.stringify(['doctor']), MEMBRENO.specialty, MEMBRENO.email, MEMBRENO.license, '#9A5B13', bcrypt.hashSync(DEMO_PASSWORD, 10), 'c-sb'])
   }
 })
-after(async () => { server.close(); await sql.close() })
 
-async function as(email: string, password = DEMO_PASSWORD) {
-  const res = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) })
-  const cookie = res.headers.get('set-cookie')?.split(';')[0] ?? ''
-  const call = async (method: string, path: string, body?: unknown) => {
-    const r = await fetch(`${base}${path}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
-    const text = await r.text()
-    let parsed: any = text
-    try { parsed = JSON.parse(text) } catch { /* no es JSON */ }
-    return { status: r.status, body: parsed }
-  }
-  return { get: (p: string) => call('GET', p), post: (p: string, b?: unknown) => call('POST', p, b), put: (p: string, b?: unknown) => call('PUT', p, b), del: (p: string) => call('DELETE', p) }
-}
+const as = booted.as
 type Client = Awaited<ReturnType<typeof as>>
 
 const pre = [{ code: 'DB10', label: 'Apendicitis aguda' }]
