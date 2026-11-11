@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { type Ctx, fail, hasRoleSql, parse, placeOf } from '../http.js'
 import { toService } from '../mappers.js'
-import { createStaffMember } from '../app.js'
+import { createStaffMember } from '../staff.js'
 
 /** Configuración y servicios de la clínica de quien hace la petición. */
 export function registerSettings(app: Express, { sql, auth, need, userOf, clinicOf, audit, settings }: Ctx) {

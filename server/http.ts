@@ -44,6 +44,15 @@ export function localDate(d: Date) {
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => void
 
+/** Nombre de la cookie de sesión. */
+export const SESSION_COOKIE = 'clinara_session'
+
+/** Lo que las rutas de sesión necesitan además de `Ctx`: emitir la cookie y leer quién la trae. */
+export interface SessionTools {
+  issue: (res: Response, row: Row) => void
+  authenticate: (req: Request) => Promise<Staff | null>
+}
+
 /** Lo que comparten todos los módulos de rutas. */
 export interface Ctx {
   sql: Sql
@@ -60,7 +69,6 @@ export interface Ctx {
   clinicStaffRow: (clinicId: string, id: string) => Promise<Row | undefined>
   patientRow: (clinicId: string, id: string) => Promise<Row | undefined>
   apptRow: (clinicId: string, id: string) => Promise<Row | undefined>
-  assertFree: (doctorId: string, start: string, minutes: number, ignoreId?: string) => Promise<void>
   /** Falla si el paciente es adulto y no tiene número de identidad, que la receta exige. */
   assertRxIdentity: (clinicId: string, patientId: string) => Promise<void>
   settings: (clinicId: string) => Promise<ClinicSettings>
