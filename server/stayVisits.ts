@@ -42,9 +42,12 @@ export async function closeOpenVisits(q: Sql, clinicId: string, patientId: strin
  * abiertas desde el día del ingreso hasta hoy pasan a canceladas. Idempotente: una cita cancelada ya no está abierta, así
  * que correrlo otra vez no cambia nada. Devuelve cuántas cerró en total.
  */
-export async function closeVisitsOfInpatients(q: Sql, now = new Date()) {
+export async function closeVisitsOfInpatients(q: Sql, now = new Date(), clinicIds?: string[]) {
   let n = 0
-  for (const h of await q.query(`SELECT clinic_id, patient_id, COALESCE(observation_at, admitted_at) AS since FROM hospitalizations WHERE status = 'active'`)) {
+  // Con `clinicIds` solo toca esas clínicas (el reinicio de la demo no debe escribir en las demás)
+  if (clinicIds && !clinicIds.length) return 0
+  const only = clinicIds ? ` AND clinic_id IN (${clinicIds.map(() => '?').join(',')})` : ''
+  for (const h of await q.query(`SELECT clinic_id, patient_id, COALESCE(observation_at, admitted_at) AS since FROM hospitalizations WHERE status = 'active'${only}`, clinicIds ?? [])) {
     n += await closeOpenVisits(q, String(h.clinic_id), String(h.patient_id), String(h.since), now)
   }
   return n

@@ -62,7 +62,7 @@ export function registerDept(app: Express, { sql, auth, need, userOf, clinicOf, 
     // cambiar después (el médico lo revisa), por eso solo el límite inferior; el cliente filtra el día exacto (finishedOn).
     const dayStart = localValueToIso(day)
     const rows = await sql.query(`SELECT e.id, e.location, h.kind AS h_kind, b.room, b.label AS bed_label, p.first_name, p.last_name, p.birth_date, p.sex, p.record
-      FROM exam_orders e JOIN patients p ON p.id = e.patient_id LEFT JOIN hospitalizations h ON h.id = e.hospitalization_id LEFT JOIN beds b ON b.id = h.bed_id
+      FROM exam_orders e JOIN patients p ON p.id = e.patient_id LEFT JOIN hospitalizations h ON h.id = e.hospitalization_id AND h.clinic_id = e.clinic_id LEFT JOIN beds b ON b.id = h.bed_id
       WHERE e.clinic_id = ? AND e.grp = ? AND e.place = 'clinic' AND (
         (e.status IN ('ordered','sample','done') AND (e.hospitalization_id IS NULL OR h.status = 'active'))
         OR (e.status IN ('done','result','reviewed') AND COALESCE(e.status_at, e.ordered_at) >= ?))`, [cid, group, dayStart])

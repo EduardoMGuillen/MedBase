@@ -948,6 +948,7 @@ export function createApp(opts: AppOptions) {
     if (appt!.doctor_id !== user.id) fail(403, 'Sólo el médico asignado puede firmar esta consulta.')
     if (['done', 'cancelled', 'no_show'].includes(String(appt!.status))) fail(409, 'Esta cita ya está cerrada.')
     const patientId = String(appt!.patient_id)
+    if (c.vitalsId && !(await sql.one('SELECT 1 FROM vitals WHERE id = ? AND clinic_id = ? AND patient_id = ?', [c.vitalsId, cid, patientId]))) fail(404, 'Los signos vitales no existen o son de otro paciente.')
     const name = await patientName(patientId)
     const consultId = randomUUID()
     const stayId = stayKind ? randomUUID() : null

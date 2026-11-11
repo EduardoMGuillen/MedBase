@@ -241,7 +241,9 @@ function vitalsFor(r: Rand, age: number, c: Case) {
 
 /** Tablas con datos de pacientes, en el orden en que se pueden borrar (lo que depende de otra va antes). */
 // print_jobs, material_uses y consult_applications (rondas 14 a 17) también cuelgan del paciente: sin ellas el borrado choca con la llave foránea
-const PATIENT_TABLES = ['print_jobs', 'material_uses', 'consult_applications', 'fluid_entries', 'surgical_counts', 'preanesthesia_evals', 'anesthesia_sheets', 'exam_events', 'exam_orders', 'addenda', 'note_drafts', 'epicrises', 'referrals', 'authorizations', 'order_marks', 'hosp_doses', 'hosp_meds', 'hosp_procedures',
+// record_versions y print_log no tienen llave al paciente, pero guardan versiones e impresiones de sus registros: los ids de
+// la demo se repiten cada día, y si quedaran, la primera corrección del día siguiente chocaría con una versión vieja.
+export const PATIENT_TABLES = ['record_versions', 'print_log', 'print_jobs', 'material_uses', 'consult_applications', 'fluid_entries', 'surgical_counts', 'preanesthesia_evals', 'anesthesia_sheets', 'exam_events', 'exam_orders', 'addenda', 'note_drafts', 'epicrises', 'referrals', 'authorizations', 'order_marks', 'hosp_doses', 'hosp_meds', 'hosp_procedures',
   'hosp_notes', 'order_set_uses', 'certificates', 'payment_installments', 'payments', 'prescriptions', 'followups', 'attachments', 'hospitalizations', 'consultations', 'vitals',
   'appointments', 'patients'] as const
 /** Tablas con filas que no son de ningún paciente (protocolos y registros generales de material): de éstas sólo se borran las del paciente. */
@@ -353,7 +355,7 @@ export async function seedDemo(sql: Sql, opts: { now?: Date; by?: string; onBack
       summary.observation += s.observation; summary.hospital += s.hospital; summary.discharged += s.discharged; summary.followups += s.followups
     }
     // Ronda 8: nadie internado queda a la vez en la consulta externa de hoy
-    await closeVisitsOfInpatients(q, now)
+    await closeVisitsOfInpatients(q, now, ids)
     // DM2 (ronda 11): los usuarios y órdenes de ejemplo de Laboratorio e Imágenes, con los pacientes nuevos
     await addDeptDemo(q, now)
     await q.run(`INSERT INTO meta (key, value) VALUES ('demo_seeded_on', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [isoDate(now)])

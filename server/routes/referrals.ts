@@ -28,7 +28,7 @@ export async function referralDraft(q: Sql, cid: string, h: Row, doctorId: strin
   const p = (await q.one('SELECT * FROM patients WHERE id = ?', [String(h.patient_id)]))!
   const c = h.consultation_id ? await q.one('SELECT * FROM consultations WHERE id = ?', [String(h.consultation_id)]) : undefined
   const consult = c ? toConsultation(c) : undefined
-  const vitals = consult?.vitalsId ? await q.one('SELECT * FROM vitals WHERE id = ?', [consult.vitalsId]) : undefined
+  const vitals = consult?.vitalsId ? await q.one('SELECT * FROM vitals WHERE id = ? AND clinic_id = ?', [consult.vitalsId, cid]) : undefined
   const v = vitals ? toVitals(vitals) : undefined
   const notes = (await q.query(`SELECT * FROM hosp_notes WHERE hospitalization_id = ? ORDER BY at`, [String(h.id)])).map(toInpatientNote)
   const meds = (await q.query('SELECT * FROM hosp_meds WHERE hospitalization_id = ? ORDER BY ordered_at', [String(h.id)])).map(toInpatientMed)
@@ -126,7 +126,7 @@ export async function stayReferralDraft(q: Sql, cid: string, h: Row, doctorId: s
 export async function consultReferralDraft(q: Sql, cid: string, row: Row, doctorId: string): Promise<ReferralData> {
   const c = toConsultation(row)
   const p = (await q.one('SELECT * FROM patients WHERE id = ?', [c.patientId]))!
-  const v = c.vitalsId ? await q.one('SELECT * FROM vitals WHERE id = ?', [c.vitalsId]) : undefined
+  const v = c.vitalsId ? await q.one('SELECT * FROM vitals WHERE id = ? AND clinic_id = ?', [c.vitalsId, cid]) : undefined
   const doc = (await q.one('SELECT name, doc_name, license, specialty FROM staff WHERE id = ?', [doctorId]))!
   const cfg = clinicSettings((await q.one('SELECT * FROM clinics WHERE id = ?', [cid]))!)
   const rx = c.prescriptionId ? await q.one('SELECT items FROM prescriptions WHERE id = ?', [c.prescriptionId]) : undefined

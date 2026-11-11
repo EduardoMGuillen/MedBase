@@ -97,6 +97,9 @@ export default function AppShell() {
     return () => clearInterval(t)
   }, [refresh])
 
+  // TB (ronda 17): en tablet la barra es una franja de íconos; abierta (open) se despliega encima del contenido
+  const rail = useMedia(RAIL_QUERY)
+
   if (!user) return null
   const today = new Date()
   const waiting = appointments.filter((a) => sameDay(a.start, today) && a.status === 'arrived').length
@@ -109,8 +112,6 @@ export default function AppShell() {
   const myAdmissions = myPendingAdmissions(inpatients, user.id).length
   const platform = user.role === 'superadmin'
   const touring = !!tour
-  // TB (ronda 17): en tablet la barra es una franja de íconos; abierta (open) se despliega encima del contenido
-  const rail = useMedia(RAIL_QUERY)
   const f = features(settings)
   // En un consultorio el médico titular también cobra y administra: "Administración" es "Mi consultorio". El médico tiene
   // «Cobrar» debajo de Recetas (MC7). Enfermería ya no cobra (AD9).

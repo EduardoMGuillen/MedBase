@@ -19,7 +19,7 @@ describe('GE3: fecha y hora en 24 horas, hora de Honduras', () => {
     assert.equal(time(iso), '20:14')
     assert.equal(dmyTime(iso), '02/11/2026 20:14')
     // En otra zona horaria (un navegador en Nueva York), lo mismo
-    const out = execFileSync('npx', ['tsx', '-e', "import('./src/lib/format.ts').then((f) => console.log(f.dmyTime('2026-11-03T02:14:00.000Z'), f.inputDateTime(new Date('2026-11-03T02:14:00.000Z'))))"],
+    const out = execFileSync(process.execPath, ['--import', 'tsx', '-e', "import('./src/lib/format.ts').then((f) => console.log(f.dmyTime('2026-11-03T02:14:00.000Z'), f.inputDateTime(new Date('2026-11-03T02:14:00.000Z'))))"],
       { env: { ...process.env, TZ: 'America/New_York' }, encoding: 'utf8' }).trim()
     assert.equal(out, '02/11/2026 20:14 2026-11-02T20:14')
   })

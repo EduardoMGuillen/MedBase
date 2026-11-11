@@ -457,8 +457,8 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     const list = await examsWhere(sql, 'clinic_id = ? AND batch_id = ?', [cid, String(req.params.batch)])
     if (!list.length) fail(404, 'La orden no existe.')
     const first = list[0]
-    const consult = first.consultationId ? await sql.one('SELECT diagnoses FROM consultations WHERE id = ?', [first.consultationId]) : undefined
-    const stay = first.hospitalizationId ? await sql.one('SELECT diagnoses FROM hospitalizations WHERE id = ?', [first.hospitalizationId]) : undefined
+    const consult = first.consultationId ? await sql.one('SELECT diagnoses FROM consultations WHERE id = ? AND clinic_id = ?', [first.consultationId, cid]) : undefined
+    const stay = first.hospitalizationId ? await sql.one('SELECT diagnoses FROM hospitalizations WHERE id = ? AND clinic_id = ?', [first.hospitalizationId, cid]) : undefined
     const doc = (await sql.one('SELECT id, name, doc_name, license, specialty, signature_id, stamp_id FROM staff WHERE id = ?', [first.orderedBy]))!
     res.json({ exams: list, diagnoses: j(consult?.diagnoses ?? stay?.diagnoses, []),
       doctor: { id: String(doc.id), name: String(doc.doc_name || doc.name), license: doc.license ? String(doc.license) : undefined, specialty: doc.specialty ? String(doc.specialty) : undefined,
@@ -663,6 +663,7 @@ export function registerExams(app: Express, { sql, auth, need, userOf, clinicOf,
     const user = userOf(req)
     if (!deptAllows(user, b.group)) fail(403, 'Ese tipo de examen es de otro departamento.')
     if (!(await patientRow(cid, b.patientId))) fail(404, 'El paciente no existe.')
+    if (b.hospitalizationId && !(await sql.one('SELECT 1 FROM hospitalizations WHERE id = ? AND clinic_id = ? AND patient_id = ?', [b.hospitalizationId, cid, b.patientId]))) fail(404, 'La estancia no existe o es de otro paciente.')
     const at = b.takenAt ?? new Date().toISOString()
     const id = randomUUID()
     const who = await patientName(b.patientId)

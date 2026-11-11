@@ -2,3 +2,14 @@ node_modules
 dist
 data
 .git
+.env
+.env.*
+!.env.example
+*.local
+server/.tmp
+.sim
+.vercel
+Review
+docs
+PLAN_*.md
+REPORTE_*.md

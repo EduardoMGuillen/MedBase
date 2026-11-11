@@ -5,7 +5,7 @@ import type { Server } from 'node:http'
 import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
-import { MEMBRENO, seedDemo } from './demoData.js'
+import { MEMBRENO, PATIENT_TABLES, seedDemo } from './demoData.js'
 import { fileAlerts } from '../src/lib/alerts.js'
 import { bandOf } from '../src/lib/vitalsSheet.js'
 import { slotsOn } from '../src/lib/schedule.js'
@@ -216,5 +216,40 @@ describe('DM1: el reinicio borra también lo que se agregó en rondas posteriore
     assert.equal(await n(`SELECT COUNT(*)::int AS n FROM consult_applications WHERE id = 'ca-dm'`), 0)
     // El registro general de material no es de ningún paciente: se queda
     assert.equal(await n(`SELECT COUNT(*)::int AS n FROM material_uses WHERE id = 'mu-dm-general'`), 1)
+  })
+})
+
+describe('DM1: la lista de borrado sale del esquema, no de la memoria', () => {
+  // Una tabla nueva que cuelgue del paciente y no esté en PATIENT_TABLES rompe el reinicio diario en producción
+  // (pasó con print_jobs y material_uses). Esta prueba lee las llaves foráneas del catálogo y falla antes.
+  test('toda tabla que depende de pacientes está en la lista y antes que la tabla de la que depende', async () => {
+    const order = PATIENT_TABLES as readonly string[]
+    const fks = (await sql.query<{ child: string; parent: string }>(`SELECT conrelid::regclass::text AS child, confrelid::regclass::text AS parent
+      FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace`)).filter((f) => f.child !== f.parent)
+    const reach = new Set(['patients'])
+    for (let grew = true; grew;) {
+      grew = false
+      for (const f of fks) if (reach.has(f.parent) && !reach.has(f.child)) { reach.add(f.child); grew = true }
+    }
+    assert.deepEqual([...reach].filter((t) => !order.includes(t)).sort(), [], 'tablas con llave hacia pacientes que el reinicio demo no borra')
+    for (const f of fks) {
+      if (!reach.has(f.parent) || !order.includes(f.child)) continue
+      assert.ok(order.indexOf(f.child) < order.indexOf(f.parent), `${f.child} se borra antes que ${f.parent}`)
+    }
+  })
+  test('toda tabla con columna patient_id está en la lista (la bitácora se borra aparte)', async () => {
+    const cols = (await sql.query<{ t: string }>(`SELECT table_name AS t FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'patient_id'`)).map((c) => c.t)
+    assert.deepEqual(cols.filter((t) => t !== 'audit' && !(PATIENT_TABLES as readonly string[]).includes(t)).sort(), [])
+  })
+  test('las versiones y las impresiones de un registro no sobreviven al reinicio (los ids de la demo se repiten cada día)', async () => {
+    await seedDemo(sql, { now: SUNDAY })
+    const c = (await sql.one(`SELECT id, doctor_id FROM consultations WHERE clinic_id = 'c-sb' ORDER BY id LIMIT 1`))!
+    const at = new Date().toISOString()
+    await sql.run(`INSERT INTO record_versions (id, clinic_id, target_kind, target_id, version, data, author_id, at, replaced_by, replaced_at) VALUES ('rv-dm', 'c-sb', 'consultation', ?, 1, '{}', ?, ?, ?, ?)`,
+      [String(c.id), String(c.doctor_id), at, String(c.doctor_id), at])
+    await sql.run(`INSERT INTO print_log (id, clinic_id, target_kind, target_id, how, by_id, at) VALUES ('pl-dm', 'c-sb', 'prescription', ?, 'print', ?, ?)`, [`${String(c.id)}-rx`, String(c.doctor_id), at])
+    await seedDemo(sql, { now: SUNDAY })
+    assert.equal(await n(`SELECT COUNT(*)::int AS n FROM record_versions WHERE clinic_id IN ('c-sb', 'c-al')`), 0)
+    assert.equal(await n(`SELECT COUNT(*)::int AS n FROM print_log WHERE clinic_id IN ('c-sb', 'c-al')`), 0)
   })
 })

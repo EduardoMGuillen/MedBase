@@ -87,7 +87,7 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
     if (await sql.one('SELECT 1 FROM staff WHERE lower(email) = lower(?)', [b.admin.email])) fail(409, 'Ya existe un usuario con ese correo. Usa otro para la administración de la clínica.')
     const assistants = await sql.query(`SELECT id, name, roles FROM staff WHERE clinic_id = ? AND ${hasRoleSql('assistant')}`, [cid])
     const owner = (await sql.one('SELECT owner_id FROM clinics WHERE id = ?', [cid]))?.owner_id
-    await sql.tx(async (q) => {
+    const { user: admin, password } = await sql.tx(async (q) => {
       await q.run(`UPDATE clinics SET kind = 'clinic' WHERE id = ?`, [cid])
       // Las asistentes cambian de rol y vuelven a entrar. El servidor ya aplica los permisos de clínica a todos desde
       // ahora (lee el tipo de cuenta en cada petición); quien convierte ve la contraseña y luego vuelve a entrar.
@@ -99,9 +99,11 @@ export function registerSettings(app: Express, { sql, auth, need, userOf, clinic
       // MI1: el titular deja la administración a la persona nueva y sigue como médico
       if (owner) await q.run(`UPDATE staff SET role = 'doctor', roles = ? WHERE id = ?`, [JSON.stringify(['doctor']), String(owner)])
       await audit(user, `Convirtió el consultorio en clínica; ${assistants.map((a) => `${a.name} pasa a ${b.assistants[String(a.id)] === 'nurse' ? 'enfermería' : 'recepción'}`).join(', ') || 'sin asistentes'}`, q)
+      // En la misma transacción: si no se puede crear a quien administra, la cuenta no queda como clínica sin administración
+      const created = await createStaffMember(q, cid, { name: b.admin.name, role: 'admin', email: b.admin.email })
+      await audit(user, `Creó el usuario de administración ${created.user.name}`, q)
+      return created
     })
-    const { user: admin, password } = await createStaffMember(sql, cid, { name: b.admin.name, role: 'admin', email: b.admin.email })
-    await audit(user, `Creó el usuario de administración ${admin.name}`)
     res.json({ settings: await settings(cid), admin, password })
   })
 

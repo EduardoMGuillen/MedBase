@@ -967,9 +967,9 @@ CREATE TABLE IF NOT EXISTS exam_ref_values (
 );
 CREATE INDEX IF NOT EXISTS exam_ref_clinic ON exam_ref_values (clinic_id, exam_key) WHERE archived_at IS NULL;
 
--- v63 (ronda 8, RF1): una referencia firmada no se edita: se corrige con adenda (como las notas)
-ALTER TABLE addenda DROP CONSTRAINT IF EXISTS addenda_target_kind_check;
-ALTER TABLE addenda ADD CONSTRAINT addenda_target_kind_check CHECK (target_kind IN ('consultation','note','referral'));
+-- v63 (ronda 8, RF1): una referencia firmada no se edita: se corrige con adenda (como las notas). La lista de tipos de
+-- adenda se fija una sola vez, más abajo (v65+): este esquema se vuelve a ejecutar entero en cada cambio de versión, y
+-- volver a poner aquí la lista corta fallaba en cuanto existía una adenda de anestesia, valoración o recuento.
 
 -- v65 (ronda 9). ME4: nebulización con varios medicamentos en una sola orden (componentes y diluyente, en JSON). La dosis
 -- registrada guarda la composición aplicada en su columna «dose» (v59).
@@ -2119,6 +2119,9 @@ export async function nextFolio(q: Sql, clinicId: string, now: Date) {
 /** Borra todo y vuelve a cargar la demo (sólo en modo demo). TRUNCATE no dispara el bloqueo de la bitácora. */
 export async function resetDemo(sql: Sql) {
   await sql.tx(async (q) => {
+    // Este borrado no distingue clínicas: se niega si en la base hay alguna cuenta de clínica que no sea de la demo
+    const real = await q.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM staff WHERE clinic_id IS NOT NULL AND lower(email) NOT LIKE '%@demo.clinara'`)
+    if (Number(real?.n ?? 0) > 0) throw new Error(`Esta base tiene ${real!.n} cuenta(s) de clínicas que no son de la demo: resetDemo borraría sus datos. No se borra nada. Para regenerar solo la demo usa «npm run seed:demo».`)
     await q.exec(`TRUNCATE record_versions, print_log, exam_ref_values, exam_events, exam_orders, exam_profiles, exam_catalog, addenda, note_drafts, payment_installments, staff_marks, epicrises, order_set_uses, order_sets, upload_parts, referrals, authorizations, order_marks, certificates, clinic_drugs, hosp_doses, hosp_meds, hosp_notes, hosp_procedures, hospitalizations, beds, followups,
       attachments, payments, prescriptions, consultations, vitals, appointments, patients, audit, staff, services, settings, clinics, rate_limits RESTART IDENTITY CASCADE`)
     await q.run(`DELETE FROM meta WHERE key = 'seeded'`)

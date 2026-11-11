@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DateField, TimeField } from '../components/DateTimeField'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Ban, FileBadge, MessageCircle, Printer } from 'lucide-react'
@@ -63,9 +63,13 @@ export default function Certificate() {
 
   useEffect(() => { if (id) fetchConsultation(id).then(setData).catch((e: Error) => notify(e.message, 'error')) }, [id, fetchConsultation, notify])
   // Fecha y horas de la atención: de la llegada a la firma de la consulta
+  const prefilled = useRef<string | null>(null)
   useEffect(() => {
     if (!data) return
     const c = data.consultation
+    // La agenda se sincroniza cada 30 s y cambia `appointments`: sin esta marca se pisaba lo que la persona ya había escrito
+    if (prefilled.current === c.id) return
+    prefilled.current = c.id
     const appt = appointments.find((a) => a.id === c.appointmentId)
     const end = new Date(c.date)
     const start = appt?.arrivedAt ? new Date(appt.arrivedAt) : new Date(end.getTime() - 30 * 60_000)

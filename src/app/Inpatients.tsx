@@ -211,7 +211,9 @@ export function AdmitModal({ initialPatientId, consultationId, bedId, onClose, o
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setF((x) => ({ ...x, patientPhone: x.patientPhone || p.phone, companionName: x.companionName || p.emergencyName || '',
       companionRelation: x.companionRelation || p.emergencyRelation || '', companionPhone: x.companionPhone || p.emergencyPhone || '' }))
-  }, [p])
+    // Solo al elegir paciente: `p` cambia de identidad en cada sincronización y volvía a llenar un campo que se borró a propósito
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p?.id])
 
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value })
   const already = p && inpatientOf(p.id)
