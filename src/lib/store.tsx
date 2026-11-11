@@ -202,10 +202,13 @@ function useStoreValue() {
   const fetchPlatformActivity = useCallback(() => api<(AuditEntry & { clinicName?: string })[]>('/platform/activity'), [])
 
   const permissions = session?.permissions
-  const can = useCallback((perm: Permission) => !!permissions?.includes(perm), [permissions])
+  // `can`, las búsquedas y las acciones cambian de identidad con cada sincronización aplicada (no en cada render): hay
+  // pantallas que las usan como dependencia para volver a consultar después de guardar, y deben seguir haciéndolo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const can = useCallback((perm: Permission) => !!permissions?.includes(perm), [permissions, data])
   const clearToast = useCallback(() => setToast(null), [])
 
-  // Búsquedas sobre los datos cargados: cambian solo cuando cambia su apartado
+  // Búsquedas sobre los datos cargados
   const { patients, staff, beds, inpatients, stays } = data
   const lookups = useMemo(() => ({
     patient: (id: string) => patients.find((p) => p.id === id),
@@ -216,9 +219,10 @@ function useStoreValue() {
     /** Hospitalizado o en observación ahora mismo; lo ven también recepción y caja. */
     stayOf: (patientId: string) => stays?.find((x) => x.patientId === patientId)?.kind,
     activeStayOf: (patientId: string) => stays?.find((x) => x.patientId === patientId),
-  }), [patients, staff, beds, inpatients, stays])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [patients, staff, beds, inpatients, stays, data])
 
-  // Acciones: no dependen de los datos, así que conservan su identidad entre sincronizaciones (sirven de dependencia)
+  // Acciones: no leen los datos; se renuevan con cada sincronización por la misma razón que `can`
   const actions = useMemo(() => ({
     emitReferral: (src: ReferralFrom, b: Partial<ReferralData> & { consent: boolean }) => run(() => api<Referral>(`${referralBase(src)}/referral`, { body: b }),
       'Referencia firmada'),
@@ -425,7 +429,8 @@ function useStoreValue() {
     updatePlatformStaff: (id: string, b: { active?: boolean; role?: ClinicRole; twoFactor?: false }) =>
       run(() => api<Staff>(`/platform/staff/${id}`, { method: 'PATCH', body: b }), 'Usuario actualizado'),
     resetPlatformStaffPassword: (id: string) => run(() => api<{ password: string }>(`/platform/staff/${id}/reset-password`, { method: 'POST' })),
-  }), [run, notify, refresh])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [run, notify, refresh, data])
 
   return useMemo(() => ({
     ...data, user, checking, demo: session?.demo ?? false, toast, notify, clearToast, refresh, can, signIn, signOut,
