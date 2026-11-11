@@ -41,7 +41,7 @@ import type { Server } from 'node:http'
 import { createApp } from './app.js'
 import { DEMO_PASSWORD, ensureDb } from './db.js'
 import { createSql, type Sql } from './sql.js'
-import { cleanArchivedThresholds } from './ronda10.js'
+import { cleanArchivedThresholds } from './baselineLoads.js'
 import { DEFAULT_CRITICAL_GROUPS, mergeCriticalGroups, type CriticalGroup } from '../src/lib/clinicalConfig.js'
 
 let server: Server
@@ -366,7 +366,7 @@ describe('CA5 (ronda 10): Imagen y gabinete completo', () => {
   })
 
   test('la carga en una base de antes: borra con copia, quita de sets y perfiles, conserva las órdenes; dos veces = una', async () => {
-    const { loadImagingCatalog } = await import('./ronda10.js')
+    const { loadImagingCatalog } = await import('./baselineLoads.js')
     const id = await mainClinic()
     const now = new Date().toISOString()
     for (const [name, sub] of [['Radiografía de tórax', null], ['Mamografía', null], ['Tomografía (TAC)', null]]) {

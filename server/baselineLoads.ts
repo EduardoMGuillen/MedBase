@@ -3,20 +3,16 @@ import type { Sql } from './sql.js'
 import { DEFAULT_CRITICAL_GROUPS, defaultAnalyte, type CriticalAnalyte, type CriticalGroup } from '../src/lib/clinicalConfig.js'
 import { EXAMS, examKey } from '../src/lib/exams.js'
 import { IMAGING_REMOVED } from '../src/lib/imagingCatalog.js'
+import { IMAGING_REMOVED_CA6, IMAGING_RENAMED_CA6 } from '../src/lib/imagingCatalog.js'
+import { removeCatalogExams, saveConfigBackup, systemAudit as sysAudit, type SetChange, setChangesText } from './examCatalog.js'
 
 /**
- * Ronda 10: migraciones y cargas de datos. Todas son idempotentes, corren en `ensureDb` para cada clínica y consultorio
- * (también los nuevos) y, antes de borrar algo, guardan una exportación en `config_backups`.
+ * Cargas y limpiezas que forman parte del esquema base (rondas 10 a 12: umbrales archivados, catálogo de Imagen y gabinete,
+ * exámenes archivados y marcas de valor crítico). Todas son idempotentes y corren en `ensureDb` para cada clínica y
+ * consultorio; antes de borrar algo guardan una exportación en `config_backups`.
+ *
+ * No agregues cargas nuevas aquí: van como un paso en `server/migrations.ts`.
  */
-
-/** Guarda una exportación de lo que se va a borrar o reemplazar (nunca se borra). */
-export async function saveConfigBackup(q: Sql, clinicId: string | null, kind: string, data: unknown, note: string) {
-  await q.run('INSERT INTO config_backups (id, clinic_id, kind, created_at, data, note) VALUES (?,?,?,?,?,?)',
-    [randomUUID(), clinicId, kind, new Date().toISOString(), JSON.stringify(data), note])
-}
-
-const sysAudit = (q: Sql, clinicId: string, action: string) =>
-  q.run('INSERT INTO audit (at, user_id, action, clinic_id) VALUES (?,?,?,?)', [new Date().toISOString(), 'sistema', action, clinicId])
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 const DEFAULT_GROUP_IDS = new Set(DEFAULT_CRITICAL_GROUPS.map((g) => g.id))
@@ -173,4 +169,80 @@ export async function loadImagingCatalog(q: Sql, clinicId: string): Promise<Imag
   }
   await q.run('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING', [mark, now])
   return report
+}
+
+/**
+ * CA7 (ronda 11): los exámenes archivados del catálogo se borran (ya no se archiva nada en el catálogo de exámenes). Correrla
+ * otra vez no cambia nada: ya no quedan archivados.
+ */
+export async function cleanArchivedCatalog(q: Sql, clinicId: string) {
+  const rows = await q.query('SELECT * FROM exam_catalog WHERE clinic_id = ? AND active = FALSE ORDER BY grp, name', [clinicId])
+  if (!rows.length) return null
+  const out = await removeCatalogExams(q, clinicId, rows, 'sistema', 'ca7-archived-removed', 'CA7 (ronda 11): archivados del catálogo')
+  await sysAudit(q, clinicId, `Catálogo de exámenes (CA7, ronda 11): se borraron ${out.removed.length} examen(es) archivado(s): ${out.removed.join(', ')}`
+    + `${out.sets.length ? `; se quitaron de ${setChangesText(out.sets)}` : ''}. Las órdenes que ya los usan no cambian. Copia previa en config_backups.`)
+  return out
+}
+
+export interface Ca6Report { deleted: string[]; created: string[]; renamed: string[]; sets: SetChange[] }
+
+/**
+ * CA6 (ronda 11, corrige CA5): Imagen y gabinete con UN estudio por modalidad. Una vez por clínica (marca `ca6:<clínica>`):
+ *  - BORRA del catálogo los estudios por región de CA5 de Rayos X, Ultrasonido, Tomografía y Resonancia (IMAGING_REMOVED_CA6),
+ *    con copia previa y la marca de quitado (no quedan en «Ver archivados», que ya no existe, ni en ninguna lista). No toca
+ *    Ultrasonido Doppler, Estudios contrastados, Cardiología, Endoscopia ni Otros.
+ *  - Renombra «Angiorresonancia cerebral» a «Angiorresonancia magnética cerebral».
+ *  - Crea los genéricos que falten (Rayos X, Ultrasonido, Tomografía, Angiotomografía, Resonancia magnética): activos, sin precio.
+ *  - Quita de los sets y perfiles los estudios borrados (se listan en la bitácora con su dueño).
+ *  Las órdenes guardan el nombre (y lo elegido) del estudio: las de CA5 siguen diciendo «Rayos X de rodilla AP y lateral · Lado derecho».
+ */
+export async function loadImagingCa6(q: Sql, clinicId: string): Promise<Ca6Report | null> {
+  const mark = `ca6:${clinicId}`
+  if (await q.one('SELECT 1 FROM meta WHERE key = ?', [mark])) return null
+  const report: Ca6Report = { deleted: [], created: [], renamed: [], sets: [] }
+  const removed = new Set(IMAGING_REMOVED_CA6.map(examKey))
+  const rows = await q.query(`SELECT * FROM exam_catalog WHERE clinic_id = ? AND grp = 'imaging' ORDER BY name`, [clinicId])
+  const gone = rows.filter((r) => removed.has(String(r.norm_key)))
+  if (gone.length) {
+    const out = await removeCatalogExams(q, clinicId, gone, 'sistema', 'ca6-imaging-removed', 'CA6 (ronda 11): estudios de imagen por región')
+    report.deleted = out.removed
+    report.sets = out.sets
+  }
+  const now = new Date().toISOString()
+  for (const [from, to] of Object.entries(IMAGING_RENAMED_CA6)) {
+    const cur = rows.find((r) => String(r.norm_key) === examKey(from))
+    if (!cur || rows.some((r) => String(r.norm_key) === examKey(to))) continue
+    await q.run('UPDATE exam_catalog SET name = ?, norm_key = ?, base_key = ?, updated_at = ?, updated_by = ? WHERE id = ?', [to, examKey(to), examKey(to), now, 'sistema', String(cur.id)])
+    report.renamed.push(`${from} → ${to}`)
+  }
+  const have = new Set((await q.query(`SELECT norm_key FROM exam_catalog WHERE clinic_id = ?`, [clinicId])).map((r) => String(r.norm_key)))
+  for (const e of EXAMS.filter((x) => x.group === 'imaging')) {
+    const key = examKey(e.name)
+    if (have.has(key)) continue
+    await q.run('INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, base_key, subgroup, active, created_by, created_at) VALUES (?,?,?,?,?,?,?,TRUE,NULL,?)',
+      [randomUUID(), clinicId, 'imaging', e.name, key, key, e.subgroup ?? null, now])
+    report.created.push(e.name)
+  }
+  if (report.deleted.length || report.created.length || report.renamed.length) {
+    await sysAudit(q, clinicId, `Catálogo de Imagen y gabinete (CA6, ronda 11): ${report.deleted.length} estudio(s) borrado(s)${report.deleted.length ? ` (${report.deleted.join(', ')})` : ''}; `
+      + `creados: ${report.created.join(', ') || 'ninguno'}; renombrado: ${report.renamed.join(', ') || 'ninguno'}`
+      + `${report.sets.length ? `; se quitaron estudios borrados de ${setChangesText(report.sets)}` : ''}. Las órdenes ya emitidas no cambian. Copia previa en config_backups.`)
+  }
+  await q.run('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING', [mark, now])
+  return report
+}
+
+/** Ronda 11: el catálogo de cada clínica al día (CA6 y CA7). Idempotente. */
+export async function loadRonda11Catalog(q: Sql, clinicId: string) {
+  await loadImagingCa6(q, clinicId)
+  await cleanArchivedCatalog(q, clinicId)
+}
+
+/**
+ * v80 (ronda 12, LB3): sin umbrales críticos. Las órdenes que quedaron marcadas «Valor crítico» dejan de estarlo (los valores
+ * conservan su Alto o Bajo frente al valor de referencia). Los umbrales guardados en la clínica no se borran: ya no se usan.
+ * Idempotente.
+ */
+export async function clearCriticalFlags(q: Sql) {
+  await q.run('UPDATE exam_orders SET critical = FALSE WHERE critical = TRUE')
 }

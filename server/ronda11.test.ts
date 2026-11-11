@@ -35,7 +35,7 @@ const mainClinic = async () => String((await sql.one(`SELECT clinic_id FROM staf
 
 describe('CA7 (ronda 11): sin «Ver archivados» ni «Archivar» en el catálogo de exámenes', () => {
   test('en una demo nueva no queda ningún archivado; la limpieza dos veces = una', async () => {
-    const { cleanArchivedCatalog } = await import('./ronda11.js')
+    const { cleanArchivedCatalog } = await import('./baselineLoads.js')
     const id = await mainClinic()
     assert.equal((await sql.query('SELECT 1 FROM exam_catalog WHERE active = FALSE')).length, 0)
     // Los 6 paquetes que archivó la ronda 7 (CA3) ya se borraron y quedaron marcados como quitados
@@ -44,7 +44,7 @@ describe('CA7 (ronda 11): sin «Ver archivados» ni «Archivar» en el catálogo
     assert.equal(await cleanArchivedCatalog(sql, id), null)
   })
   test('un archivado de antes se borra con copia, se quita de los sets y la orden antigua conserva su nombre', async () => {
-    const { cleanArchivedCatalog } = await import('./ronda11.js')
+    const { cleanArchivedCatalog } = await import('./baselineLoads.js')
     const id = await mainClinic()
     const now = new Date().toISOString()
     await sql.run(`INSERT INTO exam_catalog (id, clinic_id, grp, name, norm_key, active, created_by, created_at) VALUES ('ca7-x', ?, 'lab', 'Prueba archivada', 'prueba archivada', FALSE, NULL, ?)`, [id, now])
@@ -136,7 +136,7 @@ describe('CA6 (ronda 11): Imagen y gabinete con estudios genéricos', () => {
     }
   })
   test('la carga sobre una base con CA5: borra con copia, renombra, crea los genéricos, quita de los sets; órdenes intactas; dos veces = una', async () => {
-    const { loadImagingCa6 } = await import('./ronda11.js')
+    const { loadImagingCa6 } = await import('./baselineLoads.js')
     const id = await mainClinic()
     const now = new Date().toISOString()
     // Como quedó tras la ronda 10: estudios por región y la angiorresonancia con su nombre de antes, sin los genéricos
