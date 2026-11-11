@@ -52,10 +52,12 @@ interface Draft {
 const PATHOLOGICAL = ['Personales patológicos', 'Hospitalarios, traumáticos y quirúrgicos', 'Heredofamiliares', 'Gineco-obstétricos']
 const NON_PATHOLOGICAL = ['Personales no patológicos']
 const draftKey = (id?: string) => `clinara.nota.${id}`
-function loadDraft(id?: string): Partial<Draft> {
+function loadDraft(id?: string, me?: string): Partial<Draft> {
   try {
     // AN1: el borrador se guarda con su hora ({ data, savedAt }); los de antes eran el borrador solo
-    const raw = JSON.parse(localStorage.getItem(draftKey(id)) ?? '{}') as Partial<Draft> & { data?: Partial<Draft>; savedAt?: string }
+    const raw = JSON.parse(localStorage.getItem(draftKey(id)) ?? '{}') as Partial<Draft> & { data?: Partial<Draft>; savedAt?: string; by?: string }
+    // El borrador que dejó otra persona en este equipo no se carga
+    if (raw.by && me && raw.by !== me) return {}
     const d = (raw.savedAt !== undefined && raw.data ? raw.data : raw) as Partial<Draft>
     if (d.orders && !d.indications) {
       d.indications = d.orders.filter((o) => !o.rx).map((o) => o.text)
@@ -78,7 +80,7 @@ export default function Consultation() {
   const todayVitals = vitals.find((v) => v.appointmentId === apptId)
 
   // El borrador se guarda en este navegador mientras se escribe, por si se cierra la pestaña
-  const [saved] = useState(() => loadDraft(apptId))
+  const [saved] = useState(() => loadDraft(apptId, user?.id))
   const [reason, setReason] = useState(saved.reason ?? todayVitals?.chiefComplaint ?? appt?.reason ?? '')
   const [history, setHistory] = useState(saved.history ?? '')
   const [exam, setExam] = useState(saved.exam ?? '')

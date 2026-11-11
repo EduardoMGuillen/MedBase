@@ -92,9 +92,12 @@ export default function AppShell() {
     return () => clearInterval(t)
   }, [user?.role])
   // La sala de espera cambia por acciones de otros: se sincroniza cada 30 segundos
+  // Con la pestaña oculta no se pide nada; al volver a verla se sincroniza de una vez
   useEffect(() => {
-    const t = setInterval(refresh, 30_000)
-    return () => clearInterval(t)
+    const t = setInterval(() => { if (!document.hidden) refresh() }, 30_000)
+    const onShow = () => { if (!document.hidden) refresh() }
+    document.addEventListener('visibilitychange', onShow)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onShow) }
   }, [refresh])
 
   // TB (ronda 17): en tablet la barra es una franja de íconos; abierta (open) se despliega encima del contenido

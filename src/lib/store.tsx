@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ConsultApplication, ActiveStay, ExamOrder, FluidsMode, VitalsMode,
   Addendum, Appointment, ExamInput, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Referral, ReferralData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
   InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
@@ -65,6 +65,24 @@ export type NewPayment = Pick<Payment, 'patientId' | 'discount' | 'method'> & { 
 
 const EMPTY: Data = { staff: [], patients: [], appointments: [], prescriptions: [], audit: [], vitals: [], services: [], settings: DEFAULT_SETTINGS, beds: [], inpatients: [], followups: [], discharges: [] }
 
+/**
+ * Los datos nuevos, conservando la MISMA lista u objeto de antes en cada apartado que no cambió. La sincronización
+ * trae todo cada 30 segundos; sin esto cada apartado cambiaba de identidad aunque fuera igual, y cualquier efecto que
+ * dependiera de `appointments` o `patients` se volvía a ejecutar (así se pisaba lo escrito en algunos formularios).
+ * `seen` recuerda, por apartado, su texto y el valor que ya se entregó con ese texto.
+ */
+type Seen = Map<string, { raw: string; value: unknown }>
+function keepUnchanged(next: Data, seen: Seen): Data {
+  const out = { ...next } as Record<string, unknown>
+  for (const [k, value] of Object.entries(next)) {
+    const raw = JSON.stringify(value)
+    const before = seen.get(k)
+    if (before && before.raw === raw) out[k] = before.value
+    else seen.set(k, { raw, value })
+  }
+  return out as unknown as Data
+}
+
 /** Minutos sin actividad antes de cerrar la sesión automáticamente. */
 const IDLE_MINUTES = 30
 
@@ -76,9 +94,15 @@ function useStoreValue() {
 
   const notify = useCallback((msg: string, tone: 'ok' | 'error' = 'ok') => setToast({ msg, tone }), [])
 
+  // Cada pedido lleva su número: una respuesta que llega después de otra más nueva (o de cerrar sesión) se descarta
+  const latest = useRef(0)
+  const seen = useRef<Seen>(new Map())
   const refresh = useCallback(async () => {
+    const mine = ++latest.current
     try {
-      setData(await api<Data>('/bootstrap'))
+      const next = await api<Data>('/bootstrap')
+      if (mine !== latest.current) return
+      setData(keepUnchanged(next, seen.current))
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setSession(null)
       else notify((e as Error).message, 'error')
@@ -96,6 +120,9 @@ function useStoreValue() {
 
   const signOut = useCallback(async () => {
     await api('/auth/logout', { method: 'POST' }).catch(() => null)
+    // Una sincronización que venía en camino ya no debe volver a llenar los datos
+    latest.current++
+    seen.current.clear()
     setSession(null)
     setData(EMPTY)
   }, [])
@@ -133,13 +160,13 @@ function useStoreValue() {
   }, [refresh, notify])
 
   /** Devuelve `true` si la cuenta pide el código de verificación en dos pasos. */
-  const signIn = async (email: string, password: string, code?: string) => {
+  const signIn = useCallback(async (email: string, password: string, code?: string) => {
     const r = await api<Session | { twoFactor: true }>('/auth/login', { body: { email, password, code } })
     if ('twoFactor' in r) return true
     setSession(r)
     await refresh()
     return false
-  }
+  }, [refresh])
 
   const user = session?.user ?? null
 
@@ -174,25 +201,30 @@ function useStoreValue() {
   const fetchClinicStaff = useCallback((clinicId: string) => api<Staff[]>(`/platform/clinics/${clinicId}/staff`), [])
   const fetchPlatformActivity = useCallback(() => api<(AuditEntry & { clinicName?: string })[]>('/platform/activity'), [])
 
-  return {
-    ...data, user, checking, demo: session?.demo ?? false, toast, notify, clearToast: () => setToast(null), refresh,
-    can: (perm: Permission) => !!session?.permissions.includes(perm),
-    signIn, signOut,
-    patient: (id: string) => data.patients.find((p) => p.id === id),
-    staffById: (id: string) => data.staff.find((s) => s.id === id),
-    fetchBalances, fetchAttachmentMeta, fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
-    fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient, searchIcd, fetchIcdFrequent, fetchReferralDraft, fetchReferral,
+  const permissions = session?.permissions
+  const can = useCallback((perm: Permission) => !!permissions?.includes(perm), [permissions])
+  const clearToast = useCallback(() => setToast(null), [])
+
+  // Búsquedas sobre los datos cargados: cambian solo cuando cambia su apartado
+  const { patients, staff, beds, inpatients, stays } = data
+  const lookups = useMemo(() => ({
+    patient: (id: string) => patients.find((p) => p.id === id),
+    staffById: (id: string) => staff.find((s) => s.id === id),
+    bed: (id?: string) => (id ? beds.find((b) => b.id === id) : undefined),
+    /** Hospitalización abierta del paciente, si la tiene. */
+    inpatientOf: (patientId: string) => inpatients.find((h) => h.patientId === patientId),
+    /** Hospitalizado o en observación ahora mismo; lo ven también recepción y caja. */
+    stayOf: (patientId: string) => stays?.find((x) => x.patientId === patientId)?.kind,
+    activeStayOf: (patientId: string) => stays?.find((x) => x.patientId === patientId),
+  }), [patients, staff, beds, inpatients, stays])
+
+  // Acciones: no dependen de los datos, así que conservan su identidad entre sincronizaciones (sirven de dependencia)
+  const actions = useMemo(() => ({
     emitReferral: (src: ReferralFrom, b: Partial<ReferralData> & { consent: boolean }) => run(() => api<Referral>(`${referralBase(src)}/referral`, { body: b }),
       'Referencia firmada'),
     fetchPatientReferrals: (patientId: string) => api<Referral[]>(`/patients/${patientId}/referrals`),
     logReferralPrint: (id: string, how: 'print' | 'pdf') => api(`/referrals/${id}/printed`, { body: { how } }).catch(() => null),
     voidReferral: (id: string, reason: string) => run(() => api<Referral>(`/referrals/${id}/void`, { body: { reason } }), 'Referencia anulada'),
-    bed: (id?: string) => (id ? data.beds.find((b) => b.id === id) : undefined),
-    /** Hospitalización abierta del paciente, si la tiene. */
-    inpatientOf: (patientId: string) => data.inpatients.find((h) => h.patientId === patientId),
-    /** Hospitalizado o en observación ahora mismo; lo ven también recepción y caja. */
-    stayOf: (patientId: string) => data.stays?.find((x) => x.patientId === patientId)?.kind,
-    activeStayOf: (patientId: string) => data.stays?.find((x) => x.patientId === patientId),
 
     walkIn: (b: { patientId: string; doctorId: string; reason: string; urgent?: boolean }) =>
       run(() => api<Appointment>('/appointments/walk-in', { body: b }), 'Paciente agregado a la consulta externa de hoy'),
@@ -393,7 +425,16 @@ function useStoreValue() {
     updatePlatformStaff: (id: string, b: { active?: boolean; role?: ClinicRole; twoFactor?: false }) =>
       run(() => api<Staff>(`/platform/staff/${id}`, { method: 'PATCH', body: b }), 'Usuario actualizado'),
     resetPlatformStaffPassword: (id: string) => run(() => api<{ password: string }>(`/platform/staff/${id}/reset-password`, { method: 'POST' })),
-  }
+  }), [run, notify, refresh])
+
+  return useMemo(() => ({
+    ...data, user, checking, demo: session?.demo ?? false, toast, notify, clearToast, refresh, can, signIn, signOut,
+    fetchBalances, fetchAttachmentMeta, fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
+    fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient, searchIcd, fetchIcdFrequent, fetchReferralDraft, fetchReferral,
+    ...lookups, ...actions,
+  }), [data, user, checking, session?.demo, toast, notify, clearToast, refresh, can, signIn, signOut, lookups, actions,
+    fetchBalances, fetchAttachmentMeta, fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment,
+    fetchReport, fetchAttachments, fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient, searchIcd, fetchIcdFrequent, fetchReferralDraft, fetchReferral])
 }
 
 type Store = ReturnType<typeof useStoreValue>

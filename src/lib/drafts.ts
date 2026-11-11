@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { time } from './format'
 import { api } from './api'
+import { useStore } from './store'
 
 export type DraftScope = 'consulta' | 'evolucion' | 'procedimiento' | 'egreso' | 'enfermeria' | 'referencia' | 'material' | 'anestesia' | 'set' | 'valoracion' | 'recuento'
 
@@ -18,13 +19,22 @@ export function useDraftSync<T>(scope: DraftScope, ref: string | undefined, snap
   const applyRef = useRef(apply)
   applyRef.current = apply
   const json = JSON.stringify(snapshot)
+  // El borrador de este navegador lleva de quién es: en un equipo compartido, la siguiente persona no recibe el de otra
+  const me = useStore().user?.id
 
   // Al abrir: el borrador de este navegador y el del servidor; gana el más reciente
   useEffect(() => {
     if (!ref) return
     let alive = true
     let local: { data: T; savedAt: string } | null = null
-    try { const raw = localStorage.getItem(localKey); if (raw) { const v = JSON.parse(raw); local = v && v.savedAt ? v : { data: v, savedAt: '' } } } catch { /* sin almacenamiento */ }
+    try {
+      const raw = localStorage.getItem(localKey)
+      if (raw) {
+        const v = JSON.parse(raw)
+        const foreign = !!v && !!v.by && !!me && v.by !== me
+        if (!foreign) local = v && v.savedAt ? v : { data: v, savedAt: '' }
+      }
+    } catch { /* sin almacenamiento */ }
     api<{ data: T; updatedAt: string } | null>(`/drafts/${scope}/${ref}`).catch(() => null).then((server) => {
       if (!alive) return
       const pick = server && (!local || server.updatedAt > local.savedAt) ? { data: server.data, savedAt: server.updatedAt } : local
@@ -41,7 +51,7 @@ export function useDraftSync<T>(scope: DraftScope, ref: string | undefined, snap
     const local = setTimeout(() => {
       try {
         if (blank) localStorage.removeItem(localKey)
-        else localStorage.setItem(localKey, JSON.stringify({ data: JSON.parse(json), savedAt: new Date().toISOString() }))
+        else localStorage.setItem(localKey, JSON.stringify({ data: JSON.parse(json), savedAt: new Date().toISOString(), by: me }))
       } catch { /* sin almacenamiento */ }
     }, 400)
     const remote = setTimeout(() => {
@@ -49,7 +59,7 @@ export function useDraftSync<T>(scope: DraftScope, ref: string | undefined, snap
       req.then((r) => { setOffline(false); if (!blank) setSavedAt((r as { updatedAt: string }).updatedAt) }).catch(() => setOffline(true))
     }, 3000)
     return () => { clearTimeout(local); clearTimeout(remote) }
-  }, [json, blank, ref, scope, localKey])
+  }, [json, blank, ref, scope, localKey, me])
 
   /** Al firmar: el borrador ya no hace falta. */
   const clear = useCallback(() => {
