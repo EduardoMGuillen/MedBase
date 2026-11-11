@@ -111,7 +111,7 @@ Recorrido: entra como `ipacheco@demo.clinara`, atiende a Daniela Ordóñez (ya t
 
 Los diagnósticos se buscan en la **CIE-11 de la OMS en español** (MMS, edición 2026-01) mientras se escribe, por palabras (sin importar las tildes) o por código.
 
-- **Sin configurar nada:** Clinara trae el archivo oficial de la OMS (`server/data/icd11-mms-es.json`, 35 664 categorías), generado con `scripts/build-icd11.ts` a partir de `SimpleTabulation-ICD-11-MMS-es.zip`. Los códigos y los títulos están tal cual los publica la OMS. Licencia CC BY-ND 3.0 IGO; fuente: https://icd.who.int.
+- **Sin configurar nada:** Clinara trae el archivo oficial de la OMS (`server/data/icd11-mms-es.js`, 35 664 categorías), generado con `scripts/build-icd11.ts` a partir de `SimpleTabulation-ICD-11-MMS-es.zip`. Los códigos y los títulos están tal cual los publica la OMS. Licencia CC BY-ND 3.0 IGO; fuente: https://icd.who.int.
 - **Con la API de la OMS (opcional):** crea la cuenta gratuita en https://icd.who.int/icdapi y pon `ICD_CLIENT_ID` e `ICD_CLIENT_SECRET` en `.env` o en Vercel. La búsqueda se hace entonces en línea y, si la OMS no responde, vuelve al archivo. También se puede usar la copia local de la API con `ICD_API_URL`.
 - **Para actualizar la edición:** descarga el archivo nuevo de la OMS y ejecuta `npx tsx scripts/build-icd11.ts <archivo .txt> <edición>`.
 
@@ -206,22 +206,28 @@ paginación en las listas largas (GE5) y «Ordenar exámenes» de tamaño fijo (
 | `npm run build` | Compila la app para producción |
 | `npm start` | Sirve la app compilada y la API en http://localhost:3001 (ejecuta antes `npm run build`) |
 | `npm run db:reset` | Borra la base local y vuelve a cargar la demo con la agenda de hoy (detén antes el servidor) |
-| `npm run db:neon` | Crea las tablas y recarga la demo en Neon, usando la cadena de `.env.neon.local` |
+| `npm run db:neon` | Crea las tablas y recarga la demo en Neon, usando la cadena de `.env.neon.local`. Borra toda la base: se niega si hay cuentas de clínicas que no son de la demo |
+| `npm run seed:demo [-- .env.neon.local --confirmar]` | Regenera solo los pacientes de las clínicas demo, con respaldo previo |
+| `npm run lint` | Revisa el código con oxlint |
 | `npm run superadmin -- correo "Nombre"` | Crea o restablece una cuenta de Administración de Clinara |
 | `npm run me5:build` | Regenera `src/lib/lnme/generated.ts` desde el `.md` del listado nacional (falla si el archivo no trae 530 filas válidas) |
 | `npm run me6:compare [-- .env.neon.local]` | Solo lee: compara, por número, las 530 filas del `.md` con el vademécum de cada clínica y consultorio (0 faltantes = completo) |
 | `npm run um3:diagnose [-- .env.neon.local]` | Solo lee: lista los umbrales críticos archivados de cada clínica, si son predeterminados y quién los archivó según la bitácora |
 
-La agenda de demo se genera con la fecha del día en que se crea la base. Si lo pruebas otro día, usa `npm run db:reset` o, como administración, el botón *Restablecer demo*.
+La agenda de demo se genera con la fecha del día en que se crea la base. Si lo pruebas otro día, usa `npm run db:reset`, o `npm run seed:demo` para regenerar solo los pacientes de las clínicas demo (con respaldo).
 
 ## Configuración
 
 Todo tiene valores por defecto. Para cambiar algo, copia `.env.example` como `.env`:
 
 - `DATABASE_URL` conecta a un Postgres remoto (Neon). Sin ella se usa la base local.
-- `DEMO_MODE=false` oculta las cuentas de demo y desactiva *Restablecer demo*. Úsalo para datos reales.
+- `DEMO_MODE=false` oculta las cuentas de demo y desactiva el reinicio de los datos demo. Úsalo para datos reales.
 - `JWT_SECRET` es el secreto de sesión. Defínelo en cualquier servidor público.
-- `SECURE_COOKIES=true` si la app se sirve por HTTPS.
+- `SECURE_COOKIES=true` si la app se sirve por HTTPS (en Vercel ya está activo; en un servidor propio o en Docker hay que ponerlo).
+- `CLINIC_TZ` es la zona horaria de la clínica (por defecto `America/Tegucigalpa`): con ella se calculan «hoy», la agenda y los filtros por fecha.
+- `CRON_SECRET` protege la tarea diaria que regenera la demo (`/api/cron/demo`); sin él la tarea no corre.
+- `ICD_CLIENT_ID` e `ICD_CLIENT_SECRET` activan la búsqueda CIE-11 en línea de la OMS; sin ellos se usa el archivo local.
+- `PORT` y `PGLITE_DIR` cambian el puerto de la API y la carpeta de la base local.
 
 ## Publicar en Vercel + Neon
 
@@ -253,13 +259,13 @@ El repositorio ya trae `vercel.json`: Vercel compila el frontend con Vite y publ
 
 ### 3. Comprobar
 
-- Abre `https://tu-proyecto.vercel.app/api/public/clinic`: debe responder con los médicos.
+- Abre `https://tu-proyecto.vercel.app/api/health`: debe responder `"ok": true`. `https://tu-proyecto.vercel.app/api/public/clinics` lista las clínicas activas.
 - Entra con una cuenta de demo. La primera petición tras un rato sin uso tarda uno o dos segundos más mientras la función arranca.
 
 ### Notas
 
 - **Si cambias la contraseña de Neon**, actualiza `DATABASE_URL` en Vercel (*Settings → Environment Variables*) y vuelve a desplegar (*Deployments → Redeploy*).
-- **La demo usa la fecha del día en que se cargó.** Para renovarla, entra como administración y pulsa *Restablecer demo* (en *Personal y roles*), o ejecuta `npm run db:neon`.
+- **La demo usa la fecha del día en que se cargó.** Las clínicas demo se regeneran solas cada día (tarea de Vercel, `CRON_SECRET`). Para hacerlo a mano: `npm run seed:demo -- .env.neon.local --confirmar`. `npm run db:neon` borra TODA la base y la vuelve a cargar; se niega si hay cuentas de clínicas que no son de la demo.
 - **Los archivos adjuntos tienen un máximo de 3 MB**, por el límite de 4,5 MB por petición de Vercel, y se guardan dentro de Postgres. El plan gratuito de Neon incluye 0,5 GB.
 - **Cada cambio que subas a `main` se publica solo.** Las ramas generan URLs de vista previa.
 
@@ -269,7 +275,7 @@ El `Dockerfile` sirve para cualquier servicio de contenedores (Railway, Fly.io, 
 
 ```bash
 docker build -t clinara .
-docker run -p 3001:3001 -v clinara-data:/app/data -e JWT_SECRET=algo-largo-y-aleatorio -e DEMO_MODE=false clinara
+docker run -p 3001:3001 -v clinara-data:/app/data -e JWT_SECRET=algo-largo-y-aleatorio -e DEMO_MODE=false -e SECURE_COOKIES=true clinara
 ```
 
 ## Estructura
@@ -277,12 +283,18 @@ docker run -p 3001:3001 -v clinara-data:/app/data -e JWT_SECRET=algo-largo-y-ale
 ```
 api/index.ts      Función de Vercel (envuelve la API)
 server/           API Express + Postgres
-  app.ts          autenticación, pacientes, citas, triaje, consultas, personal
+  app.ts          composición: middleware, sesión y registro de las rutas
+  routes/         un archivo por dominio (sesión, pacientes, citas, consultas, hospitalización, exámenes, caja…)
+  http.ts         lo que comparten las rutas: contexto, validación (zod) y errores
   sql.ts          conexión: Neon en producción, PGlite en local
-  routes/         reserva pública, caja, reportes, archivos, configuración
-  db.ts           esquema, inicialización y datos de demo
+  schema.ts       esquema base de la base de datos
+  migrations.ts   cambios posteriores al esquema base: pasos numerados que corren una sola vez
+  db.ts           inicialización (ensureDb), datos de demo y numeración de expedientes y recetas
+  staff.ts        alta de personal, roles, cargos y horarios
+  demoData.ts     generador diario de los pacientes de las clínicas demo
   totp.ts         verificación en dos pasos (RFC 6238)
-  api.test.ts     pruebas
+  test/helpers.ts arranque de la aplicación y cliente con sesión para las pruebas
+  *.test.ts       pruebas (`npm test` corre todas las de server/)
 src/pages/        Landing, Login, Reserva en línea, 404
 src/app/          Pantallas internas
 src/components/   Logo, gráficas, buscador, recordatorio y primitivas de UI

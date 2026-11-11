@@ -37,6 +37,15 @@ export function parse<T extends z.ZodType>(schema: T, data: unknown, message?: s
   return r.data as z.infer<T>
 }
 
+/**
+ * Un rango de días («2026-11-03» a «2026-11-05», ambos inclusive) como instantes: desde el inicio del primer día hasta
+ * el inicio del día siguiente al último, en la hora de la clínica (server/tz.ts fija la zona del proceso, CLINIC_TZ).
+ */
+export function dayRange(from?: string, to?: string) {
+  const start = (day: string, plus = 0) => { const [y, m, d] = day.split('-').map(Number); return new Date(y!, m! - 1, d! + plus).toISOString() }
+  return { since: from ? start(from) : undefined, before: to ? start(to, 1) : undefined }
+}
+
 export function localDate(d: Date) {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`

@@ -1,7 +1,7 @@
 import type { Express } from 'express'
 import express from 'express'
 import { z } from 'zod'
-import { type Ctx, parse } from '../http.js'
+import { type Ctx, parse, dayRange } from '../http.js'
 import { toAudit } from '../mappers.js'
 import { PAGE_SIZE } from '../../src/lib/clinicalConfig.js'
 import { AUDIT_KINDS, auditKind, type AuditKind } from '../../src/lib/audit.js'
@@ -31,8 +31,9 @@ export function registerAudit(app: Express, ctx: Ctx) {
     }
     if (f.q) { where.push('a.action ILIKE ?'); args.push(`%${f.q.replace(/[%_]/g, '')}%`) }
     // Las fechas se comparan en hora de Honduras (UTC-6)
-    if (f.from) { where.push('a.at >= ?'); args.push(new Date(`${f.from}T00:00:00-06:00`).toISOString()) }
-    if (f.to) { where.push('a.at < ?'); const d = new Date(`${f.to}T00:00:00-06:00`); d.setUTCDate(d.getUTCDate() + 1); args.push(d.toISOString()) }
+    const range = dayRange(f.from, f.to)
+    if (range.since) { where.push('a.at >= ?'); args.push(range.since) }
+    if (range.before) { where.push('a.at < ?'); args.push(range.before) }
     const rows = await sql.query(`SELECT a.*, p.first_name, p.last_name FROM audit a LEFT JOIN patients p ON p.id = a.patient_id
       WHERE ${where.join(' AND ')} ORDER BY a.id DESC LIMIT 50000`, args)
     const list = rows.map((r) => ({ ...toAudit(r), role: r.role ? String(r.role) : undefined, kind: (r.kind ? String(r.kind) : auditKind(String(r.action))) as AuditKind,

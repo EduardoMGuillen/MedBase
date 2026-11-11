@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { nextFolio } from '../db.js'
 import { closeOpenVisits } from '../stayVisits.js'
-import { type Ctx, fail, parse, type Row } from '../http.js'
+import { type Ctx, fail, parse, type Row, dayRange } from '../http.js'
 import { toConsultation, toFollowup, toHospitalization, toPatient, toPrescription, toVitals, toReferral } from '../mappers.js'
 import { rxValidityOf, specialtyOf, validityInput } from '../prefs.js'
 import { currentMarks } from './me.js'
@@ -487,8 +487,9 @@ export function registerConsultations(app: Express, ctx: Ctx) {
     const args: unknown[] = [cid]
     if (f.mine) { where.push('r.doctor_id = ?'); args.push(userOf(req).id) }
     // Fechas del día local (Honduras, UTC−6): issued_at se guarda en UTC
-    if (f.from) { where.push('r.issued_at >= ?'); args.push(new Date(`${f.from}T00:00:00-06:00`).toISOString()) }
-    if (f.to) { where.push('r.issued_at < ?'); args.push(new Date(new Date(`${f.to}T00:00:00-06:00`).getTime() + 86_400_000).toISOString()) }
+    const range = dayRange(f.from, f.to)
+    if (range.since) { where.push('r.issued_at >= ?'); args.push(range.since) }
+    if (range.before) { where.push('r.issued_at < ?'); args.push(range.before) }
     const fold = (x: string) => `translate(lower(${x}), 'áéíóúüñ', 'aeiouun')`
     const q = f.q?.trim() ? normalize(f.q) : ''
     if (q) {
