@@ -134,3 +134,51 @@ Cambio de comportamiento conocido: en la Agenda, un rango de más de 90 días at
 - Los correos e ids de la demo siguen escritos en cada archivo de prueba.
 - `uuid` vía `exceljs` (vulnerabilidad moderada): pide un cambio mayor de `exceljs`.
 - La imagen de Docker no se construyó ni se probó.
+
+## Prueba de uso como médico
+
+Recorrido hecho el 12 de noviembre de 2026 sobre `main`, en una instancia local con base de datos nueva y los pacientes
+demo del día, entrando como la Dra. Solórzano en un navegador automatizado. No hubo errores de consola ni respuestas
+fallidas del servidor en ningún paso. Es una revisión de uso, no de criterio clínico.
+
+**Lo que se recorrió**
+
+1. Inicio de sesión, recorrido de bienvenida e Inicio; abrir al siguiente paciente.
+2. Consulta completa: historia, examen físico, diagnóstico CIE-11, dos indicaciones, Losartán, una creatinina y firma.
+3. Receta y orden de laboratorio resultantes.
+4. Consulta externa, Agenda, Hospitalizados, Observación, Seguimientos, Recetas y Pacientes.
+5. Expediente de un hospitalizado: las siete pestañas y una nota de evolución firmada.
+6. Constancia médica: escribir y esperar 36 segundos (pasa una sincronización).
+7. Tres pantallas a ancho de teléfono (390 px) y el buscador con Ctrl K.
+
+**Lo que funciona bien**
+
+- El vademécum completa presentación, dosis, vía y días al elegir el medicamento, y calcula la cantidad a dispensar.
+- El buscador CIE-11 acepta texto sin tildes y pone primero lo ya usado en la clínica.
+- El botón de firmar dice qué falta («falta la impresión diagnóstica», «falta la dosis»).
+- La receta y la orden de laboratorio salen en hojas separadas con un solo botón de impresión; el diagnóstico queda
+  fuera de la receta salvo que se marque.
+- La nota de evolución arrastra diagnósticos, indicaciones y medicamentos vigentes con «Cambiar» y «Omitir».
+- La hoja de medicamentos muestra quién aplicó cada dosis, a qué hora y qué está programado.
+- Las pantallas divididas en el refactor (expediente del hospitalizado, constancia) se comportaron bien; la constancia
+  conservó lo escrito después de una sincronización.
+
+**Fricciones y defectos observados**
+
+| Dónde | Qué pasa | Sugerencia |
+|---|---|---|
+| Inicio | Al entrar muestra un instante «0 citas hoy» y «No tienes más citas pendientes» antes de cargar | Mostrar estado de carga |
+| Expediente del hospitalizado | El aviso rojo «orden nueva sin revisar» le sale al mismo médico que dio la orden, en todas las pestañas | Mostrarlo solo a enfermería o bajarle el peso para el autor |
+| Notas de evolución | Tras una nota con una sola indicación nueva, las alertas de la pestaña pasaron de 1 a 6: las que «continúan» vuelven a contar como sin revisar | Contar solo las órdenes nuevas o cambiadas |
+| Agenda | La cuadrícula empieza a las 07:00 y la cita de las 05:35 no se ve, aunque el encabezado la cuenta | Extender la cuadrícula a la primera cita del día |
+| Agenda | Las citas atendidas casi no se leen (gris claro sobre lila) y ningún bloque dice su estado | Más contraste y una marca de estado |
+| Consulta externa | «Preclínica» y «Atender» pesan igual para el médico | Dejar «Atender» como acción principal |
+| Expediente en teléfono | La identidad del paciente se corta en el encabezado («ID 08…») | Permitir salto de línea |
+| Buscador CIE-11 | En la prueba automatizada el clic sobre un resultado no lo seleccionó; con teclado sí | Confirmar a mano |
+
+**Lo que no se probó**
+
+- Configuración, admisión y egreso, facturación e impresión real.
+- Los demás tipos de cuenta (enfermería, recepción, laboratorio, administración).
+- Borradores de consulta con dos usuarios.
+- En la constancia solo se probó un campo de texto, no las fechas ni el acompañante.
