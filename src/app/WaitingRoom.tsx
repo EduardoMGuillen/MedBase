@@ -92,6 +92,9 @@ export default function WaitingRoom() {
     // CX2 (ronda 8): con una estancia activa no sigue en la consulta externa. Si aun así quedó en la cola (no debería: el
     // servidor lo impide y la migración las cancela), la tarjeta lo marca y no deja hacer la preclínica ni atender.
     const interned = !!stay && a.status !== 'done'
+    // Auditoría (nov. 2026), punto 6: para el médico la acción principal es «Atender»; «Preclínica» queda como secundaria.
+    // Enfermería (y quien hace la preclínica sin atender) la sigue viendo como principal.
+    const triageBtn = `btn btn--${user?.role === 'doctor' ? 'soft' : 'primary'} btn--sm`
     return (
       <div key={a.id} className="queue-card" style={{ gridTemplateColumns: '1fr auto' }}>
         <div className="row__who">
@@ -113,8 +116,8 @@ export default function WaitingRoom() {
           {['scheduled', 'confirmed'].includes(a.status) && !interned && can('checkin.manage') &&
             <button className="btn btn--soft btn--sm" onClick={() => p.pending ? setCompleting(a) : setStatus(a.id, 'arrived', `Llegada de ${p.firstName} registrada`)}><LogIn size={15} />Llegó</button>}
           {a.status === 'arrived' && can('vitals.record') && (interned
-            ? <button className="btn btn--primary btn--sm" disabled aria-describedby={`cx2-${a.id}`}><Activity size={15} />Preclínica</button>
-            : <button className="btn btn--primary btn--sm" onClick={() => setTriage(a)}><Activity size={15} />Preclínica</button>)}
+            ? <button className={triageBtn} disabled aria-describedby={`cx2-${a.id}`}><Activity size={15} />Preclínica</button>
+            : <button className={triageBtn} onClick={() => setTriage(a)}><Activity size={15} />Preclínica</button>)}
           {(() => {
             const pv = ['triaged', 'in_consult'].includes(a.status) ? vitals.find((x) => x.appointmentId === a.id) : undefined
             return pv && <GraceButton record={pv} authorId={pv.takenBy} onCorrect={() => setFixing({ appt: a, vitals: pv })} />
