@@ -100,3 +100,17 @@ export function describeSchedule(s?: Schedule | null) {
     return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${g.text}`
   }).join('; ')
 }
+
+/**
+ * Auditoría (nov. 2026), punto 4: horas que dibuja la cuadrícula de la agenda. Va de `from` a `to` (07:00 a 19:00) y se
+ * alarga, por horas completas, hasta la primera y la última cita visibles (cada una se dibuja con `blockMin` minutos), para
+ * que ninguna cita que cuenta el encabezado quede fuera. `starts` son las horas locales de las citas (aaaa-mm-ddThh:mm).
+ */
+export function gridHours(starts: string[], from = 7, to = 19, blockMin = 30): { from: number; to: number } {
+  for (const s of starts) {
+    const min = toMin(s.slice(11, 16))
+    from = Math.min(from, Math.floor(min / 60))
+    to = Math.max(to, Math.min(24, Math.ceil((min + blockMin) / 60)))
+  }
+  return { from, to }
+}

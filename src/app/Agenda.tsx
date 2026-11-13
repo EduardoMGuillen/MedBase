@@ -10,7 +10,7 @@ import { stayFutureWarning } from '../lib/inpatient'
 import { StayConflict } from './WaitingRoom'
 import { DniInput } from '../components/DniInput'
 import { TopScrollbar } from '../components/TopScrollbar'
-import { DAY_NAMES_PLURAL, describeSchedule, slotsOn, weekday } from '../lib/schedule'
+import { DAY_NAMES_PLURAL, describeSchedule, gridHours, slotsOn, weekday } from '../lib/schedule'
 import { normalize, similarPatients } from '../lib/patients'
 import { hasRole } from '../lib/permissions'
 import { CompleteRegistration, SimilarPatients } from './NewPatient'
@@ -201,19 +201,22 @@ export default function Agenda() {
   )
 }
 
-const top = (iso: string) => { const s = new Date(iso); return ((s.getHours() - START_H) * 60 + s.getMinutes()) * (HOUR_PX / 60) }
+/** Auditoría (nov. 2026), punto 4: la cuadrícula ya no es fija de 07:00 a 19:00: se alarga hasta la primera y la última cita visibles. */
+type Span = { from: number; to: number }
+const spanOf = (list: Appointment[]): Span => gridHours(list.map((a) => a.start), START_H, END_H, VISUAL_MIN)
+const top = (iso: string, h: Span) => { const s = new Date(iso); return ((s.getHours() - h.from) * 60 + s.getMinutes()) * (HOUR_PX / 60) }
 const shortName = (p: Patient) => `${p.firstName.split(' ')[0]} ${p.lastName.split(' ')[0]}`
 
-function NowLine({ day }: { day: Date }) {
+function NowLine({ day, h }: { day: Date; h: Span }) {
   const now = new Date()
   if (!sameDate(day, now)) return null
-  const y = ((now.getHours() - START_H) * 60 + now.getMinutes()) * (HOUR_PX / 60)
-  if (y <= 0 || y >= (END_H - START_H) * HOUR_PX) return null
+  const y = ((now.getHours() - h.from) * 60 + now.getMinutes()) * (HOUR_PX / 60)
+  if (y <= 0 || y >= (h.to - h.from) * HOUR_PX) return null
   return <div className="cal__now cal__now--col" style={{ top: y }} aria-hidden="true" />
 }
 
-function Hours() {
-  return <div className="cal__hours">{Array.from({ length: END_H - START_H }, (_, i) => <div key={i} className="cal__hour">{pad(START_H + i)}:00</div>)}</div>
+function Hours({ h }: { h: Span }) {
+  return <div className="cal__hours">{Array.from({ length: h.to - h.from }, (_, i) => <div key={i} className="cal__hour">{pad(h.from + i)}:00</div>)}</div>
 }
 
 function ApptBlock({ a, p, color, style, compact, onPick }: { a: Appointment; p: Patient; color: string; style: React.CSSProperties; compact?: boolean; onPick: (id: string) => void }) {
@@ -233,6 +236,7 @@ function ApptBlock({ a, p, color, style, compact, onPick }: { a: Appointment; p:
 
 function DayGrid({ day, doctors, list, patient, onPick }: { day: Date; doctors: Staff[]; list: Appointment[]; patient: (id: string) => Patient | undefined; onPick: (id: string) => void }) {
   const cols = `56px repeat(${doctors.length}, minmax(180px, 1fr))`
+  const h = spanOf(list)
   return (
     <TopScrollbar head={(ref) => <div className="panel cal cal--head" ref={ref}>
       <div className="cal__inner">
@@ -244,16 +248,16 @@ function DayGrid({ day, doctors, list, patient, onPick }: { day: Date; doctors: 
     </div>}>{(ref) => <section className="panel cal cal--body" ref={ref}>
       <div className="cal__inner">
         <div className="cal__body" style={{ gridTemplateColumns: cols }}>
-          <Hours />
+          <Hours h={h} />
           {doctors.map((d) => (
-            <div key={d.id} className="cal__col" style={{ height: (END_H - START_H) * HOUR_PX }}>
+            <div key={d.id} className="cal__col" style={{ height: (h.to - h.from) * HOUR_PX }}>
               {/* Dos citas a la misma hora con el mismo médico se dibujan lado a lado */}
               {layoutLanes(list.filter((a) => a.doctorId === d.id)).map(({ a, lane, lanes }) => {
                 const p = patient(a.patientId)
                 return p && <ApptBlock key={a.id} a={a} p={p} color={d.color} onPick={onPick}
-                  style={{ top: top(a.start) + 2, height: VISUAL_MIN * (HOUR_PX / 60) - 4, ...(lanes > 1 ? { left: `calc(${(lane / lanes) * 100}% + 4px)`, right: 'auto', width: `calc(${100 / lanes}% - 8px)` } : {}) }} />
+                  style={{ top: top(a.start, h) + 2, height: VISUAL_MIN * (HOUR_PX / 60) - 4, ...(lanes > 1 ? { left: `calc(${(lane / lanes) * 100}% + 4px)`, right: 'auto', width: `calc(${100 / lanes}% - 8px)` } : {}) }} />
               })}
-              <NowLine day={day} />
+              <NowLine day={day} h={h} />
             </div>
           ))}
         </div>
@@ -268,6 +272,8 @@ function WeekGrid({ start, onDay, doctors, colorOf, patient, onPick, onOpenDay }
 }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i))
   const cols = '56px repeat(7, minmax(110px, 1fr))'
+  // La misma escala para los siete días: de la cita más temprana a la más tardía de la semana
+  const h = spanOf(days.flatMap(onDay))
   return (
     <TopScrollbar head={(ref) => <div className="panel cal cal--head" ref={ref}>
       <div className="cal__inner cal__inner--week">
@@ -283,15 +289,15 @@ function WeekGrid({ start, onDay, doctors, colorOf, patient, onPick, onOpenDay }
     </div>}>{(ref) => <section className="panel cal cal--body" ref={ref}>
       <div className="cal__inner cal__inner--week">
         <div className="cal__body" style={{ gridTemplateColumns: cols }}>
-          <Hours />
+          <Hours h={h} />
           {days.map((d, i) => (
-            <div key={i} className="cal__col" style={{ height: (END_H - START_H) * HOUR_PX }}>
+            <div key={i} className="cal__col" style={{ height: (h.to - h.from) * HOUR_PX }}>
               {layoutLanes(onDay(d)).map(({ a, lane, lanes }) => {
                 const p = patient(a.patientId)
                 return p && <ApptBlock key={a.id} a={a} p={p} color={colorOf(a.doctorId)} compact onPick={onPick}
-                  style={{ top: top(a.start) + 2, height: VISUAL_MIN * (HOUR_PX / 60) - 4, left: `calc(${(lane / lanes) * 100}% + 3px)`, right: 'auto', width: `calc(${100 / lanes}% - 6px)` }} />
+                  style={{ top: top(a.start, h) + 2, height: VISUAL_MIN * (HOUR_PX / 60) - 4, left: `calc(${(lane / lanes) * 100}% + 3px)`, right: 'auto', width: `calc(${100 / lanes}% - 6px)` }} />
               })}
-              <NowLine day={d} />
+              <NowLine day={d} h={h} />
             </div>
           ))}
         </div>
