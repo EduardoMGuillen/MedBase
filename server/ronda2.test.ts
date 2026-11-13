@@ -46,6 +46,13 @@ const freeBed = async () => {
   return boot.beds.find((b: any) => b.active && !used.has(b.id)).id as string
 }
 /** Un paciente nuevo en observación, ingresado desde una consulta de la Dra. Solórzano. */
+/** R18-OB1 (ronda 18): en observación ya no hay autorización quirúrgica: la estancia pasa primero a hospitalización. */
+async function toHospital(doc: Awaited<ReturnType<typeof as>>, stayId: string) {
+  const boot = (await doc.get('/api/bootstrap')).body
+  const used = new Set(boot.inpatients.map((h: { bedId?: string }) => h.bedId))
+  const r = await doc.post(`/api/inpatient/${stayId}/convert`, { bedId: boot.beds.find((b: { active: boolean; id: string }) => b.active && !used.has(b.id)).id })
+  assert.equal(r.status, 200, JSON.stringify(r.body))
+}
 async function observation(name = 'Prueba') {
   const nurse = await as('murbina@demo.clinara')
   const doc = await as('vsolorzano@demo.clinara')
@@ -160,6 +167,7 @@ describe('A1 y A2 firma en pantalla y escaneo', () => {
 
   test('el paciente que no puede firmar: firma un testigo con su identidad; el rechazo no pide al médico', async () => {
     const { doc, nurse, stayId } = await observation('Testigo')
+    await toHospital(doc, stayId)
     const a = (await doc.post(`/api/inpatient/${stayId}/authorizations`, { template: 'surgical', procedure: 'Drenaje de absceso' })).body
     assert.equal((await nurse.post(`/api/authorizations/${a.id}/sign`, { action: 'refuse', patient: { signer: 'patient', unableReason: 'No sabe escribir', readConfirmed: true } })).status, 400, 'sin testigo no')
     const r = await nurse.post(`/api/authorizations/${a.id}/sign`, { action: 'refuse', patient: { signer: 'patient', unableReason: 'No sabe escribir', readConfirmed: true,
@@ -172,6 +180,7 @@ describe('A1 y A2 firma en pantalla y escaneo', () => {
 
   test('escaneo de hasta 15 MB por partes, lectura por rangos y reemplazo que conserva el anterior', async () => {
     const { doc, nurse, stayId, patientId } = await observation('Escaneo')
+    await toHospital(doc, stayId)
     const a = (await doc.post(`/api/inpatient/${stayId}/authorizations`, { template: 'surgical', procedure: 'Apendicectomía' })).body
     const upload = async (bytes: Buffer, name: string) => {
       const uploadId = crypto.randomUUID()
