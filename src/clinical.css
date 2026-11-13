@@ -178,8 +178,8 @@
   .stat { padding: 14px 16px; }
   .ph__name { font-size: 19px; }
   .ph__main .avatar { width: 38px; height: 38px; font-size: 13px; }
-  .ph__meta { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
-  .ph__meta::-webkit-scrollbar { display: none; }
+  /* Auditoría (nov. 2026), punto 7: en el teléfono los datos del paciente saltan de línea (antes iban en un solo renglón
+     deslizable que se cortaba: «ID 08…»). Vale la regla general de .ph__meta (flex-wrap: wrap): cada dato baja entero. */
   .ph__clinical { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .ph__clinical > * { flex: none; }
   .ph__draft { display: none; }
