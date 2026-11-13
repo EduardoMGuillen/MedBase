@@ -39,7 +39,9 @@ describe('C1 permisos por tipo de cuenta', () => {
   })
   test('el médico titular administra su consultorio desde la vista de administrador; la asistente no', async () => {
     const o = await office('c1')
-    for (const p of ['consult.write', 'rx.write', 'billing.manage', 'checkin.manage', 'inpatient.care']) assert.ok(o.doc.login.permissions.includes(p), p)
+    for (const p of ['consult.write', 'rx.write', 'checkin.manage', 'inpatient.care']) assert.ok(o.doc.login.permissions.includes(p), p)
+    // CO1 (ronda 18): quien también es Administración cobra en esa vista, no en la de Médico
+    assert.ok(!o.doc.login.permissions.includes('billing.manage'), 'la vista Médico de la titular no cobra')
     // MI1: en la vista de médico no está lo administrativo (su menú no se sobrecarga)
     for (const p of ['settings.manage', 'reports.view', 'audit.view', 'staff.manage']) assert.ok(!o.doc.login.permissions.includes(p), p)
     assert.equal((await o.doc.get('/api/reports?from=2026-01-01&to=2026-12-31')).status, 403)

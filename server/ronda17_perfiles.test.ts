@@ -153,7 +153,8 @@ describe('PF2 (ronda 17): la barra lateral de cada perfil, por flujo de trabajo'
     ['radiologist', 'imaging', 'clinic', 'radiologist'], ['imaging_tech', 'imaging', 'clinic', 'imaging_tech'],
     ['office doctor', 'doctor', 'office'], ['office admin', 'admin', 'office'], ['office nurse', 'nurse', 'office'], ['office assistant', 'assistant', 'office'],
   ]
-  const ORDER = ['', 'Pacientes', 'Laboratorio e imágenes', 'Laboratorio', 'Imágenes', 'Registros', 'Administración', 'Mi consultorio']
+  // MN1 (ronda 18): antes de «Pacientes» va «Agenda y cobros» (o «Agenda», sin cobro)
+  const ORDER = ['', 'Agenda y cobros', 'Agenda', 'Pacientes', 'Laboratorio e imágenes', 'Laboratorio', 'Imágenes', 'Registros', 'Administración', 'Mi consultorio']
 
   test('los grupos van en el orden del pedido y cada entrada la puede usar su rol', () => {
     for (const [name, role, kind, pos] of PROFILES) {

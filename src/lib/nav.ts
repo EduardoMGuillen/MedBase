@@ -11,17 +11,20 @@ import type { ClinicKind, Role } from './types.js'
  *   5. Administración (o «Mi consultorio»): reportes, personal y configuración.
  * Vive aquí (sin íconos ni React) para que la pantalla y las pruebas usen la misma regla. Los íconos los pone AppShell por ruta.
  */
-export const NAV_GROUPS = ['Pacientes', 'Laboratorio e imágenes', 'Registros', 'Administración'] as const
+/**
+ * MN1 (ronda 18). VALIDAR: Emil. Los grupos cambian: Inicio va suelto, arriba; «Agenda y cobros» (Agenda y Caja o Cobrar; se llama
+ * solo «Agenda» si el rol no tiene entrada de cobro); «Pacientes» (ahora con Recetas); el del departamento; «Registros»;
+ * «Administración» («Mi consultorio» en un consultorio). TODOS se pliegan con el mismo encabezado; un grupo sin entradas no aparece.
+ */
+export const NAV_GROUPS = ['Agenda y cobros', 'Pacientes', 'Laboratorio e imágenes', 'Registros', 'Administración'] as const
 export type NavGroupName = (typeof NAV_GROUPS)[number]
 
 export interface NavEntry { to: string; label: string; perm?: Permission; anyPerm?: Permission[]; end?: boolean; group?: NavGroupName; roles?: Role[] }
 
 export const NAV: NavEntry[] = [
   { to: '/app', label: 'Inicio', end: true },
-  { to: '/app/agenda', label: 'Agenda', perm: 'agenda.view' },
-  // MC7: el médico ve Recetas y Cobrar debajo de Agenda. Recetas sin consulta: renovar un tratamiento sin abrir una consulta completa
-  { to: '/app/recetas', label: 'Recetas', perm: 'rx.write' },
-  { to: '/app/caja', label: 'Caja', perm: 'billing.manage' },
+  { to: '/app/agenda', label: 'Agenda', perm: 'agenda.view', group: 'Agenda y cobros' },
+  { to: '/app/caja', label: 'Caja', perm: 'billing.manage', group: 'Agenda y cobros' },
   // Pacientes se divide en las tres áreas que pidió el médico, más la biblioteca y los crónicos
   { to: '/app/consulta-externa', label: 'Consulta externa', perm: 'agenda.view', group: 'Pacientes' },
   // AD1 (ronda 17): administración y recepción ven la lista de Observación en solo lectura (sin expediente)
@@ -30,6 +33,8 @@ export const NAV: NavEntry[] = [
   { to: '/app/hospitalizados', label: 'Hospitalizados', perm: 'inpatient.view', anyPerm: ['inpatient.admit'], group: 'Pacientes' },
   { to: '/app/pacientes', label: 'Biblioteca de pacientes', perm: 'patients.view', group: 'Pacientes' },
   { to: '/app/seguimientos', label: 'Crónicos y seguimientos', perm: 'followups.view', group: 'Pacientes' },
+  // MC7: Recetas sin consulta (renovar un tratamiento sin abrir una consulta completa). MN1 (ronda 18): dentro de «Pacientes»
+  { to: '/app/recetas', label: 'Recetas', perm: 'rx.write', group: 'Pacientes' },
   // AD1 (ronda 17): administración y recepción: los pacientes ambulatorios (registrar y ver el estado, sin resultados) y,
   // administración, las dos bandejas en solo lectura
   { to: '/app/pacientes-ambulatorios', label: 'Pacientes ambulatorios', perm: 'ambulatory.register', roles: ['admin', 'reception'], group: 'Laboratorio e imágenes' },
@@ -60,10 +65,11 @@ export interface NavItem { to: string; label: string; end?: boolean; group?: str
 
 export interface NavWho { role: Role; kind?: ClinicKind; position?: string; observationEnabled?: boolean; permissions?: Permission[]; /** CO1 (ronda 18): todos los roles de la persona */ roles?: Role[] }
 
-const RANK: Record<NavGroupName, number> = { Pacientes: 20, 'Laboratorio e imágenes': 25, Registros: 30, Administración: 40 }
+const RANK: Record<NavGroupName, number> = { 'Agenda y cobros': 15, Pacientes: 20, 'Laboratorio e imágenes': 25, Registros: 30, Administración: 40 }
 
 /** El título del grupo según el rol y la cuenta. */
-export function groupTitle(g: NavGroupName, role: Role, office: boolean): string {
+export function groupTitle(g: NavGroupName, role: Role, office: boolean, billing = true): string {
+  if (g === 'Agenda y cobros' && !billing) return 'Agenda'
   if (g === 'Administración' && office) return 'Mi consultorio'
   if (g === 'Laboratorio e imágenes' && role === 'lab') return 'Laboratorio'
   if (g === 'Laboratorio e imágenes' && role === 'imaging') return 'Imágenes'
@@ -77,7 +83,7 @@ export function sidebarFor(who: NavWho): NavItem[] {
   const perms = who.permissions ?? permissionsFor(who.role, kind, who.position, who.roles)
   const f = features({ kind, observationEnabled: who.observationEnabled })
   const dept = who.role === 'lab' || who.role === 'imaging'
-  return NAV.filter((n) => {
+  const shown = NAV.filter((n) => {
     if (n.perm && !perms.includes(n.perm) && !n.anyPerm?.some((p) => perms.includes(p))) return false
     if (n.roles && !n.roles.includes(who.role)) return false
     if (n.to === '/app/hospitalizados' && !f.hospital) return false
@@ -91,11 +97,13 @@ export function sidebarFor(who: NavWho): NavItem[] {
     // LB5 e IM1 (ronda 12): Laboratorio e Imágenes ven sus áreas, no las listas de Observación y Hospitalizados de enfermería
     if (dept && (n.to === '/app/observacion' || n.to === '/app/hospitalizados')) return false
     return true
-  }).map((n) => ({
+  })
+  const billing = shown.some((n) => n.to === '/app/caja')
+  return shown.map((n) => ({
     to: n.to, end: n.end,
     label: f.office && n.to === '/app/personal' ? 'Personal' : f.office && n.to === '/app/configuracion' ? 'Configuración del consultorio'
       : who.role === 'doctor' && n.to === '/app/caja' ? 'Cobrar' : n.label,
-    group: n.group ? groupTitle(n.group, who.role, f.office) : undefined,
+    group: n.group ? groupTitle(n.group, who.role, f.office, billing) : undefined,
     rank: n.group ? RANK[n.group] : 10,
   })).sort((a, b) => a.rank - b.rank).map(({ rank: _r, ...x }) => { void _r; return x })
 }

@@ -119,7 +119,7 @@ export default function AppShell() {
   // En un consultorio el médico titular también cobra y administra: "Administración" es "Mi consultorio". El médico tiene
   // «Cobrar» debajo de Recetas (MC7). Enfermería ya no cobra (AD9).
   const doctor = user.role === 'doctor'
-  // PF2 (ronda 17): Inicio, Agenda, Recetas y Caja; Pacientes; Laboratorio e imágenes; Registros; Administración (o Mi consultorio)
+  // PF2 (ronda 17) y MN1 (ronda 18): Inicio; Agenda y cobros; Pacientes; Laboratorio e imágenes; Registros; Administración (o Mi consultorio)
   const items = (platform ? [{ to: '/app', label: 'Clínicas y consultorios', end: true }]
     : sidebarFor({ role: user.role, kind: settings.kind ?? 'clinic', observationEnabled: settings.observationEnabled, permissions: (Object.keys(PERMISSIONS) as Permission[]).filter((p) => can(p)) })
   ).map((n) => ({ ...n, icon: platform ? Building2 : ICONS[n.to] ?? House }))
@@ -165,8 +165,7 @@ export default function AppShell() {
               )
             })
             if (!b.group) return <Fragment key={b.items[0].to}>{links}</Fragment>
-            // RU6 (ronda 15): «Registros» es un encabezado fijo (no se contrae); si el rol no tiene ninguna entrada, no aparece
-            if (STATIC_GROUPS.has(b.group)) return <div key={b.group} className="side__grp side__grp--static" role="group" aria-label={b.group}><div className="side__group">{b.group}</div><div className="side__grp-list">{links}</div></div>
+            // MN1 (ronda 18): todos los grupos se pliegan con el mismo componente (también «Registros», antes un encabezado fijo)
             return <NavGroup key={b.group} title={b.group} userId={user.id} paths={b.items.map((n) => n.to)} badges={b.items.map((n) => badge(n.to)).filter((x) => x !== null)} forceOpen={touring || (rail && !open)}>{links}</NavGroup>
           })}
         </nav>
@@ -225,13 +224,12 @@ export default function AppShell() {
 /** Ronda 12: pendientes de un área de la bandeja; en rojo si hay urgentes. */
 const deptBadge = (c?: { n: number; urgent: number }) => (c ? { n: c.n, alert: c.urgent > 0, label: `${c.n} pendientes${c.urgent ? `, ${c.urgent} urgentes` : ''}` } : null)
 
-/** RU6 (ronda 15): grupos que son solo un encabezado (siempre abiertos). */
-const STATIC_GROUPS = new Set(['Registros'])
 
 
 /**
- * Grupo desplegable del menú ("Pacientes", "Mi consultorio", "Administración"). Se abre o se cierra al tocar el
- * título; si la página actual está dentro, aparece abierto. Cada usuario deja cada grupo como quiere y se recuerda
+ * MN1 (ronda 18): EL grupo del menú (uno solo para todos: «Agenda y cobros», «Pacientes», «Registros», «Administración»…).
+ * Encabezado con el nombre, la insignia (plegado: la suma de las de sus entradas) y una sola flecha: ▾ abierto, ▸ cerrado.
+ * Se abre o se cierra al tocar el título; si la página actual está dentro, aparece abierto. Cada usuario deja cada grupo como quiere y se recuerda
  * en este navegador. Cerrado, los contadores de sus opciones se suman junto al título para no perder las alertas.
  */
 function NavGroup({ title, userId, paths, badges, forceOpen, children }: {
