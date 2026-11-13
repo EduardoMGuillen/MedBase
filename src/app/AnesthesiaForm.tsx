@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { Combo } from '../components/Combo'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { FileSignature, Plus, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -173,8 +174,7 @@ export default function AnesthesiaFormPage() {
           {d.drugs.length > 0 && <table className="anes-table">
             <thead><tr><th>Categoría</th><th>Fármaco</th><th>Dosis</th><th>Vía</th><th>Hora</th><th /></tr></thead>
             <tbody>{d.drugs.map((r, i) => <tr key={r.id}>
-              <td data-label="Categoría" className="anes-table__wide"><select className="select" value={r.category} onChange={(e) => setDrug(i, { category: e.target.value })} aria-label={`Categoría del fármaco ${i + 1}`}>
-                <option value="">Elige…</option>{ANESTHESIA_SHEET.drugCategories.map((c) => <option key={c}>{c}</option>)}</select></td>
+              <td data-label="Categoría" className="anes-table__wide"><Combo value={r.category} onChange={(v) => setDrug(i, { category: v })} label={`Categoría del fármaco ${i + 1}`} options={ANESTHESIA_SHEET.drugCategories} /></td>
               {/* Pendiente ME8 (ronda 17): antes un campo de texto simple; ahora el buscador del vademécum (sigue aceptando texto libre) */}
               <td data-label="Fármaco" className="anes-table__wide"><DrugSearch value={r.drug} drugs={vademecum} label={null} placeholder="Busca en el vademécum o escríbelo" ariaLabel={`Fármaco ${i + 1}`}
                 onChange={(t) => setDrug(i, { drug: t })} onPick={(x) => setDrug(i, { drug: x.name })} /></td>
@@ -234,8 +234,7 @@ export default function AnesthesiaFormPage() {
           </div>
           <div className="form-grid">
             {ANESTHESIA_SHEET.aldrete.map((a) => <label key={a.key} className="field"><span>Aldrete: {a.label}</span>
-              <select className="select" value={d.aldrete[a.key]} onChange={(e) => setIn('aldrete', { [a.key]: e.target.value })}>
-                <option value="">Elige…</option>{a.options.map((o, i) => <option key={o} value={String(i)}>{i} · {o}</option>)}</select></label>)}
+              <Combo value={d.aldrete[a.key]} onChange={(v) => setIn('aldrete', { [a.key]: v })} options={a.options.map((o, i) => ({ value: String(i), label: `${i} · ${o}` }))} /></label>)}
           </div>
           <p className="anes-calc" role="status">Aldrete total: <b>{ald.any ? `${ald.total}/10${ald.complete ? '' : ' (faltan parámetros)'}` : '—'}</b></p>
         </Section>

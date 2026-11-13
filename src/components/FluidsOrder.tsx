@@ -1,4 +1,5 @@
 import { Droplets } from 'lucide-react'
+import { Combo } from './Combo'
 import { FLUID_FREQUENCIES } from '../lib/clinicalConfig'
 import { FLUIDS_ORDER, fluidsModeLabel } from '../lib/fluids'
 import type { FluidsMode } from '../lib/types'
@@ -24,9 +25,8 @@ export function FluidsOrder({ value, current, onChange }: { value: FluidsChoice;
       </button>
       {value.on && (
         <label className="fluids-order__freq"><span className="sr-only">Frecuencia de corte</span>
-          <select className="select select--sm" aria-label="Frecuencia de corte de ingestas y excretas" value={value.mode} onChange={(e) => onChange({ ...value, mode: e.target.value as FluidsMode })}>
-            {FLUID_FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-          </select>
+          <Combo size="sm" label="Frecuencia de corte de ingestas y excretas" value={value.mode} onChange={(v) => onChange({ ...value, mode: v as FluidsMode })}
+            options={FLUID_FREQUENCIES.map((f) => ({ value: f.value, label: f.label }))} />
         </label>
       )}
       <small className="muted fluids-order__hint">

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Combo } from './Combo'
 import { FlaskConical, ListChecks, Plus, ScanLine, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
@@ -80,9 +81,8 @@ export function ExamsBlock({ value, onChange, inStay = false }: { value: ExamInp
                         <div className="xrow__more">
                           {needsRegion && <input className="input" value={e.region ?? ''} onChange={(x) => set(i, { region: x.target.value || undefined })} placeholder="Región (ej. rodilla)" aria-label={`Región de ${e.name}`} />}
                           {!e.detailed && (needsRegion || cat?.side) && (
-                            <select className="select select--sm select--auto" value={e.side ?? ''} onChange={(x) => set(i, { side: (x.target.value || undefined) as ExamInput['side'] })} aria-label={`Lado de ${e.name}`}>
-                              <option value="">Sin lado</option><option value="right">Derecha</option><option value="left">Izquierda</option><option value="both">Bilateral</option>
-                            </select>
+                            <Combo size="sm" auto value={e.side ?? ''} onChange={(v) => set(i, { side: (v || undefined) as ExamInput['side'] })} label={`Lado de ${e.name}`}
+                              options={[{ value: '', label: 'Sin lado' }, { value: 'right', label: 'Derecha' }, { value: 'left', label: 'Izquierda' }, { value: 'both', label: 'Bilateral' }]} />
                           )}
                           {/* CA5 (ronda 10): proyección, contraste, lado y región, los mismos botones de «Ordenar exámenes» */}
                           {e.detailed && hasDetails(cat?.details) && <ExamDetailChips exam={e} details={cat!.details!} onChange={(patch) => set(i, patch)} />}

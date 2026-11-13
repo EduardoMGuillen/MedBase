@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Combo, asChange } from '../components/Combo'
 import { DateField } from '../components/DateTimeField'
 import { AutoTextarea, Modal } from '../components/ui'
 import { useStore } from '../lib/store'
@@ -55,12 +56,10 @@ export function IdentificationForm({ title, submitLabel, initial, withAllergies 
           {field('lastName', 'Apellidos', { autoComplete: 'family-name' })}
           {dniField('dni', minor ? 'Número de identidad (si ya tiene)' : 'Número de identidad')}
           {field('birthDate', 'Fecha de nacimiento', { type: 'date' })}
-          <label className="field"><span>Sexo</span><select className="select" value={f.sex} onChange={set('sex')}><option value="F">Femenino</option><option value="M">Masculino</option></select></label>
-          <label className="field"><span>Estado civil</span><select className="select" value={f.civilStatus} onChange={set('civilStatus')}>
-            <option value="">Sin dato</option>{[...new Set([...CIVIL_STATUS, f.civilStatus].filter(Boolean))].map((x) => <option key={x}>{x}</option>)}</select></label>
+          <label className="field"><span>Sexo</span><Combo value={f.sex} onChange={(v) => set('sex')(asChange(v))} options={[{ value: 'F', label: 'Femenino' }, { value: 'M', label: 'Masculino' }]} /></label>
+          <label className="field"><span>Estado civil</span><Combo value={f.civilStatus} onChange={(v) => set('civilStatus')(asChange(v))} options={[{ value: '', label: 'Sin dato' }, ...[...new Set([...CIVIL_STATUS, f.civilStatus].filter(Boolean))].map((x) => ({ value: x, label: x }))]} /></label>
           {field('occupation', 'Ocupación')}
-          <label className="field"><span>Escolaridad</span><select className="select" value={f.education} onChange={set('education')}>
-            <option value="">Sin dato</option>{[...new Set([...EDUCATION, f.education].filter(Boolean))].map((x) => <option key={x}>{x}</option>)}</select></label>
+          <label className="field"><span>Escolaridad</span><Combo value={f.education} onChange={(v) => set('education')(asChange(v))} options={[{ value: '', label: 'Sin dato' }, ...[...new Set([...EDUCATION, f.education].filter(Boolean))].map((x) => ({ value: x, label: x }))]} /></label>
           {field('religion', 'Religión (opcional)')}
           {field('insurance', 'Aseguradora (opcional)')}
           {field('address', 'Procedencia y dirección', {}, 'span-2')}
@@ -129,8 +128,7 @@ export function AllergiesForm({ initial, onClose, onSave }: { initial: Patient; 
     </>}>
       <label className="field"><span>Alergias, separadas por coma. Déjalo vacío si no tiene.</span><input className="input" value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Ej. Penicilina, AINEs" /></label>
       <label className="field"><span>Enfermedades crónicas, separadas por coma</span><input className="input" value={conditions} onChange={(e) => setConditions(e.target.value)} placeholder="Ej. Hipertensión arterial, Diabetes tipo 2" /></label>
-      <label className="field"><span>Tipo de sangre</span><select className="select" value={blood} onChange={(e) => setBlood(e.target.value)}>
-        <option value="">Sin dato</option>{['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'].map((b) => <option key={b}>{b}</option>)}</select></label>
+      <label className="field"><span>Tipo de sangre</span><Combo value={blood} onChange={setBlood} options={[{ value: '', label: 'Sin dato' }, 'O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-']} /></label>
     </Modal>
   )
 }

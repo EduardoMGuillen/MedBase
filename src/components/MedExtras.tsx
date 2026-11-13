@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Combo } from './Combo'
 import { Plus, TriangleAlert, X } from 'lucide-react'
 import { useVademecum } from '../lib/vademecum'
 import { normalize } from '../lib/patients'
@@ -89,9 +90,8 @@ export function NebulizerFields({ value, onChange, allergies, firstName }: { val
       <div className="neb__dil">
         <label className="field"><span>Diluir en (opcional)</span><input className="input" value={value.diluentVolume ?? ''} onChange={(e) => onChange({ ...value, diluentVolume: e.target.value })} placeholder="Ej. 3 mL" /></label>
         <label className="field"><span>Diluyente</span>
-          <select className="select" value={other ? 'Otro' : value.diluent ?? ''} onChange={(e) => onChange({ ...value, diluent: e.target.value === 'Otro' ? ' ' : e.target.value || undefined })}>
-            <option value="">Sin diluyente</option>{DILUENT_OPTIONS.map((d) => <option key={d}>{d}</option>)}
-          </select></label>
+          <Combo value={other ? 'Otro' : value.diluent ?? ''} onChange={(v) => onChange({ ...value, diluent: v === 'Otro' ? ' ' : v || undefined })}
+            options={[{ value: '', label: 'Sin diluyente' }, ...DILUENT_OPTIONS]} /></label>
         {other && <label className="field"><span>¿Cuál?</span><input className="input" value={value.diluent?.trim() ?? ''} onChange={(e) => onChange({ ...value, diluent: e.target.value || ' ' })} placeholder="Escribe el diluyente" /></label>}
       </div>
     </fieldset>

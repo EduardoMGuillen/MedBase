@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Combo } from '../components/Combo'
 import { ArrowDown, ArrowUp, Copy, GripVertical, ListChecks, Pencil, Pill, Plus, Trash2, Users, X, FlaskConical } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
@@ -168,10 +169,9 @@ function SetMedForm({ initial, onSave, onCancel }: { initial: SetMed; onSave: (m
         <label className="field"><span>Dosis</span><input className="input" data-nocap value={m.dose} onChange={(e) => setM({ ...m, dose: e.target.value })} placeholder="Ej. 1 g o ___ mg" /></label>
         <RouteField value={m.route} onChange={(r) => setM({ ...m, route: r })} />
         <label className="field"><span>Frecuencia</span>
-          <select className="select" value={freq} onChange={(e) => setFreq(e.target.value)}>
-            {initial.infusionRate && !m.prn && <option value="infusion">Infusión a {formatRate(initial.infusionRate)} {infusionUnitLabel(initial.infusionUnit)}</option>}
-            {INPATIENT_FREQUENCIES.filter((f) => !m.prn || f.hours).map((f) => <option key={f.label} value={f.hours ?? 'once'}>{m.prn ? `${f.label} como máximo` : f.label}</option>)}
-          </select></label>
+          <Combo value={freq} onChange={setFreq} options={[
+            ...(initial.infusionRate && !m.prn ? [{ value: 'infusion', label: `Infusión a ${formatRate(initial.infusionRate)} ${infusionUnitLabel(initial.infusionUnit)}` }] : []),
+            ...INPATIENT_FREQUENCIES.filter((f) => !m.prn || f.hours).map((f) => ({ value: String(f.hours ?? 'once'), label: m.prn ? `${f.label} como máximo` : f.label }))]} /></label>
         <label className="field"><span>Total de días (opcional)</span>
           <input className="input num" type="number" min={1} max={365} inputMode="numeric" value={m.days ?? ''} placeholder="Hasta nueva orden"
             onChange={(e) => setM({ ...m, days: e.target.value ? Math.max(1, Math.min(365, Math.round(Number(e.target.value)))) : undefined })} /></label>

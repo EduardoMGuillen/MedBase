@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Combo } from '../../components/Combo'
 import { useStore } from '../../lib/store'
 import { Modal } from '../../components/ui'
 import { clinicWhatsapp, contactLine, fillTemplate } from '../../lib/format'
@@ -180,9 +181,8 @@ export function ConvertToClinic({ onClose }: { onClose: () => void }) {
       {assistants.length > 0 && <fieldset className="fs"><legend>Tus asistentes pasan a</legend>
         {assistants.map((a) => (
           <label key={a.id} className="field"><span>{a.name}</span>
-            <select className="select" value={roles[a.id]} onChange={(e) => setRoles({ ...roles, [a.id]: e.target.value as 'reception' | 'nurse' })}>
-              <option value="reception">Recepción (agenda, llegadas, caja)</option><option value="nurse">Enfermería (preclínica, medicamentos, notas)</option>
-            </select></label>
+            <Combo value={roles[a.id]} onChange={(v) => setRoles({ ...roles, [a.id]: v as 'reception' | 'nurse' })}
+              options={[{ value: 'reception', label: 'Recepción (agenda, llegadas, caja)' }, { value: 'nurse', label: 'Enfermería (preclínica, medicamentos, notas)' }]} /></label>
         ))}</fieldset>}
       <label className="check-line"><input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} />
         <span><b>Entiendo que no se puede volver a consultorio</b><small>Queda en la bitácora. Ningún dato se borra.</small></span></label>

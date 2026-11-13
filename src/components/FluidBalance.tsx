@@ -1,4 +1,5 @@
 import { Fragment, useState } from 'react'
+import { Combo } from './Combo'
 import { Ban, Droplets, Plus } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
@@ -153,11 +154,10 @@ function FluidEntryModal({ stayId, entry, onClose, onSaved }: { stayId: string; 
     </>}>
       <div className="form-grid">
         <label className="field"><span>Tipo</span>
-          <select className="select" value={type} onChange={(e) => setType(e.target.value)} aria-label="Tipo de ingreso o egreso">
-            <option value="">Elige…</option>
-            <optgroup label="Ingresos">{FLUID_IN_ITEMS.map((i) => <option key={i.key} value={`in:${i.key}`}>{i.label}{i.hint ? ` (${i.hint.toLowerCase()})` : ''}</option>)}</optgroup>
-            <optgroup label="Egresos">{FLUID_OUT_ITEMS.map((i) => <option key={i.key} value={`out:${i.key}`}>{i.label}</option>)}</optgroup>
-          </select></label>
+          {/* LD1 (ronda 18): una sola lista; a la derecha de cada fila, si es ingreso o egreso */}
+          <Combo value={type} onChange={setType} label="Tipo de ingreso o egreso" options={[
+            ...FLUID_IN_ITEMS.map((i) => ({ value: `in:${i.key}`, label: `${i.label}${i.hint ? ` (${i.hint.toLowerCase()})` : ''}`, hint: 'Ingreso' })),
+            ...FLUID_OUT_ITEMS.map((i) => ({ value: `out:${i.key}`, label: i.label, hint: 'Egreso' }))]} /></label>
         <label className="field"><span>Cantidad (mL)</span><input className="input" inputMode="decimal" value={ml} onChange={(e) => setMl(e.target.value.replace(/[^\d.,]/g, ''))} aria-label="Cantidad en mL" /></label>
         <div className="field"><span>Hora</span><DateTimeField value={at} invalid={future} onChange={setAt} label="Hora del registro" />
           {future && <small className="field__msg field__msg--error">No puede ser en el futuro.</small>}</div>

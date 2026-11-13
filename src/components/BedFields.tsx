@@ -1,4 +1,5 @@
 import { useStore } from '../lib/store'
+import { Combo } from './Combo'
 import { bedLabel } from '../app/Inpatients'
 import { hasRole } from '../lib/permissions'
 
@@ -19,14 +20,11 @@ export function BedFields({ bedId, specialty, onChange, currentBedId }: {
   return (
     <div className="form-grid">
       <label className="field"><span>Cama libre</span>
-        <select className="select" value={bedId} onChange={(e) => onChange({ bedId: e.target.value, specialty })}>
-          {/* Una hospitalización siempre tiene cama: al editarla sólo se traslada a otra libre */}
-          {!currentBedId && <option value="">{free.length ? 'Elige una cama libre' : 'No hay camas libres'}</option>}
-          {free.map((b) => <option key={b.id} value={b.id}>{bedLabel(b)}{b.id === currentBedId ? ' (actual)' : ''}</option>)}
-        </select></label>
+        {/* Una hospitalización siempre tiene cama: al editarla sólo se traslada a otra libre */}
+        <Combo required value={bedId} onChange={(v) => onChange({ bedId: v, specialty })} placeholder={free.length ? 'Elige una cama libre' : 'No hay camas libres'}
+          options={free.map((b) => ({ value: b.id, label: `${bedLabel(b)}${b.id === currentBedId ? ' (actual)' : ''}` }))} /></label>
       <label className="field"><span>Especialidad del ingreso</span>
-        <input className="input" list="stay-specialties" value={specialty} onChange={(e) => onChange({ bedId, specialty: e.target.value })} />
-        <datalist id="stay-specialties">{options.map((s) => <option key={s} value={s} />)}</datalist>
+        <Combo free value={specialty} onChange={(v) => onChange({ bedId, specialty: v })} options={options} placeholder="Elige o escribe la especialidad" />
         <small className="muted">La de quien ingresa. Cámbiala si ingresa para otro servicio.</small></label>
     </div>
   )

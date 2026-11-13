@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { Combo } from '../components/Combo'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Camera, FileSignature, FileText, PenLine, Printer, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -62,8 +63,7 @@ export function AuthorizationForm({ file, p, template = 'surgical', initialProce
       {surgical ? (
         <form style={{ display: 'grid', gap: 12 }} onSubmit={(e) => { e.preventDefault(); generate() }}>
           <label className="field"><span>Procedimiento quirúrgico</span>
-            <input className="input" autoFocus list="frequent-surgeries" value={procedure} onChange={(e) => setProcedure(e.target.value)} placeholder="Ej. Apendicectomía o laparotomía exploradora" />
-            <datalist id="frequent-surgeries">{FREQUENT_SURGERIES.map((x) => <option key={x} value={x} />)}</datalist></label>
+            <Combo free autoFocus value={procedure} onChange={setProcedure} options={FREQUENT_SURGERIES} placeholder="Ej. Apendicectomía o laparotomía exploradora" /></label>
           <label className="field"><span>Diagnóstico actual</span><input className="input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} /></label>
           <p className="c-muted fs-md">Paciente, médico, fecha y acompañante los pone el sistema.</p>
         </form>

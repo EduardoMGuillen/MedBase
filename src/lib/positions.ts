@@ -41,3 +41,8 @@ export function signerOf(s?: { name: string; docName?: string; position?: string
   const cargo = pos?.label ?? [ROLE_LABEL[mainRole(s)], s.specialty].filter(Boolean).join(', ')
   return { name: signedName(s), title: [cargo, s.license && `N.º de colegiación ${s.license}`].filter(Boolean).join(' · ') }
 }
+
+/** LD1 (ronda 18): lo que dice de cada persona una lista de personal, a la derecha del nombre: su cargo, su especialidad o su rol. */
+export function staffHint(s: { position?: string; specialty?: string; role: Role; roles?: Role[] }) {
+  return positionOf(s.position)?.label ?? s.specialty ?? ROLE_LABEL[mainRole(s)]
+}

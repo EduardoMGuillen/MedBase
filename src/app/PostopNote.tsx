@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { staffHint } from '../lib/positions'
+import { Combo } from '../components/Combo'
 import { FileSignature } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { AutoTextarea } from '../components/ui'
@@ -78,13 +80,12 @@ export const blankPostop = (pre: Diagnosis[], user?: { id: string; name: string 
 /** PQ2: un cargo del equipo: se elige del personal de la clínica o se escribe (personal externo). */
 function TeamField({ label, value, onChange, required }: { label: string; value?: TeamMember; onChange: (m: TeamMember) => void; required?: boolean }) {
   const { staff: all } = useStore()
-  const listId = `team-${label.replace(/\W/g, '')}`
   const staff = all.filter((s) => s.active && s.role !== 'superadmin')
   return (
     <label className="field"><span>{label}{required ? '' : ' (opcional)'}</span>
-      <input className="input" list={listId} value={value?.name ?? ''} aria-required={required || undefined} placeholder="Elige o escribe el nombre"
-        onChange={(e) => { const name = e.target.value; const s = staff.find((x) => x.name === name); onChange({ name, staffId: s?.id }) }} />
-      <datalist id={listId}>{staff.map((s) => <option key={s.id} value={s.name} />)}</datalist></label>
+      {/* LD1 (ronda 18): lista abierta: se elige del personal o se escribe un nombre de afuera («Usar «…»») */}
+      <Combo free required={required} value={value?.name ?? ''} placeholder="Elige o escribe el nombre" options={staff.map((s) => ({ value: s.id, label: s.name, hint: staffHint(s) }))}
+        onChange={(name, o) => onChange({ name, staffId: o?.value })} /></label>
   )
 }
 
@@ -111,8 +112,7 @@ export function PostopFields({ pq, setPq, check, onAuthorize, noAuth }: { pq: Po
         {check.backwards && <small className="field__msg field__msg--error">El cierre no puede ser antes del inicio.</small>}</label>
       <small className="muted span-2">Si escribes la nota después de la cirugía, corrige las horas. La hora en que escribes la nota se guarda sola.</small>
       <label className="field"><span>Tipo de anestesia</span>
-        <select className="select" value={pq.anesthesia} onChange={(e) => set({ anesthesia: e.target.value })} aria-required="true">
-          <option value="">Elige…</option>{ANESTHESIA_TYPES.map((a) => <option key={a}>{a}</option>)}</select></label>
+        <Combo required value={pq.anesthesia} onChange={(v) => set({ anesthesia: v })} options={ANESTHESIA_TYPES} /></label>
       {pq.anesthesia === 'Otra' && <label className="field"><span>¿Cuál?</span><input className="input" value={pq.anesthesiaOther} onChange={(e) => set({ anesthesiaOther: e.target.value })} placeholder="Especifica la anestesia" /></label>}
     </div>
     <label className="field"><span>Procedimiento realizado</span><input className="input" value={pq.procedureName} onChange={(e) => set({ procedureName: e.target.value })} placeholder="Escribe qué se hizo" /></label>
@@ -127,10 +127,7 @@ export function PostopFields({ pq, setPq, check, onAuthorize, noAuth }: { pq: Po
     </fieldset>
     {!noAuth && auths.length > 0 && (
       <label className="field"><span>Autorización quirúrgica firmada (últimas 24 horas)</span>
-        <select className="select" value={chosen?.id ?? ''} onChange={(e) => set({ authId: e.target.value })}>
-          {auths.map((a) => <option key={a.id} value={a.id}>{a.name} · firmada {dmyTime(a.at)}</option>)}
-          <option value="">Ninguna de estas</option>
-        </select></label>
+        <Combo value={chosen?.id ?? ''} onChange={(v) => set({ authId: v })} options={[...auths.map((a) => ({ value: a.id, label: `${a.name} · firmada ${dmyTime(a.at)}` })), { value: '', label: 'Ninguna de estas' }]} /></label>
     )}
     {noAuth ? null : chosen ? <div className="alert-strip alert-strip--calm">Autorización firmada ✓ {chosen.name}</div> : (
       <div className="alert-strip alert-strip--amber" style={{ flexDirection: 'column', alignItems: 'stretch' }}>

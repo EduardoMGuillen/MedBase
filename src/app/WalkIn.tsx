@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Combo } from '../components/Combo'
 import { Link } from 'react-router-dom'
 import { UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -58,9 +59,7 @@ export function WalkInModal({ onClose, initialPatientId = '' }: { onClose: () =>
       {patientId && activeStayOf(patientId) && <StayConflict stay={activeStayOf(patientId)!} />}
       {can('patients.manage') && <button className="btn btn--primary self-start" onClick={() => setRegistering(true)}><UserPlus size={16} />Registrar paciente nuevo</button>}
       {doctors.length > 1 && <label className="field"><span>Médico</span>
-        <select className="select" value={doctorId} onChange={(e) => setDoctorId(e.target.value)}>
-          {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? `, ${d.specialty.toLowerCase()}` : ''}</option>)}
-        </select></label>}
+        <Combo value={doctorId} onChange={setDoctorId} options={doctors.map((d) => ({ value: d.id, label: d.name, hint: d.specialty }))} /></label>}
       <label className="field"><span>Motivo de consulta</span>
         <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej. Fiebre y dolor de garganta" /></label>
       <label className="switch-line"><input type="checkbox" role="switch" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} aria-checked={urgent} />

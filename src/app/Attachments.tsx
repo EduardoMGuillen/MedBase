@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { FileImage, FileText, Trash2, Upload } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Loading } from '../components/ui'
@@ -52,9 +53,8 @@ export function Attachments({ patientId }: { patientId: string }) {
           <strong>{busy ? 'Subiendo…' : 'Arrastra aquí resultados o imágenes'}</strong>
           <p>PDF, PNG, JPG o WEBP de hasta 15 MB.</p>
         </div>
-        <select className="select select--auto" value={category} onChange={(e) => setCategory(e.target.value as Attachment['category'])} aria-label="Tipo de archivo">
-          {Object.entries(CATEGORY).filter(([k]) => !['anesthesia', 'preanesthesia', 'surgical_count'].includes(k)).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        <Combo auto value={category} onChange={(v) => setCategory(v as Attachment['category'])} label="Tipo de archivo"
+          options={Object.entries(CATEGORY).filter(([k]) => !['anesthesia', 'preanesthesia', 'surgical_count'].includes(k)).map(([k, v]) => ({ value: k, label: v }))} />
         <button className="btn btn--soft" disabled={busy} onClick={() => input.current?.click()}>Elegir archivo</button>
         <input ref={input} type="file" accept={TYPES.join(',')} multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = '' }} />
       </div>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { setShiftList, useSupplies } from '../lib/useSupplies'
 import { Archive, ChevronDown, ChevronsDownUp, ChevronsUpDown, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -249,11 +250,8 @@ function SupplyForm({ item, preset, items, categories, canRestore, onClose, onSa
     </>}>
       <div className="form-grid supply-form">
         <label className="field"><span>Categoría</span>
-          <select className="select" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>
-            <option value="">Elige la categoría</option>
-            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-            <option value={NEW_CATEGORY}>Nueva categoría…</option>
-          </select></label>
+          <Combo value={f.category} onChange={(v) => setF({ ...f, category: v })} placeholder="Elige la categoría"
+            options={[...categories.map((c) => ({ value: c, label: c })), { value: NEW_CATEGORY, label: 'Nueva categoría…' }]} /></label>
         {f.category === NEW_CATEGORY && <label className="field"><span>Nombre de la categoría nueva</span>
           <input className="input" value={f.newCategory} maxLength={60} autoFocus onChange={(e) => setF({ ...f, newCategory: e.target.value })} placeholder="Ej. Material de ortopedia" /></label>}
         <div className="field span-2"><span>Material</span>
@@ -266,13 +264,9 @@ function SupplyForm({ item, preset, items, categories, canRestore, onClose, onSa
           {gauge && <small className="muted">{SUPPLY_GAUGE_HINT}{cleaned !== f.variant.trim() ? ` Se guardará como «${cleaned || 'sin variante'}».` : ''}</small>}
         </label>
         <label className="field"><span>Unidad</span>
-          <select className="select" value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value as SupplyUnit })}>
-            {SUPPLY_UNIT_LIST.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select></label>
+          <Combo value={f.unit} onChange={(v) => setF({ ...f, unit: v as SupplyUnit })} options={SUPPLY_UNIT_LIST} /></label>
         <label className="field"><span>Registro</span>
-          <select className="select" value={f.scope} onChange={(e) => setF({ ...f, scope: e.target.value as SupplyScope })}>
-            {SUPPLY_SCOPE_LIST.map((s) => <option key={s} value={s}>{SUPPLY_SCOPES[s]}</option>)}
-          </select></label>
+          <Combo value={f.scope} onChange={(v) => setF({ ...f, scope: v as SupplyScope })} options={SUPPLY_SCOPE_LIST.map((s) => ({ value: s, label: SUPPLY_SCOPES[s] }))} /></label>
         {!item && can('supplies.shiftlist') && <label className="check-inline span-2"><input type="checkbox" checked={f.onShiftList} onChange={(e) => setF({ ...f, onShiftList: e.target.checked })} />En la lista de turno</label>}
         {same && (
           <div className="alert-strip alert-strip--amber span-2 wrap" role="alert">

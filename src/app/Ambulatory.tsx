@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { Camera, Plus, UserPlus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
@@ -49,7 +50,7 @@ function QuickPatient({ onClose, onCreated }: { onClose: () => void; onCreated: 
         <label className="field"><span>Apellidos</span><input className="input" value={f.lastName} onChange={(e) => set({ lastName: e.target.value })} /></label>
         <div className="field"><span>Edad</span><span style={{ display: 'flex', gap: 6 }}>
           <input className="input num" inputMode="numeric" value={f.age} onChange={(e) => set({ age: e.target.value.replace(/\D/g, '').slice(0, 3) })} aria-label="Edad" style={{ maxWidth: 90 }} />
-          <select className="select" value={f.ageUnit} onChange={(e) => set({ ageUnit: e.target.value as 'years' | 'months' })} aria-label="Años o meses"><option value="years">años</option><option value="months">meses</option></select></span></div>
+          <Combo value={f.ageUnit} onChange={(v) => set({ ageUnit: v as 'years' | 'months' })} label="Años o meses" options={[{ value: 'years', label: 'años' }, { value: 'months', label: 'meses' }]} /></span></div>
         <div className="field"><span>Sexo</span>
           <div className="segmented" role="radiogroup" aria-label="Sexo">
             {(['F', 'M'] as const).map((s) => <button key={s} type="button" role="radio" aria-checked={f.sex === s} onClick={() => set({ sex: s })}>{s === 'F' ? 'Femenino' : 'Masculino'}</button>)}
@@ -120,8 +121,7 @@ export function AmbulatoryModal({ group: fixed, onClose, onDone }: { group?: Exa
       </fieldset>
       <fieldset className="fs"><legend>3. Quién lo solicita</legend>
         <label className="field"><span>Médico que solicita (opcional)</span>
-          <select className="select" value={doctorId} onChange={(e) => setDoctorId(e.target.value)}>
-            <option value="">Médico de afuera o viene por su cuenta</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
+          <Combo value={doctorId} onChange={setDoctorId} options={[{ value: '', label: 'Médico de afuera o viene por su cuenta' }, ...doctors.map((d) => ({ value: d.id, label: d.name }))]} /></label>
         {!doctorId && <label className="field"><span>Nombre del médico (si es de afuera)</span><input className="input" value={doctorName} onChange={(e) => setDoctorName(e.target.value)} placeholder="Ej. Dr. Carlos Medina" /></label>}
         <div className="field"><span>Foto o archivo de la orden (opcional)</span>
           <div className="hstack hstack--center">

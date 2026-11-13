@@ -1,4 +1,5 @@
 import { DEPT_POSITIONS } from '../lib/clinicalConfig'
+import { Combo, asChange } from '../components/Combo'
 import { positionFor, type DeptKey } from '../lib/positions'
 import { useState } from 'react'
 import { normalize } from '../lib/patients'
@@ -57,17 +58,9 @@ export default function StaffPage() {
             <label className="field staff-filters__q"><span>Buscar</span>
               <input className="input" type="search" data-nocap value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre, correo, especialidad o colegiación" /></label>
             <label className="field"><span>Rol</span>
-              <select className="select" value={roleF} onChange={(e) => setRoleF(e.target.value as Role | '')}>
-                <option value="">Todos los roles</option>
-                {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-              </select></label>
+              <Combo value={roleF} onChange={(v) => setRoleF(v as Role | '')} options={[{ value: '', label: 'Todos los roles' }, ...ROLES.map((r) => ({ value: r, label: ROLE_LABEL[r] }))]} /></label>
             <label className="field"><span>Estado</span>
-              <select className="select" value={stateF} onChange={(e) => setStateF(e.target.value as typeof stateF)}>
-                <option value="">Todos</option>
-                <option value="active">Activos</option>
-                <option value="inactive">Desactivados</option>
-                <option value="twofactor">Con verificación en dos pasos</option>
-              </select></label>
+              <Combo value={stateF} onChange={(v) => setStateF(v as typeof stateF)} options={[{ value: '', label: 'Todos' }, { value: 'active', label: 'Activos' }, { value: 'inactive', label: 'Desactivados' }, { value: 'twofactor', label: 'Con verificación en dos pasos' }]} /></label>
             <p className="muted staff-filters__count" aria-live="polite">{filtered ? `${shown.length} de ${staff.length} personas` : `${staff.length} personas`}
               {filtered && <> · <button type="button" className="linklike" onClick={() => { setQ(''); setRoleF(''); setStateF('') }}>Quitar filtros</button></>}</p>
           </div>
@@ -216,7 +209,7 @@ function NewStaff({ roles, onClose, onCreated }: { roles: Role[]; onClose: () =>
     </>}>
       <label className="field"><span>Nombre completo, con título si aplica</span><input className="input" value={f.name} onChange={set('name')} placeholder="Ej. Dra. Isabel Pacheco" /></label>
       {roles.length > 1 && <label className="field"><span>Rol</span>
-        <select className="select" value={f.role} onChange={set('role')}>{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
+        <Combo value={f.role} onChange={(v) => set('role')(asChange(v))} options={roles.map((r) => ({ value: r, label: ROLE_LABEL[r] }))} />
       </label>}
       <p style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: -6 }}>{ROLE_SUMMARY[f.role]}</p>
       <label className="field"><span>Correo de acceso</span><input className="input" type="email" value={f.email} onChange={set('email')} /></label>
@@ -251,8 +244,7 @@ function PositionFields({ dept, position, license, onPosition, onLicense }: { de
   return (
     <div className="form-grid">
       <label className="field"><span>{dept === 'nursing' ? 'Puesto en enfermería' : 'Cargo'}</span>
-        <select className="select" value={position} onChange={(e) => onPosition(e.target.value)} aria-required="true">
-          <option value="">Elige el {word}</option>{positionsOf(dept).map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}</select>
+        <Combo required value={position} onChange={onPosition} placeholder={`Elige el ${word}`} options={positionsOf(dept).map((x) => ({ value: x.key, label: x.label }))} />
         {!pos && <small className="field__msg field__msg--warn">El {word} es obligatorio.</small>}
         {dept === 'nursing' && <small className="muted">La licenciada edita el rol de turnos de enfermería; la auxiliar lo ve.</small>}</label>
       {pos?.license && <label className="field"><span>N.º de colegiación</span><input className="input" value={license} onChange={(e) => onLicense(e.target.value)} aria-required="true" />

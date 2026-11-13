@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Combo } from '../components/Combo'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Ban, ChevronDown, ChevronsDownUp, ChevronsUpDown, FileSpreadsheet, ListChecks, PencilLine, Plus, Printer } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -88,18 +89,14 @@ export default function UsagePage() {
             <label className="field field--inline"><span>{settings.period === 'week' ? 'Un día de la semana' : 'Fecha'}</span><DateField value={day} required onChange={(v) => v && setDay(v)} /></label>
             {settings.period === 'shift' && (
               <label className="field field--inline"><span>Turno</span>
-                <select className="select" value={shiftKey} onChange={(e) => setShiftKey(e.target.value)}>
-                  {settings.shifts.map((s) => <option key={s.key} value={s.key}>{s.label} ({s.from}–{s.to})</option>)}
-                </select></label>
+                <Combo value={shiftKey} onChange={setShiftKey} options={settings.shifts.map((s) => ({ value: s.key, label: `${s.label} (${s.from}–${s.to})` }))} /></label>
             )}
           </>) : (<>
             <label className="field field--inline"><span>Desde</span><DateField value={from} required onChange={(v) => v && setFrom(v)} /></label>
             <label className="field field--inline"><span>Hasta</span><DateField value={to} required min={from} onChange={(v) => v && setTo(v)} /></label>
           </>)}
           <label className="field field--inline"><span>Área</span>
-            <select className="select" value={area} onChange={(e) => setArea(e.target.value as UsageArea | 'all')}>
-              <option value="all">Todas</option>{USAGE_AREA_LIST.map((a) => <option key={a} value={a}>{USAGE_AREAS[a]}</option>)}
-            </select></label>
+            <Combo value={area} onChange={(v) => setArea(v as UsageArea | 'all')} options={[{ value: 'all', label: 'Todas' }, ...USAGE_AREA_LIST.map((a) => ({ value: a, label: USAGE_AREAS[a] }))]} /></label>
           <label className="field field--inline usage-filters__q"><span>Buscar</span>
             <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Paciente, medicamento o material" aria-label="Buscar paciente, medicamento o material" /></label>
         </div>

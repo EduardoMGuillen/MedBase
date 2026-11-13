@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { DateField } from '../components/DateTimeField'
 import { Download } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -59,12 +60,9 @@ export function AuditLog({ mine = false }: { mine?: boolean }) {
       <div className="panel__head"><div><h2>{mine ? 'Mi actividad' : 'Bitácora'}</h2><p>{mine ? 'Todo lo que has hecho en el sistema, con fecha y hora. No se edita ni se borra.' : 'Quién hizo qué y cuándo, con qué rol. No se edita ni se borra.'}</p></div>
         <button className="btn btn--ghost btn--sm" disabled={!rows?.length} onClick={exportCsv}><Download size={15} />Exportar a Excel</button></div>
       <div className="panel__body audit-filters">
-        {!mine && <label className="field"><span>Persona</span><select className="select" value={f.userId} onChange={(e) => set('userId')(e.target.value)}>
-          <option value="">Todas</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}
-        <label className="field"><span>Rol</span><select className="select" value={f.role} onChange={(e) => set('role')(e.target.value)}>
-          <option value="">Todos</option>{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></label>
-        <label className="field"><span>Tipo de acción</span><select className="select" value={f.kind} onChange={(e) => set('kind')(e.target.value)}>
-          <option value="">Todas</option>{(Object.keys(AUDIT_KINDS) as AuditKind[]).map((k) => <option key={k} value={k}>{AUDIT_KINDS[k]}</option>)}</select></label>
+        {!mine && <label className="field"><span>Persona</span><Combo value={f.userId} onChange={set('userId')} options={[{ value: '', label: 'Todas' }, ...staff.map((s) => ({ value: s.id, label: s.name }))]} /></label>}
+        <label className="field"><span>Rol</span><Combo value={f.role} onChange={set('role')} options={[{ value: '', label: 'Todos' }, ...roles.map((r) => ({ value: r, label: ROLE_LABEL[r] }))]} /></label>
+        <label className="field"><span>Tipo de acción</span><Combo value={f.kind} onChange={set('kind')} options={[{ value: '', label: 'Todas' }, ...(Object.keys(AUDIT_KINDS) as AuditKind[]).map((k) => ({ value: k, label: AUDIT_KINDS[k] }))]} /></label>
         <div className="field"><span>Desde</span><DateField value={f.from} max={f.to || undefined} onChange={(v) => set('from')(v)} label="Desde" /></div>
         <div className="field"><span>Hasta</span><DateField value={f.to} min={f.from || undefined} onChange={(v) => set('to')(v)} label="Hasta" /></div>
         <label className="field audit-filters__q"><span>Buscar en la acción</span><input className="input" data-nocap value={f.q} onChange={(e) => set('q')(e.target.value)} placeholder="Ej. receta, cobro, constancia" /></label>

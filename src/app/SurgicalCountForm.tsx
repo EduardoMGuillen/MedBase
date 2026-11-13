@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { FileSignature, Plus, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -102,8 +103,7 @@ export default function SurgicalCountFormPage() {
                   <input className="input num" inputMode="numeric" value={r.cells[c.key]} maxLength={20} placeholder={optional ? '—' : undefined}
                     onChange={(e) => setRow(i, { cells: { ...r.cells, [c.key]: e.target.value } })} aria-label={`${r.label || 'Otros'}: ${c.label}`} /></td>
               })}
-              <td data-label="Resultado" className="anes-table__wide"><select className={`select${r.result === 'Incorrecto' ? ' count-table__bad' : ''}`} value={r.result} onChange={(e) => setRow(i, { result: e.target.value })} aria-label={`Resultado de ${r.label || 'Otros'}`}>
-                <option value="">Elige…</option>{SURGICAL_COUNT.results.map((x) => <option key={x}>{x}</option>)}</select></td>
+              <td data-label="Resultado" className="anes-table__wide"><Combo className={r.result === 'Incorrecto' ? 'count-table__bad' : ''} value={r.result} onChange={(v) => setRow(i, { result: v })} label={`Resultado de ${r.label || 'Otros'}`} options={SURGICAL_COUNT.results} /></td>
               <td className="anes-table__x">{isOther(r) && <button type="button" className="btn btn--ghost btn--sm anes-btn" aria-label={`Quitar la fila ${i + 1}`} onClick={() => set({ rows: d.rows.filter((_, j) => j !== i) })}><Trash2 size={14} /></button>}</td>
             </tr>)}</tbody>
           </table>
@@ -115,8 +115,7 @@ export default function SurgicalCountFormPage() {
             <thead><tr><th>Hora</th><th>Quién se releva</th><th>Entrega</th><th>Recibe</th><th>Recuento</th><th /></tr></thead>
             <tbody>{d.handoffs.map((h, i) => <tr key={h.id}>
               <td data-label="Hora" className="anes-table__wide"><TimeField value={h.time} onChange={(v) => setHandoff(i, { time: v })} label={`Hora del cambio ${i + 1}`} /></td>
-              <td data-label="Quién se releva"><select className="select" value={h.role} onChange={(e) => setHandoff(i, { role: e.target.value })} aria-label={`Quién se releva en el cambio ${i + 1}`}>
-                <option value="">Elige…</option>{SURGICAL_COUNT.handoffRoles.map((x) => <option key={x}>{x}</option>)}</select></td>
+              <td data-label="Quién se releva"><Combo value={h.role} onChange={(v) => setHandoff(i, { role: v })} label={`Quién se releva en el cambio ${i + 1}`} options={SURGICAL_COUNT.handoffRoles} /></td>
               <td data-label="Entrega"><input className="input" value={h.from} maxLength={120} onChange={(e) => setHandoff(i, { from: e.target.value })} aria-label={`Quién entrega en el cambio ${i + 1}`} /></td>
               <td data-label="Recibe"><input className="input" value={h.to} maxLength={120} onChange={(e) => setHandoff(i, { to: e.target.value })} aria-label={`Quién recibe en el cambio ${i + 1}`} /></td>
               <td data-label="Recuento" className="anes-table__wide"><input className="input" value={h.count} maxLength={200} placeholder="Ej. Completo: 20 compresas, 30 gasas…" onChange={(e) => setHandoff(i, { count: e.target.value })} aria-label={`Recuento del cambio ${i + 1}`} /></td>

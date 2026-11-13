@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { staffHint } from '../lib/positions'
+import { Combo } from './Combo'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { uploadLarge } from '../lib/files'
@@ -58,9 +60,8 @@ export function SurgicalDocUpload({ title, docName, patientId, stayId, endpoint,
       {ui}
       <div className="form-grid">
         {performed && <label className="field"><span>{performed.label}</span>
-          <input className="input" list="surgical-doc-people" value={by.name} aria-required="true" placeholder="Elige o escribe el nombre"
-            onChange={(e) => { const name = e.target.value; setBy({ name, staffId: people.find((x) => x.name === name)?.id }) }} />
-          <datalist id="surgical-doc-people">{people.map((s) => <option key={s.id} value={s.name} />)}</datalist></label>}
+          <Combo free required value={by.name} placeholder="Elige o escribe el nombre" options={people.map((s) => ({ value: s.id, label: s.name, hint: staffHint(s) }))}
+            onChange={(name, o) => setBy({ name, staffId: o?.value })} /></label>}
         <label className="field"><span>Observación (opcional)</span>
           <input className="input" value={observation} maxLength={1000} onChange={(e) => setObservation(e.target.value)} placeholder="Ej. La trajo la circulante" /></label>
         {replaces && <label className="field span-2"><span>Por qué se reemplaza</span>

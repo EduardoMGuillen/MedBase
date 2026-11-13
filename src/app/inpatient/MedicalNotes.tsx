@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Combo } from '../../components/Combo'
 import { fromLocalValue } from '../../lib/dateInput'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { BedDouble, FileSignature, LogOut, NotebookPen, Pill, Send, Syringe } from 'lucide-react'
@@ -496,10 +497,7 @@ export function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize
       ) : <small className="muted">Para procedimientos menores: no piden autorización. Una cirugía se escribe en «Nota postquirúrgica».</small>}
       {f.major && auths.length > 0 && (
         <label className="field"><span>Autorización quirúrgica firmada (últimas 24 horas)</span>
-          <select className="select" value={chosen?.id ?? ''} onChange={(e) => setAuthId(e.target.value)}>
-            {auths.map((a) => <option key={a.id} value={a.id}>{a.name} · firmada {dm(a.at)}</option>)}
-            <option value="">Ninguna de estas</option>
-          </select></label>
+          <Combo value={chosen?.id ?? ''} onChange={setAuthId} options={[...auths.map((a) => ({ value: a.id, label: `${a.name} · firmada ${dm(a.at)}` })), { value: '', label: 'Ninguna de estas' }]} /></label>
       )}
       {f.major && covered && <div className="alert-strip alert-strip--calm">Autorización firmada ✓ {chosen!.name}</div>}
       {f.major && !covered && (

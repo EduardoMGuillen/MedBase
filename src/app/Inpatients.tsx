@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Combo } from '../components/Combo'
 import { DateTimeField } from '../components/DateTimeField'
 import { localValueToIso } from '../lib/dateInput'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -282,10 +283,8 @@ export function AttendingPicker({ value, onChange, required = false }: { value: 
         </div>
       )}
       {rest.length > 0 && (
-        <select className="select" aria-label={value.length ? 'Agregar otro médico tratante' : 'Médico tratante'} value="" onChange={(e) => { if (e.target.value) onChange([...value, e.target.value]) }}>
-          <option value="">{value.length ? 'Agregar otro médico tratante…' : 'Elige al médico tratante'}</option>
-          {rest.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? ` · ${d.specialty}` : ''}</option>)}
-        </select>
+        <Combo label={value.length ? 'Agregar otro médico tratante' : 'Médico tratante'} value="" placeholder={value.length ? 'Agregar otro médico tratante…' : 'Elige al médico tratante'}
+          onChange={(v) => { if (v) onChange([...value, v]) }} options={rest.map((d) => ({ value: d.id, label: d.name, hint: d.specialty }))} />
       )}
       {required && !value.length && <small className="field__msg field__msg--warn">Obligatorio: al médico tratante le llega el aviso para escribir la nota de ingreso.</small>}
     </div>

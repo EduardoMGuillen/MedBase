@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Combo } from '../components/Combo'
 import { DateField } from '../components/DateTimeField'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CheckCheck, MessageCircle, Plus, Smartphone, Trash2 } from 'lucide-react'
@@ -162,17 +163,18 @@ export function FollowupFields({ value, onChange }: { value: FollowupInput; onCh
           </div></div>
       )}
       <label className="field span-2"><span>{value.kind === 'chronic' ? 'Padecimiento crónico' : value.reminderType === 'procedure' || value.kind === 'procedure' ? 'Procedimiento' : 'Qué debe hacer el paciente'}</span>
-        <input className="input" list={value.kind === 'chronic' ? 'chronic-presets' : undefined} value={value.title}
-          onChange={(e) => { const preset = CHRONIC_PRESETS.find((c) => c.title === e.target.value); onChange({ ...value, title: e.target.value, everyDays: preset?.everyDays ?? value.everyDays, ...(preset?.everyDays && value.kind === 'chronic' ? { dueDate: nextControl(preset.everyDays) } : {}) }) }}
-          placeholder={value.kind === 'chronic' ? 'Ej. Hipertensión arterial' : value.reminderType === 'procedure' || value.kind === 'procedure' ? 'Ej. Hernioplastia inguinal' : 'Ej. Hacerse química sanguínea y volver con resultados'} />
-        <datalist id="chronic-presets">{CHRONIC_PRESETS.map((c) => <option key={c.title} value={c.title} />)}</datalist></label>
+        {value.kind === 'chronic'
+          // LD1 (ronda 18): los padecimientos frecuentes, o el que se escriba
+          ? <Combo free value={value.title} placeholder="Ej. Hipertensión arterial" options={CHRONIC_PRESETS.map((c) => c.title)}
+            onChange={(title) => { const preset = CHRONIC_PRESETS.find((c) => c.title === title); onChange({ ...value, title, everyDays: preset?.everyDays ?? value.everyDays, ...(preset?.everyDays ? { dueDate: nextControl(preset.everyDays) } : {}) }) }} />
+          : <input className="input" value={value.title} onChange={(e) => onChange({ ...value, title: e.target.value })}
+            placeholder={value.reminderType === 'procedure' || value.kind === 'procedure' ? 'Ej. Hernioplastia inguinal' : 'Ej. Hacerse química sanguínea y volver con resultados'} />}</label>
       <label className="field"><span>{value.kind === 'chronic' ? 'Próximo control' : 'Fecha'}</span>
         <DateField value={value.dueDate} min={localISODate(new Date())} onChange={(v) => set('dueDate', v)} label="Fecha" /></label>
       {value.kind === 'chronic' && (
         <label className="field"><span>Control cada</span>
-          <select className="select" value={value.everyDays ?? 90} onChange={(e) => every(Number(e.target.value))}>
-            {[30, 60, 90, 120, 180, 365].map((d) => <option key={d} value={d}>{d === 365 ? '1 año' : `${d / 30} ${d === 30 ? 'mes' : 'meses'}`}</option>)}
-          </select></label>
+          <Combo value={String(value.everyDays ?? 90)} onChange={(v) => every(Number(v))}
+            options={[30, 60, 90, 120, 180, 365].map((d) => ({ value: String(d), label: d === 365 ? '1 año' : `${d / 30} ${d === 30 ? 'mes' : 'meses'}` }))} /></label>
       )}
       <label className={`field ${value.kind === 'chronic' ? 'span-2' : ''}`}><span>Nota (opcional)</span>
         <input className="input" value={value.notes ?? ''} onChange={(e) => set('notes', e.target.value)} placeholder="Ej. Traer glucometrías de la semana" /></label>

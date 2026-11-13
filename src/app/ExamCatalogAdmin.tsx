@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { Archive, FlaskConical, Pencil, Plus, RotateCcw, ScanLine, Trash2, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
@@ -166,7 +167,7 @@ function ExamForm({ exam, onClose, onSaved, only }: { exam?: ClinicExam; onClose
         <small className="muted">Decide a quién le llega el pendiente: laboratorio, imágenes o enfermería.</small>
       </div>}
       <label className="field"><span>Subgrupo</span>
-        <select className="select" value={subgroup} onChange={(e) => setSubgroup(e.target.value)}>{options.map((o) => <option key={o}>{o}</option>)}</select>
+        <Combo value={subgroup} onChange={setSubgroup} options={options} />
         <small className="muted">Así se agrupa al ordenar y en este catálogo.</small></label>
       </div>
       {group === 'imaging' && (
@@ -181,17 +182,16 @@ function ExamForm({ exam, onClose, onSaved, only }: { exam?: ClinicExam; onClose
               onKeyDown={(e) => { if (e.key === 'Enter' && newProj.trim()) { e.preventDefault(); setDetails({ ...details, projections: [...(details.projections ?? []), newProj.trim()] }); setNewProj('') } }} />
               <button type="button" className="btn btn--soft btn--sm" disabled={!newProj.trim()} onClick={() => { setDetails({ ...details, projections: [...(details.projections ?? []), newProj.trim()] }); setNewProj('') }}><Plus size={14} />Agregar</button></span></div>
           <label className="field"><span>Contraste</span>
-            <select className="select" value={details.contrast ?? ''} onChange={(e) => setDetails({ ...details, contrast: (e.target.value || undefined) as ImagingDetails['contrast'] })}>
-              <option value="">No pide contraste</option>
-              <option value="ct2">Tomografía: simple o contrastada</option><option value="mr2">Resonancia: simple o con contraste</option>
-              {/* Los de CA5 (ronda 10), si un estudio todavía los usa */}
-              {details.contrast === 'ct' && <option value="ct">Tomografía: simple, contrastada, simple y contrastada</option>}
-              {details.contrast === 'ct-multi' && <option value="ct-multi">Tomografía, también doble y triple contraste</option>}
-              {details.contrast === 'mr' && <option value="mr">Resonancia: simple o con gadolinio</option>}</select></label>
+            <Combo value={details.contrast ?? ''} onChange={(v) => setDetails({ ...details, contrast: (v || undefined) as ImagingDetails['contrast'] })} options={[
+              { value: '', label: 'No pide contraste' }, { value: 'ct2', label: 'Tomografía: simple o contrastada' }, { value: 'mr2', label: 'Resonancia: simple o con contraste' },
+              // Los de CA5 (ronda 10), si un estudio todavía los usa
+              ...(details.contrast === 'ct' ? [{ value: 'ct', label: 'Tomografía: simple, contrastada, simple y contrastada' }] : []),
+              ...(details.contrast === 'ct-multi' ? [{ value: 'ct-multi', label: 'Tomografía, también doble y triple contraste' }] : []),
+              ...(details.contrast === 'mr' ? [{ value: 'mr', label: 'Resonancia: simple o con gadolinio' }] : [])]} /></label>
           {(!!details.projections?.length || !!details.contrast) && <label className="check-inline"><input type="checkbox" checked={!!details.free} onChange={(e) => setDetails({ ...details, free: e.target.checked || undefined })} />También se puede escribir otra proyección u otro contraste</label>}
           <label className="field"><span>Lado (derecho, izquierdo o bilateral)</span>
-            <select className="select" value={details.side ? (details.sideOptional ? 'optional' : 'required') : ''} onChange={(e) => setDetails({ ...details, side: e.target.value ? true : undefined, sideOptional: e.target.value === 'optional' || undefined })}>
-              <option value="">No pide el lado</option><option value="optional">Opcional</option><option value="required">Obligatorio</option></select></label>
+            <Combo value={details.side ? (details.sideOptional ? 'optional' : 'required') : ''} onChange={(v) => setDetails({ ...details, side: v ? true : undefined, sideOptional: v === 'optional' || undefined })}
+              options={[{ value: '', label: 'No pide el lado' }, { value: 'optional', label: 'Opcional' }, { value: 'required', label: 'Obligatorio' }]} /></label>
           <label className="check-inline"><input type="checkbox" checked={!!details.region} onChange={(e) => setDetails({ ...details, region: e.target.checked || undefined })} />Pide escribir la región</label>
         </fieldset>
       )}
@@ -235,7 +235,7 @@ function RefEditor({ exam, rows, setRows, comment, setComment }: { exam: ClinicE
               <div key={r.id ?? `new-${i}`} className={`refed__tr${r.archive ? ' is-archived' : ''}`} role="row">
                 <span className="refed__name">
                   {r.id ? <b>{r.analyte || 'Resultado'}</b> : <input className="input" value={r.analyte} onChange={(e) => set(i, { analyte: e.target.value })} placeholder="Parámetro" aria-label="Parámetro" />}
-                  {r.id ? r.sex !== 'all' && <span className="badge">{SEX_LABEL[r.sex]}</span> : <select className="select select--sm" value={r.sex} onChange={(e) => set(i, { sex: e.target.value as RefDraft['sex'] })} aria-label="Sexo">{(['all', 'F', 'M'] as const).map((x) => <option key={x} value={x}>{SEX_LABEL[x]}</option>)}</select>}
+                  {r.id ? r.sex !== 'all' && <span className="badge">{SEX_LABEL[r.sex]}</span> : <Combo size="sm" value={r.sex} onChange={(v) => set(i, { sex: v as RefDraft['sex'] })} label="Sexo" options={(['all', 'F', 'M'] as const).map((x) => ({ value: x, label: SEX_LABEL[x] }))} />}
                   {cur?.warn && <span className="badge badge--amber" title="Revisa la unidad que usa tu laboratorio">⚠️</span>}
                 </span>
                 <input className="input num" inputMode="decimal" value={r.low} onChange={(e) => set(i, { low: e.target.value })} placeholder="—" aria-label={`Mínimo de ${r.analyte || 'resultado'}`} />

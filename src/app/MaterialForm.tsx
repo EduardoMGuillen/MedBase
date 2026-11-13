@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { ChevronDown, ChevronUp, Layers, Users, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
@@ -199,9 +200,7 @@ export function MaterialForm({ editing, onClose, onSaved }: { editing?: Material
         <label className="field"><span>Fecha</span><DateField className="dtf--inset" value={d.day} max={today} required onChange={(v) => v && setD({ ...d, day: v })} /></label>
         {settings.period === 'shift' ? (
           <label className="field"><span>Turno</span>
-            <select className="select" value={d.shiftKey} onChange={(e) => setD({ ...d, shiftKey: e.target.value })}>
-              {settings.shifts.map((s) => <option key={s.key} value={s.key}>{s.label} ({s.from}–{s.to})</option>)}
-            </select></label>
+            <Combo value={d.shiftKey} onChange={(v) => setD({ ...d, shiftKey: v })} options={settings.shifts.map((s) => ({ value: s.key, label: `${s.label} (${s.from}–${s.to})` }))} /></label>
         ) : <div className="field"><span>Periodo</span><b className="mat-form__period">{period.label}</b></div>}
       </div>
       <div className="mat-form__cols">

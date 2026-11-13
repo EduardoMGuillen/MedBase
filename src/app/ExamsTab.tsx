@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { fromLocalValue } from '../lib/dateInput'
 import { DateTimeField } from '../components/DateTimeField'
 import { Link, useNavigate } from 'react-router-dom'
@@ -87,7 +88,7 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
           <label className="field field--inline exam-tools__q"><span>Buscar examen</span>
             <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar examen" aria-label="Buscar examen" /></label>
           <label className="field field--inline"><span>Orden</span>
-            <select className="select" value={sort} onChange={(e) => setSort(e.target.value as ExamSort)}>{EXAM_SORTS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}</select></label>
+            <Combo value={sort} onChange={(v) => setSort(v as ExamSort)} options={EXAM_SORTS.map((o) => ({ value: o.key, label: o.label }))} /></label>
           <div className="segmented segmented--sm exam-tools__filters" role="radiogroup" aria-label="Mostrar">
             {EXAM_FILTERS.map((f) => <button key={f.key} type="button" role="radio" aria-checked={filter === f.key} onClick={() => setFilter(f.key)}>
               {f.label} <span className="num">{exams.filter((e) => match(e) && f.test(e)).length}</span></button>)}
@@ -370,8 +371,7 @@ export function ResultModal({ e, onClose, onDone }: { e: ExamOrder; onClose: () 
       </div>
       {resp && resp.microbiologists.length > 0 && (resp.needsChoice || resp.optional
         ? <label className="field"><span>Microbiólogo responsable{resp.optional ? ' (opcional)' : ''}</span>
-          <select className="select" value={responsibleId} onChange={(x) => setResponsibleId(x.target.value)} aria-required="true">
-            <option value="">Elige el microbiólogo responsable</option>{resp.microbiologists.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
+          <Combo required value={responsibleId} onChange={setResponsibleId} placeholder="Elige el microbiólogo responsable" options={resp.microbiologists.map((m) => ({ value: m.id, label: m.name }))} />
           <small className="muted">{resp.optional ? 'Si un microbiólogo responde por este resultado, elígelo (va en el PDF).' : 'No hay un solo microbiólogo de turno: elige quién responde por este resultado (va en el PDF).'}</small></label>
         : resp.auto && <p className="c-muted fs-md m-0">Microbiólogo responsable: {resp.microbiologists.find((m) => m.id === resp.auto)?.name} (de turno).</p>)}
       {imagesOnly && <p className="c-muted fs-md m-0">Sube las imágenes del estudio. El informe lo escribe el radiólogo o un médico.</p>}

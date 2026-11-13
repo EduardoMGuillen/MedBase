@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Combo, asChange } from '../components/Combo'
 import { Link, useParams } from 'react-router-dom'
 import { Building2, ExternalLink, Plus, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -226,10 +227,9 @@ export function ClinicDetail() {
                 <tr key={s.id} style={s.active ? undefined : { opacity: 0.6 }}>
                   <td><div className="cell-person"><Avatar name={s.name} color={s.color} /><span style={{ fontWeight: 600 }}>{s.name}<small>{s.email}</small></span></div></td>
                   <td>
-                    <select className="select select--sm select--auto" value={s.role} aria-label={`Rol de ${s.name}`}
-                      onChange={async (e) => { if (await updatePlatformStaff(s.id, { role: e.target.value as ClinicRole })) load() }}>
-                      {ROLES_BY_KIND[clinic.kind ?? 'clinic'].map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                    </select>
+                    <Combo size="sm" auto value={s.role} label={`Rol de ${s.name}`}
+                      onChange={async (v) => { if (await updatePlatformStaff(s.id, { role: v as ClinicRole })) load() }}
+                      options={ROLES_BY_KIND[clinic.kind ?? 'clinic'].map((r) => ({ value: r, label: ROLE_LABEL[r] }))} />
                     {(s.roles ?? []).filter((r) => r !== s.role).length > 0 && (
                       <small className="muted" style={{ display: 'block', marginTop: 2 }}>También: {(s.roles ?? []).filter((r) => r !== s.role).map((r) => ROLE_LABEL[r]).join(', ')}</small>
                     )}
@@ -299,7 +299,7 @@ function NewMember({ clinicName, roles, onClose, onCreate }: { clinicName: strin
       }}>Crear usuario</button>
     </>}>
       <label className="field"><span>Nombre completo, con título si aplica</span><input className="input" value={f.name} onChange={set('name')} placeholder="Ej. Dra. Isabel Pacheco" autoFocus /></label>
-      <label className="field"><span>Rol</span><select className="select" value={f.role} onChange={set('role')}>{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></label>
+      <label className="field"><span>Rol</span><Combo value={f.role} onChange={(v) => set('role')(asChange(v))} options={roles.map((r) => ({ value: r, label: ROLE_LABEL[r] }))} /></label>
       <p style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: -6 }}>{ROLE_SUMMARY[f.role]}</p>
       <label className="field"><span>Correo de acceso</span><input className="input" type="email" value={f.email} onChange={set('email')} /></label>
       {f.role === 'doctor' && (

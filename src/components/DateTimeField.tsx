@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { Combo } from './Combo'
 import { createPortal } from 'react-dom'
 import { CalendarDays, Clock } from 'lucide-react'
 import {
@@ -25,7 +26,8 @@ function usePopover() {
   useEffect(() => {
     if (!open) return
     // El panel va fuera del campo (en un portal): un clic adentro de cualquiera de los dos no lo cierra
-    const close = (e: MouseEvent) => { const t = e.target as Node; if (!ref.current?.contains(t) && !popRef.current?.contains(t)) setOpen(false) }
+    // (la lista de la hora y los minutos, LD1, también va en un portal: un clic en ella tampoco lo cierra)
+    const close = (e: MouseEvent) => { const t = e.target as HTMLElement; if (!ref.current?.contains(t) && !popRef.current?.contains(t) && !t.closest?.('.combo__pop')) setOpen(false) }
     // Esc cierra solo el calendario, no la ventana en que está
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); e.stopPropagation(); setOpen(false) } }
     document.addEventListener('mousedown', close)
@@ -109,11 +111,9 @@ function TimePicker({ value, onPick }: { value: string; onPick: (hm: string) => 
   const [h, m] = /^\d{2}:\d{2}$/.test(value) ? value.split(':') : ['', '']
   return (
     <div className="dtf__time">
-      <label><small>Hora</small><select className="select" value={h} onChange={(e) => onPick(`${e.target.value}:${m || '00'}`)} aria-label="Hora (00 a 23)">
-        {!h && <option value="">--</option>}{HOURS.map((x) => <option key={x}>{x}</option>)}</select></label>
+      <label><small>Hora</small><Combo value={h} onChange={(v) => onPick(`${v}:${m || '00'}`)} label="Hora (00 a 23)" placeholder="--" options={HOURS} /></label>
       <b>:</b>
-      <label><small>Minutos</small><select className="select" value={m} onChange={(e) => onPick(`${h || '00'}:${e.target.value}`)} aria-label="Minutos">
-        {!m && <option value="">--</option>}{MINUTES.map((x) => <option key={x}>{x}</option>)}</select></label>
+      <label><small>Minutos</small><Combo value={m} onChange={(v) => onPick(`${h || '00'}:${v}`)} label="Minutos" placeholder="--" options={MINUTES} /></label>
     </div>
   )
 }

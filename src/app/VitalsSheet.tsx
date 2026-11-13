@@ -1,4 +1,5 @@
 import { FluidBalance } from '../components/FluidBalance'
+import { Combo } from '../components/Combo'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DateTimeField } from '../components/DateTimeField'
 import { fromLocalValue, localValueToIso } from '../lib/dateInput'
@@ -115,7 +116,7 @@ export function VitalsSheet({ file, p, reload, autoRecord, autoRecordPast, onFoc
                 <small className="muted">Indicado en la nota médica</small></div>
             ) : <label className="vs__every"><span>Toma cada</span>
               {can('inpatient.orders') && open
-                ? <select className="select select--auto" value={every} onChange={(e) => setEvery(Number(e.target.value))} aria-label="Frecuencia de toma">{VITALS_FREQUENCIES.map((n) => <option key={n} value={n}>{n} h</option>)}</select>
+                ? <Combo auto value={String(every)} onChange={(v) => setEvery(Number(v))} label="Frecuencia de toma" options={VITALS_FREQUENCIES.map((n) => ({ value: String(n), label: `${n} h` }))} />
                 : <b>{every} h</b>}
               <small className="muted">{source}</small></label>}
             <div className="segmented" role="radiogroup" aria-label="Rango de la curva y la tabla">

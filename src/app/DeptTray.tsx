@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { Link } from 'react-router-dom'
 import { UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -98,7 +99,7 @@ export default function DeptTray({ group, area }: { group: ExamGroup; area?: Dep
       </div>
       <div className="exam-tools dept__filters" role="search">
         <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar paciente o estudio" aria-label="Buscar paciente o estudio" />
-        {places.length > 0 && <select className="select" value={where} onChange={(e) => setWhere(e.target.value)} aria-label="Ubicación"><option value="">Todas las ubicaciones</option>{places.map((p) => <option key={p}>{p}</option>)}</select>}
+        {places.length > 0 && <Combo value={where} onChange={setWhere} label="Ubicación" options={[{ value: '', label: 'Todas las ubicaciones' }, ...places.map((p) => ({ value: p, label: p }))]} />}
         <label className="check-inline"><input type="checkbox" checked={urgentOnly} onChange={(e) => setUrgentOnly(e.target.checked)} />Solo urgentes</label>
         <DateField value={day} max={today} onChange={(v) => setDay(v || today)} label="Fecha" />
       </div>

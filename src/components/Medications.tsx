@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
+import { Combo } from './Combo'
 import { isNebulization, loadingAllowed, loadingDroppedByRoute, nebulizationBody, nebulizationReady } from '../lib/medExtras'
 import { BuyOutsideFields, EMPTY_NEB, LoadingDoseFields, LoadingDropped, NebulizerFields } from './MedExtras'
 import { frequencyHours, medLabel } from '../lib/inpatient'
@@ -254,11 +255,10 @@ export function MedicationForm(props: ItemForm | StayForm) {
         <RouteField value={d.route} onChange={(r) => setD((m) => ({ ...m, route: r, nebulization: isNebulization(r) ? m.nebulization ?? structuredClone(EMPTY_NEB) : m.nebulization, freq: isNebulization(r) && m.freq === 'infusion' ? '6' : m.freq }))} />
         {neb && <NebulizerFields value={nebValue} onChange={(n) => set({ nebulization: n })} allergies={patient.allergies} firstName={patient.firstName} />}
         <label className="field"><span>Frecuencia</span>
-          <select className={`select ${statBad ? 'input--warn' : ''}`} value={d.freq} onChange={(e) => {
-            const v = e.target.value
+          <Combo warn={statBad} value={d.freq} options={freqOptions.map((f) => ({ value: f.value, label: f.label }))} onChange={(v) => {
             // ME1: una infusión no es PRN; si estaba en vía oral, pasa a intravenosa
             setD((m) => ({ ...m, freq: v, ...(v === 'infusion' ? { prn: false, route: m.route === 'Oral' ? 'Intravenosa' : m.route } : {}) }))
-          }}>{freqOptions.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select>
+          }} />
           {statBad && <small className="field__msg field__msg--warn">Sin ingreso solo se permite dosis STAT. Cámbiala o marca el ingreso.</small>}</label>
         {/* MC2 (ronda 6): PRN con su condición; una infusión o una dosis STAT no son PRN */}
         {!infusion && !statOnly && (
@@ -273,18 +273,15 @@ export function MedicationForm(props: ItemForm | StayForm) {
           <div className="field span-2"><span>Velocidad de infusión</span>
             <div className="rate-field">
               <input className={`input num ${d.rate && rIssue ? 'input--error' : ''}`} inputMode="decimal" value={d.rate} onChange={(e) => set({ rate: e.target.value })} placeholder="Ej. 125" aria-label="Velocidad de infusión" aria-required="true" />
-              <select className="select" value={unit.value} onChange={(e) => set({ infusionUnit: e.target.value as InfusionUnit })} aria-label="Unidad de la velocidad">
-                {INFUSION_UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
-              </select>
+              <Combo value={unit.value} onChange={(v) => set({ infusionUnit: v as InfusionUnit })} label="Unidad de la velocidad" options={INFUSION_UNITS.map((u) => ({ value: u.value, label: u.label }))} />
             </div>
             {rIssue && <small className={`field__msg ${d.rate ? 'field__msg--error' : 'field__msg--warn'}`}>{rIssue}</small>}</div>
         )}
         {repeating && !statOnly && <LoadingDoseFields checked={d.loading} onChecked={(v) => set({ loading: v })} value={d.loadingDose} onValue={(v) => set({ loadingDose: v })} warn={!!d.drug.trim()}
           givenAt={loadingGivenAt ? `Dosis inicial ya administrada el ${dmyTime(loadingGivenAt)}.` : undefined}
           extra={inStay ? <div className="field"><span>Hora de la dosis inicial</span>
-            <select className="select" value={d.loadingNow ? 'now' : 'at'} onChange={(e) => set({ loadingNow: e.target.value === 'now', ...(e.target.value === 'at' ? { firstAt: inputDateTime(new Date()) } : {}) })} aria-label="Hora de la dosis inicial">
-              <option value="now">Ahora (STAT)</option><option value="at">Elegir fecha y hora</option>
-            </select>
+            <Combo value={d.loadingNow ? 'now' : 'at'} onChange={(v) => set({ loadingNow: v === 'now', ...(v === 'at' ? { firstAt: inputDateTime(new Date()) } : {}) })} label="Hora de la dosis inicial"
+              options={[{ value: 'now', label: 'Ahora (STAT)' }, { value: 'at', label: 'Elegir fecha y hora' }]} />
             {!d.loadingNow && <DateTimeField value={d.firstAt} onChange={(v) => set({ firstAt: v })} label="Fecha y hora de la dosis inicial" />}
           </div> : undefined} />}
         <LoadingDropped show={dropped && !neb} />

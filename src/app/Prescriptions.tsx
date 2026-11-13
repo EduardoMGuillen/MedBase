@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Combo, asChange } from '../components/Combo'
 import { DateField } from '../components/DateTimeField'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ban, Copy, FileText, MessageCircle, Plus, Printer, UserPlus, X } from 'lucide-react'
@@ -146,7 +147,7 @@ function GuestFields({ value, onChange, onPick, onCancel }: { value: GuestPatien
         <label className="field span-2"><span>Nombre completo</span><input className="input" autoFocus value={value.name} onChange={set('name')} autoComplete="off" /></label>
         <div className="field"><span>Fecha de nacimiento (opcional)</span><DateField value={value.birthDate ?? ''} onChange={(v) => onChange({ ...value, birthDate: v })} max={localISODate(now)} label="Fecha de nacimiento" /></div>
         <label className="field"><span>O la edad (opcional)</span><input className="input" value={value.age ?? ''} onChange={set('age')} placeholder="Ej. 34 años" disabled={!!value.birthDate} /></label>
-        <label className="field"><span>Sexo (opcional)</span><select className="select" value={value.sex ?? ''} onChange={set('sex')}><option value="">Sin dato</option><option value="F">Femenino</option><option value="M">Masculino</option></select></label>
+        <label className="field"><span>Sexo (opcional)</span><Combo value={value.sex ?? ''} onChange={(v) => set('sex')(asChange(v))} options={[{ value: '', label: 'Sin dato' }, { value: 'F', label: 'Femenino' }, { value: 'M', label: 'Masculino' }]} /></label>
         <label className="field"><span>Identidad (opcional)</span><DniInput value={value.dni ?? ''} onChange={(dni) => onChange({ ...value, dni })} /></label>
         <label className="field"><span>Teléfono (opcional)</span><input className="input" inputMode="tel" value={value.phone ?? ''} onChange={set('phone')} placeholder="0000-0000" /></label>
       </div>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { DateField, TimeField } from '../components/DateTimeField'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Ban, FileBadge, MessageCircle, Printer } from 'lucide-react'
@@ -116,8 +117,7 @@ export default function Certificate() {
           </>)}
           {kind === 'rest' && (<>
             <label className="field"><span>Días de reposo</span><input className="input num" type="number" min={1} max={90} value={f.restDays} onChange={(e) => set('restDays', Math.max(1, Math.min(90, Number(e.target.value) || 1)))} /></label>
-            <label className="field"><span>Reposo</span><select className="select" value={f.restType} onChange={(e) => set('restType', e.target.value as 'relativo' | 'absoluto')}>
-              <option value="relativo">Relativo</option><option value="absoluto">Absoluto (total)</option></select></label>
+            <label className="field"><span>Reposo</span><Combo value={f.restType} onChange={(v) => set('restType', v as 'relativo' | 'absoluto')} options={[{ value: 'relativo', label: 'Relativo' }, { value: 'absoluto', label: 'Absoluto (total)' }]} /></label>
             <div className="field"><span>Desde</span><DateField value={f.restFrom} onChange={(v) => set('restFrom', v)} label="Desde" /></div>
             <div className="field"><span>Hasta (se calcula)</span><div className="picked"><b>{date(`${draft.restTo}T12:00:00`)}</b></div></div>
           </>)}

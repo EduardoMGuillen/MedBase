@@ -1,4 +1,5 @@
 import { MessageCircle, Phone, Plus, X } from 'lucide-react'
+import { Combo } from './Combo'
 import { formatPhone, telUrl, whatsappUrl } from '../lib/format'
 import type { ClinicContact } from '../lib/types'
 
@@ -19,9 +20,8 @@ export function ContactsEditor({ value, onChange }: { value: ClinicContact[]; on
           <label className="field"><span>Número</span><input className="input num" inputMode="tel" value={c.number} onChange={(e) => set(i, { number: formatPhone(e.target.value) })} placeholder="2232-7710" /></label>
           <label className="field"><span>Etiqueta</span><input className="input" value={c.label} onChange={(e) => set(i, { label: e.target.value })} placeholder="Ej. Recepción, Citas por WhatsApp" maxLength={40} /></label>
           <label className="field"><span>Tipo</span>
-            <select className="select" value={c.type} onChange={(e) => set(i, { type: e.target.value as ClinicContact['type'], whatsapp: e.target.value === 'call' ? false : c.whatsapp })}>
-              {(Object.keys(TYPE_LABEL) as ClinicContact['type'][]).map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
-            </select></label>
+            <Combo value={c.type} onChange={(v) => set(i, { type: v as ClinicContact['type'], whatsapp: v === 'call' ? false : c.whatsapp })}
+              options={(Object.keys(TYPE_LABEL) as ClinicContact['type'][]).map((t) => ({ value: t, label: TYPE_LABEL[t] }))} /></label>
           <div className="contacts__marks">
             <label className="check-inline"><input type="radio" name="contact-primary" checked={!!c.primary} onChange={() => only(i, 'primary')} />Principal</label>
             <label className="check-inline" title={c.type === 'call' ? 'Este número no acepta WhatsApp' : undefined}>

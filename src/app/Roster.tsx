@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { DateField } from '../components/DateTimeField'
@@ -159,7 +160,7 @@ function RepeatShift({ dept, people, month, onClose, onDone }: { dept: 'nursing'
         try { const r = await api<{ added: number }>('/roster/bulk', { body: { staffId, dept, shift, from, to, weekdays: days } }); notify(`Se asignaron ${r.added} turno(s).`); onDone() } catch (x) { notify((x as Error).message, 'error'); setBusy(false) }
       }}>Asignar</button>
     </>}>
-      <label className="field"><span>Persona</span><select className="select" value={staffId} onChange={(e) => setStaffId(e.target.value)}>{people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <label className="field"><span>Persona</span><Combo value={staffId} onChange={setStaffId} options={people.map((p) => ({ value: p.id, label: p.name }))} /></label>
       <div className="field"><span>Turno</span><div className="segmented" role="radiogroup" aria-label="Turno">
         {DEPT_SHIFTS[dept].map((s) => <button key={s.key} type="button" role="radio" aria-checked={shift === s.key} onClick={() => setShift(s.key)}>{s.label}</button>)}</div></div>
       <div className="field"><span>Días de la semana</span><div className="chips">

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Combo, asChange } from './Combo'
 import { Plus, TriangleAlert } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Modal } from './ui'
@@ -81,8 +82,8 @@ export function AddDrugModal({ name, presentation, route, drugs, onClose, onDone
         <label className="field span-2"><span>Nombre genérico</span><input className="input" autoFocus value={f.name} onChange={set('name')} aria-required="true" /></label>
         <label className="field span-2"><span>Nombre comercial (opcional)</span><input className="input" value={f.brand} onChange={set('brand')} placeholder="Ej. Tylenol" /></label>
         <label className="field span-2"><span>Presentación</span><input className="input" value={f.presentation} onChange={set('presentation')} placeholder="Ej. 500 mg, 250 mg/5 ml" /></label>
-        <label className="field"><span>Forma farmacéutica (opcional)</span><select className="select" value={f.form} onChange={set('form')}><option value="">—</option>{FORMS.map((x) => <option key={x}>{x}</option>)}</select></label>
-        <label className="field"><span>Vía</span><select className="select" value={f.route} onChange={set('route')}><option value="">—</option>{ROUTES.map((r) => <option key={r}>{r}</option>)}</select></label>
+        <label className="field"><span>Forma farmacéutica (opcional)</span><Combo value={f.form} onChange={(v) => set('form')(asChange(v))} options={[{ value: '', label: '—' }, ...FORMS]} /></label>
+        <label className="field"><span>Vía</span><Combo value={f.route} onChange={(v) => set('route')(asChange(v))} options={[{ value: '', label: '—' }, ...ROUTES]} /></label>
       </div>
     </Modal>
   )

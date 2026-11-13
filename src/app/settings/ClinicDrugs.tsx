@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Combo } from '../../components/Combo'
 import { Download, Plus, Upload } from 'lucide-react'
 import { useStore } from '../../lib/store'
 import { SectionHead } from '../../components/ui'
@@ -86,9 +87,7 @@ export function ClinicDrugs() {
       <div className="panel__body vdm-tools">
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre genérico, comercial o alias" aria-label="Buscar medicamento" />
         <label className="field field--inline"><span>Vía</span>
-          <select className="select" value={via} onChange={(e) => setVia(e.target.value)} aria-label="Filtrar por vía">
-            <option value="">Todas</option>{routeOptions.map((r) => <option key={r}>{r}</option>)}
-          </select></label>
+          <Combo value={via} onChange={setVia} label="Filtrar por vía" options={[{ value: '', label: 'Todas' }, ...routeOptions.map((r) => ({ value: r, label: r }))]} /></label>
       </div>
       {result && (
         <div className={`alert-strip ${result.added ? 'alert-strip--calm' : 'alert-strip--amber'}`} style={{ margin: '12px 22px 0', flexDirection: 'column', alignItems: 'stretch' }}>

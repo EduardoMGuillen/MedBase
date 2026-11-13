@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { DateField } from '../components/DateTimeField'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, Download, FileText, MessageCircle, Plus, Printer, Search, Wallet, X } from 'lucide-react'
@@ -186,8 +187,7 @@ function BankFields({ bank, reference, onBank, onReference }: { bank: string; re
   return (
     <div className="form-grid">
       <label className="field"><span>Banco</span>
-        <input className="input" list="hn-banks" value={bank} onChange={(e) => onBank(e.target.value)} placeholder="Elige o escribe el banco" />
-        <datalist id="hn-banks">{BANKS.map((b) => <option key={b} value={b} />)}</datalist></label>
+        <Combo free value={bank} onChange={onBank} options={BANKS} placeholder="Elige o escribe el banco" /></label>
       <label className="field"><span>Número de referencia (opcional)</span><input className="input num" value={reference} onChange={(e) => onReference(e.target.value)} /></label>
     </div>
   )
@@ -274,10 +274,8 @@ function ChargeModal({ appt, onClose, onPaid }: { appt?: Appointment; onClose: (
       )}
       {chosen && todayVisits.length > 0 && (
         <label className="field"><span>Visita de hoy (opcional)</span>
-          <select className="select" value={visitId} onChange={(e) => setVisitId(e.target.value)}>
-            <option value="">Sin vincular a una visita</option>
-            {todayVisits.map((a) => <option key={a.id} value={a.id}>{time(a.start)} con {staffById(a.doctorId)?.name}{a.reason ? `, ${a.reason}` : ''}</option>)}
-          </select></label>
+          <Combo value={visitId} onChange={setVisitId} options={[{ value: '', label: 'Sin vincular a una visita' },
+            ...todayVisits.map((a) => ({ value: a.id, label: `${time(a.start)} con ${staffById(a.doctorId)?.name ?? ''}${a.reason ? `, ${a.reason}` : ''}` }))]} /></label>
       )}
 
       <div className="lines">

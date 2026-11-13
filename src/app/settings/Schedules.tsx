@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Combo } from '../../components/Combo'
 import { useStore } from '../../lib/store'
 import { Avatar, Modal } from '../../components/ui'
 import { normalize } from '../../lib/patients'
@@ -82,9 +83,8 @@ export function ScheduleCard({ d, onDirty }: { d: Staff; onDirty?: (save: (() =>
       <div className="panel__body">
         <ScheduleEditor d={d} onDirty={onDirty} extra={
           <label className="field"><span>Se cobra por defecto</span>
-            <select className="select" value={d.serviceId ?? ''} onChange={(e) => updateStaff(d.id, { serviceId: e.target.value }, 'Servicio por defecto guardado')}>
-              <option value="">Ninguno</option>{services.filter((x) => x.active).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-            </select>
+            <Combo value={d.serviceId ?? ''} onChange={(v) => updateStaff(d.id, { serviceId: v }, 'Servicio por defecto guardado')}
+              options={[{ value: '', label: 'Ninguno' }, ...services.filter((x) => x.active).map((x) => ({ value: x.id, label: x.name }))]} />
           </label>
         } />
       </div>

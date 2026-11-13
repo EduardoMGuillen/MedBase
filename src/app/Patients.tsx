@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { DateField } from '../components/DateTimeField'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, SlidersHorizontal, UserPlus, X } from 'lucide-react'
@@ -181,13 +182,12 @@ export default function Patients() {
       <div className="filters2__group"><h3>Próxima cita</h3>
         <Seg label="Próxima cita" value={f.cita} onPick={(v) => setParam({ cita: v })} options={[['', 'Cualquiera'], ['con', 'Tiene'], ['sin', 'No tiene']]} /></div>
       <label className="filters2__group"><h3>Médico que lo atendió</h3>
-        <select className="select" value={f.medico} onChange={(e) => setParam({ medico: e.target.value })}>
-          <option value="">Cualquier médico</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
+        <Combo value={f.medico} onChange={(v) => setParam({ medico: v })} options={[{ value: '', label: 'Cualquier médico' }, ...doctors.map((d) => ({ value: d.id, label: d.name }))]} /></label>
       <label className="filters2__group"><h3>Padecimiento crónico</h3>
-        <select className="select" value={f.seguimiento} onChange={(e) => setParam({ seguimiento: e.target.value })}>
-          <option value="">Con o sin padecimiento</option><option value="cronico">Con algún padecimiento crónico</option>
-          {chronicTitles.map((t) => <option key={t} value={`cronico:${t}`}>{t}</option>)}
-          <option value="cualquiera">Con cualquier seguimiento activo</option><option value="recordatorio">Con recordatorio</option><option value="procedimiento">Con procedimiento programado</option></select></label>
+        <Combo value={f.seguimiento} onChange={(v) => setParam({ seguimiento: v })} options={[
+          { value: '', label: 'Con o sin padecimiento' }, { value: 'cronico', label: 'Con algún padecimiento crónico' },
+          ...chronicTitles.map((t) => ({ value: `cronico:${t}`, label: t })),
+          { value: 'cualquiera', label: 'Con cualquier seguimiento activo' }, { value: 'recordatorio', label: 'Con recordatorio' }, { value: 'procedimiento', label: 'Con procedimiento programado' }]} /></label>
       <div className="filters2__group filters2__group--wide"><h3>Dónde está ahora</h3>
         <Seg label="Dónde está ahora" value={whereOf(f.estado)} onPick={(v) => setParam({ estado: v })} options={[['', 'En cualquier lugar'], ...where]} /></div>
     </div>

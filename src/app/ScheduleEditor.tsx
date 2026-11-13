@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { TimeField } from '../components/DateTimeField'
 import { Plus, X } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -70,7 +71,7 @@ export function ScheduleEditor({ d, extra, onSaved, onDirty }: {
       </div>
       <div className="sched__foot">
         <label className="field"><span>La agenda ofrece horas cada</span>
-          <select className="select" value={slot} onChange={(e) => setSlot(Number(e.target.value))}>{SLOT_OPTIONS.map((m) => <option key={m} value={m}>{m} minutos</option>)}</select>
+          <Combo value={String(slot)} onChange={(v) => setSlot(Number(v))} options={SLOT_OPTIONS.map((m) => ({ value: String(m), label: `${m} minutos` }))} />
         </label>
         {extra}
       </div>
