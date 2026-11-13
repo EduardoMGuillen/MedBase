@@ -178,16 +178,15 @@ describe('PQ3 (ronda 14): hoja de anestesia', () => {
     assert.equal((await rios.post(`/api/anesthesia/notes/${noteId}/upload`, { fileId: f, performedBy: { name: 'Dr. Sin Usuario' } })).status, 201)
   })
 
-  test('Consultorio: la titular (Dra. Isabel Pacheco) sube la hoja en papel en observación', async () => {
+  // R18-OB1 (ronda 18): en observación ya no se escriben notas postquirúrgicas (tampoco en el consultorio, A14): sin nota no hay hoja
+  test('Consultorio: en observación ya no hay nota postquirúrgica ni, por tanto, hoja de anestesia nueva', async () => {
     const lopez = await as('ipacheco@demo.clinara')
     const obs = (await lopez.get('/api/bootstrap')).body.inpatients.find((h: any) => h.kind === 'observation' && h.status === 'active')
     assert.ok(obs)
     const n = await lopez.post(`/api/inpatient/${obs.id}/notes`, { kind: 'evolution', format: 'postop', diagnoses: pre,
       postop: { ...postop({ anesthesiologist: { name: 'Dr. Visitante' } }), team: { surgeon: { name: 'Dra. Isabel Pacheco' }, anesthesiologist: { name: 'Dr. Visitante' } } } })
-    assert.equal(n.status, 201, JSON.stringify(n.body))
-    const f = await uploadPdf(lopez, obs.patientId, obs.id)
-    assert.equal((await lopez.post(`/api/anesthesia/notes/${n.body.id}/upload`, { fileId: f, performedBy: { name: 'Dr. Visitante' } })).status, 201)
-    assert.equal((await lopez.get(`/api/inpatient/${obs.id}/anesthesia`)).body.length, 1)
+    assert.equal(n.status, 403, JSON.stringify(n.body))
+    assert.equal((await lopez.get(`/api/inpatient/${obs.id}/anesthesia`)).body.length, 0)
   })
 
   test('la nota que no es postquirúrgica no lleva hoja', async () => {

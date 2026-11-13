@@ -65,7 +65,7 @@ describe('LB8 y EX12 (ronda 16): exámenes agrupados por categoría del catálog
     assert.equal(new Set(titles).size, titles.length, 'cada categoría una sola vez')
   })
   test('el resumen del resultado: los valores fuera de rango primero; si no hay, los valores o el inicio del informe', () => {
-    assert.deepEqual(resultBrief({ at: '', by: '', values: [{ analyte: 'Sodio', value: '128', unit: 'mmol/L', flag: 'low' }, { analyte: 'Potasio', value: '4', unit: 'mmol/L' }] }).flags, ['Sodio 128 mmol/L (bajo)'])
+    assert.deepEqual(resultBrief({ at: '', by: '', values: [{ analyte: 'Sodio', value: '128', unit: 'mmol/L', flag: 'low' }, { analyte: 'Potasio', value: '4', unit: 'mmol/L' }] }).flags, ['Sodio 128 mmol/L · Bajo'])
     assert.equal(resultBrief({ at: '', by: '', values: [{ analyte: 'Hemoglobina', value: '12', unit: 'g/dL' }] }).text, 'Hemoglobina 12 g/dL')
     assert.equal(resultBrief({ at: '', by: '', report: 'Sin alteraciones agudas.' }).text, 'Sin alteraciones agudas.')
     assert.deepEqual(resultBrief(undefined), { flags: [] })

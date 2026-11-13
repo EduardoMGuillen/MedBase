@@ -240,7 +240,7 @@ describe('P6 referencia en el consultorio y observación sin autorización', () 
     let file = (await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body
     assert.equal(file.authorizations.length, 0)
     assert.equal((await doc.post(`/api/inpatient/${c.body.hospitalizationId}/authorizations`, { template: 'hospital', companion: { name: 'Ana Ruiz', phone: '9999-0000' } })).status, 409)
-    assert.equal((await doc.post(`/api/inpatient/${c.body.hospitalizationId}/authorizations`, { template: 'surgical', procedure: 'Sutura de herida' })).status, 201, 'la quirúrgica sí')
+    assert.equal((await doc.post(`/api/inpatient/${c.body.hospitalizationId}/authorizations`, { template: 'surgical', procedure: 'Sutura de herida' })).status, 403, 'R18-OB1 (ronda 18): la quirúrgica tampoco: en observación no hay cirugía')
     await doc.post(`/api/inpatient/${c.body.hospitalizationId}/convert`, { bedId: await freeBed() })
     file = (await doc.get(`/api/inpatient/${c.body.hospitalizationId}`)).body
     assert.equal(file.authorizations.filter((a: any) => a.template === 'hospital' && a.status === 'pending').length, 1)
