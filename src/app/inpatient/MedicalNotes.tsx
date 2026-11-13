@@ -160,6 +160,9 @@ export function MedicalNotes({ file, p, reload, show = true, onWriting }: { file
       )}
       {pre.ui}
       {can('orders.review') && <PendingOrdersPanel file={file} reload={reload} />}
+      {/* Auditoría (nov. 2026), punto 2: quien no revisa órdenes (el médico que las dio) no ve el aviso rojo: una etiqueta gris,
+          siempre gris, que se quita cuando enfermería las marca */}
+      {!can('orders.review') && open && pendingOrdersOf(file).length > 0 && <p className="m-0"><span className="badge" data-testid="orders-by-nursing">Pendiente de revisión por enfermería ({pendingOrdersOf(file).length})</span></p>}
       {/* MC5: la nota de egreso se escribe en la misma hoja que la epicrisis */}
       {writing === 'discharge' && <DischargeWriter file={file} p={p} initialCondition={transfer ? 'Trasladado a otro centro' : undefined} onDone={() => { setWriting(null); reload(); if (transfer) { const q = new URLSearchParams(notesParams); q.delete('egreso'); setNotesParams(q, { replace: true }) } }} />}
       {referring && <ReferralModal from={{ kind: 'stay', id: h.id }} stayKind={h.kind === 'observation' ? 'observation' : 'hospital'} onClose={() => { setReferring(false); reload() }} />}

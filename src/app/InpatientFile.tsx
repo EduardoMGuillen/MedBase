@@ -8,7 +8,8 @@ import { date, dateTime, time, dxCode } from '../lib/format'
 import { admissionOrdersPending, attendingText, elapsed, stayDay } from '../lib/inpatient'
 import { AlertBar } from './MedAlerts'
 import { TAB_PARAM, tabCounts, type AlertGo } from '../lib/alerts'
-import { useFileAlerts, useNow } from '../lib/hooks'
+import { useStayAlerts } from '../lib/hooks'
+import { reloadWard } from '../lib/ward'
 import type { InpatientFile as File } from '../lib/types'
 import { bedLabel } from './Inpatients'
 import { GeneralDataModal } from './GeneralData'
@@ -48,18 +49,22 @@ export default function InpatientFile() {
   const [missing, setMissing] = useState(false)
   // HO1 (ronda 12): la nota que se está escribiendo (abajo), para avisarlo en las otras pestañas
   const [writingNote, setWritingNote] = useState<string | null>(null)
-  const now = useNow()
-  const alerts = useFileAlerts(file)
+  // PD1 (ronda 18): lo de quien mira cuenta (recuadro y pestañas); lo de otros roles va aparte, en gris
+  const { mine: alerts, others, now } = useStayAlerts(file)
+  // PD1: «Ver resultados» baja hasta el resultado por revisar, aunque ya se esté en la pestaña Exámenes
+  const [reveal, setReveal] = useState(params.get('ver') === 'resultados' ? 1 : 0)
   const load = useCallback(() => {
     if (!id) return
+    // PD2: lo que se registre aquí también actualiza las listas y las insignias del menú
+    reloadWard()
     fetchInpatient(id).then(setFile).catch((e: Error) => { setMissing(true); notify(e.message, 'error') })
   }, [id, fetchInpatient, notify])
   useEffect(load, [load])
   // Lo que pidió la alerta ya está en `focus`: se quita de la URL para que recargar no lo vuelva a abrir
   useEffect(() => {
-    if (!['dosis', 'hora', 'registrar'].some((k) => params.has(k))) return
+    if (!['dosis', 'hora', 'registrar', 'ver'].some((k) => params.has(k))) return
     const q = new URLSearchParams(params)
-    for (const k of ['dosis', 'hora', 'registrar']) q.delete(k)
+    for (const k of ['dosis', 'hora', 'registrar', 'ver']) q.delete(k)
     setParams(q, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -109,6 +114,7 @@ export default function InpatientFile() {
     }
     setFocus({ dose: g.dose, record: g.record, recordPast: g.recordPast })
     selectTab(g.tab)
+    if (g.results) { setReveal((n) => n + 1); return }
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   // EX1: la pestaña «Laboratorios» pasa a «Exámenes» (Laboratorio e Imagen y gabinete)
@@ -159,7 +165,7 @@ export default function InpatientFile() {
         </TabRow>
       </div>
       {/* EN2: barra compacta; la autorización pendiente y la cama sin asignar van en ella como pendientes */}
-      <AlertBar alerts={alerts} onGo={go} />
+      <AlertBar alerts={alerts} others={others} now={now} onGo={go} />
       {ordersPending && (
         <div className="alert-strip admission-pending" role="alert" data-testid="admission-pending">
           <span><TriangleAlert size={16} style={{ verticalAlign: '-3px' }} /> Ingreso sin nota de ingreso: el médico tratante debe escribir las órdenes</span>
@@ -219,7 +225,7 @@ export default function InpatientFile() {
       {tab === 'meds' && <MedSheet file={file} p={p} reload={load} onWriteNote={() => setTab('notes')} focusDose={focus.dose} onFocused={() => setFocus({})} />}
       {tab === 'vitals' && <VitalsSheet file={file} p={p} reload={load} autoRecord={focus.record} autoRecordPast={focus.recordPast} onFocused={() => setFocus({})} />}
       {tab === 'nursing' && !obs && <NursingNotes file={file} reload={load} />}
-      {tab === 'labs' && <ExamList exams={exams} patientId={h.patientId} hospitalizationId={h.id} reload={load} open={open} />}
+      {tab === 'labs' && <ExamList exams={exams} patientId={h.patientId} hospitalizationId={h.id} reload={load} open={open} reveal={reveal} />}
       {tab === 'annexes' && <Annexes file={file} p={p} reload={load} />}
       {/* HO1 (ronda 12): siempre montada: la nota que se escribe sigue abierta al cambiar de pestaña.
           NE8 (ronda 13): va después del contenido de cualquier pestaña: lo de la pestaña arriba, la nota abajo */}

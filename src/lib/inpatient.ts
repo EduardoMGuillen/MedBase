@@ -240,7 +240,9 @@ export function pendingOrdersOf(file: Pick<InpatientFile, 'notes' | 'marks'>) {
   const out: { note: InpatientNote; index: number; text: string }[] = []
   for (const n of [...file.notes].sort((a, b) => a.at.localeCompare(b.at))) {
     if (!n.checklist) continue
-    n.orders?.forEach((text, index) => { if (orderMark(file.marks, n.id, index)?.action !== 'check') out.push({ note: n, index, text }) })
+    // Auditoría (nov. 2026), punto 3: solo cuentan las órdenes nuevas, cambiadas u omitidas (enfermería tiene que enterarse); las
+    // que «continúan» de la nota anterior ya se revisaron entonces y no vuelven a contar
+    n.orders?.forEach((text, index) => { if (n.lines?.[index]?.tag !== 'continue' && orderMark(file.marks, n.id, index)?.action !== 'check') out.push({ note: n, index, text }) })
   }
   return out
 }

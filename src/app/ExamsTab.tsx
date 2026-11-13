@@ -50,7 +50,9 @@ const daysOf = <T extends { orderedAt: string }>(list: T[]) => list.reduce<T[][]
  * sus botones de acción se usan sin abrirla. Sólo un crítico sin revisar empieza abierto. Arriba: «Buscar examen», orden
  * por fecha (con el día como encabezado), filtros con su conteo y «Expandir todo / Contraer todo». Es sólo presentación.
  */
-export function ExamList({ exams, patientId, hospitalizationId, reload, open = true, only }: { exams: ExamOrder[]; patientId: string; hospitalizationId?: string; reload: () => void; open?: boolean
+export function ExamList({ exams, patientId, hospitalizationId, reload, open = true, only, reveal = 0 }: { exams: ExamOrder[]; patientId: string; hospitalizationId?: string; reload: () => void; open?: boolean
+  /** PD1 (ronda 18): cada vez que cambia (y no es 0), se abren los resultados por revisar y la página baja hasta el primero. */
+  reveal?: number
   /** DP4 (ronda 11): solo el tipo del departamento. */
   only?: ExamGroup }) {
   const { can, staffById, user } = useStore()
@@ -89,6 +91,17 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
     setOpenCats((x) => ({ ...x, ...Object.fromEntries(keys.map((k) => [k, v])) }))
   }
   const canTake = useCanTake()
+  useEffect(() => {
+    if (!reveal) return
+    const ready = exams.filter((e) => e.status === 'result').sort(order)
+    if (!ready.length) return
+    setShown((x) => ({ ...x, ...Object.fromEntries(ready.map((e) => [e.id, true])) }))
+    const keys = (['lab', 'imaging'] as ExamGroup[]).flatMap((g) => daysOf(exams.filter((e) => e.group === g).sort(order)).flatMap((day) => orderGroups(day, catalog).filter((c) => c.items.some((e) => e.status === 'result')).map((c) => catKey(g, day, c.title))))
+    setOpenCats((x) => ({ ...x, ...Object.fromEntries(keys.map((k) => [k, true])) }))
+    const t = setTimeout(() => document.getElementById(`exam-row-${ready[0].id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal])
   return (
     <div className="hc" data-tour="examenes-tab">
       {exams.length > 0 && (
@@ -227,7 +240,7 @@ export function ExamRow({ e, reload, open, expanded, onToggle, compact = false }
   const canNext = open && mine && can('exams.process') && isPending(e) && e.status === 'ordered' && e.place !== 'external'
   const canCancel = open && isPending(e) && !dept && (can('exams.process') || can('exams.order'))
   return (
-    <div className={`exam-row${compact ? ' exam-row--compact' : ''}${e.priority === 'urgent' && isPending(e) ? ' exam-row--urgent' : ''}${expanded ? '' : ' is-folded'}`}>
+    <div id={`exam-row-${e.id}`} className={`exam-row${compact ? ' exam-row--compact' : ''}${e.priority === 'urgent' && isPending(e) ? ' exam-row--urgent' : ''}${expanded ? '' : ' is-folded'}`}>
       <div className="exam-row__main">
         {compact ? <div className="exam-row__line">{toggle}{ordered}</div> : <>{toggle}{ordered}</>}
         {compact && (brief.flags.length > 0 || brief.text) && <span className="exam-row__brief">

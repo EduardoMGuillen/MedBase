@@ -36,14 +36,16 @@
 .board__table td.board__who.board__state { width: auto; white-space: normal; }
 
 /* Hasta 1180 px (tablet): sin la columna de diagnóstico ancha; la tabla se desplaza a lo ancho si no cabe */
-.board__spec { display: none; }
+/* PD2 (ronda 18): con la columna «Especialidad» a la vista, no se repite debajo del paciente (antes `.board__who small` la
+   volvía a mostrar) */
+.board__who small.board__spec { display: none; }
 @media (max-width: 1180px) {
   .board__table .board__dx { min-width: 140px; }
 }
 /* 1000 px o menos (tableta en vertical): la especialidad pasa debajo del paciente y los avisos se angostan */
 @media (max-width: 1000px) {
   .board__table .board__col-spec { display: none; }
-  .board__spec { display: block; color: var(--ink-deep) !important; }
+  .board__who small.board__spec { display: block; color: var(--ink-deep) !important; }
   .board__table .board__dx { min-width: 120px; }
   .board__table td.board__flags { min-width: 0; max-width: 160px; }
   .board__table th, .board__table td { padding-left: 10px; padding-right: 10px; }
@@ -73,3 +75,18 @@
   .board__flags > * { margin: 0; }
   .board__flags .btn { min-height: 44px; }
 }
+
+/* PD2 (ronda 18): columna «Pendientes»: etiquetas cortas de quien mira (cada una abre el expediente donde se resuelve) y, en gris,
+   cuántos hay de otros roles */
+.board__table td.board__pend { min-width: 170px; max-width: 260px; }
+.pend { display: grid; gap: 4px; }
+.pend__chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.pend__chip { text-decoration: none; white-space: nowrap; }
+.pend__chip:hover { filter: brightness(.96); text-decoration: underline; }
+.pend__others { color: var(--muted); font-size: var(--fs-sm); }
+@media (max-width: 760px) {
+  .board__table td.board__pend { display: block; max-width: none; margin-top: 8px; }
+  .board__table td.board__pend:empty { display: none; }
+  .pend__chip { min-height: 32px; display: inline-flex; align-items: center; }
+}
+@media (pointer: coarse) { .pend__chip { min-height: 44px; display: inline-flex; align-items: center; padding-left: 12px; padding-right: 12px; } }

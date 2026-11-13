@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Bed } from '../lib/types'
 
-export type BoardFilter = 'all' | 'occupied' | 'free'
+/** PD2 (ronda 18): 'mine' = «Con pendientes para mí». */
+export type BoardFilter = 'all' | 'occupied' | 'free' | 'mine'
 
 /** Lo que muestra una fila; lo arma la pantalla según lo que la persona puede ver (HO2: sin expediente, menos datos). */
 export type BedRow = {
@@ -16,6 +17,9 @@ export type BedRow = {
   day?: number
   since?: string
   flags?: ReactNode
+  /** PD2 (ronda 18): la celda «Pendientes» (etiquetas de quien mira) y si tiene alguno suyo (para el filtro). */
+  pending?: ReactNode
+  hasMine?: boolean
   action?: ReactNode
 }
 
@@ -24,19 +28,21 @@ const FILTERS: { key: BoardFilter; label: string; count: (c: Counts) => number }
   { key: 'occupied', label: 'Ocupadas', count: (c) => c.occupied },
   { key: 'free', label: 'Libres', count: (c) => c.free },
 ]
-type Counts = { all: number; occupied: number; free: number }
+type Counts = { all: number; occupied: number; free: number; mine?: number }
 
 /**
  * TB (ronda 17): Hospitalizados como una tabla sobria de camas, agrupada por cuarto (el cuarto ocupa las filas de sus camas),
  * con un filtro segmentado y etiquetas de estado en vez de tarjetas. A 760 px o menos cada cama es un bloque compacto con su
  * cuarto arriba (boards.css).
  */
-export function BedBoard({ beds, rowOf, filter, onFilter, counts }: {
+export function BedBoard({ beds, rowOf, filter, onFilter, counts, pendings = false }: {
   beds: Bed[]; rowOf: (b: Bed) => BedRow; filter: BoardFilter; onFilter: (f: BoardFilter) => void; counts: Counts
+  /** PD2 (ronda 18): con la columna «Pendientes» y el filtro «Con pendientes para mí» (quien abre el expediente). */
+  pendings?: boolean
 }) {
   const nav = useNavigate()
   const rows = beds.map((b) => ({ b, r: rowOf(b) }))
-    .filter(({ r }) => filter === 'all' || (filter === 'occupied' ? r.occupied : !r.occupied))
+    .filter(({ r }) => filter === 'all' || (filter === 'mine' ? !!r.hasMine : filter === 'occupied' ? r.occupied : !r.occupied))
   // Cuántas camas de cada cuarto quedan en la lista (para el rowSpan de la primera)
   const span = new Map<string, number>()
   for (const { b } of rows) span.set(b.room, (span.get(b.room) ?? 0) + 1)
@@ -51,10 +57,11 @@ export function BedBoard({ beds, rowOf, filter, onFilter, counts }: {
               {f.label} <span className="num">{f.count(counts)}</span>
             </button>
           ))}
+          {pendings && <button type="button" role="radio" aria-checked={filter === 'mine'} onClick={() => onFilter('mine')}>Con pendientes para mí <span className="num">{counts.mine ?? 0}</span></button>}
         </div>
       </div>
       {rows.length === 0
-        ? <div className="empty">{filter === 'free' ? 'No hay camas libres.' : 'No hay camas ocupadas.'}</div>
+        ? <div className="empty">{filter === 'mine' ? 'Ningún paciente tiene pendientes para ti.' : filter === 'free' ? 'No hay camas libres.' : 'No hay camas ocupadas.'}</div>
         : (
           <table className="table board__table">
             <thead>
@@ -67,6 +74,7 @@ export function BedBoard({ beds, rowOf, filter, onFilter, counts }: {
                 <th>Diagnóstico</th>
                 <th>Médico tratante</th>
                 <th className="ta-r">Día</th>
+                {pendings && <th>Pendientes</th>}
                 <th><span className="sr-only">Avisos y acciones</span></th>
               </tr>
             </thead>
@@ -88,6 +96,7 @@ export function BedBoard({ beds, rowOf, filter, onFilter, counts }: {
                     <td data-label="Diagnóstico" className="board__dx">{r.dx}</td>
                     <td data-label="Médico tratante">{r.doctor}</td>
                     <td data-label="Día" className="num ta-r">{r.day}</td>
+                    {pendings && <td data-label="Pendientes" className="board__pend">{r.occupied ? r.pending : null}</td>}
                     <td className="board__flags">{r.flags}{r.action}</td>
                   </tr>
                 )

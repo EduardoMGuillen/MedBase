@@ -176,8 +176,10 @@ export async function pendingOrders(sql: Sql, cid: string) {
   const state = new Map<string, string>()
   for (const m of marks) state.set(`${m.note_id}:${m.order_index}`, String(m.action))
   return notes.map((n) => {
-    const orders = (JSON.parse(String(n.data)) as { orders?: string[] }).orders ?? []
-    const pending = orders.filter((_, i) => state.get(`${n.id}:${i}`) !== 'check').length
+    const data = JSON.parse(String(n.data)) as { orders?: string[]; lines?: { tag?: string }[] }
+    const orders = data.orders ?? []
+    // Auditoría (nov. 2026), punto 3: las órdenes que «continúan» no cuentan (igual que pendingOrdersOf en el cliente)
+    const pending = orders.filter((_, i) => data.lines?.[i]?.tag !== 'continue' && state.get(`${n.id}:${i}`) !== 'check').length
     return { hospitalizationId: String(n.hospitalization_id), patientId: String(n.patient_id), bedId: n.bed_id ? String(n.bed_id) : undefined,
       noteId: String(n.id), authorId: String(n.author_id), at: String(n.at), pending }
   }).filter((x) => x.pending > 0).sort((a, b) => b.at.localeCompare(a.at))

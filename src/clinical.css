@@ -886,6 +886,16 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; te
 .alert-bar--critical { border-color: var(--err-line); background: var(--red-soft); }
 .alert-bar--pending { border-color: var(--warn-line); }
 .alert-bar--info { border-color: var(--line); }
+/* PD1 (ronda 18): sin pendientes propios, el recuadro no es de alerta: gris. «Pendientes de otros», informativo y más pequeño */
+.alert-bar--none { border-color: var(--line); background: var(--paper-soft); }
+.alert-bar--none .alert-bar__head b { color: var(--muted); }
+.alert-bar__others-n { color: var(--muted); font-size: 13px; }
+.alert-others { border-top: 1px solid var(--line-soft); padding: 8px 16px 10px; background: var(--paper-soft); color: var(--muted); font-size: 13px; }
+.alert-bar--none .alert-others { border-top: 0; padding-top: 0; }
+.alert-others h3 { margin: 0 0 4px; font-family: var(--text); font-size: 12px; font-weight: 700; color: var(--muted); }
+.alert-others ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.alert-others li b { font-weight: 650; }
+.alert-others__late { color: var(--petrol); font-weight: 700; }
 .alert-bar__head { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 14px; background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .alert-bar__head:disabled { cursor: default; }
 .alert-bar__head b { font-size: 14px; }

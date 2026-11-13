@@ -7,6 +7,8 @@ import { age, fullName, time } from '../lib/format'
 import { useNow } from '../lib/hooks'
 import { api } from '../lib/api'
 import { attendingText, elapsed } from '../lib/inpatient'
+import { PendingChips } from '../components/Pendings'
+import { useStayPendings } from '../lib/ward'
 
 /** AD1 (ronda 17): una fila de la lista de Observación para quien no ve el expediente (administración). */
 type BoardRow = { id: string; patientId: string; since: string; specialty?: string; room?: string; doctorIds: string[] }
@@ -22,12 +24,16 @@ export default function Observation() {
 }
 
 /** TB (ronda 17): filtro del tablero: todos o solo los que pasan del límite de horas */
-function ObsFilter({ over, total, limit, value, onChange }: { over: number; total: number; limit: number; value: 'all' | 'over'; onChange: (v: 'all' | 'over') => void }) {
+type ObsShow = 'all' | 'over' | 'mine'
+function ObsFilter({ over, total, limit, value, onChange, mine }: { over: number; total: number; limit: number; value: ObsShow; onChange: (v: ObsShow) => void
+  /** PD2 (ronda 18): cuántos tienen pendientes de quien mira (sin el dato, no se ofrece el filtro) */
+  mine?: number }) {
   return (
     <div className="board__bar">
       <div className="segmented" role="radiogroup" aria-label="Mostrar pacientes">
         <button type="button" role="radio" aria-checked={value === 'all'} onClick={() => onChange('all')}>Todos <span className="num">{total}</span></button>
         <button type="button" role="radio" aria-checked={value === 'over'} onClick={() => onChange('over')}>Más de {limit} h <span className="num">{over}</span></button>
+        {mine != null && <button type="button" role="radio" aria-checked={value === 'mine'} onClick={() => onChange('mine')}>Con pendientes para mí <span className="num">{mine}</span></button>}
       </div>
     </div>
   )
@@ -44,20 +50,22 @@ function ObservationList() {
   const { inpatients, patient, staffById, settings } = useStore()
   const now = useNow()
   const nav = useNavigate()
-  const [show, setShow] = useState<'all' | 'over'>('all')
+  const [show, setShow] = useState<ObsShow>('all')
   const limit = settings.obsAlertHours ?? 24
+  // PD2 (ronda 18): columna «Pendientes» y filtro «Con pendientes para mí»
+  const pendings = useStayPendings()
   const list = inpatients.filter((h) => h.kind === 'observation').sort((a, b) => a.admittedAt.localeCompare(b.admittedAt))
-    .map((h) => { const minutes = Math.floor((now.getTime() - new Date(h.admittedAt).getTime()) / 60_000); return { h, minutes, over: minutes >= limit * 60 } })
-  const rows = list.filter((x) => show === 'all' || x.over)
+    .map((h) => { const minutes = Math.floor((now.getTime() - new Date(h.admittedAt).getTime()) / 60_000); return { h, minutes, over: minutes >= limit * 60, mine: !!pendings?.get(h.id)?.mine.length } })
+  const rows = list.filter((x) => show === 'all' || (show === 'mine' ? x.mine : x.over))
   return (
     <div className="page">
       <PageHead title="Observación" sub={list.length ? `${list.length} ${list.length === 1 ? 'paciente' : 'pacientes'} en observación. Se resaltan los que pasan de ${limit} horas.` : 'Nadie en observación ahora.'} />
       {list.length ? (
         <section className="panel board" data-testid="observation-list">
-          <ObsFilter over={list.filter((x) => x.over).length} total={list.length} limit={limit} value={show} onChange={setShow} />
+          <ObsFilter over={list.filter((x) => x.over).length} total={list.length} limit={limit} value={show} onChange={setShow} mine={list.filter((x) => x.mine).length} />
           {rows.length ? (
             <table className="table board__table">
-              <thead><tr><th>Paciente</th><th>Diagnóstico o motivo</th><th>Ingresó</th><th>Tiempo</th><th><span className="sr-only">Avisos</span></th></tr></thead>
+              <thead><tr><th>Paciente</th><th>Diagnóstico o motivo</th><th>Ingresó</th><th>Tiempo</th><th>Pendientes</th></tr></thead>
               <tbody>{rows.map(({ h, minutes, over }) => {
                 const p = patient(h.patientId)
                 if (!p) return null
@@ -68,12 +76,12 @@ function ObservationList() {
                     <td data-label="Diagnóstico" className="board__dx">{h.diagnoses.map((d) => d.label).join('; ') || h.reason}</td>
                     <td data-label="Ingresó">{staffById(h.admittedBy)?.name} · {time(h.admittedAt)}</td>
                     <td className="board__time">{timeBadge(minutes, over)}</td>
-                    <td className="board__flags">{h.authPending && <span className="badge badge--amber">Autorización pendiente de firma</span>}</td>
+                    <td data-label="Pendientes" className="board__pend"><PendingChips p={pendings?.get(h.id)} to={to} /></td>
                   </tr>
                 )
               })}</tbody>
             </table>
-          ) : <div className="empty">Nadie pasa de {limit} horas.</div>}
+          ) : <div className="empty">{show === 'mine' ? 'Ningún paciente tiene pendientes para ti.' : `Nadie pasa de ${limit} horas.`}</div>}
         </section>
       ) : <section className="panel"><div className="empty">Para ingresar a un paciente, marca «Ingreso a observación» al firmar su consulta externa.</div></section>}
     </div>
@@ -84,7 +92,7 @@ function ObservationList() {
 function ObservationBoard() {
   const { patient, staffById, settings } = useStore()
   const now = useNow()
-  const [show, setShow] = useState<'all' | 'over'>('all')
+  const [show, setShow] = useState<ObsShow>('all')
   const limit = settings.obsAlertHours ?? 24
   const [list, setList] = useState<BoardRow[] | null>(null)
   useEffect(() => {

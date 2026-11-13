@@ -1,18 +1,12 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CircleAlert, Clock } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { api } from '../lib/api'
-import { useNow } from '../lib/hooks'
-import { alertQuery, fileAlerts, LEVEL_RANK, type FileAlert } from '../lib/alerts'
-import { bandOf } from '../lib/vitalsSheet'
+import { alertQuery, LEVEL_RANK, type FileAlert } from '../lib/alerts'
+import { useStayPendings, useWardFiles } from '../lib/ward'
 import { stayPath } from '../lib/inpatient'
-import { fullName, shortStaff } from '../lib/format'
+import { fullName } from '../lib/format'
 import { bedLabel } from './Inpatients'
-import type { InpatientFile } from '../lib/types'
 
-/** Lo que manda el servidor de cada estancia: sólo lo que usan las alertas. */
-type AlertFile = Pick<InpatientFile, 'hospitalization' | 'notes' | 'marks' | 'meds' | 'doses' | 'vitals' | 'consultOrders' | 'authorizations' | 'exams'>
 /** Líneas por paciente antes de «y N más». */
 const MAX_LINES = 4
 
@@ -21,18 +15,12 @@ const MAX_LINES = 4
  * Los pacientes van por prioridad (crítico, pendiente) y, dentro de ella, por lo más antiguo; los avisos no salen aquí.
  */
 export function WardAlerts() {
-  const { patient, bed, settings, staffById } = useStore()
-  const now = useNow()
-  const [files, setFiles] = useState<AlertFile[] | null>(null)
-  useEffect(() => {
-    const load = () => api<AlertFile[]>('/inpatient/alerts').then(setFiles).catch(() => null)
-    load()
-    const t = setInterval(load, 60_000)
-    return () => clearInterval(t)
-  }, [])
-  if (!files?.length) return null
-  const band = bandOf(settings)
-  const rows = files.map((f) => ({ f, alerts: fileAlerts(f, band, now, { nameOf: (id) => shortStaff(staffById(id)?.name) }).filter((a) => a.level !== 'info') }))
+  const { patient, bed } = useStore()
+  // PD1 (ronda 18): solo los pendientes de quien mira (los suyos y los compartidos), de la misma fuente que las listas y el menú
+  const files = useWardFiles()
+  const pendings = useStayPendings()
+  if (!files?.length || !pendings) return null
+  const rows = files.map((f) => ({ f, alerts: (pendings.get(f.hospitalization.id)?.mine ?? []).filter((a) => a.level !== 'info') }))
     .filter((r) => r.alerts.length)
     .sort((a, b) => LEVEL_RANK[a.alerts[0].level] - LEVEL_RANK[b.alerts[0].level] || a.alerts[0].since - b.alerts[0].since)
   return (

@@ -14,7 +14,7 @@ import { RoleMenu } from '../components/ViewSwitch'
 import { cap, localISODate, sameDay } from '../lib/format'
 import { miniTourFor, tourFor, tourKey, type TourCtx, type TourStep } from '../lib/tours'
 import { stayPath } from '../lib/inpatient'
-import { ADMISSION_PENDING_TEXT, myPendingAdmissions } from '../lib/alerts'
+import { pendingBadge, useStayPendings } from '../lib/ward'
 import { api } from '../lib/api'
 import { RAIL_QUERY, useMedia } from '../lib/hooks'
 
@@ -37,6 +37,7 @@ export default function AppShell() {
   const { user, can, signOut, appointments, followups, refresh, settings, pendingOrders = [], inpatients, stays: activeStays, saveTour } = useStore()
   const nav = useNavigate()
   const loc = useLocation()
+  const pendings = useStayPendings()
   const [open, setOpen] = useState(false)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setOpen(false), [loc.pathname])
@@ -107,29 +108,30 @@ export default function AppShell() {
   const today = new Date()
   const waiting = appointments.filter((a) => sameDay(a.start, today) && a.status === 'arrived').length
   const due = followups.filter((f) => f.dueDate <= localISODate(today) && !f.notifiedAt).length
-  // Enfermería: órdenes médicas nuevas sin revisar
-  const newOrders = pendingOrders.reduce((s, x) => s + x.pending, 0)
   // AD1 (ronda 17): con `stays` (todos los roles), así administración también ve el contador sin el expediente
   const inObservation = (activeStays ?? inpatients).filter((h) => h.kind === 'observation').length
-  // HO2 (ronda 16): al médico tratante, sus ingresos con órdenes pendientes (en rojo, en Hospitalizados)
-  const myAdmissions = myPendingAdmissions(inpatients, user.id).length
+  // PD1 y PD2 (ronda 18): quien abre el expediente ve en Observación y Hospitalizados cuántos pacientes tienen al menos un
+  // pendiente SUYO (lo mismo que deja el filtro «Con pendientes para mí»). Los demás, como antes: cuántos hay en observación.
+  const mineIn = (kind: 'observation' | 'hospital') => pendingBadge(pendings, inpatients.filter((h) => (h.kind === 'observation') === (kind === 'observation')).map((h) => h.id))
   const platform = user.role === 'superadmin'
   const touring = !!tour
   const f = features(settings)
   // En un consultorio el médico titular también cobra y administra: "Administración" es "Mi consultorio". El médico tiene
   // «Cobrar» debajo de Recetas (MC7). Enfermería ya no cobra (AD9).
-  const doctor = user.role === 'doctor'
   // PF2 (ronda 17) y MN1 (ronda 18): Inicio; Agenda y cobros; Pacientes; Laboratorio e imágenes; Registros; Administración (o Mi consultorio)
   const items = (platform ? [{ to: '/app', label: 'Clínicas y consultorios', end: true }]
     : sidebarFor({ role: user.role, kind: settings.kind ?? 'clinic', observationEnabled: settings.observationEnabled, permissions: (Object.keys(PERMISSIONS) as Permission[]).filter((p) => can(p)) })
   ).map((n) => ({ ...n, icon: platform ? Building2 : ICONS[n.to] ?? House }))
   const label = today.toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })
-  // Contador de cada opción: lo que está esperando ahí (en rojo, lo que es una alerta)
+  // Contador de cada opción. MN1 (ronda 18), una sola regla de color: ROJO solo cuando lo que cuenta es de quien mira y hay algo
+  // crítico (orden sin revisar por más de 30 min, fiebre sin atender, ingreso sin órdenes, examen urgente en su bandeja); lo
+  // demás, ÁMBAR. Consulta externa cuenta pacientes en sala; Crónicos y seguimientos, controles vencidos o de hoy.
+  const pend = (to: string, kind: 'observation' | 'hospital') => { const b = mineIn(kind); return b ? { n: b.n, alert: b.alert, label: `${b.n} ${b.n === 1 ? 'paciente' : 'pacientes'} con pendientes para ti` } : to === '/app/observacion' ? { n: inObservation, label: `${inObservation} en observación` } : null }
   const badge = (to: string): { n: number; alert?: boolean; label: string } | null => {
     const b = to === '/app/consulta-externa' ? { n: waiting, label: `${waiting} en sala` }
       : to === '/app/seguimientos' ? { n: due, label: `${due} seguimientos vencidos o de hoy` }
-          : to === '/app/observacion' ? { n: inObservation, label: `${inObservation} en observación` }
-            : to === '/app/hospitalizados' ? (doctor && myAdmissions ? { n: myAdmissions, alert: true, label: `${myAdmissions} ${ADMISSION_PENDING_TEXT.toLowerCase()}` } : { n: newOrders, alert: true, label: `${newOrders} órdenes nuevas sin revisar` })
+          : to === '/app/observacion' ? pend(to, 'observation')
+            : to === '/app/hospitalizados' ? pend(to, 'hospital')
               : /^\/app\/(laboratorio|imagenes)\//.test(to) ? deptBadge(deptCount[to.endsWith('ambulatorio') ? 'outpatient' : to.endsWith('observacion') ? 'observation' : 'hospital']) : null
     return b && b.n > 0 ? b : null
   }

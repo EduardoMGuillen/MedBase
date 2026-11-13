@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { BedDouble, FileBadge, FileText, Lock, NotebookPen, Pencil, Printer, Syringe } from 'lucide-react'
 import { AlertBar } from './MedAlerts'
 import { alertQuery } from '../lib/alerts'
-import { useFileAlerts } from '../lib/hooks'
+import { useStayAlerts } from '../lib/hooks'
 import type { InpatientFile, Payment, ExamOrder } from '../lib/types'
 import { followupLabel } from '../lib/followups'
 import { bedLabel } from './Inpatients'
@@ -59,10 +59,10 @@ function HospAlerts({ id }: { id?: string }) {
 
 /** EN2: la misma barra del expediente; cada acción abre la estancia en el lugar exacto. */
 function StayAlerts({ file }: { file: InpatientFile | null }) {
-  const alerts = useFileAlerts(file)
+  const { mine, others, now } = useStayAlerts(file)
   const nav = useNavigate()
   if (!file) return null
-  return <AlertBar alerts={alerts} onGo={(go) => nav(`${stayPath(file.hospitalization)}?${alertQuery(go)}`)} />
+  return <AlertBar alerts={mine} others={others} now={now} onGo={(go) => nav(`${stayPath(file.hospitalization)}?${alertQuery(go)}`)} />
 }
 
 export function useChart(patientId: string | undefined, enabled: boolean) {

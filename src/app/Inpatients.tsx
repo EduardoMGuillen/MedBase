@@ -7,6 +7,8 @@ import { BedDouble, Plus, Search, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { Modal, PageHead } from '../components/ui'
 import { BedBoard, type BoardFilter } from '../components/BedBoard'
+import { PendingChips } from '../components/Pendings'
+import { useStayPendings } from '../lib/ward'
 import { age, dateTime, dniDigits, fullName, inputDateTime } from '../lib/format'
 import { DiagnosisPicker } from '../components/DiagnosisPicker'
 import { attendingText, defaultSpecialty, stayDay, stayPath } from '../lib/inpatient'
@@ -31,6 +33,8 @@ export default function Inpatients() {
   const chart = can('inpatient.view')
   const [consent, setConsent] = useState<{ authorizationId: string; patientId: string } | null>(null)
   const nameOf = (id: string) => staffById(id)?.name
+  // PD2 (ronda 18): los pendientes de quien mira, por paciente (columna, filtro e insignia del menú salen de aquí)
+  const pendings = useStayPendings()
 
   const shown = beds
     .filter((b) => b.active)
@@ -66,7 +70,8 @@ export default function Inpatients() {
       {!beds.length ? (
         <section className="panel"><div className="empty">La clínica todavía no tiene camas. Administración las agrega en Configuración de la clínica › Hospitalización y observación.</div></section>
       ) : (
-        <BedBoard beds={shown} filter={filter} onFilter={setFilter} counts={{ all: shown.length, occupied, free: shown.length - occupied }}
+        <BedBoard beds={shown} filter={filter} onFilter={setFilter} pendings={chart}
+          counts={{ all: shown.length, occupied, free: shown.length - occupied, mine: [...byBed.values()].filter((h) => pendings?.get(h.id)?.mine.length).length }}
           rowOf={(b) => {
             const h = byBed.get(b.id)
             const p = h && patient(h.patientId)
@@ -87,12 +92,11 @@ export default function Inpatients() {
               specialty: h.specialty, dx: h.diagnoses.map((d) => d.label).join('; '),
               doctor: attendingText(h.attendingIds ?? [h.admittedBy], nameOf),
               day: stayDay(h.admittedAt), since: dateTime(h.admittedAt),
-              flags: <>
-                {p.allergies.length > 0 && <span className="badge badge--red">Alergias: {p.allergies.join(', ')}</span>}
-                {/* HO2 (ronda 16): ingreso directo sin nota de ingreso firmada; se quita sola al firmarla */}
-                {h.ordersPending && <span className="badge badge--red">Sin órdenes de ingreso</span>}
-                {h.authPending && <span className="badge badge--amber">Autorización pendiente de firma</span>}
-              </>,
+              // PD2 (ronda 18): «Sin órdenes de ingreso» y «Autorización pendiente de firma» ya no son etiquetas sueltas: son
+              // pendientes con responsable y salen en su columna (a quien le tocan) o en «Otros»
+              flags: p.allergies.length > 0 ? <span className="badge badge--red">Alergias: {p.allergies.join(', ')}</span> : undefined,
+              pending: <PendingChips p={pendings?.get(h.id)} to={`/app/hospitalizados/${h.id}`} />,
+              hasMine: !!pendings?.get(h.id)?.mine.length,
             }
           }} />
       )}

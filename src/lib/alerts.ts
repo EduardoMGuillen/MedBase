@@ -3,6 +3,7 @@ import { time } from './format.js'
 import { activeVitals, currentVitalsMode, missedTakes, tempClass, vitalsModeShort, type TempBand } from './vitalsSheet'
 import { examLine, GROUP_LABEL, isPending } from './exams'
 import type { ExamGroup, Hospitalization, InpatientFile } from './types'
+import { PENDING_TYPES, type PendingOwner, type PendingType } from './pendings'
 
 /**
  * EN2: alertas del expediente agrupadas (una línea por tipo y elemento, con conteo) y con tres niveles:
@@ -12,10 +13,20 @@ export type AlertLevel = 'critical' | 'pending' | 'info'
 export type AlertTab = 'sheet' | 'vitals' | 'notes' | 'meds' | 'nursing' | 'labs' | 'annexes'
 /** A dónde lleva la acción: una pestaña (con lo que hay que abrir en ella) o algo del propio expediente. */
 export type AlertGo =
-  | { tab: AlertTab; dose?: { medId: string; at: string }; record?: boolean; recordPast?: boolean }
+  | { tab: AlertTab; dose?: { medId: string; at: string }; record?: boolean; recordPast?: boolean
+    /** PD1 (ronda 18): «Ver resultados» baja hasta el primer resultado por revisar (aunque ya se esté en la pestaña Exámenes). */
+    results?: boolean }
   | { action: 'sign' | 'bed' }
 export interface FileAlert {
   key: string
+  /** PD1 (ronda 18): el tipo de pendiente, a quién le toca y, si es de un médico, de cuáles (tratantes o quien pidió el examen). */
+  type: PendingType
+  owners: PendingOwner[]
+  doctorIds?: string[]
+  /** PD2: la etiqueta corta de la columna «Pendientes» («2 signos atrasados», «Firma del paciente»). */
+  chip: string
+  /** PD1: cómo se le dice a otro rol en «Pendientes de otros», después de «Médico: » («revisar resultado de Hemograma»). */
+  other: string
   level: AlertLevel
   /** Pestaña a la que pertenece (para su contador). */
   tab: AlertTab
@@ -24,6 +35,8 @@ export interface FileAlert {
   /** Desde cuándo está pendiente (ms): ordena dentro del mismo nivel, lo más viejo primero. */
   since: number
   action: { label: string; go: AlertGo }
+  /** PD1: lleva demasiado tiempo (una orden sin revisar de más de 30 min): en «Pendientes de otros» va primero, con el tiempo resaltado. */
+  stale?: boolean
   /** EN2 (ronda 6): una segunda acción, como «Registrar tomas anteriores». */
   secondary?: { label: string; go: AlertGo }
 }
@@ -52,6 +65,12 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
   const h = file.hospitalization
   if (h.status !== 'active') return []
   const out: FileAlert[] = []
+  // PD1 (ronda 18): cada alerta sale con su tipo y su responsable (tabla en pendings.ts)
+  const attending = h.attendingIds?.length ? h.attendingIds : [h.admittedBy]
+  const own = (type: PendingType, extra: Partial<Pick<FileAlert, 'owners' | 'doctorIds'>> = {}) => {
+    const owners = extra.owners ?? PENDING_TYPES[type].owners
+    return { type, owners, doctorIds: owners.includes('doctor') ? extra.doctorIds ?? attending : undefined }
+  }
   const t = now.getTime()
   const day = t - 24 * HOUR
 
@@ -63,9 +82,9 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
     const kind = tempClass(bad.temperature!, band) === 'fever' ? 'Fiebre' : 'Hipotermia'
     const at = new Date(bad.takenAt).getTime()
     if (bad === lastTemp) {
-      out.push({ key: 'temp', level: 'critical', tab: 'vitals', text: `${kind}: ${bad.temperature!.toFixed(1)} °C a las ${when(at, now)}`, count: 1, since: at, action: { label: 'Registrar signos', go: { tab: 'vitals', record: true } } })
+      out.push({ key: 'temp', ...own('vitals-alert'), chip: kind, other: `registrar signos (${kind.toLowerCase()})`, level: 'critical', tab: 'vitals', text: `${kind}: ${bad.temperature!.toFixed(1)} °C a las ${when(at, now)}`, count: 1, since: at, action: { label: 'Registrar signos', go: { tab: 'vitals', record: true } } })
     } else {
-      out.push({ key: 'temp', level: 'info', tab: 'vitals', text: `${kind} de ${bad.temperature!.toFixed(1)} °C a las ${when(at, now)}; la última toma (${lastTemp!.temperature!.toFixed(1)} °C, ${hm(lastTemp!.takenAt)}) es normal`, count: 1, since: at, action: { label: 'Ver curva', go: { tab: 'vitals' } } })
+      out.push({ key: 'temp', ...own('vitals-alert'), chip: `${kind} resuelta`, other: `${kind.toLowerCase()} ya normalizada`, level: 'info', tab: 'vitals', text: `${kind} de ${bad.temperature!.toFixed(1)} °C a las ${when(at, now)}; la última toma (${lastTemp!.temperature!.toFixed(1)} °C, ${hm(lastTemp!.takenAt)}) es normal`, count: 1, since: at, action: { label: 'Ver curva', go: { tab: 'vitals' } } })
     }
   }
 
@@ -73,7 +92,7 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
   const missed = missedTakes(file, now)
   if (missed.length) {
     // EN2 (ronda 6): cada hora con su fecha («23:00 del 30/10 y 07:00 del 31/10»)
-    out.push({ key: 'vitals-missed', level: 'pending', tab: 'vitals', text: `Signos vitales: ${plural(missed.length, 'toma pendiente', 'tomas pendientes')} (${listAnd(missed.map((s) => `${hm(s)} del ${ddmm(s)}`))}) · ${vitalsModeShort(currentVitalsMode(file))}`, count: missed.length, since: missed[0].getTime(),
+    out.push({ key: 'vitals-missed', ...own('vitals-due'), chip: plural(missed.length, 'signo atrasado', 'signos atrasados'), other: `registrar signos vitales (${plural(missed.length, 'toma pendiente', 'tomas pendientes')})`, level: 'pending', tab: 'vitals', text: `Signos vitales: ${plural(missed.length, 'toma pendiente', 'tomas pendientes')} (${listAnd(missed.map((s) => `${hm(s)} del ${ddmm(s)}`))}) · ${vitalsModeShort(currentVitalsMode(file))}`, count: missed.length, since: missed[0].getTime(),
       action: { label: 'Registrar signos', go: { tab: 'vitals', record: true } }, secondary: { label: 'Registrar tomas anteriores', go: { tab: 'vitals', recordPast: true } } })
   }
 
@@ -84,7 +103,7 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
       return slotState(s.at, s.omitted, dose, now, m.everyHours) === 'late'
     })
     if (!late.length) continue
-    out.push({ key: `late-${m.id}`, level: 'pending', tab: 'meds', text: `${medLabel(m)}: ${plural(late.length, 'dosis atrasada', 'dosis atrasadas')} (${list(late.map((s) => when(s.at.getTime(), now)))})`,
+    out.push({ key: `late-${m.id}`, ...own('dose-late'), chip: plural(late.length, 'dosis atrasada', 'dosis atrasadas'), other: `aplicar ${medLabel(m)} (${plural(late.length, 'dosis atrasada', 'dosis atrasadas')})`, level: 'pending', tab: 'meds', text: `${medLabel(m)}: ${plural(late.length, 'dosis atrasada', 'dosis atrasadas')} (${list(late.map((s) => when(s.at.getTime(), now)))})`,
       count: late.length, since: late[0].at.getTime(), action: { label: 'Registrar dosis', go: { tab: 'meds', dose: { medId: m.id, at: late[0].at.toISOString() } } } })
   }
 
@@ -102,7 +121,7 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
     const at = new Date(x.at).getTime()
     const old = t - at > ORDERS_CRITICAL_MIN * 60_000
     const who = opts.nameOf?.(x.author)
-    out.push({ key: `orders-${noteId}`, level: old ? 'critical' : 'pending', tab: 'notes', text: `${plural(x.n, 'orden nueva sin revisar', 'órdenes nuevas sin revisar')}${who ? ` de ${who}` : ''} (${when(at, now)})${old ? `, hace más de ${ORDERS_CRITICAL_MIN} min` : ''}`,
+    out.push({ key: `orders-${noteId}`, ...own('orders-review'), chip: plural(x.n, 'orden por revisar', 'órdenes por revisar'), other: `revisar orden nueva (${x.n})`, stale: old, level: old ? 'critical' : 'pending', tab: 'notes', text: `${plural(x.n, 'orden nueva sin revisar', 'órdenes nuevas sin revisar')}${who ? ` de ${who}` : ''} (${when(at, now)})${old ? `, hace más de ${ORDERS_CRITICAL_MIN} min` : ''}`,
       count: x.n, since: at, action: { label: 'Ver orden', go: { tab: 'notes' } } })
   }
 
@@ -110,38 +129,63 @@ export function fileAlerts(file: AlertFile, band: TempBand, now: Date, opts: { n
   const exams = (file.exams ?? []).filter((e) => e.status !== 'cancelled' && (!opts.groups || opts.groups.includes(e.group)))
   // DP2 (ronda 11): el departamento marcó «No se realizó»: sigue pendiente; el médico decide si lo cancela
   for (const e of exams.filter((x) => x.notDone && isPending(x))) {
-    out.push({ key: `notdone-${e.id}`, level: 'pending', tab: 'labs', text: `No se realizó ${examLine(e)}: ${e.notDone!.reason}`, count: 1,
+    out.push({ key: `notdone-${e.id}`, ...own('exam-notdone', { doctorIds: [...new Set([e.orderedBy, ...attending])] }), chip: 'Examen no realizado', other: `decidir sobre ${examLine(e)}, que no se realizó`, level: 'pending', tab: 'labs', text: `No se realizó ${examLine(e)}: ${e.notDone!.reason}`, count: 1,
       since: new Date(e.notDone!.at).getTime(), action: { label: 'Ver exámenes', go: { tab: 'labs' } } })
   }
-  for (const g of ['lab', 'imaging'] as ExamGroup[]) {
+  // PD1 (ronda 18): lo pendiente se reparte por responsable. Laboratorio: la toma de muestra, de laboratorio y enfermería (sin
+  // laboratorio en la clínica, de enfermería). Imagen: por realizar, del técnico; realizado y sin informe, del radiólogo.
+  const pendingOf = (g: ExamGroup, type: PendingType, owners: PendingOwner[], pick: (e: (typeof exams)[number]) => boolean, noun: [string, string], verb: string) => {
     // MC5 (ronda 5): lo externo no es un pendiente de la clínica
-    const pend = exams.filter((e) => e.group === g && isPending(e) && e.area !== 'none').sort((a, b) => Number(b.priority === 'urgent') - Number(a.priority === 'urgent') || a.orderedAt.localeCompare(b.orderedAt))
-    if (!pend.length) continue
+    const pend = exams.filter((e) => e.group === g && isPending(e) && e.area !== 'none' && pick(e)).sort((a, b) => Number(b.priority === 'urgent') - Number(a.priority === 'urgent') || a.orderedAt.localeCompare(b.orderedAt))
+    if (!pend.length) return
     const urgent = pend.filter((e) => e.priority === 'urgent').length
-    out.push({ key: `exams-${g}`, level: 'pending', tab: 'labs', text: `${GROUP_LABEL[g]}: ${plural(pend.length, 'examen pendiente', 'exámenes pendientes')}${urgent ? ` (${urgent} urgente${urgent > 1 ? 's' : ''})` : ''}: ${list(pend.map(examLine), 3)}`,
+    out.push({ key: `exams-${type}-${owners.join('+')}`, ...own(type, { owners }), chip: plural(pend.length, noun[0], noun[1]), other: `${verb} ${list(pend.map(examLine), 3)}`, level: 'pending', tab: 'labs',
+      text: `${GROUP_LABEL[g]}: ${plural(pend.length, 'examen pendiente', 'exámenes pendientes')}${urgent ? ` (${urgent} urgente${urgent > 1 ? 's' : ''})` : ''}: ${list(pend.map(examLine), 3)}`,
       count: pend.length, since: new Date(pend[0].orderedAt).getTime(), action: { label: 'Ver exámenes', go: { tab: 'labs' } } })
   }
-  const toReview = exams.filter((e) => e.status === 'result')
-  if (toReview.length) {
-    out.push({ key: 'exams-review', level: 'info', tab: 'labs', text: `${plural(toReview.length, 'resultado listo', 'resultados listos')} por revisar: ${list(toReview.map(examLine), 3)}`,
-      count: toReview.length, since: new Date(toReview[0].result?.at ?? toReview[0].orderedAt).getTime(), action: { label: 'Ver resultados', go: { tab: 'labs' } } })
+  pendingOf('lab', 'sample-pending', ['lab', 'nursing'], (e) => e.area === 'lab', ['muestra pendiente', 'muestras pendientes'], 'tomar la muestra de')
+  pendingOf('lab', 'sample-pending', ['nursing'], (e) => e.area !== 'lab', ['muestra pendiente', 'muestras pendientes'], 'tomar la muestra de')
+  pendingOf('imaging', 'imaging-pending', ['imaging'], (e) => e.area === 'imaging' && e.status === 'ordered', ['estudio por realizar', 'estudios por realizar'], 'realizar')
+  pendingOf('imaging', 'imaging-report', ['radiologist'], (e) => e.area === 'imaging' && e.status !== 'ordered', ['informe pendiente', 'informes pendientes'], 'informar')
+  pendingOf('imaging', 'imaging-pending', ['nursing'], (e) => e.area !== 'imaging', ['estudio por coordinar', 'estudios por coordinar'], 'coordinar')
+  // Resultados por revisar: del médico que pidió cada examen y de los tratantes (uno por grupo de médicos)
+  const reviewBy = new Map<string, typeof exams>()
+  for (const e of exams.filter((x) => x.status === 'result')) {
+    const ids = [...new Set([e.orderedBy, ...attending])].sort().join(',')
+    reviewBy.set(ids, [...(reviewBy.get(ids) ?? []), e])
+  }
+  for (const [ids, toReview] of reviewBy) {
+    out.push({ key: `exams-review-${ids}`, ...own('result-review', { doctorIds: ids.split(',') }), chip: plural(toReview.length, 'resultado por revisar', 'resultados por revisar'), other: `revisar ${plural(toReview.length, 'resultado', 'resultados')} de ${list(toReview.map(examLine), 3)}`,
+      level: 'info', tab: 'labs', text: `${plural(toReview.length, 'resultado listo', 'resultados listos')} por revisar: ${list(toReview.map(examLine), 3)}`,
+      count: toReview.length, since: new Date(toReview[0].result?.at ?? toReview[0].orderedAt).getTime(), action: { label: 'Ver resultados', go: { tab: 'labs', results: true } } })
   }
 
   // Autorizaciones pendientes de firma y cama sin asignar
+  // PD1 (ronda 18): cada pendiente de firma dice QUÉ firma falta. Mientras no firme el paciente (o su familiar o el testigo), ese
+  // pendiente es compartido: lo recoge enfermería o el médico tratante. La firma del médico es otro pendiente, solo del médico,
+  // que sigue abierto aunque enfermería ya haya recogido la del paciente. El mismo nombre en el recuadro y en las listas.
   for (const a of file.authorizations.filter((x) => x.status === 'pending')) {
     const hosp = a.template === 'hospital'
-    const doctorOnly = a.signing?.action === 'accept'
-    out.push({ key: `auth-${a.id}`, level: 'pending', tab: 'annexes', text: hosp ? (doctorOnly ? 'Autorización de hospitalización: ya firmó el paciente, falta la firma del médico' : 'Autorización de hospitalización pendiente de firma')
-      : `Autorización quirúrgica pendiente de firma${a.data.procedure ? `: ${a.data.procedure}` : ''}`, count: 1, since: new Date(a.createdAt).getTime(),
-      action: hosp && !doctorOnly ? { label: 'Firmar ahora', go: { action: 'sign' } } : { label: 'Ir a Anexos', go: { tab: 'annexes' } } })
+    const doc = hosp ? 'Autorización de hospitalización' : 'Autorización quirúrgica'
+    const what = `${doc}${!hosp && a.data.procedure ? ` (${a.data.procedure})` : ''}`
+    const patientSigned = a.signing?.action === 'accept'
+    const since = new Date(a.createdAt).getTime()
+    if (!patientSigned) {
+      out.push({ key: `auth-${a.id}`, ...own('sign-patient'), chip: 'Firma del paciente', other: `recoger la firma del paciente en la ${doc.toLowerCase()}`, level: 'pending', tab: 'annexes',
+        text: `${what}: falta la firma del paciente o familiar`, count: 1, since, action: hosp ? { label: 'Firmar ahora', go: { action: 'sign' } } : { label: 'Ir a Anexos', go: { tab: 'annexes' } } })
+    }
+    if (!a.signing?.doctor) {
+      out.push({ key: `auth-doc-${a.id}`, ...own('sign-doctor'), chip: 'Firma del médico', other: `firmar la ${doc.toLowerCase()}`, level: 'pending', tab: 'annexes',
+        text: `${what}: falta la firma del médico${patientSigned ? ' (ya firmó el paciente)' : ''}`, count: 1, since, action: { label: 'Ir a Anexos', go: { tab: 'annexes' } } })
+    }
   }
   // HO2 (ronda 16): ingreso directo sin nota de ingreso firmada: el médico tratante debe escribir las órdenes
   if (admissionOrdersPending(h, file.notes)) {
-    out.push({ key: 'admission-orders', level: 'critical', tab: 'notes', text: `${ADMISSION_PENDING_TEXT}: falta la nota de ingreso del médico tratante`, count: 1, since: new Date(h.admittedAt).getTime(),
+    out.push({ key: 'admission-orders', ...own('admission-orders'), chip: 'Sin nota de ingreso', other: 'escribir la nota de ingreso con las órdenes', stale: true, level: 'critical', tab: 'notes', text: `${ADMISSION_PENDING_TEXT}: falta la nota de ingreso del médico tratante`, count: 1, since: new Date(h.admittedAt).getTime(),
       action: { label: 'Ver notas', go: { tab: 'notes' } } })
   }
   if (h.kind !== 'observation' && !h.bedId) {
-    out.push({ key: 'bed', level: 'pending', tab: 'sheet', text: `Falta asignar la cama${h.companionName ? '' : ' y anotar al acompañante'}`, count: 1, since: new Date(h.admittedAt).getTime(), action: { label: 'Asignar cama', go: { action: 'bed' } } })
+    out.push({ key: 'bed', ...own('bed'), chip: 'Asignar cama', other: 'asignar la cama', level: 'pending', tab: 'sheet', text: `Falta asignar la cama${h.companionName ? '' : ' y anotar al acompañante'}`, count: 1, since: new Date(h.admittedAt).getTime(), action: { label: 'Asignar cama', go: { action: 'bed' } } })
   }
 
   return (opts.groups ? out.filter((a) => a.tab === 'labs') : out).sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level] || a.since - b.since)
@@ -156,6 +200,12 @@ export const ADMISSION_PENDING_TEXT = 'Ingreso con órdenes pendientes'
  */
 export const myPendingAdmissions = (inpatients: Hospitalization[], userId: string) =>
   inpatients.filter((h) => h.ordersPending && (h.attendingIds ?? [h.admittedBy]).includes(userId))
+
+/** PD1 (ronda 18): hace cuánto está pendiente («hace 2 h 10 min»), para lo de otros que lleva demasiado. */
+export function sinceText(since: number, now: Date) {
+  const m = Math.max(0, Math.floor((now.getTime() - since) / 60_000))
+  return m < 60 ? `hace ${m} min` : m < 48 * 60 ? `hace ${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}` : `hace ${Math.floor(m / 1440)} días`
+}
 
 /** "2 críticas · 3 pendientes · 1 aviso". */
 export function alertSummary(alerts: FileAlert[]) {
@@ -190,5 +240,6 @@ export function alertQuery(go: AlertGo) {
   if (go.dose) { q.set('dosis', go.dose.medId); q.set('hora', go.dose.at) }
   if (go.record) q.set('registrar', '1')
   if (go.recordPast) q.set('registrar', 'anteriores')
+  if (go.results) q.set('ver', 'resultados')
   return q.toString()
 }
