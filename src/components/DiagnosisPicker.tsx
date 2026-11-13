@@ -65,7 +65,11 @@ export function DiagnosisPicker({ value, onChange, label, placeholder, recode = 
             if (first) add(first); else if (!loading) free()
           }} />
         {s.length >= 2 && (
-          <div className="suggest__list dx-picker__list">
+          // Auditoría (nov. 2026), punto 8: al presionar un resultado el foco se queda en el buscador. La lista no se cierra al
+          // perder el foco (solo depende del texto), así que el clic ya seleccionaba; pero el foco pasaba al renglón, que
+          // desaparece al elegirlo, y se perdía (en el teléfono se cerraba el teclado). Así el clic y el toque siempre eligen
+          // y se puede seguir escribiendo el siguiente diagnóstico.
+          <div className="suggest__list dx-picker__list" onMouseDown={(e) => { if ((e.target as HTMLElement).closest('button')) e.preventDefault() }}>
             {usual.length > 0 && <small className="dx-picker__group">Usados en la clínica</small>}
             {usual.map((d) => <button type="button" key={`u-${d.code}-${d.label}`} onClick={() => add(d)}><code>{d.code}</code>{d.label}</button>)}
             {live.length > 0 && <small className="dx-picker__group">CIE-11 de la OMS{results?.release ? `, edición ${results.release}` : ''}</small>}
