@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ConsultApplication, ActiveStay, ExamOrder, FluidsMode, VitalsMode,
   Addendum, Appointment, ExamInput, ApptStatus, Attachment, AuditEntry, Authorization, AuthorizationData, Bed, Certificate, CertificateData, Clinic, ClinicDrug, ClinicKind, ClinicRole, ClinicSettings, Consultation, Diagnosis, DischargeData, Referral, ReferralData, Dose, Followup, GuestPatient, HospProcedure, Hospitalization,
-  InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, Vitals,
+  InpatientFile, InpatientMed, InpatientNote, OrderMark, PatientIndex, PendingOrders, Patient, Payment, PaymentMethod, Prescription, PrescriptionItem, Schedule, Service, Staff, TeamNote, TeamNoteVersion, Vitals,
 } from './types'
 import type { Permission } from './permissions'
 import type { CriticalGroup } from './clinicalConfig'
@@ -314,6 +314,10 @@ function useStoreValue() {
       run(() => api<{ id: string; record: string }>('/patients', { body: p }), 'Paciente registrado'),
     updatePatient: (id: string, p: Partial<Patient>) =>
       run(() => api<Patient>(`/patients/${id}`, { method: 'PATCH', body: p }), 'Ficha actualizada'),
+    // NP1 (ronda 18): nota para el equipo. Texto vacío = quitarla; la sincronización trae la vigente con el paciente
+    saveTeamNote: (patientId: string, text: string) =>
+      run(() => api<TeamNote>(`/patients/${patientId}/team-note`, { method: 'PUT', body: { text } }), text.trim() ? 'Nota para el equipo guardada' : 'Nota para el equipo quitada'),
+    fetchTeamNoteHistory: (patientId: string) => api<TeamNoteVersion[]>(`/patients/${patientId}/team-note/history`),
     addVitals: (v: Omit<Vitals, 'id' | 'takenAt' | 'takenBy'>) =>
       run(() => api<Vitals>('/vitals', { body: v }), 'Preclínica guardada'),
     finishConsult: async (c: Omit<Consultation, 'id' | 'prescriptionId' | 'patientId' | 'doctorId' | 'date'> & { appointmentId: string; followups?: FollowupInput[]; observe?: boolean; admit?: boolean; validityDays?: number; exams?: ExamInput[]; vitalsPlan?: VitalsMode; fluids?: { mode: FluidsMode } }, items: PrescriptionItem[]) => {

@@ -27,6 +27,7 @@ import { NoteColumns, NoteExams, NoteText } from '../components/NoteColumns'
 import { ReferralSheet } from './Referral'
 import { bedLabel } from './Inpatients'
 import { ClinicLogo } from './Prescriptions'
+import { TeamNoteLine } from '../components/TeamNote'
 
 const dm = (iso: string) => `${date(iso, { day: '2-digit', month: '2-digit', year: 'numeric' })} ${time(iso)}`
 
@@ -119,6 +120,8 @@ export default function FullRecord() {
         actions={<button className="btn btn--primary" onClick={() => window.print()}><Printer size={16} />Imprimir / Descargar PDF</button>} />
       <nav className="panel fr-index no-print" aria-label="Índice del expediente">
         <div className="panel__head"><div><h2>Expediente completo de {fullName(p)}</h2><p>Al imprimir, cada sección y cada nota de evolución empieza en una hoja nueva. Para guardar el PDF, elige «Guardar como PDF» en la impresora.</p></div></div>
+        {/* NP1 (ronda 18): la nota para el equipo se ve en pantalla, fuera del documento: no sale impresa */}
+        <div className="fr-index__note"><TeamNoteLine p={p} /></div>
         <ol>{sections.map(([sid, label]) => <li key={sid}><a href={`#${sid}`}>{label}</a></li>)}</ol>
       </nav>
 

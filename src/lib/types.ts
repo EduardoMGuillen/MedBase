@@ -216,6 +216,19 @@ export interface Background {
   gynecoNotes?: string
 }
 
+/** NP1 (ronda 18): nota para el equipo vigente del paciente. `text` vacío = la quitaron (queda en el historial). */
+export interface TeamNote {
+  text: string
+  authorId: string
+  /** Nombre tal como está guardado (ya trae «Dr.», «Dra.», «Lic.»…). */
+  authorName: string
+  at: string
+  /** Cuántas versiones tiene el historial, con la vigente. */
+  versions: number
+}
+/** NP1 (ronda 18): una versión del historial de la nota para el equipo. */
+export type TeamNoteVersion = Omit<TeamNote, 'versions'> & { id: string }
+
 export interface Patient {
   id: string
   record: string // número de expediente
@@ -248,6 +261,8 @@ export interface Patient {
   createdAt: string
   /** Agendado por teléfono con nombre y teléfono; completa su registro al llegar. No aparece en la biblioteca. */
   pending?: boolean
+  /** NP1 (ronda 18): nota interna para el equipo (llega con la sincronización; nunca se imprime). */
+  teamNote?: TeamNote
 }
 
 /** Flujo de la cita dentro de la clínica (de la reserva al alta). */

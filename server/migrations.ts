@@ -22,7 +22,22 @@ export interface Step {
   run: (q: Sql) => Promise<void>
 }
 
-export const STEPS: Step[] = []
+export const STEPS: Step[] = [
+  // NP1 (ronda 18): nota para el equipo del paciente. Una fila por versión (nada se borra): la vigente es la última y
+  // «Quitar nota» es una versión con el texto vacío. Con IF NOT EXISTS: si una base vuelve a ejecutar el esquema base, los pasos
+  // corren otra vez desde el primero.
+  { id: 1, name: 'pacientes: nota para el equipo con historial', run: (q) => q.exec(`
+    CREATE TABLE IF NOT EXISTS patient_team_notes (
+      id BIGSERIAL PRIMARY KEY,
+      clinic_id TEXT NOT NULL REFERENCES clinics(id),
+      patient_id TEXT NOT NULL REFERENCES patients(id),
+      text TEXT NOT NULL,
+      author_id TEXT NOT NULL REFERENCES staff(id),
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS patient_team_notes_patient ON patient_team_notes (clinic_id, patient_id, id);
+  `) },
+]
 
 /** Falla al arrancar si los pasos no están numerados 1, 2, 3… sin huecos ni repetidos. */
 export function checkSteps(steps: Step[]) {

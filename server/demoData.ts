@@ -243,7 +243,7 @@ function vitalsFor(r: Rand, age: number, c: Case) {
 // print_jobs, material_uses y consult_applications (rondas 14 a 17) también cuelgan del paciente: sin ellas el borrado choca con la llave foránea
 // record_versions y print_log no tienen llave al paciente, pero guardan versiones e impresiones de sus registros: los ids de
 // la demo se repiten cada día, y si quedaran, la primera corrección del día siguiente chocaría con una versión vieja.
-export const PATIENT_TABLES = ['record_versions', 'print_log', 'print_jobs', 'material_uses', 'consult_applications', 'fluid_entries', 'surgical_counts', 'preanesthesia_evals', 'anesthesia_sheets', 'exam_events', 'exam_orders', 'addenda', 'note_drafts', 'epicrises', 'referrals', 'authorizations', 'order_marks', 'hosp_doses', 'hosp_meds', 'hosp_procedures',
+export const PATIENT_TABLES = ['patient_team_notes', 'record_versions', 'print_log', 'print_jobs', 'material_uses', 'consult_applications', 'fluid_entries', 'surgical_counts', 'preanesthesia_evals', 'anesthesia_sheets', 'exam_events', 'exam_orders', 'addenda', 'note_drafts', 'epicrises', 'referrals', 'authorizations', 'order_marks', 'hosp_doses', 'hosp_meds', 'hosp_procedures',
   'hosp_notes', 'order_set_uses', 'certificates', 'payment_installments', 'payments', 'prescriptions', 'followups', 'attachments', 'hospitalizations', 'consultations', 'vitals',
   'appointments', 'patients'] as const
 /** Tablas con filas que no son de ningún paciente (protocolos y registros generales de material): de éstas sólo se borran las del paciente. */

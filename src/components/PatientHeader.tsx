@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { TriangleAlert } from 'lucide-react'
 import { Avatar } from './ui'
+import { TeamNoteLine } from './TeamNote'
 import { age, fullName } from '../lib/format'
 import { patientColor } from '../app/Patients'
 import type { Patient } from '../lib/types'
@@ -35,6 +36,8 @@ export function PatientHeader({ p, clinical, link = false, children }: { p: Pati
           {p.conditions.map((c) => <span key={c} className="chip">{c}</span>)}
         </div>
       )}
+      {/* NP1 (ronda 18): nota para el equipo; también sin etiquetas clínicas (recepción) */}
+      <TeamNoteLine key={p.id} p={p} />
     </header>
   )
 }

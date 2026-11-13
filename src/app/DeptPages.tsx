@@ -11,6 +11,7 @@ import PatientChart from './PatientChart'
 import { age, dmyTime } from '../lib/format'
 import { isPending } from '../lib/exams'
 import { TabRow } from '../components/TabRow'
+import { TeamNoteLine } from '../components/TeamNote'
 import type { ExamGroup, ExamOrder } from '../lib/types'
 
 /** DP1 (ronda 11): una pantalla de un departamento solo la abre ese departamento (Laboratorio o Imágenes). */
@@ -99,7 +100,7 @@ export function ChartOrDept() {
  */
 function DeptPatient() {
   const { id } = useParams()
-  const { notify } = useStore()
+  const { notify, patient } = useStore()
   const [v, setV] = useState<DeptView | null>(null)
   const [tab, setTab] = useState<'data' | 'pending' | 'done' | null>(null)
   const load = () => { api<DeptView>(`/dept/patients/${id}`).then(setV).catch((e: Error) => notify(e.message, 'error')) }
@@ -107,6 +108,7 @@ function DeptPatient() {
   useEffect(load, [id])
   if (!v) return <Loading label="Abriendo el paciente" />
   const p = v.patient
+  const teamOf = patient(p.id)
   const pending = v.exams.filter((e) => isPending(e) && e.status !== 'cancelled')
   const done = v.exams.filter((e) => !isPending(e) && e.status !== 'cancelled')
   const shown = tab ?? (pending.length ? 'pending' : 'data')
@@ -121,6 +123,8 @@ function DeptPatient() {
               {p.allergies.length ? <span className="ph__allergy"><TriangleAlert size={14} />Alergias: {p.allergies.join(', ')}</span> : <span className="ph__ok">Sin alergias conocidas</span>}
               {v.location && <span className="badge badge--ink">{v.location}</span>}
             </div>
+            {/* NP1 (ronda 18): Laboratorio e Imágenes ven la nota para el equipo (solo lectura) */}
+            {teamOf && <TeamNoteLine p={teamOf} />}
           </div>
         </section>
         <TabRow>

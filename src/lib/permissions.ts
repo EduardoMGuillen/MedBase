@@ -59,6 +59,9 @@ export const PERMISSIONS = {
   // bandejas de Laboratorio e Imágenes en solo lectura (estudios, estado, espera y urgentes; nunca los resultados)
   'observation.board': 'Ver la lista de Observación (sin expediente)',
   'dept.view': 'Ver las bandejas de Laboratorio e Imágenes en solo lectura (sin resultados)',
+  // NP1 (ronda 18): la nota para el equipo la ve todo el que abre al paciente (patients.view); la cambian médicos, enfermería y
+  // administración
+  'patients.teamnote': 'Agregar, cambiar o quitar la nota para el equipo del paciente',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -83,6 +86,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'inpatient.admit',
     // AD1 (ronda 17): la lista de Observación y las bandejas de Laboratorio e Imágenes, en solo lectura
     'observation.board', 'dept.view',
+    // NP1 (ronda 18): agrega, cambia y quita la nota para el equipo
+    'patients.teamnote',
   ],
   doctor: [
     'agenda.view', 'agenda.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record',
@@ -92,6 +97,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'inpatient.admit',
     // PF1 (ronda 17): registra pacientes sin cita (y la llegada de sus citas), como el médico del consultorio
     'checkin.manage',
+    // NP1 (ronda 18)
+    'patients.teamnote',
   ],
   // AD9: enfermería ya no cobra (los cobros los generan recepción, el médico o administración)
   nurse: ['agenda.view', 'checkin.manage', 'patients.view', 'patients.manage', 'chart.view', 'vitals.record', 'rx.view', 'inpatient.view', 'inpatient.care', 'orders.review', 'followups.view',
@@ -101,7 +108,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // RU4 y RU8 (ronda 15, A4 y A13): agrega materiales y variantes (no edita ni archiva) y administra los sets
     'supplies.add', 'sets.manage',
     // EN1 (ronda 16): ve el rol de turnos de enfermería (editarlo es del puesto de licenciada: POSITION_PERMISSIONS)
-    'roster.view'],
+    'roster.view',
+    // NP1 (ronda 18)
+    'patients.teamnote'],
   // RU2 y RU3 (ronda 14): ve el registro de uso, lo imprime y lo exporta. RU10 (ronda 16): también registra material (no anula
   // lo de otros: usage.void sigue siendo de administración)
   reception: ['agenda.view', 'agenda.manage', 'checkin.manage', 'patients.view', 'patients.manage', 'billing.manage', 'followups.view', 'ambulatory.register', 'usage.view', 'usage.export',

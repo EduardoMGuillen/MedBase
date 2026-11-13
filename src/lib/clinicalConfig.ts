@@ -610,3 +610,5 @@ export const FLUID_OUT_ITEMS = [
 export const FLUID_IV_RULE = { routes: ['Intravenosa'], countWhen: 'given' as const, maxDoseMl: 5000 }
 /** IE1 (ronda 16). VALIDAR: Emil. Límite de un registro manual de ingreso o egreso (mL). */
 export const FLUID_MAX_ENTRY_ML = 10000
+/** NP1 (ronda 18). VALIDAR: Emil. Máximo de caracteres de la nota para el equipo del paciente (A3). */
+export const TEAM_NOTE_MAX = 200

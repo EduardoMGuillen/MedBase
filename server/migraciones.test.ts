@@ -1,7 +1,7 @@
 import { after, before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ensureDb } from './db.js'
-import { checkSteps, type Step } from './migrations.js'
+import { checkSteps, STEPS, type Step } from './migrations.js'
 import { BASELINE_VERSION } from './schema.js'
 import { createSql, type Sql } from './sql.js'
 
@@ -16,6 +16,8 @@ function instance() {
   return { same, log }
 }
 const meta = async (key: string) => (await sql.one<{ value: string }>('SELECT value FROM meta WHERE key = ?', [key]))?.value
+/** Los pasos de prueba van después de los publicados (la base de la prueba ya los aplicó): N+1, N+2… */
+const N = STEPS.length
 
 describe('migraciones: versión base y pasos numerados', () => {
   test('una base al día no ejecuta nada: ni esquema ni transacción', async () => {
@@ -28,33 +30,34 @@ describe('migraciones: versión base y pasos numerados', () => {
   test('un paso nuevo corre una sola vez, en orden, y queda anotado', async () => {
     const ran: number[] = []
     const steps: Step[] = [
-      { id: 1, name: 'tabla de prueba', run: async (q) => { ran.push(1); await q.exec('CREATE TABLE paso_uno (id TEXT PRIMARY KEY)') } },
-      { id: 2, name: 'columna de prueba', run: async (q) => { ran.push(2); await q.exec('ALTER TABLE paso_uno ADD COLUMN nota TEXT') } },
+      ...STEPS,
+      { id: N + 1, name: 'tabla de prueba', run: async (q) => { ran.push(1); await q.exec('CREATE TABLE paso_uno (id TEXT PRIMARY KEY)') } },
+      { id: N + 2, name: 'columna de prueba', run: async (q) => { ran.push(2); await q.exec('ALTER TABLE paso_uno ADD COLUMN nota TEXT') } },
     ]
     await ensureDb(instance().same, steps)
     assert.deepEqual(ran, [1, 2])
-    assert.equal(await meta('schema_step'), '2')
+    assert.equal(await meta('schema_step'), String(N + 2))
     // Otra instancia con los mismos pasos: nada (CREATE TABLE sin IF NOT EXISTS fallaría si se repitiera)
     const again = instance()
     await ensureDb(again.same, steps)
     assert.deepEqual(ran, [1, 2])
     assert.deepEqual(again.log, { exec: 0, tx: 0 })
     // Con un paso más, solo corre el nuevo
-    await ensureDb(instance().same, [...steps, { id: 3, name: 'otro', run: async () => { ran.push(3) } }])
+    await ensureDb(instance().same, [...steps, { id: N + 3, name: 'otro', run: async () => { ran.push(3) } }])
     assert.deepEqual(ran, [1, 2, 3])
-    assert.equal(await meta('schema_step'), '3')
+    assert.equal(await meta('schema_step'), String(N + 3))
   })
 
   test('si un paso falla, no queda a medias: se revierte y el siguiente arranque lo reintenta', async () => {
     const steps = (ok: boolean): Step[] => [
-      ...[1, 2, 3].map((id): Step => ({ id, name: `p${id}`, run: async () => {} })),
-      { id: 4, name: 'falla', run: async (q) => { await q.exec('CREATE TABLE paso_cuatro (id TEXT)'); if (!ok) throw new Error('paso roto') } },
+      ...Array.from({ length: N + 3 }, (_, i): Step => ({ id: i + 1, name: `p${i + 1}`, run: async () => {} })),
+      { id: N + 4, name: 'falla', run: async (q) => { await q.exec('CREATE TABLE paso_cuatro (id TEXT)'); if (!ok) throw new Error('paso roto') } },
     ]
     await assert.rejects(ensureDb(instance().same, steps(false)), /paso roto/)
-    assert.equal(await meta('schema_step'), '3')
+    assert.equal(await meta('schema_step'), String(N + 3))
     assert.equal(await sql.one(`SELECT 1 FROM information_schema.tables WHERE table_name = 'paso_cuatro'`), undefined)
     await ensureDb(instance().same, steps(true))
-    assert.equal(await meta('schema_step'), '4')
+    assert.equal(await meta('schema_step'), String(N + 4))
   })
 
   test('una base que dejó más adelante un despliegue más nuevo no se toca (vuelta atrás de un despliegue)', async () => {

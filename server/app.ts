@@ -18,6 +18,7 @@ import { registerIcd } from './routes/icd.js'
 import { registerTriage } from './routes/triage.js'
 import { registerAppointments } from './routes/appointments.js'
 import { registerPatients } from './routes/patients.js'
+import { registerTeamNote } from './routes/teamNote.js'
 import { registerBootstrap } from './routes/bootstrap.js'
 import { registerAudit } from './routes/audit.js'
 import { registerMe } from './routes/me.js'
@@ -178,6 +179,7 @@ export function createApp(opts: AppOptions) {
 
   registerBootstrap(app, ctx)
   registerPatients(app, ctx)
+  registerTeamNote(app, ctx)
 
   registerAppointments(app, ctx)
   registerTriage(app, ctx)

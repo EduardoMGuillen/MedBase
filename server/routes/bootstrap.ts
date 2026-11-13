@@ -4,6 +4,7 @@ import { clinicSettings, toAppointment, toAudit, toBed, toClinicDrug, toFollowup
 import { ORDERS_PENDING_SQL, pendingOrders } from './inpatient.js'
 import { sweepFollowupReminders } from './followups.js'
 import { can } from '../../src/lib/permissions.js'
+import { teamNotesOf } from './teamNote.js'
 
 /** Datos iniciales de la sesión según el rol (lo que la interfaz carga al entrar y en cada sincronización). */
 export function registerBootstrap(app: Express, ctx: Ctx) {
@@ -22,7 +23,7 @@ export function registerBootstrap(app: Express, ctx: Ctx) {
     const since = new Date(); since.setDate(since.getDate() - 90)
     const none = Promise.resolve([] as Row[])
     if (can(user, 'followups.view')) await sweepFollowupReminders(sql, cid)
-    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges, clinicDrugs, pending, stays, bedStays] = await Promise.all([
+    const [staff, patients, appts, prescriptions, auditLog, vitals, services, cfg, beds, inpatients, followups, discharges, clinicDrugs, pending, stays, bedStays, teamNotes] = await Promise.all([
       sql.query('SELECT * FROM staff WHERE clinic_id = ? ORDER BY name', [cid]),
       // Los pendientes de registro sí viajan (agenda y 'Por llegar'); los que se unieron a otro expediente no
       sql.query('SELECT * FROM patients WHERE clinic_id = ? AND merged_into IS NULL ORDER BY last_name', [cid]),
@@ -53,10 +54,12 @@ export function registerBootstrap(app: Express, ctx: Ctx) {
       // AD3: estado de cada cama (quién la ocupa y la especialidad del ingreso), sin datos clínicos, para todos los roles
       // HO2 (ronda 16): con el médico tratante (recepción y administración ven el tablero de camas para ingresar)
       sql.query(`SELECT id, bed_id, patient_id, specialty, attending_ids, admitted_by FROM hospitalizations WHERE clinic_id = ? AND status = 'active' AND bed_id IS NOT NULL AND kind = 'hospital'`, [cid]),
+      // NP1 (ronda 18): la nota para el equipo vigente de cada paciente, para todo el personal
+      teamNotesOf(sql, cid),
     ])
     res.json({
       staff: staff.map(toStaff),
-      patients: patients.map((r) => toPatient(r, clinical)),
+      patients: patients.map((r) => ({ ...toPatient(r, clinical), teamNote: teamNotes.get(String(r.id)) })),
       appointments: appts.map((r) => ({ ...toAppointment(r), paid: billing ? Boolean(r.paid) : undefined })),
       prescriptions: prescriptions.map(toPrescription),
       audit: auditLog.map(toAudit),
