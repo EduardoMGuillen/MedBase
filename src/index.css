@@ -361,6 +361,10 @@ a.stat:hover { background: var(--ward); }
 .stat b { display: block; font-family: var(--display); font-size: 36px; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .stat span { font-size: 13.5px; color: var(--muted); }
 .stat small { display: block; font-size: 12.5px; margin-top: 6px; color: var(--mint-ink); font-weight: 600; }
+/* RP1 (ronda 18): variación contra el periodo anterior; verde si sube, rojo si baja, gris si igual (la flecha va siempre) */
+.stat small.stat__delta { color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.stat small.stat__delta--up { color: var(--mint-ink); }
+.stat small.stat__delta--down { color: var(--red-ink); }
 
 .grid-2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 24px; align-items: start; }
 

@@ -2,39 +2,79 @@ import type { Express } from 'express'
 import { z } from 'zod'
 import { type Ctx, fail, hasRoleSql, localDate, parse, type Row } from '../http.js'
 
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+const pad = (n: number) => String(n).padStart(2, '0')
+const shiftDay = (day: string, by: number) => { const d = new Date(`${day}T12:00:00`); d.setDate(d.getDate() + by); return localDate(d) }
+const lastDayOf = (year: number, month: number) => new Date(year, month, 0).getDate()
+
+/**
+ * RP1 (ronda 18): el periodo anterior de la misma duración. Con días sueltos, los N días de antes. Con `month` (RP2), el mes
+ * calendario anterior: completo si el mes está cerrado, o sus mismos días si va en curso (1 al 12 de noviembre contra 1 al 12
+ * de octubre; si el mes anterior es más corto, hasta su último día).
+ */
+export function previousRange(from: string, to: string, period?: 'month') {
+  if (period === 'month') {
+    const [y, m] = from.split('-').map(Number)
+    const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1
+    const day = Number(to.slice(8))
+    const end = day >= lastDayOf(y, m) ? lastDayOf(py, pm) : Math.min(day, lastDayOf(py, pm))
+    return { from: `${py}-${pad(pm)}-01`, to: `${py}-${pad(pm)}-${pad(end)}` }
+  }
+  const days = Math.round((new Date(`${to}T12:00:00`).getTime() - new Date(`${from}T12:00:00`).getTime()) / 86_400_000) + 1
+  return { from: shiftDay(from, -days), to: shiftDay(from, -1) }
+}
+
 /** Indicadores agregados para administración. No incluye datos clínicos individuales. */
 export function registerReports(app: Express, { sql, auth, need, clinicOf }: Ctx) {
-  app.get('/api/reports', auth, need('reports.view'), async (req, res) => {
-    const q = parse(z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }), req.query, 'Elige un rango de fechas.')
-    if (q.from > q.to) fail(400, 'La fecha inicial debe ser anterior a la final.')
-    const inRange = (iso: string) => { const d = localDate(new Date(iso)); return d >= q.from && d <= q.to }
+  /**
+   * Citas, cobros y totales de un rango de fechas locales. RP1 (ronda 18): se llama para el periodo pedido y para el
+   * anterior, así los dos se calculan con las mismas reglas (mismos estados de cita, sin cobros anulados).
+   */
+  async function loadPeriod(cid: string, from: string, to: string) {
+    const inRange = (iso: string) => { const d = localDate(new Date(iso)); return d >= from && d <= to }
     // Las marcas de tiempo en UTC se amplían un día y se filtran por fecha local
-    const lo = new Date(`${q.from}T00:00:00`); lo.setDate(lo.getDate() - 1)
-    const hi = new Date(`${q.to}T23:59:59`); hi.setDate(hi.getDate() + 1)
-
-    const cid = clinicOf(req)
-    const [appts, payRows, instRows, consRows, patRows, doctors] = await Promise.all([
-      sql.query(`SELECT id, doctor_id, start, status, source FROM appointments WHERE clinic_id = ? AND start >= ? AND start < ?`, [cid, q.from, `${q.to}T99`]),
+    const lo = new Date(`${from}T00:00:00`); lo.setDate(lo.getDate() - 1)
+    const hi = new Date(`${to}T23:59:59`); hi.setDate(hi.getDate() + 1)
+    const [appts, payRows, instRows, patRows] = await Promise.all([
+      sql.query(`SELECT id, doctor_id, start, status, source FROM appointments WHERE clinic_id = ? AND start >= ? AND start < ?`, [cid, from, `${to}T99`]),
       sql.query(`SELECT p.total, COALESCE(p.amount_paid, p.total) AS amount_paid, p.method, p.paid_at, p.items, p.discount, a.doctor_id FROM payments p LEFT JOIN appointments a ON a.id = p.appointment_id
         WHERE p.clinic_id = ? AND NOT p.voided AND p.paid_at BETWEEN ? AND ?`, [cid, lo.toISOString(), hi.toISOString()]),
       // AD9: abonos posteriores (cuentan el día y con la forma en que se recibieron)
       sql.query(`SELECT i.amount, i.method, i.paid_at, a.doctor_id FROM payment_installments i JOIN payments p ON p.id = i.payment_id LEFT JOIN appointments a ON a.id = p.appointment_id
         WHERE i.clinic_id = ? AND NOT p.voided AND i.paid_at BETWEEN ? AND ?`, [cid, lo.toISOString(), hi.toISOString()]),
-      sql.query(`SELECT diagnoses, date FROM consultations WHERE clinic_id = ? AND date BETWEEN ? AND ?`, [cid, localDate(lo), hi.toISOString()]),
       sql.query(`SELECT created_at FROM patients WHERE clinic_id = ? AND NOT pending AND created_at BETWEEN ? AND ?`, [cid, localDate(lo), hi.toISOString()]),
-      sql.query(`SELECT id, name FROM staff WHERE clinic_id = ? AND ${hasRoleSql('doctor')} ORDER BY name`, [cid]),
     ])
     const payments = payRows.filter((p) => inRange(String(p.paid_at)))
     // Dinero recibido: lo pagado al cobrar y los abonos, cada uno en su día y con su forma de pago
     const received = [...payments.map((p) => ({ amount: Number(p.amount_paid), method: String(p.method), at: String(p.paid_at), doctor: p.doctor_id })),
       ...instRows.filter((i) => inRange(String(i.paid_at))).map((i) => ({ amount: Number(i.amount), method: String(i.method), at: String(i.paid_at), doctor: i.doctor_id }))]
-    const consults = consRows.filter((c) => inRange(String(c.date)))
-    const newPatients = patRows.filter((p) => inRange(String(p.created_at))).length
-
     const count = (f: (a: Row) => boolean) => appts.filter(f).length
     const done = count((a) => a.status === 'done')
     const noShow = count((a) => a.status === 'no_show')
-    const revenue = received.reduce((s, p) => s + p.amount, 0)
+    const totals = {
+      appointments: count((a) => a.status !== 'cancelled'), done, noShow, cancelled: count((a) => a.status === 'cancelled'),
+      attendance: done + noShow ? done / (done + noShow) : null,
+      revenue: received.reduce((s, p) => s + p.amount, 0), payments: payments.length,
+      avgTicket: payments.length ? payments.reduce((s, p) => s + Number(p.total), 0) / payments.length : 0,
+      online: count((a) => a.source === 'online'), newPatients: patRows.filter((p) => inRange(String(p.created_at))).length,
+    }
+    return { inRange, lo, hi, payments, received, count, totals }
+  }
+
+  app.get('/api/reports', auth, need('reports.view'), async (req, res) => {
+    const q = parse(z.object({ from: z.string().regex(DAY), to: z.string().regex(DAY), period: z.literal('month').optional() }), req.query, 'Elige un rango de fechas.')
+    if (q.from > q.to) fail(400, 'La fecha inicial debe ser anterior a la final.')
+    if (q.period === 'month' && (!q.from.endsWith('-01') || q.to.slice(0, 7) !== q.from.slice(0, 7))) fail(400, 'El mes va del día 1 al último.')
+    const before = previousRange(q.from, q.to, q.period)
+
+    const cid = clinicOf(req)
+    const [cur, prev] = await Promise.all([loadPeriod(cid, q.from, q.to), loadPeriod(cid, before.from, before.to)])
+    const { inRange, lo, hi, payments, received, count } = cur
+    const [consRows, doctors] = await Promise.all([
+      sql.query(`SELECT diagnoses, date FROM consultations WHERE clinic_id = ? AND date BETWEEN ? AND ?`, [cid, localDate(lo), hi.toISOString()]),
+      sql.query(`SELECT id, name FROM staff WHERE clinic_id = ? AND ${hasRoleSql('doctor')} ORDER BY name`, [cid]),
+    ])
+    const consults = consRows.filter((c) => inRange(String(c.date)))
 
     const days: { date: string; appointments: number; done: number; revenue: number }[] = []
     for (let d = new Date(`${q.from}T12:00:00`); localDate(d) <= q.to; d.setDate(d.getDate() + 1)) {
@@ -60,13 +100,10 @@ export function registerReports(app: Express, { sql, auth, need, clinicOf }: Ctx
     }
 
     res.json({
-      range: q,
-      totals: {
-        appointments: count((a) => a.status !== 'cancelled'), done, noShow, cancelled: count((a) => a.status === 'cancelled'),
-        attendance: done + noShow ? done / (done + noShow) : null,
-        revenue, payments: payments.length, avgTicket: payments.length ? payments.reduce((s, p) => s + Number(p.total), 0) / payments.length : 0,
-        online: count((a) => a.source === 'online'), newPatients,
-      },
+      range: { from: q.from, to: q.to },
+      totals: cur.totals,
+      // RP1 (ronda 18): los mismos totales del periodo anterior, para la variación de los cuadros de arriba
+      previous: { range: before, totals: prev.totals },
       days,
       byDoctor: doctors.map((d) => ({
         id: String(d.id), name: String(d.name),

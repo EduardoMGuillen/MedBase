@@ -6,6 +6,8 @@ import { Loading, PageHead } from '../components/ui'
 import { Pagination, paginate, usePage } from '../components/Pagination'
 import { BarChart, HBars } from '../components/Charts'
 import { localISODate, METHOD_LABEL, money } from '../lib/format'
+import { formatDelta, vsLabel } from '../lib/reportDelta'
+import { placeWord } from '../lib/permissions'
 import { monthLabel, periodFromParams, periodRange, REPORT_PRESETS, shiftMonth, type ReportPeriod } from '../lib/reportPeriod'
 
 export default function Reports() {
@@ -22,9 +24,9 @@ export default function Reports() {
 
   useEffect(() => {
     let stale = false
-    fetchReport(from, to).then((r) => { if (!stale) setLoaded({ key, report: r }) }).catch((e: Error) => notify(e.message, 'error'))
+    fetchReport(from, to, month ? 'month' : undefined).then((r) => { if (!stale) setLoaded({ key, report: r }) }).catch((e: Error) => notify(e.message, 'error'))
     return () => { stale = true }
-  }, [from, to, key, fetchReport, notify])
+  }, [from, to, month, key, fetchReport, notify])
 
   const setPeriod = (p: ReportPeriod) => setParams((prev) => {
     const n = new URLSearchParams(prev)
@@ -40,6 +42,13 @@ export default function Reports() {
   const doctorsPage = paginate(report?.byDoctor ?? [], doctorsPageNo)
   const short = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('es-HN', { day: 'numeric', month: 'short' })
   const long = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })
+
+  // RP1 (ronda 18): variación de cada cuadro contra el periodo anterior (lo calcula el servidor con las mismas reglas)
+  const delta = (pick: (t: Report['totals']) => number | null) => {
+    if (!report) return null
+    const d = formatDelta(pick(report.totals), pick(report.previous.totals), vsLabel(month !== null, report.previous.range))
+    return d && <small className={`stat__delta stat__delta--${d.dir}`}>{d.text}</small>
+  }
 
   const exportCsv = () => {
     if (!report) return
@@ -60,7 +69,7 @@ export default function Reports() {
 
   return (
     <div className="page">
-      <PageHead tour="reportes" title="Reportes" sub="Actividad e ingresos de la clínica. No incluye información clínica de pacientes."
+      <PageHead tour="reportes" title="Reportes" sub={`Actividad e ingresos ${placeWord(settings) === 'consultorio' ? 'del consultorio' : 'de la clínica'}. No incluye información clínica de pacientes.`}
         actions={<>
           <div className="segmented" role="radiogroup" aria-label="Periodo">
             {REPORT_PRESETS.map((p) => <button key={p.days} role="radio" aria-checked={period.kind === 'days' && period.days === p.days}
@@ -77,11 +86,11 @@ export default function Reports() {
 
       {!report ? <Loading label="Calculando indicadores" /> : (<>
         <div className="stats">
-          <div className="stat"><b className="num">{money(report.totals.revenue, cur)}</b><span>Ingresos</span><small>Ticket promedio {money(report.totals.avgTicket, cur)}</small></div>
-          <div className="stat"><b className="num">{report.totals.done}</b><span>Consultas atendidas</span><small>de {report.totals.appointments} citas</small></div>
-          <div className="stat"><b className="num">{report.totals.attendance == null ? '—' : `${Math.round(report.totals.attendance * 100)}%`}</b><span>Asistencia</span>
+          <div className="stat"><b className="num">{money(report.totals.revenue, cur)}</b><span>Ingresos</span>{delta((t) => t.revenue)}<small>Ticket promedio {money(report.totals.avgTicket, cur)}</small></div>
+          <div className="stat"><b className="num">{report.totals.done}</b><span>Consultas atendidas</span>{delta((t) => t.done)}<small>de {report.totals.appointments} citas</small></div>
+          <div className="stat"><b className="num">{report.totals.attendance == null ? '—' : `${Math.round(report.totals.attendance * 100)}%`}</b><span>Asistencia</span>{delta((t) => t.attendance)}
             <small className="c-muted">{report.totals.noShow} no asistieron</small></div>
-          <div className="stat"><b className="num">{report.totals.online}</b><span>Reservas en línea</span><small className="c-muted">{report.totals.newPatients} {report.totals.newPatients === 1 ? 'paciente nuevo' : 'pacientes nuevos'}</small></div>
+          <div className="stat"><b className="num">{report.totals.online}</b><span>Reservas en línea</span>{delta((t) => t.online)}<small className="c-muted">{report.totals.newPatients} {report.totals.newPatients === 1 ? 'paciente nuevo' : 'pacientes nuevos'}</small></div>
         </div>
 
         <div className="grid-2 grid-2--even">

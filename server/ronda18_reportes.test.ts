@@ -3,6 +3,8 @@ import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { type Sql } from './sql.js'
 import { bootApp, DEMO } from './test/helpers.js'
+import { previousRange } from './routes/reports.js'
+import { formatDelta, vsLabel } from '../src/lib/reportDelta.js'
 import { daysRange, monthLabel, monthRange, periodFromParams, shiftMonth } from '../src/lib/reportPeriod.js'
 
 // Ronda 18, Reportes (RP2 y RP1): con la base y la API (copia en memoria de la demo)
@@ -86,5 +88,105 @@ describe('RP2 (ronda 18): periodos de Reportes', () => {
     const r = await (await as(String(other.email))).get(url)
     assert.equal(r.status, 200)
     assert.equal(r.body.totals.revenue, 0)
+  })
+})
+
+describe('RP1 (ronda 18): variación contra el periodo anterior', () => {
+  test('el texto de la variación: flecha, un decimal y contra qué se compara', () => {
+    assert.deepEqual(formatDelta(112.5, 100, 'mes anterior'), { dir: 'up', text: '▲ 12.5 % vs. mes anterior' })
+    assert.deepEqual(formatDelta(97, 100, '7 días anteriores'), { dir: 'down', text: '▼ 3.0 % vs. 7 días anteriores' })
+    assert.deepEqual(formatDelta(100, 100, '30 días anteriores'), { dir: 'same', text: '= 0 % vs. 30 días anteriores' })
+    // Asistencia: cambio relativo (A1), de 88 % a 91 %
+    assert.equal(formatDelta(0.91, 0.88, '1–12 oct')!.text, '▲ 3.4 % vs. 1–12 oct')
+    // Anterior en 0 y actual no: sin datos (ni «∞ %» ni «100 %»); los dos en 0: sin cambio
+    assert.deepEqual(formatDelta(5, 0, 'mes anterior'), { dir: 'none', text: 'Sin datos del periodo anterior' })
+    assert.deepEqual(formatDelta(0.9, null, 'mes anterior'), { dir: 'none', text: 'Sin datos del periodo anterior' })
+    assert.deepEqual(formatDelta(0, 0, 'mes anterior'), { dir: 'same', text: '= 0 % vs. mes anterior' })
+    assert.deepEqual(formatDelta(null, null, 'mes anterior'), { dir: 'same', text: '= 0 % vs. mes anterior' })
+    assert.deepEqual(formatDelta(0, 40, 'mes anterior'), { dir: 'down', text: '▼ 100.0 % vs. mes anterior' })
+    // Un cambio que no llega a una décima se lee como igual; sin dato actual no hay línea
+    assert.equal(formatDelta(1000.2, 1000, 'mes anterior')!.text, '= 0 % vs. mes anterior')
+    assert.equal(formatDelta(null, 0.88, 'mes anterior'), null)
+  })
+  test('contra qué se compara: días anteriores, mes anterior o los mismos días del mes anterior', () => {
+    assert.equal(vsLabel(false, { from: '2026-10-30', to: '2026-11-05' }), '7 días anteriores')
+    assert.equal(vsLabel(false, { from: '2026-09-14', to: '2026-10-13' }), '30 días anteriores')
+    assert.equal(vsLabel(true, { from: '2026-09-01', to: '2026-09-30' }), 'mes anterior')
+    assert.equal(vsLabel(true, { from: '2026-10-01', to: '2026-10-12' }), '1–12 oct')
+  })
+  test('el periodo anterior: los N días de antes; con «Mes», el mes anterior completo o sus mismos días', () => {
+    assert.deepEqual(previousRange('2026-11-06', '2026-11-12'), { from: '2026-10-30', to: '2026-11-05' })
+    assert.deepEqual(previousRange('2026-10-14', '2026-11-12'), { from: '2026-09-14', to: '2026-10-13' })
+    assert.deepEqual(previousRange('2026-08-15', '2026-11-12'), { from: '2026-05-17', to: '2026-08-14' })
+    assert.deepEqual(previousRange('2026-10-01', '2026-10-31', 'month'), { from: '2026-09-01', to: '2026-09-30' })
+    assert.deepEqual(previousRange('2026-11-01', '2026-11-12', 'month'), { from: '2026-10-01', to: '2026-10-12' })
+    assert.deepEqual(previousRange('2026-01-01', '2026-01-31', 'month'), { from: '2025-12-01', to: '2025-12-31' })
+    // Mes en curso más largo que el anterior: hasta el último día de este
+    assert.deepEqual(previousRange('2026-03-01', '2026-03-30', 'month'), { from: '2026-02-01', to: '2026-02-28' })
+    // Sin «Mes», del 1 al 7 se compara con los 7 días de antes, no con el mes anterior
+    assert.deepEqual(previousRange('2026-11-01', '2026-11-07'), { from: '2026-10-25', to: '2026-10-31' })
+  })
+  test('un mes cerrado se compara con el mes anterior completo, con las mismas reglas', async () => {
+    const admin = await as(ADMIN)
+    const oct = (await admin.get('/api/reports?from=2019-10-01&to=2019-10-31&period=month')).body
+    assert.deepEqual(oct.range, { from: '2019-10-01', to: '2019-10-31' })
+    assert.deepEqual(oct.previous.range, { from: '2019-09-01', to: '2019-09-30' })
+    // Septiembre: L 1,000 (el cobro anulado no cuenta), 1 atendida de 2 (la cancelada no cuenta), 0 en línea
+    assert.equal(oct.previous.totals.revenue, 1000)
+    assert.equal(oct.previous.totals.done, 1)
+    assert.equal(oct.previous.totals.appointments, 2)
+    assert.equal(oct.previous.totals.attendance, 0.5)
+    assert.equal(oct.previous.totals.online, 0)
+    // Lo «anterior» de octubre es exactamente el reporte de septiembre
+    const sep = (await admin.get('/api/reports?from=2019-09-01&to=2019-09-30&period=month')).body
+    assert.deepEqual(oct.previous.totals, sep.totals)
+    // Y en pantalla: ingresos de 1,000 a 1,250; asistencia de 50 % a 75 %; en línea de 0 a 1
+    const vs = vsLabel(true, oct.previous.range)
+    assert.equal(formatDelta(oct.totals.revenue, oct.previous.totals.revenue, vs)!.text, '▲ 25.0 % vs. mes anterior')
+    assert.equal(formatDelta(oct.totals.done, oct.previous.totals.done, vs)!.text, '▲ 200.0 % vs. mes anterior')
+    assert.equal(formatDelta(oct.totals.attendance, oct.previous.totals.attendance, vs)!.text, '▲ 50.0 % vs. mes anterior')
+    assert.equal(formatDelta(oct.totals.online, oct.previous.totals.online, vs)!.text, 'Sin datos del periodo anterior')
+    // Septiembre contra agosto (sin nada): sin datos; agosto contra julio (los dos en 0): sin cambio
+    assert.equal(sep.previous.totals.revenue, 0)
+    assert.equal(sep.previous.totals.attendance, null)
+    assert.equal(formatDelta(sep.totals.revenue, sep.previous.totals.revenue, vs)!.text, 'Sin datos del periodo anterior')
+    const aug = (await admin.get('/api/reports?from=2019-08-01&to=2019-08-31&period=month')).body
+    assert.equal(formatDelta(aug.totals.revenue, aug.previous.totals.revenue, vs)!.text, '= 0 % vs. mes anterior')
+  })
+  test('un mes en curso se compara con los mismos días del mes anterior', async () => {
+    const admin = await as(ADMIN)
+    // Como si hoy fuera 15 de octubre de 2019: del 1 al 15 de octubre contra del 1 al 15 de septiembre
+    const r = (await admin.get('/api/reports?from=2019-10-01&to=2019-10-15&period=month')).body
+    assert.deepEqual(r.previous.range, { from: '2019-09-01', to: '2019-09-15' })
+    assert.equal(r.totals.revenue, 750)
+    assert.equal(r.previous.totals.revenue, 600) // el cobro del 30 de septiembre queda fuera
+    assert.equal(vsLabel(true, r.previous.range), '1–15 sep')
+  })
+  test('los periodos de días se comparan con los días de antes; el reporte de siempre no cambia', async () => {
+    const admin = await as(ADMIN)
+    // 7 días (25 al 31 de octubre) contra los 7 de antes (18 al 24)
+    const r = (await admin.get('/api/reports?from=2019-10-25&to=2019-10-31')).body
+    assert.deepEqual(r.previous.range, { from: '2019-10-18', to: '2019-10-24' })
+    assert.equal(r.totals.revenue, 500)
+    assert.equal(r.totals.done, 1)
+    assert.equal(r.previous.totals.revenue, 0)
+    assert.equal(r.previous.totals.noShow, 1)
+    assert.equal(r.previous.totals.attendance, 0)
+    assert.equal(r.days.length, 7)
+    for (const k of ['range', 'totals', 'days', 'byDoctor', 'byMethod', 'byService', 'topDiagnoses', 'previous']) assert.ok(k in r, k)
+    // Con los datos de la demo: lo anterior de los últimos 30 días es el reporte de los 30 de antes
+    const today = new Date().toLocaleDateString('en-CA')
+    const cur = daysRange(30, today)
+    const now = (await admin.get(`/api/reports?from=${cur.from}&to=${cur.to}`)).body
+    const before = (await admin.get(`/api/reports?from=${now.previous.range.from}&to=${now.previous.range.to}`)).body
+    assert.equal(before.days.length, 30)
+    assert.deepEqual(now.previous.totals, before.totals)
+  })
+  test('«Mes» pide un mes: del día 1 y dentro del mismo mes; lo anterior también exige `reports.view`', async () => {
+    const admin = await as(ADMIN)
+    assert.equal((await admin.get('/api/reports?from=2019-10-02&to=2019-10-31&period=month')).status, 400)
+    assert.equal((await admin.get('/api/reports?from=2019-10-01&to=2019-11-30&period=month')).status, 400)
+    assert.equal((await admin.get('/api/reports?from=2019-10-01&to=2019-10-31&period=semana')).status, 400)
+    assert.equal((await (await as(DEMO.doctor)).get('/api/reports?from=2019-10-01&to=2019-10-31&period=month')).status, 403)
   })
 })

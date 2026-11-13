@@ -40,9 +40,12 @@ const referralBase = (src: ReferralFrom) => `/${src.kind === 'stay' ? 'inpatient
 export type NewMed = Pick<InpatientMed, 'drug' | 'presentation' | 'dose' | 'route' | 'everyHours' | 'prn' | 'prnCondition' | 'instructions' | 'days' | 'replacesId' | 'infusionRate' | 'infusionUnit' | 'loadingDose' | 'loadingStat' | 'nebulization' | 'buyOutside' | 'buyQuantity' | 'quantity'> & { firstAt?: string }
 export type FollowupInput = Pick<Followup, 'kind' | 'title' | 'dueDate' | 'everyDays' | 'notes' | 'reminderType'>
 
+export interface ReportTotals { appointments: number; done: number; noShow: number; cancelled: number; attendance: number | null; revenue: number; payments: number; avgTicket: number; online: number; newPatients: number }
 export interface Report {
   range: { from: string; to: string }
-  totals: { appointments: number; done: number; noShow: number; cancelled: number; attendance: number | null; revenue: number; payments: number; avgTicket: number; online: number; newPatients: number }
+  totals: ReportTotals
+  /** RP1 (ronda 18): los mismos totales del periodo anterior de igual duración (o del mes anterior). */
+  previous: { range: { from: string; to: string }; totals: ReportTotals }
   days: { date: string; appointments: number; done: number; revenue: number }[]
   byDoctor: { id: string; name: string; appointments: number; done: number; noShow: number; revenue: number }[]
   byMethod: { method: PaymentMethod; count: number; total: number }[]
@@ -183,7 +186,7 @@ function useStoreValue() {
   const fetchPayments = useCallback((from: string, to: string) => api<Payment[]>(`/payments?from=${from}&to=${to}`), [])
   const fetchBalances = useCallback((patientId?: string) => api<Payment[]>(`/payments/balances${patientId ? `?patientId=${patientId}` : ''}`), [])
   const fetchPayment = useCallback((id: string) => api<{ payment: Payment; patient: Patient }>(`/payments/${id}`), [])
-  const fetchReport = useCallback((from: string, to: string) => api<Report>(`/reports?from=${from}&to=${to}`), [])
+  const fetchReport = useCallback((from: string, to: string, period?: 'month') => api<Report>(`/reports?from=${from}&to=${to}${period ? `&period=${period}` : ''}`), [])
   const searchIcd = useCallback((q: string) =>
     api<{ source: 'api' | 'file'; release: string; results: Diagnosis[]; error?: string }>(`/icd/search?q=${encodeURIComponent(q)}`), [])
   const fetchIcdFrequent = useCallback(() => api<(Diagnosis & { code: string; label: string })[]>('/icd/frequent'), [])
