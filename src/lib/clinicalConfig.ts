@@ -407,6 +407,39 @@ export const DEPT_POSITIONS = {
 export const NURSE_DEFAULT_POSITION = 'nurse_aux'
 /** Prefijos que ya puede traer el nombre (no se repiten en la firma). */
 /**
+ * AR1 (ronda 18). VALIDAR: Emil. Categorías de la pestaña «Archivos» del paciente, en el orden en que se ofrecen. Las cuatro
+ * primeras de siempre (lab, imaging, document, other) conservan su clave: los archivos ya subidos no cambian. La clave se guarda
+ * en `attachments.category`.
+ */
+export const FILE_CATEGORIES = [
+  { key: 'lab', label: 'Laboratorio' },
+  { key: 'imaging', label: 'Imagen' },
+  { key: 'ecg', label: 'Electrocardiograma y otros estudios' },
+  { key: 'referral', label: 'Referencia o contrarreferencia' },
+  { key: 'external_report', label: 'Informe o epicrisis de otro centro' },
+  { key: 'consent', label: 'Consentimiento o autorización firmada' },
+  { key: 'external_rx', label: 'Receta externa' },
+  { key: 'certificate', label: 'Constancia o incapacidad' },
+  { key: 'photo', label: 'Fotografía clínica' },
+  { key: 'identification', label: 'Identificación o carné de seguro' },
+  { key: 'document', label: 'Documento' },
+  { key: 'other', label: 'Otro' },
+] as const
+export type FileCategory = (typeof FILE_CATEGORIES)[number]['key']
+/**
+ * AR1 (ronda 18): documentos quirúrgicos que también son archivos del expediente. No se eligen al subir un archivo: los sube su
+ * propia pantalla (la tarjeta de la nota postquirúrgica y Anexos, PQ3 a PQ5). Misma configuración para «Archivos» y «Anexos».
+ */
+export const SYSTEM_FILE_CATEGORIES = [
+  { key: 'anesthesia', label: 'Hoja de anestesia' },
+  { key: 'preanesthesia', label: 'Valoración preanestésica' },
+  { key: 'surgical_count', label: 'Recuento quirúrgico' },
+] as const
+export type SystemFileCategory = (typeof SYSTEM_FILE_CATEGORIES)[number]['key']
+export const FILE_CATEGORY_KEYS = FILE_CATEGORIES.map((c) => c.key) as [FileCategory, ...FileCategory[]]
+export const fileCategoryLabel = (key: string) => [...FILE_CATEGORIES, ...SYSTEM_FILE_CATEGORIES].find((c) => c.key === key)?.label ?? 'Otro'
+
+/**
  * R18-OB1 (ronda 18): en Observación no se hacen documentos de cirugía (autorización quirúrgica, valoración preanestésica, nota
  * postquirúrgica): si el paciente va a cirugía, primero pasa a hospitalización. Lo dice el servidor al rechazar uno nuevo.
  */

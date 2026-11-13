@@ -1,4 +1,5 @@
 import express, { type Express } from 'express'
+import { FILE_CATEGORY_KEYS } from '../../src/lib/clinicalConfig.js'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { can } from '../../src/lib/permissions.js'
@@ -29,7 +30,7 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
     const b = parse(z.object({
       name: z.string().trim().min(1).max(160),
       mime: z.string(),
-      category: z.enum(['lab', 'imaging', 'document', 'other']),
+      category: z.enum(FILE_CATEGORY_KEYS),
       data: z.string().min(1, 'El archivo está vacío.'),
       // Laboratorio subido a mano: qué examen es y cuándo se tomó
       title: z.string().trim().max(120).optional(),
@@ -109,7 +110,7 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
     if (!(await patientRow(cid, patientId))) fail(404, 'El paciente no existe.')
     const b = parse(z.object({
       uploadId: z.string().regex(/^[0-9a-f-]{36}$/), parts: z.number().int().min(1).max(6),
-      name: z.string().trim().min(1).max(160), mime: z.string(), category: z.enum(['lab', 'imaging', 'document', 'other']),
+      name: z.string().trim().min(1).max(160), mime: z.string(), category: z.enum(FILE_CATEGORY_KEYS),
       title: z.string().trim().max(120).optional(), takenAt: z.string().refine((x) => !Number.isNaN(Date.parse(x))).optional(), hospitalizationId: z.string().optional(),
     }), req.body)
     if (!ALLOWED.includes(b.mime)) fail(400, 'Sólo se aceptan PDF e imágenes (PNG, JPG o WEBP).')

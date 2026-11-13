@@ -950,6 +950,11 @@ button.src-tag--none { cursor: pointer; }
 
 /* EX4 (ronda 10): archivos de un resultado: nombre, tipo y «Ver archivo»; miniatura si solo hay archivo; vista previa */
 .exam-result__files { display: flex; flex-wrap: wrap; gap: 6px; }
+/* AR1 (ronda 18): archivos agrupados por categoría */
+.file-group + .file-group { border-top: 1px solid var(--line); }
+.file-group__head { margin: 0; padding: 10px 22px 6px; font-size: 13px; font-weight: 700; color: var(--muted); background: var(--paper-soft); border-bottom: 1px solid var(--line-soft); }
+.dropzone__cat { width: 280px; flex: 0 1 280px; }
+@media (max-width: 720px) { .dropzone__cat { flex: 1 1 100%; width: 100%; } }
 .file-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 40px; padding: 6px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); font: inherit; font-size: 13.5px; color: var(--ink-deep); cursor: pointer; text-align: left; }
 .file-chip:hover { background: var(--ward); }
 .file-chip__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }

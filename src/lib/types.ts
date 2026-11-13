@@ -1,4 +1,4 @@
-import type { CriticalGroup } from './clinicalConfig.js'
+import type { CriticalGroup, FileCategory, SystemFileCategory } from './clinicalConfig.js'
 /** DP1 (ronda 11): «lab» (Laboratorio) e «imaging» (Imágenes), solo en clínicas, con cargo (Staff.position). */
 export type Role = 'superadmin' | 'admin' | 'doctor' | 'nurse' | 'reception' | 'assistant' | 'lab' | 'imaging'
 
@@ -181,7 +181,8 @@ export interface Attachment {
   mime: string
   size: number
   /** PQ3 (ronda 14): 'anesthesia', la hoja de anestesia en papel (se sube desde la tarjeta de la nota postquirúrgica). */
-  category: 'lab' | 'imaging' | 'document' | 'other' | 'anesthesia' | 'preanesthesia' | 'surgical_count'
+  /** AR1 (ronda 18): las categorías salen de clinicalConfig (FILE_CATEGORIES y los documentos quirúrgicos) */
+  category: FileCategory | SystemFileCategory
   uploadedBy: string
   uploadedAt: string
   title?: string // qué examen es, p. ej. "Hemograma"
