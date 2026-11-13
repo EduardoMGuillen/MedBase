@@ -489,7 +489,7 @@ tr.clickable { cursor: pointer; }
 .exam-values { border-collapse: collapse; font-size: 13.5px; }
 .exam-values th { text-align: left; font-weight: 500; padding: 3px 12px 3px 0; color: var(--muted); }
 .exam-values td { padding: 3px 12px 3px 0; }
-.exam-values tr.is-high td b, .exam-values tr.is-low td b { color: var(--red-ink); }
+.exam-values tr.is-high td b, .exam-values tr.is-low td b { color: var(--amber-ink); }
 .exam-values--input .input { width: 100px; height: 34px; }
 .tray-groups { display: grid; grid-template-columns: 1fr 1fr; }
 .tray-group + .tray-group { border-left: 1px solid var(--line-soft); }
@@ -757,8 +757,25 @@ tr.clickable { cursor: pointer; }
 .queue-group-body .queue-card:last-child { border-bottom: 0; }
 
 /* Ronda 8 (EX): exámenes desplegables, con búsqueda y orden por fecha */
-.exam-tools { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+/* PX2 (ronda 18): barra pareja: buscador, «Ordenar por», filtros y los dos botones miden lo mismo (--field-h) y se alinean
+   abajo. Si la barra mide menos de 1180 px, dos renglones: el buscador a todo el ancho y los demás debajo. */
+.exam-tools-wrap { container-type: inline-size; }
+.exam-tools { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .exam-tools__q { flex: 1 1 260px; }
+.exam-tools__sort { flex: 0 0 240px; }
+.exam-tools .segmented { height: var(--field-h); flex-wrap: nowrap; align-items: stretch; }
+.exam-tools .segmented button { display: inline-flex; align-items: center; min-height: 0; white-space: nowrap; }
+.exam-tools .fold-tools { flex-wrap: nowrap; }
+.exam-tools .fold-tools .btn { height: var(--field-h); min-height: var(--field-h); }
+@container (max-width: 1180px) {
+  .exam-tools__q { flex-basis: 100%; }
+  .exam-tools__sort { flex: 1 1 220px; }
+}
+@container (max-width: 640px) {
+  .exam-tools__sort, .exam-tools__filters, .exam-tools .fold-tools { flex: 1 1 100%; }
+  .exam-tools .segmented button { flex: 1 1 0; justify-content: center; padding-left: 6px; padding-right: 6px; }
+  .exam-tools .fold-tools .btn { flex: 1 1 0; }
+}
 .exam-row__toggle { display: flex; gap: 6px; align-items: flex-start; background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; min-width: 0; }
 .exam-row__toggle strong { min-width: 0; overflow-wrap: anywhere; }
 .exam-row__chev { flex: none; margin-top: 2px; color: var(--muted); transition: transform .15s; transform: rotate(90deg); }
@@ -1038,6 +1055,8 @@ button.src-tag--none { cursor: pointer; }
 .dept-card .exam-row--urgent { padding-left: 10px; }
 /* EX12 y LB8 (ronda 16): renglón compacto de un examen (una línea; las acciones a la derecha) */
 .exam-row--compact { padding: 6px 22px; align-items: center; }
+/* PX1 (ronda 18): con el examen abierto, el estado y sus botones se quedan en la fila del examen (no bajan al centro) */
+.exam-row--compact:not(.is-folded) { align-items: start; }
 .exam-row--compact.is-folded { padding-top: 6px; padding-bottom: 6px; }
 .exam-row__line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
 .exam-row__brief { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding-left: 22px; font-size: 13px; }

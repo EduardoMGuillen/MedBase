@@ -240,7 +240,8 @@ export function resultBrief(r?: ExamOrder['result']): { flags: string[]; text?: 
   if (!r) return { flags: [] }
   const vals = r.values ?? []
   const fmt = (v: { analyte: string; value: string; unit?: string }) => `${v.analyte} ${v.value}${v.unit ? ` ${v.unit}` : ''}`
-  const flags = vals.filter((v) => v.flag).map((v) => `${fmt(v)} (${v.flag === 'high' ? 'alto' : 'bajo'})`)
+  // PX1 (ronda 18): la misma etiqueta que con el examen abierto («Alto» / «Bajo», en ámbar)
+  const flags = vals.filter((v) => v.flag).map((v) => `${fmt(v)} · ${v.flag === 'high' ? 'Alto' : 'Bajo'}`)
   if (flags.length) return { flags }
   if (vals.length) return { flags, text: vals.slice(0, 3).map(fmt).join(' · ') + (vals.length > 3 ? ` · y ${vals.length - 3} más` : '') }
   if (r.report) return { flags, text: r.report.length > 110 ? `${r.report.slice(0, 110).trimEnd()}…` : r.report }

@@ -146,6 +146,8 @@ img, svg { display: block; }
    dedo), la opción elegida con check y lo escrito resaltado. `.combo--sm` (34 px) solo en filas compactas. */
 .combo { position: relative; display: block; min-width: 0; max-width: 100%; }
 .combo--auto { display: inline-block; vertical-align: middle; }
+/* Dentro de un campo, el rótulo es un <span> gris y pequeño: la lista no es rótulo */
+.field > span.combo, .field--inline > span.combo { font-size: inherit; font-weight: inherit; color: inherit; }
 .combo__input { padding-right: 36px; text-overflow: ellipsis; cursor: pointer; }
 .combo__input:focus { cursor: text; }
 .combo__input::placeholder { color: var(--faint); }

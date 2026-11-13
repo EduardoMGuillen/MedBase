@@ -65,39 +65,49 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<ExamSort>('recent')
   const [filter, setFilter] = useState<ExamFilter>('all')
-  // Abiertos a mano (true) o cerrados a mano (false); lo que no está aquí sigue la regla
+  // PX1 (ronda 18): todo empieza cerrado (grupos y exámenes), sin excepciones; aquí queda lo que el usuario abre mientras
+  // está en la pestaña. Antes, un resultado con valores fuera de rango abría solo (resto de «crítico abierto» de EX1).
   const [shown, setShown] = useState<Record<string, boolean>>({})
   const groups: ExamGroup[] = only ? [only] : ['lab', 'imaging']
   const batches = [...new Set(exams.filter((e) => e.status !== 'cancelled').map((e) => e.batchId))]
-  const startsOpen = (e: ExamOrder) => e.status === 'result' && !!e.result?.values?.some((v) => v.flag)
-  const isOpen = (e: ExamOrder) => shown[e.id] ?? startsOpen(e)
+  const isOpen = (e: ExamOrder) => !!shown[e.id]
   const match = (e: ExamOrder) => !q.trim() || fold(`${examLine(e)} ${e.indication ?? ''}`).includes(fold(q.trim()))
   const passes = (e: ExamOrder) => EXAM_FILTERS.find((f) => f.key === filter)!.test(e)
   const order = (a: ExamOrder, b: ExamOrder) => (sort === 'oldest' ? a.orderedAt.localeCompare(b.orderedAt) : b.orderedAt.localeCompare(a.orderedAt))
   const visible = exams.filter((e) => match(e) && passes(e))
-  const setAll = (v: boolean) => setShown((x) => ({ ...x, ...Object.fromEntries(visible.map((e) => [e.id, v])) }))
-  // EX12 (ronda 16): grupos por categoría contraídos a mano; el catálogo de la clínica da la categoría
-  const [folded, setFolded] = useState<Record<string, boolean>>({})
+  // EX12 (ronda 16): grupos por categoría; el catálogo de la clínica da la categoría. PX1: cerrados al entrar (al buscar se
+  // abren solos, para ver lo que coincide)
+  const [openCats, setOpenCats] = useState<Record<string, boolean>>({})
   const { exams: clinicExams } = useExamCatalog()
   const catalog = examCatalog(clinicExams)
+  const catKey = (g: ExamGroup, day: ExamOrder[], title: string) => `${g}|${dayKey(day[0].orderedAt)}|${title}`
+  const catOpen = (key: string) => openCats[key] ?? !!q.trim()
+  // PX1: «Expandir todo» y «Contraer todo» valen para los dos niveles: grupos y exámenes
+  const setAll = (v: boolean) => {
+    setShown((x) => ({ ...x, ...Object.fromEntries(visible.map((e) => [e.id, v])) }))
+    const keys = groups.flatMap((g) => daysOf(visible.filter((e) => e.group === g).sort(order)).flatMap((day) => orderGroups(day, catalog).map((c) => catKey(g, day, c.title))))
+    setOpenCats((x) => ({ ...x, ...Object.fromEntries(keys.map((k) => [k, v])) }))
+  }
   const canTake = useCanTake()
   return (
     <div className="hc" data-tour="examenes-tab">
       {exams.length > 0 && (
-        <div className="exam-tools" role="search">
+        // PX2 (ronda 18): todos los controles con el mismo alto y alineados abajo; cuando no caben en una fila, el buscador va
+        // arriba a todo el ancho y los demás abajo (modules.css)
+        <div className="exam-tools-wrap"><div className="exam-tools" role="search">
           <label className="field field--inline exam-tools__q"><span>Buscar examen</span>
             <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar examen" aria-label="Buscar examen" /></label>
-          <label className="field field--inline"><span>Orden</span>
+          <label className="field field--inline exam-tools__sort"><span>Ordenar por</span>
             <Combo value={sort} onChange={(v) => setSort(v as ExamSort)} options={EXAM_SORTS.map((o) => ({ value: o.key, label: o.label }))} /></label>
-          <div className="segmented segmented--sm exam-tools__filters" role="radiogroup" aria-label="Mostrar">
+          <div className="segmented exam-tools__filters" role="radiogroup" aria-label="Mostrar">
             {EXAM_FILTERS.map((f) => <button key={f.key} type="button" role="radio" aria-checked={filter === f.key} onClick={() => setFilter(f.key)}>
               {f.label} <span className="num">{exams.filter((e) => match(e) && f.test(e)).length}</span></button>)}
           </div>
           <span className="fold-tools">
-            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setAll(true)}><ChevronsUpDown size={14} />Expandir todo</button>
-            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setAll(false)}><ChevronsDownUp size={14} />Contraer todo</button>
+            <button type="button" className="btn btn--ghost" onClick={() => setAll(true)}><ChevronsUpDown size={15} />Expandir todo</button>
+            <button type="button" className="btn btn--ghost" onClick={() => setAll(false)}><ChevronsDownUp size={15} />Contraer todo</button>
           </span>
-        </div>
+        </div></div>
       )}
       {groups.map((g) => {
         const all = exams.filter((e) => e.group === g)
@@ -118,12 +128,12 @@ export function ExamList({ exams, patientId, hospitalizationId, reload, open = t
                 {/* EX12 (ronda 16): dentro del día, por categoría del catálogo (el orden de la orden impresa, IM3); cada grupo se contrae
                     y lleva un «Muestra tomada» para todos sus exámenes (DP2) */}
                 {orderGroups(day, catalog).map((c) => {
-                  const key = `${g}|${dayKey(day[0].orderedAt)}|${c.title}`
-                  const closed = !!folded[key]
+                  const key = catKey(g, day, c.title)
+                  const closed = !catOpen(key)
                   return (
                     <section key={key} className={`exam-cat${closed ? ' is-closed' : ''}`}>
                       <div className="exam-cat__head">
-                        <button type="button" className="exam-cat__toggle" aria-expanded={!closed} onClick={() => setFolded((x) => ({ ...x, [key]: !closed }))}>
+                        <button type="button" className="exam-cat__toggle" aria-expanded={!closed} onClick={() => setOpenCats((x) => ({ ...x, [key]: closed }))}>
                           <ChevronRight size={16} className="exam-cat__chev" aria-hidden /><b>{c.title}</b> <span className="muted">({c.items.length})</span></button>
                         <TakeAllButton list={c.items.filter((x) => canTake(x, open))} reload={reload} />
                       </div>
@@ -221,7 +231,7 @@ export function ExamRow({ e, reload, open, expanded, onToggle, compact = false }
       <div className="exam-row__main">
         {compact ? <div className="exam-row__line">{toggle}{ordered}</div> : <>{toggle}{ordered}</>}
         {compact && (brief.flags.length > 0 || brief.text) && <span className="exam-row__brief">
-          {brief.flags.map((f) => <span key={f} className="badge badge--red">{f}</span>)}{brief.text && <span className="muted">{brief.text}</span>}</span>}
+          {brief.flags.map((f) => <span key={f} className="badge badge--amber">{f}</span>)}{brief.text && <span className="muted">{brief.text}</span>}</span>}
         {expanded && <div id={id} className="exam-row__body">
           <span className="exam-row__trail">{(e.events ?? []).filter((x) => x.status !== 'ordered').map((x) => `${STATUS_LABEL[e.group][x.status]} ${dateTime(x.at)} (${shortStaff(staffById(x.by)?.name)})`).join(' · ')}</span>
           {e.status === 'cancelled' && <span className="c-muted fs-md">Cancelado: {e.cancelReason}</span>}
