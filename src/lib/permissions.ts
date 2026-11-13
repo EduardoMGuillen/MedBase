@@ -160,8 +160,16 @@ const OFFICE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
 }
 
 /** Permisos de un rol según el tipo de cuenta (y, en Laboratorio e Imágenes, el cargo). En una clínica son los de siempre. */
-export function permissionsFor(role: Role, kind: ClinicKind = 'clinic', position?: string): Permission[] {
-  if (kind === 'office') return OFFICE_PERMISSIONS[role] ?? []
+/**
+ * CO1 (ronda 18): `roles` son todos los roles de la persona. En un consultorio, quien es médico Y administración cobra en la
+ * vista de Administración (Caja, Reportes): su vista de Médico no tiene «Cobrar» (ni por dirección directa). Quien solo tiene
+ * el rol de médico lo conserva (A7).
+ */
+export function permissionsFor(role: Role, kind: ClinicKind = 'clinic', position?: string, roles?: Role[]): Permission[] {
+  if (kind === 'office') {
+    const own = OFFICE_PERMISSIONS[role] ?? []
+    return role === 'doctor' && roles?.includes('admin') ? own.filter((p) => p !== 'billing.manage') : own
+  }
   const base = ROLE_PERMISSIONS[role] ?? []
   // El cargo suma solo en la vista de su rol (el puesto de enfermería, en la de enfermería; el de Laboratorio, en la de Laboratorio)
   const fits = !!position && POSITION_ROLES.includes(role) && (role === 'nurse') === position.startsWith('nurse_')
@@ -198,8 +206,8 @@ export const ROLE_SUMMARY: Record<Role, string> = {
 }
 
 /** ¿Puede este usuario (rol y tipo de cuenta) hacer esto? Con sólo el rol, se asume una clínica. */
-export const can = (who: Role | { role: Role; clinicKind?: ClinicKind; position?: string }, p: Permission) =>
-  (typeof who === 'string' ? ROLE_PERMISSIONS[who] : permissionsFor(who.role, who.clinicKind, who.position)).includes(p)
+export const can = (who: Role | { role: Role; clinicKind?: ClinicKind; position?: string; roles?: Role[] }, p: Permission) =>
+  (typeof who === 'string' ? ROLE_PERMISSIONS[who] : permissionsFor(who.role, who.clinicKind, who.position, who.roles)).includes(p)
 
 /** AD5: ¿la persona tiene este rol (aunque ahora trabaje con otra vista)? */
 export const hasRole = (s: { role: Role; roles?: Role[] }, r: Role) => (s.roles ?? [s.role]).includes(r)
@@ -222,7 +230,7 @@ export function viewsOf(s: { role: Role; roles?: Role[] }): Role[] {
 
 /** Otro de sus roles que sí tiene este permiso (para ofrecer cambiar de vista), o undefined. */
 export function roleWith(s: { role: Role; roles?: Role[]; position?: string }, p: Permission, kind: ClinicKind = 'clinic') {
-  return viewsOf(s).find((r) => r !== s.role && permissionsFor(r, kind, s.position).includes(p))
+  return viewsOf(s).find((r) => r !== s.role && permissionsFor(r, kind, s.position, s.roles).includes(p))
 }
 
 /** Permisos que se muestran en la matriz de una clínica (sin los de plataforma). */

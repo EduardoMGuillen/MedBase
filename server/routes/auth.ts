@@ -16,7 +16,7 @@ export function registerAuth(app: Express, ctx: Ctx, tools: SessionTools) {
   const { sql, demoMode, auth, userOf, audit, staffRow, settings } = ctx
   const session = (row: Row) => {
     const user = toStaff(row)
-    return { user, permissions: permissionsFor(user.role, user.clinicKind, user.position), demo: demoMode }
+    return { user, permissions: permissionsFor(user.role, user.clinicKind, user.position, user.roles), demo: demoMode }
   }
 
   app.post('/api/auth/login', async (req, res) => {

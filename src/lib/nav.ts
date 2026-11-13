@@ -58,7 +58,7 @@ export const NAV: NavEntry[] = [
 /** Lo que la barra muestra: la entrada con su nombre y el título del grupo para este rol y esta cuenta. */
 export interface NavItem { to: string; label: string; end?: boolean; group?: string }
 
-export interface NavWho { role: Role; kind?: ClinicKind; position?: string; observationEnabled?: boolean; permissions?: Permission[] }
+export interface NavWho { role: Role; kind?: ClinicKind; position?: string; observationEnabled?: boolean; permissions?: Permission[]; /** CO1 (ronda 18): todos los roles de la persona */ roles?: Role[] }
 
 const RANK: Record<NavGroupName, number> = { Pacientes: 20, 'Laboratorio e imágenes': 25, Registros: 30, Administración: 40 }
 
@@ -74,7 +74,7 @@ export function groupTitle(g: NavGroupName, role: Role, office: boolean): string
 export function sidebarFor(who: NavWho): NavItem[] {
   if (who.role === 'superadmin') return [{ to: '/app', label: 'Clínicas y consultorios', end: true }]
   const kind = who.kind ?? 'clinic'
-  const perms = who.permissions ?? permissionsFor(who.role, kind, who.position)
+  const perms = who.permissions ?? permissionsFor(who.role, kind, who.position, who.roles)
   const f = features({ kind, observationEnabled: who.observationEnabled })
   const dept = who.role === 'lab' || who.role === 'imaging'
   return NAV.filter((n) => {

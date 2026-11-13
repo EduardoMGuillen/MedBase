@@ -23,8 +23,8 @@ export function tourKey(role: Role, kind: ClinicKind = 'clinic'): string {
 const TOURS: Record<string, TourStep[]> = { recepcion, enfermeria, medico, administracion, consultorio, asistente, plataforma }
 
 /** Pasos del recorrido sin los de pantallas o permisos que esta cuenta y este rol no tienen. */
-export function tourFor(role: Role, kind: ClinicKind = 'clinic', opts: { observationEnabled?: boolean } = {}): TourStep[] {
-  const perms = permissionsFor(role, kind)
+export function tourFor(role: Role, kind: ClinicKind = 'clinic', opts: { observationEnabled?: boolean; roles?: Role[] } = {}): TourStep[] {
+  const perms = permissionsFor(role, kind, undefined, opts.roles)
   const f = features({ kind, observationEnabled: opts.observationEnabled })
   // DP1 (ronda 11): Laboratorio e Imágenes todavía no tienen recorrido guiado
   return (TOURS[tourKey(role, kind)] ?? []).filter((s) => (!s.perm || perms.includes(s.perm)) && (!s.feature || f[s.feature]))

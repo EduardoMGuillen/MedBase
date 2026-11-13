@@ -165,13 +165,13 @@ export default function Dashboard() {
       <div className="page">
         <PageHead title={`${greeting()}, ${first}`} sub={next ? `Tu próxima cita es a las ${time(next.start)}.` : 'No tienes más citas pendientes hoy.'}
           actions={<Link className="btn btn--primary" to="/app/consulta-externa">Ir a consulta externa</Link>} />
-        <div className="stats">
+        <div className={`stats${office && can('billing.manage') ? ' stats--5' : ''}`}>
           <Link className="stat" to="/app/consulta-externa"><b>{mine.length}</b><span>Citas hoy</span></Link>
           <Link className="stat" to="/app/consulta-externa"><b>{waiting.length}</b><span>En sala de espera</span></Link>
           <Link className="stat" to="/app/consulta-externa"><b>{ready.length}</b><span>Listos para consulta</span>{ready.length > 0 && <small>Con preclínica hecha</small>}</Link>
           <Link className="stat" to="/app/consulta-externa"><b>{done.length}</b><span>Atendidos</span></Link>
-          {/* En su consultorio el médico también cobra */}
-          {office && <Link className="stat" to="/app/caja"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span>
+          {/* En su consultorio el médico también cobra. CO1 (ronda 18): si además es Administración, el dinero se ve en esa vista */}
+          {office && can('billing.manage') && <Link className="stat" to="/app/caja"><b className="num">{todayRevenue == null ? '—' : money(todayRevenue, settings.currency)}</b><span>Cobrado hoy</span>
             {owed && owed.n > 0 && <small>{owed.n} con saldo pendiente</small>}</Link>}
         </div>
         {next && nextPatient && (

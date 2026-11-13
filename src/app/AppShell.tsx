@@ -46,7 +46,7 @@ export default function AppShell() {
   const [tourMenu, setTourMenu] = useState(false)
   const [help, setHelp] = useState(false)
   const key = user ? tourKey(user.role, settings.kind ?? 'clinic') : ''
-  const steps = user ? tourFor(user.role, settings.kind ?? 'clinic', { observationEnabled: settings.observationEnabled }) : []
+  const steps = user ? tourFor(user.role, settings.kind ?? 'clinic', { observationEnabled: settings.observationEnabled, roles: user.roles }) : []
   const saved = user?.prefs?.tours?.[key]
   const startMain = (manual: boolean) => {
     setHelp(false)
