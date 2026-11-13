@@ -1,27 +1,42 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Download } from 'lucide-react'
 import { useStore, type Report } from '../lib/store'
 import { Loading, PageHead } from '../components/ui'
 import { Pagination, paginate, usePage } from '../components/Pagination'
 import { BarChart, HBars } from '../components/Charts'
 import { localISODate, METHOD_LABEL, money } from '../lib/format'
-
-const PRESETS = [{ days: 7, label: '7 días' }, { days: 30, label: '30 días' }, { days: 90, label: '90 días' }]
+import { monthLabel, periodFromParams, periodRange, REPORT_PRESETS, shiftMonth, type ReportPeriod } from '../lib/reportPeriod'
 
 export default function Reports() {
   const { fetchReport, settings, notify } = useStore()
-  const [days, setDays] = useState(30)
-  const [report, setReport] = useState<Report | null>(null)
+  // RP2 (ronda 18): el periodo vive en la dirección (`?periodo=mes&mes=2026-11`): «Atrás» y recargar lo mantienen
+  const [params, setParams] = useSearchParams()
+  const [today] = useState(() => localISODate(new Date()))
+  const period = periodFromParams(params, today)
+  const { from, to } = periodRange(period, today)
+  const month = period.kind === 'month' ? period.month : null
+  const key = `${from}_${to}_${period.kind}`
+  const [loaded, setLoaded] = useState<{ key: string; report: Report } | null>(null)
+  const report = loaded?.key === key ? loaded.report : null
 
   useEffect(() => {
-    const to = new Date()
-    const from = new Date(); from.setDate(from.getDate() - (days - 1))
-    fetchReport(localISODate(from), localISODate(to)).then(setReport).catch((e: Error) => notify(e.message, 'error'))
-  }, [days, fetchReport, notify])
+    let stale = false
+    fetchReport(from, to).then((r) => { if (!stale) setLoaded({ key, report: r }) }).catch((e: Error) => notify(e.message, 'error'))
+    return () => { stale = true }
+  }, [from, to, key, fetchReport, notify])
+
+  const setPeriod = (p: ReportPeriod) => setParams((prev) => {
+    const n = new URLSearchParams(prev)
+    n.delete('pagina'); n.delete('periodo'); n.delete('mes')
+    if (p.kind === 'month') { n.set('periodo', 'mes'); n.set('mes', p.month) }
+    else if (p.days !== 30) n.set('periodo', String(p.days))
+    return n
+  })
 
   const cur = settings.currency
   // GE5 (ronda 10): las tablas del reporte, por páginas
-  const [doctorsPageNo, setDoctorsPage] = usePage(String(days))
+  const [doctorsPageNo, setDoctorsPage] = usePage(key)
   const doctorsPage = paginate(report?.byDoctor ?? [], doctorsPageNo)
   const short = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('es-HN', { day: 'numeric', month: 'short' })
   const long = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -38,7 +53,7 @@ export default function Reports() {
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `reporte-${report.range.from}-a-${report.range.to}.csv`
+    a.download = month ? `reporte_${month}.csv` : `reporte-${report.range.from}-a-${report.range.to}.csv`
     a.click()
     URL.revokeObjectURL(a.href)
   }
@@ -48,8 +63,15 @@ export default function Reports() {
       <PageHead tour="reportes" title="Reportes" sub="Actividad e ingresos de la clínica. No incluye información clínica de pacientes."
         actions={<>
           <div className="segmented" role="radiogroup" aria-label="Periodo">
-            {PRESETS.map((p) => <button key={p.days} role="radio" aria-checked={days === p.days} onClick={() => { setReport(null); setDays(p.days) }}>{p.label}</button>)}
+            {REPORT_PRESETS.map((p) => <button key={p.days} role="radio" aria-checked={period.kind === 'days' && period.days === p.days}
+              onClick={() => setPeriod({ kind: 'days', days: p.days })}>{p.label}</button>)}
+            <button role="radio" aria-checked={month !== null} onClick={() => setPeriod({ kind: 'month', month: today.slice(0, 7) })}>Mes</button>
           </div>
+          {month && <div className="month-nav" role="group" aria-label="Mes del reporte">
+            <button type="button" aria-label="Mes anterior" onClick={() => setPeriod({ kind: 'month', month: shiftMonth(month, -1) })}>‹</button>
+            <span aria-live="polite">{monthLabel(month)}</span>
+            <button type="button" aria-label="Mes siguiente" disabled={month >= today.slice(0, 7)} onClick={() => setPeriod({ kind: 'month', month: shiftMonth(month, 1) })}>›</button>
+          </div>}
           <button className="btn btn--ghost" disabled={!report} onClick={exportCsv}><Download size={16} />Exportar CSV</button>
         </>} />
 

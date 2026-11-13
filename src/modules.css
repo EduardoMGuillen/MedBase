@@ -41,6 +41,13 @@
 .segmented { display: inline-flex; background: var(--ward); border: 1px solid var(--line); border-radius: var(--r-md); padding: 3px; gap: 2px; flex-wrap: wrap; }
 .segmented button { border: 0; background: transparent; padding: 6px 12px; border-radius: 7px; font-weight: 600; font-size: 13.5px; color: var(--muted); cursor: pointer; }
 .segmented button[aria-checked='true'] { background: var(--paper); color: var(--ink-deep); box-shadow: 0 1px 2px rgba(14, 34, 51, .12); }
+/* RP2 (ronda 18): selector de mes de Reportes, «‹ Noviembre 2026 ›»; en el teléfono baja de renglón con el resto */
+.month-nav { display: inline-flex; align-items: center; gap: 2px; background: var(--ward); border: 1px solid var(--line); border-radius: var(--r-md); padding: 3px; }
+.month-nav span { min-width: 132px; padding: 0 6px; text-align: center; font-weight: 600; font-size: 13.5px; color: var(--ink-deep); white-space: nowrap; }
+.month-nav button { border: 0; background: transparent; min-width: 32px; padding: 6px 10px; border-radius: 7px; font-weight: 700; font-size: 15px; line-height: 1.2; color: var(--muted); cursor: pointer; }
+.month-nav button:hover:not(:disabled) { background: var(--paper); color: var(--ink-deep); }
+.month-nav button:disabled { opacity: .35; cursor: default; }
+@media (pointer: coarse) { .month-nav button { min-width: 44px; min-height: 44px; } }
 
 /* Caja */
 .lines { display: grid; gap: 8px; }
