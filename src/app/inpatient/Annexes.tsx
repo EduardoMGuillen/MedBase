@@ -37,7 +37,8 @@ export function Annexes({ file, p, reload }: { file: File; p: Patient; reload: (
             <p className="muted">Se firman en pantalla (tablet, celular o computadora) o se imprimen, se firman en papel y se sube la foto o el PDF de la hoja firmada.</p>
             <div className="hstack">
               {file.hospitalization.kind === 'hospital' && <button className="btn btn--soft" onClick={() => setMaking('hospital')}><FileSignature size={16} />Autorización de hospitalización{hospital?.status === 'pending' ? ' (pendiente)' : ''}</button>}
-              <button className="btn btn--primary" onClick={() => setMaking('surgical')}><FileSignature size={16} />Autorización quirúrgica</button>
+              {/* R18-OB1 (ronda 18): en observación no se generan autorizaciones quirúrgicas (las que ya existen se ven abajo) */}
+              {file.hospitalization.kind !== 'observation' && <button className="btn btn--primary" onClick={() => setMaking('surgical')}><FileSignature size={16} />Autorización quirúrgica</button>}
             </div>
           </div>
         </section>

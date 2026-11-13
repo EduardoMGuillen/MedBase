@@ -75,6 +75,10 @@ button.ph-note__text { background: none; border: 0; padding: 0; cursor: pointer;
 .note__list { margin: 0; padding-left: 22px; display: grid; gap: 4px; font-size: 14.5px; }
 .consult-entry .panel__head h2::first-letter { text-transform: uppercase; }
 
+/* R18-OB1 (ronda 18): acciones del expediente en una sola fila; lo que no cabe va a «Más acciones» */
+.action-row { position: relative; display: flex; gap: 8px; flex-wrap: nowrap; min-width: 0; }
+.action-row > .btn { flex: none; }
+.action-row__ruler { position: absolute; left: 0; top: 0; height: 0; overflow: hidden; visibility: hidden; display: flex; gap: 8px; white-space: nowrap; pointer-events: none; }
 .fs { border: 0; padding: 0; margin: 0; display: grid; gap: 12px; min-width: 0; min-inline-size: 0; }
 /* NE1 (ronda 7): un <fieldset> por defecto no se encoge por debajo de su contenido (min-inline-size: min-content) */
 .fs legend { font-family: var(--display); font-weight: 650; font-size: 15px; color: var(--ink-deep); margin-bottom: 8px; padding: 0; }

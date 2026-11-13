@@ -1,6 +1,6 @@
 import { closeOpenVisits } from '../stayVisits.js'
 import { nebulizationBody } from '../../src/lib/medExtras.js'
-import { ANESTHESIA_TYPES, INFUSION_UNITS, NEB_MAX_COMPONENTS, SURGICAL_TEAM } from '../../src/lib/clinicalConfig.js'
+import { ANESTHESIA_TYPES, INFUSION_UNITS, NEB_MAX_COMPONENTS, OBS_NO_SURGERY, SURGICAL_TEAM } from '../../src/lib/clinicalConfig.js'
 import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -628,6 +628,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     const user = userOf(req)
     const cid = clinicOf(req)
     const h = await activeHosp(cid, String(req.params.id))
+    // R18-OB1 (ronda 18): en observación no se escriben notas postquirúrgicas nuevas
+    if (b.format === 'postop' && h.kind === 'observation') fail(403, OBS_NO_SURGERY)
     // PQ1 (ronda 9): toda nota postquirúrgica es un procedimiento mayor: la misma regla que tenía la casilla de la nota de
     // procedimiento: autorización quirúrgica firmada (la elegida o una de las 24 horas antes del inicio) o urgencia justificada
     let postopAuth: { authorizationId?: string; urgent?: boolean; justification?: string } | undefined
@@ -978,6 +980,8 @@ export function registerInpatient(app: Express, ctx: Ctx) {
     // El diagnóstico lo pone el sistema (los diagnósticos de la estancia); sólo se escribe si no tiene ninguno
     const known = (JSON.parse(String(h.diagnoses ?? '[]')) as { label: string }[]).map((d) => d.label).join('; ')
     if (b.template === 'surgical' && !b.diagnosis && !known) fail(400, 'Escribe el diagnóstico: el expediente no tiene ninguno.')
+    // R18-OB1 (ronda 18): ni autorizaciones quirúrgicas nuevas (las que ya existen se siguen viendo, firmando o anulando)
+    if (b.template === 'surgical' && h.kind === 'observation') fail(403, OBS_NO_SURGERY)
     const name = await patientName(String(h.patient_id))
     if (b.template === 'hospital') {
       if (h.kind === 'observation') fail(409, 'La observación no lleva autorización de hospitalización. Se genera si el paciente pasa a hospitalización.')

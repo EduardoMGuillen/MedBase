@@ -406,6 +406,11 @@ export const DEPT_POSITIONS = {
 /** EN1 (ronda 16). VALIDAR: Emil. Puesto de enfermería de quien no tiene uno (la migración y al crear sin elegirlo): auxiliar. */
 export const NURSE_DEFAULT_POSITION = 'nurse_aux'
 /** Prefijos que ya puede traer el nombre (no se repiten en la firma). */
+/**
+ * R18-OB1 (ronda 18): en Observación no se hacen documentos de cirugía (autorización quirúrgica, valoración preanestésica, nota
+ * postquirúrgica): si el paciente va a cirugía, primero pasa a hospitalización. Lo dice el servidor al rechazar uno nuevo.
+ */
+export const OBS_NO_SURGERY = 'Sin permiso: en observación no se hacen autorizaciones quirúrgicas, valoraciones preanestésicas ni notas postquirúrgicas. Para una cirugía, pasa al paciente a hospitalización.'
 export const NAME_PREFIXES = ['Dr.', 'Dra.', 'Lic.', 'Téc.', 'Aux.', 'Ing.']
 /**
  * DP6 (ronda 11). VALIDAR: Emil. Turnos de cada departamento en el rol de turnos (por defecto, las de enfermería).

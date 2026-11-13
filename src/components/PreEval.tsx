@@ -29,18 +29,28 @@ const evalLine = (e: PreEval, who: (id: string) => string | undefined) => e.mode
  * El botón «Valoración preanestésica» (Notas de evolución, tarjeta de la autorización quirúrgica y Anexos): escribirla en el
  * sistema, subirla en papel o imprimirla en blanco.
  */
-export function PreEvalButton({ stayId, patientId, authorizationId, small, onChanged }: { stayId: string; patientId: string; authorizationId?: string; small?: boolean; onChanged?: () => void }) {
+export function PreEvalButton(props: { stayId: string; patientId: string; authorizationId?: string; small?: boolean; onChanged?: () => void }) {
+  const pre = usePreEval(props)
+  const { can } = useStore()
+  if (!pre.available) return null
+  const { small } = props
+  return <>
+    <button type="button" className={`btn ${small ? 'btn--ghost btn--sm anes-btn' : can('inpatient.orders') ? 'btn--primary' : 'btn--soft'}`} onClick={pre.open} data-testid="preeval-button">
+      <ClipboardCheck size={small ? 14 : 16} />Valoración preanestésica</button>
+    {pre.ui}
+  </>
+}
+
+/** R18-OB1 (ronda 18): lo mismo sin el botón, para la fila de acciones (que puede mandarlo a «Más acciones»). */
+export function usePreEval({ stayId, patientId, authorizationId, onChanged }: { stayId: string; patientId: string; authorizationId?: string; onChanged?: () => void }) {
   const access = useAnesthesiaAccess()
   const { can, user, notify } = useStore()
   const nav = useNavigate()
   const [choosing, setChoosing] = useState(false)
   const [uploading, setUploading] = useState(false)
-  if (!access) return null
   const doctor = can('inpatient.orders')
   const q = authorizationId ? `autorizacion=${authorizationId}` : ''
-  return <>
-    <button type="button" className={`btn ${small ? 'btn--ghost btn--sm anes-btn' : doctor ? 'btn--primary' : 'btn--soft'}`} onClick={() => setChoosing(true)} data-testid="preeval-button">
-      <ClipboardCheck size={small ? 14 : 16} />Valoración preanestésica</button>
+  const ui = <>
     {choosing && (
       <Modal title="Valoración preanestésica" onClose={() => setChoosing(false)}>
         <p className="c-muted mt-0 fs-base">Se hace antes de la cirugía. Puede haber más de una (si se reprograma); la vigente es la última.</p>
@@ -58,6 +68,7 @@ export function PreEvalButton({ stayId, patientId, authorizationId, small, onCha
       performed={{ label: 'Valoración realizada por', start: doctor && user ? { name: user.name, staffId: user.id } : { name: '' } }}
       onClose={() => setUploading(false)} onDone={() => { setUploading(false); notify('Valoración preanestésica subida'); onChanged?.() }} />}
   </>
+  return { available: !!access, open: () => setChoosing(true), ui }
 }
 
 /** Anexos de la estancia: las valoraciones (la vigente marcada; también las anuladas), con ver, imprimir, corregir o reemplazar. */

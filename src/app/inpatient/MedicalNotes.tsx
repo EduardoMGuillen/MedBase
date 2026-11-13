@@ -28,7 +28,9 @@ import { ReferralModal } from '../Referral'
 import { features } from '../../lib/permissions'
 import { vitalsModeText } from '../../lib/vitalsSheet'
 import { AnesthesiaCard } from '../../components/AnesthesiaSheet'
-import { PreEvalButton } from '../../components/PreEval'
+import { usePreEval } from '../../components/PreEval'
+import { ActionRow, type RowAction } from '../../components/ActionRow'
+import { ClipboardCheck } from 'lucide-react'
 import { SurgicalCountCard } from '../../components/SurgicalCount'
 import { fluidsOrderText } from '../../lib/fluids'
 import { ConsultEntry } from './ConsultEntry'
@@ -110,8 +112,24 @@ export function MedicalNotes({ file, p, reload, show = true, onWriting }: { file
     const q = new URLSearchParams(notesParams); q.delete('nota'); setNotesParams(q, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openAdmission])
+  // R18-OB1 (ronda 18): la fila de acciones. En Observación no hay cirugía (autorización quirúrgica, valoración preanestésica,
+  // nota postquirúrgica): si el paciente va a cirugía, primero pasa a hospitalización. Hospitalización las conserva todas.
+  const pre = usePreEval({ stayId: h.id, patientId: p.id })
+  const surgery = !obs
+  const actions = ([
+    (doctor || (writer && hasAdmission)) && { key: 'note', label: hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso', icon: <NotebookPen size={16} />, run: () => setWriting('note'), tour: 'nueva-evolucion' },
+    writer && { key: 'procedure', label: doctor ? 'Procedimiento' : 'Procedimiento menor', icon: <Syringe size={16} />, run: () => setWriting('procedure') },
+    surgery && (doctor || can('inpatient.care')) && { key: 'auth', label: 'Autorización quirúrgica', icon: <FileSignature size={16} />, run: () => { setAuthFor(undefined); setWriting('authorization') } },
+    // PQ4 (ronda 16): la valoración preanestésica, antes de la cirugía
+    surgery && pre.available && { key: 'preeval', label: 'Valoración preanestésica', icon: <ClipboardCheck size={16} />, run: pre.open, testid: 'preeval-button' },
+    surgery && writer && hasAdmission && { key: 'postop', label: doctor ? 'Nota postquirúrgica' : 'Procedimiento mayor (nota postquirúrgica)', icon: <NotebookPen size={16} />, run: () => setWriting('postop') },
+    doctor && hasAdmission && !discharged && { key: 'discharge', label: 'Egreso', icon: <LogOut size={16} />, run: () => setWriting('discharge'), tour: 'egreso' },
+    doctor && obs && features(settings).hospital && { key: 'convert', label: 'Pasar a hospitalización', icon: <BedDouble size={16} />, run: () => setConverting(true) },
+    // Ronda 8: referencia a otro centro desde la observación y la hospitalización
+    doctor && { key: 'referral', label: 'Referencia', icon: <Send size={16} />, run: () => setReferring(true) },
+  ] as (RowAction | false | undefined)[]).filter((a): a is RowAction => !!a)
   const editors = <>
-      {writing === 'procedure' && <ProcedureNoteForm inline file={file} initial={procDraft} onClose={() => { setWriting(null); setProcDraft(undefined) }} onSaved={() => { setWriting(null); setProcDraft(undefined); reload() }}
+      {writing === 'procedure' && <ProcedureNoteForm inline obs={obs} file={file} initial={procDraft} onClose={() => { setWriting(null); setProcDraft(undefined) }} onSaved={() => { setWriting(null); setProcDraft(undefined); reload() }}
         onAuthorize={(draft) => { setProcDraft(draft); setBack('procedure'); setAuthFor(draft.name); setWriting('authorization') }}
         onConvert={(draft) => { setProcDraft(undefined); setPostopSeed({ procedureName: draft.name, description: draft.text, startAt: draft.performedAt, endAt: draft.performedAt, urgent: draft.urgent, justification: draft.justification }); setWriting('postop') }} />}
       {writing === 'postop' && <NoteEditor inline notesOnly={!doctor} file={file} p={p} kind="evolution" variant="postop" seed={postopSeed} onClose={() => { setWriting(null); setPostopSeed(undefined) }} onSaved={(b, rx) => { setWriting(null); setPostopSeed(undefined); reload(); if (b || rx) setOrdersFor({ batch: b, rxNote: rx }) }} onStale={reload}
@@ -133,23 +151,14 @@ export function MedicalNotes({ file, p, reload, show = true, onWriting }: { file
     <div className="hc">
       {open && (writer || can('inpatient.care')) && (
         <section className="panel">
-          <div className="panel__body" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-            <p className="muted">{hasAdmission ? 'Las notas quedan en orden, de la más antigua a la más reciente. Procedimientos, notas postquirúrgicas y egreso también son notas de evolución.' : 'Lo primero es la nota de ingreso, con las indicaciones de medicamentos.'}</p>
-            <div className="hstack">
-              {(doctor || (writer && hasAdmission)) && <button className="btn btn--primary" data-tour="nueva-evolucion" onClick={() => setWriting('note')}><NotebookPen size={16} />{hasAdmission ? 'Nueva nota de evolución' : 'Escribir nota de ingreso'}</button>}
-              {writer && <button className="btn btn--primary" onClick={() => setWriting('procedure')}><Syringe size={16} />{doctor ? 'Procedimiento' : 'Procedimiento menor'}</button>}
-              {(doctor || can('inpatient.care')) && <button className={`btn ${doctor ? 'btn--primary' : 'btn--soft'}`} onClick={() => { setAuthFor(undefined); setWriting('authorization') }}><FileSignature size={16} />Autorización quirúrgica</button>}
-              {/* PQ4 (ronda 16): la valoración preanestésica, antes de la cirugía */}
-              <PreEvalButton stayId={file.hospitalization.id} patientId={p.id} />
-              {writer && hasAdmission && <button className="btn btn--primary" onClick={() => setWriting('postop')}><NotebookPen size={16} />{doctor ? 'Nota postquirúrgica' : 'Procedimiento mayor (nota postquirúrgica)'}</button>}
-              {doctor && hasAdmission && !discharged && <button className="btn btn--primary" data-tour="egreso" onClick={() => setWriting('discharge')}><LogOut size={16} />Egreso</button>}
-              {doctor && obs && features(settings).hospital && <button className="btn btn--soft" onClick={() => setConverting(true)}><BedDouble size={16} />Pasar a hospitalización</button>}
-              {/* Ronda 8: referencia a otro centro desde la observación y la hospitalización (antes, sólo el consultorio) */}
-              {doctor && <button className="btn btn--soft" onClick={() => setReferring(true)}><Send size={16} />Referencia</button>}
-            </div>
+          <div className="panel__body stack">
+            <p className="muted m-0">{!hasAdmission ? 'Lo primero es la nota de ingreso, con las indicaciones de medicamentos.'
+              : `Las notas quedan en orden, de la más antigua a la más reciente. ${obs ? 'Procedimientos y egreso' : 'Procedimientos, notas postquirúrgicas y egreso'} también son notas de evolución.`}</p>
+            <ActionRow actions={actions} label="Acciones del expediente" />
           </div>
         </section>
       )}
+      {pre.ui}
       {can('orders.review') && <PendingOrdersPanel file={file} reload={reload} />}
       {/* MC5: la nota de egreso se escribe en la misma hoja que la epicrisis */}
       {writing === 'discharge' && <DischargeWriter file={file} p={p} initialCondition={transfer ? 'Trasladado a otro centro' : undefined} onDone={() => { setWriting(null); reload(); if (transfer) { const q = new URLSearchParams(notesParams); q.delete('egreso'); setNotesParams(q, { replace: true }) } }} />}
@@ -447,7 +456,9 @@ export function TextCorrection({ n, procedure, onClose, onSaved, onExpired }: { 
  */
 export type ProcDraft = { name: string; performedAt: string; text: string; major: boolean; urgent: boolean; justification: string }
 
-export function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize, onConvert, inline = false }: { file: File; initial?: ProcDraft; onClose: () => void; onSaved: () => void; onAuthorize: (draft: ProcDraft) => void; onConvert: (draft: ProcDraft) => void; inline?: boolean }) {
+export function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize, onConvert, inline = false, obs = false }: { file: File; initial?: ProcDraft; onClose: () => void; onSaved: () => void; onAuthorize: (draft: ProcDraft) => void; onConvert: (draft: ProcDraft) => void; inline?: boolean
+  /** R18-OB1 (ronda 18): en observación no hay nota postquirúrgica */
+  obs?: boolean }) {
   const { addProcedureNote } = useStore()
   const now = useNow()
   // Si se fue a generar la autorización quirúrgica, al volver la nota sigue como estaba
@@ -494,7 +505,7 @@ export function ProcedureNoteForm({ file, initial, onClose, onSaved, onAuthorize
           <span>Este borrador se empezó como procedimiento mayor. Las cirugías ahora se escriben en la nota postquirúrgica (diagnósticos, horas, anestesia y equipo quirúrgico).</span>
           <button type="button" className="btn btn--soft btn--sm self-start" onClick={() => { draft.clear(); onConvert(f) }}>Continuar como nota postquirúrgica</button>
         </div>
-      ) : <small className="muted">Para procedimientos menores: no piden autorización. Una cirugía se escribe en «Nota postquirúrgica».</small>}
+      ) : <small className="muted">Para procedimientos menores: no piden autorización. {obs ? 'Para una cirugía, pasa al paciente a hospitalización.' : 'Una cirugía se escribe en «Nota postquirúrgica».'}</small>}
       {f.major && auths.length > 0 && (
         <label className="field"><span>Autorización quirúrgica firmada (últimas 24 horas)</span>
           <Combo value={chosen?.id ?? ''} onChange={setAuthId} options={[...auths.map((a) => ({ value: a.id, label: `${a.name} · firmada ${dm(a.at)}` })), { value: '', label: 'Ninguna de estas' }]} /></label>

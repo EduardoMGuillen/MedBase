@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { type Ctx, fail, parse, type Row } from '../http.js'
 import { assertGrace, graceUntil, saveVersion } from '../grace.js'
 import { can } from '../../src/lib/permissions.js'
-import { ANESTHESIA_SHEET } from '../../src/lib/clinicalConfig.js'
+import { ANESTHESIA_SHEET, OBS_NO_SURGERY } from '../../src/lib/clinicalConfig.js'
 import type { PreEval, PreEvalPrefill } from '../../src/lib/preanesthesia.js'
 import type { AnesthesiaSigner } from '../../src/lib/anesthesia.js'
 import type { Staff } from '../../src/lib/types.js'
@@ -112,6 +112,8 @@ export function registerPreanesthesia(app: Express, { sql, auth, userOf, clinicO
       fail(403, 'La valoración preanestésica la escribe y la firma un médico.')
     }
     if (h!.status !== 'active') fail(409, 'La estancia ya terminó.')
+    // R18-OB1 (ronda 18): en observación no se hacen valoraciones preanestésicas nuevas
+    if (h!.kind === 'observation') fail(403, OBS_NO_SURGERY)
     const b = parse(z.object({ data: preEvalInput, authorizationId: z.string().optional() }), req.body)
     const authId = b.authorizationId && (await sql.one('SELECT 1 FROM authorizations WHERE id = ? AND hospitalization_id = ?', [b.authorizationId, String(h!.id)])) ? b.authorizationId : null
     const id = randomUUID()
@@ -133,6 +135,8 @@ export function registerPreanesthesia(app: Express, { sql, auth, userOf, clinicO
     const cid = clinicOf(req)
     const b = parse(paperBody('hizo la valoración').extend({ authorizationId: z.string().optional() }), req.body)
     const h = await stayOf(cid, String(req.params.id))
+    // R18-OB1 (ronda 18): en observación solo se reemplaza una que ya exista
+    if (h!.kind === 'observation' && !b.replaces) fail(403, OBS_NO_SURGERY)
     if (!b.performedBy) fail(400, 'Escribe quién hizo la valoración.')
     await assertPaperFile(sql, cid, b.fileId, String(h!.patient_id), u.id)
     const staffId = await staffIdIn(sql, cid, b.performedBy!.staffId)
