@@ -109,7 +109,7 @@
 .cal-bar__date { width: 170px; }
 /* UI2 (ronda 17): el alto va en el campo, no en el contenedor (con alto fijo el botón se salía y quedaba sobre la barra de arriba) */
 .cal-bar__date .dtf__input { height: 34px; }
-.cal-bar__doc { width: auto; max-width: 230px; }
+.cal-bar__doc { width: 230px; max-width: 230px; }
 .cal__inner--week { min-width: 900px; }
 .cal__head--day { flex-direction: column; gap: 0; border: 0; border-left: 1px solid var(--line-soft); background: transparent; cursor: pointer; padding: 8px 4px; }
 .cal__head--day strong { font-family: var(--display); font-size: 20px; }
@@ -204,7 +204,8 @@
   .cal-bar__title { font-size: 16px; white-space: normal; }
   .cal-bar__tools { display: grid; grid-template-columns: 1fr 1fr; }
   .cal-bar__tools .segmented { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); }
-  .cal-bar__date, .cal-bar__doc { width: 100%; max-width: none; height: var(--field-h); }
+  .cal-bar__date, .cal-bar__doc { width: 100%; max-width: none; }
+  .cal-bar__date, .cal-bar__doc .combo__input, .cal-bar__doc .combo__chev { height: var(--field-h); }
   .month__head span { padding: 8px 0; text-align: center; font-size: 11.5px; }
   .month__cell { min-height: 54px; align-items: center; padding: 4px 2px; }
   .month__day { align-self: center; }

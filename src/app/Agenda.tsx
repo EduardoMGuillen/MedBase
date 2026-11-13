@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Combo } from '../components/Combo'
 import { DateField } from '../components/DateTimeField'
 import { useNavigate } from 'react-router-dom'
 import { Activity, Ban, CalendarCheck, CalendarClock, Check, ChevronLeft, ChevronRight, Globe, LogIn, Plus, Receipt, Search, Stethoscope, UserPlus, UserX, X, type LucideIcon } from 'lucide-react'
@@ -99,10 +100,8 @@ export default function Agenda() {
           <DateField className="cal-bar__date" value={localISODate(cursor)} label="Ir a una fecha" required
             onChange={(v) => v && setCursor(new Date(`${v}T12:00:00`))} />
           {/* Con un solo médico (consultorio) no hay a quién filtrar */}
-          {doctors.length > 1 && <select className="select select--sm cal-bar__doc" value={doctorFilter} onChange={(e) => setDoctorFilter(e.target.value)} aria-label="Médico">
-            <option value="all">Todos los médicos</option>
-            {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>}
+          {doctors.length > 1 && <Combo size="sm" className="cal-bar__doc" value={doctorFilter} onChange={setDoctorFilter} label="Médico"
+            options={[{ value: 'all', label: 'Todos los médicos' }, ...doctors.map((d) => ({ value: d.id, label: d.name }))]} />}
           <div className="segmented" role="radiogroup" aria-label="Vista">
             {(['day', 'week', 'month'] as View[]).map((v) => <button key={v} role="radio" aria-checked={view === v} onClick={() => setView(v)}>{{ day: 'Día', week: 'Semana', month: 'Mes' }[v]}</button>)}
           </div>
@@ -505,20 +504,15 @@ function AppointmentForm({ title, submitLabel, doctors, patients, initial, lockP
           onNew={(q) => { const [first, ...rest] = q.trim().split(/\s+/); setF((x) => ({ ...x, patientId: '', newPatient: { firstName: first ?? '', lastName: rest.join(' '), phone: '', dni: '' } })) }} />
       )}
       {doctors.length > 1 && <label className="field"><span>Médico</span>
-        <select className="select" value={f.doctorId} onChange={(e) => set('doctorId', e.target.value)}>
-          {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? `, ${d.specialty}` : ''}</option>)}
-        </select>
+        <Combo value={f.doctorId} onChange={(v) => set('doctorId', v)} options={doctors.map((d) => ({ value: d.id, label: d.name, hint: d.specialty }))} />
       </label>}
       <div className="form-grid">
         <div className="field"><span>Fecha</span><DateField value={f.date} required onChange={(v) => v && set('date', v)} label="Fecha" /></div>
         <label className="field"><span>Hora</span>
-          <select className="select" value={f.time} disabled={!options.length} onChange={(e) => set('time', e.target.value)}>
-            {!options.length && <option value="">Sin horario</option>}
-            {options.map((t) => {
-              const n = sameTime(t).length
-              return <option key={t} value={t}>{t}{n ? ` · ya hay ${n === 1 ? 'una cita' : `${n} citas`}` : ''}{keepInitial && t === initial.time ? ' (fuera de horario)' : ''}</option>
-            })}
-          </select>
+          <Combo value={f.time} disabled={!options.length} onChange={(v) => set('time', v)} placeholder="Sin horario" options={options.map((t) => {
+            const n = sameTime(t).length
+            return { value: t, label: t, hint: [n ? `ya hay ${n === 1 ? 'una cita' : `${n} citas`}` : '', keepInitial && t === initial.time ? 'fuera de horario' : ''].filter(Boolean).join(' · ') || undefined }
+          })} />
         </label>
       </div>
       {stay && (stayToday ? <StayConflict stay={stay} />
@@ -539,9 +533,8 @@ function AppointmentForm({ title, submitLabel, doctors, patients, initial, lockP
           <label className="field"><span>Motivo de consulta</span><input className="input" value={f.reason} onChange={(e) => set('reason', e.target.value)} placeholder="Ej. Control de presión arterial" /></label>
           {!lockPatient && (
             <label className="field"><span>Tipo</span>
-              <select className="select" value={f.type} onChange={(e) => set('type', e.target.value as FormState['type'])}>
-                <option value="">Sin especificar</option><option value="first">Primera vez</option><option value="followup">Seguimiento</option><option value="urgent">Urgente</option>
-              </select>
+              <Combo value={f.type} onChange={(v) => set('type', v as FormState['type'])}
+                options={[{ value: '', label: 'Sin especificar' }, { value: 'first', label: 'Primera vez' }, { value: 'followup', label: 'Seguimiento' }, { value: 'urgent', label: 'Urgente' }]} />
             </label>
           )}
         </div>
