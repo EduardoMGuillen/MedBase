@@ -152,7 +152,7 @@
 /* PQ5 (ronda 16): recuento quirúrgico (formulario e impreso) */
 .count-table th { font-size: 11.5px; line-height: 1.25; vertical-align: bottom; }
 .count-table td.count-table__opt .input { background: var(--ward); }
-.count-table .count-table__bad { border-color: var(--danger, #b42318); color: var(--danger, #b42318); font-weight: 600; }
+.count-table .count-table__bad .combo__input { border-color: var(--danger, #b42318); color: var(--danger, #b42318); font-weight: 600; }
 .count-doc .anes-sec { margin-bottom: 6px; }
 .count-doc .anes-sec > h3 { font-size: 10.5px; padding: 3px 8px; }
 .count-doc .anes-sec__body { font-size: 11px; line-height: 1.4; padding: 4px 8px; }

@@ -50,6 +50,8 @@
   --fs-sm: 12.5px;
   --fs-md: 13.5px;
   --fs-base: 14px;
+  /* R18-UI1 (ronda 18): un solo alto para campos, listas y los botones pegados a un campo (44 px con el dedo, responsive.css) */
+  --field-h: 40px;
 
   color-scheme: light;
   font-family: var(--text);
@@ -115,10 +117,12 @@ img, svg { display: block; }
 .badge--red { background: var(--red); color: var(--red-ink); }
 .badge--done { background: transparent; color: var(--faint); padding-left: 0; }
 
-.field { display: grid; gap: 6px; }
+/* R18-UI1 (ronda 18): el campo no se estira con su fila: rótulo, cuadro y ayuda van pegados arriba, así dos campos de la misma
+   fila empiezan a la misma altura aunque uno tenga texto de ayuda debajo */
+.field { display: grid; gap: 6px; align-content: start; }
 .field > span { font-size: 13px; font-weight: 600; color: var(--muted); }
 .input, .select, .textarea {
-  width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-md);
+  width: 100%; height: var(--field-h); padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-md);
   background-color: var(--paper); transition: border-color 0.15s, box-shadow 0.15s;
 }
 .textarea { height: auto; min-height: 88px; padding: 10px 12px; resize: vertical; line-height: 1.55; }
@@ -136,6 +140,44 @@ img, svg { display: block; }
 .select:disabled, .input:disabled { background-color: var(--paper-soft); color: var(--muted); cursor: not-allowed; }
 .select--sm { height: 34px; padding-left: 10px; padding-right: 30px; font-size: var(--fs-md); background-position: right 9px center; background-size: 14px 14px; }
 .select--auto { width: auto; max-width: 100%; }
+
+/* LD1 (ronda 18): la lista desplegable única (components/Combo.tsx). El campo es un `.input` con la flecha a la derecha; la
+   lista va en un portal con la superficie de todos los menús (papel, borde, sombra): fondo claro, filas de 40 px (44 con el
+   dedo), la opción elegida con check y lo escrito resaltado. `.combo--sm` (34 px) solo en filas compactas. */
+.combo { position: relative; display: block; min-width: 0; max-width: 100%; }
+.combo--auto { display: inline-block; vertical-align: middle; }
+.combo__input { padding-right: 36px; text-overflow: ellipsis; cursor: pointer; }
+.combo__input:focus { cursor: text; }
+.combo__input::placeholder { color: var(--faint); }
+.combo__chev { position: absolute; top: 0; right: 0; height: var(--field-h); width: 36px; display: grid; place-items: center; border: 0; padding: 0; background: none; color: var(--muted); cursor: pointer; border-radius: 0 var(--r-md) var(--r-md) 0; }
+.combo__chev:disabled { cursor: not-allowed; }
+.combo.is-open .combo__chev svg { transform: rotate(180deg); }
+.combo--sm .combo__input { height: 34px; padding-left: 10px; padding-right: 30px; font-size: var(--fs-md); }
+.combo--sm .combo__chev { height: 34px; width: 30px; }
+.combo__msg { display: block; margin-top: 4px; }
+.combo--sm .combo__msg, .combo--auto .combo__msg { position: absolute; top: 100%; left: 0; z-index: 5; white-space: nowrap; background: var(--paper); padding: 2px 6px; border-radius: var(--r-sm); box-shadow: var(--shadow-pop); }
+.combo__pop {
+  position: fixed; z-index: 1000; overflow-y: auto; overscroll-behavior: contain; min-width: 160px; max-width: calc(100vw - 16px);
+  background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-pop); box-shadow: var(--shadow-pop);
+  padding: 4px; font-family: var(--text); font-size: var(--fs-base); line-height: 1.35; color: var(--petrol);
+}
+.combo__opt { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px 12px; border: 0; border-radius: var(--r-sm); background: none; font: inherit; text-align: left; color: var(--petrol); cursor: pointer; }
+.combo__opt[aria-selected='true'], .combo__opt:focus-visible, button.combo__opt:hover { background: var(--ward); outline: none; }
+.combo__opt[aria-disabled='true'] { color: var(--faint); cursor: default; }
+.combo__opt.is-chosen { font-weight: 600; }
+.combo__label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.combo__hint { flex: none; color: var(--muted); font-size: var(--fs-md); }
+.combo__check { flex: none; color: var(--ink); }
+.combo__opt svg { flex: none; }
+.combo__opt mark { background: none; color: var(--ink-deep); font-weight: 700; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 2px; }
+.combo__opt--use { color: var(--ink-deep); font-weight: 600; border-top: 1px solid var(--line-soft); border-radius: 0 0 var(--r-sm) var(--r-sm); }
+.combo__none { padding: 10px 12px; color: var(--muted); }
+.combo__pop--menu { min-width: 200px; }
+.menu-btn svg:last-child { margin-left: -2px; }
+@media (pointer: coarse) {
+  .combo__opt { min-height: 44px; }
+  .combo--sm .combo__input, .combo--sm .combo__chev { height: 44px; }
+}
 
 .avatar {
   display: inline-grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 50%;
@@ -426,7 +468,7 @@ button.chip[aria-pressed='true'] { background: var(--ink); color: #fff; border-c
 .soap__letter { font-family: var(--display); font-weight: 700; font-size: 22px; color: var(--ink); width: 22px; }
 .soap__title h3 { font-size: 17px; }
 .soap__title p { font-size: 13px; color: var(--muted); margin-left: auto; }
-.form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; align-items: start; }
 .form-grid--3 { grid-template-columns: repeat(3, 1fr); }
 .form-grid--4 { grid-template-columns: repeat(4, 1fr); }
 /* ES (ronda 17): no estirarse en una rejilla ni en una columna flexible (antes, style={{ justifySelf: 'start' }}) */

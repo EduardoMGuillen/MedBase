@@ -87,7 +87,7 @@
 .orders__tools .icon-btn { width: 28px; height: 28px; }
 .orders__tools .icon-btn:disabled { opacity: .3; cursor: default; }
 .order-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
-.order-add .btn { width: 44px; padding: 0; height: 42px; }
+.order-add .btn { width: 44px; padding: 0; height: var(--field-h); }
 .order-quick { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .rx-form { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r-pop); background: var(--ward); }
 /* MC1 (ronda 6): la tarjeta de firmar va al final, sin pegarse abajo: pegada tapaba el bloque de arriba al desplazarse */
@@ -204,7 +204,7 @@
   .cal-bar__title { font-size: 16px; white-space: normal; }
   .cal-bar__tools { display: grid; grid-template-columns: 1fr 1fr; }
   .cal-bar__tools .segmented { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); }
-  .cal-bar__date, .cal-bar__doc { width: 100%; max-width: none; height: 42px; }
+  .cal-bar__date, .cal-bar__doc { width: 100%; max-width: none; height: var(--field-h); }
   .month__head span { padding: 8px 0; text-align: center; font-size: 11.5px; }
   .month__cell { min-height: 54px; align-items: center; padding: 4px 2px; }
   .month__day { align-self: center; }
@@ -758,7 +758,7 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; te
 .vs__head { align-items: center; }
 .vs__bar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding-top: 0; }
 .vs__every { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
-.vs__every .select { min-width: 84px; }
+.vs__every .combo { min-width: 84px; }
 .vs__every small { font-weight: 500; }
 .vs__empty { display: grid; justify-items: center; gap: 10px; color: var(--muted); }
 .vs-curve__scroll { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; border-radius: var(--r-md); }
@@ -982,7 +982,7 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; te
  * formulario de adentro. Aquí todo puede encogerse y la etiqueta parte línea.
  */
 .med-form, .med-form .field, .med-form .rate-field > * { min-width: 0; }
-.med-form .field > .select + .input { margin-top: 6px; }
+.med-form .field > .combo + .input { margin-top: 6px; }
 .orders li > * { min-width: 0; }
 .orders__text .chip { white-space: normal; display: inline-block; max-width: 100%; overflow-wrap: anywhere; vertical-align: baseline; }
 .orders__tools { flex: none; }
@@ -1086,7 +1086,7 @@ button.linklike:not(:has(strong)) { color: var(--ink-deep); font-weight: 600; te
 
 /* IE1 (ronda 16): ingestas y excretas (botón del editor de órdenes y tabla por turno y por día) */
 .fluids-order { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px dashed var(--line); }
-.fluids-order__freq .select { min-width: 170px; }
+.fluids-order__freq .combo { min-width: 170px; }
 .fluids-order__hint { flex-basis: 100%; font-size: 13px; }
 .fluids__day { margin-bottom: 18px; }
 .fluids__day h4 { margin: 0 0 6px; }

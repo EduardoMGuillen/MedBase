@@ -47,7 +47,7 @@
 .line { display: grid; grid-template-columns: 1fr 64px 110px 110px 34px; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--paper-soft); font-size: 14px; }
 .line .input { height: 34px; padding: 0 8px; }
 .line b { text-align: right; }
-.total-box { height: 42px; display: flex; align-items: center; padding: 0 12px; border-radius: var(--r-md); background: var(--ink-soft); color: var(--ink-deep); font-weight: 700; font-size: 17px; }
+.total-box { height: var(--field-h); display: flex; align-items: center; padding: 0 12px; border-radius: var(--r-md); background: var(--ink-soft); color: var(--ink-deep); font-weight: 700; font-size: 17px; }
 .total-box--ok { background: var(--mint); color: var(--mint-ink); }
 .total-box--bad { background: var(--red); color: var(--red-ink); }
 .total-box--warn { background: var(--amber); color: var(--amber-ink); }
@@ -440,7 +440,7 @@ tr.clickable { cursor: pointer; }
 .xrow__more .input { height: 34px; font-size: 13.5px; }
 .xrow__indinput { flex: 1 1 100%; }
 .xrow__more > .input:not(.xrow__indinput) { flex: 1 1 200px; width: auto; }
-.xrow__more > .select { flex: 0 1 auto; }
+.xrow__more > .select, .xrow__more > .combo { flex: 0 1 auto; }
 /* Angosto (celular o columna estrecha): nombre y ✕ arriba; Indicación y los dos controles abajo, de al menos 44 px */
 @container (max-width: 620px) {
   .xrow { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: 'name name ind x' 'prio place place place' 'more more more more'; row-gap: 2px; padding: 4px 4px 6px 10px; }
@@ -820,13 +820,14 @@ button.src-tag--none { cursor: pointer; }
    un hermano del campo en una fila que se partía: según el ancho quedaba al lado, debajo o encima de lo que siguiera (en la
    Agenda, sobre la barra de desplazamiento de arriba). Ahora campo y botón van juntos en `.dtf__box`; «Ahora» y el aviso
    siguen fuera, en la misma fila si cabe. */
-.dtf { position: relative; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; max-width: 100%; }
+.dtf { position: relative; display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; min-width: 0; max-width: 100%; }
 .dtf__box { position: relative; display: block; flex: 1 1 11rem; min-width: 0; }
 .dtf--date .dtf__box { flex-basis: 9.5rem; }
 .dtf--time .dtf__box { flex: 0 1 7.5rem; }
 .dtf__box .dtf__input { width: 100%; min-width: 0; padding-right: 42px; }
 .dtf__box .dtf__btn { position: absolute; top: 0; right: 0; bottom: 0; width: 42px; height: auto; min-height: 0; border-radius: 0 var(--r-md) var(--r-md) 0; }
-.dtf__now { min-height: 42px; }
+/* R18-UI1 (ronda 18): «Ahora» mide lo mismo que el campo */
+.dtf__now { height: var(--field-h); min-height: var(--field-h); }
 .dtf__msg { flex-basis: 100%; }
 /* El calendario es un panel (no una lista): 12 px por dentro; superficie igual a los menús */
 .dtf__pop { position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; width: min(300px, 88vw); display: grid; gap: 10px; padding: 12px; }
@@ -842,7 +843,7 @@ button.src-tag--none { cursor: pointer; }
 .dtf__time { display: flex; align-items: end; gap: 6px; }
 .dtf__time label { display: grid; gap: 2px; }
 .dtf__time small { font-size: 11.5px; color: var(--muted); }
-.dtf__time .select { min-width: 4.5rem; }
+.dtf__time .combo { width: 5.5rem; }
 .dtf__popfoot { display: flex; justify-content: flex-end; gap: 6px; }
 
 /* ME8 (ronda 10): buscador de medicamentos. La lista va debajo del campo (no lo tapa), con DRUG_SEARCH_VISIBLE filas a la
@@ -1010,7 +1011,7 @@ button.src-tag--none { cursor: pointer; }
 .dept__tabs { display: flex; flex-wrap: wrap; margin-bottom: 12px; }
 .dept__tabs button { min-height: 44px; }
 .dept__filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
-.dept__filters > .input, .dept__filters > .select { flex: 1 1 220px; max-width: 360px; }
+.dept__filters > .input, .dept__filters > .combo { flex: 1 1 220px; max-width: 360px; }
 .dept__list { display: grid; gap: 10px; }
 .dept__item { padding: 12px 14px 4px; overflow: hidden; }
 .dept__item--urgent { border-color: var(--err-line); }
@@ -1093,7 +1094,7 @@ button.src-tag--none { cursor: pointer; }
 .refed__tr { display: grid; grid-template-columns: minmax(150px, 1.3fr) 84px 104px 92px minmax(170px, 2fr) minmax(90px, auto) 64px; gap: 8px; align-items: center; padding: 6px 12px; border-top: 1px solid var(--line-soft); min-width: 820px; }
 .refed__th { border-top: 0; background: var(--ward); font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
 .refed__tr .input { height: 34px; min-width: 0; width: 100%; }
-.refed__tr .select { min-width: 0; }
+.refed__tr .combo { min-width: 0; }
 .refed__tr.is-archived { opacity: .5; text-decoration: line-through; }
 .refed__name { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 14px; min-width: 0; }
 .refed__max { display: flex; gap: 4px; align-items: center; }

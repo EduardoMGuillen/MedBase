@@ -51,8 +51,9 @@
 /* ---------- Con el dedo (pantalla táctil) ----------
    Botones, campos, pestañas y opciones de al menos 44 px de alto, como pide la guía de accesibilidad para tocar. */
 @media (pointer: coarse) {
+  :root { --field-h: 44px; }
   .btn, .btn--sm, .input, .select, .tab, .segmented button, .side__link, .chip--toggle { min-height: 44px; }
-  .input, .select { height: 44px; }
+  .input, .select { height: var(--field-h); }
   .icon-btn { width: 44px; height: 44px; }
   .segmented button { display: inline-flex; align-items: center; }
   .tab { display: inline-flex; align-items: center; }
