@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DateField } from '../components/DateTimeField'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Globe, Plus, Receipt, Search, UserPlus, X } from 'lucide-react'
+import { Activity, Ban, CalendarCheck, CalendarClock, Check, ChevronLeft, ChevronRight, Globe, LogIn, Plus, Receipt, Search, Stethoscope, UserPlus, UserX, X, type LucideIcon } from 'lucide-react'
 import { useStore, type NewAppointment } from '../lib/store'
 import { Avatar, Modal, PageHead, StatusBadge } from '../components/ui'
 import { ReminderButton } from '../components/Reminder'
-import { cap, dmyTime, dniDigits, formatPhone, fullName, localISODate, time } from '../lib/format'
+import { cap, dmyTime, dniDigits, formatPhone, fullName, localISODate, STATUS, time } from '../lib/format'
 import { stayFutureWarning } from '../lib/inpatient'
 import { StayConflict } from './WaitingRoom'
 import { DniInput } from '../components/DniInput'
@@ -15,7 +15,7 @@ import { normalize, similarPatients } from '../lib/patients'
 import { hasRole } from '../lib/permissions'
 import { CompleteRegistration, SimilarPatients } from './NewPatient'
 import { useIsPhone } from '../lib/hooks'
-import type { Appointment, Patient, Staff } from '../lib/types'
+import type { Appointment, ApptStatus, Patient, Staff } from '../lib/types'
 
 const START_H = 7
 const END_H = 19
@@ -219,6 +219,29 @@ function Hours({ h }: { h: Span }) {
   return <div className="cal__hours">{Array.from({ length: h.to - h.from }, (_, i) => <div key={i} className="cal__hour">{pad(h.from + i)}:00</div>)}</div>
 }
 
+/**
+ * Auditoría (nov. 2026), punto 5: cada cita dice su estado con un icono (y con texto donde cabe), no solo con color. Los
+ * textos son los de STATUS; los iconos repiten los de los botones «Llegó», «Preclínica» y «Atender».
+ */
+const STATUS_ICON: Record<ApptStatus, LucideIcon> = {
+  scheduled: CalendarClock, confirmed: CalendarCheck, arrived: LogIn, triaged: Activity, in_consult: Stethoscope, done: Check, no_show: UserX, cancelled: Ban,
+}
+function StatusMark({ status, size = 12 }: { status: ApptStatus; size?: number }) {
+  const Icon = STATUS_ICON[status]
+  return <Icon size={size} className="appt__icon" role="img" aria-label={STATUS[status].label} />
+}
+/** Qué significa cada icono, bajo la semana y el mes (ahí el bloque es angosto y solo lleva el icono). */
+function StatusLegend() {
+  return (
+    <div className="cal__legend cal__legend--status" aria-label="Estados de las citas">
+      {(Object.keys(STATUS_ICON) as ApptStatus[]).filter((k) => k !== 'cancelled').map((k) => {
+        const Icon = STATUS_ICON[k]
+        return <span key={k}><Icon size={13} aria-hidden="true" />{STATUS[k].label}</span>
+      })}
+    </div>
+  )
+}
+
 function ApptBlock({ a, p, color, style, compact, onPick }: { a: Appointment; p: Patient; color: string; style: React.CSSProperties; compact?: boolean; onPick: (id: string) => void }) {
   const { activeStayOf } = useStore()
   // CX2 (ronda 8): cita de hoy o pasada, todavía abierta, de un paciente con estancia activa
@@ -226,10 +249,10 @@ function ApptBlock({ a, p, color, style, compact, onPick }: { a: Appointment; p:
   return (
     <button className={`appt ${a.status === 'done' || a.status === 'no_show' ? 'appt--done' : ''} ${a.type === 'urgent' || conflict ? 'appt--urgent' : ''} ${compact ? 'appt--compact' : ''}`}
       style={{ ...style, ['--c' as string]: color, textAlign: 'left', border: 0, borderLeft: `3px solid ${color}` }} onClick={() => onPick(a.id)}
-      title={`${time(a.start)} ${fullName(p)}: ${a.reason}`}>
-      {compact ? <><strong>{time(a.start)}</strong><span className="appt__name">{shortName(p)}</span></> : <strong>{time(a.start)} {fullName(p)}</strong>}
+      title={`${time(a.start)} ${fullName(p)}: ${[STATUS[a.status].label, a.reason].filter(Boolean).join(', ')}`}>
+      {compact ? <><strong><StatusMark status={a.status} size={11} />{time(a.start)}</strong><span className="appt__name">{shortName(p)}</span></> : <strong>{time(a.start)} {fullName(p)}</strong>}
       {!compact && conflict && <span className="badge badge--red self-start">Hospitalizado: cita en conflicto</span>}
-      {!compact && <span>{a.source === 'online' && <Globe size={11} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }} aria-label="Reservada en línea" />}{a.reason}</span>}
+      {!compact && <span><b className="appt__status"><StatusMark status={a.status} />{STATUS[a.status].label}</b>{a.reason && ' · '}{a.source === 'online' && <Globe size={11} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }} aria-label="Reservada en línea" />}{a.reason}</span>}
     </button>
   )
 }
@@ -303,6 +326,7 @@ function WeekGrid({ start, onDay, doctors, colorOf, patient, onPick, onOpenDay }
         </div>
       </div>
       {doctors.length > 1 && <div className="cal__legend">{doctors.map((d) => <span key={d.id}><i style={{ background: d.color }} />{d.name}</span>)}</div>}
+      <StatusLegend />
     </section>}</TopScrollbar>
   )
 }
@@ -356,8 +380,8 @@ function MonthGrid({ cursor, start, onDay, colorOf, patient, phone, onPick, onOp
                     const p = patient(a.patientId)
                     return p && (
                       <button key={a.id} className="month__chip" style={{ ['--c' as string]: colorOf(a.doctorId) }}
-                        onClick={(e) => { e.stopPropagation(); onPick(a.id) }}>
-                        <span className="num">{time(a.start)}</span> {shortName(p)}
+                        onClick={(e) => { e.stopPropagation(); onPick(a.id) }} title={`${time(a.start)} ${fullName(p)}: ${STATUS[a.status].label}`}>
+                        <StatusMark status={a.status} size={11} /><span className="num">{time(a.start)}</span> {shortName(p)}
                       </button>
                     )
                   })}
@@ -367,6 +391,7 @@ function MonthGrid({ cursor, start, onDay, colorOf, patient, phone, onPick, onOp
             )
           })}
         </div>
+        {!phone && <StatusLegend />}
       </section>
       {phone && picked && <DayList days={[picked]} onDay={onDay} patient={patient} staff={staff} onPick={onPick} />}
     </>

@@ -413,7 +413,14 @@ a.row:hover { background: var(--ward); }
 .appt:hover { box-shadow: var(--shadow-lift); z-index: 3; }
 .appt strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .appt span { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.appt--done { opacity: 0.55; }
+/* Auditoría (nov. 2026), punto 5: la cita atendida (o a la que no se asistió) ya no se atenúa con opacidad (gris claro sobre
+   lila, ilegible): va sobre papel neutro con borde, con la letra en sus colores normales (contraste AA). El estado lo dice
+   la marca con icono y texto, no solo el color. */
+.appt--done { background: var(--paper-soft); box-shadow: inset 0 0 0 1px var(--line); }
+.appt--done strong { font-weight: 600; }
+.appt .appt__status { color: var(--petrol); font-weight: 650; }
+.appt__icon { display: inline; vertical-align: -1.5px; margin-right: 4px; flex: none; }
+.cal__legend--status svg { vertical-align: -2px; margin-right: 5px; color: var(--petrol); }
 .appt--urgent { box-shadow: inset 0 0 0 1.5px var(--red-ink); }
 .cal__now { position: absolute; left: 56px; right: 0; height: 2px; background: var(--mint-strong); z-index: 4; pointer-events: none; }
 .cal__now::before { content: ''; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--mint-strong); }
