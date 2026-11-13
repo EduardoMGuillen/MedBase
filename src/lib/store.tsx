@@ -93,6 +93,9 @@ function useStoreValue() {
   const [session, setSession] = useState<Session | null>(null)
   const [checking, setChecking] = useState(true)
   const [data, setData] = useState<Data>(EMPTY)
+  // Auditoría (nov. 2026), punto 1: ya llegó la primera carga de datos de esta sesión. Antes de eso las listas están vacías
+  // porque no han cargado, no porque no haya nada: las pantallas muestran «Cargando» y no «0 citas».
+  const [loaded, setLoaded] = useState(false)
   const [toast, setToast] = useState<{ msg: string; tone: 'ok' | 'error' } | null>(null)
 
   const notify = useCallback((msg: string, tone: 'ok' | 'error' = 'ok') => setToast({ msg, tone }), [])
@@ -106,6 +109,7 @@ function useStoreValue() {
       const next = await api<Data>('/bootstrap')
       if (mine !== latest.current) return
       setData(keepUnchanged(next, seen.current))
+      setLoaded(true)
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setSession(null)
       else notify((e as Error).message, 'error')
@@ -128,6 +132,7 @@ function useStoreValue() {
     seen.current.clear()
     setSession(null)
     setData(EMPTY)
+    setLoaded(false)
   }, [])
 
   // Cierre por inactividad: protege la información si alguien deja la computadora abierta
@@ -436,11 +441,11 @@ function useStoreValue() {
   }), [run, notify, refresh, data])
 
   return useMemo(() => ({
-    ...data, user, checking, demo: session?.demo ?? false, toast, notify, clearToast, refresh, can, signIn, signOut,
+    ...data, user, checking, loaded, demo: session?.demo ?? false, toast, notify, clearToast, refresh, can, signIn, signOut,
     fetchBalances, fetchAttachmentMeta, fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment, fetchReport, fetchAttachments,
     fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient, searchIcd, fetchIcdFrequent, fetchReferralDraft, fetchReferral,
     ...lookups, ...actions,
-  }), [data, user, checking, session?.demo, toast, notify, clearToast, refresh, can, signIn, signOut, lookups, actions,
+  }), [data, user, checking, loaded, session?.demo, toast, notify, clearToast, refresh, can, signIn, signOut, lookups, actions,
     fetchBalances, fetchAttachmentMeta, fetchAuthorization, fetchCertificate, fetchCertificates, fetchPatientIndex, fetchChart, fetchPrescription, fetchConsultation, fetchAppointments, fetchPayments, fetchPayment,
     fetchReport, fetchAttachments, fetchClinics, fetchClinicStaff, fetchPlatformActivity, fetchInpatient, searchIcd, fetchIcdFrequent, fetchReferralDraft, fetchReferral])
 }

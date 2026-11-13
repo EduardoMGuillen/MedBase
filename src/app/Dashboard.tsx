@@ -7,7 +7,7 @@ import { useStore } from '../lib/store'
 import { receivedIn } from '../lib/billing'
 import { ExamTray, NewResults } from './ExamPanels'
 import { WardAlerts } from './WardAlerts'
-import { PageHead, StatusBadge } from '../components/ui'
+import { Loading, PageHead, StatusBadge } from '../components/ui'
 import { ReminderButton } from '../components/Reminder'
 import { HBars } from '../components/Charts'
 import { date, dmyTime, fullName, localISODate, money, sameDay, time } from '../lib/format'
@@ -113,7 +113,7 @@ export function ApptRows({ list, showDoctor = false, action, empty = 'No hay cit
 }
 
 export default function Dashboard() {
-  const { user, appointments, patients, staff, audit, staffById, settings, can, fetchPayments, fetchBalances, setStatus, stayOf, stays } = useStore()
+  const { user, loaded, appointments, patients, staff, audit, staffById, settings, can, fetchPayments, fetchBalances, setStatus, stayOf, stays } = useStore()
   const [todayRevenue, setTodayRevenue] = useState<number | null>(null)
   const [owed, setOwed] = useState<{ n: number; total: number } | null>(null)
   const [triage, setTriage] = useState<Appointment | null>(null)
@@ -136,6 +136,9 @@ export default function Dashboard() {
   const now = new Date()
   const today = appointments.filter((a) => sameDay(a.start, now)).sort((a, b) => a.start.localeCompare(b.start))
   const first = user.name.split(' ').slice(0, 2).join(' ')
+  // Auditoría (nov. 2026), punto 1: mientras llega la primera carga no se muestran «0 citas hoy» ni «No tienes más citas
+  // pendientes»: solo el saludo y el estado de carga
+  if (!loaded) return <div className="page"><PageHead title={`${greeting()}, ${first}`} sub="Cargando las citas y los pacientes de hoy…" /><Loading label="Cargando tu día" /></div>
 
   // Recepción, administración, la asistente y el médico de un consultorio marcan la llegada desde la lista "Por llegar"
   const arrive = (a: Appointment) => {
