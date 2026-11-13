@@ -1,9 +1,10 @@
 import type { Express } from 'express'
+import { ANESTHESIA_DEFAULT_POSITION } from '../../src/lib/clinicalConfig.js'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { type Ctx, fail, parse } from '../http.js'
 import { rolesOf, toStaff } from '../mappers.js'
-import { checkPosition, cleanSchedule, CLINIC_ROLES as ROLES, createStaffMember, giveDoctorDefaults, nursePosition, scheduleInput, tempPassword, assertRoleFits, assertNotLastAdmin } from '../staff.js'
+import { checkPosition, DEPT_ROLES, cleanSchedule, CLINIC_ROLES as ROLES, createStaffMember, giveDoctorDefaults, nursePosition, scheduleInput, tempPassword, assertRoleFits, assertNotLastAdmin } from '../staff.js'
 import { can, ROLE_LABEL } from '../../src/lib/permissions.js'
 import { positionOf } from '../../src/lib/positions.js'
 
@@ -23,6 +24,8 @@ export function registerStaff(app: Express, ctx: Ctx) {
       position: z.string().trim().max(40).optional(),
     }), req.body)
     await assertRoleFits(sql, clinicOf(req), s.role)
+    // AN1 (ronda 18): Anestesia tiene hoy un solo cargo: si no se eligió, es ese
+    if (s.role === 'anesthesia') s.position ||= ANESTHESIA_DEFAULT_POSITION
     checkPosition([s.role], s.position, s.license, s.name)
     // EN1 (ronda 16): enfermería con su puesto (Licenciada o Auxiliar); si no se elige, auxiliar
     if (s.role === 'nurse') s.position = nursePosition(s.position, s.name)
@@ -59,11 +62,12 @@ export function registerStaff(app: Express, ctx: Ctx) {
     if ((nextRoles && prev.includes('admin') && !nextRoles.includes('admin')) || (b.active === false && prev.includes('admin'))) await assertNotLastAdmin(sql, cid, id)
     // DP1 (ronda 11): con Laboratorio o Imágenes, el cargo es obligatorio y, para Microbiólogo o Radiólogo, la colegiación
     const roles = nextRoles ?? prev
-    const position = b.position === undefined ? (row!.position ? String(row!.position) : undefined) : b.position ?? undefined
-    if (roles.some((r) => r === 'lab' || r === 'imaging') || b.position !== undefined) checkPosition(roles, position, b.license ?? (row!.license ? String(row!.license) : undefined), String(row!.name))
+    let position = b.position === undefined ? (row!.position ? String(row!.position) : undefined) : b.position ?? undefined
+    if (roles.includes('anesthesia') && positionOf(position)?.dept !== 'anesthesia' && !roles.some((r) => r === 'lab' || r === 'imaging')) position = ANESTHESIA_DEFAULT_POSITION
+    if (roles.some((r) => DEPT_ROLES.includes(r)) || b.position !== undefined) checkPosition(roles, position, b.license ?? (row!.license ? String(row!.license) : undefined), String(row!.name))
     // EN1 (ronda 16): solo con Enfermería (sin Laboratorio ni Imágenes), el puesto es el de enfermería (auxiliar si no tenía)
-    const nurseOnly = roles.includes('nurse') && !roles.some((r) => r === 'lab' || r === 'imaging')
-    const keptPosition = roles.some((r) => r === 'lab' || r === 'imaging') ? position
+    const nurseOnly = roles.includes('nurse') && !roles.some((r) => DEPT_ROLES.includes(r))
+    const keptPosition = roles.some((r) => DEPT_ROLES.includes(r)) ? position
       : nurseOnly ? nursePosition(b.position ?? (positionOf(position)?.dept === 'nursing' ? position : undefined), String(row!.name)) : undefined
     const addsDoctor = nextRoles?.includes('doctor') && !prev.includes('doctor')
     if (addsDoctor && !row!.license && !b.license) fail(400, `Para darle el rol de médico a ${row!.name} escribe su número de colegiación.`)

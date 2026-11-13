@@ -23,8 +23,9 @@ import { currentPreEval, toPreEval } from './preanesthesia.js'
  * - No es obligatoria: no genera avisos en el paciente ni en el egreso; solo el anestesiólogo con usuario la ve como pendiente.
  * - Nada se borra: reemplazar una subida la deja anulada con motivo; la llenada se corrige en el periodo de gracia o con adenda.
  */
-export const canSheet = (u: Staff) => can(u, 'chart.view') && (can(u, 'inpatient.orders') || can(u, 'inpatient.care') || can(u, 'inpatient.notes'))
-const writesNotes = (u: Staff) => can(u, 'inpatient.orders') || can(u, 'inpatient.notes')
+// AN1 (ronda 18): también el técnico en anestesia (anesthesia.sheet): ve, sube en papel y, si hizo la anestesia, llena y firma
+export const canSheet = (u: Staff) => can(u, 'chart.view') && (can(u, 'inpatient.orders') || can(u, 'inpatient.care') || can(u, 'inpatient.notes') || can(u, 'anesthesia.sheet'))
+const writesNotes = (u: Staff) => can(u, 'inpatient.orders') || can(u, 'inpatient.notes') || can(u, 'anesthesia.sheet')
 const postopOf = (n: Row) => { try { const d = JSON.parse(String(n.data ?? '{}')); return d.format === 'postop' ? d.postop as PostopData : undefined } catch { return undefined } }
 const anesthesiologistOf = (pq?: PostopData) => pq?.team.anesthesiologist?.name.trim() ? { name: pq.team.anesthesiologist.name.trim(), staffId: pq.team.anesthesiologist.staffId } : undefined
 /** ¿Puede esta persona llenar y firmar la hoja de esta nota? */

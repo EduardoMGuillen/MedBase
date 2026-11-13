@@ -352,7 +352,7 @@ export function PendingOrdersPanel({ file, reload }: { file: File; reload: () =>
   if (file.hospitalization.status !== 'active') return null
   return (
     <section className={`panel ${pending.length ? 'pending-orders' : ''}`} data-tour="checklist">
-      <div className="panel__head"><div><h2>Órdenes por revisar <span className="num faint">{pending.length}</span></h2>
+      <div className="panel__head"><div><h2>Órdenes por revisar · <span className="num faint">{pending.length}</span></h2>
         <p>{pending.length ? 'Marca cada orden cuando la hayas revisado; queda tu nombre y la hora.' : 'Todas las órdenes médicas están revisadas.'}</p></div></div>
       {pending.length > 0 && (
         <div className="rows">{pending.map(({ note, index, text }) => (

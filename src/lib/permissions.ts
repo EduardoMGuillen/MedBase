@@ -59,6 +59,8 @@ export const PERMISSIONS = {
   // bandejas de Laboratorio e Imágenes en solo lectura (estudios, estado, espera y urgentes; nunca los resultados)
   'observation.board': 'Ver la lista de Observación (sin expediente)',
   'dept.view': 'Ver las bandejas de Laboratorio e Imágenes en solo lectura (sin resultados)',
+  // AN1 (ronda 18): el técnico en anestesia
+  'anesthesia.sheet': 'Subir la valoración preanestésica y la hoja de anestesia, y llenar y firmar la hoja de la anestesia que hizo',
   // NP1 (ronda 18): la nota para el equipo la ve todo el que abre al paciente (patients.view); la cambian médicos, enfermería y
   // administración
   'patients.teamnote': 'Agregar, cambiar o quitar la nota para el equipo del paciente',
@@ -128,6 +130,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   // Radiólogo además ve todo el expediente en solo lectura (positionPermissions).
   lab: ['patients.view', 'patients.manage', 'exams.process', 'dept.work', 'ambulatory.register'],
   imaging: ['patients.view', 'patients.manage', 'exams.process', 'dept.work', 'ambulatory.register'],
+  // AN1 (ronda 18): Anestesia (cargo: Técnico(a) en anestesia). Ve el expediente de observación y hospitalización en solo
+  // lectura (como el radiólogo en DP4), sube la valoración preanestésica y la hoja de anestesia en papel, y llena y firma la
+  // hoja de anestesia en el sistema cuando figura como quien hizo la anestesia. No escribe notas, no ordena, no indica.
+  anesthesia: ['patients.view', 'chart.view', 'inpatient.view', 'anesthesia.sheet'],
 }
 
 /** DP1 y DP4 (ronda 11): lo que el cargo suma a su rol. */
@@ -138,7 +144,7 @@ const POSITION_PERMISSIONS: Record<string, Permission[]> = {
   nurse_lic: ['roster.edit'],
 }
 /** EN1 (ronda 16): roles cuyo cargo o puesto suma permisos. */
-const POSITION_ROLES: Role[] = ['lab', 'imaging', 'nurse']
+const POSITION_ROLES: Role[] = ['lab', 'imaging', 'nurse', 'anesthesia']
 
 /**
  * MI1: en un consultorio el médico titular es médico y administrador (dos roles, AD5) y cambia de vista: en la de
@@ -157,6 +163,8 @@ const OFFICE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
   // EN1 (ronda 16): un consultorio no tiene rol de turnos
   nurse: ROLE_PERMISSIONS.nurse.filter((p) => p !== 'roster.view'),
   assistant: ROLE_PERMISSIONS.assistant,
+  // AN1 (ronda 18): la titular puede sumar a un técnico en anestesia (A18)
+  anesthesia: ROLE_PERMISSIONS.anesthesia,
 }
 
 /** Permisos de un rol según el tipo de cuenta (y, en Laboratorio e Imágenes, el cargo). En una clínica son los de siempre. */
@@ -179,8 +187,8 @@ export function permissionsFor(role: Role, kind: ClinicKind = 'clinic', position
 
 /** Roles que se pueden dar a alguien en cada tipo de cuenta. */
 export const ROLES_BY_KIND: Record<ClinicKind, Exclude<Role, 'superadmin'>[]> = {
-  clinic: ['admin', 'doctor', 'nurse', 'reception', 'lab', 'imaging'],
-  office: ['admin', 'doctor', 'nurse', 'assistant'],
+  clinic: ['admin', 'doctor', 'nurse', 'reception', 'lab', 'imaging', 'anesthesia'],
+  office: ['admin', 'doctor', 'nurse', 'assistant', 'anesthesia'],
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -192,6 +200,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   assistant: 'Asistente',
   lab: 'Laboratorio',
   imaging: 'Imágenes',
+  anesthesia: 'Anestesia',
 }
 
 export const ROLE_SUMMARY: Record<Role, string> = {
@@ -203,6 +212,7 @@ export const ROLE_SUMMARY: Record<Role, string> = {
   assistant: 'En el consultorio: agenda citas, recibe y registra al paciente, toma la preclínica, cobra y aplica los medicamentos que el médico indica en observación.',
   lab: 'Laboratorio clínico: bandeja de órdenes, toma de muestras, resultados, pacientes ambulatorios y, el microbiólogo, la configuración y el rol de turnos del laboratorio.',
   imaging: 'Imágenes: bandeja de estudios, realizados, informes (el radiólogo), pacientes ambulatorios y, el radiólogo, la configuración y el rol de turnos de imágenes.',
+  anesthesia: 'Técnico(a) en anestesia: ve el expediente de observación y hospitalización en solo lectura, sube la valoración preanestésica y la hoja de anestesia, y llena y firma la hoja de la anestesia que hizo. No escribe notas ni indica medicamentos.',
 }
 
 /** ¿Puede este usuario (rol y tipo de cuenta) hacer esto? Con sólo el rol, se asume una clínica. */
@@ -214,7 +224,7 @@ export const hasRole = (s: { role: Role; roles?: Role[] }, r: Role) => (s.roles 
 
 /** El rol con que se firma una nota: el clínico de la persona (médico antes que administración), no su vista activa. */
 export function mainRole(s: { role: Role; roles?: Role[] }): Role {
-  return (['doctor', 'nurse', 'lab', 'imaging', 'assistant', 'reception', 'admin', 'superadmin'] as Role[]).find((r) => hasRole(s, r)) ?? s.role
+  return (['doctor', 'nurse', 'lab', 'imaging', 'anesthesia', 'assistant', 'reception', 'admin', 'superadmin'] as Role[]).find((r) => hasRole(s, r)) ?? s.role
 }
 
 /**
@@ -224,7 +234,7 @@ export const VIEW_LABEL: Record<Role, string> = { ...ROLE_LABEL, superadmin: 'Pl
 
 /** Vistas que puede elegir: sus roles, en el orden del menú (administración primero). */
 export function viewsOf(s: { role: Role; roles?: Role[] }): Role[] {
-  const order: Role[] = ['admin', 'doctor', 'nurse', 'lab', 'imaging', 'reception', 'assistant', 'superadmin']
+  const order: Role[] = ['admin', 'doctor', 'nurse', 'lab', 'imaging', 'anesthesia', 'reception', 'assistant', 'superadmin']
   return order.filter((r) => hasRole(s, r))
 }
 

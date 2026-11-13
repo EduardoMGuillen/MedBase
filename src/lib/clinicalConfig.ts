@@ -402,7 +402,14 @@ export const DEPT_POSITIONS = {
     { key: 'nurse_lic', label: 'Licenciado(a) en enfermería', prefix: 'Lic.', license: false, licenseBody: '', lead: true },
     { key: 'nurse_aux', label: 'Auxiliar de enfermería', prefix: 'Aux.', license: false, licenseBody: '', lead: false },
   ],
+  // AN1 (ronda 18). VALIDAR: Emil. Cargo del rol «Anestesia» (un rol con cargos, como DP1): el técnico en anestesia hace la
+  // valoración preanestésica y la anestesia; su número de registro es opcional (A18). Los anestesiólogos son médicos.
+  anesthesia: [
+    { key: 'anesthesia_tech', label: 'Técnico(a) en anestesia', prefix: 'Téc.', license: false, licenseBody: '', lead: false },
+  ],
 } as const
+/** AN1 (ronda 18): el cargo de quien tiene el rol «Anestesia» y no eligió otro (hoy solo hay uno). */
+export const ANESTHESIA_DEFAULT_POSITION = 'anesthesia_tech'
 /** EN1 (ronda 16). VALIDAR: Emil. Puesto de enfermería de quien no tiene uno (la migración y al crear sin elegirlo): auxiliar. */
 export const NURSE_DEFAULT_POSITION = 'nurse_aux'
 /** Prefijos que ya puede traer el nombre (no se repiten en la firma). */

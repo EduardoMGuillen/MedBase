@@ -1,7 +1,7 @@
 import { DEPT_POSITIONS } from '../lib/clinicalConfig'
 import { Combo, asChange } from '../components/Combo'
 import { positionFor, type DeptKey } from '../lib/positions'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { normalize } from '../lib/patients'
 import { Check, Minus, UserPlus } from 'lucide-react'
 import { useStore } from '../lib/store'
@@ -224,9 +224,10 @@ function NewStaff({ roles, onClose, onCreated }: { roles: Role[]; onClose: () =>
   )
 }
 
-const isDept = (r: Role) => r === 'lab' || r === 'imaging'
+// AN1 (ronda 18): Anestesia también lleva cargo de su departamento
+const isDept = (r: Role) => r === 'lab' || r === 'imaging' || r === 'anesthesia'
 /** El departamento cuyo cargo se pide: Laboratorio o Imágenes; si no, Enfermería (EN1, ronda 16: Licenciado(a) o Auxiliar). */
-const deptOf = (roles: Role[]): DeptKey | undefined => (roles.find(isDept) as 'lab' | 'imaging' | undefined) ?? (roles.includes('nurse') ? 'nursing' : undefined)
+const deptOf = (roles: Role[]): DeptKey | undefined => (roles.find(isDept) as 'lab' | 'imaging' | 'anesthesia' | undefined) ?? (roles.includes('nurse') ? 'nursing' : undefined)
 const positionsOf = (dept: DeptKey): readonly { key: string; label: string; license: boolean; licenseBody: string }[] => DEPT_POSITIONS[dept]
 function positionValid(dept: DeptKey, position: string, license: string) {
   const pos = positionsOf(dept).find((x) => x.key === position)
@@ -241,12 +242,17 @@ function PositionFields({ dept, position, license, onPosition, onLicense }: { de
   const pos = positionsOf(dept).find((x) => x.key === position)
   // EN1 (ronda 16): en enfermería se llama «Puesto»
   const word = dept === 'nursing' ? 'puesto' : 'cargo'
+  // AN1 (ronda 18): con un solo cargo en el departamento (Anestesia), queda elegido
+  const only = positionsOf(dept).length === 1 ? positionsOf(dept)[0].key : undefined
+  useEffect(() => { if (only && position !== only) onPosition(only) })
   return (
     <div className="form-grid">
       <label className="field"><span>{dept === 'nursing' ? 'Puesto en enfermería' : 'Cargo'}</span>
         <Combo required value={position} onChange={onPosition} placeholder={`Elige el ${word}`} options={positionsOf(dept).map((x) => ({ value: x.key, label: x.label }))} />
         {!pos && <small className="field__msg field__msg--warn">El {word} es obligatorio.</small>}
         {dept === 'nursing' && <small className="muted">La licenciada edita el rol de turnos de enfermería; la auxiliar lo ve.</small>}</label>
+      {dept === 'anesthesia' && <label className="field"><span>N.º de registro (opcional)</span><input className="input" value={license} onChange={(e) => onLicense(e.target.value)} />
+        <small className="muted">Sale en su firma de la hoja de anestesia: «Téc. …, Técnico(a) en anestesia».</small></label>}
       {pos?.license && <label className="field"><span>N.º de colegiación</span><input className="input" value={license} onChange={(e) => onLicense(e.target.value)} aria-required="true" />
         <small className="muted">{pos.licenseBody}</small></label>}
     </div>

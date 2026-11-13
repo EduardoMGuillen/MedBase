@@ -9,7 +9,7 @@ import { ReferralActions } from '../Referral'
 import { DischargeDocuments } from '../Epicrisis'
 import { GenerateRxModal, RxAnnex } from '../../components/GenerateRx'
 import { AnesthesiaAnnex } from '../../components/AnesthesiaSheet'
-import { PreEvalAnnex } from '../../components/PreEval'
+import { PreEvalAnnex, PreEvalButton } from '../../components/PreEval'
 import { SurgicalCountAnnex } from '../../components/SurgicalCount'
 
 // Expediente de la estancia: anexos (autorizaciones, recetas, documentos quirúrgicos y archivos).
@@ -42,6 +42,13 @@ export function Annexes({ file, p, reload }: { file: File; p: Patient; reload: (
             </div>
           </div>
         </section>
+      )}
+      {/* AN1 (ronda 18): quien no escribe en el expediente pero sube la valoración (el técnico en anestesia) la sube desde aquí */}
+      {!write && open && file.hospitalization.kind !== 'observation' && can('anesthesia.sheet') && (
+        <section className="panel"><div className="panel__body hstack hstack--center" style={{ justifyContent: 'space-between' }}>
+          <p className="muted m-0">Sube la valoración preanestésica en papel o imprímela en blanco.</p>
+          <PreEvalButton stayId={file.hospitalization.id} patientId={p.id} onChanged={reload} />
+        </div></section>
       )}
       {making && <AuthorizationForm file={file} p={p} template={making} onClose={() => setMaking(null)} onCreated={(a) => { setMaking(null); setChoiceFor(a.id) }} />}
       {choiceFor && <ConsentChoice authorizationId={choiceFor} p={p} onDone={() => { setChoiceFor(null); reload() }} />}

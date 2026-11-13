@@ -18,7 +18,7 @@ export function positionOf(key?: string) {
 export const isDeptLead = (s?: { position?: string }) => { const p = positionOf(s?.position); return !!p?.lead && p.dept !== 'nursing' }
 
 /** EN1 (ronda 16): el departamento del cargo o puesto de cada rol (Laboratorio, Imágenes, Enfermería). */
-export const POSITION_DEPT: Partial<Record<Role, DeptKey>> = { lab: 'lab', imaging: 'imaging', nurse: 'nursing' }
+export const POSITION_DEPT: Partial<Record<Role, DeptKey>> = { lab: 'lab', imaging: 'imaging', nurse: 'nursing', anesthesia: 'anesthesia' }
 
 /** EN1 (ronda 16): el cargo o puesto de la persona en el departamento de ese rol (o undefined si no tiene). */
 export function positionFor(s: { position?: string }, role: Role) {
@@ -40,6 +40,16 @@ export function signerOf(s?: { name: string; docName?: string; position?: string
   const pos = positionOf(s.position)
   const cargo = pos?.label ?? [ROLE_LABEL[mainRole(s)], s.specialty].filter(Boolean).join(', ')
   return { name: signedName(s), title: [cargo, s.license && `N.º de colegiación ${s.license}`].filter(Boolean).join(' · ') }
+}
+
+/**
+ * AN1 (ronda 18): quién hace una valoración preanestésica o una anestesia: los médicos con especialidad de Anestesiología y el
+ * personal con el cargo «Técnico(a) en anestesia». Es lo que ofrecen «Valoración realizada por» y «Anestesia realizada por»
+ * (además se puede escribir el nombre de alguien de afuera).
+ */
+export function isAnesthesiaStaff(s: { role: Role; roles?: Role[]; position?: string; specialty?: string }) {
+  if (s.position === 'anesthesia_tech') return true
+  return (s.roles ?? [s.role]).includes('doctor') && /anestesi/i.test((s.specialty ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
 }
 
 /** LD1 (ronda 18): lo que dice de cada persona una lista de personal, a la derecha del nombre: su cargo, su especialidad o su rol. */

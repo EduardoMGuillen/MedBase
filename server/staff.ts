@@ -6,7 +6,7 @@ import { fail, hasRoleSql } from './http.js'
 import { toStaff } from './mappers.js'
 import { ROLES_BY_KIND } from '../src/lib/permissions.js'
 import { positionOf } from '../src/lib/positions.js'
-import { NURSE_DEFAULT_POSITION } from '../src/lib/clinicalConfig.js'
+import { ANESTHESIA_DEFAULT_POSITION, NURSE_DEFAULT_POSITION } from '../src/lib/clinicalConfig.js'
 import { scheduleFromWeek, scheduleProblems, SLOT_OPTIONS, weekOf } from '../src/lib/schedule.js'
 
 /**
@@ -14,7 +14,7 @@ import { scheduleFromWeek, scheduleProblems, SLOT_OPTIONS, weekOf } from '../src
  * y de la plataforma (antes vivía al final de server/app.ts y esas rutas lo importaban de vuelta).
  */
 const COLORS = ['#2335C9', '#0F8A6E', '#B4407A', '#C27A12', '#6A4BC4', '#2C7DA0', '#5B6472']
-export const CLINIC_ROLES = ['admin', 'doctor', 'nurse', 'reception', 'assistant', 'lab', 'imaging'] as const
+export const CLINIC_ROLES = ['admin', 'doctor', 'nurse', 'reception', 'assistant', 'lab', 'imaging', 'anesthesia'] as const
 const ROLES = CLINIC_ROLES
 
 export const tempPassword = () => randomBytes(6).toString('base64url')
@@ -45,7 +45,7 @@ export async function createStaffMember(sql: Sql, clinicId: string, s: { name: s
   const schedule = s.role === 'doctor' ? JSON.stringify(scheduleFromWeek({ 1: [{ start: '08:00', end: '17:00' }], 2: [{ start: '08:00', end: '17:00' }], 3: [{ start: '08:00', end: '17:00' }], 4: [{ start: '08:00', end: '17:00' }], 5: [{ start: '08:00', end: '17:00' }] }, 30)) : null
   await sql.run(`INSERT INTO staff (id,name,role,specialty,email,license,color,active,password_hash,schedule,service_id,clinic_id,roles,position) VALUES (?,?,?,?,?,?,?,TRUE,?,?,?,?,?,?)`,
     [id, s.name, s.role, s.specialty || null, s.email, s.license || null, COLORS[count % COLORS.length], bcrypt.hashSync(password, 10),
-      schedule, service ? String(service.id) : null, clinicId, JSON.stringify([s.role]), s.role === 'lab' || s.role === 'imaging' || s.role === 'nurse' ? s.position ?? null : null])
+      schedule, service ? String(service.id) : null, clinicId, JSON.stringify([s.role]), s.role === 'anesthesia' ? s.position ?? ANESTHESIA_DEFAULT_POSITION : s.role === 'lab' || s.role === 'imaging' || s.role === 'nurse' ? s.position ?? null : null])
   return { user: toStaff((await sql.one('SELECT * FROM staff WHERE id = ?', [id]))!), password }
 }
 
@@ -92,12 +92,15 @@ export function nursePosition(position: string | undefined, name: string) {
   return position
 }
 
+/** AN1 (ronda 18): roles que llevan cargo de su departamento (Enfermería lleva puesto, aparte). */
+export const DEPT_ROLES = ['lab', 'imaging', 'anesthesia']
+const DEPT_NAME: Record<string, string> = { lab: 'Laboratorio', imaging: 'Imágenes', anesthesia: 'Anestesia' }
 export function checkPosition(roles: string[], position: string | undefined, license: string | undefined, name: string) {
-  const depts = roles.filter((r) => r === 'lab' || r === 'imaging')
+  const depts = roles.filter((r) => DEPT_ROLES.includes(r))
   if (!depts.length) return
-  if (depts.length > 1) fail(400, 'Una persona trabaja en Laboratorio o en Imágenes, no en los dos.')
+  if (depts.length > 1) fail(400, 'Una persona trabaja en Laboratorio, en Imágenes o en Anestesia, no en más de uno.')
   const pos = positionOf(position)
-  if (!pos) fail(400, `Elige el cargo de ${name} en ${depts[0] === 'lab' ? 'Laboratorio' : 'Imágenes'}.`)
-  if (pos!.dept !== depts[0]) fail(400, `«${pos!.label}» no es un cargo de ${depts[0] === 'lab' ? 'Laboratorio' : 'Imágenes'}.`)
+  if (!pos) fail(400, `Elige el cargo de ${name} en ${DEPT_NAME[depts[0]]}.`)
+  if (pos!.dept !== depts[0]) fail(400, `«${pos!.label}» no es un cargo de ${DEPT_NAME[depts[0]]}.`)
   if (pos!.license && !license?.trim()) fail(400, `Escribe el número de colegiación de ${name} (${pos!.licenseBody}).`)
 }

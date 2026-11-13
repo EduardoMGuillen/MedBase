@@ -153,6 +153,8 @@ export function registerFiles(app: Express, { sql, auth, need, userOf, clinicOf,
  * papel y los resultados), y los departamentos solo abren los de su tipo.
  */
 function deptUpload(u: Staff, category: string) {
+  // AN1 (ronda 18): el técnico en anestesia solo sube sus documentos en papel (valoración y hoja de anestesia)
+  if (u.role === 'anesthesia') { if (category !== 'document') fail(403, 'Solo puedes subir la valoración preanestésica y la hoja de anestesia.'); return }
   if (can(u, 'chart.view')) return
   const own = u.role === 'lab' ? 'lab' : u.role === 'imaging' ? 'imaging' : undefined
   if (own ? category !== own : !['lab', 'imaging'].includes(category)) fail(403, 'Solo puedes subir archivos de exámenes de tu tipo.')

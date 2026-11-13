@@ -37,6 +37,11 @@ export const STEPS: Step[] = [
     );
     CREATE INDEX IF NOT EXISTS patient_team_notes_patient ON patient_team_notes (clinic_id, patient_id, id);
   `) },
+  // AN1 (ronda 18): rol «Anestesia» (cargo «Técnico(a) en anestesia»). Solo ensancha la lista de roles admitidos
+  { id: 2, name: 'personal: rol de anestesia', run: async (q) => {
+    await q.exec(`ALTER TABLE staff DROP CONSTRAINT IF EXISTS staff_role_check`)
+    await q.exec(`ALTER TABLE staff ADD CONSTRAINT staff_role_check CHECK (role IN ('superadmin','admin','doctor','nurse','reception','assistant','lab','imaging','anesthesia'))`)
+  } },
 ]
 
 /** Falla al arrancar si los pasos no están numerados 1, 2, 3… sin huecos ni repetidos. */

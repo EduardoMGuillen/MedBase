@@ -565,6 +565,8 @@ button.chip[aria-pressed='true'] { background: var(--ink); color: #fff; border-c
 .modal__head { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px 0; }
 .modal__head h2 { font-size: 22px; }
 .modal__body { padding: 20px 24px; display: grid; gap: 14px; }
+/* LD1 (ronda 18): el título de una ventana baja de renglón en vez de cortarse */
+.modal__head h2 { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
 .modal__foot { padding: 0 24px 22px; display: flex; justify-content: flex-end; gap: 8px; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.98); } }

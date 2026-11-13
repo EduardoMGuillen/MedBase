@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { staffHint } from '../lib/positions'
+import { isAnesthesiaStaff, staffHint } from '../lib/positions'
 import { Combo } from './Combo'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Camera, ClipboardList, Eye, PenLine, Printer, Replace } from 'lucide-react'
@@ -24,7 +24,7 @@ import './anesthesia.css'
 // eslint-disable-next-line react-refresh/only-export-components
 export function useAnesthesiaAccess() {
   const { can } = useStore()
-  return can('chart.view') && (can('inpatient.orders') || can('inpatient.care') || can('inpatient.notes'))
+  return can('chart.view') && (can('inpatient.orders') || can('inpatient.care') || can('inpatient.notes') || can('anesthesia.sheet'))
 }
 
 const stayPath = (stayKind: string, stayId: string) => `/app/${stayKind === 'observation' ? 'observacion' : 'hospitalizados'}/${stayId}`
@@ -119,7 +119,8 @@ function AnesthesiaUpload({ info, replaces, onClose, onDone }: { info: NoteInfo;
   const [observation, setObservation] = useState('')
   const [reason, setReason] = useState('')
   const [progress, setProgress] = useState<number | null>(null)
-  const people = staff.filter((s) => s.active && s.role !== 'superadmin')
+  // AN1 (ronda 18): la anestesia la hacen los anestesiólogos y los técnicos en anestesia (o alguien de afuera, escrito)
+  const people = staff.filter((s) => s.active && isAnesthesiaStaff(s))
   const ok = !!preview && !tooBig && by.name.trim().length >= 3 && (!replaces || reason.trim().length >= 5) && progress === null
   const confirm = async () => {
     if (!preview || !ok) return
@@ -147,7 +148,7 @@ function AnesthesiaUpload({ info, replaces, onClose, onDone }: { info: NoteInfo;
       {ui}
       <div className="form-grid">
         <label className="field"><span>Anestesia realizada por</span>
-          <Combo free required value={by.name} placeholder="Elige o escribe el nombre" options={people.map((s) => ({ value: s.id, label: s.name, hint: staffHint(s) }))}
+          <Combo free required value={by.name} placeholder="Elige o escribe el nombre" emptyText="No hay anestesiólogos ni técnicos en anestesia registrados" options={people.map((s) => ({ value: s.id, label: s.name, hint: staffHint(s) }))}
             onChange={(name, o) => setBy({ name, staffId: o?.value })} /></label>
         <label className="field"><span>Observación (opcional)</span>
           <input className="input" value={observation} maxLength={1000} onChange={(e) => setObservation(e.target.value)} placeholder="Ej. La trajo la circulante" /></label>
@@ -189,13 +190,14 @@ export function AnesthesiaAnnex({ stayId }: { stayId: string }) {
 interface Pending { noteId: string; hospitalizationId: string; stayKind: string; patient: string; procedure: string; at: string }
 
 /** Inicio del anestesiólogo con usuario: «Hoja de anestesia pendiente · paciente · cirugía · fecha», con un clic a la nota. */
-export function AnesthesiaPending() {
+export function AnesthesiaPending({ showEmpty = false }: { showEmpty?: boolean }) {
   const [list, setList] = useState<Pending[]>([])
   useEffect(() => { api<Pending[]>('/anesthesia/pending').then(setList).catch(() => setList([])) }, [])
-  if (!list.length) return null
+  // AN1 (ronda 18): en el Inicio del técnico en anestesia el recuadro está siempre, también vacío
+  if (!list.length) return showEmpty ? <section className="panel" data-testid="anesthesia-pending"><div className="panel__head"><div><h2>Registros de anestesia pendientes</h2><p>Aquí salen las cirugías en que figuras como quien hizo la anestesia y todavía no tienen su hoja.</p></div></div><div className="empty">No tienes registros de anestesia pendientes.</div></section> : null
   return (
     <section className="panel" data-testid="anesthesia-pending">
-      <div className="panel__head"><div><h2>Registros de anestesia pendientes</h2><p>Figuras como anestesiólogo en estas notas postquirúrgicas. Súbelo en papel o llénalo en el sistema.</p></div></div>
+      <div className="panel__head"><div><h2>Registros de anestesia pendientes</h2><p>Figuras como quien hizo la anestesia en estas notas postquirúrgicas. Súbelo en papel o llénalo en el sistema.</p></div></div>
       <div className="rows">{list.map((x) => (
         <Link key={x.noteId} className="row anes-row anes-row--link" to={anesthesiaNoteLink(x.stayKind, x.hospitalizationId, x.noteId)}>
           <div className="row__who"><strong>Registro de anestesia pendiente · {x.patient} · {x.procedure} · {dmy(x.at)}</strong><span>Abrir la nota</span></div>

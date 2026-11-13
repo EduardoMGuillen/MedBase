@@ -1,6 +1,6 @@
 import type { CriticalGroup, FileCategory, SystemFileCategory } from './clinicalConfig.js'
 /** DP1 (ronda 11): «lab» (Laboratorio) e «imaging» (Imágenes), solo en clínicas, con cargo (Staff.position). */
-export type Role = 'superadmin' | 'admin' | 'doctor' | 'nurse' | 'reception' | 'assistant' | 'lab' | 'imaging'
+export type Role = 'superadmin' | 'admin' | 'doctor' | 'nurse' | 'reception' | 'assistant' | 'lab' | 'imaging' | 'anesthesia'
 
 /** Tipo de cuenta: clínica (varios médicos, hospitalización) o consultorio de un médico independiente. */
 export type ClinicKind = 'clinic' | 'office'

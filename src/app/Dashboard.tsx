@@ -154,6 +154,15 @@ export default function Dashboard() {
   )
   const office = features(settings).office
 
+  // AN1 (ronda 18): el técnico en anestesia: sus hojas pendientes y la entrada a los pacientes (expediente en solo lectura)
+  if (user.role === 'anesthesia') return (
+    <div className="page">
+      <PageHead title={`${greeting()}, ${first}`} sub="Valoraciones preanestésicas y registros de anestesia de los pacientes en observación y hospitalización."
+        actions={<>{features(settings).hospital && <Link className="btn btn--primary" to="/app/hospitalizados">Hospitalizados</Link>}{features(settings).observation && <Link className="btn btn--ghost" to="/app/observacion">Observación</Link>}</>} />
+      <AnesthesiaPending showEmpty />
+    </div>
+  )
+
   if (user.role === 'doctor') {
     const mine = today.filter((a) => a.doctorId === user.id && a.status !== 'cancelled')
     const waiting = mine.filter((a) => a.status === 'arrived')

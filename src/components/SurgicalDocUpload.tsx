@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { staffHint } from '../lib/positions'
+import { isAnesthesiaStaff, staffHint } from '../lib/positions'
 import { Combo } from './Combo'
 import { useStore } from '../lib/store'
 import { api } from '../lib/api'
@@ -32,7 +32,9 @@ export function SurgicalDocUpload({ title, docName, patientId, stayId, endpoint,
   const [observation, setObservation] = useState('')
   const [reason, setReason] = useState('')
   const [progress, setProgress] = useState<number | null>(null)
-  const people = staff.filter((s) => s.active && s.role !== 'superadmin')
+  // AN1 (ronda 18): «Valoración realizada por» ofrece solo a los anestesiólogos (médicos con esa especialidad) y a los técnicos
+  // en anestesia; a alguien de afuera se le escribe el nombre («Usar «…»»). Quién la sube no cambia.
+  const people = staff.filter((s) => s.active && isAnesthesiaStaff(s))
   const ok = !!preview && !tooBig && (!performed || by.name.trim().length >= 3) && (!replaces || reason.trim().length >= 5) && progress === null
   const confirm = async () => {
     if (!preview || !ok) return
@@ -60,7 +62,7 @@ export function SurgicalDocUpload({ title, docName, patientId, stayId, endpoint,
       {ui}
       <div className="form-grid">
         {performed && <label className="field"><span>{performed.label}</span>
-          <Combo free required value={by.name} placeholder="Elige o escribe el nombre" options={people.map((s) => ({ value: s.id, label: s.name, hint: staffHint(s) }))}
+          <Combo free required value={by.name} placeholder="Elige o escribe el nombre" emptyText="No hay anestesiólogos ni técnicos en anestesia registrados" options={people.map((s) => ({ value: s.id, label: s.name, hint: staffHint(s) }))}
             onChange={(name, o) => setBy({ name, staffId: o?.value })} /></label>}
         <label className="field"><span>Observación (opcional)</span>
           <input className="input" value={observation} maxLength={1000} onChange={(e) => setObservation(e.target.value)} placeholder="Ej. La trajo la circulante" /></label>
